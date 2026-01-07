@@ -639,8 +639,8 @@ struct Pipeline[
         ]()
 
         var num_iters = args.num_iters
-        var m: UInt32 = block_idx.y * UInt(BM)
-        var n: UInt32 = block_idx.x * UInt(BN)
+        var m = UInt32(block_idx.y * UInt(BM))
+        var n = UInt32(block_idx.x * UInt(BN))
 
         for i in range(num_iters):
             if elect_one_thread:

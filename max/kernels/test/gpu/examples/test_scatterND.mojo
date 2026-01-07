@@ -81,9 +81,9 @@ fn scatter_nd_gpu[
         data_offset += index * element_count_dim
 
     # Set updates_data_base to appropriate offset (from where to copy).
-    var updates_data_base = updates_data_ptr.offset(num_updates_elements * id)
+    var updates_data_base = updates_data_ptr + num_updates_elements * id
     # Set output_data_base to appropriate offset (where to copy).
-    var output_data_base = output_data_ptr.offset(data_offset)
+    var output_data_base = output_data_ptr + data_offset
 
     # Start copying appropriate amount of elements.
     for i in range(num_updates_elements):

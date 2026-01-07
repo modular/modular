@@ -359,7 +359,7 @@ struct MatmulTileWriter[
                     var tma_writer = TileWriterTMA(Pointer(to=tma_op))
 
                     if self.local_thread_idx < UInt(Self.WG_BN // TMA_BN):
-                        var smem_offset = self.smem_tile.ptr.offset(
+                        var smem_offset = self.smem_tile.ptr + (
                             Self.WG_BM * TMA_BN * Int(self.local_thread_idx)
                         )
                         var tma_tile = SMemTileType[

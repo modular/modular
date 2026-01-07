@@ -82,7 +82,7 @@ fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
         out_host.create_sub_buffer[DType.int64](0, half_length)
     )
     # Using host pointer math
-    first_out_dev.enqueue_copy_to(out_host.unsafe_ptr().offset(half_length))
+    first_out_dev.enqueue_copy_to(out_host.unsafe_ptr() + half_length)
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -131,7 +131,7 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
     var first_out_dev = DeviceBuffer[DType.int64](
         ctx, out_ptr, half_length, owning=use_take_ptr
     )
-    var interior_out_ptr = out_ptr.offset(half_length)
+    var interior_out_ptr = out_ptr + half_length
     var second_out_dev = DeviceBuffer[DType.int64](
         ctx, interior_out_ptr, half_length, owning=False
     )
@@ -142,7 +142,7 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
         out_host.create_sub_buffer[DType.int64](0, half_length)
     )
     # Using host pointer math
-    first_out_dev.enqueue_copy_to(out_host.unsafe_ptr().offset(half_length))
+    first_out_dev.enqueue_copy_to(out_host.unsafe_ptr() + half_length)
 
     # Wait for the copies to be completed.
     ctx.synchronize()

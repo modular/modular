@@ -23,8 +23,8 @@ from pathlib import Path
 from typing import Any, overload
 
 from max import mlir
-from max._core import Attribute
-from max._core.dialects import builtin, kgen
+from max._core import Attribute, Operation
+from max._core.dialects import builtin
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession, Model
@@ -206,7 +206,7 @@ class CustomOp:
         return self._custom_op_def(*args, **kwargs)
 
     @property
-    def kernel(self) -> kgen.GeneratorOp:
+    def kernel(self) -> Operation:
         """Retrieves the op definition MLIR from the custom op library."""
         analysis = self.library._kernel_library._analysis
         return analysis.kernel(self.name)

@@ -13,13 +13,13 @@
 
 
 import pytest
-from conftest import MiB, alloc_pinned
+from conftest import MemType, MiB
 
 
-def test_oom(memory_manager_config: None) -> None:
-    # We expect a OOM because we cannot allocate 101MiB when the limit is 100MiB.
-    with pytest.raises(
-        ValueError,
-        match=r"\[Use only memory manager mode\]: No room left in memory manager: .*\[0 - host\] on .* \(size: 101MB ; free: 0B ; cache_size: 0B ; max_cache_size: 100MB\)",
-    ):
-        _ = alloc_pinned(101 * MiB)
+@pytest.mark.parametrize("mem_type", [MemType.PINNED, MemType.DEVICE])
+def test_enumerate(memory_manager_config: None, mem_type: MemType) -> None:
+    # allocate 1MiB, 2MiB, 3MiB, 4MiB, 5MiB in increasing order
+    # the sum of the sizes is far less than 100MiB
+    for i in range(1, 6):
+        size = i * MiB
+        _ = mem_type.alloc(size)

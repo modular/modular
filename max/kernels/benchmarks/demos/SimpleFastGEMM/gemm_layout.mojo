@@ -129,9 +129,7 @@ fn gemm[
         # @parameter
         # fn process_row(ir: Int):
         for ir in range(M // MR):
-            var a_tile = TensorBuilder[MR, K, dtype].Wrap(
-                a.data.offset(K * MR * ir)
-            )
+            var a_tile = TensorBuilder[MR, K, dtype].Wrap(a.data + K * MR * ir)
 
             # var c_strip = TensorBuilder[MR, N, dtype].Wrap(
             #     c.data.offset(N * MR * ir)
@@ -141,7 +139,7 @@ fn gemm[
             # Possibly a slightly more efficient way of building c_tile
             comptime c_tile_layout = Layout([MR, NR], [N, 1])
             var c_tile = LayoutTensor[c_tile_layout, dtype](
-                c.data.offset(N * MR * ir + NR * jc)
+                c.data + N * MR * ir + NR * jc
             )
 
             kernel(c_tile, a_tile, b_tile)

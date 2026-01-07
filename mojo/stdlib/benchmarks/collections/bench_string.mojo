@@ -49,9 +49,9 @@ fn make_string[
             while length > len(items):
                 items.append(items[i])
                 i = i + 1 if i < len(items) - 1 else 0
-            return String(bytes=items)
+            return String(unsafe_from_utf8=items)
         else:
-            return String(bytes=f.read_bytes())
+            return String(unsafe_from_utf8=f.read_bytes())
     except e:
         print(e, file=stderr)
     abort(String())

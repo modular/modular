@@ -22,7 +22,7 @@ using mpirun.
 # RUN: %mojo-build %s -o %t
 # RUN: %t
 
-from memory import LegacyUnsafePointer
+from memory import LegacyUnsafePointer, alloc
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
@@ -53,7 +53,7 @@ fn simple_shift_kernel(destination: UnsafePointer[Int32]):
 def simple_shift(ctx: SHMEMContext):
     # Set up buffers to test devices are communicating with the correct IDs
     var target_device = ctx.enqueue_create_buffer[DType.int32](1)
-    var target_host = ctx.enqueue_create_host_buffer[DType.int32](1)
+    var target_host = alloc[Int32](1)
 
     ctx.enqueue_function_checked[simple_shift_kernel, simple_shift_kernel](
         target_device, grid_dim=1, block_dim=1

@@ -28,7 +28,6 @@ from gpu import (
     block_idx,
     grid_dim,
     thread_idx,
-    warp_id as get_warp_id,
 )
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host.info import is_gpu
@@ -804,7 +803,7 @@ fn group_limited_router_kernel[
     var grid_size = grid_dim.x
     var bid = block_idx.x
     var tid = Int(thread_idx.x)
-    var warp_id = get_warp_id()
+    var warp_id = tid // WARP_SIZE
 
     var num_tokens = expert_scores.dim(0)
 

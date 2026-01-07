@@ -630,7 +630,7 @@ fn mgp_buffer_to_index(
 fn mgp_buffer_slice(
     buffer: NDBuffer[DType.int8, 1, MutAnyOrigin], offset: Int, size: Int
 ) -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
-    return NDBuffer[DType.int8, 1](buffer.data.offset(offset), Index(size))
+    return NDBuffer[DType.int8, 1](buffer.data + offset, Index(size))
 
 
 @register_internal("mgp.buffer.concat")

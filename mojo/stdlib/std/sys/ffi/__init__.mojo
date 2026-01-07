@@ -87,6 +87,9 @@ comptime c_float = Float32
 comptime c_double = Float64
 """C `double` type."""
 
+comptime c_pid_t = Int
+"""C `pid_t` type."""
+
 comptime MAX_PATH = _get_max_path()
 """Maximum path length for the current platform."""
 

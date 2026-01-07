@@ -59,7 +59,7 @@ struct LoadStore_i8mm[
         tile_n_idx: Int,
         c_bound: IndexList[2],
     ):
-        var c_ptr_loc = c_ptr.offset(tile_n_idx)
+        var c_ptr_loc = c_ptr + tile_n_idx
 
         @parameter
         for idx0 in range(Self.tile_rows):
@@ -81,13 +81,13 @@ struct LoadStore_i8mm[
                     )
                 elif idx1 * 2 <= c_bound[1]:
                     var t0 = partial_simd_load[2](
-                        c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
+                        c_ptr_loc + (c_stride * (2 * idx0 + 0) + 2 * idx1),
                         0,
                         c_bound[1] - tile_n_idx - idx1 * 2,
                         0,
                     )
                     var t1 = partial_simd_load[2](
-                        c_ptr_loc.offset(c_stride * (2 * idx0 + 1) + 2 * idx1),
+                        c_ptr_loc + (c_stride * (2 * idx0 + 1) + 2 * idx1),
                         0,
                         c_bound[1] - tile_n_idx - idx1 * 2,
                         0,
@@ -106,7 +106,7 @@ struct LoadStore_i8mm[
         tile_n_idx: Int,
         c_bound: IndexList[2],
     ):
-        var c_ptr_loc = c_ptr.offset(tile_n_idx)
+        var c_ptr_loc = c_ptr + tile_n_idx
 
         @parameter
         for idx0 in range(Self.tile_rows):
@@ -117,22 +117,20 @@ struct LoadStore_i8mm[
                 if self.skip_boundary_check or (
                     idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
                 ):
-                    c_ptr_loc.offset(
-                        c_stride * (2 * idx0 + 0) + 2 * idx1
-                    ).store(
+                    (c_ptr_loc + (c_stride * (2 * idx0 + 0) + 2 * idx1)).store(
                         c_data.slice[2](),
                     )
 
                     @parameter
                     if not Self.single_row:
-                        c_ptr_loc.offset(
-                            c_stride * (2 * idx0 + 1) + 2 * idx1
+                        (
+                            c_ptr_loc + (c_stride * (2 * idx0 + 1) + 2 * idx1)
                         ).store(
                             c_data.slice[2, offset=2](),
                         )
                 elif idx1 * 2 <= c_bound[1]:
                     partial_simd_store(
-                        c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
+                        c_ptr_loc + (c_stride * (2 * idx0 + 0) + 2 * idx1),
                         0,
                         c_bound[1] - tile_n_idx - idx1 * 2,
                         c_data.slice[2](),
@@ -141,9 +139,7 @@ struct LoadStore_i8mm[
                     @parameter
                     if not Self.single_row:
                         partial_simd_store(
-                            c_ptr_loc.offset(
-                                c_stride * (2 * idx0 + 1) + 2 * idx1
-                            ),
+                            c_ptr_loc + (c_stride * (2 * idx0 + 1) + 2 * idx1),
                             0,
                             c_bound[1] - tile_n_idx - idx1 * 2,
                             c_data.slice[2, offset=2](),
@@ -188,13 +184,11 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         var b_offset = b_packed.runtime_layout(
             RuntimeTuple[b_packed.layout.shape](Index(n_outer_idx, kl // 8, 0))
         )
-        var b_ptr = b_packed.ptr.offset(b_offset)
+        var b_ptr = b_packed.ptr + b_offset
 
         # This inner kernels works with non-transposed A.
         var K = a.dim(1)
-        var a_ptr = a.ptr.offset(
-            global_offset.M * K + 2 * global_offset.K + 2 * kl
-        )
+        var a_ptr = a.ptr + (global_offset.M * K + 2 * global_offset.K + 2 * kl)
 
         # Prefetch B matrix.
         comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
@@ -208,7 +202,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
             for idx in range(kernel_cols // simd_size):
                 prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
-                ](b_ptr.offset(prefetch_offset + idx * simd_size))
+                ](b_ptr + (prefetch_offset + idx * simd_size))
 
         # Loop over local accumulator tiles.
         @parameter
@@ -218,7 +212,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
             for idx1 in range(kernel_cols // simd_size):
                 comptime alignment = align_of[SIMD[c_local.dtype, simd_size]]()
                 var a_val = a_ptr.load[width = simd_size * 4](2 * idx0 * K)
-                var b_val = b_ptr.offset(16 * idx1).load[
+                var b_val = (b_ptr + 16 * idx1).load[
                     width = simd_size * 4, alignment=alignment
                 ]()
                 var c_val = c_local[idx0, idx1]
@@ -250,7 +244,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
 
         var c_stride = c.dim[1]()
 
-        var c_ptr = c.ptr.offset(global_offset.M * c_stride + global_offset.N)
+        var c_ptr = c.ptr + (global_offset.M * c_stride + global_offset.N)
 
         var c_bound = Index(global_bound.M, global_bound.N) - Index(
             global_offset.M, global_offset.N

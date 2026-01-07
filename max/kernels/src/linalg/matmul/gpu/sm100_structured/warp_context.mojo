@@ -12,32 +12,43 @@
 # ===----------------------------------------------------------------------=== #
 """RAII warp context managers for SM100 matmul kernel.
 
-Provides lifecycle management for MMA and Epilogue warps:
-
-- MmaWarpContext: Allocates TMEM, manages output pipeline, deallocates on exit
-- EpilogueWarpContext: Consumes TMEM data, signals completion on exit
-
-Usage (MMA warp):
-    var tmem = Tmem.allocate(smem.tmem_addr())
-    var ctx = MmaWarpContext(tmem, OutputPipeline(...), TmemDeallocBarrier(...))
-    with ctx:
-        with ctx.output_pipeline.producer() as stage:
-            # ... MMA work ...
-    # __exit__ waits for epilogue and deallocates TMEM
-
-Usage (Epilogue warp):
-    EpilogueCtx.Sync.wait()  # MUST wait before reading TMEM address!
-    var tmem = Tmem.from_shared(smem.tmem_addr())
-    var ctx = EpilogueWarpContext(tmem, OutputPipeline(...), TmemDeallocBarrier(...))
-    with ctx:
-        with ctx.output_pipeline.consumer() as stage:
-            # ... store results ...
-    # __exit__ signals MMA that epilogue is complete
+MmaWarpContext: MMA warp - allocates TMEM, deallocates on exit
+EpilogueWarpContext: Epilogue warp - consumes TMEM, signals completion on exit
 """
 
 from .barriers import TmemDeallocBarrier, WarpGroupBarrier
 from .tile_pipeline import OutputTilePipeline
 from .tmem import TmemAllocation
+
+
+# =============================================================================
+# Shared type aliases for warp contexts
+# =============================================================================
+
+
+@register_passable("trivial")
+struct _WarpContextTypes[
+    num_accum_stages: Int,
+    stage_stride_cols: Int,
+    cta_group: Int,
+    mma_threads: Int,
+    epilogue_threads: Int,
+]:
+    """Shared type definitions for MMA and Epilogue warp contexts."""
+
+    comptime Tmem = TmemAllocation[Self.cta_group]
+    comptime Pipeline = OutputTilePipeline[
+        Self.num_accum_stages, Self.stage_stride_cols, Self.cta_group
+    ]
+    comptime Dealloc = TmemDeallocBarrier[Self.cta_group]
+    comptime Sync = WarpGroupBarrier[
+        Self.mma_threads + Self.epilogue_threads, 1
+    ]
+
+
+# =============================================================================
+# MmaWarpContext
+# =============================================================================
 
 
 @register_passable("trivial")
@@ -50,18 +61,21 @@ struct MmaWarpContext[
 ]:
     """MMA warp context - owns TMEM lifecycle and output pipeline.
 
-    __enter__: Signals epilogue that TMEM is allocated (non-blocking arrive)
-    __exit__: Waits for epilogue completion, then deallocates TMEM
+    __enter__: Signals epilogue that TMEM is allocated
+    __exit__: Waits for epilogue, deallocates TMEM
     """
 
-    comptime Tmem = TmemAllocation[Self.cta_group]
-    comptime Pipeline = OutputTilePipeline[
-        Self.num_accum_stages, Self.stage_stride_cols, Self.cta_group
+    comptime _Types = _WarpContextTypes[
+        Self.num_accum_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+        Self.mma_threads,
+        Self.epilogue_threads,
     ]
-    comptime Dealloc = TmemDeallocBarrier[Self.cta_group]
-    comptime Sync = WarpGroupBarrier[
-        Self.mma_threads + Self.epilogue_threads, 1
-    ]
+    comptime Tmem = Self._Types.Tmem
+    comptime Pipeline = Self._Types.Pipeline
+    comptime Dealloc = Self._Types.Dealloc
+    comptime Sync = Self._Types.Sync
 
     var tmem: Self.Tmem
     var output_pipeline: Self.Pipeline
@@ -85,6 +99,11 @@ struct MmaWarpContext[
         self.dealloc_barrier.complete_dealloc(self.tmem)
 
 
+# =============================================================================
+# EpilogueWarpContext
+# =============================================================================
+
+
 @register_passable("trivial")
 struct EpilogueWarpContext[
     num_accum_stages: Int,
@@ -95,21 +114,21 @@ struct EpilogueWarpContext[
 ]:
     """Epilogue warp context - consumes TMEM data, signals completion.
 
-    IMPORTANT: Call Sync.wait() BEFORE constructing! The wait must happen
-    before reading the TMEM address that MMA stored in shared memory.
-
-    __enter__: Returns self (wait already done by caller)
-    __exit__: Signals MMA warp that epilogue is complete
+    IMPORTANT: Call Sync.wait() BEFORE constructing to ensure TMEM address
+    is visible from shared memory.
     """
 
-    comptime Tmem = TmemAllocation[Self.cta_group]
-    comptime Pipeline = OutputTilePipeline[
-        Self.num_accum_stages, Self.stage_stride_cols, Self.cta_group
+    comptime _Types = _WarpContextTypes[
+        Self.num_accum_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+        Self.mma_threads,
+        Self.epilogue_threads,
     ]
-    comptime Dealloc = TmemDeallocBarrier[Self.cta_group]
-    comptime Sync = WarpGroupBarrier[
-        Self.mma_threads + Self.epilogue_threads, 1
-    ]
+    comptime Tmem = Self._Types.Tmem
+    comptime Pipeline = Self._Types.Pipeline
+    comptime Dealloc = Self._Types.Dealloc
+    comptime Sync = Self._Types.Sync
 
     var tmem: Self.Tmem
     var output_pipeline: Self.Pipeline

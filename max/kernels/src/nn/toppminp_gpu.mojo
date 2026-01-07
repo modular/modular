@@ -798,12 +798,12 @@ fn _topp_minp_sampling_gpu[
     var ids_buf = ctx.enqueue_create_buffer[out_idx_type](input_size * 2)
     var probs_double_buffer = DoubleBuffer(
         probs_buf.unsafe_ptr(),
-        probs_buf.unsafe_ptr().offset(input_size),
+        probs_buf.unsafe_ptr() + input_size,
         input_size,
     )
     var keys_double_buffer = DoubleBuffer(
         ids_buf.unsafe_ptr(),
-        ids_buf.unsafe_ptr().offset(input_size),
+        ids_buf.unsafe_ptr() + input_size,
         input_size,
     )
 

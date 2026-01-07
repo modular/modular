@@ -696,7 +696,7 @@ fn pack_b[
 
             for idx_n in range(0, n_out, tile_n):
                 var packed_dst_view = NDBuffer[b_type, 3](
-                    dst_flat.data.offset(dst_offset),
+                    dst_flat.data + dst_offset,
                     DimList(
                         tile_n // inner_size2,
                         tile_k2 // factor,
@@ -741,7 +741,7 @@ fn pack_b[
         for idx_k_t in range(0, k_out_t, tile_k):
             for idx_n_t in range(0, n_out_t, tile_n):
                 var packed_dst_view_t = NDBuffer[b_type, 3](
-                    dst_flat.data.offset(dst_offset),
+                    dst_flat.data + dst_offset,
                     DimList(tile_n // inner_size, tile_k, inner_size),
                 )
                 var valid_k_t = min(tile_k, k_in_t - idx_k_t)
@@ -1088,9 +1088,8 @@ struct BTileGenerator[
                 #   2. the n dimension of each thread's tile is guaranteed to be an
                 #       exact multiple of the inner size
                 #   3. each tile has dims [tile_n/inner, tile_k, inner]
-                b_flat.data.offset(
-                    tile_k_idx * tile_k * n_padded + global_offset.N * tile_k2
-                ),
+                b_flat.data
+                + (tile_k_idx * tile_k * n_padded + global_offset.N * tile_k2),
                 tile_shape_pack,
             )
             return b_tile_view

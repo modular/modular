@@ -33,7 +33,7 @@ fn semaphore_vector_reduce[
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
-    var sema = Semaphore(locks.offset(0), Int(tid))
+    var sema = Semaphore(locks, Int(tid))
 
     sema.fetch()
     # for each block the partition id is the same as block_idx
@@ -115,7 +115,7 @@ fn semaphore_matrix_reduce[
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
-    var sema = Semaphore(locks.offset(0), Int(tid))
+    var sema = Semaphore(locks, Int(tid))
 
     sema.fetch()
 

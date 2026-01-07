@@ -721,7 +721,7 @@ struct ConvTransposedPacked[
         )
         # Move the pointer to (c_tile_offset, f_tile_offset) mapped in
         # current group.
-        filter_ptr = filter_ptr.offset(
+        filter_ptr = filter_ptr + (
             # Jump over f_tile_offset in current group.
             self.conv_shape.f_in_group(f_tile_offset)
             * self.conv_shape.c_per_group()
@@ -862,10 +862,8 @@ struct ConvTransposedPacked[
                     Index(h, w),
                 )
 
-                input_base = input_base.offset(
-                    height * self.conv_shape.c,
-                )
-                output_base = output_base.offset(
+                input_base = input_base + height * self.conv_shape.c
+                output_base = output_base + (
                     height * self.conv_shape.stride[1] * self.conv_shape.f
                 )
 
@@ -952,10 +950,8 @@ struct ConvTransposedPacked[
                         Index(d, h, w),
                     )
 
-                    input_base = input_base.offset(
-                        height * self.conv_shape.c,
-                    )
-                    output_base = output_base.offset(
+                    input_base = input_base + height * self.conv_shape.c
+                    output_base = output_base + (
                         height * self.conv_shape.stride[2] * self.conv_shape.f
                     )
 
@@ -1164,12 +1160,12 @@ fn update_w_tile_3d[
                 continue
 
             for s in range(conv_shape.s()):
-                var output_ptr = output.offset(
+                var output_ptr = output + (
                     q * output_stride_by_q
                     + r * output_stride_by_r
                     + s * output_stride_by_s
                 )
-                var filter_ptr = filter.offset(
+                var filter_ptr = filter + (
                     q * filter_stride_by_q
                     + r * filter_stride_by_r
                     + s * filter_stride_by_s

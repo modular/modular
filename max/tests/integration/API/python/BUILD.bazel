@@ -155,6 +155,10 @@ modular_py_test(
         "test_eagle_hidden_states_ops.py",
         "test_speculative_decoding.py",
     ],
+    args = [
+        "-n",
+        "auto",
+    ],
     data = [
         # TODO(MAXPLAT-86): Find a shared place for these tools
         "//max/tests/integration/API:inputs",
@@ -177,6 +181,7 @@ modular_py_test(
         "//max/python/max/entrypoints",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
         "//max/tests/integration/pipelines/python/test_common",
+        requirement("pytest-xdist"),
     ],
 )
 

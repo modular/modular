@@ -24,6 +24,7 @@ from max.interfaces import (
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
+    TokenBuffer,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
@@ -116,7 +117,7 @@ def create_mock_request(
     context = TextContext(
         request_id=RequestID(),
         max_length=100,
-        tokens=tokens,
+        tokens=TokenBuffer(tokens),
     )
     assert context.current_position == seq_len
     context.skip_processing(start_idx)

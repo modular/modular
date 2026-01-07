@@ -45,6 +45,9 @@ def modular_py_binary(
         testonly: Only test targets can depend on this target
         **kwargs: Extra arguments passed through to py_binary
     """
+    if len(imports) > 1:
+        fail("modular_py_binary only supports a single import path.")
+
     mojo_test_env_name = name + ".mojo_test_env"
     extra_toolchains = [
         "@//bazel/internal:current_gpu_toolchain",

@@ -128,6 +128,10 @@ modular_py_test(
         "test_matmul_packed.py",
         "test_reduce_add.py",
     ],
+    mojo_deps = select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":modular_graph_test",

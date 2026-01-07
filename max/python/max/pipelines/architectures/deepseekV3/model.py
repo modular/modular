@@ -82,16 +82,16 @@ def _choose_correct_data_parallel_degree(
 ) -> None:
     """Ensures the data parallel degree is set correctly in the PipelineConfig.
 
-    For DeepSeekV3, DP is only used in the MLA layer (which does not support
-    TP), so the DP degree must be equal to the number of devices.
+    For DeepSeekV3, DP attention requires DP degree to match device count.
+    TP attention requires DP degree to be 1.
     """
     data_parallel_degree = pipeline_config.model_config.data_parallel_degree
-    if data_parallel_degree > 1 and data_parallel_degree != num_devices:
+    if data_parallel_degree not in (1, num_devices):
         raise ValueError(
             f"--data-parallel-degree for DeepSeekV3 ({data_parallel_degree}) must be "
-            f" equal to the number of devices ({num_devices})"
+            f"1 (TP attention) or equal to the number of devices ({num_devices})."
         )
-    pipeline_config.model_config.data_parallel_degree = num_devices
+    pipeline_config.model_config.data_parallel_degree = data_parallel_degree
 
 
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):

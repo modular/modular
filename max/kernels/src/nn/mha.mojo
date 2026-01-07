@@ -913,7 +913,7 @@ fn flash_attention_dispatch[
                     var qk_max = LayoutTensor[
                         accum_type, Layout.row_major[3]()
                     ](
-                        exp_sum_qk_max_data.unsafe_ptr().offset(data_len),
+                        exp_sum_qk_max_data.unsafe_ptr() + data_len,
                         RuntimeLayout[Layout.row_major[3]()].row_major(
                             data_dim
                         ),
@@ -1455,10 +1455,10 @@ fn mha[
                 use_score_mod=use_score_mod,
                 sink=sink,
             ](
-                q_ptr.offset(q_batch_offset),
+                q_ptr + q_batch_offset,
                 k,
                 v,
-                output_ptr.offset(q_batch_offset),
+                output_ptr + q_batch_offset,
                 scale,
                 seq_len,
                 max_seq_len,
@@ -1477,10 +1477,10 @@ fn mha[
                 use_score_mod=use_score_mod,
                 sink=sink,
             ](
-                q_ptr.offset(q_batch_offset),
+                q_ptr + q_batch_offset,
                 k,
                 v,
-                output_ptr.offset(q_batch_offset),
+                output_ptr + q_batch_offset,
                 scale,
                 seq_len,
                 max_seq_len,
@@ -1500,8 +1500,8 @@ fn mha[
         comptime attention_config = MHAAttentionConfig[False, config, group]()
         var attention = Attention[config, group, False, sink](
             attention_config,
-            output_ptr.offset(q_batch_offset),
-            q_ptr.offset(q_batch_offset),
+            output_ptr + q_batch_offset,
+            q_ptr + q_batch_offset,
             k,
             v,
             mask,
@@ -3022,11 +3022,11 @@ fn mha_decoding[
     # split-k intermediate buffers
     var qk_max_batch_ptr = type_of(qk_max_ptr)()
     if qk_max_ptr:
-        qk_max_batch_ptr = qk_max_ptr.offset(qk_max_offset)
+        qk_max_batch_ptr = qk_max_ptr + qk_max_offset
 
     var exp_sum_batch_ptr = type_of(exp_sum_ptr)()
     if exp_sum_ptr:
-        exp_sum_batch_ptr = exp_sum_ptr.offset(exp_sum_offset)
+        exp_sum_batch_ptr = exp_sum_ptr + exp_sum_offset
 
     var seq_len: Int
     var q_batch_offset: Int
@@ -3073,10 +3073,10 @@ fn mha_decoding[
                 decoding_warp_split_k=decoding_warp_split_k,
                 sink=sink,
             ](
-                q_ptr.offset(q_batch_offset),
+                q_ptr + q_batch_offset,
                 k,
                 v,
-                output_ptr.offset(output_batch_offset),
+                output_ptr + output_batch_offset,
                 exp_sum_batch_ptr,
                 qk_max_batch_ptr,
                 scale,
@@ -3104,10 +3104,10 @@ fn mha_decoding[
                 decoding_warp_split_k=decoding_warp_split_k,
                 sink=sink,
             ](
-                q_ptr.offset(q_batch_offset),
+                q_ptr + q_batch_offset,
                 k,
                 v,
-                output_ptr.offset(output_batch_offset),
+                output_ptr + output_batch_offset,
                 exp_sum_batch_ptr,
                 qk_max_batch_ptr,
                 scale,
@@ -3158,8 +3158,8 @@ fn mha_decoding[
         ]()
         var attention = Attention[config, Int(group), True, sink](
             attention_config,
-            output_ptr.offset(output_batch_offset),
-            q_ptr.offset(q_batch_offset),
+            output_ptr + output_batch_offset,
+            q_ptr + q_batch_offset,
             k,
             v,
             mask,

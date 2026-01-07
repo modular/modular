@@ -536,11 +536,11 @@ fn _batched_matmul_cpu[
         for batch in range(batch_start, batch_start + batches_per_task):
             # Get a 2D view of the 3D Tensor.
             var c_view = NDBuffer[c_type, 2](
-                c.data.offset(batch * c_stride_between_batches),
+                c.data + batch * c_stride_between_batches,
                 IndexList[2](c.dim[1](), c.dim[2]()),
             )
             var a_view = NDBuffer[a_type, 2, MutAnyOrigin](
-                a.data.offset(batch * a_stride_between_batches),
+                a.data + batch * a_stride_between_batches,
                 IndexList[2](a.dim[1](), a.dim[2]()),
             )
 
@@ -561,7 +561,7 @@ fn _batched_matmul_cpu[
                 packA_i8mm[a_type](0, m, k, a_view.data, a_packed_ptr)
 
             var b_view = NDBuffer[b_type, 2](
-                b.data.offset(batch * b_stride_between_batches),
+                b.data + batch * b_stride_between_batches,
                 IndexList[2](b.dim[1](), b.dim[2]()),
             )
 

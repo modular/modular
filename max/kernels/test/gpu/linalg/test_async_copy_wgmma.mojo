@@ -157,7 +157,7 @@ fn cpasync_wgmma_kernel[
 
     c_reg_tile_vec2 = c_reg_tile.vectorize[1, 2]()
     comptime T = c_reg_tile_vec2.element_type
-    c_gmem_ptr = c_gmem_tile.ptr.offset(t_idx)
+    c_gmem_ptr = c_gmem_tile.ptr + t_idx
 
     @parameter
     for mma_id in range(tile_to_idx.size()):
@@ -169,9 +169,7 @@ fn cpasync_wgmma_kernel[
             comptime v_idx = v_to_idx(local_idx)
             comptime c_idx = v_idx + mma_idx
             casted_vec = c_reg_tile_vec2[mma_id, local_idx_v2].cast[c_type]()
-            c_gmem_ptr.offset(c_idx).store[alignment = align_of[T]()](
-                casted_vec
-            )
+            (c_gmem_ptr + c_idx).store[alignment = align_of[T]()](casted_vec)
 
 
 def test_cpasync_wgmma[

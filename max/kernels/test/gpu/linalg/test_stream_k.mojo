@@ -104,7 +104,7 @@ fn mac_loop[
     var global_c = rn_base + Int(tx)
     var accum = Scalar[c_type](0)
     var thread_id = thread_idx.x + thread_idx.y * block_dim.x
-    var sema = Semaphore(locks.offset(tile_id), Int(thread_id))
+    var sema = Semaphore(locks + tile_id, Int(thread_id))
     sema.fetch()
 
     for iter in range(start_iter, end_iter):

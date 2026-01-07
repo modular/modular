@@ -254,8 +254,8 @@ fn multistage_mma[
     # In the slice-K method, we pass `num_threads_per_warp_k_part` as `num_threads`
     # in the parameters. This ensures that `tid` represents the relative thread position
     # within each warp_k_part_id groups.
-    var tid: UInt32 = thread_idx.x % UInt(num_threads)
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    var tid = UInt32(thread_idx.x % UInt(num_threads))
+    var warp_id = warp.broadcast(tid // UInt32(WARP_SIZE))
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
@@ -479,11 +479,11 @@ fn multistage_mma[
                 for k_mma1 in range(k_group_size):
                     comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                     comptime current = k_mma % num_reg_tiles
-                    comptime k_mma_next = k_mma + k_group_size
+                    comptime k_mma_next = k_mma + UInt32(k_group_size)
                     comptime next = Int(k_mma_next % num_reg_tiles)
 
                     @parameter
-                    if k_mma_next == num_k_mmas:
+                    if k_mma_next == UInt32(num_k_mmas):
                         comptime prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
 
                         # Prefetch one k tile (if valid) from global memory to current
@@ -534,7 +534,7 @@ fn multistage_mma[
                             b_wtile_dim0, b_wtile_dim1
                         ](b_wtile_coord0, b_wtile_coord1)
 
-                    comptime kidx = k_mma_next % num_k_mmas
+                    comptime kidx = k_mma_next % UInt32(num_k_mmas)
 
                     @parameter
                     if a_iter.address_space == AddressSpace.SHARED:
@@ -583,11 +583,11 @@ fn multistage_mma[
             for k_mma1 in range(k_group_size):
                 comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                 comptime current = k_mma % num_reg_tiles
-                comptime k_mma_next = k_mma + k_group_size
+                comptime k_mma_next = k_mma + UInt32(k_group_size)
                 comptime next = Int(k_mma_next % num_reg_tiles)
 
                 @parameter
-                if k_mma_next == num_k_mmas:
+                if k_mma_next == UInt32(num_k_mmas):
                     var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
 
                     # Prefetch one k tile (if valid) from global memory to current
@@ -687,7 +687,7 @@ fn multistage_mma[
                         b_wtile_dim0, b_wtile_dim1
                     ](b_wtile_coord0, b_wtile_coord1)
 
-                comptime kidx = Int(k_mma_next % num_k_mmas)
+                comptime kidx = Int(k_mma_next % UInt32(num_k_mmas))
                 mma_op.load_a[swizzle_a_pattern](
                     a_warp_tile,
                     a_reg_tiles[next].vectorize[1, a_frag_size](),
@@ -813,15 +813,16 @@ fn multistage_gemm_kernel[
         alignment=alignment,
     ]()
     comptime a_smem_size = num_pipeline_stages * UInt(BM) * UInt(BK)
-    var a_smem_iter = LayoutTensorIter[
+    comptime IteratorTypeA = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
         address_space = a_smem.address_space,
         alignment=alignment,
         circular=True,
-    ](
-        a_smem + warp_k_part_id * a_smem_size,
-        a_smem_size,
+    ]
+    var a_smem_iter = IteratorTypeA(
+        a_smem + IteratorTypeA.linear_uint_type(warp_k_part_id * a_smem_size),
+        IteratorTypeA.linear_uint_type(a_smem_size),
     )
 
     # There is one pre-allocated shared buffer. Explicitly offset B after at A's end.
@@ -832,12 +833,16 @@ fn multistage_gemm_kernel[
     comptime BD_0 = BN if transpose_b else BK
     comptime BD_1 = BK if transpose_b else BN
     comptime b_smem_layout = Layout.row_major(BD_0, BD_1)
-    var b_smem_iter = LayoutTensorIter[
+    comptime IteratorTypeB = LayoutTensorIter[
         b_type,
         b_smem_layout,
         address_space = AddressSpace.SHARED,
         circular=True,
-    ](b_smem + warp_k_part_id * b_smem_size, b_smem_size)
+    ]
+    var b_smem_iter = IteratorTypeB(
+        b_smem + IteratorTypeB.linear_uint_type(warp_k_part_id * b_smem_size),
+        IteratorTypeB.linear_uint_type(b_smem_size),
+    )
 
     # create input layout tensors A and Bv
     # global memory iterator
@@ -961,7 +966,7 @@ fn multistage_gemm_kernel[
             comptime alignment = align_of[SIMD[c_type, src_simd_width_y]]()
             var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
             if m < Int(M) and n < Int(N):
-                var vec = c_reg_frag.ptr.offset(src_idx).load[
+                var vec = (c_reg_frag.ptr + src_idx).load[
                     width=src_simd_width_y,
                     alignment = align_of[SIMD[c_type, src_simd_width_y]](),
                 ]()
@@ -1113,7 +1118,9 @@ fn multistage_gemm_kernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(config.num_threads())
+    )
 )
 fn multistage_gemm_split_k_kernel[
     c_type: DType,

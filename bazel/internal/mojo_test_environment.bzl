@@ -120,6 +120,9 @@ def _mojo_test_environment_implementation(ctx):
         if lib.startswith("-resource-dir="):
             continue
 
+        # Escape $ORIGIN otherwise it will fail later
+        lib = lib.replace("$ORIGIN", "$$ORIGIN")
+
         if ctx.attr.short_path:
             new_system_libs.append(lib.replace("external/", "../"))
         else:

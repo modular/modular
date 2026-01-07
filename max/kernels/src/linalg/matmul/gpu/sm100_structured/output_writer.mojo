@@ -224,7 +224,7 @@ struct TileWriter[
             Self.c_swizzle,
             Self.transpose_c,
         ]
-        var smem_writer = SMEMWriter(warp_id, lane)
+        var smem_writer = SMEMWriter(UInt32(warp_id), UInt32(lane))
 
         comptime StoreExecutor = TMAStoreExecutor[
             Self.c_type,
@@ -249,9 +249,11 @@ struct TileWriter[
             Self.cta_group,
             Self.transpose_c,
         ]
-        var epilogue_applier = EpilogueApplierType(warp_id, lane)
-        var c_row = c_coord[0] * UInt(Self.BM)
-        var c_col = c_coord[1] * UInt(Self.MMA_N)
+        var epilogue_applier = EpilogueApplierType(
+            UInt32(warp_id), UInt32(lane)
+        )
+        var c_row = UInt32(c_coord[0] * UInt(Self.BM))
+        var c_col = UInt32(c_coord[1] * UInt(Self.MMA_N))
 
         var upper_frag_casted: SIMD[Self.epilogue_dtype, Self.rep_frag_size]
         var lower_frag_casted: SIMD[Self.epilogue_dtype, Self.rep_frag_size]
@@ -335,7 +337,7 @@ struct TileWriter[
                     stage,
                     Self.rep_frag_size,
                     Self.elementwise_compute_lambda_fn.value(),
-                ](warp_id, c_tiles, c_shape, c_coord)
+                ](UInt32(warp_id), c_tiles, c_shape, c_coord)
                 writer.write_tile(
                     AccumTile(upper_frag_casted, lower_frag_casted)
                 )
@@ -350,9 +352,13 @@ struct TileWriter[
                 Self.c_smem_layout.shape[0].value(),
                 stage,
             ]
-            var store_coords = StoreCoords(c_coord, warp_id)
+            var store_coords = StoreCoords(c_coord, UInt32(warp_id))
             StoreExecutor.execute[Self.c_layout, Self.c_desc_layout](
-                c_smem_tile, store_coords, self.c_tma_op[], warp_id, lane
+                c_smem_tile,
+                store_coords,
+                self.c_tma_op[],
+                UInt32(warp_id),
+                UInt32(lane),
             )
             tma_wait_pipelined[
                 Self.c_type,
