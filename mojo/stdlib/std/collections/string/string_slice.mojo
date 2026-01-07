@@ -28,7 +28,7 @@ from collections.string._utf8 import (
 )
 from collections.string.format import _CurlyEntryFormattable, _FormatUtils
 from hashlib.hasher import Hasher
-from io.write import _TotalWritableBytes, _WriteBufferStack
+from fmt._utils import _TotalWritableBytes, _WriteBufferStack
 from math import align_down
 from os import PathLike, abort
 from sys import is_compile_time, simd_width_of

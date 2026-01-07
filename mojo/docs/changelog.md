@@ -593,6 +593,10 @@ what we publish.
   wait on processes. These use `posix_spawn` and do not go through the
   system shell.
 
+- `Writer` and `Writable` have been moved into a new `fmt` module and out of
+  `io`. These traits are not directly related to binary i/o, but are rather
+  closely tied to type/value string formatting.
+
 - `Writer` has been reworked to only support UTF-8 data instead of arbitrary
   `Byte` sequences. The `write_bytes` method has been replaced with
   `write_string`.

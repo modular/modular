@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
-from io.write import Writable, Writer
 from math import align_up, ceildiv
 from sys import (
     has_amd_gpu_accelerator,

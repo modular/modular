@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections.string.string_slice import get_static_string
-from io.write import _WriteBufferHeap, _WriteBufferStack
+from fmt._utils import _WriteBufferHeap, _WriteBufferStack
 from sys import _libc as libc
 from sys import (
     external_call,

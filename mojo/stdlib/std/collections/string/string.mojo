@@ -25,7 +25,11 @@ from collections.string.string_slice import (
 )
 from builtin.builtin_slice import ContiguousSlice
 from hashlib.hasher import Hasher
-from io.write import STACK_BUFFER_BYTES, _TotalWritableBytes, _WriteBufferStack
+from fmt._utils import (
+    STACK_BUFFER_BYTES,
+    _TotalWritableBytes,
+    _WriteBufferStack,
+)
 from os import PathLike, abort
 from os.atomic import Atomic, Consistency, fence
 from sys import size_of, bit_width_of
