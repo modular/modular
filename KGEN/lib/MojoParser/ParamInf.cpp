@@ -78,26 +78,6 @@ void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
 }
 
 //===----------------------------------------------------------------------===//
-// ParameterInferenceDiagnostics
-//===----------------------------------------------------------------------===//
-
-void ParamInfDiags::addExplanation(MojoInflightDiag &diag) {
-  // Pick the first diagnostic for the earliest parameter after numActual.
-  const FailedInference *best = nullptr;
-  for (const FailedInference &failure : diags) {
-    // Don't report diagnostics when failure occurred from a default value,
-    // we need a location.
-    if (!failure.argExpr)
-      continue;
-    best = &failure;
-    break;
-  }
-
-  if (best)
-    best->info.addExplanation(diag);
-}
-
-//===----------------------------------------------------------------------===//
 // ParameterInferenceState
 //===----------------------------------------------------------------------===//
 
@@ -1048,8 +1028,11 @@ ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
 /// argument.
 LogicalResult
 ParamInfState::inferSelfFromInitResult(FnTypeGeneratorType signature) {
-  ASTType returnedType;
+  // We don't not have a expr for init self result, use the call expression
+  // location to report parameter match error.
+  curArgExpr = givenBindings.callExpr;
 
+  ASTType returnedType;
   // When a parameter gets bound, we re-evaluate the result type to see the
   // fully concretized parameters that the parameter may be computing.
 RetryLabel:
@@ -1455,7 +1438,7 @@ RetryLabel:
   if (!pValue.value()) {
     // If we had a fully formed type that we were inferring into, then this is
     // a failure.
-    if (!noImplicitConversionDiags.empty() ||
+    if (noImplicitConversionDiags.has_value() ||
         nonParamType.mlirType == expectedType.mlirType) {
       diags.resetDiags(std::move(noImplicitConversionDiags));
       return failure();
@@ -1904,6 +1887,7 @@ LogicalResult ParamInfState::inferCTADParams(FnTypeGeneratorType signature,
   // We can only do this if we have an argument.
   assert(!operands.empty() && !operands[0].keyword &&
          "init should have positional self argument");
+  curArgExpr = operands[0].expr;
 
   auto selfConvention = signature.getArgConventions()[0];
   ASTType declaredSelfType =

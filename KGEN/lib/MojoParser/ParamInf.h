@@ -55,19 +55,21 @@ class ParamInfDiags {
 public:
   /// Indicate that parameter inference failed to infer the parameter at
   /// `paramIdx` from the argument at `argPos`.
-  void addFailure(const ExprNode *argExpr, InferenceFailure &&info) {
-    diags.push_back({argExpr, std::move(info)});
+  void addFailure(InferenceFailure &&info) {
+    // only report the first error;
+    if (hasFailure())
+      return;
+    diags = std::move(info);
   }
 
-  void addExplanation(MojoInflightDiag &diag);
+  void addExplanation(MojoInflightDiag &diag) {
+    if (hasFailure())
+      diags->addExplanation(diag);
+  }
 
-  size_t getNumFailures() const { return diags.size(); }
+  bool hasFailure() const { return diags.has_value(); }
 
-  struct FailedInference {
-    const ExprNode *argExpr;
-    InferenceFailure info;
-  };
-  using DiagStorage = SmallVector<FailedInference, 1>;
+  using DiagStorage = std::optional<InferenceFailure>;
 
   DiagStorage saveDiags() { return diags; }
   void resetDiags(DiagStorage &&newDiags) { diags = std::move(newDiags); }
@@ -129,7 +131,7 @@ public:
   void dump() const;
 
   void addFailure(InferenceFailure &&info) {
-    diags.addFailure(curArgExpr, std::move(info));
+    diags.addFailure(std::move(info));
   }
 
   /// This is the evaluator instance parameter inference uses to progressively
