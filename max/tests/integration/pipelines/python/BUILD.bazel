@@ -128,6 +128,25 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "check_logit_flakes",
+    testonly = True,
+    srcs = ["check_logit_flakes.py"],
+    imports = ["."],
+    deps = [
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_check_logit_flakes",
+    size = "small",
+    srcs = ["test_check_logit_flakes.py"],
+    deps = [
+        ":check_logit_flakes",
+    ],
+)
+
+modular_py_binary(
     name = "smoke_test",
     testonly = True,
     srcs = ["smoke_tests/smoke_test.py"],
