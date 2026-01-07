@@ -63,4 +63,8 @@ def fixit : Flag<["--", "-"],
            "again after the fix-its are applied. WARNING: this feature is "
            "highly experimental and may result in irreversible data loss.">;
 
+def werror : Flag<["--", "-"], "Werror">,
+  Group<DiagnosticOptionGroup>, Index<7>,
+  HelpText<"Treat warnings as errors.">;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_DIAGNOSTICOPTIONS_TD

@@ -63,7 +63,8 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
 
   // Parse diagnostic format arguments.
   if (int exitCode = state.parseDiagnosticFormatArguments(
-          args, optionIDs.diagnosticFormat, optionIDs.disableWarnings)) {
+          args, optionIDs.diagnosticFormat, optionIDs.disableWarnings,
+          optionIDs.warningsAsErrors)) {
     result.exitCode = exitCode;
     return result;
   }
@@ -352,6 +353,7 @@ ErrorOrSuccess M::parseCompilationOptions(
   // warning emission mechanism in State::reportWarning(), and the option
   // is single-sourced to affect both places.
   compilationOptions.disableWarnings = state.areWarningsDisabled();
+  compilationOptions.warningsAsErrors = state.areWarningsAsErrors();
 
   sourceMgr.setIncludeDirs(args.getAllArgValues(includeDirsId));
 

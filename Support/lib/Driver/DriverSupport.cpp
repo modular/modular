@@ -123,7 +123,8 @@ void State::reportWarning(const Twine &message) const {
 int State::parseDiagnosticFormatArguments(
     llvm::opt::InputArgList &args,
     llvm::opt::OptSpecifier diagnosticFormatOptionID,
-    llvm::opt::OptSpecifier disableWarningsOptionID) {
+    llvm::opt::OptSpecifier disableWarningsOptionID,
+    llvm::opt::OptSpecifier warningsAsErrorsOptionID) {
   StringLiteral kDiagnosticFormatText = "text";
   StringLiteral kDiagnosticFormatJSON = "json";
   StringRef format =
@@ -142,6 +143,9 @@ int State::parseDiagnosticFormatArguments(
 
   if (disableWarningsOptionID.isValid())
     disableWarnings = args.hasArg(disableWarningsOptionID);
+
+  if (warningsAsErrorsOptionID.isValid())
+    warningsAsErrors = args.hasArg(warningsAsErrorsOptionID);
 
   return EXIT_SUCCESS;
 }

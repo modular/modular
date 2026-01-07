@@ -69,6 +69,7 @@ struct State {
   void reportWarning(const Twine &message) const;
 
   bool areWarningsDisabled() const { return disableWarnings; }
+  bool areWarningsAsErrors() const { return warningsAsErrors; }
 
   /// If `args` contains a diagnostic format option (as specified by the given
   /// option ID), this parses that option and sets this object's
@@ -76,7 +77,8 @@ struct State {
   int parseDiagnosticFormatArguments(
       llvm::opt::InputArgList &args,
       llvm::opt::OptSpecifier diagnosticFormatOptionID,
-      llvm::opt::OptSpecifier disableWarningsOptionID);
+      llvm::opt::OptSpecifier disableWarningsOptionID,
+      llvm::opt::OptSpecifier warningsAsErrorsOptionID);
 
   /// Print the given `helpText` to stdout and return a successful exit code.
 #if __cplusplus >= 202002
@@ -118,6 +120,9 @@ struct State {
 
   /// Whether to report warnings or silently ignore them.
   bool disableWarnings = false;
+
+  /// Whether to treat warnings as errors.
+  bool warningsAsErrors = false;
 };
 
 /// A mapping from each subcommand to a callback function that encapsulates the

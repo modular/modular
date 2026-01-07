@@ -372,6 +372,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
             config.maxNotesPerDiagnostic,
             canonicalizeFileCompilationDir(config.stripFilePrefix),
             /*disableWarnings=*/config.options.disableWarnings,
+            /*warningsAsErrors=*/config.options.warningsAsErrors,
             /*extraContext=*/this,
             /*autoFixItHandler=*/config.autoFixItHandler),
       options(config.options),
