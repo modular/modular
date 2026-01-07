@@ -28,7 +28,6 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.bit import prev_power_of_two
 
 from linalg.structuring import SMemPtr
-from .pipeline import ProducerConsumerPipeline
 
 
 @fieldwise_init

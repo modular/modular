@@ -86,21 +86,14 @@ from .tile_pipeline import (
     ProducerStage,
     ConsumerStage,
     OutputTilePipeline,
-    OutputStage,
 )
 from .barriers import TmemDeallocBarrier, WarpGroupBarrier
 from .tmem import TmemAllocation
 from .warp_context import MmaWarpContext, EpilogueWarpContext
 from .tile_loader import TileLoaderTMA
 from .tile_scheduler import TileScheduler
-from .tile_scheduler_splitk import (
-    TileScheduler as TileSchedulerSplitK,
-    WorkInfo as WorkInfoSplitK,
-)
-from .tile_writer import (
-    EpilogueConfig,
-    store_fragment_to_smem,
-)
+from .tile_scheduler_splitk import TileScheduler as TileSchedulerSplitK
+from .tile_writer import EpilogueConfig
 from linalg.structuring import (
     SMemPtr,
     SMemTileType,
@@ -1778,70 +1771,3 @@ struct BlackwellMatmulSM100FallbackKernel[
                                 c_gmem_frag[m_vec, n_vec] = rebind[
                                     c_gmem_frag.element_type
                                 ](c_mn)
-
-
-comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
-    layout, element_type = DType.uint32, linear_idx_type = DType.uint32
-]
-
-
-@always_inline
-fn f32_frag_to_smem[
-    swizzle_mode: TensorMapSwizzle,
-    stageN: UInt,
-](vec: SIMD, dst: SMemTileType):
-    # TODO: apply swizzle. Somehow swizzle+distribute results in wrong values.
-    # comptime swizzle = make_swizzle[DType.float64, swizzle_mode]() # hack
-    # var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4), swizzle=swizzle](lane_id())
-    var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
-        lane_id()
-    )
-    constrained[
-        2 * dst_frag.layout.size() == vec.size,
-        "2*dst_frag.layout.size() must be equal to vec.size",
-    ]()
-
-    @parameter
-    for i in range(dst_frag.layout.shape[0].value()):
-
-        @parameter
-        for j in range(dst_frag.layout.shape[1].value()):
-            comptime i_vec = i + j * dst_frag.layout.shape[0].value()
-            val = SIMD[dst.dtype, 2](
-                rebind[Scalar[dst.dtype]](vec[2 * i_vec]),
-                rebind[Scalar[dst.dtype]](vec[2 * i_vec + 1]),
-            )
-            dst_frag[i, j] = rebind[dst_frag.element_type](val)
-
-
-@always_inline
-fn stsm_helper[
-    swizzle: Swizzle,
-    stageN: UInt,
-    transpose_c: Bool = False,
-    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-](vec: SIMD, dst: SMemTileType, warp_offset: UInt32 = 0):
-    """Store a fragment to shared memory using st.matrix.
-
-    Delegates to store_fragment_to_smem for non-float32 types,
-    and to f32_frag_to_smem for float32.
-    """
-
-    @parameter
-    if size_of[dst.dtype]() == 4:
-        constrained[not transpose_c, "transpose_c must be False"]()
-        return f32_frag_to_smem[swizzle_mode, stageN](vec, dst)
-
-    # Validate layout constraint
-    constrained[
-        dst.layout.stride[1].value() == 1,
-        "stride1 must be 1. Got: "
-        + String(dst.layout.stride[1].value())
-        + " for layout: "
-        + String(dst.layout),
-    ]()
-
-    # Delegate to tile_writer component
-    store_fragment_to_smem[swizzle, Int(stageN), transpose_c, swizzle_mode](
-        vec, dst, warp_offset
-    )
