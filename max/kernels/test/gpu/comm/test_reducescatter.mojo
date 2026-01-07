@@ -20,9 +20,6 @@ from comm import Signal, MAX_GPUS
 from comm.reducescatter import reducescatter
 from comm_test_utils import human_readable_size, test_value_for_gpu_element
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal, assert_true
 from utils.numerics import get_accum_type
 
@@ -70,11 +67,15 @@ fn reducescatter_test[
     # Create device buffers for all GPUs
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
+    var host_buffers = List[UnsafePointer[Scalar[dtype], MutOrigin.external]](
+        capacity=ngpus
+    )
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        fill={}
+    )
 
     # Initialize buffers for each GPU
     for i in range(ngpus):
@@ -85,7 +86,7 @@ fn reducescatter_test[
         )
 
         # Create and initialize host buffers with unique values per GPU
-        var host_buffer = UnsafePointer[Scalar[dtype]].alloc(length)
+        var host_buffer = alloc[Scalar[dtype]](length)
         host_buffers.append(host_buffer)
 
         # Initialize with unique per-GPU, per-element values for thorough testing
@@ -137,7 +138,7 @@ fn reducescatter_test[
     # For each element j in GPU gpu_idx's output, we sum across all GPUs
     # at the global index (gpu_idx * output_length + j)
     for gpu_idx in range(ngpus):
-        var result_host = UnsafePointer[Scalar[dtype]].alloc(output_length)
+        var result_host = alloc[Scalar[dtype]](output_length)
         list_of_ctx[gpu_idx].enqueue_copy(result_host, out_bufs_list[gpu_idx])
         list_of_ctx[gpu_idx].synchronize()
 

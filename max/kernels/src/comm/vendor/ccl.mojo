@@ -17,6 +17,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
+from memory import UnsafePointer as RealUnsafePointer
 from sys import has_amd_gpu_accelerator
 from pathlib import Path
 from sys.ffi import _get_global_or_null, external_call
@@ -276,7 +277,9 @@ fn allreduce[
         NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
     ],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[comm.Signal], MAX_GPUS],
+    rank_sigs: InlineArray[
+        RealUnsafePointer[comm.Signal, MutAnyOrigin], MAX_GPUS
+    ],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
     iteration: Int = 0,

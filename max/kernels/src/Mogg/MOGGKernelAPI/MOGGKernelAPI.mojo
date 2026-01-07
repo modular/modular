@@ -34,9 +34,6 @@ from math import (
     sqrt,
     tanh,
 )
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from random import randn, seed
 from sys import align_of, external_call, llvm_intrinsic
 from sys.info import simd_width_of, size_of, _current_target
@@ -6585,7 +6582,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     ) raises:
         # Dummy position_ids - won't be used since has_position_ids=False
         var dummy_position_ids = DynamicTensor[dtype = DType.uint32, rank=2](
-            UnsafePointer[UInt32](), IndexList[2](0)
+            {}, IndexList[2](0)
         )
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
@@ -8696,7 +8693,9 @@ struct DistributedAllReduceSum:
         var out_buf = managed_tensor_slice_to_ndbuffer(output)
 
         # Marshal signal buffers.
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -8780,7 +8779,9 @@ struct DistributedAllGather:
         for i in range(num_devices * num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -8881,7 +8882,9 @@ struct DistributedMatmulAllReduce:
                 NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape]
             ](managed_tensor_slice_to_ndbuffer(outputs[i]))
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -9394,7 +9397,7 @@ struct MatmulStaticScaledFloat8:
         var output_dummy = NDBuffer[
             DType.float32, 2, MutAnyOrigin, DimList(Dim(), N)
         ](
-            UnsafePointer[Scalar[DType.float32]](),
+            {},
             IndexList[2](M, N),
         )
 

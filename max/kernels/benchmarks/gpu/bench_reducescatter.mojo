@@ -32,9 +32,7 @@ from comm.reducescatter import reducescatter
 from comm import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import arg_parse
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal, assert_true
 
 from algorithm import sync_parallelize
@@ -135,11 +133,15 @@ fn bench_reducescatter[
     # Create device buffers for all GPUs
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
+    var host_buffers = List[UnsafePointer[Scalar[dtype], MutOrigin.external]](
+        capacity=ngpus
+    )
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        fill={}
+    )
 
     # Cache busting: allocate larger buffer to avoid cache reuse
     comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
@@ -160,7 +162,7 @@ fn bench_reducescatter[
         )
 
         # Create and initialize host buffers
-        var host_buffer = UnsafePointer[Scalar[dtype]].alloc(cache_elems)
+        var host_buffer = alloc[Scalar[dtype]](cache_elems)
         host_buffers.append(host_buffer)
 
         # Fill with repeated GPU-specific values for cache busting

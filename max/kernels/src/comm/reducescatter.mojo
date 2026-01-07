@@ -31,9 +31,6 @@ from gpu.grid_controls import (
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils import StaticTuple
 from utils.numerics import get_accum_type
 
@@ -69,7 +66,8 @@ fn _load_reduce[
 ](
     elem_idx: Int,
     ptrs: InlineArray[
-        UnsafePointer[Scalar[dtype]], 1 if use_multimem else ngpus
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+        1 if use_multimem else ngpus,
     ],
 ) -> SIMD[dtype, simd_width]:
     @parameter
@@ -162,9 +160,10 @@ fn _reduce_scatter_impl[
     use_multimem: Bool = False,
 ](
     src_ptrs: InlineArray[
-        UnsafePointer[Scalar[dtype]], 1 if use_multimem else ngpus
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+        1 if use_multimem else ngpus,
     ],
-    out_ptr: UnsafePointer[Scalar[dtype]],
+    out_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     my_rank: Int,
     config: ReduceScatterConfig[
         dtype, ngpus, simd_width, alignment, accum_type
@@ -207,9 +206,10 @@ fn _reducescatter_kernel[
 ](
     result: NDBuffer[dtype, rank, MutAnyOrigin],
     src_ptrs: InlineArray[
-        UnsafePointer[Scalar[dtype]], 1 if use_multimem else ngpus
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+        1 if use_multimem else ngpus,
     ],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
 ):
@@ -234,7 +234,7 @@ fn _reducescatter_kernel[
         my_rank: Current GPU rank.
     """
     comptime num_buffers = 1 if use_multimem else ngpus
-    var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
+    var my_sig = rank_sigs[my_rank]
 
     # --- Thread Indexing ---
     var global_tid = Int(global_idx.x)
@@ -253,12 +253,12 @@ fn _reducescatter_kernel[
     if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
-    var result_ptr = UnsafePointer[Scalar[dtype]](result.data)
+    var result_ptr = result.data
 
     # Round-robin access pattern to balance NVLink traffic across GPUs.
-    var ptrs = InlineArray[UnsafePointer[Scalar[dtype]], num_buffers](
-        uninitialized=True
-    )
+    var ptrs = InlineArray[
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
+    ](uninitialized=True)
 
     @parameter
     for i in range(num_buffers):
@@ -287,7 +287,7 @@ fn _reducescatter_p2p[
         NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
     ],
     out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
     ctx: DeviceContext,
 ) raises:
@@ -324,7 +324,7 @@ fn _reducescatter_p2p[
     # Pass a stack-allocated array of pointers to the device kernel.
     comptime num_buffers = 1 if use_multimem else ngpus
     var list_of_in_ptrs = InlineArray[
-        UnsafePointer[Scalar[dtype]], num_buffers
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
     @parameter
@@ -377,7 +377,7 @@ fn reducescatter[
         NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
     ],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
 ) raises:

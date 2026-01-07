@@ -26,9 +26,6 @@ from comm.allreduce import (
 import comm.vendor.ccl as vendor_ccl
 from comm_test_utils import human_readable_size
 from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal, assert_true
 from collections.optional import OptionalReg
 
@@ -71,11 +68,15 @@ fn allreduce_test[
     # Create device buffers for all GPUs
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
+    var host_buffers = List[UnsafePointer[Scalar[dtype], MutOrigin.external]](
+        capacity=ngpus
+    )
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        fill={}
+    )
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
     var temp_buffer_num_bytes = ngpus * size_of[dtype]() * length
@@ -92,7 +93,7 @@ fn allreduce_test[
         )
 
         # Create and initialize host buffers
-        var host_buffer = UnsafePointer[Scalar[dtype]].alloc(length)
+        var host_buffer = alloc[Scalar[dtype]](length)
         host_buffers.append(host_buffer)
 
         # Initialize host buffer with values (i + 1).0
@@ -302,12 +303,14 @@ def allreduce_naive_test() -> None:
     # Allocate input/output buffers and initialize inputs
     var in_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
-    var host_ptrs = List[UnsafePointer[Float32]](capacity=ngpus)
+    var host_ptrs = List[UnsafePointer[Float32, MutOrigin.external]](
+        capacity=ngpus
+    )
 
     for i in range(ngpus):
         in_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
         out_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
-        var h = UnsafePointer[Float32].alloc(length)
+        var h = alloc[Float32](length)
         host_ptrs.append(h)
         var h_nd = NDBuffer[DType.float32, 1](h, DimList(length))
         h_nd.fill(Float32(i + 1))

@@ -39,9 +39,7 @@ from gpu.host import (
 )
 from gpu.grid_controls import PDLLevel
 from internal_utils import InitializationType, arg_parse
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal, assert_true
 from algorithm import sync_parallelize
 
@@ -126,13 +124,17 @@ fn bench_reduce[
     # Create device buffers for all GPUs
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
+    var host_buffers = List[UnsafePointer[Scalar[dtype], MutOrigin.external]](
+        capacity=ngpus
+    )
 
     comptime num_buffers = 1 if use_multimem else ngpus
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        fill={}
+    )
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
     var temp_buffer_num_bytes = ngpus * num_bytes
@@ -154,7 +156,7 @@ fn bench_reduce[
         )
 
         # Create and initialize host buffers
-        var host_buffer = UnsafePointer[Scalar[dtype]].alloc(cache_elems)
+        var host_buffer = alloc[Scalar[dtype]](cache_elems)
         host_buffers.append(host_buffer)
 
         for i in range(cache_elems // stride):
@@ -192,7 +194,7 @@ fn bench_reduce[
         fill={}
     )
 
-    var multi_ptr = UnsafePointer[Scalar[dtype]]()
+    var multi_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin]()
 
     @parameter
     if use_multimem:
