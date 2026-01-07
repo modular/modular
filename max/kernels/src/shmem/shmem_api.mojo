@@ -309,13 +309,12 @@ fn shmem_n_pes() -> c_int:
 
 
 fn shmem_malloc[
-    dtype: DType, origin: Origin
-](size: UInt) -> UnsafePointer[Scalar[dtype], origin]:
+    dtype: DType
+](size: UInt) -> UnsafePointer[Scalar[dtype], MutOrigin.external]:
     """Collectively allocate symmetric memory.
 
     Parameters:
         dtype: The data type of elements to allocate memory for.
-        origin: The memory origin for the pointer.
 
     Args:
         size: The number of elements to be allocated from the symmetric heap.
@@ -339,11 +338,9 @@ fn shmem_malloc[
 
     @parameter
     if has_nvidia_gpu_accelerator():
-        return nvshmem_malloc[dtype, origin](UInt(size_of[dtype]() * Int(size)))
+        return nvshmem_malloc[dtype](UInt(size_of[dtype]() * Int(size)))
     elif has_amd_gpu_accelerator():
-        return rocshmem_malloc[dtype, origin](
-            UInt(size_of[dtype]() * Int(size))
-        )
+        return rocshmem_malloc[dtype](UInt(size_of[dtype]() * Int(size)))
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
@@ -352,15 +349,14 @@ fn shmem_malloc[
 
 
 fn shmem_calloc[
-    dtype: DType, origin: Origin
+    dtype: DType
 ](count: UInt, size: UInt = UInt(size_of[dtype]())) -> UnsafePointer[
-    Scalar[dtype], origin
+    Scalar[dtype], MutOrigin.external
 ]:
     """Collectively allocate a zeroed block of symmetric memory.
 
     Parameters:
         dtype: The data type of elements to allocate memory for.
-        origin: The memory origin for the pointer.
 
     Args:
         count: The number of elements to allocate.
@@ -386,22 +382,21 @@ fn shmem_calloc[
 
     @parameter
     if has_nvidia_gpu_accelerator():
-        return nvshmem_calloc[dtype, origin](count, size)
+        return nvshmem_calloc[dtype](count, size)
     else:
         return CompilationTarget.unsupported_target_error[
-            UnsafePointer[Scalar[dtype], origin],
+            UnsafePointer[Scalar[dtype], MutOrigin.external],
             operation = __get_current_function_name(),
         ]()
 
 
 fn shmem_free[
-    dtype: DType, origin: Origin
-](ptr: UnsafePointer[Scalar[dtype], origin]):
+    dtype: DType, //
+](ptr: UnsafePointer[Scalar[dtype]]) where type_of(ptr).mut:
     """Collectively deallocate symmetric memory.
 
     Parameters:
         dtype: The data type of the memory being freed.
-        origin: The memory origin for the pointer.
 
     Args:
         ptr: Symmetric address of an object in the symmetric heap.

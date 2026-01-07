@@ -383,20 +383,20 @@ fn rocshmem_n_pes() -> c_int:
 
 
 fn rocshmem_malloc[
-    dtype: DType, origin: Origin
-](size: c_size_t) -> UnsafePointer[Scalar[dtype], origin]:
+    dtype: DType
+](size: c_size_t) -> UnsafePointer[Scalar[dtype], MutOrigin.external]:
     return _get_rocshmem_function[
         "rocshmem_malloc",
-        fn (c_size_t) -> UnsafePointer[Scalar[dtype], origin],
+        fn (c_size_t) -> UnsafePointer[Scalar[dtype], MutOrigin.external],
     ]()(size)
 
 
 fn rocshmem_free[
-    dtype: DType, origin: Origin
-](ptr: UnsafePointer[Scalar[dtype], origin]):
+    dtype: DType, //
+](ptr: UnsafePointer[Scalar[dtype]]) where type_of(ptr).mut:
     _get_rocshmem_function[
         "rocshmem_free",
-        fn (UnsafePointer[Scalar[dtype], origin]) -> NoneType,
+        fn (type_of(ptr)) -> NoneType,
     ]()(ptr)
 
 
@@ -422,7 +422,7 @@ fn rocshmem_put[
     //,
 ](
     dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    source: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    source: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -436,7 +436,7 @@ fn rocshmem_put[
             symbol,
             fn (
                 UnsafePointer[Scalar[dtype], MutAnyOrigin],
-                UnsafePointer[Scalar[dtype], MutAnyOrigin],
+                UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
                 c_size_t,
                 c_int,
             ) -> NoneType,
@@ -448,7 +448,7 @@ fn rocshmem_put_nbi[
     //,
 ](
     dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    source: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    source: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -484,7 +484,7 @@ fn rocshmem_get[
     //,
 ](
     dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    source: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    source: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     nelems: c_size_t,
     pe: c_int,
 ):

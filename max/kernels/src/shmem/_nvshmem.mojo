@@ -427,29 +427,33 @@ fn nvshmem_n_pes() -> c_int:
 
 
 fn nvshmem_malloc[
-    dtype: DType, origin: Origin
-](size: c_size_t) -> UnsafePointer[Scalar[dtype], origin]:
+    dtype: DType
+](size: c_size_t) -> UnsafePointer[Scalar[dtype], MutOrigin.external]:
     return _get_nvshmem_function[
         "nvshmem_malloc",
-        fn (c_size_t) -> UnsafePointer[Scalar[dtype], origin],
+        fn (c_size_t) -> UnsafePointer[Scalar[dtype], MutOrigin.external],
     ]()(size)
 
 
 fn nvshmem_calloc[
-    dtype: DType, origin: Origin
-](count: c_size_t, size: c_size_t) -> UnsafePointer[Scalar[dtype], origin]:
+    dtype: DType
+](count: c_size_t, size: c_size_t) -> UnsafePointer[
+    Scalar[dtype], MutOrigin.external
+]:
     return _get_nvshmem_function[
         "nvshmem_calloc",
-        fn (c_size_t, c_size_t) -> UnsafePointer[Scalar[dtype], origin],
+        fn (
+            c_size_t, c_size_t
+        ) -> UnsafePointer[Scalar[dtype], MutOrigin.external],
     ]()(count, size)
 
 
 fn nvshmem_free[
-    dtype: DType, origin: Origin
-](ptr: UnsafePointer[Scalar[dtype], origin]):
+    dtype: DType, //
+](ptr: UnsafePointer[Scalar[dtype]]) where type_of(ptr).mut:
     _get_nvshmem_function[
         "nvshmem_free",
-        fn (UnsafePointer[Scalar[dtype], origin]) -> NoneType,
+        fn (type_of(ptr)) -> NoneType,
     ]()(ptr)
 
 
