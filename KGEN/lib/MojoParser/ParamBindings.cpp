@@ -969,7 +969,6 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
                                       bool partial) const {
   ParamInfDiags inferenceDiags;
 
-  SyntheticNode errorLoc(getExprLoc());
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
     ParamInfState inference(declScope, getParameters(), expectedParamTypes,
                             paramListAttr, bindingsSoFar, inferenceDiags,
@@ -985,7 +984,7 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
     // If we succeeded inference but didn't get a value for this parameter, then
     // the parameter must not be present: complain.
     inferenceDiags.addFailure(
-        errorLoc, InferenceFailure::NotFoundFailure{bindingsSoFar.size()});
+        InferenceFailure::NotFoundFailure{bindingsSoFar.size()});
     return PValue();
   };
 
