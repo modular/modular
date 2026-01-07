@@ -643,6 +643,14 @@ what we publish.
   that public aliases have properly formatted docstrings (summary ends with
   period, starts with capital letter). Parametric aliases are also checked for
   proper `Parameters:` sections.
+- Docstring validation with `--validate-doc-strings` now emits an
+  error when an `fn` function is declared to raise an error (`raises`) but it's
+  missing a [`Raises`
+  docstring](https://github.com/modular/modular/blob/main/mojo/stdlib/docs/docstring-style-guide.md#errors)
+  (previously it emitted only a warning). Because Mojo automatically
+  treats all `def` functions as [raising
+  functions](/mojo/manual/functions#raising-and-non-raising-functions), we don't
+  enforce `Raises` docs for `def` functions (to avoid noisy false positives).
 - The Mojo LSP server now debounces document updates to reduce CPU usage during
   rapid typing. Previously, every keystroke triggered a full document parse;
   now updates are coalesced with a 150ms delay, reducing parse frequency by
