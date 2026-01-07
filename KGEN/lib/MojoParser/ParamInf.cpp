@@ -83,9 +83,9 @@ void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
 
 ParamInfState::ParamInfState(ASTDecl &declScope,
                              const CallOperands &givenBindings,
+                             size_t numPreCheckedParam,
                              ArrayRef<Type> declaredParamTypes,
                              PogListAttr declaredParamPogs,
-                             ArrayRef<TypedAttr> bindingsSoFar,
                              ParamInfDiags &diags,
                              bool allowImplicitConversions)
     : declScope(declScope), shared(declScope.getShared()),
@@ -94,14 +94,22 @@ ParamInfState::ParamInfState(ASTDecl &declScope,
       declaredParamPogs(declaredParamPogs), diags(diags),
       allowImplicitConversions(allowImplicitConversions) {
 
-  // Maintain the invariant that 'evaluator' has the full size of the set of
-  // parameters we're trying to infer.  Add null entries for any uninferred
-  // values.
   size_t finalSize = declaredParamTypes.size();
-  assert(bindingsSoFar.size() <= finalSize &&
-         "too many params inferred already?");
-  for (auto paramValue : bindingsSoFar)
-    evaluator.appendIndexBinding(paramValue);
+  // FIXME: turn the if statement into an assertion, it should be a #parameter
+  // mismatch error and we should fail before even constructing a
+  // `ParamInfState`.
+  if (numPreCheckedParam <= finalSize) {
+    ArrayRef preChecked =
+        ArrayRef(givenBindings.values).take_front(numPreCheckedParam);
+    for (auto &preCheckedOperand : preChecked) {
+      auto preCheckParamVal = preCheckedOperand.ir.getIfPValue().get();
+      if (sugarIsa<UnboundAttr>(preCheckParamVal))
+        evaluator.appendIndexBinding(TypedAttr());
+      else
+        evaluator.appendIndexBinding(preCheckParamVal);
+    }
+  }
+  // Fills in with nullptr.
   while (evaluator.getNumIndexBindings() < finalSize)
     evaluator.appendIndexBinding(TypedAttr());
 }
