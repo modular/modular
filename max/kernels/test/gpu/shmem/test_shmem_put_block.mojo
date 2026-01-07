@@ -116,4 +116,5 @@ def main():
         # after initiating the operation.
         test_shmem_put[True](ctx)
 
-    shmem_launch[test_both]()
+    # FIXME SERVOPT-873: This test times out on CI on H100
+    # shmem_launch[test_both]()
