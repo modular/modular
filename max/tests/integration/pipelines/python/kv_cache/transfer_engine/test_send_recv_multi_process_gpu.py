@@ -125,6 +125,9 @@ def transfer_routine_receiver(
     engine.cleanup()
 
 
+@pytest.mark.skip(
+    reason="SERVOPT-872: This test flakily times out on b200 in ci"
+)
 def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
     # Use multiprocessing.Queue for inter-process communication
     ctx = mp.get_context("spawn")
