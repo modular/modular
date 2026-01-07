@@ -21,6 +21,10 @@ modular_py_test(
     env = {
         "GRAPH_EXECUTOR": "$(location :example)",
     },
+    mojo_deps = select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

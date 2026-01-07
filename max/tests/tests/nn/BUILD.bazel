@@ -10,6 +10,10 @@ package(default_visibility = [
 modular_py_test(
     name = "nn",
     srcs = glob(["*.py"]),
+    mojo_deps = select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/driver",

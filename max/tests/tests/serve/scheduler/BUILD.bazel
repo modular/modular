@@ -12,6 +12,10 @@ package(default_visibility = [
     modular_py_test(
         name = src.split("/")[-1].split(".")[0],
         srcs = [src],
+        mojo_deps = select({
+            "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+            "//conditions:default": [],
+        }),
         tags = [
             "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
         ],
@@ -31,6 +35,10 @@ package(default_visibility = [
 modular_py_test(
     name = "test_di",
     srcs = ["test_di.py"],
+    mojo_deps = select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     target_compatible_with = [
         "@platforms//cpu:x86_64",
@@ -52,6 +60,10 @@ modular_py_test(
             "//:nvidia_gpu",
         ] + select({
             "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        mojo_deps = select({
+            "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
             "//conditions:default": [],
         }),
         tags = [

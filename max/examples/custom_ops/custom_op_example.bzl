@@ -21,7 +21,10 @@ def custom_op_example_py_binary(
             "//max:layout",
             "@mojo//:std",
             "//max:tensor",
-        ],
+        ] + select({
+            "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+            "//conditions:default": [],
+        }),
         deps = [
             "//max/python/max/driver",
             "//max/python/max/dtype",
