@@ -22,11 +22,16 @@ This module defines two traits that define the roles of the different structs
 - `KVCollectionT`: Defines the interface for a pair of caches (keys and values).
 """
 
+from math import align_up
 from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, IntTuple
 from layout.runtime_layout import RuntimeLayout
-from layout.tma_async import SplitLastDimTMATensorTile, create_split_tma
+from layout.tma_async import (
+    SplitLastDimTMATensorTile,
+    create_split_tma,
+    RaggedTMA3DTile,
+)
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -35,7 +40,24 @@ comptime OpaquePointer = LegacyUnsafePointer[
 ]
 
 from utils import Index, IndexList
+from sys import size_of
 from builtin.device_passable import DevicePassable
+
+
+@always_inline
+fn swizzle_granularity[dtype: DType, swizzle_mode: TensorMapSwizzle]() -> Int:
+    comptime sg = swizzle_mode.bytes() // size_of[dtype]()
+    return sg
+
+
+@always_inline
+fn padded_depth[
+    dtype: DType, swizzle_mode: TensorMapSwizzle, depth: Int
+]() -> Int:
+    comptime padded_depth = align_up(
+        depth, swizzle_mode.bytes() // size_of[dtype]()
+    )
+    return padded_depth
 
 
 @always_inline
@@ -186,13 +208,40 @@ trait KVCacheT(DevicePassable, ImplicitlyCopyable):
 
     @always_inline
     fn create_tma_tile[
-        BN: Int, swizzle_mode: TensorMapSwizzle
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int = padded_depth[
+            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+        ](),
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
-        IndexList[3](BN, 1, Int(Self.kv_params.head_size)),
+        IndexList[3](BN, 1, BK),
         swizzle_mode,
     ]:
-        """Creates a TMA tile for this KV cache."""
+        """Creates a TMA tile for this KV cache.
+        This is useful for `k-major` MMA operations where we don't
+        need to mask any extra rows."""
+        ...
+
+    @always_inline
+    fn create_ragged_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int = padded_depth[
+            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+        ](),
+    ](self, ctx: DeviceContext) raises -> RaggedTMA3DTile[
+        Self.dtype,
+        swizzle_mode,
+        BM=BN,
+        BN=BK,
+    ]:
+        """Creates a TMA tile for this KV cache.
+        This is useful for `mn-major` MMA operations where we need
+        to mask extra rows to avoid adding `NaN` to the output
+        through the MMA reduction."""
         ...
 
 
@@ -392,13 +441,17 @@ struct ContinuousBatchingKVCache[
 
     @always_inline
     fn create_tma_tile[
-        BN: Int,
         swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int = padded_depth[
+            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+        ](),
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
-        IndexList[3](BN, 1, Int(Self.kv_params.head_size)),
+        IndexList[3](BN, 1, BK),
         swizzle_mode,
-    ]:
+    ] where (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0:
         """Creates a TMA tile for this KV cache."""
         # The continuous cache is laid out as [num_blocks, num_layers, seq_len, num_heads, head_size]
         # We create a view of the data as a flattened 2D tensor
@@ -412,7 +465,7 @@ struct ContinuousBatchingKVCache[
         # (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
         var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
 
-        comptime smem_dim = IndexList[3](BN, 1, Int(Self.kv_params.head_size))
+        comptime smem_dim = IndexList[3](BN, 1, BK)
         comptime gmem_dim = IndexList[3](
             UNKNOWN_VALUE,
             Int(Self.kv_params.num_heads),
@@ -420,6 +473,33 @@ struct ContinuousBatchingKVCache[
         )
         return create_split_tma[smem_dim, gmem_dim, swizzle_mode](
             ctx, self.blocks.ptr, Int(rows)
+        )
+
+    @always_inline
+    fn create_ragged_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int = padded_depth[
+            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+        ](),
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: RaggedTMA3DTile[
+            Self.dtype,
+            swizzle_mode,
+            BM=BN,
+            BN=BK,
+        ],
+    ) raises where (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0:
+        var total_blocks = self.blocks.dim[0]()
+        var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
+        tma = type_of(tma).create[depth = Int(Self.kv_params.head_size)](
+            ctx,
+            self.blocks.ptr,
+            rows=Int(rows),
+            middle_dim=Int(Self.kv_params.num_heads),
         )
 
     @always_inline
@@ -578,13 +658,17 @@ struct PagedKVCache[
 
     @always_inline
     fn create_tma_tile[
-        BN: Int,
         swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int = padded_depth[
+            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+        ](),
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
-        IndexList[3](BN, 1, Int(Self.kv_params.head_size)),
+        IndexList[3](BN, 1, BK),
         swizzle_mode,
-    ]:
+    ] where (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0:
         """Creates a TMA tile for this KV cache."""
         # Paged cache collection is (where `$idx` means subsetting that idx):
         # [total_num_blocks, $kv_idx, $layer_idx, page_size, num_heads, head_size]
@@ -600,7 +684,7 @@ struct PagedKVCache[
         # Create a view that accounts for the paged layout
         var total_blocks = self.blocks.dim[0]()
         var rows = (total_blocks - 1) * self._stride() + Self.page_size
-        comptime smem_dim = IndexList[3](BN, 1, Int(Self.kv_params.head_size))
+        comptime smem_dim = IndexList[3](BN, 1, BK)
         comptime gmem_dim = IndexList[3](
             UNKNOWN_VALUE,
             Int(Self.kv_params.num_heads),
@@ -608,6 +692,33 @@ struct PagedKVCache[
         )
         return create_split_tma[smem_dim, gmem_dim, swizzle_mode](
             ctx, self.blocks.ptr, Int(rows)
+        )
+
+    @always_inline
+    fn create_ragged_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int = padded_depth[
+            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+        ](),
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: RaggedTMA3DTile[
+            Self.dtype,
+            swizzle_mode,
+            BM=BN,
+            BN=BK,
+        ],
+    ) raises where (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0:
+        var total_blocks = self.blocks.dim[0]()
+        var rows = (total_blocks - 1) * self._stride() + Self.page_size
+        tma = type_of(tma).create[depth = Int(Self.kv_params.head_size)](
+            ctx,
+            self.blocks.ptr,
+            rows=Int(rows),
+            middle_dim=Int(Self.kv_params.num_heads),
         )
 
     @always_inline
