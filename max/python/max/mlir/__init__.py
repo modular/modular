@@ -11,8 +11,30 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .._mlir._mlir_libs._mlir import *
-from .._mlir._mlir_libs._mlir.ir import *
+from .._mlir._mlir_libs._mlir.ir import (  # type: ignore[attr-defined]
+    ArrayAttr,
+    Attribute,
+    Block,
+    BoolAttr,
+    Context,
+    Diagnostic,
+    DictAttr,
+    FunctionType,
+    IndexType,
+    InsertionPoint,
+    IntegerAttr,
+    Location,
+    # This one is super strange: It's not actually defined (in the stubfiles)
+    # but importing not only works, but other things fail without it.
+    MLIRError,
+    Module,
+    Operation,
+    OpView,
+    StringAttr,
+    Type,
+    TypeAttr,
+    Value,
+)
 
 
 def site_initialize() -> None:
