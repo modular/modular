@@ -205,12 +205,6 @@ fn _test_string_conversions(mut python: Python) raises -> None:
     var type_obj = python.type(py_float)
     assert_equal(String(type_obj), "<class 'float'>")
 
-    # check that invalid utf-8 encoding raises an error
-    var buffer = InlineArray[Byte, 2](0xF0, 0x28)
-    var invalid = String(unsafe_from_utf8=buffer)
-    with assert_raises(contains="'utf-8' codec can't decode byte"):
-        _ = PythonObject(invalid)
-
 
 def test_len():
     var empty_list: PythonObject = []

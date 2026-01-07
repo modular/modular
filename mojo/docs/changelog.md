@@ -603,6 +603,14 @@ what we publish.
     more in line with the existing `StringSlice` constructors and explicitly
     states that construction from arbitrary bytes is inherently unsafe.
 
+- `String` has had its UTF-8 guarantees strengthened. It now has three separate
+  constructors when converting raw bytes (`Span[Byte]`) to a `String`
+  - `String(from_utf8=...)`: Raises an error if the bytes are invalid UTF-8
+  - `String(from_utf8_lossy=...)`: Converts invalid UTF-8 byte sequences
+    into the `(U+FFFD, �)` replacement character and does not raise an error.
+  - `String(unsafe_from_utf8=...)`: Unsafely assumes the input bytes are valid
+    UTF-8 without any checks.
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain

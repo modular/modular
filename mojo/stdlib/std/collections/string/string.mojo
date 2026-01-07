@@ -16,6 +16,7 @@ from collections import KeyElement
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string._parsing_numbers.parsing_floats import _atof
+from collections.string._utf8 import UTF8Chunks, _is_valid_utf8
 from collections.string.format import _CurlyEntryFormattable, _FormatUtils
 from collections.string.string_slice import (
     CodepointSliceIter,
@@ -358,9 +359,13 @@ struct String(
     fn __init__(out self, *, bytes: Span[Byte, ...]):
         self = Self(unsafe_from_utf8=bytes)
 
-    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, ...]):
+    fn __init__(out self, *, unsafe_from_utf8: Span[Byte]):
         """Construct a string by copying the data. This constructor is explicit
         because it can involve memory allocation.
+
+        Consider using the `String(from_utf8=...)` or
+        `String(from_utf8_lossy=...)` constructors instead, as they are safer
+        alternatives to the `unsafe_from_utf8` constructor.
 
         Args:
             unsafe_from_utf8: The utf8 bytes to copy.
@@ -368,6 +373,10 @@ struct String(
         Safety:
             `unsafe_from_utf8` MUST be valid UTF-8 encoded data.
         """
+        debug_assert(
+            _is_valid_utf8(unsafe_from_utf8),
+            "String: span is not valid UTF-8",
+        )
         var length = len(unsafe_from_utf8)
         self = Self(unsafe_uninit_length=length)
         memcpy(
@@ -375,6 +384,53 @@ struct String(
             src=unsafe_from_utf8.unsafe_ptr(),
             count=length,
         )
+
+    fn __init__(out self, *, from_utf8_lossy: Span[Byte]):
+        """Construct a string from a span of bytes, including invalid UTF-8.
+
+        Since `String` is guaranteed to be valid UTF-8, invalid UTF-8 sequences
+        are replaced with the `U+FFFD` replacement character: `�`.
+
+        Args:
+            from_utf8_lossy: The bytes to convert to a string.
+
+        Examples:
+
+        ```mojo
+        # Valid UTF-8 sequence
+        var fire_emoji_bytes = [Byte(0xF0), 0x9F, 0x94, 0xA5]
+        var fire_emoji = String(from_utf8_lossy=fire_emoji_bytes)
+        assert_equal(fire_emoji, "🔥")
+
+        # Invalid UTF-8 sequence
+        # "mojo<invalid sequence>"
+        var mojo_bytes = [Byte(0x6D), 0x6F, 0x6A, 0x6F, 0xF0, 0x90, 0x80]
+        var mojo = String(from_utf8_lossy=mojo_bytes)
+        assert_equal(mojo, "mojo�")
+        ```
+        """
+
+        comptime REPLACEMENT = StaticString("�")
+
+        self = String(capacity=len(from_utf8_lossy))
+        for chunk in UTF8Chunks(from_utf8_lossy):
+            self += chunk.valid
+            if len(chunk.invalid) > 0:
+                self += REPLACEMENT
+
+    fn __init__(out self, *, from_utf8: Span[Byte]) raises:
+        """Construct a string from a span of bytes, raising an error if the data
+        is not valid UTF-8.
+
+        Args:
+            from_utf8: The bytes to convert to a string.
+
+        Raises:
+            An error if the data is not valid UTF-8.
+        """
+        if not _is_valid_utf8(from_utf8):
+            raise Error("Cannot construct a String from invalid UTF-8 data")
+        self = String(unsafe_from_utf8=from_utf8)
 
     fn __init__[T: Stringable](out self, value: T):
         """Initialize from a type conforming to `Stringable`.

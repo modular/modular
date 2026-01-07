@@ -262,6 +262,8 @@ struct PythonObject(
             If the string is not valid UTF-8.
         """
         ref cpy = Python().cpython()
+        # TODO: This should not be necessary, as `StringSlice` is guaranteed to
+        # be valid UTF-8.
         var unicode = cpy.PyUnicode_DecodeUTF8(string)
         if not unicode:
             raise cpy.unsafe_get_error()

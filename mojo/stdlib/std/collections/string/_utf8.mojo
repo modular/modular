@@ -79,7 +79,32 @@ comptime shuf3 = SIMD[DType.uint8, 16](
     TOO_LONG | OVERLONG_2 | TWO_CONTS | SURROGATE | TOO_LARGE,
     TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT
 )
+
+comptime UTF8_CHAR_WIDTHS = InlineArray[Byte, 256](
+    #  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, # 0
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, # 1
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, # 2
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, # 3
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, # 4
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, # 5
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, # 6
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, # 7
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, # 8
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, # 9
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, # A
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, # B
+    0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, # C
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, # D
+    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, # E
+    4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, # F
+)
 # fmt: on
+
+
+@always_inline
+fn _utf8_char_width(b: Byte) -> Int:
+    return Int(UTF8_CHAR_WIDTHS[Int(b)])
 
 
 @always_inline
@@ -337,3 +362,144 @@ fn _is_newline_char_utf8[
         debug_assert(char_len == 3, "invalid UTF-8 byte length")
         var b2 = p[eol_start + 2]
         return b0 == 0xE2 and b1 == 0x80 and (b2 == 0xA8 or b2 == 0xA9)
+
+
+struct UTF8Chunk[origin: ImmutOrigin](ImplicitlyCopyable):
+    var valid: StringSlice[Self.origin]
+    """The valid UTF-8 bytes."""
+
+    var invalid: Span[Byte, Self.origin]
+    """The invalid UTF-8 bytes."""
+
+    @doc_private
+    fn __init__(
+        out self,
+        *,
+        valid: StringSlice[Self.origin],
+        invalid: Span[Byte, Self.origin],
+    ):
+        self.valid = valid
+        self.invalid = invalid
+
+
+# This is an implementation of Rust's `UTF8Chunk` iterator.
+# https://doc.rust-lang.org/src/core/str/lossy.rs.html#194
+struct UTF8Chunks[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
+    """An iterator over valid and invalid UTF-8 chunks."""
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    comptime Element = UTF8Chunk[Self.origin]
+
+    var _bytes: Span[Byte, Self.origin]
+
+    fn __init__(out self, bytes: Span[Byte, Self.origin]):
+        self._bytes = bytes
+
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self
+
+    fn __next__(mut self) raises StopIteration -> UTF8Chunk[Self.origin]:
+        if len(self._bytes) == 0:
+            raise StopIteration()
+
+        @always_inline
+        fn safe_get(i: Int) unified {read self} -> Byte:
+            return self._bytes[i] if i < len(self._bytes) else Byte(0)
+
+        @always_inline
+        fn in_range(byte: Byte, *, start: Byte, end: Byte) -> Bool:
+            return start <= byte <= end
+
+        @always_inline
+        fn is_continuation_byte(byte: Byte) -> Bool:
+            # Check if byte has the pattern 10xxxxxx (continuation byte).
+            return byte & 192 == TWO_CONTS
+
+        var i = 0
+        var valid_up_to = 0
+
+        while i < len(self._bytes):
+            var byte = self._bytes.unsafe_get(i)
+            i += 1
+
+            # ASCII bytes (0-127) are always valid single-byte characters
+            # Multi-byte sequences start with bytes >= 128
+            if byte >= TWO_CONTS:
+                var width = _utf8_char_width(byte)
+
+                # 2-byte sequence: one continuation byte must follow
+                if width == 2:
+                    if not is_continuation_byte(safe_get(i)):
+                        break
+                    i += 1
+
+                # 3-byte sequence: validate first byte + second byte combination,
+                # then verify the remaining continuation bytes.
+                elif width == 3:
+                    var peek = safe_get(i)
+                    # These range checks prevent overlong encodings and invalid
+                    # Unicode ranges (like UTF-16 surrogates)
+                    if byte == 0xE0 and in_range(peek, start=0xA0, end=0xBF):
+                        pass  # Valid: prevents overlong 2-byte as 3-byte
+                    elif in_range(byte, start=0xE1, end=0xEC) and in_range(
+                        peek, start=0x80, end=0xBF
+                    ):
+                        pass  # Valid: normal 3-byte range
+                    elif byte == 0xED and in_range(peek, start=0x80, end=0x9F):
+                        pass  # Valid: excludes UTF-16 surrogate pairs
+                    elif in_range(byte, start=0xEE, end=0xEF) and in_range(
+                        peek, start=0x80, end=0xBF
+                    ):
+                        pass  # Valid: normal 3-byte range
+                    else:
+                        break  # Invalid combination
+
+                    i += 1
+                    if not is_continuation_byte(safe_get(i)):
+                        break
+                    i += 1
+
+                # 4-byte sequence: validate first byte + second byte combination,
+                # then verify the remaining continuation bytes.
+                elif width == 4:
+                    var peek = safe_get(i)
+                    # These checks ensure we stay within valid Unicode range (U+10FFFF)
+                    if byte == 0xF0 and in_range(peek, start=0x90, end=0xBF):
+                        pass  # Valid: prevents overlong 3-byte as 4-byte
+                    elif in_range(byte, start=0xF1, end=0xF3) and in_range(
+                        peek, start=0x80, end=0xBF
+                    ):
+                        pass  # Valid: normal 4-byte range
+                    elif byte == 0xF4 and in_range(peek, start=0x80, end=0x8F):
+                        pass  # Valid: up to U+10FFFF (max Unicode)
+                    else:
+                        break  # Invalid combination or beyond Unicode range
+
+                    i += 1
+                    if not is_continuation_byte(safe_get(i)):
+                        break
+                    i += 1
+                    if not is_continuation_byte(safe_get(i)):
+                        break
+                    i += 1
+
+                # width == 0 or invalid width means invalid UTF-8 byte
+                else:
+                    break
+
+            # If we reach here, the current character is valid
+            valid_up_to = i
+
+        # Split the inspected bytes into valid and invalid portions
+        var inspected = self._bytes[:i]
+        var remaining = self._bytes[i:]
+        self._bytes = remaining
+
+        var valid = inspected[:valid_up_to]
+        var invalid = inspected[valid_up_to:]
+        return UTF8Chunk(
+            valid=StringSlice(unsafe_from_utf8=valid), invalid=invalid
+        )

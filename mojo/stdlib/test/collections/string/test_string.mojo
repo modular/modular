@@ -1565,5 +1565,200 @@ def test_copyinit():
     assert_equal(test_current_size, 1024)
 
 
+def test_from_utf8_lossy():
+    # Test empty byte span
+    var empty = String(from_utf8_lossy=List[Byte]())
+    assert_equal(empty, "")
+    assert_equal(len(empty), 0)
+
+    # Test single ASCII character
+    var single_char = String(from_utf8_lossy=Span([Byte(0x41)]))
+    assert_equal(single_char, "A")
+    assert_equal(len(single_char), 1)
+
+    # Test valid 2-byte sequence
+    var two_byte = String(from_utf8_lossy=Span([Byte(0xC2), 0xA9]))
+    assert_equal(two_byte, "©")
+
+    # Test valid 3-byte sequence
+    var three_byte = String(from_utf8_lossy=Span([Byte(0xE2), 0x82, 0xAC]))
+    assert_equal(three_byte, "€")
+
+    # Test valid 4-byte sequence
+    var four_byte = String(from_utf8_lossy=Span([Byte(0xF0), 0x9F, 0x94, 0xA5]))
+    assert_equal(four_byte, "🔥")
+
+    fn replacement_bytes() -> List[Byte]:
+        # The byte sequence for the replacement character '�'
+        return [Byte(0xEF), 0xBF, 0xBD]
+
+    # Test invalid sequence at the beginning
+    var invalid_start = String(
+        from_utf8_lossy=Span([Byte(0xFF), 0x61, 0x62, 0x63])
+    )
+    assert_equal(invalid_start, "�abc")
+    assert_true(
+        invalid_start.as_bytes()
+        == Span(replacement_bytes() + [Byte(0x61), 0x62, 0x63])
+    )
+
+    # Test invalid sequence at the end
+    var invalid_end = String(
+        from_utf8_lossy=Span([Byte(0x6D), 0x6F, 0x6A, 0x6F, 0xF0, 0x90, 0x80])
+    )
+    assert_equal(invalid_end, "mojo�")
+    assert_true(
+        invalid_end.as_bytes()
+        == Span([Byte(0x6D), 0x6F, 0x6A, 0x6F] + replacement_bytes())
+    )
+
+    # Test invalid sequence in the middle
+    var invalid_middle = String(
+        from_utf8_lossy=Span([Byte(0x61), 0x62, 0xC0, 0xAF, 0x63, 0x64])
+    )
+    assert_equal(invalid_middle, "ab��cd")
+    assert_true(
+        invalid_middle.as_bytes()
+        == Span(
+            [Byte(0x61), 0x62]
+            + replacement_bytes()
+            + replacement_bytes()
+            + [Byte(0x63), 0x64]
+        )
+    )
+
+    # Test multiple invalid sequences
+    var multiple_invalid = String(
+        from_utf8_lossy=Span([Byte(0xFF), 0xFE, 0xFD])
+    )
+    assert_equal(multiple_invalid, "���")
+    assert_true(
+        multiple_invalid.as_bytes()
+        == Span(replacement_bytes() + replacement_bytes() + replacement_bytes())
+    )
+
+    # Test valid text followed by invalid sequence
+    var valid_then_invalid = String(
+        from_utf8_lossy=Span([Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F, 0xC0])
+    )
+    assert_equal(valid_then_invalid, "Hello�")
+    assert_true(
+        valid_then_invalid.as_bytes()
+        == Span([Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F] + replacement_bytes())
+    )
+
+    # Test invalid sequence followed by valid text
+    var invalid_then_valid = String(
+        from_utf8_lossy=Span([Byte(0xC0), 0x48, 0x65, 0x6C, 0x6C, 0x6F])
+    )
+    assert_equal(invalid_then_valid, "�Hello")
+    assert_true(
+        invalid_then_valid.as_bytes()
+        == Span(replacement_bytes() + [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F])
+    )
+
+    # Test overlong encoding (2-byte when 1-byte would suffice) - should be invalid
+    var overlong_2byte = String(from_utf8_lossy=Span([Byte(0xC0), 0x80]))
+    assert_equal(overlong_2byte, "��")
+    assert_true(
+        overlong_2byte.as_bytes()
+        == Span(replacement_bytes() + replacement_bytes())
+    )
+
+    # Test continuation byte without start byte
+    var orphan_continuation = String(
+        from_utf8_lossy=Span([Byte(0x61), 0x80, 0x62])
+    )
+    assert_equal(orphan_continuation, "a�b")
+    assert_true(
+        orphan_continuation.as_bytes()
+        == Span([Byte(0x61)] + replacement_bytes() + [Byte(0x62)])
+    )
+
+    # Test truncated 2-byte sequence
+    var truncated_2byte = String(from_utf8_lossy=Span([Byte(0x61), 0xC2]))
+    assert_equal(truncated_2byte, "a�")
+    assert_true(
+        truncated_2byte.as_bytes() == Span([Byte(0x61)] + replacement_bytes())
+    )
+
+    # Test truncated 3-byte sequence
+    var truncated_3byte = String(from_utf8_lossy=Span([Byte(0x61), 0xE2, 0x82]))
+    assert_equal(truncated_3byte, "a�")
+    assert_true(
+        truncated_3byte.as_bytes() == Span([Byte(0x61)] + replacement_bytes())
+    )
+
+    # Test mixed valid and invalid with multi-byte characters
+    var mixed = String(
+        from_utf8_lossy=Span(
+            [
+                Byte(0x48),
+                0x65,
+                0x6C,
+                0x6C,
+                0x6F,  # "Hello"
+                0x20,  # space
+                0xF0,
+                0x9F,
+                0x94,
+                0xA5,  # 🔥
+                0xFF,  # invalid
+                0x20,  # space
+                0xE2,
+                0x82,
+                0xAC,  # €
+            ]
+        )
+    )
+    assert_equal(mixed, "Hello 🔥� €")
+    assert_true(
+        mixed.as_bytes()
+        == Span(
+            [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F]  # "Hello"
+            + [Byte(0x20)]  # space
+            + [Byte(0xF0), 0x9F, 0x94, 0xA5]  # 🔥
+            + replacement_bytes()  # replacement character
+            + [Byte(0x20)]  # space
+            + [Byte(0xE2), 0x82, 0xAC]  # €
+        )
+    )
+
+
+def test_from_utf8():
+    # Test empty byte span
+    var empty = String(from_utf8=List[Byte]())
+    assert_equal(empty, "")
+    assert_equal(len(empty), 0)
+
+    # Test single ASCII character
+    var single_char = String(from_utf8=Span([Byte(0x41)]))
+    assert_equal(single_char, "A")
+    assert_equal(len(single_char), 1)
+
+    # Test valid 4-byte sequence
+    var four_byte = String(from_utf8=Span([Byte(0xF0), 0x9F, 0x94, 0xA5]))
+    assert_equal(four_byte, "🔥")
+
+    var invalid_sequences = [
+        [Byte(0xFF), 0x61, 0x62, 0x63],  # Invalid byte at the beginning
+        [Byte(0x6D), 0x6F, 0x6A, 0x6F, 0xFF],  # Invalid byte at the end
+        [Byte(0x61), 0x62, 0xFF, 0x63, 0x64],  # Invalid byte in the middle
+        [Byte(0x61), 0xC2],  # Truncated 2-byte sequence
+        [Byte(0x61), 0xE2, 0x82],  # Truncated 3-byte sequence
+        [Byte(0x61), 0xF0, 0x9F, 0x94],  # Truncated 4-byte sequence
+        [
+            Byte(0xC0),
+            0x80,
+        ],  # Overlong encoding (2-byte when 1-byte would suffice)
+        [Byte(0x61), 0x80, 0x62],  # Continuation byte without start byte
+        [Byte(0xC2), 0x00],  # Invalid continuation byte
+    ]
+
+    for sequence in invalid_sequences:
+        with assert_raises():
+            _ = String(from_utf8=Span(sequence))
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

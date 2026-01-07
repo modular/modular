@@ -269,9 +269,8 @@ struct FileHandle(Defaultable, Movable, Writer):
         ```
         """
 
-        # TODO: This should error if the bytes are not valid UTF-8.
         var bytes = self.read_bytes(size)
-        return String(unsafe_from_utf8=bytes)
+        return String(from_utf8=bytes)
 
     fn read[
         dtype: DType, origin: MutOrigin
