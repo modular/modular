@@ -11,9 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections.string.string_slice import get_static_string
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from memory import UnsafePointer
 from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of
@@ -170,10 +168,10 @@ comptime ROCSHMEM_TEAM_INDEX_MAX: rocshmem_team_id_t = rocshmem_team_id_t.MAX
 # Structs
 struct ROCSHMEMInitAttr:
     var version: c_int
-    var mpi_comm: UnsafePointer[MPIComm]
+    var mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]
     var args: ROCSHMEMInitArgs
 
-    fn __init__(out self, mpi_comm: UnsafePointer[MPIComm]):
+    fn __init__(out self, mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]):
         __comptime_assert (
             size_of[Self]() == 144
         ), "ROCSHMEMInitAttr must be 144 bytes"
@@ -198,7 +196,7 @@ struct ROCSHMEMInitArgs:
 
 struct ROCSHMEMUniqueIDArgs:
     var version: c_int
-    var id: UnsafePointer[ROCSHMEMUniqueID]
+    var id: UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]
     var myrank: c_int
     var nranks: c_int
 
@@ -207,7 +205,7 @@ struct ROCSHMEMUniqueIDArgs:
             size_of[Self]() == 24
         ), "ROCSHMEMUniqueIDArgs must be 24 bytes"
         self.version = (1 << 16) + size_of[ROCSHMEMUniqueIDArgs]()
-        self.id = UnsafePointer[ROCSHMEMUniqueID]()
+        self.id = UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]()
         self.myrank = 0
         self.nranks = 0
 
@@ -331,18 +329,20 @@ fn rocshmem_init_thread(
 
 fn rocshmem_init_attr(
     flags: UInt32,
-    attr: UnsafePointer[ROCSHMEMInitAttr],
+    attr: UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin],
 ) -> c_int:
     return _get_rocshmem_function[
         "rocshmem_init_attr",
-        fn (UInt32, UnsafePointer[ROCSHMEMInitAttr]) -> c_int,
+        fn (UInt32, UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin]) -> c_int,
     ]()(flags, attr)
 
 
-fn rocshmem_get_uniqueid(uid: UnsafePointer[ROCSHMEMUniqueID]) -> c_int:
+fn rocshmem_get_uniqueid(
+    uid: UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]
+) -> c_int:
     return _get_rocshmem_function[
         "rocshmem_get_uniqueid",
-        fn (UnsafePointer[ROCSHMEMUniqueID]) -> c_int,
+        fn (UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]) -> c_int,
     ]()(uid)
 
 
@@ -383,18 +383,20 @@ fn rocshmem_n_pes() -> c_int:
 
 
 fn rocshmem_malloc[
-    dtype: DType
-](size: c_size_t) -> UnsafePointer[Scalar[dtype]]:
+    dtype: DType, origin: Origin
+](size: c_size_t) -> UnsafePointer[Scalar[dtype], origin]:
     return _get_rocshmem_function[
         "rocshmem_malloc",
-        fn (c_size_t) -> UnsafePointer[Scalar[dtype]],
+        fn (c_size_t) -> UnsafePointer[Scalar[dtype], origin],
     ]()(size)
 
 
-fn rocshmem_free[dtype: DType](ptr: UnsafePointer[Scalar[dtype]]):
+fn rocshmem_free[
+    dtype: DType, origin: Origin
+](ptr: UnsafePointer[Scalar[dtype], origin]):
     _get_rocshmem_function[
         "rocshmem_free",
-        fn (UnsafePointer[Scalar[dtype]]) -> NoneType,
+        fn (UnsafePointer[Scalar[dtype], origin]) -> NoneType,
     ]()(ptr)
 
 
@@ -419,8 +421,8 @@ fn rocshmem_put[
     dtype: DType,
     //,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    source: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -433,8 +435,8 @@ fn rocshmem_put[
         _get_rocshmem_function[
             symbol,
             fn (
-                UnsafePointer[Scalar[dtype]],
-                UnsafePointer[Scalar[dtype]],
+                UnsafePointer[Scalar[dtype], MutAnyOrigin],
+                UnsafePointer[Scalar[dtype], MutAnyOrigin],
                 c_size_t,
                 c_int,
             ) -> NoneType,
@@ -445,8 +447,8 @@ fn rocshmem_put_nbi[
     dtype: DType,
     //,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    source: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -456,7 +458,11 @@ fn rocshmem_put_nbi[
 
 fn rocshmem_p[
     dtype: DType
-](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int,):
+](
+    dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    value: Scalar[dtype],
+    pe: c_int,
+):
     comptime symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_p"]()
 
     @parameter
@@ -466,7 +472,7 @@ fn rocshmem_p[
         _get_rocshmem_function[
             symbol,
             fn (
-                UnsafePointer[Scalar[dtype]],
+                UnsafePointer[Scalar[dtype], MutAnyOrigin],
                 Scalar[dtype],
                 c_int,
             ) -> NoneType,
@@ -477,8 +483,8 @@ fn rocshmem_get[
     dtype: DType,
     //,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    source: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     nelems: c_size_t,
     pe: c_int,
 ):

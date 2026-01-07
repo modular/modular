@@ -20,9 +20,7 @@ The headings below corrosspond to section 9: OpenSHMEM Library API.
 """
 
 from collections.optional import OptionalReg
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from memory import UnsafePointer
 from os import getenv, setenv
 from sys import (
     CompilationTarget,
@@ -310,11 +308,14 @@ fn shmem_n_pes() -> c_int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_malloc[dtype: DType](size: UInt) -> UnsafePointer[Scalar[dtype]]:
+fn shmem_malloc[
+    dtype: DType, origin: Origin
+](size: UInt) -> UnsafePointer[Scalar[dtype], origin]:
     """Collectively allocate symmetric memory.
 
     Parameters:
         dtype: The data type of elements to allocate memory for.
+        origin: The memory origin for the pointer.
 
     Args:
         size: The number of elements to be allocated from the symmetric heap.
@@ -338,9 +339,11 @@ fn shmem_malloc[dtype: DType](size: UInt) -> UnsafePointer[Scalar[dtype]]:
 
     @parameter
     if has_nvidia_gpu_accelerator():
-        return nvshmem_malloc[dtype](UInt(size_of[dtype]() * Int(size)))
+        return nvshmem_malloc[dtype, origin](UInt(size_of[dtype]() * Int(size)))
     elif has_amd_gpu_accelerator():
-        return rocshmem_malloc[dtype](UInt(size_of[dtype]() * Int(size)))
+        return rocshmem_malloc[dtype, origin](
+            UInt(size_of[dtype]() * Int(size))
+        )
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
@@ -349,14 +352,15 @@ fn shmem_malloc[dtype: DType](size: UInt) -> UnsafePointer[Scalar[dtype]]:
 
 
 fn shmem_calloc[
-    dtype: DType
+    dtype: DType, origin: Origin
 ](count: UInt, size: UInt = UInt(size_of[dtype]())) -> UnsafePointer[
-    Scalar[dtype]
+    Scalar[dtype], origin
 ]:
     """Collectively allocate a zeroed block of symmetric memory.
 
     Parameters:
         dtype: The data type of elements to allocate memory for.
+        origin: The memory origin for the pointer.
 
     Args:
         count: The number of elements to allocate.
@@ -382,19 +386,22 @@ fn shmem_calloc[
 
     @parameter
     if has_nvidia_gpu_accelerator():
-        return nvshmem_calloc[dtype](count, size)
+        return nvshmem_calloc[dtype, origin](count, size)
     else:
         return CompilationTarget.unsupported_target_error[
-            UnsafePointer[Scalar[dtype]],
+            UnsafePointer[Scalar[dtype], origin],
             operation = __get_current_function_name(),
         ]()
 
 
-fn shmem_free[dtype: DType](ptr: UnsafePointer[Scalar[dtype]]):
+fn shmem_free[
+    dtype: DType, origin: Origin
+](ptr: UnsafePointer[Scalar[dtype], origin]):
     """Collectively deallocate symmetric memory.
 
     Parameters:
         dtype: The data type of the memory being freed.
+        origin: The memory origin for the pointer.
 
     Args:
         ptr: Symmetric address of an object in the symmetric heap.
@@ -629,7 +636,11 @@ fn shmem_put_nbi[
 
 fn shmem_p[
     dtype: DType
-](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int,):
+](
+    dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    value: Scalar[dtype],
+    pe: c_int,
+):
     """Copies one data item to a remote PE.
 
     Very low latency put capability for single elements. As with shmem_put,

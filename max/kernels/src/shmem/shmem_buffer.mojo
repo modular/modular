@@ -24,6 +24,7 @@ from gpu.host import DeviceContext, HostBuffer
 from gpu.host.device_context import _checked, _DeviceContextPtr
 
 from .shmem_api import shmem_free, shmem_malloc
+from memory import UnsafePointer
 from builtin.device_passable import DevicePassable
 
 
@@ -56,7 +57,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
     ) raises:
         @parameter
         if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
-            self._data = shmem_malloc[Self.dtype](UInt(size))
+            self._data = shmem_malloc[Self.dtype, MutAnyOrigin](UInt(size))
             self._ctx_ptr = ctx._handle
             self._size = size
         else:
