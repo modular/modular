@@ -233,7 +233,11 @@ def cli_serve(
     from max.entrypoints.cli.config import parse_task_flags
     from max.entrypoints.workers import start_workers
     from max.interfaces import PipelineTask, SamplingParams, SamplingParamsInput
-    from max.pipelines import AudioGenerationConfig, PipelineConfig
+    from max.pipelines import (
+        AudioGenerationConfig,
+        PipelineConfig,
+        PixelGenerationConfig,
+    )
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging
 
@@ -255,6 +259,10 @@ def cli_serve(
     pipeline_config: PipelineConfig
     if task == PipelineTask.AUDIO_GENERATION:
         pipeline_config = AudioGenerationConfig.from_flags(
+            parse_task_flags(task_arg), **config_kwargs
+        )
+    elif task == PipelineTask.PIXEL_GENERATION:
+        pipeline_config = PixelGenerationConfig.from_flags(
             parse_task_flags(task_arg), **config_kwargs
         )
     else:

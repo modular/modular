@@ -11,5 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .pixel_generation import PixelGenerationPipeline
-from .text_generation import TextGenerationPipeline
+from .arch import z_image_module_v3_arch
+from .model_config import ZImageConfig
+
+ARCHITECTURES = [z_image_module_v3_arch]
+
+__all__ = ["ARCHITECTURES", "ZImageConfig", "z_image_module_v3_arch"]

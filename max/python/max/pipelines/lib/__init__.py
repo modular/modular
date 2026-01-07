@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Types to interface with ML pipelines such as text/token generation."""
+"""Types to interface with ML pipelines such as text/token/pixel generation."""
 
 from max.config import (
     MAXConfig,
@@ -22,8 +22,15 @@ from max.config import (
 )
 
 from .bfloat16_utils import float32_to_bfloat16_as_uint16
-from .config import AudioGenerationConfig, PipelineConfig
-from .config_enums import PipelineRole, RepoType, RopeType, SupportedEncoding
+from .config import AudioGenerationConfig, PipelineConfig, PixelGenerationConfig
+from .config_enums import (
+    PipelineRole,
+    PixelGenerationType,
+    RepoType,
+    RopeType,
+    SupportedEncoding,
+)
+from .diffusers_config import DiffusersComponentConfig, DiffusersConfig
 from .embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
 from .float8 import parse_float8_config
 from .hf_utils import (
@@ -47,7 +54,7 @@ from .lora_config import LoRAConfig
 from .lora_request_processor import LoRARequestProcessor
 from .memory_estimation import MemoryEstimator
 from .model_config import MAXModelConfig, MAXModelConfigBase
-from .pipeline_variants.text_generation import TextGenerationPipeline
+from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
 from .profiling_config import ProfilingConfig
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .sampling import (
@@ -77,6 +84,8 @@ __all__ = [
     "PIPELINE_REGISTRY",
     "AlwaysSignalBuffersMixin",
     "AudioGenerationConfig",
+    "DiffusersComponentConfig",
+    "DiffusersConfig",
     "EAGLESpeculativeDecodingPipeline",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
@@ -96,6 +105,9 @@ __all__ = [
     "PipelineConfig",
     "PipelineModel",
     "PipelineRole",
+    "PixelGenerationConfig",
+    "PixelGenerationPipeline",
+    "PixelGenerationType",
     "PreTrainedPipelineTokenizer",
     "ProfilingConfig",
     "RepoType",
