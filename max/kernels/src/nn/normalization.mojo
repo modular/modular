@@ -648,7 +648,7 @@ fn layer_norm_cpu[
 
         fn _normalize[simd_width: Int](col: Int) unified {mut}:
             var out_val = input_fn[simd_width](row, col)
-            var gamma_val = gamma_fn[simd_width, 1](col)
+            var gamma_val = gamma_fn[simd_width, 1](Index(col))
             var beta_col = beta.runtime_layout(
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](col)
             )

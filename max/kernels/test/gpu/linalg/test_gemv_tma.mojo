@@ -271,8 +271,8 @@ def gemv_tma[
     )
     var tma_desc_b = create_tma_descriptor[dtype, 1](
         b_device,
-        (K),
-        (1),
+        Index(K),
+        Index(1),
         Index(BLOCK_SIZE_K),
     )
     # Shared memory needed for NUM_PIPELINE_STAGES A and B working tiles.

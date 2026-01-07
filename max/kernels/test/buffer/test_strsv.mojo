@@ -13,6 +13,7 @@
 
 from buffer import NDBuffer
 from testing import TestSuite
+from utils import IndexList
 
 comptime simd_width = 8
 
@@ -47,7 +48,7 @@ fn strsv[
         for i in range(simd_width):
             # Broadcast one solution value to a simd vector.
             x_vec = x_ptr[i]
-            x_solved.store(i * simd_width, x_vec)
+            x_solved.store(IndexList[1](i * simd_width), x_vec)
 
         x_ptr += simd_width
         L_ptr += simd_width

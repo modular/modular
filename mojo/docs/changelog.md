@@ -264,6 +264,12 @@ what we publish.
       return None  # Implicit conversion
   ```
 
+- `IndexList` is no longer implicitly constructible from `Int`. Previously, the
+  fill constructor (which broadcasts a single `Int` to all elements) was marked
+  `@implicit`, allowing code like `var x: IndexList[3] = 5` which would create
+  `(5, 5, 5)`. This implicit conversion has been removed to improve type safety.
+  Use explicit construction instead: `IndexList[3](5)`.
+
 - The `inlined_assembly` function is now publicly exported from the `sys` module,
   allowing users to embed raw assembly instructions directly into Mojo code.
   This provides fine-grained control over hardware operations using LLVM-style

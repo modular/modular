@@ -111,13 +111,13 @@ struct _Accumulator[
     fn __setitem__(
         mut self, m: Int, n: Int, value: SIMD[Self.dtype, Self.simd_width]
     ):
-        self._storage.store(self._storage_index(m, n), value)
+        self._storage.store(IndexList[1](self._storage_index(m, n)), value)
 
     @always_inline
     fn _partial_set[
         partial_width: Int
     ](mut self, offset: Int, value: SIMD[Self.dtype, partial_width]):
-        self._storage.store[width=partial_width](offset, value)
+        self._storage.store[width=partial_width](IndexList[1](offset), value)
 
     @always_inline
     fn _partial_get[

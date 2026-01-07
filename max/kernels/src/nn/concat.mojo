@@ -702,12 +702,12 @@ fn _concat_inner_most_single_dim[
     ],
 ):
     var idx = block_idx.x * UInt(block_size) + thread_idx.x
+    if idx >= UInt(output.size()):
+        return
+
     var index = _get_start_indices_of_nth_subvolume_uint[1](
         UInt(idx), output.runtime_layout.shape.value
     )
-
-    if index > output.size():
-        return
 
     @parameter
     for i in range(num_inputs):

@@ -966,7 +966,7 @@ fn gemv[
             for i in range(width):
                 func[out_type, 1]((idx[0] + i, 0), value[i])
         else:
-            c_buf.store[width=width](idx[0], value.cast[c_type]())
+            c_buf.store[width=width](IndexList[1](idx[0]), value.cast[c_type]())
 
     @always_inline
     @parameter

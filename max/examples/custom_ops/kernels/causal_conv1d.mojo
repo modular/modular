@@ -127,7 +127,7 @@ fn causal_conv1d_cpu[
     for batch_id in range(batch):
         for channel_id in range(channels):
             W = weight.load[width, 2](Index(channel_id, 0))
-            B = bias.load[1, 1](channel_id)
+            B = bias.load[1, 1](Index(channel_id))
             prev_input_chunk = 0
             for chunk in range(n_chunks):
                 var tmp: SIMD[dtype, width]

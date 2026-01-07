@@ -1520,7 +1520,7 @@ fn combine_cb_kernel[
         for token_idx in range(sm_id - n_aux_sms, num_tokens, n_red_sms):
             # The output tensor is of shape `(num_tokens, top_k, hid_dim)`.
             var output_token_tensor = output_tokens.slice[:, :, (1, 2)](
-                token_idx
+                IndexList[1](token_idx)
             )
 
             # Copy the received tokens from all the experts.
