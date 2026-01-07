@@ -863,7 +863,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Args:
             writer: The object to write to.
         """
-        writer.write_bytes(self.as_bytes())
+        writer.write_string(self)
 
     fn __bool__(self) -> Bool:
         """Check if a string slice is non-empty.
@@ -1218,12 +1218,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             The string concatenated `n` times.
         """
         var string = String()
-        var str_bytes = self.as_bytes()
         var buffer = _WriteBufferStack(string)
         for _ in range(n):
-            buffer.write_bytes(str_bytes)
+            buffer.write_string(self)
         buffer.flush()
-        return string
+        return string^
 
     @always_inline("nodebug")
     fn __merge_with__[

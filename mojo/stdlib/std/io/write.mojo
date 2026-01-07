@@ -48,15 +48,9 @@ trait Writer:
     struct NewString(Writer, Writable, ImplicitlyCopyable):
         var s: String
 
-        # Writer requirement to write a Span of Bytes
-        fn write_bytes(mut self, bytes: Span[Byte, _]):
-            self.s._iadd(bytes)
-
-        # Writer requirement to take multiple args
-        fn write[*Ts: Writable](mut self, *args: *Ts):
-            @parameter
-            for i in range(args.__len__()):
-                args[i].write_to(self)
+        # Writer requirement to write a String
+        fn write_string(mut self, string: StringSlice):
+            self.s += string
 
         # Also make it Writable to allow `print` to write the inner String
         fn write_to(self, mut writer: Some[Writer]):
@@ -93,14 +87,17 @@ trait Writer:
     ```
     """
 
-    @always_inline
-    fn write_bytes(mut self, bytes: Span[Byte, _]):
+    @deprecated("Writer only supports valid utf8, use `write_string` instead")
+    @doc_private
+    fn write_bytes(mut self, bytes: Span[Byte]):
+        self.write_string(StringSlice(unsafe_from_utf8=bytes))
+
+    fn write_string(mut self, string: StringSlice):
         """
-        Write a `Span[Byte]` to this `Writer`.
+        Write a `StringSlice` to this `Writer`.
 
         Args:
-            bytes: The string slice to write to this Writer. Must NOT be
-              null-terminated.
+            string: The string slice to write to this Writer.
         """
         ...
 
@@ -196,9 +193,14 @@ struct _WriteBufferHeap(Writable, Writer):
             for i in range(1, length):
                 self.write(sep, values[i])
 
+    # TODO: Removing @always_inline causes some AMD tests to fail.
+    # This is likely because not inlining causes _WriteBufferHeap to
+    # add a conditional allocation branch which is not supported on AMD.
+    # However, when its inlined, the branch (and allocation) are removed.
+    # We should consider uses _WriteBufferStack on AMD instead.
     @always_inline
-    fn write_bytes(mut self, bytes: Span[UInt8, _]):
-        len_bytes = len(bytes)
+    fn write_string(mut self, string: StringSlice):
+        var len_bytes = len(string)
         if len_bytes + self._pos > HEAP_BUFFER_BYTES:
             _printf[
                 "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
@@ -206,12 +208,16 @@ struct _WriteBufferHeap(Writable, Writer):
             ]()
             abort()
         memcpy(
-            dest=self._data + self._pos, src=bytes.unsafe_ptr(), count=len_bytes
+            dest=self._data + self._pos,
+            src=string.unsafe_ptr(),
+            count=len_bytes,
         )
         self._pos += len_bytes
 
     fn write_to(self, mut writer: Some[Writer]):
-        writer.write_bytes(Span(ptr=self._data, length=self._pos))
+        writer.write_string(
+            StringSlice(unsafe_from_utf8=Span(ptr=self._data, length=self._pos))
+        )
 
     fn nul_terminate(mut self):
         if self._pos + 1 > HEAP_BUFFER_BYTES:
@@ -223,12 +229,14 @@ struct _WriteBufferHeap(Writable, Writer):
         self._data[self._pos] = 0
         self._pos += 1
 
-    fn as_span[
+    fn as_string_slice[
         mut: Bool, origin: Origin[mut=mut], //
-    ](ref [origin]self) -> Span[Byte, origin]:
-        return Span(
-            ptr=self._data.mut_cast[mut]().unsafe_origin_cast[origin](),
-            length=self._pos,
+    ](ref [origin]self) -> StringSlice[origin]:
+        return StringSlice(
+            unsafe_from_utf8=Span(
+                ptr=self._data.mut_cast[mut]().unsafe_origin_cast[origin](),
+                length=self._pos,
+            )
         )
 
 
@@ -261,17 +269,21 @@ struct _WriteBufferStack[
                 self.write(sep, values[i])
 
     fn flush(mut self):
-        self.writer[].write_bytes(
-            Span(ptr=self.data.unsafe_ptr(), length=self.pos)
+        self.writer[].write_string(
+            StringSlice(
+                unsafe_from_utf8=Span(
+                    ptr=self.data.unsafe_ptr(), length=self.pos
+                )
+            )
         )
         self.pos = 0
 
-    fn write_bytes(mut self, bytes: Span[Byte, _]):
-        len_bytes = len(bytes)
+    fn write_string(mut self, string: StringSlice):
+        len_bytes = len(string)
         # If span is too large to fit in buffer, write directly and return
         if len_bytes > Int(Self.stack_buffer_bytes):
             self.flush()
-            self.writer[].write_bytes(bytes)
+            self.writer[].write_string(string)
             return
         # If buffer would overflow, flush writer and reset pos to 0.
         elif self.pos + len_bytes > Int(Self.stack_buffer_bytes):
@@ -279,7 +291,7 @@ struct _WriteBufferStack[
         # Continue writing to buffer
         memcpy(
             dest=self.data.unsafe_ptr() + self.pos,
-            src=bytes.unsafe_ptr(),
+            src=string.unsafe_ptr(),
             count=len_bytes,
         )
         self.pos += len_bytes
@@ -309,8 +321,8 @@ struct _TotalWritableBytes(Writer):
             for i in range(1, length):
                 self.write(sep, values[i])
 
-    fn write_bytes(mut self, bytes: Span[UInt8, _]):
-        self.size += len(bytes)
+    fn write_string(mut self, string: StringSlice):
+        self.size += len(string)
 
 
 # ===-----------------------------------------------------------------------===#

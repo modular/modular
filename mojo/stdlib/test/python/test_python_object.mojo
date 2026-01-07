@@ -207,7 +207,7 @@ fn _test_string_conversions(mut python: Python) raises -> None:
 
     # check that invalid utf-8 encoding raises an error
     var buffer = InlineArray[Byte, 2](0xF0, 0x28)
-    var invalid = String(bytes=buffer)
+    var invalid = String(unsafe_from_utf8=buffer)
     with assert_raises(contains="'utf-8' codec can't decode byte"):
         _ = PythonObject(invalid)
 

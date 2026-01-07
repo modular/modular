@@ -269,8 +269,9 @@ struct FileHandle(Defaultable, Movable, Writer):
         ```
         """
 
-        var list = self.read_bytes(size)
-        return String(bytes=list)
+        # TODO: This should error if the bytes are not valid UTF-8.
+        var bytes = self.read_bytes(size)
+        return String(unsafe_from_utf8=bytes)
 
     fn read[
         dtype: DType, origin: MutOrigin
@@ -622,6 +623,17 @@ struct FileHandle(Defaultable, Movable, Writer):
                 abort("write() returned 0 bytes (file may be full or closed)")
 
             total_written += Int(bytes_written)
+
+    fn write_string(mut self, string: StringSlice):
+        """
+        Write a `StringSlice` to this `FileHandle`.
+
+        This method is required by the `Writer` trait.
+
+        Args:
+            string: The `StringSlice` to write to this `FileHandle`.
+        """
+        self.write_bytes(string.as_bytes())
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.

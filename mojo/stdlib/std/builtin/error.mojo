@@ -137,14 +137,6 @@ struct StackTrace(Copyable, Movable, Stringable):
 # ===-----------------------------------------------------------------------===#
 
 
-@fieldwise_init
-struct _ErrorWriter(Writer):
-    var data: List[Byte]
-
-    fn write_bytes(mut self, bytes: Span[Byte, _]):
-        self.data.extend(bytes)
-
-
 struct Error(
     Boolable,
     Copyable,

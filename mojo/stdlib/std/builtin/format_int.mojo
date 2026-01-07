@@ -355,4 +355,4 @@ fn _write_int[
     # Create a span to only those bytes in `buf` that have been initialized.
     # -1 because NUL terminator
     var bytes = Span(buf)[offset : len(buf) - 1]
-    writer.write_bytes(bytes)
+    writer.write_string(StringSlice(unsafe_from_utf8=bytes))

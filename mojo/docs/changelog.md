@@ -583,6 +583,16 @@ what we publish.
   wait on processes. These use `posix_spawn` and do not go through the
   system shell.
 
+- `Writer` has been reworked to only support UTF-8 data instead of arbitrary
+  `Byte` sequences. The `write_bytes` method has been replaced with
+  `write_string`.
+
+  - In line with these changes, `String`'s `write_bytes` method has also been
+    deprecated, and its initializer `__init__(out self, *, bytes: Span[Byte])`
+    has had its keyword argument renamed to `unsafe_from_utf8`. This bring it
+    more in line with the existing `StringSlice` constructors and explicitly
+    states that construction from arbitrary bytes is inherently unsafe.
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain

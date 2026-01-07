@@ -350,16 +350,31 @@ struct String(
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = Self.FLAG_HAS_NUL_TERMINATOR
 
+    @deprecated(
+        "Strings must contain valid utf8, use `String(unsafe_from_utf8=...)`"
+        " instead"
+    )
+    @doc_private
     fn __init__(out self, *, bytes: Span[Byte, ...]):
+        self = Self(unsafe_from_utf8=bytes)
+
+    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, ...]):
         """Construct a string by copying the data. This constructor is explicit
         because it can involve memory allocation.
 
         Args:
-            bytes: The bytes to copy.
+            unsafe_from_utf8: The utf8 bytes to copy.
+
+        Safety:
+            `unsafe_from_utf8` MUST be valid UTF-8 encoded data.
         """
-        var length = len(bytes)
+        var length = len(unsafe_from_utf8)
         self = Self(unsafe_uninit_length=length)
-        memcpy(dest=self.unsafe_ptr_mut(), src=bytes.unsafe_ptr(), count=length)
+        memcpy(
+            dest=self.unsafe_ptr_mut(),
+            src=unsafe_from_utf8.unsafe_ptr(),
+            count=length,
+        )
 
     fn __init__[T: Stringable](out self, value: T):
         """Initialize from a type conforming to `Stringable`.
@@ -813,14 +828,14 @@ struct String(
     # Factory dunders
     # ===------------------------------------------------------------------=== #
 
-    fn write_bytes(mut self, bytes: Span[Byte, _]):
-        """Write a byte span to this String.
+    fn write_string(mut self, string: StringSlice):
+        """
+        Write a `StringSlice` to this `String`.
 
         Args:
-            bytes: The byte span to write to this String. Must NOT be
-                null terminated.
+            string: The `StringSlice` to write to this String.
         """
-        self._iadd(bytes)
+        self._iadd(string.as_bytes())
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
@@ -1123,9 +1138,7 @@ struct String(
         Args:
             writer: The object to write to.
         """
-        writer.write_bytes(
-            Span(ptr=self.unsafe_ptr(), length=self.byte_length())
-        )
+        writer.write_string(self)
 
     fn join[T: Copyable & Writable](self, elems: Span[T, ...]) -> String:
         """Joins string elements using the current string as a delimiter.
