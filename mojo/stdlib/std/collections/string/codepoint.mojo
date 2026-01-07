@@ -305,6 +305,21 @@ struct Codepoint(
         """
         return Int(self._scalar_value)
 
+    fn write_to(self, mut writer: Some[Writer]):
+        """Formats the string representation of this type to the provided
+        `Writer`.
+
+        Args:
+            writer: The type conforming to `Writer`.
+        """
+        var buf = InlineArray[Byte, 4](uninitialized=True)
+        var char_len = self.utf8_byte_length()
+        var written = self.unsafe_write_utf8(buf.unsafe_ptr())
+        debug_assert(char_len == written, "Didn't write what was expected")
+        writer.write_bytes(
+            Span(ptr=buf.unsafe_ptr().origin_cast[False](), length=written)
+        )
+
     @no_inline
     fn __str__(self) -> String:
         """Formats this `Codepoint` as a single-character string.

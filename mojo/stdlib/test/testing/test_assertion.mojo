@@ -50,7 +50,7 @@ def test_assert_messages():
 
 
 @fieldwise_init
-struct DummyStruct(Equatable, Stringable):
+struct DummyStruct(Equatable, Writable):
     """Test struct using default reflection-based __eq__."""
 
     var value: Int
@@ -58,8 +58,8 @@ struct DummyStruct(Equatable, Stringable):
     # Uses default reflection-based __eq__ from Equatable trait
 
     @no_inline
-    fn __str__(self) -> String:
-        return "Dummy"  # Can't be used for equality
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write("Dummy")  # Can't be used for equality
 
 
 def test_assert_equal_is_generic():

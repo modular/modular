@@ -465,6 +465,27 @@ struct Error(
         """
         self = Error(String(args), depth=0)
 
+    # FIXME(#5274): this should use the Writer trait but it doesn't yet accept
+    # capturing write_to functions.
+    @no_inline
+    fn __init__[
+        message_func: fn[W: Writer] (mut writer: W) capturing
+    ](out self: Error):
+        """Construct an Error by executing a function that writes the message.
+
+        Parameters:
+            message_func: The function that writes the message.
+
+        Warning:
+            This function is for temporary internal use only. Due to some
+            language-level limitations, this needs to be a public `__init__`
+            function.
+        """
+
+        var string = String()
+        message_func(string)
+        self = Error(string, depth=0)
+
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
