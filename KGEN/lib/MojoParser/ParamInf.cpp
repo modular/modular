@@ -1498,15 +1498,8 @@ void ParamInfState::inferOneParam(ASTExprAnd<AnyValue> binding,
 /// be installed into evaluator.
 ///
 /// TODO: remove `installParam` and make it always true.
-void ParamInfState::inferFromParamList(bool hasArguments, bool installParam) {
+void ParamInfState::inferFromParamList(bool hasArguments) {
   if (declaredParamTypes.empty())
-    return;
-
-  // If the parameter list has any inferred parameters, then we have to infer
-  // against the provided binding list, since we might infer parameters from
-  // other parameters. Otherwise, just exit early.
-  if (!installParam && !declaredParamPogs.hasInferredParams() &&
-      !declaredParamPogs.isPosVarArg(declaredParamTypes.size() - 1))
     return;
 
   // // TODO: re-enable below and make it a failure.
@@ -1521,10 +1514,6 @@ void ParamInfState::inferFromParamList(bool hasArguments, bool installParam) {
   auto inferAndEmitOneParam = [&](ASTExprAnd<AnyValue> binding,
                                   ASTType expectedType) -> TypedAttr {
     if (failed(inferOneOperand(binding, expectedType, ArgConvention::ReadReg)))
-      return {};
-
-    // No need to install the parameter, just return
-    if (!installParam)
       return {};
 
     IREmitter emitter(declScope, EC_TypeParamValue);
@@ -1652,7 +1641,7 @@ ParamInfState::inferForCall(FnTypeGeneratorType signature,
                             bool returnsSelf, bool hasCTADParams) {
 
   // First try to infer parameters from the already provided bindings.
-  inferFromParamList(/*hasArguments*/ true, /*installParam*/ true);
+  inferFromParamList(/*hasArguments*/ true);
 
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be

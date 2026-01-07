@@ -103,7 +103,7 @@ public:
   /// be installed into evaluator.
   ///
   /// TODO: remove `installParam` and make it always true.
-  void inferFromParamList(bool hasArguments, bool installParam = false);
+  void inferFromParamList(bool hasArguments);
 
   /// Given an incomplete parameter binding set and the arguments for a call to
   /// the specified signature, try to infer the value of the next 'decl'
