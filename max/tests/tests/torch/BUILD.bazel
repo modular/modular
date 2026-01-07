@@ -10,10 +10,6 @@ package(default_visibility = [
 modular_py_test(
     name = "tests",
     srcs = glob(["**/*.py"]),
-    args = [
-        "-n",
-        "auto",
-    ],
     data = ["//max/tests/tests/torch/custom_ops"],
     env = {
         "MODULAR_PYTORCH_CUSTOM_OPS": "$(rootpath //max/tests/tests/torch/custom_ops)",
@@ -42,7 +38,6 @@ modular_py_test(
         "//max/python/max/torch",
         requirement("hypothesis"),
         requirement("numpy"),
-        requirement("pytest-xdist"),
         requirement("torch"),
     ],
 )
