@@ -39,6 +39,8 @@ from ._mixed_tuple import (
     _AllEqual,
     _IntToComptimeInt,
     mixed_tuple,
+    mixed_int_tuple_to_int_tuple,
+    mixed_int_tuple_to_index_list,
 )
 
 
@@ -622,6 +624,36 @@ struct MixedLayoutTensor[
             last dimension stride equals the SIMD width for the tensor's dtype.
         """
         return self.vectorize[1, simd_width_of[Self.dtype]()]()
+
+    @always_inline("nodebug")
+    fn to_layout_tensor(
+        self,
+        out result: LayoutTensor[
+            Self.dtype,
+            Layout(
+                mixed_int_tuple_to_int_tuple[*Self.shape_types](),
+                mixed_int_tuple_to_int_tuple[*Self.stride_types](),
+            ),
+            Self.origin,
+            address_space = Self.address_space,
+        ],
+    ):
+        """Return a LayoutTensor with the same shape, stride, and address space
+        of this tensor. Currently it expects flat layouts.
+
+        This is a utility to help with porting LayoutTensor methods to this type.
+
+        Returns:
+            A LayoutTensor with the same shape, stride, and address space of
+            this tensor.
+        """
+        return {
+            self.ptr,
+            layout.RuntimeLayout[result.layout](
+                mixed_int_tuple_to_index_list(self.layout.shape),
+                mixed_int_tuple_to_index_list(self.layout.stride),
+            ),
+        }
 
 
 @always_inline("nodebug")

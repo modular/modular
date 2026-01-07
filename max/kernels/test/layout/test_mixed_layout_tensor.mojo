@@ -379,3 +379,48 @@ def test_indexing():
     var tensor = MixedLayoutTensor(stack, row_major[2, 2]())
     assert_equal(tensor[(Int32(0), Int64(0))], 1)
     assert_equal(tensor[(Int(1), Int64(0))], 3)
+
+
+def test_to_layout_tensor_square():
+    var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
+    var tensor = MixedLayoutTensor(stack, row_major[2, 2]()).to_layout_tensor()
+    assert_equal(tensor.layout, layout.Layout.row_major(2, 2))
+    assert_equal(tensor.rank, 2)
+    assert_equal(
+        rebind[std.utils.IndexList[2]](
+            tensor.runtime_layout.shape.value.canonicalize()
+        ),
+        std.utils.IndexList[2](2, 2),
+    )
+
+
+def test_to_layout_tensor_3d():
+    var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
+    var tensor = MixedLayoutTensor(stack, row_major[64, 8, 4]())
+    var lt = tensor.to_layout_tensor()
+    assert_equal(lt.layout, layout.Layout.row_major(64, 8, 4))
+    assert_equal(lt.rank, 3)
+    assert_equal(
+        rebind[std.utils.IndexList[3]](
+            lt.runtime_layout.shape.value.canonicalize()
+        ),
+        std.utils.IndexList[3](64, 8, 4),
+    )
+
+
+def test_to_layout_tensor_3d_dynamic():
+    var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
+    var tensor = MixedLayoutTensor(
+        stack, row_major((Idx[64](), Idx[8](), Idx(4)))
+    )
+    var lt = tensor.to_layout_tensor()
+    assert_equal(
+        lt.layout, layout.Layout.row_major(64, 8, layout.UNKNOWN_VALUE)
+    )
+    assert_equal(lt.rank, 3)
+    assert_equal(
+        rebind[std.utils.IndexList[3]](
+            lt.runtime_layout.shape.value.canonicalize()
+        ),
+        std.utils.IndexList[3](64, 8, 4),
+    )

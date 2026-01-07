@@ -755,6 +755,64 @@ fn mixed_int_tuple_to_int_tuple[
     return result
 
 
+@always_inline
+fn mixed_int_tuple_to_index_list[
+    *element_types: MixedTupleLike
+](value: MixedTuple[*element_types]) -> std.utils.IndexList[value.rank]:
+    """Convert a flat MixedTuple to an IndexList.
+
+    Parameters:
+        element_types: The variadic pack of element types in the MixedTuple.
+
+    Args:
+        value: The MixedTuple to convert.
+
+    Returns:
+        An IndexList with the same rank and values as the input MixedTuple.
+    """
+    var result = std.utils.IndexList[value.rank]()
+
+    @parameter
+    for i in range(MixedTuple[*element_types].__len__()):
+        result[i] = value[i].value()
+
+    return result
+
+
+fn mixed_int_tuple_to_int_tuple[*element_types: MixedTupleLike]() -> IntTuple:
+    """Convert a MixedTuple to an IntTuple, preserving the nested structure.
+
+    This function recursively traverses the MixedTuple and converts each element:
+    - Value elements (ComptimeInt, RuntimeInt) become integer values in the IntTuple
+    - Tuple elements (nested MixedTuple) become nested IntTuples
+
+    Parameters:
+        element_types: The variadic pack of element types in the MixedTuple.
+
+    Returns:
+        An IntTuple with the same structure and values as the input MixedTuple.
+    """
+    var result = IntTuple()
+
+    @parameter
+    for i in range(Variadic.size(element_types)):
+        comptime T = element_types[i]
+
+        @parameter
+        if T.IS_TUPLE:
+            # Recursively convert nested tuples
+            result.append(mixed_int_tuple_to_int_tuple[element_types[i]]())
+        else:
+
+            @parameter
+            if T.IS_STATIC_VALUE:
+                result.append(IntTuple(T.STATIC_VALUE))
+            else:
+                result.append(layout.UNKNOWN_VALUE)
+
+    return result
+
+
 fn mixed_tuple[
     dtype: DType, *element_types: Movable
 ](var values: Tuple[*element_types]) -> MixedTuple[
