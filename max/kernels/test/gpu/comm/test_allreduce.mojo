@@ -63,9 +63,6 @@ fn allreduce_test[
     if use_multimem and length == 0:
         return
 
-    # TODO(KERN-2294): Remove bench code from tests
-    comptime num_warmups = 1
-    comptime num_iters = 1
     comptime num_buffers = 1 if use_multimem else ngpus
 
     __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
@@ -177,58 +174,27 @@ fn allreduce_test[
             ),
         )
 
-    # Warm up.
-    for _ in range(num_warmups):
-        group_start()
-
-        @parameter
-        for i in range(ngpus):
-            allreduce[
-                ngpus=ngpus,
-                output_lambda = OptionalReg[elementwise_epilogue_type](
-                    outputs_lambda[input_index=i]
-                ) if use_custom_epilogue else None,
-                use_multimem=use_multimem,
-                use_quickreduce=use_quickreduce,
-            ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
-        group_end()
-
-    # Synchronize all devices.
-    for i in range(ngpus):
-        list_of_ctx[i].synchronize()
-
     # Precompute expected sum across GPUs for verification.
     var expected_sum = Scalar[dtype](0)
     for i in range(ngpus):
         expected_sum += i + 1
 
-    # Perform a benchmarked allreduce (Mojo).
-    start_t_mojo = time.perf_counter_ns()
+    group_start()
 
-    for _ in range(num_iters):
-        group_start()
-
-        @parameter
-        for i in range(ngpus):
-            allreduce[
-                ngpus=ngpus,
-                output_lambda = OptionalReg[elementwise_epilogue_type](
-                    outputs_lambda[input_index=i]
-                ) if use_custom_epilogue else None,
-                use_multimem=use_multimem,
-                use_quickreduce=use_quickreduce,
-            ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
-        group_end()
+    @parameter
+    for i in range(ngpus):
+        allreduce[
+            ngpus=ngpus,
+            output_lambda = OptionalReg[elementwise_epilogue_type](
+                outputs_lambda[input_index=i]
+            ) if use_custom_epilogue else None,
+            use_multimem=use_multimem,
+            use_quickreduce=use_quickreduce,
+        ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
+    group_end()
 
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
-
-    end_t_mojo = time.perf_counter_ns()
-
-    print(
-        "Mojo allreduce time (ms):",
-        (end_t_mojo - start_t_mojo) / (1_000_000 * num_iters),
-    )
 
     # Vendor RCCL comparison (non-multimem path only and only if available).
     @parameter
@@ -247,44 +213,20 @@ fn allreduce_test[
                     out_dev_vendor[i].unsafe_ptr(), DimList(length)
                 )
 
-            # Warm-up RCCL.
-            for _ in range(num_warmups):
-                with vendor_ccl.group():
+            # Test RCCL.
+            with vendor_ccl.group():
 
-                    @parameter
-                    for i in range(ngpus):
-                        vendor_ccl.allreduce[ngpus=ngpus](
-                            in_bufs,
-                            out_bufs_vendor[i],
-                            rank_sigs,
-                            list_of_ctx[i],
-                        )
-
-            for i in range(ngpus):
-                list_of_ctx[i].synchronize()
-
-            # Benchmark RCCL.
-            start_t_rccl = time.perf_counter_ns()
-            for _ in range(num_iters):
-                with vendor_ccl.group():
-
-                    @parameter
-                    for i in range(ngpus):
-                        vendor_ccl.allreduce[ngpus=ngpus](
-                            in_bufs,
-                            out_bufs_vendor[i],
-                            rank_sigs,
-                            list_of_ctx[i],
-                        )
+                @parameter
+                for i in range(ngpus):
+                    vendor_ccl.allreduce[ngpus=ngpus](
+                        in_bufs,
+                        out_bufs_vendor[i],
+                        rank_sigs,
+                        list_of_ctx[i],
+                    )
 
             for i in range(ngpus):
                 list_of_ctx[i].synchronize()
-            end_t_rccl = time.perf_counter_ns()
-
-            print(
-                "RCCL allreduce time (ms):",
-                (end_t_rccl - start_t_rccl) / (1_000_000 * num_iters),
-            )
 
             # Verify RCCL results
             for i in range(ngpus):
