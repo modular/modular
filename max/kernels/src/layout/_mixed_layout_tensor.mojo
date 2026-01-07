@@ -233,7 +233,7 @@ struct MixedLayoutTensor[
     @always_inline("nodebug")
     fn __setitem__(
         self, tuple: MixedTuple, value: Scalar[Self.dtype]
-    ) where tuple.rank == Self.rank where Self.mut:
+    ) where (tuple.rank == Self.rank) & Self.mut:
         self.ptr.mut_cast[True]()[
             self.layout[linear_idx_type = Self.linear_idx_type](tuple)
         ] = value
@@ -429,7 +429,7 @@ struct MixedLayoutTensor[
         Self.origin,
         address_space = Self.address_space,
         linear_idx_type = Self.linear_idx_type,
-    ] where (Variadic.size(slices) == Self.rank) where Self.ALL_DIMS_KNOWN:
+    ] where (Variadic.size(slices) == Self.rank) & Self.ALL_DIMS_KNOWN:
         """Extract a slice from the tensor using slice objects.
 
         This method creates a view into a subset of the tensor defined by the
@@ -1245,7 +1245,9 @@ fn copy[
 ](
     dst: MixedLayoutTensor,
     src: MixedLayoutTensor,
-) where dst.SHAPE_KNOWN where src.SHAPE_KNOWN where dst.mut:
+) where (
+    dst.SHAPE_KNOWN & src.SHAPE_KNOWN & dst.mut
+):
     # global memory
     var src_fragment = src.distribute[thread_layout=thread_layout](
         Int(thread_idx.x)
@@ -1273,7 +1275,9 @@ fn copy_local[
 ](
     dst: MixedLayoutTensor,
     src: MixedLayoutTensor,
-) where dst.SHAPE_KNOWN where src.SHAPE_KNOWN where dst.mut:
+) where (
+    dst.SHAPE_KNOWN & src.SHAPE_KNOWN & dst.mut
+):
     """Copy data from src to dst using warp-local distribution.
 
     This function distributes work across threads in a warp. For a 2D warp layout,

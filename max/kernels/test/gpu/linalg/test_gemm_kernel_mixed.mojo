@@ -575,7 +575,7 @@ fn matmul_kernel_naive[
     m: Int,
     n: Int,
     k: Int,
-) where (c.rank == 2) where (a.rank == 2) where (b.rank == 2):
+) where ((c.rank == 2) & (a.rank == 2) & (b.rank == 2)):
     var x = Int(global_idx.x)
     var y = Int(global_idx.y)
 
@@ -613,7 +613,7 @@ fn outer_product_acc[
     ],
     lhs: MixedLayoutTensor,
     rhs: MixedLayoutTensor,
-) where (lhs.rank == 1) where (rhs.rank == 1):
+) where (lhs.rank == 1) & (rhs.rank == 1):
     """Updates result tensor with the outer product of two vectors.
 
     Computes `res += outer(lhs, rhs)` where `lhs` and `rhs` are vectors and
