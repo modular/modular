@@ -8967,6 +8967,7 @@ struct AdvancedIndexingGetItem:
     fn execute[
         input_rank: Int,
         index_rank: Int,
+        output_rank: Int,
         input_type: DType,
         index_type: DType,
         num_index_tensors: Int,
@@ -8975,15 +8976,18 @@ struct AdvancedIndexingGetItem:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_tensor: OutputTensor[
-            dtype=input_type, rank = input_rank + index_rank - num_index_tensors
-        ],
+        out_tensor: OutputTensor[dtype=input_type, rank=output_rank],
         input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank],
         indices: FusedInputVariadicTensors[
             index_type, index_rank, size=num_index_tensors
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:
+        # TODO: Uses `where` clause when emit mojo is turned on by default.
+        __comptime_assert (
+            output_rank == input_rank + index_rank - num_index_tensors
+        )
+
         @parameter
         @always_inline
         fn input_tensor_fn[
