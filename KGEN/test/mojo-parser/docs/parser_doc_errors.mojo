@@ -21,7 +21,7 @@ struct _ParamStruct_Private_Missing[_type: __mlir_type.`!kgen.dtype`]:
     pass
 
 
-# expected-warning @below {{struct takes parameters, but no 'Parameters' in doc string}}
+# expected-warning @below {{struct takes parameters, but has no 'Parameters' in doc string}}
 struct ParamStruct_Missing[_type: __mlir_type.`!kgen.dtype`]:
     """This doc string is missing a `Parameters:` section."""
 
@@ -111,7 +111,7 @@ fn _fn_private_args_missing(arg: ArgStruct):
     pass
 
 
-# expected-warning @below {{function takes arguments, but no 'Args' in doc string}}
+# expected-warning @below {{function takes arguments, but has no 'Args' in doc string}}
 fn fn_args_missing(arg: ArgStruct):
     """This doc string is missing an `Args:` section."""
     return
@@ -220,7 +220,13 @@ fn fn_raises():
     return
 
 
-# expected-warning @below {{function has results, but no 'Returns' in doc string}}
+# expected-warning @below {{function can throw errors, but has no 'Raises' in doc string}}
+fn fn_missing_raises_section() raises:
+    """This doc string is missing a `Raises:` section."""
+    pass
+
+
+# expected-warning @below {{function has results, but has no 'Returns' in doc string}}
 fn fn_args_missing_return() -> Int:
     """This doc string is missing a `Returns:` section."""
     return 0
@@ -303,7 +309,7 @@ comptime AliasWithParams_MissingDocString[T: AnyType] = T
 comptime _AliasWithParams_Private[T: AnyType] = T
 
 
-# expected-warning @below {{alias takes parameters, but no 'Parameters' in doc string}}
+# expected-warning @below {{alias takes parameters, but has no 'Parameters' in doc string}}
 comptime AliasWithParams_MissingParamsSection[T: AnyType] = T
 """This alias doc string is missing a Parameters section."""
 

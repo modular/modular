@@ -709,22 +709,20 @@ private:
       if (!sections[DocString::kSectionParameters] && !seenParameters.empty())
         emitDiag(
             funcOp.getLoc(),
-            "function takes parameters, but no 'Parameters' in doc string");
+            "function takes parameters, but has no 'Parameters' in doc string");
       if (!sections[DocString::kSectionArgs] && !seenArguments.empty())
         emitDiag(funcOp.getLoc(),
-                 "function takes arguments, but no 'Args' in doc string");
+                 "function takes arguments, but has no 'Args' in doc string");
       if (!sections[DocString::kSectionReturns] && hasResults &&
           !funcOp.getSpecialFunctionInfo().hasSelfResult())
         emitDiag(funcOp.getLoc(),
-                 "function has results, but no 'Returns' in doc string");
+                 "function has results, but has no 'Returns' in doc string");
       if (!sections[DocString::kSectionRaises] && canThrow && !funcOp.isDef())
         // Ignore 'def' functions because they implicitly throw but shouldn't
         // require 'Raises' docs. (canThrow is always true for `def`.)
-        // TODO: This should be an error, but we first need to add `Raises`
-        // docstrings to resolve all the warnings in the standard library.
-        emitDiag(funcOp.getLoc(),
-                 "function can throw errors, but no 'Raises' in doc string",
-                 /*emitError=*/false);
+        emitDiag(
+            funcOp.getLoc(),
+            "function can throw errors, but has no 'Raises' in doc string");
     }
   }
 
@@ -752,8 +750,9 @@ private:
     if (validation == ValidationKind::Strict && diagnoseMissingDocStrings &&
         !isOpInPrivateModule(structOp) &&
         !sections[DocString::kSectionParameters] && !seenParameters.empty())
-      emitDiag(structOp.getLoc(),
-               "struct takes parameters, but no 'Parameters' in doc string");
+      emitDiag(
+          structOp.getLoc(),
+          "struct takes parameters, but has no 'Parameters' in doc string");
   }
 
   //===--------------------------------------------------------------------===//
@@ -801,25 +800,21 @@ private:
         !isOpInPrivateModule(aliasOp) &&
         !sections[DocString::kSectionParameters] && !seenParameters.empty())
       emitDiag(aliasOp.getLoc(),
-               "alias takes parameters, but no 'Parameters' in doc string");
+               "alias takes parameters, but has no 'Parameters' in doc string");
   }
 
   //===--------------------------------------------------------------------===//
   // Diagnostics
 
   /// Emit a diagnostic at the given doc string location.
-  /// TODO: Remove the emitError argument, but we first need to add `Raises`
-  /// docstrings to resolve all the warnings in the standard library.
-  MojoInflightDiag emitDiag(const char *loc, const Twine &msg = {},
-                            bool emitError = true) {
+  MojoInflightDiag emitDiag(const char *loc, const Twine &msg = {}) {
     SMLoc smLoc = translateLoc(loc);
-    return smLoc.isValid() ? emitDiag(smLoc, msg, emitError)
-                           : emitDiag(docStr->getLoc(), msg, emitError);
+    return smLoc.isValid() ? emitDiag(smLoc, msg)
+                           : emitDiag(docStr->getLoc(), msg);
   }
   template <typename T>
-  MojoInflightDiag emitDiag(T loc, const Twine &msg = {},
-                            bool emitError = true) {
-    if (emitError && errorOnInvalidDocStrings)
+  MojoInflightDiag emitDiag(T loc, const Twine &msg = {}) {
+    if (errorOnInvalidDocStrings)
       return sharedState.emitError(loc, msg);
     return sharedState.emitWarning(loc, msg);
   }
