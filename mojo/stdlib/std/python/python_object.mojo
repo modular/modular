@@ -23,7 +23,7 @@ from os import abort
 from sys import bit_width_of
 from sys.ffi import c_double, c_long, c_size_t, c_ssize_t
 
-from compile.reflection import get_type_name
+from reflection import get_type_name
 
 from ._cpython import CPython, GILAcquired, PyObject, PyObjectPtr, PyTypeObject
 from .bindings import PyMojoObject, _get_type_name, lookup_py_type_object
@@ -39,7 +39,7 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
     # ===-------------------------------------------------------------------===#
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = PythonObject
 
@@ -67,16 +67,15 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return Bool(self.next_item)
-
-    fn __next__(mut self) -> PythonObject:
+    fn __next__(mut self) raises StopIteration -> PythonObject:
         """Return the next item and update to point to subsequent item.
 
         Returns:
             The next item in the traversable object that this iterator
             points to.
         """
+        if not self.next_item:
+            raise StopIteration()
         ref cpy = Python().cpython()
         var curr_item = self.next_item
         self.next_item = cpy.PyIter_Next(self.iterator._obj_ptr)
@@ -153,7 +152,9 @@ struct PythonObject(
         self._obj_ptr = from_borrowed
 
     @always_inline
-    fn __init__[T: Movable](out self, *, var alloc: T) raises:
+    fn __init__[
+        T: Movable & ImplicitlyDestructible
+    ](out self, *, var alloc: T) raises:
         """Allocate a new `PythonObject` and store a Mojo value in it.
 
         The newly allocated Python object will contain the provided Mojo `T`
@@ -187,6 +188,7 @@ struct PythonObject(
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
     @doc_private
+    @implicit
     fn __init__(out self, none: NoneType._mlir_type):
         """Initialize a none value object from a `None` literal.
 
@@ -237,7 +239,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
 
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             var val = c_long(Int(value))
             self = Self(from_owned=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():
@@ -260,6 +262,8 @@ struct PythonObject(
             If the string is not valid UTF-8.
         """
         ref cpy = Python().cpython()
+        # TODO: This should not be necessary, as `StringSlice` is guaranteed to
+        # be valid UTF-8.
         var unicode = cpy.PyUnicode_DecodeUTF8(string)
         if not unicode:
             raise cpy.unsafe_get_error()
@@ -1746,7 +1750,7 @@ struct PythonObject(
         return None
 
     fn unchecked_downcast_value_ptr[
-        mut: Bool, origin: Origin[mut], //, T: ImplicitlyDestructible
+        mut: Bool, origin: Origin[mut=mut], //, T: ImplicitlyDestructible
     ](ref [origin]self) -> UnsafePointer[T, origin]:
         """Get a pointer to the expected Mojo value of type `T`.
 
@@ -1807,7 +1811,7 @@ fn _unsafe_alloc[
 
 
 fn _unsafe_init[
-    T: Movable,
+    T: Movable & ImplicitlyDestructible,
     //,
 ](obj_ptr: PyObjectPtr, var mojo_value: T) raises:
     """Initialize a Python object pointer with a Mojo value.
@@ -1830,7 +1834,7 @@ fn _unsafe_init[
 
 
 fn _unsafe_alloc_init[
-    T: Movable,
+    T: Movable & ImplicitlyDestructible,
     //,
 ](
     type_obj_ptr: UnsafePointer[PyTypeObject, MutAnyOrigin], var mojo_value: T

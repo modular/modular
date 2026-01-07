@@ -43,7 +43,7 @@ from os import PathLike
 from pathlib import Path
 from sys.info import CompilationTarget, _current_target, _TargetType
 
-from .reflection import get_linkage_name
+from reflection import get_linkage_name
 
 # ===-----------------------------------------------------------------------===#
 # compile_info
@@ -116,6 +116,9 @@ struct CompiledFunctionInfo[
 
     var capture_sizes: UnsafePointer[UInt64, ImmutOrigin.external]
     """Pointer to the sizes of the variables captured by the function closure."""
+
+    var emission_kind: StaticString
+    """The emission kind the object was emitted to."""
 
     comptime populate = rebind[
         fn (OpaquePointer[MutAnyOrigin]) capturing -> None
@@ -288,4 +291,5 @@ fn compile_info[
         module_name=StaticString(offload.module_name),
         num_captures=Int(mlir_value=offload.num_captures),
         capture_sizes=offload.capture_sizes,
+        emission_kind=emission_kind,
     )

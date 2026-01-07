@@ -136,7 +136,7 @@ fn parallelism_level() -> Int:
 
 
 fn create_task(
-    var handle: Coroutine[*_], out task: Task[handle.type, handle.origins]
+    var handle: Coroutine[...], out task: Task[handle.type, handle.origins]
 ):
     """Run the coroutine as a task on the AsyncRT Runtime.
 
@@ -158,7 +158,7 @@ fn create_task(
 
 
 @always_inline
-fn _run(var handle: Coroutine[*_], out result: handle.type):
+fn _run(var handle: Coroutine[...], out result: handle.type):
     """Executes a coroutine and waits for its completion.
     This function runs the given coroutine on the async runtime and blocks until
     it completes. The result of the coroutine is stored in the output parameter.
@@ -414,7 +414,8 @@ struct TaskGroup(Defaultable):
 
         _suspend_async[await_body]()
 
-    fn wait[origins: OriginSet = origin_of()](mut self):
+    # FIXME: OriginSet isn't a first class type.  This API isn't very usable.
+    fn wait[origins: OriginSet = origin_of()._mlir_origin](mut self):
         """Wait for all tasks in the `TaskGroup` to complete.
 
         This is a blocking call that returns only when all tasks have finished.

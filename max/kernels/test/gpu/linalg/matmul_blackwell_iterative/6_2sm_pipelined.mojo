@@ -13,7 +13,9 @@
 
 from hashlib import default_comp_time_hasher
 from math import align_up
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import LegacyUnsafePointer, bitcast
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -529,15 +531,13 @@ fn store_C[
                 var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
 
                 st_matrix[simd_width=4](
-                    upper.ptr.offset(
-                        st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
-                    ),
+                    upper.ptr
+                    + st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args)),
                     d_reg_upper_packed,
                 )
                 st_matrix[simd_width=4](
-                    lower.ptr.offset(
-                        st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
-                    ),
+                    lower.ptr
+                    + st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args)),
                     d_reg_lower_packed,
                 )
 
@@ -552,9 +552,7 @@ fn store_C[
         var col_start = block_idx.y * UInt(MMA_N) + thread_idx.x * UInt(TMA_BN)
 
         fence_async_view_proxy()
-        var c_smem_offset = c_smem_tile.ptr.offset(
-            BM * TMA_BN * Int(thread_idx.x)
-        )
+        var c_smem_offset = c_smem_tile.ptr + BM * TMA_BN * Int(thread_idx.x)
 
         var c_tma_tile = LayoutTensor[
             c_type,
@@ -1142,7 +1140,7 @@ def test_blackwell_kernel_6[
 
 
 fn get_dic_of_shapes(
-    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], *_, **_]
+    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], ...]
 ) -> Tuple[Int, Int, Int]:
     try:
         return dic_bro[index]

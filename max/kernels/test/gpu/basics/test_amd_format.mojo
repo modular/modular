@@ -27,15 +27,15 @@ struct Buffer[capacity: Int](Defaultable, Writer):
         self.data = InlineArray[UInt8, Self.capacity](fill=0)
         self.pos = 0
 
-    fn write_bytes(mut self, bytes: Span[Byte, _]):
-        len_bytes = len(bytes)
+    fn write_string(mut self, string: StringSlice):
+        len_bytes = len(string)
         # If empty then return
         if len_bytes == 0:
             return
         # Continue writing to buffer
         memcpy(
             dest=self.data.unsafe_ptr() + self.pos,
-            src=bytes.unsafe_ptr(),
+            src=string.unsafe_ptr(),
             count=len_bytes,
         )
         self.pos += len_bytes

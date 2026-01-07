@@ -14,7 +14,9 @@
 
 from buffer import Dim, DimList, NDBuffer
 from math import align_up
-from memory import AddressSpace, LegacyUnsafePointer as UnsafePointer
+from memory import AddressSpace, LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import simd_width_of, size_of
 from utils.index import Index, IndexList
 
@@ -78,7 +80,8 @@ fn _layout_tensor_to_nd_buffer[
         dtype,
         layout,
         origin,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     out result: NDBuffer[
         dtype,
@@ -118,28 +121,28 @@ fn mla_prefill_branch_fp8[
     target: StaticString = "cpu",
 ](
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     buffer_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     kv_b_proj: LayoutTensor[
-        fp8_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     kv_b_proj_scale: LayoutTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -449,8 +452,6 @@ fn mla_prefill_branch_fp8[
     ](launch_shape, ctx)
 
     generic_flare_mla_prefill_kv_cache_ragged[
-        write_softmax_info=False,
-        use_cascade_attention=False,
         target=target,
         mask_str=mask_str,
         score_mod_str=score_mod_str,
@@ -465,9 +466,6 @@ fn mla_prefill_branch_fp8[
         layer_idx,
         scale,
         output,
-        LayoutTensor[DType.float32, Layout.row_major(1, 1, 1)](
-            UnsafePointer[Float32]()
-        ),
         ctx,
     )
 
@@ -487,29 +485,31 @@ fn quantize_and_bmm_fp8_helper[
     k_scale_granularity: Int,
     target: StaticString = "cpu",
 ](
-    c: LayoutTensor[mut=True, dtype, address_space = AddressSpace.GENERIC, **_],
-    a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    b: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, **_],
+    c: LayoutTensor[mut=True, dtype, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
     b_scales: LayoutTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
     """
     Helper function to quantize and perform a batched matrix multiplication.
+    This function uses the transposed view of the input tensor `a`.
     """
 
-    comptime B = a.shape[0]()
+    comptime B = a.shape[1]()
     comptime K = a.shape[2]()
     comptime N = b.shape[1]()
 
-    var m = a.dim(1)
+    var m = a.dim(0)
+
+    comptime fp8_a_layout = Layout.row_major(B, UNKNOWN_VALUE, K)
 
     # allocate buffers for quantized a and its scales
     var fp8_a_buf = ctx.enqueue_create_buffer[fp8_dtype](B * m * K)
-    var fp8_a = LayoutTensor[fp8_dtype, a.layout](
-        fp8_a_buf,
-        a.runtime_layout,
+    var fp8_a = LayoutTensor[fp8_dtype, fp8_a_layout](
+        fp8_a_buf, RuntimeLayout[fp8_a_layout].row_major(Index(B, m, K))
     )
 
     # the scales are stored in a transposed, padded format
@@ -528,12 +528,28 @@ fn quantize_and_bmm_fp8_helper[
         ),
     )
 
-    batched_quantize_dynamic_scaled_fp8[k_scale_granularity](
+    var a_ndbuffer = _layout_tensor_to_nd_buffer[3](a)
+
+    @parameter
+    @__copy_capture(a)
+    @always_inline
+    fn input_fn[
+        width: Int
+    ](batch: Int, row: Int, col: Int) capturing -> SIMD[dtype, width]:
+        # First transpose the q_nope tensor from [row, batch, col] to [batch, row, col].
+        return a.aligned_load[width=width](IndexList[3](row, batch, col))
+
+    batched_quantize_dynamic_scaled_fp8[
+        input_fn=input_fn,
+        group_size_or_per_token=k_scale_granularity,
+        num_cols=K,
+    ](
         _layout_tensor_to_nd_buffer[3](fp8_a),
         _layout_tensor_to_nd_buffer[3](fp8_a_scale),
-        _layout_tensor_to_nd_buffer[3](a),
         1200.0,
         ctx,
+        num_rows=m,
+        batch_size=B,
     )
 
     batched_matmul_dynamic_scaled_fp8[
@@ -559,10 +575,10 @@ fn transpose_helper[
     dtype: DType
 ](
     output_tensor: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     input_tensor: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, **_
+        dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -608,23 +624,23 @@ fn mla_decode_branch_fp8[
     target: StaticString = "cpu",
 ](
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    w_uk: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, **_],
+    w_uk: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
     w_uk_scale: LayoutTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    w_uv: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, **_],
+    w_uv: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
     w_uv_scale: LayoutTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -705,23 +721,6 @@ fn mla_decode_branch_fp8[
     if seq_len == 0:
         return
 
-    # First transpose the q_nope tensor from [tot_seq_len, num_heads,
-    # qk_nope_head_dim] to [num_heads, tot_seq_len, qk_nope_head_dim].
-    # TODO: This will be fused with the batched_quantize_dynamic_scaled_fp8 kernel in the future.
-    comptime q_nope_t_layout = Layout.row_major(
-        num_heads, UNKNOWN_VALUE, qk_nope_head_dim
-    )
-    var q_nope_t_buf = ctx.enqueue_create_buffer[dtype](
-        num_heads * seq_len * qk_nope_head_dim
-    )
-    var q_nope_t = LayoutTensor[dtype, q_nope_t_layout](
-        q_nope_t_buf,
-        RuntimeLayout[q_nope_t_layout].row_major(
-            Index(num_heads, seq_len, qk_nope_head_dim)
-        ),
-    )
-    transpose_helper[dtype](q_nope_t, q_nope, ctx)
-
     # Proceed with the fp8 batched matmul
     comptime q_nope_proj_layout = Layout.row_major(
         num_heads, UNKNOWN_VALUE, kv_latent_dim
@@ -736,12 +735,13 @@ fn mla_decode_branch_fp8[
         ),
     )
 
+    # This helper function uses the transposed view of the input tensor `q_nope`.
     quantize_and_bmm_fp8_helper[
         m_scale_granularity=m_scale_granularity,
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
         target=target,
-    ](q_nope_proj, q_nope_t, w_uk, w_uk_scale, ctx)
+    ](q_nope_proj, q_nope, w_uk, w_uk_scale, ctx)
 
     # concatenate the transposed q_nope_proj and q_rope tensors
     comptime q_full_layout = Layout.row_major(
@@ -823,20 +823,6 @@ fn mla_decode_branch_fp8[
         ctx,
     )
 
-    comptime raw_output_t_layout = Layout.row_major(
-        num_heads, UNKNOWN_VALUE, kv_latent_dim
-    )
-    var raw_output_t_buf = ctx.enqueue_create_buffer[dtype](
-        num_heads * seq_len * kv_latent_dim
-    )
-    var raw_output_t = LayoutTensor[dtype, raw_output_t_layout](
-        raw_output_t_buf,
-        RuntimeLayout[raw_output_t_layout].row_major(
-            Index(num_heads, seq_len, kv_latent_dim)
-        ),
-    )
-    transpose_helper[dtype](raw_output_t, raw_output, ctx)
-
     # Another batched matmul to project the raw output to the original space
     comptime output_t_layout = Layout.row_major(
         num_heads, UNKNOWN_VALUE, v_head_dim
@@ -851,6 +837,7 @@ fn mla_decode_branch_fp8[
         ),
     )
 
+    # This helper function uses the transposed view of the input tensor `raw_output`.
     quantize_and_bmm_fp8_helper[
         dtype=dtype,
         fp8_dtype=fp8_dtype,
@@ -859,7 +846,7 @@ fn mla_decode_branch_fp8[
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
         target=target,
-    ](output_t, raw_output_t, w_uv, w_uv_scale, ctx)
+    ](output_t, raw_output, w_uv, w_uv_scale, ctx)
 
     # Transpose the output tensor from [num_heads, tot_seq_len, v_head_dim] to [tot_seq_len, num_heads, v_head_dim].
     transpose_helper[dtype](output, output_t, ctx)
@@ -885,37 +872,37 @@ fn mla_prefill_decode_graph_fp8[
     target: StaticString = "cpu",
 ](
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     buffer_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     cache_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     max_seq_len: Int,
     kv_b_proj: LayoutTensor[
-        fp8_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     kv_b_proj_scale: LayoutTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    w_uk: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, **_],
+    w_uk: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
     w_uk_scale: LayoutTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    w_uv: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, **_],
+    w_uv: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
     w_uv_scale: LayoutTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, **_
+        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:

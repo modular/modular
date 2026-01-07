@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 
-@always_inline("nodebug")
+@always_inline("builtin")
 fn rebind[
     src_type: AnyTrivialRegType,
     //,
@@ -45,9 +45,9 @@ fn rebind[
 
 @always_inline("nodebug")
 fn rebind[
-    src_type: UnknownDestructibility,
+    src_type: AnyType,
     //,
-    dest_type: UnknownDestructibility,
+    dest_type: AnyType,
 ](ref src: src_type) -> ref [src] dest_type:
     """Statically assert that a parameter input type `src_type` resolves to the
     same type as a parameter result type `dest_type` after function
@@ -107,21 +107,21 @@ fn rebind_var[
 
 
 comptime downcast[
-    _Trait: type_of(UnknownDestructibility),
-    T: UnknownDestructibility,
+    T: AnyType,
+    _Trait: type_of(AnyType),
 ] = __mlir_attr[`#kgen.downcast<`, T, `> : `, _Trait]
 """Type alias for downcasting a type to conform to a trait.
 
 Parameters:
-    _Trait: The trait type to downcast to.
     T: The type to downcast.
+    _Trait: The trait type to downcast to.
 """
 
 
 @always_inline
 fn trait_downcast[
     T: AnyTrivialRegType, //, Trait: type_of(AnyType)
-](var src: T) -> downcast[Trait, T]:
+](var src: T) -> downcast[T, Trait]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving
     to a concrete type, does not actually conform to `Trait`, a compilation
@@ -137,13 +137,36 @@ fn trait_downcast[
     Returns:
         The downcasted value.
     """
-    return rebind[downcast[Trait, T]](src)
+    return rebind[downcast[T, Trait]](src)
+
+
+fn trait_downcast_var[
+    T: Movable,
+    //,
+    Trait: type_of(Movable),
+](var src: T) -> downcast[T, Trait]:
+    """Downcast a parameter input type `T` and rebind the type such that the
+    return value's type conforms to the provided `Trait`. If `T`, after
+    resolving to a concrete type, does not actually conform to `Trait`, a
+    compilation error will occur.
+
+    Parameters:
+        T: The original type (inferred).
+        Trait: The trait to downcast into.
+
+    Args:
+        src: The value to downcast.
+
+    Returns:
+        The downcasted value.
+    """
+    return rebind_var[downcast[T, Trait]](src^)
 
 
 @always_inline
 fn trait_downcast[
-    T: UnknownDestructibility, //, Trait: type_of(UnknownDestructibility)
-](ref src: T) -> ref [src] downcast[Trait, T]:
+    T: AnyType, //, Trait: type_of(AnyType)
+](ref src: T) -> ref [src] downcast[T, Trait]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving
     to a concrete type, does not actually conform to `Trait`, a compilation
@@ -159,4 +182,4 @@ fn trait_downcast[
     Returns:
         The downcasted value.
     """
-    return rebind[downcast[Trait, T]](src)
+    return rebind[downcast[T, Trait]](src)

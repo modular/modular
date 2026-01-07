@@ -184,6 +184,8 @@ struct Unit:
 
     comptime ns = "ns"
     """Nanoseconds."""
+    comptime us = "us"
+    """Microseconds."""
     comptime ms = "ms"
     """Milliseconds."""
     comptime s = "s"
@@ -193,6 +195,8 @@ struct Unit:
     fn _divisor(unit: String) -> Int:
         if unit == Unit.ns:
             return 1
+        elif unit == Unit.us:
+            return 1_000
         elif unit == Unit.ms:
             return 1_000_000
         else:
@@ -240,7 +244,7 @@ struct Report(Copyable, Defaultable):
         The total duration it took to run all benchmarks.
 
         Args:
-            unit: The time unit to display for example: ns, ms, s (default `s`).
+            unit: The time unit to display for example: ns, us, ms, s (default `s`).
 
         Returns:
             The total duration it took to run all benchmarks.
@@ -256,7 +260,7 @@ struct Report(Copyable, Defaultable):
         The average duration of all benchmark runs.
 
         Args:
-            unit: The time unit to display for example: ns, ms, s (default `s`).
+            unit: The time unit to display for example: ns, us, ms, s (default `s`).
 
         Returns:
             The average duration of all benchmark runs.
@@ -268,7 +272,7 @@ struct Report(Copyable, Defaultable):
         The batch of benchmarks that was the fastest to run.
 
         Args:
-            unit: The time unit to display for example: ns, ms, s (default `s`).
+            unit: The time unit to display for example: ns, us, ms, s (default `s`).
 
         Returns:
             The fastest duration out of all batches.
@@ -286,7 +290,7 @@ struct Report(Copyable, Defaultable):
         The batch of benchmarks that was the slowest to run.
 
         Args:
-            unit: The time unit to display for example: ns, ms, s (default `s`).
+            unit: The time unit to display for example: ns, us, ms, s (default `s`).
 
         Returns:
             The slowest duration out of all batches.
@@ -302,26 +306,38 @@ struct Report(Copyable, Defaultable):
                 result = self.runs[i].mean(unit)
         return result
 
+    fn as_string(self, unit: String = Unit.s) -> String:
+        """Converts the Report to a String.
+
+        Args:
+            unit: The time unit to display for example: ns, us, ms, s (default `s`).
+
+        Returns:
+            The string representation of the Report.
+        """
+        var lines: List[String] = [
+            "-" * 80,
+            "Benchmark Report (" + unit + ")",
+            "-" * 80,
+            "Mean: " + String(self.mean(unit)),
+            "Total: " + String(self.duration(unit)),
+            "Iters: " + String(self.iters()),
+            "Warmup Total: "
+            + String(self.warmup_duration / Unit._divisor(unit)),
+            "Fastest Mean: " + String(self.min(unit)),
+            "Slowest Mean: " + String(self.max(unit)),
+            "",
+        ]
+        return "\n".join(lines)
+
     fn print(self, unit: String = Unit.s):
         """
         Prints out the shortened version of the report.
 
         Args:
-            unit: The time unit to display for example: ns, ms, s (default `s`).
+            unit: The time unit to display for example: ns, us, ms, s (default `s`).
         """
-        var divisor = Unit._divisor(unit)
-        print("-" * 80)
-        print("Benchmark Report (", end="")
-        print(unit, end="")
-        print(")")
-        print("-" * 80)
-        print("Mean:", self.mean(unit))
-        print("Total:", self.duration(unit))
-        print("Iters:", self.iters())
-        print("Warmup Total:", self.warmup_duration / divisor)
-        print("Fastest Mean:", self.min(unit))
-        print("Slowest Mean:", self.max(unit))
-        print()
+        print(self.as_string(unit))
 
     fn print_full(self, unit: String = Unit.s):
         """
@@ -329,7 +345,7 @@ struct Report(Copyable, Defaultable):
         runs.
 
         Args:
-            unit: The time unit to display for example: ns, ms, s (default `s`).
+            unit: The time unit to display for example: ns, us, ms, s (default `s`).
         """
 
         var divisor = Unit._divisor(unit)
@@ -381,7 +397,7 @@ struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int]:
 
 @always_inline
 fn run[
-    func: fn () raises -> None
+    *, func1: fn () raises -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -395,7 +411,7 @@ fn run[
     `max_runtime_secs` OR `max_iters` is achieved.
 
     Parameters:
-        func: The function to benchmark.
+        func1: The function to benchmark.
 
     Args:
         num_warmup_iters: Number of warmup iterations.
@@ -419,7 +435,7 @@ fn run[
         @always_inline
         fn iter_fn() raises:
             for _ in range(num_iters):
-                func()
+                func1()
 
         return Int(time_function[iter_fn]())
 
@@ -436,7 +452,7 @@ fn run[
 
 @always_inline
 fn run[
-    func: fn () -> None
+    *, func2: fn () -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -450,7 +466,7 @@ fn run[
     `max_runtime_secs` OR `max_iters` is achieved.
 
     Parameters:
-        func: The function to benchmark.
+        func2: The function to benchmark.
 
     Args:
         num_warmup_iters: Number of warmup iterations.
@@ -469,9 +485,9 @@ fn run[
 
     @parameter
     fn raising_func() raises:
-        func()
+        func2()
 
-    return run[raising_func](
+    return run[func3=raising_func](
         num_warmup_iters,
         max_iters,
         min_runtime_secs,
@@ -482,7 +498,7 @@ fn run[
 
 @always_inline
 fn run[
-    func: fn () raises capturing [_] -> None
+    func3: fn () raises capturing [_] -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -496,7 +512,7 @@ fn run[
     `max_runtime_secs` OR `max_iters` is achieved.
 
     Parameters:
-        func: The function to benchmark.
+        func3: The function to benchmark.
 
     Args:
         num_warmup_iters: Number of warmup iterations.
@@ -520,7 +536,7 @@ fn run[
         @always_inline
         fn iter_fn() raises:
             for _ in range(num_iters):
-                func()
+                func3()
 
         return Int(time_function[iter_fn]())
 
@@ -537,7 +553,7 @@ fn run[
 
 @always_inline
 fn run[
-    func: fn () capturing [_] -> None
+    *, func4: fn () capturing [_] -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -551,7 +567,7 @@ fn run[
     `max_runtime_secs` OR `max_iters` is achieved.
 
     Parameters:
-        func: The function to benchmark.
+        func4: The function to benchmark.
 
     Args:
         num_warmup_iters: Number of warmup iterations.
@@ -570,7 +586,7 @@ fn run[
 
     @parameter
     fn raising_func() raises:
-        func()
+        func4()
 
     return run[raising_func](
         num_warmup_iters,

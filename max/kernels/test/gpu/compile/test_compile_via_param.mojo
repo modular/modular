@@ -20,7 +20,9 @@
 
 from gpu import thread_idx
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 def test_compile_function():
@@ -32,7 +34,7 @@ def test_compile_function():
     # CHECK: tid.x
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function[kernel]()
+        _ = ctx.compile_function_checked[kernel, kernel]()
 
 
 def main():

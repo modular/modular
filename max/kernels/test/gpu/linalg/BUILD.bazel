@@ -52,10 +52,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2366
-    "test_gemv.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2397
     "test_grouped_matmul_vendor.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -110,6 +106,7 @@ _B200_TESTS = [
     "test_tma_pair_mma_sm100.mojo",
     "test_matmul_sm100_fallback.mojo",
     "test_matmul_sm100_smoke.mojo",
+    "test_matmul_sm100_structured_quick.mojo",
     "test_matmul_sm100_composable.mojo",
     "test_matmul_sm100_blockwise_fp8.mojo",
     "test_grouped_matmul_dynamic_scaled_fp8.mojo",

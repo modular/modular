@@ -39,6 +39,7 @@ from max.interfaces import (
     SamplingParams,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TokenBuffer,
 )
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.parallel import ParallelArrayOps
@@ -432,9 +433,9 @@ async def test_qwen_input_preparation__position_ids_after_reset(
     context.reset()
 
     # Verify reset state: indices reset, but tokens remain
-    assert context.start_idx == 0
+    assert context.processed_length == 0
     assert (
-        context.active_idx == initial_current_length + 5
+        context.current_position == initial_current_length + 5
     )  # Includes the 5 added tokens
     assert context.current_length == initial_current_length + 5
 
@@ -629,8 +630,8 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
     context.reset()
 
     # Verify reset state: indices reset, tokens and images remain
-    assert context.start_idx == 0
-    assert context.active_idx == initial_current_length + 3
+    assert context.processed_length == 0
+    assert context.current_position == initial_current_length + 3
     assert context.current_length == initial_current_length + 3
     assert len(context.images) == len(initial_images), (
         "Images should be preserved after reset"
@@ -764,7 +765,7 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
     image_token_id = 151652
     ctx = Qwen2_5VLTextAndVisionContext(
         request_id=RequestID("test-posid-increment"),
-        tokens=tokens,
+        tokens=TokenBuffer(tokens),
         max_length=L + 8,
         eos_token_ids=set([2]),
         sampling_params=SamplingParams(max_new_tokens=2),
@@ -783,9 +784,9 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
     )
 
     # Verify initial state: prefill phase (start_idx=0, active range covers all tokens).
-    assert ctx.start_idx == 0
-    assert ctx.active_idx == L
-    assert ctx.end_idx == L
+    assert ctx.processed_length == 0
+    assert ctx.current_position == L
+    assert ctx.current_length == L
 
     # Build inputs for prefill phase.
     dummy_kv_inputs = Mock(spec=KVCacheInputs)
@@ -807,9 +808,7 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
 
     # Simulate first decode step (single-token generation).
     # Mimic the pipeline's next iteration: move to decode phase with single active token.
-    ctx.start_idx = L  # type: ignore
-    ctx.active_idx = L + 1  # type: ignore
-    ctx.end_idx = L + 1  # type: ignore
+    ctx.tokens.advance_with_token(0)
 
     step1_inputs = model.prepare_initial_token_inputs(
         replica_batches=[[ctx]],

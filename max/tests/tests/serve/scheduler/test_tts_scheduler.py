@@ -31,6 +31,7 @@ from max.interfaces import (
     MAXPushQueue,
     RequestID,
     SchedulerResult,
+    TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
@@ -64,7 +65,7 @@ def create_text_context(
     return TTSContext(
         request_id=RequestID(),
         max_length=max_seq_len,
-        tokens=tokens,
+        tokens=TokenBuffer(tokens),
         streaming=False,
     )
 
@@ -354,7 +355,7 @@ def enqueue_request_with_prompt(
     context = TTSContext(
         request_id=RequestID(),
         max_length=max_seq_len,
-        tokens=tokens,
+        tokens=TokenBuffer(tokens),
         streaming=False,
     )
 

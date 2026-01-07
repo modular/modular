@@ -1096,7 +1096,9 @@ def _test_deque_iter_bounds[I: Iterator](var deque_iter: I, deque_len: Int):
         var lower, upper = iter.bounds()
         assert_equal(deque_len - i, lower)
         assert_equal(deque_len - i, upper.value())
-        _ = iter.__next__()
+        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
+            iter.__next__()^
+        )
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -1140,6 +1142,29 @@ def test_deque_literal():
 def test_repr_wrap():
     var s = Deque[StaticString]("a", "b", "c")
     assert_equal(repr(s), "Deque('a', 'b', 'c')")
+
+
+def test_write_to():
+    """Test Writable trait implementation."""
+    var deque = Deque[Int](10, 20, 30)
+    var output = String()
+    deque.write_to(output)
+
+    assert_equal(output, "Deque(10, 20, 30)")
+
+    # Test with different types
+    var string_deque = Deque[String]("hello", "world")
+    var string_output = String()
+    string_deque.write_to(string_output)
+
+    assert_equal(string_output, "Deque('hello', 'world')")
+
+    # Test empty deque
+    var empty_deque = Deque[Int]()
+    var empty_output = String()
+    empty_deque.write_to(empty_output)
+
+    assert_equal(empty_output, "Deque()")
 
 
 # ===-------------------------------------------------------------------===#

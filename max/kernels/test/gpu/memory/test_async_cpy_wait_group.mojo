@@ -22,7 +22,9 @@ from gpu.memory import (
     async_copy_wait_all,
     async_copy_wait_group,
 )
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 
@@ -39,8 +41,8 @@ fn copy_via_shared(
     ] = src.address_space_cast[AddressSpace.GLOBAL]()
 
     async_copy[4](
-        src_global.offset(thread_id),
-        mem_buff.offset(thread_id),
+        src_global + thread_id,
+        mem_buff + thread_id,
     )
 
     async_copy_commit_group()

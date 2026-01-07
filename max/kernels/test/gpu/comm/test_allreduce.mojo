@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from math import floor
 from sys import size_of, has_amd_gpu_accelerator
 from itertools import product
 
@@ -25,8 +24,11 @@ from comm.allreduce import (
     elementwise_epilogue_type,
 )
 import comm.vendor.ccl as vendor_ccl
+from comm_test_utils import human_readable_size
 from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal, assert_true
 from collections.optional import OptionalReg
 
@@ -47,32 +49,6 @@ comptime test_dtypes = (DType.bfloat16, DType.float32)
 comptime test_gpu_counts = (2, 4, 8)
 
 
-fn _pretty_print_float(val: Float64) -> String:
-    """This converts the float value to a string, but omits the fractional part
-    if not needed (e.g. prints 2 instead of 2.0).
-    """
-    if Float64(floor(val)) == val:
-        return String(Int(val))
-    return String(val)
-
-
-fn _human_memory(size: Int) -> String:
-    comptime KB = 1024
-    comptime MB = KB * KB
-    comptime GB = MB * KB
-
-    if size >= GB:
-        return _pretty_print_float(Float64(size) / GB) + "GB"
-
-    if size >= MB:
-        return _pretty_print_float(Float64(size) / MB) + "MB"
-
-    if size >= KB:
-        return _pretty_print_float(Float64(size) / KB) + "KB"
-
-    return String(size) + "B"
-
-
 fn allreduce_test[
     dtype: DType,
     rank: Int,
@@ -87,8 +63,6 @@ fn allreduce_test[
     if use_multimem and length == 0:
         return
 
-    comptime num_warmups = 5
-    comptime num_iters = 100
     comptime num_buffers = 1 if use_multimem else ngpus
 
     __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
@@ -200,58 +174,27 @@ fn allreduce_test[
             ),
         )
 
-    # Warm up.
-    for _ in range(num_warmups):
-        group_start()
-
-        @parameter
-        for i in range(ngpus):
-            allreduce[
-                ngpus=ngpus,
-                output_lambda = OptionalReg[elementwise_epilogue_type](
-                    outputs_lambda[input_index=i]
-                ) if use_custom_epilogue else None,
-                use_multimem=use_multimem,
-                use_quickreduce=use_quickreduce,
-            ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
-        group_end()
-
-    # Synchronize all devices.
-    for i in range(ngpus):
-        list_of_ctx[i].synchronize()
-
     # Precompute expected sum across GPUs for verification.
     var expected_sum = Scalar[dtype](0)
     for i in range(ngpus):
         expected_sum += i + 1
 
-    # Perform a benchmarked allreduce (Mojo).
-    start_t_mojo = time.perf_counter_ns()
+    group_start()
 
-    for _ in range(num_iters):
-        group_start()
-
-        @parameter
-        for i in range(ngpus):
-            allreduce[
-                ngpus=ngpus,
-                output_lambda = OptionalReg[elementwise_epilogue_type](
-                    outputs_lambda[input_index=i]
-                ) if use_custom_epilogue else None,
-                use_multimem=use_multimem,
-                use_quickreduce=use_quickreduce,
-            ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
-        group_end()
+    @parameter
+    for i in range(ngpus):
+        allreduce[
+            ngpus=ngpus,
+            output_lambda = OptionalReg[elementwise_epilogue_type](
+                outputs_lambda[input_index=i]
+            ) if use_custom_epilogue else None,
+            use_multimem=use_multimem,
+            use_quickreduce=use_quickreduce,
+        ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
+    group_end()
 
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
-
-    end_t_mojo = time.perf_counter_ns()
-
-    print(
-        "Mojo allreduce time (ms):",
-        (end_t_mojo - start_t_mojo) / (1_000_000 * num_iters),
-    )
 
     # Vendor RCCL comparison (non-multimem path only and only if available).
     @parameter
@@ -270,44 +213,20 @@ fn allreduce_test[
                     out_dev_vendor[i].unsafe_ptr(), DimList(length)
                 )
 
-            # Warm-up RCCL.
-            for _ in range(num_warmups):
-                with vendor_ccl.group():
+            # Test RCCL.
+            with vendor_ccl.group():
 
-                    @parameter
-                    for i in range(ngpus):
-                        vendor_ccl.allreduce[ngpus=ngpus](
-                            in_bufs,
-                            out_bufs_vendor[i],
-                            rank_sigs,
-                            list_of_ctx[i],
-                        )
-
-            for i in range(ngpus):
-                list_of_ctx[i].synchronize()
-
-            # Benchmark RCCL.
-            start_t_rccl = time.perf_counter_ns()
-            for _ in range(num_iters):
-                with vendor_ccl.group():
-
-                    @parameter
-                    for i in range(ngpus):
-                        vendor_ccl.allreduce[ngpus=ngpus](
-                            in_bufs,
-                            out_bufs_vendor[i],
-                            rank_sigs,
-                            list_of_ctx[i],
-                        )
+                @parameter
+                for i in range(ngpus):
+                    vendor_ccl.allreduce[ngpus=ngpus](
+                        in_bufs,
+                        out_bufs_vendor[i],
+                        rank_sigs,
+                        list_of_ctx[i],
+                    )
 
             for i in range(ngpus):
                 list_of_ctx[i].synchronize()
-            end_t_rccl = time.perf_counter_ns()
-
-            print(
-                "RCCL allreduce time (ms):",
-                (end_t_rccl - start_t_rccl) / (1_000_000 * num_iters),
-            )
 
             # Verify RCCL results
             for i in range(ngpus):
@@ -365,7 +284,7 @@ fn _get_test_str[
         quickreduce_tag,
         epilogue_tag,
         "-",
-        _human_memory(size_of[dtype]() * length),
+        human_readable_size(size_of[dtype]() * length),
     )
 
 
@@ -476,7 +395,7 @@ fn run_allreduce_sweep[
     ):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() < num_gpus:
-            break
+            continue
 
         # Create GPU context.
         var ctx = List[DeviceContext]()

@@ -25,8 +25,8 @@ from max.graph.weights import WeightData
 from max.nn.float8_config import (
     Float8ScaleGranularity,
     Float8ScaleOrigin,
-    parse_float8_config,
 )
+from max.pipelines.lib.float8 import parse_float8_config
 from transformers import AutoConfig
 
 # Define a base path for test data.

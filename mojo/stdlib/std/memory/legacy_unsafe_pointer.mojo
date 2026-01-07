@@ -42,11 +42,12 @@ fn _default_invariant[mut: Bool]() -> Bool:
 
 @register_passable("trivial")
 struct LegacyUnsafePointer[
-    type: UnknownDestructibility,
+    mut: Bool,
+    //,
+    type: AnyType,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    mut: Bool = True,
-    origin: Origin[mut] = Origin[mut].cast_from[MutAnyOrigin],
+    origin: Origin[mut=mut] = Origin[mut=mut](unsafe_cast=MutAnyOrigin),
 ](
     Boolable,
     Comparable,
@@ -66,9 +67,9 @@ struct LegacyUnsafePointer[
     `UnsafePointer` function, and vice versa.
 
     Parameters:
+        mut: Whether the origin is mutable.
         type: The type the pointer points to.
         address_space: The address space associated with the pointer's allocated memory.
-        mut: Whether the origin is mutable.
         origin: The origin of the memory being addressed.
     """
 
@@ -77,7 +78,6 @@ struct LegacyUnsafePointer[
     # ===-------------------------------------------------------------------===#
 
     comptime _UnsafePointerType = UnsafePointer[
-        mut = Self.mut,
         Self.type,
         Self.origin,
         address_space = Self.address_space,
@@ -138,7 +138,7 @@ struct LegacyUnsafePointer[
     fn __init__(
         out self,
         other: LegacyUnsafePointer[
-            Self.type, address_space = Self.address_space, **_
+            Self.type, address_space = Self.address_space, ...
         ],
     ):
         """Exclusivity parameter cast a pointer.
@@ -155,7 +155,6 @@ struct LegacyUnsafePointer[
     fn __init__(
         out self,
         other: UnsafePointer[
-            mut = Self.mut,
             Self.type,
             Self.origin,
             address_space = Self.address_space,
@@ -175,7 +174,7 @@ struct LegacyUnsafePointer[
     fn __init__(
         out self,
         other: UnsafePointer[
-            Self.type, address_space = Self.address_space, **_
+            Self.type, address_space = Self.address_space, ...
         ],
     ):
         """Implicitly cast an `UnsafePointer` to a `LegacyUnsafePointer`.
@@ -190,7 +189,7 @@ struct LegacyUnsafePointer[
     fn __init__[
         T: ImplicitlyDestructible, //
     ](
-        out self: LegacyUnsafePointer[T, mut = Self.mut, origin = Self.origin],
+        out self: LegacyUnsafePointer[T, origin = Self.origin],
         *,
         ref [Self.origin]unchecked_downcast_value: PythonObject,
     ):
@@ -219,7 +218,6 @@ struct LegacyUnsafePointer[
         count: Int, *, alignment: Int = align_of[Self.type]()
     ) -> LegacyUnsafePointer[
         Self.type,
-        mut=True,
         address_space = AddressSpace.GENERIC,
         origin = MutOrigin.external,
     ]:
@@ -275,21 +273,6 @@ struct LegacyUnsafePointer[
         )
 
     @always_inline("nodebug")
-    fn offset[I: Indexer, //](self, idx: I) -> Self:
-        """Returns a new pointer shifted by the specified offset.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            idx: The offset of the new pointer.
-
-        Returns:
-            The new constructed LegacyUnsafePointer.
-        """
-        return __mlir_op.`pop.offset`(self.address, index(idx)._mlir_value)
-
-    @always_inline("nodebug")
     fn __getitem__[
         I: Indexer, //
     ](self, offset: I) -> ref [Self.origin, Self.address_space] Self.type:
@@ -319,7 +302,7 @@ struct LegacyUnsafePointer[
         Returns:
             An offset pointer.
         """
-        return self.offset(offset)
+        return __mlir_op.`pop.offset`(self.address, index(offset)._mlir_value)
 
     @always_inline
     fn __sub__[I: Indexer, //](self, offset: I) -> Self:
@@ -452,13 +435,11 @@ struct LegacyUnsafePointer[
             LegacyUnsafePointer[
                 Self.type,
                 address_space = Self.address_space,
-                mut=_,
                 origin=_,
             ]
         ),
     ](self) -> LegacyUnsafePointer[
         type = Self.type,
-        mut = Self.mut & other_type.origin.mut,
         origin = origin_of(Self.origin, other_type.origin),
         address_space = Self.address_space,
     ]:
@@ -624,8 +605,8 @@ struct LegacyUnsafePointer[
     fn swap_pointees[
         U: Movable
     ](
-        self: LegacyUnsafePointer[U, mut=True, origin=_],
-        other: LegacyUnsafePointer[U, mut=True, origin=_],
+        self: LegacyUnsafePointer[mut=True, U, origin=_],
+        other: LegacyUnsafePointer[mut=True, U, origin=_],
     ):
         """Swap the values at the pointers.
 
@@ -660,8 +641,10 @@ struct LegacyUnsafePointer[
 
             var self_tmp = UnsafeMaybeUninitialized[U]()
             var other_tmp = UnsafeMaybeUninitialized[U]()
-            memcpy(dest=self_tmp.unsafe_ptr(), src=self, count=1)
-            memcpy(dest=other_tmp.unsafe_ptr(), src=other, count=1)
+            memcpy(dest=self_tmp.unsafe_ptr(), src=UnsafePointer(self), count=1)
+            memcpy(
+                dest=other_tmp.unsafe_ptr(), src=UnsafePointer(other), count=1
+            )
 
             memcpy(dest=self, src=other_tmp.unsafe_ptr(), count=1)
             memcpy(dest=other, src=self_tmp.unsafe_ptr(), count=1)
@@ -697,7 +680,7 @@ struct LegacyUnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
-    ](self: LegacyUnsafePointer[Scalar[dtype], **_]) -> SIMD[dtype, width]:
+    ](self: LegacyUnsafePointer[Scalar[dtype], ...]) -> SIMD[dtype, width]:
         """Loads `width` elements from the value the pointer points to.
 
         Use `alignment` to specify minimal known alignment in bytes; pass a
@@ -771,7 +754,7 @@ struct LegacyUnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
-    ](self: LegacyUnsafePointer[Scalar[dtype], **_], offset: Scalar) -> SIMD[
+    ](self: LegacyUnsafePointer[Scalar[dtype], ...], offset: Scalar) -> SIMD[
         dtype, width
     ]:
         """Loads the value the pointer points to with the given offset.
@@ -794,7 +777,7 @@ struct LegacyUnsafePointer[
             The loaded value.
         """
         __comptime_assert offset.dtype.is_integral(), "offset must be integer"
-        return self.offset(Int(offset)).load[
+        return (self + Int(offset)).load[
             width=width,
             alignment=alignment,
             volatile=volatile,
@@ -811,7 +794,7 @@ struct LegacyUnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
-    ](self: LegacyUnsafePointer[Scalar[dtype], **_], offset: I) -> SIMD[
+    ](self: LegacyUnsafePointer[Scalar[dtype], ...], offset: I) -> SIMD[
         dtype, width
     ]:
         """Loads the value the pointer points to with the given offset.
@@ -833,7 +816,7 @@ struct LegacyUnsafePointer[
         Returns:
             The loaded value.
         """
-        return self.offset(offset).load[
+        return (self + offset).load[
             width=width,
             alignment=alignment,
             volatile=volatile,
@@ -850,7 +833,7 @@ struct LegacyUnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: LegacyUnsafePointer[Scalar[dtype], mut=True, **_],
+        self: LegacyUnsafePointer[mut=True, Scalar[dtype], ...],
         offset: I,
         val: SIMD[dtype, width],
     ):
@@ -871,7 +854,7 @@ struct LegacyUnsafePointer[
             offset: The offset to store to.
             val: The value to store.
         """
-        self.offset(offset).store[alignment=alignment, volatile=volatile](val)
+        (self + offset).store[alignment=alignment, volatile=volatile](val)
 
     @always_inline("nodebug")
     fn store[
@@ -883,7 +866,7 @@ struct LegacyUnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: LegacyUnsafePointer[Scalar[dtype], mut=True, **_],
+        self: LegacyUnsafePointer[mut=True, Scalar[dtype], ...],
         offset: Scalar[offset_type],
         val: SIMD[dtype, width],
     ):
@@ -904,9 +887,7 @@ struct LegacyUnsafePointer[
             val: The value to store.
         """
         __comptime_assert offset_type.is_integral(), "offset must be integer"
-        self.offset(Int(offset))._store[alignment=alignment, volatile=volatile](
-            val
-        )
+        (self + Int(offset))._store[alignment=alignment, volatile=volatile](val)
 
     @always_inline("nodebug")
     fn store[
@@ -917,7 +898,7 @@ struct LegacyUnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: LegacyUnsafePointer[Scalar[dtype], mut=True, **_],
+        self: LegacyUnsafePointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
     ):
         """Stores a single element value `val` at element offset 0.
@@ -959,7 +940,7 @@ struct LegacyUnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: LegacyUnsafePointer[Scalar[dtype], mut=True, **_],
+        self: LegacyUnsafePointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
     ):
         __comptime_assert width > 0, "width must be a positive integer value"
@@ -975,7 +956,7 @@ struct LegacyUnsafePointer[
     @always_inline("nodebug")
     fn strided_load[
         dtype: DType, T: Intable, //, width: Int
-    ](self: LegacyUnsafePointer[Scalar[dtype], **_], stride: T) -> SIMD[
+    ](self: LegacyUnsafePointer[Scalar[dtype], ...], stride: T) -> SIMD[
         dtype, width
     ]:
         """Performs a strided load of the SIMD vector.
@@ -992,7 +973,7 @@ struct LegacyUnsafePointer[
             A vector which is stride loaded.
         """
         return strided_load(
-            self, Int(stride), SIMD[DType.bool, width](fill=True)
+            UnsafePointer(self), Int(stride), SIMD[DType.bool, width](fill=True)
         )
 
     @always_inline("nodebug")
@@ -1002,7 +983,7 @@ struct LegacyUnsafePointer[
         //,
         width: Int = 1,
     ](
-        self: LegacyUnsafePointer[Scalar[dtype], mut=True, **_],
+        self: LegacyUnsafePointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
         stride: T,
     ):
@@ -1029,7 +1010,7 @@ struct LegacyUnsafePointer[
         width: Int = 1,
         alignment: Int = align_of[dtype](),
     ](
-        self: LegacyUnsafePointer[Scalar[dtype], **_],
+        self: LegacyUnsafePointer[Scalar[dtype], ...],
         offset: SIMD[_, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
         default: SIMD[dtype, width] = 0,
@@ -1083,7 +1064,7 @@ struct LegacyUnsafePointer[
         width: Int = 1,
         alignment: Int = align_of[dtype](),
     ](
-        self: LegacyUnsafePointer[Scalar[dtype], mut=True, **_],
+        self: LegacyUnsafePointer[mut=True, Scalar[dtype], ...],
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
@@ -1131,7 +1112,7 @@ struct LegacyUnsafePointer[
     @always_inline
     fn free(
         self: LegacyUnsafePointer[
-            _, mut=True, address_space = AddressSpace.GENERIC, **_
+            mut=True, _, address_space = AddressSpace.GENERIC, ...
         ]
     ):
         """Free the memory referenced by the pointer."""
@@ -1139,11 +1120,10 @@ struct LegacyUnsafePointer[
 
     @always_inline("builtin")
     fn bitcast[
-        T: UnknownDestructibility = Self.type,
+        T: AnyType = Self.type
     ](self) -> LegacyUnsafePointer[
         T,
         address_space = Self.address_space,
-        mut = Self.mut,
         origin = Self.origin,
     ]:
         """Bitcasts a LegacyUnsafePointer to a different type.
@@ -1163,11 +1143,10 @@ struct LegacyUnsafePointer[
         ](self.address)
 
     comptime _OriginCastType[
-        target_mut: Bool, target_origin: Origin[target_mut]
+        target_mut: Bool, target_origin: Origin[mut=target_mut]
     ] = LegacyUnsafePointer[
         Self.type,
         address_space = Self.address_space,
-        mut=target_mut,
         origin=target_origin,
     ]
 
@@ -1175,7 +1154,7 @@ struct LegacyUnsafePointer[
     fn mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[target_mut].cast_from[Self.origin]
+        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
     ]:
         """Changes the mutability of a pointer.
 
@@ -1199,7 +1178,7 @@ struct LegacyUnsafePointer[
     fn unsafe_mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[target_mut].cast_from[Self.origin]
+        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
     ]:
         """Changes the mutability of a pointer.
 
@@ -1219,18 +1198,18 @@ struct LegacyUnsafePointer[
             Casting the mutability of a pointer is inherently very unsafe.
             Improper usage can lead to undefined behavior. Consider restricting
             types to their proper mutability at the function signature level.
-            For example, taking an `LegacyUnsafePointer[T, mut=True, **_]` as an
-            argument over an unbound `LegacyUnsafePointer[T, **_]` is preferred.
+            For example, taking an `LegacyUnsafePointer[T, mut=True, ...]` as an
+            argument over an unbound `LegacyUnsafePointer[T, ...]` is preferred.
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = Self._OriginCastType[
-                target_mut, Origin[target_mut].cast_from[Self.origin]
+                target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
             ]._mlir_type,
         ](self.address)
 
     @always_inline("builtin")
     fn unsafe_origin_cast[
-        target_origin: Origin[Self.mut]
+        target_origin: Origin[mut = Self.mut]
     ](self) -> Self._OriginCastType[Self.mut, target_origin]:
         """Changes the origin of a pointer.
 
@@ -1257,7 +1236,7 @@ struct LegacyUnsafePointer[
     @always_inline("builtin")
     fn as_immutable(
         self,
-    ) -> Self._OriginCastType[False, ImmutOrigin.cast_from[Self.origin]]:
+    ) -> Self._OriginCastType[False, ImmutOrigin(Self.origin)]:
         """Changes the mutability of a pointer to immutable.
 
         Unlike `unsafe_mut_cast`, this function is always safe to use as casting
@@ -1270,7 +1249,7 @@ struct LegacyUnsafePointer[
 
     @doc_private
     fn as_any_origin(
-        self: LegacyUnsafePointer[Self.type, **_]
+        self: LegacyUnsafePointer[Self.type, ...]
     ) -> Self._OriginCastType[False, ImmutAnyOrigin]:
         constrained[
             False,
@@ -1285,11 +1264,10 @@ struct LegacyUnsafePointer[
 
     @always_inline("builtin")
     fn as_any_origin(
-        self: LegacyUnsafePointer[Self.type, mut=False, **_],
+        self: LegacyUnsafePointer[mut=False, Self.type, ...],
     ) -> LegacyUnsafePointer[
         Self.type,
         address_space = Self.address_space,
-        mut=False,
         origin=ImmutAnyOrigin,
     ]:
         """Casts the origin of an immutable pointer to `ImmutAnyOrigin`.
@@ -1307,18 +1285,16 @@ struct LegacyUnsafePointer[
             _type = LegacyUnsafePointer[
                 Self.type,
                 address_space = Self.address_space,
-                mut=False,
                 origin=ImmutAnyOrigin,
             ]._mlir_type,
         ](self.address)
 
     @always_inline("builtin")
     fn as_any_origin(
-        self: LegacyUnsafePointer[Self.type, mut=True, **_],
+        self: LegacyUnsafePointer[mut=True, Self.type, ...],
     ) -> LegacyUnsafePointer[
         Self.type,
         address_space = Self.address_space,
-        mut=True,
         origin=MutAnyOrigin,
     ]:
         """Casts the origin of a mutable pointer to `MutAnyOrigin`.
@@ -1339,7 +1315,6 @@ struct LegacyUnsafePointer[
             _type = LegacyUnsafePointer[
                 Self.type,
                 address_space = Self.address_space,
-                mut=True,
                 origin=MutAnyOrigin,
             ]._mlir_type,
         ](self.address)
@@ -1350,7 +1325,6 @@ struct LegacyUnsafePointer[
     ](self) -> LegacyUnsafePointer[
         Self.type,
         address_space=target_address_space,
-        mut = Self.mut,
         origin = Self.origin,
     ]:
         """Casts an LegacyUnsafePointer to a different address space.
@@ -1374,7 +1348,7 @@ struct LegacyUnsafePointer[
         T: ImplicitlyDestructible, //
     ](
         self: LegacyUnsafePointer[
-            T, mut=True, address_space = AddressSpace.GENERIC, **_
+            mut=True, T, address_space = AddressSpace.GENERIC, ...
         ]
     ):
         """Destroy the pointed-to value.
@@ -1397,7 +1371,7 @@ struct LegacyUnsafePointer[
         //,
     ](
         self: LegacyUnsafePointer[
-            T, mut=True, address_space = AddressSpace.GENERIC, **_
+            mut=True, T, address_space = AddressSpace.GENERIC, ...
         ]
     ) -> T:
         """Move the value at the pointer out, leaving it uninitialized.
@@ -1425,7 +1399,7 @@ struct LegacyUnsafePointer[
         //,
     ](
         self: LegacyUnsafePointer[
-            T, mut=True, address_space = AddressSpace.GENERIC, **_
+            mut=True, T, address_space = AddressSpace.GENERIC, ...
         ],
         var value: T,
     ):
@@ -1453,7 +1427,7 @@ struct LegacyUnsafePointer[
         //,
     ](
         self: LegacyUnsafePointer[
-            T, mut=True, address_space = AddressSpace.GENERIC, **_
+            mut=True, T, address_space = AddressSpace.GENERIC, ...
         ],
         value: T,
     ):
@@ -1481,10 +1455,10 @@ struct LegacyUnsafePointer[
         //,
     ](
         self: LegacyUnsafePointer[
-            T, mut=True, address_space = AddressSpace.GENERIC, **_
+            mut=True, T, address_space = AddressSpace.GENERIC, ...
         ],
         src: LegacyUnsafePointer[
-            T, mut=True, address_space = AddressSpace.GENERIC, **_
+            mut=True, T, address_space = AddressSpace.GENERIC, ...
         ],
     ):
         """Moves the value `src` points to into the memory location pointed to
@@ -1553,10 +1527,10 @@ struct LegacyUnsafePointer[
         //,
     ](
         self: LegacyUnsafePointer[
-            T, mut=True, address_space = AddressSpace.GENERIC, **_
+            mut=True, T, address_space = AddressSpace.GENERIC, ...
         ],
         dst: LegacyUnsafePointer[
-            T, mut=True, address_space = AddressSpace.GENERIC, **_
+            mut=True, T, address_space = AddressSpace.GENERIC, ...
         ],
     ):
         """Moves the value `self` points to into the memory location pointed to by
@@ -1590,5 +1564,11 @@ struct LegacyUnsafePointer[
         ) = __get_address_as_owned_value(self.address)
 
 
-comptime LegacyOpaquePointer = LegacyUnsafePointer[NoneType]
-"""An opaque pointer, equivalent to the C `void*` type."""
+comptime LegacyOpaquePointer = LegacyUnsafePointer[
+    NoneType, origin=MutAnyOrigin
+]
+"""An opaque pointer, equivalent to the C `void*` type.
+
+Parameters:
+    origin: The origin of the pointer.
+"""

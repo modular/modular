@@ -18,13 +18,13 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine.api import InferenceSession
-from max.experimental import _passes, tensor
+from max.experimental import _passes, realization_context
 from max.graph import Graph, TensorType
 
 
 @pytest.fixture
 def session() -> Iterator[InferenceSession]:
-    yield tensor._session()
+    yield realization_context._session()
 
 
 def test_add_input(session: InferenceSession) -> None:

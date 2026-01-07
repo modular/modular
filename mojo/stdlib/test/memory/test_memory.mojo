@@ -157,6 +157,9 @@ def test_memcmp_overflow():
     c = memcmp(p2, p1, 1)
     assert_equal(c, -1)
 
+    p1.free()
+    p2.free()
+
 
 def test_memcmp_simd():
     var length = simd_width_of[DType.int8]() + 10

@@ -142,6 +142,23 @@ what we publish.
   generic functions instantiated with `Never` as their error type) compile into
   the same ABI as functions that don't `raise`.
 
+- Mojo now allows the use of a `comptime(x)` expression to force a subexpression
+  to be evaluated at compile time.  This can help make working with certain
+  types more elegant when you can't (or don't want to) materialize them into a
+  runtime value.  For example, if you just want the size from a compile time
+  layout:
+
+  ```mojo
+  fn takes_layout[a: Layout]():
+    # materializes entire layout value just to get the size out of it
+    print(a.size())
+    # Could already work around this with a comptime declaration, verbosely.
+    comptime a_size = a.size()
+    print(a_size)
+    # Can now tell Mojo to evaluate the expression at comptime.
+    print(comptime(a.size()))
+  ```
+
 - The `deinit` argument convention can now be applied to any argument of a
   struct method, but the argument type still must be of the enclosing struct
   type.
@@ -150,7 +167,37 @@ what we publish.
   methods, i.e. `fn __exit__(var self)` which can be useful for linear context
   managers. This also works with `deinit`.
 
+- Mojo now allows functions that return references to convert to functions that
+  return values if the type is implicitly copyable or implicitly convertible to
+  the destination type:
+
+  ```mojo
+  fn fn_returns_ref(x: SomeType) -> ref [x.field] Int: ...
+  fn examples():
+      # OK, Int result from fn_returns_ref can be implicitly copied.
+      var f1 : fn (x: SomeType) -> Int = fn_returns_ref
+      # OK, Int result from fn_returns_ref implicitly converts to Float64.
+      var f2 : fn (x: SomeType) -> Float64 = fn_returns_ref
+  ```
+
+- Mojo now supports the `...` expression.  It is a logically empty value of
+  `EllipsisType`.  It can be used in overloaded functions (e.g. getitem calls),
+  e.g.:
+
+  ```mojo
+  struct YourType:
+    fn __getitem__(self, idx: Int) -> Int:
+      # ... behavior when passed x[i]
+    fn __getitem__(self, idx: EllipsisType) -> Int:
+      # ... behavior when passed x[...]
+  ```
+
 ### Language changes
+
+- The `*_` and `**_` syntax for explicitly unpacked parameters has been replaced
+  with a simplified `...` syntax.  Instead of `T[4, 5, *_, **_]` you can now use
+  `T[4, 5, ...]`.  The `...` delays binding of both keyword and non-keyword
+  parameters.
 
 - The compiler will now warn on unqualified access to struct parameters, e.g.
 
@@ -168,10 +215,11 @@ what we publish.
 - The Mojo language basic trait hierarchy has changed to expand first-class
   support for linear types (aka. non-implicitly-destructible types).
 
-  The `AnyType` trait no longer requires that a type provide a `__del__()`
-  method that may be called by the compiler implicitly whenver an owned value
-  is unused. Instead, the `ImplicitlyDestructible` trait should be used in
-  generic code to require that a type is implicitly destructible.
+  The `AnyType`, `Movable`, and `Copyable` traits no longer require that a type
+  provide a `__del__()` method that may be called by the compiler implicitly
+  whenever an owned value is unused. Instead, the `ImplicitlyDestructible` trait
+  should be used in generic code to require that a type is implicitly
+  destructible.
 
   Linear types enable Mojo programs to encode powerful invariants in the type
   system, by modeling a type in such a way that a user is required to take an
@@ -184,7 +232,164 @@ what we publish.
   Relatedly, the `UnknownDestructibility` trait is now no longer required, as it
   is equivalent to the new `AnyType` behavior.
 
+- The `__next_ref__` method in for-each loops has been removed.  Now you can
+  implement the `__next__` method of your iterator to return either a value or a
+  reference.  When directly using the collection, Mojo will use the
+  ref-returning variant, but will allow it to conform to `Iterator` for use with
+  generic algorithms (which use a copied value).
+
+- The `origin_of(x)` operator now returns a value of type `Origin` instead of an
+  internal MLIR type, and aliases like `ImmutOrigin` are now `Origin` type as
+  well.
+
+- The `Origin.cast_from[x]` syntax has been replaced with a safe implicit
+  conversion from any origin to an immutable origin (`ImmutOrigin(x)`) and an
+  explicit unsafe conversion (`SomeOrigin(unsafe_cast=x)`).
+
+- Mojo no longer supports overloading functions on parameters alone: it will not
+  try to disambiguate between `fn foo[a: Int8]():` and `fn foo[a: Int32]():` for
+  example.  Mojo never fully implemented the previous support in a reliable way,
+  and removing this simplifies the language.  It still supports overloading on
+  function arguments of course.
+
 ### Library changes
+
+- `PythonObject` now supports implicit conversion from `None`, allowing more
+  natural Python-like code:
+
+  ```mojo
+  var obj: PythonObject = None  # Now works without explicit PythonObject(None)
+
+  fn returns_none() -> PythonObject:
+      return None  # Implicit conversion
+  ```
+
+- The `inlined_assembly` function is now publicly exported from the `sys` module,
+  allowing users to embed raw assembly instructions directly into Mojo code.
+  This provides fine-grained control over hardware operations using LLVM-style
+  inline assembly syntax. Example:
+
+  ```mojo
+  from sys import inlined_assembly
+
+  # Convert bfloat16 to float32 on NVIDIA GPU using PTX assembly.
+  var result = inlined_assembly[
+      "cvt.f32.bf16 $0, $1;",
+      Float32,
+      constraints="=f,h",
+      has_side_effect=False,
+  ](my_bf16_as_int16)
+  ```
+
+- We have removed `Identifiable` from enum-like types
+  (such as `DType` and `AddressSpace`). This change is
+  related to the idea that `Identifiable` is for comparing memory addresses.
+
+- The `Iterator` trait and and for-each loop have removed the `__has_next__`
+  method and now using a `__next__` method that `raises StopIteration`. This
+  follows Python precedent better, is more convenient to implement, and can be a
+  minor performance win in some cases.
+
+- `Variadic` now has `zip_types`, `zip_values`, and `slice_types`.
+
+- The `reflection` module has been moved from `compile.reflection` to a top-level
+  `reflection` module. Update imports from `from compile.reflection import ...`
+  to `from reflection import ...`.
+
+- The `reflection` module now supports compile-time struct field introspection:
+
+  - `struct_field_count[T]()` returns the number of fields
+  - `struct_field_names[T]()` returns an `InlineArray[StaticString, N]` of
+    all field names
+  - `struct_field_types[T]()` returns a variadic of all field types
+  - `struct_field_index_by_name[T, name]()` returns the index of a field by name
+  - `struct_field_type_by_name[T, name]()` returns the type of a field,
+    wrapped in a `ReflectedType` struct
+
+  These APIs work with both concrete types and generic type parameters,
+  enabling generic serialization, comparison, and other reflection-based
+  utilities.
+
+  Example iterating over fields (works with generics):
+
+  ```mojo
+  fn print_fields[T: AnyType]():
+      comptime names = struct_field_names[T]()
+      comptime types = struct_field_types[T]()
+      @parameter
+      for i in range(struct_field_count[T]()):
+          print(names[i], get_type_name[types[i]]())
+
+  fn main():
+      print_fields[Point]()  # Works with any struct!
+  ```
+
+  Example looking up a field by name:
+
+  ```mojo
+  comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
+  comptime field_type = struct_field_type_by_name[Point, "y"]()
+  var value: field_type.T = 3.14  # field_type.T is Float64
+  ```
+
+- Two new magic functions have been added for index-based struct field access:
+
+  - `__struct_field_type_at_index(T, idx)` returns the type of the field at the
+    given index.
+  - `__struct_field_ref(idx, ref s)` returns a reference to the field at the
+    given index.
+
+  Unlike `kgen.struct.extract` which copies the field value, `__struct_field_ref`
+  returns a reference, enabling reflection-based utilities to work with
+  non-copyable types:
+
+  ```mojo
+  struct Container:
+      var id: Int
+      var resource: NonCopyableResource  # Cannot be copied!
+
+  fn inspect(ref c: Container):
+      # Get references to fields without copying
+      ref id_ref = __struct_field_ref(0, c)
+      ref resource_ref = __struct_field_ref(1, c)
+
+      print("id:", id_ref)
+      print("resource:", resource_ref.data)
+
+      # Mutation through reference also works
+      __struct_field_ref(0, c) = 42
+  ```
+
+  The index can be either a literal integer or a parametric index (such as a
+  loop variable in a `@parameter for` loop), enabling generic field iteration:
+
+  ```mojo
+  fn print_all_fields[T: AnyType](ref s: T):
+      comptime names = struct_field_names[T]()
+      @parameter
+      for i in range(struct_field_count[T]()):
+          print(names[i], "=", __struct_field_ref(i, s))
+
+  fn main():
+      var c = Container(42, NonCopyableResource(100))
+      print_all_fields(c)  # Works with any struct!
+  ```
+
+  This enables implementing generic Debug traits and serialization utilities
+  that work with any struct, regardless of whether its fields are copyable.
+
+- The `conforms_to` builtin now accepts types from the reflection APIs like
+  `struct_field_types[T]()`. This enables checking trait conformance on
+  dynamically obtained field types:
+
+  ```mojo
+  @parameter
+  for i in range(struct_field_count[MyStruct]()):
+      comptime field_type = struct_field_types[MyStruct]()[i]
+      @parameter
+      if conforms_to(field_type, Copyable):
+          print("Field", i, "is Copyable")
+  ```
 
 - The `Copyable` trait now refines the `Movable` trait.  This means that structs
   and generic algorithms that already require `Copyable` don't need to also
@@ -206,7 +411,17 @@ what we publish.
   no longer allocates memory.
 
 - `Dict` now raises a custom `DictKeyError` type on failure, making lookup
-  failures more efficient to handle.
+  failures more efficient to handle. The error message now includes the missing
+  key when the key type implements `Writable`:
+
+  ```mojo
+  var d = Dict[String, Int]()
+  var key = "missing_key"
+  try:
+      _ = d[key]
+  except e:
+      print(e)  # Prints: DictKeyError(key=missing_key)
+  ```
 
 - Remove `List` variadic initializer.
 
@@ -295,12 +510,22 @@ what we publish.
   method taking `deinit self` that the programmer will be required to call
   explicitly whenever an owned instance is no longer used.
 
-  The `UnknownDestructibility` trait can be used in parameters to denote
+  The updated `AnyType` trait can be used in parameters to denote
   generic code that supports object instances that cannot be implicitly
   destroyed.
 
-  - `UnsafePointer` and `Pointer` can point to linear types
-  - `Variant` and `VariadicPack` can now contain linear types
+  - `Span`, `UnsafePointer`, `Pointer`, and `OwnedPointer` can point to linear
+    types.
+    - Added `UnsafePointer.destroy_pointee_with()`, for destroying linear types
+      in-place using a destructor function pointer.
+  - `List`, `InlineArray`, `Optional`, `Variant`, `VariadicListMem`, and
+    `VariadicPack` can now contain linear types.
+    - `Variant.take` now takes `deinit self` instead of `mut self`.
+    - Added `Variant.destroy_with` for destroying a linear type in-place with an
+      explicit destructor function.
+    - The `*args` language syntax for arguments now supports linear types.
+  - `Iterator.Element` no longer requires `ImplicitlyDestructible`.
+  - `UnsafeMaybeUninitialized` can now contain linear types.
 
 - Using a new 'unconditional conformances' technique leveraging `conforms_to()`
   and `trait_downcast()` to perform "late" element type conformance checking,
@@ -310,6 +535,8 @@ what we publish.
   - `List` now conforms to `Equatable`, `Writable`, `Stringable`,
     and `Representable`.
   - `Dict` now conforms to `Writable`, `Stringable`, and `Representable`.
+  - `Deque` now conforms to `Writable`, `Stringable`, and `Representable`.
+  - `Iterator` no longer requires its type to be `Copyable`.
 
   - The following types no longer require their elements to be `Copyable`.
     - `Iterator`
@@ -347,6 +574,43 @@ what we publish.
   # note: constraint failed: Conversion flag "invalid" not recognized.
   ```
 
+- `Counter` now conforms to `Writable`, `Stringable`, and `Representable`.
+
+- The `iter.peekable` function has been added. This allows users to peek at
+  the next element of an iterator without advancing it.
+
+- The "LegacyUnsafePointer" type has been changed to take its mutability as a
+  first inferred parameter without a default, rather than a later explicit
+  parameter with a default value of true. We recommend moving off of this type
+  as soon as possible, but to roughly emulate the prior behavior, try out:
+
+  ```mojo
+  from memory import LegacyUnsafePointer
+  comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+  ```
+
+- the `os.process` submodule has been added with utilities to spawn and
+  wait on processes. These use `posix_spawn` and do not go through the
+  system shell.
+
+- `Writer` has been reworked to only support UTF-8 data instead of arbitrary
+  `Byte` sequences. The `write_bytes` method has been replaced with
+  `write_string`.
+
+  - In line with these changes, `String`'s `write_bytes` method has also been
+    deprecated, and its initializer `__init__(out self, *, bytes: Span[Byte])`
+    has had its keyword argument renamed to `unsafe_from_utf8`. This bring it
+    more in line with the existing `StringSlice` constructors and explicitly
+    states that construction from arbitrary bytes is inherently unsafe.
+
+- `String` has had its UTF-8 guarantees strengthened. It now has three separate
+  constructors when converting raw bytes (`Span[Byte]`) to a `String`
+  - `String(from_utf8=...)`: Raises an error if the bytes are invalid UTF-8
+  - `String(from_utf8_lossy=...)`: Converts invalid UTF-8 byte sequences
+    into the `(U+FFFD, �)` replacement character and does not raise an error.
+  - `String(unsafe_from_utf8=...)`: Unsafely assumes the input bytes are valid
+    UTF-8 without any checks.
+
 ### Tooling changes
 
 - The Mojo compiler now "diffs" very long types in error messages to explain
@@ -379,6 +643,10 @@ what we publish.
   that public aliases have properly formatted docstrings (summary ends with
   period, starts with capital letter). Parametric aliases are also checked for
   proper `Parameters:` sections.
+- The Mojo LSP server now debounces document updates to reduce CPU usage during
+  rapid typing. Previously, every keystroke triggered a full document parse;
+  now updates are coalesced with a 150ms delay, reducing parse frequency by
+  10-50x during active editing.
 
 ### Experimental changes
 
@@ -401,7 +669,7 @@ or removed in future releases.
 - Added support for `DType` expressions in `where` clauses:
 
   ```mojo
-  fn foo[dt: DType]() -> Int where dt is DType.int32:
+  fn foo[dt: DType]() -> Int where dt == DType.int32:
       return 42
   ```
 
@@ -425,12 +693,37 @@ or removed in future releases.
 
 ### ❌ Removed
 
+- The DeviceContext `enqueue_function` and `compile_function` have been removed.
+  Please migrate the code to use `enqueue_function_checked` and
+  `compile_function_checked`.
+
+- The `UnsafePointer.offset()` method is now deprecated. Use pointer arithmetic
+  instead:
+
+  ```mojo
+  # Before
+  new_ptr = ptr.offset(n)
+
+  # After
+  new_ptr = ptr + n
+  ```
+
 ### 🛠️ Fixed
 
+- `Codepoint.unsafe_decode_utf8_codepoint()` no longer returns `Codepoint(0)`
+  (NUL) when passed an empty span. Instead, a `debug_assert` now enforces the
+  requirement that the input span be non-empty, consistent with the function's
+  existing safety contract.
+
+- [Issue #5732](https://github.com/modular/modular/issues/5732): Compiler
+  crash when using `get_type_name` with types containing constructor calls in
+  their parameters (like `A[B(True)]`) when extracted via `struct_field_types`.
 - [Issue #1850](https://github.com/modular/modular/issues/1850): Mojo assumes
   string literal at start of a function is a doc comment
 - [Issue #4501](https://github.com/modular/modular/issues/4501): Incorrect
   parsing of incomplete assignment
+- [Issue #4765](https://github.com/modular/modular/issues/4765): Parser
+  accepts pointless var ref a = n binding form
 - [Issue #5578](https://github.com/modular/modular/issues/5578): ownership
   overloading not working when used with `ref`.
 - [Issue #5137](https://github.com/modular/modular/issues/5137): Tail call
@@ -443,3 +736,7 @@ or removed in future releases.
   when should be implicit conversion error.
 - [Issue #5635](https://github.com/modular/modular/issues/5635): `Deque` shrink
   reallocation incorrectly handled empty deque with `capacity > min_capacity`.
+- [Issue #5723](https://github.com/modular/modular/issues/5723): Compiler crash
+  when using `get_type_name` with nested parametric types from `struct_field_types`.
+- [Issue #5731](https://github.com/modular/modular/issues/5731): Compiler crash
+  when using reflection functions on builtin types like `Int`, `NoneType`, or

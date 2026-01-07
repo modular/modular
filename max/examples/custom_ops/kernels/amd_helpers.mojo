@@ -32,7 +32,7 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from memory import Pointer
+from memory import Pointer, LegacyUnsafePointer
 
 from utils.index import IndexList
 
@@ -164,7 +164,7 @@ fn copy_local_to_dram_32_32_8[
                 dst_idx += dst_fragments.runtime_layout(i)
 
             var src_element = Element[index_type = src.linear_idx_type].load(
-                src.ptr.offset(src_idx),
+                src.ptr + src_idx,
                 src.runtime_element_layout,
             )
 
@@ -242,7 +242,7 @@ fn mma[
 ](
     a_tiles: MMATileBuffers[mma_type=MMAType],
     b_tiles: MMATileBuffers[mma_type=MMAType],
-    c_reg_tile: LayoutTensor[mut=True, **_],
+    c_reg_tile: LayoutTensor[mut=True, ...],
 ):
     """
     AMD-style MMA operation wrapper for the AMD_MMA struct.
@@ -567,9 +567,7 @@ fn compare_equal[
     gpu_ctx.enqueue_memset(
         DeviceBuffer[max_relative_error.dtype](
             gpu_ctx,
-            rebind[LegacyUnsafePointer[Scalar[max_relative_error.dtype]]](
-                max_relative_error.ptr
-            ),
+            max_relative_error.ptr,
             m * n,
             owning=False,
         ),

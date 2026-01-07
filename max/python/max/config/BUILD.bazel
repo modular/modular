@@ -6,7 +6,6 @@ modular_py_library(
     name = "config",
     srcs = glob(["**/*.py"]),
     deps = [
-        requirement("cyclopts"),
         requirement("pydantic"),
         requirement("pyyaml"),
     ],

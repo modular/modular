@@ -10,12 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides infrastructure for creating Python bindings to Mojo code.
+
+This module implements the core machinery for exposing Mojo functions and types
+to Python through CPython's C API. It includes builder types for constructing
+Python modules and type objects, wrapper functions for converting between Mojo
+and Python calling conventions, and utilities for argument validation and type
+conversion. This enables seamless bidirectional interoperability between Mojo
+and Python code.
+"""
 
 from sys.ffi import _Global, c_int
 from sys.info import size_of
 
 from builtin._startup import _ensure_current_or_global_runtime_init
-from compile.reflection import get_type_name
+from reflection import get_type_name
 from memory import OpaquePointer, stack_allocation
 from python import Python, PythonObject
 from python._cpython import (
@@ -673,7 +682,7 @@ struct PythonTypeBuilder(Copyable):
         return self
 
     fn def_py_init[
-        T: Movable,
+        T: Movable & ImplicitlyDestructible,
         //,
         init_func: fn (out T, args: PythonObject, kwargs: PythonObject),
     ](mut self) raises -> ref [self] Self:
@@ -699,7 +708,7 @@ struct PythonTypeBuilder(Copyable):
         return self.def_py_init[raising_wrapper[init_func]]()
 
     fn def_py_init[
-        T: Movable,
+        T: Movable & ImplicitlyDestructible,
         //,
         init_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
     ](mut self) raises -> ref [self] Self:
@@ -968,7 +977,7 @@ fn _py_new_function_wrapper[
 
 
 fn _py_init_function_wrapper[
-    T: Movable,
+    T: Movable & ImplicitlyDestructible,
     init_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
 ](
     py_self: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr

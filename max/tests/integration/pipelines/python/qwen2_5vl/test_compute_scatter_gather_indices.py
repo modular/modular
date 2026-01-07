@@ -18,7 +18,7 @@ import copy
 from unittest.mock import Mock
 
 import numpy as np
-from max.interfaces import ImageMetadata
+from max.interfaces import ImageMetadata, TokenBuffer
 from max.pipelines.architectures.qwen2_5vl.context import (
     Qwen2_5VLTextAndVisionContext,
 )
@@ -32,11 +32,12 @@ def test_compute_scatter_gather_indices() -> None:
     # These pixel values are arbitrary
     img0 = np.array([[-1, -2], [-3, -4]])
     img1 = np.array([[-5, -6], [-7, -8]])
+    tokens = np.array(
+        [0, 1, 2, 3, IMG, IMG, IMG, IMG, 8, 9, IMG, IMG, IMG, IMG, IMG, 15]
+    )
     ctx = Qwen2_5VLTextAndVisionContext(
         max_length=50,
-        tokens=np.array(
-            [0, 1, 2, 3, IMG, IMG, IMG, IMG, 8, 9, IMG, IMG, IMG, IMG, IMG, 15]
-        ),
+        tokens=TokenBuffer(tokens),
         images=[
             ImageMetadata(
                 start_idx=4,
@@ -88,7 +89,7 @@ def test_compute_scatter_gather_indices() -> None:
     # ctx0 (start_idx=0), ctx1 (start_idx=8)
     ctx0 = copy.deepcopy(ctx)
     ctx1 = copy.deepcopy(ctx)
-    ctx0.rewind_processing(ctx0.start_idx)
+    ctx0.rewind_processing(ctx0.processed_length)
     scatter_indices, gather_indices = compute_scatter_gather_indices(
         [ctx0, ctx1]
     )

@@ -13,7 +13,6 @@
 """Tests `max.Tensor` basic behaviors."""
 
 import asyncio
-import warnings
 
 import numpy as np
 import pytest
@@ -34,10 +33,9 @@ from max.experimental.tensor import (
 )
 from max.graph import BufferValue, DeviceRef, Graph
 
-DEVICE = Accelerator() if accelerator_count() else CPU()
-
 
 def test_tensor_basic() -> None:
+    DEVICE = Accelerator() if accelerator_count() else CPU()
     expected_type = TensorType(
         DType.float32, [5, 5], DeviceRef.from_device(DEVICE)
     )
@@ -46,6 +44,22 @@ def test_tensor_basic() -> None:
     assert a.type == expected_type
     assert a.driver_tensor.to(CPU())[0, 0].item() == 0.0
     b = a + 1
+    assert isinstance(b, Tensor)
+    assert b.type == a.type == expected_type
+    assert b.driver_tensor.to(CPU())[0, 0].item() == 1.0
+
+
+def test_tensor_basic_lazy() -> None:
+    DEVICE = Accelerator() if accelerator_count() else CPU()
+    expected_type = TensorType(
+        DType.float32, [5, 5], DeviceRef.from_device(DEVICE)
+    )
+    a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
+    a = Tensor(storage=a_data)
+    assert a.type == expected_type
+    assert a.driver_tensor.to(CPU())[0, 0].item() == 0.0
+    with F.lazy():
+        b = a + 1
     assert isinstance(b, Tensor)
     assert not b.real
     assert b.type == a.type == expected_type
@@ -56,6 +70,7 @@ def test_tensor_basic() -> None:
 
 
 def test_tensor_with_intermediate() -> None:
+    DEVICE = Accelerator() if accelerator_count() else CPU()
     expected_type = TensorType(
         DType.float32, [5, 5], DeviceRef.from_device(DEVICE)
     )
@@ -64,6 +79,22 @@ def test_tensor_with_intermediate() -> None:
     assert a.type == expected_type
     assert a.driver_tensor.to(CPU())[0, 0].item() == 0.0
     b = a + a + 1
+    assert isinstance(b, Tensor)
+    assert b.type == a.type == expected_type
+    assert b.driver_tensor.to(CPU())[0, 0].item() == 1.0
+
+
+def test_tensor_with_intermediate_lazy() -> None:
+    DEVICE = Accelerator() if accelerator_count() else CPU()
+    expected_type = TensorType(
+        DType.float32, [5, 5], DeviceRef.from_device(DEVICE)
+    )
+    a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
+    a = Tensor(storage=a_data)
+    assert a.type == expected_type
+    assert a.driver_tensor.to(CPU())[0, 0].item() == 0.0
+    with F.lazy():
+        b = a + a + 1
     assert isinstance(b, Tensor)
     assert not b.real
     assert b.type == a.type == expected_type
@@ -77,17 +108,17 @@ def test_compilation_failure() -> None:
     a_data = DriverTensor.zeros([5, 5], DType.float8_e4m3fn, CPU())
     b_data = DriverTensor.zeros([5, 5], DType.float32, CPU())
     a = Tensor(storage=a_data)
-    a_plus_1 = a + 1
-    assert isinstance(a_plus_1, Tensor)
+
+    with F.lazy():
+        # Adding fp8 on cpu is unsupported
+        fails_compilation = a + 1
 
     with pytest.raises(Exception):
-        asyncio.run(a_plus_1.realize)
+        asyncio.run(fails_compilation.realize)
 
-    del a, a_plus_1
-
+    # Test that new tensor ops can still execucte
     b = Tensor(storage=b_data)
     c = b + 1
-    asyncio.run(c.realize)
     assert c.real
 
 
@@ -101,10 +132,10 @@ def test_tensor_dlpack() -> None:
     assert list(npt.shape) == t.shape
 
 
-def test_tensor_eager_dlpack() -> None:
+def test_tensor_lazy_dlpack() -> None:
     expected_type = TensorType(DType.float32, [5, 5], DeviceRef.CPU())
-    t = random.normal_like(expected_type)
-    assert not t.real
+    with F.lazy():
+        t = random.normal_like(expected_type)
     npt = np.from_dlpack(t)
     assert npt.dtype == t.dtype.to_numpy()
     assert list(npt.shape) == t.shape
@@ -121,17 +152,6 @@ def test_tensor_from_dlpack() -> None:
 def test_functional_in_graph() -> None:
     with Graph("test_functional") as graph:
         graph.output(F.constant(1, dtype=DType.float32, device=DeviceRef.CPU()))
-
-
-def test_tensor_warns_on_sync() -> None:
-    async def coro():  # noqa: ANN202
-        t = Tensor.constant(1, dtype=DType.float32, device=CPU())
-        return t.item()
-
-    with warnings.catch_warnings(record=True) as warns:
-        asyncio.run(coro())
-
-    assert warns
 
 
 def test_constant_default_dtype() -> None:
@@ -174,34 +194,49 @@ def test_constant_default_device_context() -> None:
 
 
 def test_realized_tensor_as_buffer() -> None:
+    DEVICE = Accelerator() if accelerator_count() else CPU()
+    a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
+    a = Tensor(storage=a_data)
+    b = Tensor.ones_like(a.type)
+    F.buffer_store(a, b)
+    assert a.real
+
+
+def test_realized_tensor_as_buffer_lazy() -> None:
+    DEVICE = Accelerator() if accelerator_count() else CPU()
     a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
     a = Tensor(storage=a_data)
     assert a.real
-    b = Tensor.ones_like(a.type)
-    F.buffer_store(a, b)
+    with F.lazy():
+        b = Tensor.ones_like(a.type)
+        # Woof. `a` is a `Tensor`, not a `LazyTensor`. What does this do?
+        F.buffer_store(a, b)
     assert not a.real
     asyncio.run(a.realize)
     assert a.real
 
 
 def test_unrealized_value_as_buffer() -> None:
-    a = Tensor.zeros([5, 5])
-    b = Tensor.ones_like(a.type)
-    assert not a.real
-    F.buffer_store(a, b)
-    assert not a.real
+    with F.lazy():
+        a = Tensor.zeros([5, 5])
+        b = Tensor.ones_like(a.type)
+        assert not a.real
+        F.buffer_store(a, b)
+        assert not a.real
     asyncio.run(a.realize)
     assert a.real
 
 
 def test_buffervalue_on_realized_tensor() -> None:
+    DEVICE = Accelerator() if accelerator_count() else CPU()
     a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
     a = Tensor(storage=a_data)
     assert a.real
-    _ = BufferValue(a)
-    # Don't know whether the value was thrown away or used
-    # in a mutating op!
-    assert not a.real
+    with F.lazy():
+        _ = BufferValue(a)
+        # Don't know whether the value was thrown away or used
+        # in a mutating op!
+        assert not a.real
     asyncio.run(a.realize)
     assert a.real
 
@@ -212,6 +247,19 @@ def test_mutation_op_order() -> None:
     c = a + b
     F.buffer_store(a, b)
     d = a + b
+    assert a.item() == 1.0
+    assert b.item() == 1.0
+    assert c.item() == 1.0
+    assert d.item() == 2.0
+
+
+def test_mutation_op_order_lazy() -> None:
+    with F.lazy():
+        a = Tensor.zeros([1])
+        b = Tensor.ones_like(a.type)
+        c = a + b
+        F.buffer_store(a, b)
+        d = a + b
     asyncio.run(c.realize)
     asyncio.run(d.realize)
     assert a.item() == 1.0

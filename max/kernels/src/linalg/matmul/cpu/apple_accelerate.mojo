@@ -13,7 +13,7 @@
 
 from collections import OptionalReg
 from math import fma
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import alloc
 from os import abort
 from sys import CompilationTarget, simd_width_of
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
@@ -46,12 +46,12 @@ comptime cblas_gemm_type = fn (
     Int32,
     Int32,
     Float32,
-    UnsafePointer[Float32],
+    UnsafePointer[Float32, ImmutAnyOrigin],
     Int32,
-    UnsafePointer[Float32],
+    UnsafePointer[Float32, ImmutAnyOrigin],
     Int32,
     Float32,
-    UnsafePointer[Float32],
+    UnsafePointer[Float32, MutAnyOrigin],
     Int32,
 ) -> None
 
@@ -139,7 +139,7 @@ fn use_apple_accelerate_lib[
 ]() -> Bool:
     return (
         CompilationTarget.is_macos()
-        and a_type == b_type == c_type is DType.float32
+        and a_type == b_type == c_type == DType.float32
     )
 
 
@@ -175,9 +175,9 @@ fn _cblas_f32[
     ldc: Int32,
     alpha: Float32,
     beta: Float32,
-    c_ptr: UnsafePointer[Float32, **_],
-    a_ptr: UnsafePointer[Float32, **_],
-    b_ptr: UnsafePointer[Float32, **_],
+    c_ptr: UnsafePointer[mut=True, Float32, ...],
+    a_ptr: UnsafePointer[Float32, ...],
+    b_ptr: UnsafePointer[Float32, ...],
 ):
     cblas_gemm_fn(
         _CBLASOrder.ROW_MAJOR,
@@ -187,12 +187,12 @@ fn _cblas_f32[
         n,
         k,
         alpha,
-        rebind[UnsafePointer[Float32]](a_ptr),
+        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](a_ptr),
         lda,
-        rebind[UnsafePointer[Float32]](b_ptr),
+        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](b_ptr),
         ldb,
         beta,
-        rebind[UnsafePointer[Float32]](c_ptr),
+        rebind[UnsafePointer[Float32, MutAnyOrigin]](c_ptr),
         ldc,
     )
 
@@ -212,9 +212,9 @@ fn _cblas_f32[
     ldc: Int32,
     alpha: Float32,
     beta: Float32,
-    c_ptr: UnsafePointer[Float32, **_],
-    a_ptr: UnsafePointer[Float32, **_],
-    b_ptr: UnsafePointer[Float32, **_],
+    c_ptr: UnsafePointer[mut=True, Float32, ...],
+    a_ptr: UnsafePointer[Float32, ...],
+    b_ptr: UnsafePointer[Float32, ...],
 ) raises:
     var cblas_gemm = get_cblas_f32_function()
 
@@ -261,14 +261,14 @@ fn apple_gemv[
     var N = b.dim[0]() if transpose_b or b_packed else b.dim[1]()
 
     var transposed_b = NDBuffer[b.type, 2, MutAnyOrigin]()
-    var transposed_b_ptr = UnsafePointer[Scalar[b.type]]()
+    var transposed_b_ptr = UnsafePointer[Scalar[b.type], MutOrigin.external]()
 
     # If both b_packed and transpose_b are False, we need to transpose B at
     # runtime (which is suboptimal, but enables faster gemv below).
     @parameter
     if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(b.dim[1](), b.dim[0]())
-        transposed_b_ptr = UnsafePointer[Scalar[b.type]].alloc(b.num_elements())
+        transposed_b_ptr = alloc[Scalar[b.type]](b.num_elements())
         transposed_b = NDBuffer[b.type, 2](transposed_b_ptr, transposed_b_shape)
 
         pack_b_ndbuffer[
@@ -353,9 +353,14 @@ fn apple_matmul[
     *,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
-](cblas_gemm_fn: cblas_gemm_type, c: NDBuffer, a: NDBuffer, b: NDBuffer) raises:
+](
+    cblas_gemm_fn: cblas_gemm_type,
+    c: NDBuffer[mut=True, ...],
+    a: NDBuffer,
+    b: NDBuffer,
+) raises:
     @parameter
-    if a.type == b.type == c.type is DType.float32:
+    if a.type == b.type == c.type == DType.float32:
         var m = Int32(a.dim[0]())
         var n = Int32(b.dim[0]() if transpose_b else b.dim[1]())
         var k = Int32(a.dim[1]())
@@ -377,15 +382,21 @@ fn apple_matmul[
             ldc,
             alpha,
             beta,
-            rebind[UnsafePointer[Float32, address_space = c.address_space]](
-                c.data
-            ),
-            rebind[UnsafePointer[Float32, address_space = a.address_space]](
-                a.data
-            ),
-            rebind[UnsafePointer[Float32, address_space = b.address_space]](
-                b.data
-            ),
+            rebind[
+                LegacyUnsafePointer[
+                    mut=True, Float32, address_space = c.address_space
+                ]
+            ](c.data),
+            rebind[
+                LegacyUnsafePointer[
+                    mut=True, Float32, address_space = a.address_space
+                ]
+            ](a.data),
+            rebind[
+                LegacyUnsafePointer[
+                    mut=True, Float32, address_space = b.address_space
+                ]
+            ](b.data),
         )
 
         @parameter
@@ -416,9 +427,9 @@ fn apple_matmul[
     *,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
-](c: NDBuffer, a: NDBuffer, b: NDBuffer) raises:
+](c: NDBuffer[mut=True, ...], a: NDBuffer, b: NDBuffer) raises:
     @parameter
-    if a.type == b.type == c.type is DType.float32:
+    if a.type == b.type == c.type == DType.float32:
         var cblas_gemm = get_cblas_f32_function()
 
         apple_matmul[
@@ -442,7 +453,7 @@ fn apple_batched_matmul[
     elementwise_epilogue_fn: OptionalReg[
         batched_matmul_elementwise_epilogue_type
     ] = None,
-](c: NDBuffer, a: NDBuffer, b: NDBuffer) raises:
+](c: NDBuffer[mut=True, ...], a: NDBuffer, b: NDBuffer) raises:
     var c3 = _reshape_nd_buffer_with_batch_to_3d(c)
     var a3 = _reshape_nd_buffer_with_batch_to_3d(a)
     var b3 = _reshape_nd_buffer_with_batch_to_3d(b)

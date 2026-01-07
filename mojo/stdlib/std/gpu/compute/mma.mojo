@@ -130,7 +130,7 @@ fn _dtype_to_nvvm_type[
     out_type: DType, in_type: DType = out_type
 ]() -> __mlir_type.`!kgen.deferred`:
     @parameter
-    if out_type is DType.float16 or out_type is DType.uint32:
+    if out_type == DType.float16 or out_type == DType.uint32:
         # Special case when input types are integers, the result has to be integer too.
         if in_type != out_type and in_type.is_integral():
             return __mlir_attr.`si32`
@@ -143,20 +143,20 @@ fn _dtype_to_nvvm_wgmma_type[
     out_type: DType, in_type: DType = out_type
 ]() -> __mlir_type.`!kgen.deferred`:
     @parameter
-    if out_type is DType.float8_e4m3fn:
+    if out_type == DType.float8_e4m3fn:
         return __mlir_attr[`#nvvm.wgmma_type<e4m3>`]
-    elif out_type is DType.float8_e5m2:
+    elif out_type == DType.float8_e5m2:
         return __mlir_attr[`#nvvm.wgmma_type<e5m2>`]
-    elif out_type is DType.float16 or out_type is DType.uint32:
+    elif out_type == DType.float16 or out_type == DType.uint32:
         # Special case when input types are integers, the result has to be integer too.
         if in_type != out_type and in_type.is_integral():
             return __mlir_attr[`#nvvm.wgmma_type<s32>`]
         return __mlir_attr[`#nvvm.wgmma_type<f16>`]
-    elif out_type is DType.int8:
+    elif out_type == DType.int8:
         return __mlir_attr[`#nvvm.wgmma_type<s8>`]
-    elif out_type is DType.uint8:
+    elif out_type == DType.uint8:
         return __mlir_attr[`#nvvm.wgmma_type<u8>`]
-    elif out_type is DType.float32:
+    elif out_type == DType.float32:
         return __mlir_attr[`#nvvm.wgmma_type<tf32>`]
     else:
         return __mlir_deferred_attr[
@@ -246,7 +246,7 @@ fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 @always_inline
 fn ld_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
-](ptr: UnsafePointer[mut=False, Scalar[dtype], **_]) -> SIMD[dtype, simd_width]:
+](ptr: UnsafePointer[mut=False, Scalar[dtype], ...]) -> SIMD[dtype, simd_width]:
     """Loads a matrix from shared memory into registers in a format suitable for tensor core operations.
 
     This function performs a warp-synchronized load from shared memory to registers, formatting the data
@@ -517,7 +517,8 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
     ](
         smem_ptr: UnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED, **_,
+            address_space = AddressSpace.SHARED,
+            ...,
         ],
     ) -> Self:
         """Create a descriptor for shared memory operand.
@@ -725,7 +726,7 @@ fn wgmma_async[
     comptime layout_a_value = _get_kgen_string[layout_a]()
     comptime layout_b_value = _get_kgen_string[layout_b]()
 
-    comptime type_d_value = __mlir_attr.`#nvvm.wgmma_type<f32>` if c_dtype is DType.float32 else _dtype_to_nvvm_wgmma_type[
+    comptime type_d_value = __mlir_attr.`#nvvm.wgmma_type<f32>` if c_dtype == DType.float32 else _dtype_to_nvvm_wgmma_type[
         c_dtype, a_type
     ]()
 
@@ -852,7 +853,7 @@ fn wgmma_async[
 
     comptime layout_a_value = _get_kgen_string[layout_a]()
     comptime layout_b_value = _get_kgen_string[layout_b]()
-    comptime type_d_value = __mlir_attr.`#nvvm.wgmma_type<f32>` if c_dtype is DType.float32 else _dtype_to_nvvm_wgmma_type[
+    comptime type_d_value = __mlir_attr.`#nvvm.wgmma_type<f32>` if c_dtype == DType.float32 else _dtype_to_nvvm_wgmma_type[
         c_dtype, a_type
     ]()
 
@@ -962,13 +963,13 @@ fn wgmma_async[
     # for now, limited support
     __comptime_assert m == 64
     __comptime_assert k == 16
-    __comptime_assert a_type is DType.bfloat16
-    __comptime_assert b_type is DType.bfloat16
-    __comptime_assert accum_type is DType.float32
-    __comptime_assert c_dtype is DType.float32
+    __comptime_assert a_type == DType.bfloat16
+    __comptime_assert b_type == DType.bfloat16
+    __comptime_assert accum_type == DType.float32
+    __comptime_assert c_dtype == DType.float32
     __comptime_assert layout_a == "row"
     __comptime_assert layout_b == "col" or (
-        layout_b == "row" and b_type is DType.bfloat16
+        layout_b == "row" and b_type == DType.bfloat16
     )
 
     var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
@@ -980,8 +981,8 @@ fn wgmma_async[
     if (
         m == 64
         and k == 16
-        and a_type == b_type is DType.bfloat16
-        and accum_type == c_dtype is DType.float32
+        and a_type == b_type == DType.bfloat16
+        and accum_type == c_dtype == DType.float32
     ):
         var a0 = bitcast[DType.uint32, 1](
             SIMD[DType.bfloat16, 2](

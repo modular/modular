@@ -23,7 +23,7 @@ from os.atomic import Atomic, Consistency, fence
 from sys.info import size_of
 
 
-struct _ArcPointerInner[T: Movable]:
+struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
     var refcount: Atomic[DType.uint64]
     var payload: Self.T
 
@@ -64,7 +64,9 @@ struct _ArcPointerInner[T: Movable]:
 
 
 @register_passable
-struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable):
+struct ArcPointer[T: Movable & ImplicitlyDestructible](
+    Identifiable, ImplicitlyCopyable
+):
     """Atomic reference-counted pointer.
 
     This smart pointer owns an instance of `T` indirectly managed on the heap.
@@ -184,7 +186,7 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable):
     # correctly.
     fn __getitem__[
         self_life: ImmutOrigin
-    ](ref [self_life]self) -> ref [MutOrigin.cast_from[self_life]] Self.T:
+    ](ref [self_life]self) -> ref [MutOrigin(unsafe_cast=self_life)] Self.T:
         """Returns a mutable reference to the managed value.
 
         Parameters:
@@ -197,7 +199,7 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable):
 
     fn unsafe_ptr[
         mut: Bool,
-        origin: Origin[mut],
+        origin: Origin[mut=mut],
         //,
     ](ref [origin]self) -> UnsafePointer[Self.T, origin]:
         """Retrieves a pointer to the underlying memory.

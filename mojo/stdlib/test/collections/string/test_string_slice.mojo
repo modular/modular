@@ -14,7 +14,7 @@
 from collections.string.string_slice import _to_string_list, get_static_string
 from sys.info import size_of
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, assert_raises
 from testing import TestSuite
 
 # ===----------------------------------------------------------------------=== #
@@ -548,9 +548,9 @@ def test_split():
         "\x1c",
         "\x1d",
         "\x1e",
-        String(bytes=next_line),
-        String(bytes=unicode_line_sep),
-        String(bytes=unicode_paragraph_sep),
+        String(unsafe_from_utf8=next_line),
+        String(unsafe_from_utf8=unicode_line_sep),
+        String(unsafe_from_utf8=unicode_paragraph_sep),
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
     assert_equal(StringSlice(s).split(), [StaticString("hello"), "world"])
@@ -654,9 +654,13 @@ def test_splitlines():
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = String(bytes=Span[Byte]([0xC2, 0x85]))
-    var unicode_line_sep = String(bytes=Span[Byte]([0xE2, 0x80, 0xA8]))
-    var unicode_paragraph_sep = String(bytes=Span[Byte]([0xE2, 0x80, 0xA9]))
+    var next_line = String(unsafe_from_utf8=Span[Byte]([0xC2, 0x85]))
+    var unicode_line_sep = String(
+        unsafe_from_utf8=Span[Byte]([0xE2, 0x80, 0xA8])
+    )
+    var unicode_paragraph_sep = String(
+        unsafe_from_utf8=Span[Byte]([0xE2, 0x80, 0xA9])
+    )
 
     for ref u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
         item = StaticString("").join(
@@ -901,7 +905,8 @@ def test_chars_iter():
     var s0 = StringSlice("")
     var s0_iter = s0.codepoints()
 
-    assert_false(s0_iter.__has_next__())
+    with assert_raises():
+        _ = s0_iter.__next__()  # raises StopIteration
     assert_true(s0_iter.peek_next() is None)
     assert_true(s0_iter.next() is None)
 
@@ -924,7 +929,8 @@ def test_chars_iter():
     assert_equal(iter.__next__(), Codepoint.ord("a"))
     # U+0301 Combining Acute Accent
     assert_equal(iter.__next__().to_u32(), 0x0301)
-    assert_equal(iter.__has_next__(), False)
+    with assert_raises():
+        _ = iter.__next__()  # raises StopIteration
 
     # A piece of text containing, 1-byte, 2-byte, 3-byte, and 4-byte codepoint
     # sequences.
@@ -936,7 +942,6 @@ def test_chars_iter():
     # Iterator __len__ returns length in codepoints, not bytes.
     assert_equal(s3_iter.__len__(), 5)
     assert_equal(s3_iter._slice.byte_length(), 13)
-    assert_equal(s3_iter.__has_next__(), True)
     assert_equal(s3_iter.__next__(), Codepoint.ord("߷"))
 
     assert_equal(s3_iter.__len__(), 4)
@@ -955,12 +960,12 @@ def test_chars_iter():
 
     assert_equal(s3_iter.__len__(), 1)
     assert_equal(s3_iter._slice.byte_length(), 1)
-    assert_equal(s3_iter.__has_next__(), True)
     assert_equal(s3_iter.__next__(), Codepoint.ord("!"))
 
     assert_equal(s3_iter.__len__(), 0)
     assert_equal(s3_iter._slice.byte_length(), 0)
-    assert_equal(s3_iter.__has_next__(), False)
+    with assert_raises():
+        _ = s3_iter.__next__()  # raises StopIteration
 
 
 def test_string_slice_from_pointer():

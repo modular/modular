@@ -16,7 +16,9 @@ from random import rand
 from gpu import block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext
 from gpu.semaphore import Semaphore
-from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
+from memory import LegacyUnsafePointer, memset_zero
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 
@@ -31,7 +33,7 @@ fn semaphore_vector_reduce[
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
-    var sema = Semaphore(locks.offset(0), Int(tid))
+    var sema = Semaphore(locks, Int(tid))
 
     sema.fetch()
     # for each block the partition id is the same as block_idx
@@ -113,7 +115,7 @@ fn semaphore_matrix_reduce[
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
-    var sema = Semaphore(locks.offset(0), Int(tid))
+    var sema = Semaphore(locks, Int(tid))
 
     sema.fetch()
 

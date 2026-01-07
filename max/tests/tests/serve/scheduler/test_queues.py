@@ -24,6 +24,7 @@ from max.interfaces import (
     ImageMetadata,
     RequestID,
     SharedMemoryArray,
+    TokenBuffer,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -98,7 +99,7 @@ def test_serialization_and_deserialization_through_queue_with_msgpack() -> None:
         TextContext(
             request_id=RequestID(),
             max_length=15,
-            tokens=np.ones(5, dtype=np.int32),
+            tokens=TokenBuffer(np.ones(5, dtype=np.int64)),
         ),
     )
 
@@ -124,7 +125,7 @@ def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
     context = TextAndVisionContext(
         request_id=RequestID("test-request"),
         max_length=50,
-        tokens=np.array([0, 1, 22, 22, 4]),
+        tokens=TokenBuffer(np.array([0, 1, 22, 22, 4], dtype=np.int64)),
         images=[ImageMetadata(start_idx=2, end_idx=4, pixel_values=img)],
         vision_token_ids=[22],
     )
@@ -167,7 +168,7 @@ def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
     context2 = TextAndVisionContext(
         request_id=RequestID("test-request-2"),
         max_length=50,
-        tokens=np.array([0, 1, 22, 22, 4]),
+        tokens=TokenBuffer(np.array([0, 1, 22, 22, 4], dtype=np.int64)),
         images=[ImageMetadata(start_idx=2, end_idx=4, pixel_values=img)],
         vision_token_ids=[22],
     )
@@ -199,7 +200,9 @@ def test_zmq_push_pull_queue_with_complex_data() -> None:
     """Test queue with complex data structures using pickle serialization."""
 
     context = TextContext(
-        request_id=RequestID(), max_length=15, tokens=np.array([1, 1, 1, 1, 1])
+        request_id=RequestID(),
+        max_length=15,
+        tokens=TokenBuffer(np.array([1, 1, 1, 1, 1], dtype=np.int64)),
     )
     test_data = ("test_id", context)
 
@@ -218,7 +221,9 @@ def test_zmq_push_pull_queue_with_complex_data() -> None:
 def test_zmq_push_pull_queue_with_custom_serialization() -> None:
     """Test queue with custom msgpack serialization."""
     context = TextContext(
-        request_id=RequestID(), max_length=10, tokens=np.array([1, 2, 3, 4, 5])
+        request_id=RequestID(),
+        max_length=10,
+        tokens=TokenBuffer(np.array([1, 2, 3, 4, 5], dtype=np.int64)),
     )
     test_data = (context.request_id, context)
 
@@ -320,7 +325,7 @@ def test_zmq_push_pull_queue_with_vision_context() -> None:
     context = TextAndVisionContext(
         request_id=RequestID("test-vision-request"),
         max_length=50,
-        tokens=np.array([0, 1, 22, 22, 4]),
+        tokens=TokenBuffer(np.array([0, 1, 22, 22, 4], dtype=np.int64)),
         images=[ImageMetadata(start_idx=2, end_idx=4, pixel_values=img)],
         vision_token_ids=[22],
     )
@@ -337,7 +342,7 @@ def test_zmq_push_pull_queue_with_vision_context() -> None:
 
     assert result[0] == test_data[0]
     assert result[1].request_id == test_data[1].request_id
-    assert np.array_equal(result[1].tokens, test_data[1].tokens)
+    assert np.array_equal(result[1].tokens.array, test_data[1].tokens.array)
     assert np.allclose(
         result[1].images[0].pixel_values, test_data[1].images[0].pixel_values
     )
@@ -363,7 +368,7 @@ def test_shared_memory_default_threshold_usage() -> None:
     context = TextAndVisionContext(
         request_id=RequestID("array-test"),
         max_length=50,
-        tokens=np.array([0, 1, 22, 22, 4]),
+        tokens=TokenBuffer(np.array([0, 1, 22, 22, 4], dtype=np.int64)),
         images=[ImageMetadata(start_idx=2, end_idx=4, pixel_values=img)],
         vision_token_ids=[22],
     )
@@ -381,7 +386,7 @@ def test_shared_memory_default_threshold_usage() -> None:
     # Verify both arrays are correctly transmitted
     assert result[0] == test_data[0]
     assert result[1].request_id == test_data[1].request_id
-    assert np.array_equal(result[1].tokens, test_data[1].tokens)
+    assert np.array_equal(result[1].tokens.array, test_data[1].tokens.array)
     assert np.allclose(
         result[1].images[0].pixel_values, test_data[1].images[0].pixel_values
     )

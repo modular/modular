@@ -171,7 +171,7 @@ fn _flush(file: FileDescriptor = stdout):
 
 fn _printf_cpu[
     fmt: StaticString, *types: AnyType
-](args: VariadicPack[_, _, AnyType, *types], file: FileDescriptor = stdout):
+](args: VariadicPack[_, AnyType, *types], file: FileDescriptor = stdout):
     # The argument pack will contain references for each value in the pack,
     # but we want to pass their values directly into the C printf call. Load
     # all the members of the pack.
@@ -363,6 +363,27 @@ fn print[
     """Prints elements to the text stream. Each element is separated by `sep`
     and followed by `end`.
 
+    This function accepts any number of values, but their types must implement
+    the [`Writable`](/mojo/std/io/write/Writable) trait. Most built-in types
+    (like `Int`, `Float64`, `Bool`, `String`) implement both
+    [`Stringable`](/mojo/std/builtin/str/Stringable/) and
+    [`Writable`](/mojo/std/io/write/Writable) traits. If a type only
+    implements `Stringable`, it can still be printed by first converting it to
+    `String`.
+
+    For string formatting, use the
+    [`format()`](/mojo/std/collections/string/string/String#format) function.
+
+    Examples:
+
+    ```mojo
+    print("Hello, World!")                   # Hello, World!
+
+    print("The answer is", 42)               # The answer is 42
+
+    print("{} is {}".format("Mojo", "🔥"))   # Mojo is 🔥
+    ```
+
     Parameters:
         Ts: The elements types.
 
@@ -404,14 +425,14 @@ fn print[
             end.write_to(buffer)
             buffer.nul_terminate()
 
-            var span = buffer.as_span()
+            var slice = buffer.as_string_slice()
 
             @parameter
             if is_nvidia_gpu():
-                _printf["%s"](span.unsafe_ptr())
+                _printf["%s"](slice.unsafe_ptr())
             elif is_amd_gpu():
                 var msg = printf_begin()
-                _ = printf_append_string_n(msg, span, is_last=True)
+                _ = printf_append_string_n(msg, slice.as_bytes(), is_last=True)
             else:
                 return CompilationTarget.unsupported_target_error[
                     operation = __get_current_function_name()

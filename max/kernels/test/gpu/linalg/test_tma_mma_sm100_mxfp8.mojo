@@ -40,7 +40,9 @@ from math import ceildiv
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
 from internal_utils._utils import ValOrDim, dynamic, static
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal, random, fill, zero
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
@@ -107,7 +109,7 @@ fn block_scaled_mxfp8_kernel[
 ):
     __comptime_assert num_threads == 256
     __comptime_assert (
-        a_type == b_type and a_type is DType.float8_e4m3fn
+        a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     comptime BM = block_tile_shape[0]
@@ -510,7 +512,7 @@ fn sm100_block_scaled_mxfp8[
     __comptime_assert transpose_b, "Only support transposed B"
 
     __comptime_assert (
-        a_type == b_type and a_type is DType.float8_e4m3fn
+        a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     var M = c.dim(0)

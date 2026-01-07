@@ -11,6 +11,8 @@ load("//bazel/internal:modular_py_library.bzl", _modular_py_library = "modular_p
 load("//bazel/internal:modular_py_test.bzl", _modular_py_test = "modular_py_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_venv.bzl", _modular_py_venv = "modular_py_venv")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_run_binary_test.bzl", _modular_run_binary_test = "modular_run_binary_test")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_sphinx_docs.bzl", _modular_sphinx_docs = "modular_sphinx_docs")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_versioned_expand_template.bzl", _modular_versioned_expand_template = "modular_versioned_expand_template")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_binary.bzl", _mojo_binary = "mojo_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_library.bzl", _mojo_library = "mojo_library")  # buildifier: disable=bzl-visibility
@@ -25,16 +27,34 @@ modular_multi_py_version_test = _modular_multi_py_version_test
 modular_py_binary = _modular_py_binary
 modular_py_library = _modular_py_library
 modular_py_venv = _modular_py_venv
+modular_run_binary_test = _modular_run_binary_test
+modular_versioned_expand_template = _modular_versioned_expand_template
 mojo_binary = _mojo_binary
 mojo_library = _mojo_library
 mojo_test = _mojo_test
 mojo_filecheck_test = _mojo_filecheck_test
+modular_sphinx_docs = _modular_sphinx_docs
 mojo_test_environment = _mojo_test_environment
 pkg_files = _pkg_files
 pkg_filegroup = _pkg_filegroup
 py_repl = _py_repl
 requirement = _requirement
 strip_prefix = _strip_prefix
+
+def has_resource_tag(tags):
+    for tag in tags:
+        if tag.startswith("resources:"):
+            return True
+    return False
+
+# buildifier: disable=function-docstring
+def modular_py_test(tags = [], **kwargs):
+    if "external-exclusive" in tags:
+        tags.append("exclusive")
+    if not has_resource_tag(tags):
+        # Default to 2 GB of memory
+        tags = tags + ["resources:memory:2000"]  # 2 GB
+    _modular_py_test(tags = tags, **kwargs)
 
 def modular_cc_binary(deps = [], **kwargs):
     # TODO: This will break in the presence of select()s
@@ -44,19 +64,12 @@ def modular_cc_binary(deps = [], **kwargs):
         **kwargs
     )
 
-def modular_py_test(external_noop = False, **kwargs):
-    if not external_noop:
-        _modular_py_test(**kwargs)
-
-def modular_run_binary_test(external_noop = False, **kwargs):
-    if not external_noop:
-        _modular_run_binary_test(**kwargs)
-
-def modular_generate_stubfiles(name, pyi_srcs, deps = [], **_kwargs):
+def modular_generate_stubfiles(name, pyi_srcs, deps = [], tags = [], **_kwargs):
     modular_py_library(
         name = name,
         pyi_srcs = pyi_srcs,
         deps = deps + ["@modular_wheel//:wheel"],
+        tags = tags + ["no-pydeps"],  # Pydeps works internally but not externally
     )
 
 # buildifier: disable=function-docstring

@@ -2,14 +2,16 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_library(
     name = "shared_conv_impl",
     testonly = True,
     srcs = ["shared_conv_impl.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/engine",
         "//max/python/max/nn",
@@ -22,6 +24,7 @@ modular_py_library(
     name = "shared_mlp_impl",
     testonly = True,
     srcs = ["shared_mlp_impl.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/engine",
         "//max/python/max/nn",
@@ -33,41 +36,56 @@ modular_py_library(
     ],
 )
 
-modular_py_test(
-    name = "nn_tests",
-    size = "large",
-    srcs = glob(
+[
+    modular_py_test(
+        name = src.split(".")[0],
+        size = "large",
+        srcs = [
+            src,
+            "conftest.py",
+        ],
+        args = [
+            "-n",
+            "auto",
+        ],
+        imports = ["."],
+        tags = [
+            "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
+        ] + (["resources:memory:40000"] if src == "test_mlp.py" else []),  # 40 GB
+        target_compatible_with = select({
+            "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+            "//:asan": ["@platforms//:incompatible"],  # Too slow with ASAN
+            "//conditions:default": [],
+        }),
+        deps = [
+            ":shared_conv_impl",
+            ":shared_mlp_impl",
+            "//max/python/max/engine",
+            "//max/python/max/nn",
+            "//max/python/max/nn/hooks",
+            "//max/python/max/pipelines",
+            "//max/python/max/serve",
+            "//max/tests/integration/API/python/graph:modular_graph_test",
+            "//max/tests/integration/pipelines/python/test_common",
+            requirement("torch"),
+            requirement("transformers"),
+            requirement("hypothesis"),
+            requirement("gguf"),
+            requirement("pytest-mock"),
+            requirement("pytest-asyncio"),
+            requirement("pytest-xdist"),
+        ],
+    )
+    for src in glob(
         ["*.py"],
         exclude = [
+            "conftest.py",
             "*_gpu.py",
             "shared_conv_impl.py",
             "shared_mlp_impl.py",
         ],
-    ),
-    imports = ["."],
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
-        "//:asan": ["@platforms//:incompatible"],  # Too slow with ASAN
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":shared_conv_impl",
-        ":shared_mlp_impl",
-        "//max/python/max/engine",
-        "//max/python/max/nn",
-        "//max/python/max/nn/hooks",
-        "//max/python/max/pipelines",
-        "//max/python/max/serve",
-        "//max/tests/integration/API/python/graph:modular_graph_test",
-        "//max/tests/integration/pipelines/python/test_common",
-        requirement("torch"),
-        requirement("transformers"),
-        requirement("hypothesis"),
-        requirement("gguf"),
-        requirement("pytest-mock"),
-        requirement("pytest-asyncio"),
-    ],
-)
+    )
+]
 
 modular_py_test(
     name = "nn_gpu_tests",
@@ -88,7 +106,10 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     deps = [
         ":shared_conv_impl",
         "//max/python/max/engine",
@@ -110,7 +131,10 @@ modular_py_test(
     srcs = ["test_conv_transpose_gpu.py"],
     gpu_constraints = ["//:nvidia_gpu"],
     imports = ["."],
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     deps = [
         "//max/python/max/engine",
         "//max/python/max/nn",
@@ -135,7 +159,10 @@ modular_py_test(
     },
     gpu_constraints = ["//:has_4_gpus"],
     imports = ["."],
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     deps = [
         ":shared_mlp_impl",
         "//max/python/max/engine",
@@ -166,6 +193,7 @@ modular_py_test(
         "gpu",
         # TODO: GEX-2676
         "manual",
+        "no-pydeps",  # TODO: Fix and re-enable
     ],
     target_compatible_with = ["//:amd_gpu"],
     deps = [
@@ -191,6 +219,7 @@ modular_py_test(
     tags = [
         "b200",
         "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [

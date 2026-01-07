@@ -69,10 +69,51 @@ alias(
     for gpu in SUPPORTED_GPUS.keys()
 ]
 
+string_flag(
+    name = "release_type",
+    build_setting_default = "dev",
+    values = [
+        "dev",
+        "production",
+    ],
+)
+
 config_setting(
     name = "production_build",
-    tags = [ALLOW_UNUSED_TAG],
-    values = {"features": "UNREACHABLE"},
+    flag_values = {"//:release_type": "production"},
+)
+
+###
+# Release flags
+###
+
+string_flag(
+    name = "modular_version_major",
+    build_setting_default = "0",
+    make_variable = "MODULAR_VERSION_MAJOR",
+)
+
+string_flag(
+    name = "modular_version_minor",
+    build_setting_default = "0",
+    make_variable = "MODULAR_VERSION_MINOR",
+)
+
+string_flag(
+    name = "modular_version_patch",
+    build_setting_default = "0",
+    make_variable = "MODULAR_VERSION_PATCH",
+)
+
+string_flag(
+    name = "modular_version_label",
+    build_setting_default = "",
+    make_variable = "MODULAR_VERSION_LABEL",
+)
+
+string_flag(
+    name = "modular_version_sha",
+    build_setting_default = "deadbeef",
 )
 
 config_setting(

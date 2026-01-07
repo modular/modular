@@ -17,7 +17,9 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu import block_dim, global_idx, thread_idx
 from gpu.memory import external_memory
 from gpu.sync import barrier
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal, assert_equal
 
 
@@ -138,7 +140,9 @@ fn test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     )
 
     # Compile the simple kernel for occupancy testing
-    var simple_func = ctx.compile_function[occupancy_test_kernel]()
+    var simple_func = ctx.compile_function_checked[
+        occupancy_test_kernel, occupancy_test_kernel
+    ]()
 
     # Test with different block sizes
     var block_sizes: List[Int] = [32, 64, 128, 256, 512, 1024]
@@ -168,7 +172,9 @@ fn test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
             )
 
     # Test with shared memory usage
-    var shared_func = ctx.compile_function[shared_memory_kernel]()
+    var shared_func = ctx.compile_function_checked[
+        shared_memory_kernel, shared_memory_kernel
+    ]()
 
     print("\nTesting occupancy with different shared memory sizes:")
     var shared_memory_sizes: List[Int] = [

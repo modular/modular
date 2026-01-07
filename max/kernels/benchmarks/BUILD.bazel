@@ -21,6 +21,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "gpu/bench_allreduce.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "gpu/bench_reducescatter.mojo": ["//:nvidia_gpu"],  # Requires P2P for reduce-scatter
     "gpu/bench_ep_dispatch.mojo": ["//:nvidia_gpu"],  # Requires NVSHMEM shmem_module_init
     "gpu/bench_ep_combine.mojo": ["//:nvidia_gpu"],  # Requires NVSHMEM shmem_module_init
     "nn/bench_gather_reduce.mojo": ["@platforms//:incompatible"],  # TODO(KERN-464): re-enable and remove this tag
@@ -44,6 +45,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MSTDL-1880
+    "gpu/bench_mla.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: KERN-2317
 }
 
 _CPU_TESTS = glob(

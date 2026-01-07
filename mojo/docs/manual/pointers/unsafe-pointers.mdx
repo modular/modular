@@ -41,7 +41,6 @@ guide provided in the
 
 :::
 
-
 ## Unsafe pointer basics
 
 An `UnsafePointer` is a type that holds an address to memory. You can store
@@ -357,7 +356,7 @@ s_ptr = UnsafePointer(to=s)
 
 When allocating memory with the `alloc()` function, the returned pointer has
 an `origin` value of `MutOrigin.external`. This value represents an origin that
-is mutable and doesn't _alias_ existing values. For example, it doesn't
+is mutable and doesn't *alias* existing values. For example, it doesn't
 point to the memory allocated for any other variable. That means the compiler
 won't unnecessarily extend the lifetimes of unrelated values. This memory isn't tracked
 by Mojo's lifetime checker and you're responsible for freeing it.
@@ -490,7 +489,6 @@ def get_foreign_pointer() -> UnsafePointer[Int, MutOrigin.external]:
     return ptr
 ```
 
-
 ### Opaque pointers
 
 The `OpaquePointer` type is a pointer that does not have a specific type. In
@@ -511,7 +509,6 @@ var str_ptr = UnsafePointer(to=str)
 var opaque_ptr = str_ptr.bitcast[NoneType]()
 # ... call some foreign function that takes a void pointer
 ```
-
 
 ## Converting data: bitcasting and byte order
 
@@ -605,9 +602,9 @@ def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8], pixel_count: Int):
     # bytes per pixel, which is also the stride size
     bpp = 3
     for i in range(0, pixel_count * bpp, simd_width * bpp):
-        red_values = ptr.offset(i).strided_load[width=simd_width](bpp)
+        red_values = (ptr + i).strided_load[width=simd_width](bpp)
         # Invert values and store them in their original locations
-        ptr.offset(i).strided_store[width=simd_width](~red_values, bpp)
+        (ptr + i).strided_store[width=simd_width](~red_values, bpp)
 ```
 
 The [`gather()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#gather) and

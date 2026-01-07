@@ -24,6 +24,7 @@ counted sets, also called bags or multisets, and extend that model by
 supporting negative counts.
 
 """
+from builtin.constrained import _constrained_conforms_to
 from collections.dict import Dict, _DictEntryIter, _DictKeyIter, _DictValueIter
 from hashlib import Hasher, default_hasher
 
@@ -37,7 +38,10 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     Defaultable,
     Equatable,
     Iterable,
+    Representable,
     Sized,
+    Stringable,
+    Writable,
 ):
     """A container for counting hashable items.
 
@@ -68,7 +72,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[Self.V, Int, Self.H, iterable_origin]
     """The iterator type for this counter.
 
@@ -112,7 +116,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for item in values:
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
-    fn __init__(out self, items: List[Self.V, *_]):
+    fn __init__(out self, items: List[Self.V, ...]):
         """Create a `Counter` from an input iterable.
 
         Args:
@@ -132,7 +136,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
     @staticmethod
-    fn fromkeys(keys: List[Self.V, *_], value: Int) -> Self:
+    fn fromkeys(keys: List[Self.V, ...], value: Int) -> Self:
         """Create a new `Counter` from a list of keys and a default value.
 
         Args:
@@ -221,6 +225,67 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             `False` if the `Counter` is empty, `True` otherwise.
         """
         return Bool(len(self))
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Returns a string representation of a `Counter`.
+
+        Returns:
+            A string representation of the Counter.
+        """
+        return self.__str__()
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Returns a string representation of a `Counter`.
+
+        Returns:
+            A string representation of the Counter.
+
+        Examples:
+
+        ```mojo
+        var c = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
+        counter_as_string = String(c)
+        print(counter_as_string)
+        # prints "Counter({'a': 3, 'c': 3, 'b': 2, 'd': 1})"
+        ```
+        """
+        var output = String()
+        self.write_to(output)
+        return output^
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write `my_counter.__str__()` to a `Writer`.
+
+        Constraints:
+            `V` must conform to `Representable`.
+
+        Args:
+            writer: The object to write to.
+        """
+        _constrained_conforms_to[
+            conforms_to(Self.V, Representable),
+            Parent=Self,
+            Element = Self.V,
+            ParentConformsTo="Stringable",
+            ElementConformsTo="Representable",
+        ]()
+
+        writer.write("Counter({")
+
+        var items = self.most_common(UInt(len(self)))
+        for i in range(len(items)):
+            ref item = items[i]
+            # Access the value and count from CountTuple
+            ref value = item._value
+            ref key = trait_downcast[Representable](value)
+            var count = item._count
+            writer.write(repr(key), ": ", repr(count))
+            if i < len(items) - 1:
+                writer.write(", ")
+        writer.write("})")
 
     # ===------------------------------------------------------------------=== #
     # Comparison operators

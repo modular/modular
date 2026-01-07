@@ -30,6 +30,7 @@ from max.interfaces import (
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
+    TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
@@ -59,7 +60,7 @@ def create_text_context(
     return TextContext(
         request_id=RequestID(),
         max_length=max_seq_len,
-        tokens=tokens,
+        tokens=TokenBuffer(tokens),
     )
 
 
@@ -330,7 +331,7 @@ def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
     input_tokens = inputs.input_tokens
     num_steps = inputs.num_steps
     batch_context_length = sum(
-        context.start_idx for context in inputs.batch.values()
+        context.processed_length for context in inputs.batch.values()
     )
 
     if batch_size == 0:
@@ -391,7 +392,7 @@ def enqueue_request_with_prompt(
     context = TextContext(
         request_id=RequestID(),
         max_length=max_seq_len,
-        tokens=tokens,
+        tokens=TokenBuffer(tokens),
     )
 
     queue.put_nowait(context)

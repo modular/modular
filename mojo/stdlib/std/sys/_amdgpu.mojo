@@ -54,7 +54,7 @@ struct amd_signal_t(Copyable):
 
 
 @always_inline
-fn update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, **_]):
+fn update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, ...]):
     var mb = UnsafePointer(to=sig[].event_mailbox_ptr).bitcast[
         UnsafePointer[
             UInt64, MutOrigin.external, address_space = AddressSpace.GLOBAL
@@ -646,16 +646,16 @@ struct Buffer(ImplicitlyCopyable):
     @always_inline
     fn get_header(self, ptr: UInt64) -> Header:
         return Header(
-            self._handle[].headers.offset(ptr & self._handle[].index_mask)
+            self._handle[].headers + (ptr & self._handle[].index_mask)
         )
 
     @always_inline
     fn get_payload(self, ptr: UInt64) -> Payload:
         return Payload(
-            self._handle[].payloads.offset(ptr & self._handle[].index_mask)
+            self._handle[].payloads + (ptr & self._handle[].index_mask)
         )
 
-    fn pop(mut self, top: UnsafePointer[mut=True, UInt64, **_]) -> UInt64:
+    fn pop(mut self, top: UnsafePointer[mut=True, UInt64, ...]) -> UInt64:
         var f = Atomic.fetch_add(top, 0)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
@@ -694,7 +694,7 @@ struct Buffer(ImplicitlyCopyable):
             | ptr_lo_32.cast[DType.uint64]()
         )
 
-    fn push(mut self, top: UnsafePointer[mut=True, UInt64, **_], ptr: UInt64):
+    fn push(mut self, top: UnsafePointer[mut=True, UInt64, ...], ptr: UInt64):
         var f = Atomic.fetch_add(top, 0)
         var p = self.get_header(ptr)
         while True:
@@ -873,15 +873,13 @@ fn hostcall(
     compiled for, otherwise behaviour is undefined.
     """
     var buffer = Buffer(
-        implicitarg_ptr()
-        .bitcast[
+        implicitarg_ptr().bitcast[
             UnsafePointer[
                 buffer_t,
                 MutOrigin.external,
                 address_space = AddressSpace.GLOBAL,
             ]
-        ]()
-        .offset(10)[]
+        ]()[10]
     )
 
     var me = UInt32(lane_id())

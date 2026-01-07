@@ -33,7 +33,7 @@ from max.interfaces.log_probabilities import LogProbabilities
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
-from max.interfaces.tokens import TokenSlice
+from max.interfaces.tokens import TokenBuffer, TokenSlice
 
 
 class TextGenerationRequestFunction(TypedDict):
@@ -241,27 +241,12 @@ class TextGenerationContext(BaseContext, Protocol):
     the state of tokens throughout the generation process. It handles token arrays,
     generation status, sampling parameters, and various indices that track different
     stages of token processing.
-
-    The context maintains a token array with the following layout::
-
-        .                      +---------- full prompt ----------+   CHUNK_SIZE*N v
-        . +--------------------+---------------+-----------------+----------------+
-        . |     completed      |  next_tokens  |                 |  preallocated  |
-        . +--------------------+---------------+-----------------+----------------+
-        .            start_idx ^    active_idx ^         end_idx ^
-
-    Token Array Regions:
-        - completed: Tokens that have already been processed and encoded.
-        - next_tokens: Tokens that will be processed in the next iteration.
-          This may be a subset of the full prompt due to chunked prefill.
-        - preallocated: Token slots that have been preallocated. The token array
-          resizes to multiples of ``CHUNK_SIZE`` to accommodate new tokens.
-
-    Key Indices:
-        - ``start_idx``: Marks the beginning of uncompleted tokens
-        - ``active_idx``: Marks the start of next_tokens within the array
-        - ``end_idx``: Marks the end of all active tokens (one past the last token)
     """
+
+    @property
+    def tokens(self) -> TokenBuffer:
+        """The token buffer for the context."""
+        ...
 
     @property
     def eos_token_ids(self) -> set[int]:
@@ -274,8 +259,8 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def active_idx(self) -> int:
-        """The index marking the start of ``next_tokens`` within the token array.
+    def current_position(self) -> int:
+        """The index marking the end of ``next_tokens`` within the token array.
 
         This index separates completed tokens from tokens that will be processed
         in the next iteration during chunked prefill or generation.
@@ -286,7 +271,7 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def start_idx(self) -> int:
+    def processed_length(self) -> int:
         """The index marking the start of completed tokens in the token array.
 
         Completed tokens are those that have already been processed and encoded
@@ -294,18 +279,6 @@ class TextGenerationContext(BaseContext, Protocol):
 
         Returns:
             The zero-based index where completed tokens begin in the token array.
-        """
-        ...
-
-    @property
-    def end_idx(self) -> int:
-        """The index marking the end of all active tokens in the token array.
-
-        This is an exclusive end index (one past the last active token), following
-        Python's standard slicing conventions.
-
-        Returns:
-            The zero-based index one position past the last active token.
         """
         ...
 
@@ -355,18 +328,6 @@ class TextGenerationContext(BaseContext, Protocol):
 
         Returns:
             A 1D NumPy array of int32 token IDs with length equal to ``active_length``.
-        """
-        ...
-
-    @property
-    def tokens(self) -> TokenSlice:
-        """The complete token array including preallocated slots.
-
-        This includes all tokens (completed, active, and preallocated empty slots).
-        For most use cases, prefer ``all_tokens`` to get only the active tokens.
-
-        Returns:
-            A 1D NumPy array of int32 values containing all tokens including padding.
         """
         ...
 
@@ -442,7 +403,7 @@ class TextGenerationContext(BaseContext, Protocol):
         Returns:
             A 1D NumPy array of int32 values containing all prompt and generated tokens.
         """
-        return self.tokens[: self.end_idx]
+        ...
 
     @property
     def prompt_tokens(self) -> TokenSlice:
@@ -719,7 +680,9 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         self.input_tokens = sum(
             ctx.active_length for ctx in self.batch.values()
         )
-        self.context_tokens = sum(ctx.start_idx for ctx in self.batch.values())
+        self.context_tokens = sum(
+            ctx.processed_length for ctx in self.batch.values()
+        )
         self.batch_type = BatchType.TG
         for req in self.batch.values():
             if req.needs_ce:

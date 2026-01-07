@@ -15,10 +15,12 @@ import time
 from collections import OptionalReg
 from io.io import _snprintf
 from math import ceildiv
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from random import rand, random_float64
 from sys import argv, env_get_string
 from builtin.device_passable import DevicePassable
@@ -109,7 +111,7 @@ struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
 
 
 fn initialize(
-    buffer: NDBuffer[mut=True, **_], init_type: InitializationType
+    buffer: NDBuffer[mut=True, ...], init_type: InitializationType
 ) raises:
     if init_type == InitializationType.zero:
         buffer.zero()
@@ -125,7 +127,7 @@ fn initialize(
 
 @parameter
 @always_inline
-fn arange(buffer: NDBuffer[mut=True, *_]):
+fn arange(buffer: NDBuffer[mut=True, ...]):
     @parameter
     if buffer.rank == 2:
         for i in range(buffer.dim[0]()):
@@ -136,11 +138,11 @@ fn arange(buffer: NDBuffer[mut=True, *_]):
             buffer.data[i] = i
 
 
-fn zero(buffer: NDBuffer[mut=True, *_, **_]):
+fn zero(buffer: NDBuffer[mut=True, ...]):
     buffer.zero()
 
 
-fn fill(buffer: NDBuffer[mut=True, *_], val: Scalar):
+fn fill(buffer: NDBuffer[mut=True, ...], val: Scalar):
     buffer.fill(val.cast[buffer.type]())
 
 
@@ -166,7 +168,7 @@ fn bench_compile_time[
                 keep(s.unsafe_ptr())
             elif emission_kind == "ptx":
                 with DeviceContext() as ctx:
-                    var func = ctx.compile_function[func]()
+                    var func = ctx.compile_function_unchecked[func]()
                     # Ensure that the compilation step is not optimized away.
                     keep(UnsafePointer(to=func))
                     clobber_memory()
@@ -465,7 +467,7 @@ struct Mode(ImplicitlyCopyable, Stringable):
 
 fn random[
     dtype: DType
-](buffer: NDBuffer[mut=True, dtype, **_], min: Float64 = 0, max: Float64 = 1):
+](buffer: NDBuffer[mut=True, dtype, ...], min: Float64 = 0, max: Float64 = 1,):
     @parameter
     if dtype.is_float8():
         var size = buffer.num_elements()
@@ -510,12 +512,12 @@ struct Timer:
     var report: List[String]
 
     fn __init__(out self):
-        self.start = time.perf_counter_ns()
+        self.start = Float64(time.perf_counter_ns())
         self.current = self.start
         self.report = List[String]()
 
     fn measure(mut self, msg: String):
-        var current = time.perf_counter_ns()
+        var current = Float64(time.perf_counter_ns())
         var elapsed = current - self.current
         self.current = current
         self.report.append("[" + msg + "] " + String(elapsed / 1e6) + " (ms)")
@@ -565,7 +567,7 @@ fn init_vector_gpu[
     elif mode == InitializationType.fill:
         values = SIMD[dtype, 4](value)
     elif mode == InitializationType.uniform_distribution:
-        var rng = Random(offset=tid)
+        var rng = Random(offset=UInt64(tid))
         values = SIMD[dtype, 4](rng.step_uniform())
     elif mode == InitializationType.arange:
         values = SIMD[dtype, 4](

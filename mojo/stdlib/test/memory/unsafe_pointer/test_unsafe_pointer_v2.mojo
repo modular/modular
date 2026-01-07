@@ -34,34 +34,34 @@ from testing import (
 # ---------------------------------------------------------------------------- #
 
 
-def _mutable_pointer(p: MutUnsafePointer[Int, **_]):
+def _mutable_pointer(p: MutUnsafePointer[Int, ...]):
     assert_true(p)
     assert_equal(p[], 42)
 
 
-def _immutable_pointer(p: ImmutUnsafePointer[Int, **_]):
+def _immutable_pointer(p: ImmutUnsafePointer[Int, ...]):
     assert_true(p)
     assert_equal(p[], 42)
 
 
-def _mutable_any_pointer(p: UnsafePointer[Int, MutAnyOrigin, **_]):
+def _mutable_any_pointer(p: UnsafePointer[Int, MutAnyOrigin, ...]):
     assert_true(p)
     assert_equal(p[], 42)
 
 
-def _immutable_any_pointer(p: UnsafePointer[Int, ImmutAnyOrigin, **_]):
+def _immutable_any_pointer(p: UnsafePointer[Int, ImmutAnyOrigin, ...]):
     assert_true(p)
     assert_equal(p[], 42)
 
 
-def _parameterized_pointer(p: UnsafePointer[Int, **_]):
+def _parameterized_pointer(p: UnsafePointer[Int, ...]):
     assert_true(p)
     assert_equal(p[], 42)
 
 
 def _named_origin[
-    mut: Bool, //, origin: Origin[mut]
-](p: UnsafePointer[Int, origin, **_]):
+    mut: Bool, //, origin: Origin[mut=mut]
+](p: UnsafePointer[Int, origin, ...]):
     assert_true(p)
     assert_equal(p[], 42)
 
@@ -199,7 +199,7 @@ def test_pointer_to():
 def test_explicit_copy_of_pointer_address():
     var local = 1
     var ptr = UnsafePointer[Int](to=local)
-    var copy = UnsafePointer(other=ptr)
+    var copy = UnsafePointer.copy(ptr)
     assert_equal(Int(ptr), Int(copy))
     _ = local
 
@@ -400,17 +400,17 @@ def test_offset():
         ptr[i] = i
     var x = UInt(3)
     var y = Int(4)
-    assert_equal(ptr.offset(x)[], 3)
-    assert_equal(ptr.offset(y)[], 4)
+    assert_equal((ptr + x)[], 3)
+    assert_equal((ptr + y)[], 4)
 
     var ptr2 = alloc[Int](5)
     var ptr3 = ptr2
     ptr2 += UInt(3)
-    assert_equal(ptr2, ptr3.offset(3))
+    assert_equal(ptr2, ptr3 + 3)
     ptr2 -= UInt(5)
-    assert_equal(ptr2, ptr3.offset(-2))
-    assert_equal(ptr2 + UInt(1), ptr3.offset(-1))
-    assert_equal(ptr2 - UInt(4), ptr3.offset(-6))
+    assert_equal(ptr2, ptr3 + -2)
+    assert_equal(ptr2 + UInt(1), ptr3 + -1)
+    assert_equal(ptr2 - UInt(4), ptr3 + -6)
 
     ptr.free()
     ptr2.free()

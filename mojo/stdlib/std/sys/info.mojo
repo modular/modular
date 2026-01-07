@@ -22,8 +22,6 @@ print(CompilationTarget.is_x86())
 """
 
 from collections.string.string_slice import _get_kgen_string
-from memory import LegacyOpaquePointer as OpaquePointer
-
 from .ffi import _external_call_const, external_call
 
 comptime _TargetType = __mlir_type.`!kgen.target`
@@ -879,9 +877,7 @@ fn simd_byte_width[target: _TargetType = _current_target()]() -> Int:
 
 
 @always_inline("nodebug")
-fn size_of[
-    type: UnknownDestructibility, target: _TargetType = _current_target()
-]() -> Int:
+fn size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bytes) of the type.
 
     Parameters:
@@ -948,9 +944,7 @@ fn size_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 
 @always_inline("nodebug")
-fn align_of[
-    type: UnknownDestructibility, target: _TargetType = _current_target()
-]() -> Int:
+fn align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the align of (in bytes) of the type.
 
     Parameters:
@@ -1118,7 +1112,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         "kern.osproductversion".as_c_string_slice().unsafe_ptr(),
         osver.unsafe_ptr(),
         Pointer(to=buf_len),
-        OpaquePointer(),
+        OpaquePointer[origin=MutAnyOrigin](),
         Int(0),
     )
     if err:

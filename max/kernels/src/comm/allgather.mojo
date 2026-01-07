@@ -33,13 +33,14 @@ from math import ceildiv
 from sys import simd_width_of
 
 from buffer import NDBuffer
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from gpu import WARP_SIZE, global_idx, grid_dim
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
 from utils import StaticTuple
 
-# Import P2P detection and synchronization from allreduce
 from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, can_enable_p2p
 
 

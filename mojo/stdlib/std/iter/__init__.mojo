@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Iteration traits and utilities: Iterable, Iterator, enumerate, zip, map.
 
-This module defines the core iteration protocol for Mojo through the `Iterable`
+This package defines the core iteration protocol for Mojo through the `Iterable`
 and `Iterator` traits. Types that conform to these traits can be used with
 `for` loops and iteration utilities like `enumerate()`, `zip()`, and `map()`.
 
@@ -46,6 +46,7 @@ for squared in map[square](values):
 ```
 """
 
+from builtin.constrained import _constrained_conforms_to
 
 # ===-----------------------------------------------------------------------===#
 # Iterable
@@ -58,7 +59,7 @@ trait Iterable:
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -75,23 +76,32 @@ trait Iterable:
 # ===-----------------------------------------------------------------------===#
 
 
-trait Iterator(Copyable):
+@fieldwise_init
+@register_passable("trivial")
+struct StopIteration(Writable):
+    """A custom error type for Iterator's that run out of elements."""
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """This always writes "StopIteration".
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write("StopIteration")
+
+
+trait Iterator(Movable):
     """The `Iterator` trait describes a type that can be used as an
     iterator, e.g. in a `for` loop.
     """
 
     comptime Element: Movable
 
-    fn __has_next__(self) -> Bool:
-        """Checks if there are more elements in the iterator.
-
-        Returns:
-            True if there are more elements, False otherwise.
-        """
-        ...
-
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         """Returns the next element from the iterator.
+
+        Raises:
+            StopIteration if there are no more elements.
 
         Returns:
             The next element.
@@ -149,7 +159,7 @@ fn iter[
 @always_inline
 fn next[
     IteratorType: Iterator
-](mut iterator: IteratorType) -> IteratorType.Element:
+](mut iterator: IteratorType) raises StopIteration -> IteratorType.Element:
     """Advances the iterator and returns the next element.
 
     Parameters:
@@ -160,6 +170,9 @@ fn next[
 
     Returns:
         The next element from the iterator.
+
+    Raises:
+        StopIteration: If the iterator is exhausted.
     """
     return iterator.__next__()
 
@@ -176,13 +189,10 @@ struct _Enumerate[InnerIteratorType: Iterator](Copyable, Iterable, Iterator):
 
     comptime Element = Tuple[Int, Self.InnerIteratorType.Element]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     var _inner: Self.InnerIteratorType
     var _count: Int
-
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        return self.copy()
 
     fn __init__(
         out self, var iterator: Self.InnerIteratorType, *, start: Int = 0
@@ -190,13 +200,27 @@ struct _Enumerate[InnerIteratorType: Iterator](Copyable, Iterable, Iterator):
         self._inner = iterator^
         self._count = start
 
-    fn __has_next__(self) -> Bool:
-        return self._inner.__has_next__()
+    fn __copyinit__(out self, existing: Self):
+        _constrained_conforms_to[
+            conforms_to(Self.InnerIteratorType, Copyable),
+            Parent=Self,
+            Element = Self.InnerIteratorType,
+            ParentConformsTo="Copyable",
+        ]()
+        self._inner = rebind_var[Self.InnerIteratorType](
+            trait_downcast[Copyable](existing._inner).copy()
+        )
+        self._count = existing._count
 
-    fn __next__(mut self) -> Self.Element:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        # This raises on error.
+        var elt = next(self._inner)
         var count = self._count
         self._count += 1
-        return count, next(self._inner)
+        return count, elt^
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return self._inner.bounds()
@@ -245,7 +269,7 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var _inner_a: Self.IteratorTypeA
@@ -254,14 +278,52 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn copy(self) -> Self:
-        return Self(self._inner_a.copy(), self._inner_b.copy())
+    fn __copyinit__(out self, existing: Self):
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeA, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeA,
+            ParentConformsTo="Copyable",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeB, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeB,
+            ParentConformsTo="Copyable",
+        ]()
+        self._inner_a = rebind_var[Self.IteratorTypeA](
+            trait_downcast[Copyable](existing._inner_a).copy()
+        )
+        self._inner_b = rebind_var[Self.IteratorTypeB](
+            trait_downcast[Copyable](existing._inner_b).copy()
+        )
 
-    fn __has_next__(self) -> Bool:
-        return self._inner_a.__has_next__() and self._inner_b.__has_next__()
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeA, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeA,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeB, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeB,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
 
-    fn __next__(mut self) -> Self.Element:
-        return next(self._inner_a), next(self._inner_b)
+        var a = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_a)
+        )
+        var b = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_b)
+        )
+        return (
+            rebind_var[Self.IteratorTypeA.Element](a^),
+            rebind_var[Self.IteratorTypeB.Element](b^),
+        )
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return _min_bounds(self._inner_a.bounds(), self._inner_b.bounds())
@@ -277,7 +339,7 @@ struct _Zip3[
         Self.IteratorTypeC.Element,
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var _inner_a: Self.IteratorTypeA
@@ -287,20 +349,72 @@ struct _Zip3[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn copy(self) -> Self:
-        return Self(
-            self._inner_a.copy(), self._inner_b.copy(), self._inner_c.copy()
+    fn __copyinit__(out self, existing: Self):
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeA, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeA,
+            ParentConformsTo="Copyable",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeB, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeB,
+            ParentConformsTo="Copyable",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeC, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeC,
+            ParentConformsTo="Copyable",
+        ]()
+        self._inner_a = rebind_var[Self.IteratorTypeA](
+            trait_downcast[Copyable](existing._inner_a).copy()
+        )
+        self._inner_b = rebind_var[Self.IteratorTypeB](
+            trait_downcast[Copyable](existing._inner_b).copy()
+        )
+        self._inner_c = rebind_var[Self.IteratorTypeC](
+            trait_downcast[Copyable](existing._inner_c).copy()
         )
 
-    fn __has_next__(self) -> Bool:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeA, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeA,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeB, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeB,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeC, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeC,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+
+        var a = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_a)
+        )
+        var b = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_b)
+        )
+        var c = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_c)
+        )
         return (
-            self._inner_a.__has_next__()
-            and self._inner_b.__has_next__()
-            and self._inner_c.__has_next__()
+            rebind_var[Self.IteratorTypeA.Element](a^),
+            rebind_var[Self.IteratorTypeB.Element](b^),
+            rebind_var[Self.IteratorTypeC.Element](c^),
         )
-
-    fn __next__(mut self) -> Self.Element:
-        return next(self._inner_a), next(self._inner_b), next(self._inner_c)
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return _min_bounds(
@@ -324,7 +438,7 @@ struct _Zip4[
         Self.IteratorTypeD.Element,
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var _inner_a: Self.IteratorTypeA
@@ -335,28 +449,91 @@ struct _Zip4[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn copy(self) -> Self:
-        return Self(
-            self._inner_a.copy(),
-            self._inner_b.copy(),
-            self._inner_c.copy(),
-            self._inner_d.copy(),
+    fn __copyinit__(out self, existing: Self):
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeA, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeA,
+            ParentConformsTo="Copyable",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeB, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeB,
+            ParentConformsTo="Copyable",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeC, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeC,
+            ParentConformsTo="Copyable",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeD, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeD,
+            ParentConformsTo="Copyable",
+        ]()
+        self._inner_a = rebind_var[Self.IteratorTypeA](
+            trait_downcast[Copyable](existing._inner_a).copy()
+        )
+        self._inner_b = rebind_var[Self.IteratorTypeB](
+            trait_downcast[Copyable](existing._inner_b).copy()
+        )
+        self._inner_c = rebind_var[Self.IteratorTypeC](
+            trait_downcast[Copyable](existing._inner_c).copy()
+        )
+        self._inner_d = rebind_var[Self.IteratorTypeD](
+            trait_downcast[Copyable](existing._inner_d).copy()
         )
 
-    fn __has_next__(self) -> Bool:
-        return (
-            self._inner_a.__has_next__()
-            and self._inner_b.__has_next__()
-            and self._inner_c.__has_next__()
-            and self._inner_d.__has_next__()
-        )
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeA, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeA,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeB, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeB,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeC, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeC,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeD, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.IteratorTypeD,
+            ParentConformsTo="Iterator",
+            ElementConformsTo="ImplicitlyDestructible",
+        ]()
 
-    fn __next__(mut self) -> Self.Element:
+        var a = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_a)
+        )
+        var b = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_b)
+        )
+        var c = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_c)
+        )
+        var d = trait_downcast_var[Movable & ImplicitlyDestructible](
+            next(self._inner_d)
+        )
         return (
-            next(self._inner_a),
-            next(self._inner_b),
-            next(self._inner_c),
-            next(self._inner_d),
+            rebind_var[Self.IteratorTypeA.Element](a^),
+            rebind_var[Self.IteratorTypeB.Element](b^),
+            rebind_var[Self.IteratorTypeC.Element](c^),
+            rebind_var[Self.IteratorTypeD.Element](d^),
         )
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -507,22 +684,27 @@ struct _MapIterator[
 ](Copyable, Iterable, Iterator):
     comptime Element = Self.OutputType
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var _inner: Self.InnerIteratorType
 
+    fn __copyinit__(out self, existing: Self):
+        _constrained_conforms_to[
+            conforms_to(Self.InnerIteratorType, Copyable),
+            Parent=Self,
+            Element = Self.InnerIteratorType,
+            ParentConformsTo="Copyable",
+        ]()
+        self._inner = rebind_var[Self.InnerIteratorType](
+            trait_downcast[Copyable](existing._inner).copy()
+        )
+
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __has_next__(self) -> Bool:
-        return self._inner.__has_next__()
-
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         return Self.function(next(self._inner))
-
-    fn copy(self) -> Self:
-        return Self(self._inner.copy())
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         return self._inner.bounds()
@@ -569,6 +751,86 @@ fn map[
     for elem in m:
         print(elem)
     ```
+    """
+    return {iter(iterable)}
+
+
+# ===-----------------------------------------------------------------------===#
+# peekable
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _PeekableIterator[InnerIterator: Iterator](Copyable, Iterable, Iterator):
+    comptime Element = Self.InnerIterator.Element
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    var _inner: Self.InnerIterator
+    var _next: Optional[Self.Element]
+
+    fn __init__(out self, var inner: Self.InnerIterator):
+        self._inner = inner^
+        self._next = None
+
+    fn __copyinit__(out self, other: Self):
+        _constrained_conforms_to[
+            conforms_to(Self.InnerIterator, Copyable),
+            Parent=Self,
+            Element = Self.InnerIterator,
+            ParentConformsTo="Copyable",
+        ]()
+        _constrained_conforms_to[
+            conforms_to(Self.Element, Copyable),
+            Parent=Self,
+            Element = Self.Element,
+            ParentConformsTo="Copyable",
+        ]()
+
+        self._inner = rebind_var[Self.InnerIterator](
+            trait_downcast[Copyable](other._inner).copy()
+        )
+        self._next = other._next.copy()
+
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        if self._next:
+            return self._next.unsafe_take()
+        return next(self._inner)
+
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var peek_len = 1 if self._next else 0
+        var lower, upper = self._inner.bounds()
+        if upper:
+            return (lower + peek_len, upper.value() + peek_len)
+        else:
+            return (lower + peek_len, None)
+
+    fn peek(
+        mut self,
+    ) -> Optional[Pointer[Self.Element, ImmutOrigin(origin_of(self._next[]))]]:
+        if not self._next:
+            try:
+                self._next = next(self._inner)
+            except:
+                return None
+        return Pointer(to=self._next.unsafe_value()).get_immutable()
+
+
+fn peekable(
+    ref iterable: Some[Iterable],
+) -> _PeekableIterator[type_of(iterable).IteratorType[origin_of(iterable)]]:
+    """Returns a peekable iterator that can use the `peek` method to look ahead
+    at the next element without advancing the iterator.
+
+    Args:
+        iterable: The iterable to create a peekable iterator from.
+
+    Returns:
+        A peekable iterator.
     """
     return {iter(iterable)}
 

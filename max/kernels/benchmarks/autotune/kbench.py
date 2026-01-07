@@ -33,6 +33,7 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
+from terminal_viz import render_results
 from utils import (
     LINE,
     _get_core_count,
@@ -113,6 +114,7 @@ def run(
     num_gpu: int = 1,
     target_accelerator: str | None = None,
     timeout_secs: int | None = None,
+    plot: str = "bars",
 ) -> None:
     if yaml_path_list:
         # Load specs from a list of YAML files and join them in 'spec'.
@@ -295,6 +297,19 @@ def run(
         verbose=verbose,
     )
     logging.info(f"output-dir: [{output_dir}]\n{LINE}")
+
+    # Render terminal visualization if requested
+    if plot != "none" and mode in [KBENCH_MODE.RUN, KBENCH_MODE.BUILD_AND_RUN]:
+        pkl_path = output_path.with_suffix(output_path.suffix + ".pkl")
+        if pkl_path.exists():
+            import pickle
+
+            with open(pkl_path, "rb") as f:
+                pkl_data = pickle.load(f)
+            if "merged_df" in pkl_data:
+                render_results(
+                    pkl_data["merged_df"], mode=plot, console=CONSOLE
+                )
 
     logging.info(f"Number of specs: {scheduler.num_specs}")
     logging.info(
@@ -512,6 +527,12 @@ def set_build_opts(  # noqa: ANN201
     multiple=False,
     type=click.STRING,
 )
+@click.option(
+    "--plot",
+    type=click.Choice(["bars", "table", "summary", "none"]),
+    default="bars",
+    help="Terminal visualization: bars (default), table, summary, or none to disable.",
+)
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
     files,  # noqa: ANN001
@@ -542,6 +563,7 @@ def cli(
     exec_suffix,  # noqa: ANN001
     timeout_secs: int,
     partition: str,
+    plot: str,
 ) -> bool:
     configure_logging(verbose=verbose)
 
@@ -677,6 +699,7 @@ def cli(
             num_gpu=num_gpu,
             target_accelerator=target_accelerator,
             timeout_secs=timeout_secs,
+            plot=plot,
         )
         if obj_cache.is_active:
             obj_cache.dump()

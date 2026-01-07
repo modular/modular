@@ -258,7 +258,7 @@ fn test_dual_matmul[
 
     var dual_gemm_time: Float64 = 0.0
     if do_benchmark:
-        dual_gemm_time = benchmark.run[run_dual_gemm](
+        dual_gemm_time = benchmark.run[func3=run_dual_gemm](
             max_runtime_secs=5.0
         ).mean()
         print(
@@ -353,7 +353,7 @@ fn test_dual_matmul[
             )
 
     if do_benchmark:
-        var dgs = benchmark.run[run_naive_dual_gemm](
+        var dgs = benchmark.run[func3=run_naive_dual_gemm](
             max_runtime_secs=5.0
         ).mean()
         print(
@@ -407,7 +407,10 @@ def main():
         test_dual_matmul[transpose_b=False](ctx, do_benchmark=do_benchmark)
         test_dual_matmul[transpose_b=True](ctx, do_benchmark=do_benchmark)
         comptime Ms = StaticTuple[Int, 3](128, 256, 1024)
-        comptime Ms_transpose = StaticTuple[Int, 4](1, 128, 256, 1024)
+        # Note: M=1 is not included because multistage_dual_gemm doesn't support
+        # M < BM (block tile M dimension). The general dual_gemm() function
+        # redirects M=1 cases to dual_gemv instead.
+        comptime Ms_transpose = StaticTuple[Int, 3](128, 256, 1024)
         comptime N = 14336
         comptime K = 4096
         for m_idx in range(len(Ms)):

@@ -19,10 +19,12 @@ from algorithm import unswitch
 from buffer.buffer import NDBuffer, partial_simd_load
 from buffer.dimlist import DimList
 from memory import (
-    LegacyUnsafePointer as UnsafePointer,
+    LegacyUnsafePointer,
     memcpy,
     stack_allocation,
 )
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from register import register_internal
 
 from utils.index import Index, IndexList
@@ -55,7 +57,7 @@ struct PackMatrixRows[
     simd_size: Int,
     row_inner_size: Int,
     packed_origin: MutOrigin,
-    original_origin: Origin[original_mut],
+    original_origin: Origin[mut=original_mut],
 ](ImplicitlyCopyable):
     """Pack rows from a matrix into the mlas packed layout and
     extract inner vectors of rows into the packed inner dimension,
@@ -311,7 +313,7 @@ struct PackMatrixCols[
     use_vnni: Bool,
     use_i8mm: Bool,
     packed_origin: MutOrigin,
-    original_origin: Origin[original_mut],
+    original_origin: Origin[mut=original_mut],
 ](ImplicitlyCopyable):
     """Pack columns from a matrix into the mlas packed layout and
     extract inner vectors of columns into the packed inner dimension,
@@ -694,7 +696,7 @@ fn pack_b[
 
             for idx_n in range(0, n_out, tile_n):
                 var packed_dst_view = NDBuffer[b_type, 3](
-                    dst_flat.data.offset(dst_offset),
+                    dst_flat.data + dst_offset,
                     DimList(
                         tile_n // inner_size2,
                         tile_k2 // factor,
@@ -739,7 +741,7 @@ fn pack_b[
         for idx_k_t in range(0, k_out_t, tile_k):
             for idx_n_t in range(0, n_out_t, tile_n):
                 var packed_dst_view_t = NDBuffer[b_type, 3](
-                    dst_flat.data.offset(dst_offset),
+                    dst_flat.data + dst_offset,
                     DimList(tile_n // inner_size, tile_k, inner_size),
                 )
                 var valid_k_t = min(tile_k, k_in_t - idx_k_t)
@@ -774,7 +776,7 @@ fn _pack_b_ndbuffer_impl[
     c_type: DType,
     c_shape: DimList,
     transposed: Bool,
-    b_origin: Origin[b_mut],
+    b_origin: Origin[mut=b_mut],
     output_origin: MutOrigin,
 ](
     b_input: NDBuffer[b_type, 2, b_origin, b_shape],
@@ -857,7 +859,7 @@ fn pack_b_ndbuffer[
     b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
-    b_origin: Origin[b_mut],
+    b_origin: Origin[mut=b_mut],
     output_origin: MutOrigin,
 ](
     b_input: NDBuffer[b_type, 2, b_origin, b_shape],
@@ -920,7 +922,7 @@ struct BTileGenerator[
     shape: DimList,
     transpose_b: Bool,
     b_packed: Bool,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
 ](ImplicitlyCopyable):
     """Struct to encapsulate a tile of B that supports prepacking.
 
@@ -1086,9 +1088,8 @@ struct BTileGenerator[
                 #   2. the n dimension of each thread's tile is guaranteed to be an
                 #       exact multiple of the inner size
                 #   3. each tile has dims [tile_n/inner, tile_k, inner]
-                b_flat.data.offset(
-                    tile_k_idx * tile_k * n_padded + global_offset.N * tile_k2
-                ),
+                b_flat.data
+                + (tile_k_idx * tile_k * n_padded + global_offset.N * tile_k2),
                 tile_shape_pack,
             )
             return b_tile_view

@@ -10,6 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Defines the Hasher trait and default hasher implementations.
+
+This module provides the `Hasher` trait for implementing hash algorithms and
+default hasher instances for common use cases. The `default_hasher` uses AHash
+for runtime hashing, while `default_comp_time_hasher` uses FNV-1a for
+compile-time hashing.
+"""
+
 from memory import Span
 
 from ._ahash import AHasher

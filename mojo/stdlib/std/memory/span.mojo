@@ -38,7 +38,7 @@ struct _SpanIter[
     mut: Bool,
     //,
     T: Copyable,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for Span.
@@ -51,7 +51,7 @@ struct _SpanIter[
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     """The iterator type for this span iterator.
 
@@ -70,31 +70,24 @@ struct _SpanIter[
         return self.copy()
 
     @always_inline
-    fn __has_next__(self) -> Bool:
+    fn __next__(mut self) raises StopIteration -> ref [Self.origin] Self.T:
         @parameter
         if Self.forward:
-            return self.index < len(self.src)
-        else:
-            return self.index > 0
+            if self.index >= len(self.src):
+                raise StopIteration()
 
-    @always_inline
-    fn __next_ref__(mut self) -> ref [Self.origin] Self.T:
-        @parameter
-        if Self.forward:
             var curr = self.index
             self.index += 1
             return self.src[curr]
         else:
+            if self.index <= 0:
+                raise StopIteration()
             self.index -= 1
             return self.src[self.index]
 
-    @always_inline
-    fn __next__(mut self) -> Self.T:
-        return self.__next_ref__().copy()
-
 
 @register_passable("trivial")
-struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
+struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
     Boolable,
     Defaultable,
     DevicePassable,
@@ -111,9 +104,9 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
     """
 
     # Aliases
-    comptime Mutable = Span[Self.T, MutOrigin.cast_from[Self.origin]]
+    comptime Mutable = Span[Self.T, MutOrigin(unsafe_cast=Self.origin)]
     """The mutable version of the `Span`."""
-    comptime Immutable = Span[Self.T, ImmutOrigin.cast_from[Self.origin]]
+    comptime Immutable = Span[Self.T, ImmutOrigin(Self.origin)]
     """The immutable version of the `Span`."""
     comptime UnsafePointerType = UnsafePointer[
         Self.T,
@@ -121,7 +114,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
     ]
     """The unsafe pointer type for this `Span`."""
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _SpanIter[Self.T, Self.origin]
     """The iterator type for this `Span`.
 
@@ -180,8 +173,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
     @implicit
     @always_inline("nodebug")
     fn __init__(
-        other: Span[Self.T, _],
-        out self: Span[Self.T, ImmutOrigin.cast_from[other.origin]],
+        other: Span, out self: Span[other.T, ImmutOrigin(other.origin)]
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -203,7 +195,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
 
     @always_inline
     @implicit
-    fn __init__(out self, ref [Self.origin]list: List[Self.T, *_]):
+    fn __init__(out self, ref [Self.origin]list: List[Self.T, ...]):
         """Construct a `Span` from a `List`.
 
         Args:
@@ -343,7 +335,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
         return False
 
     @no_inline
-    fn __str__[U: Representable & Copyable, //](self: Span[U, *_]) -> String:
+    fn __str__[U: Representable & Copyable, //](self: Span[U, ...]) -> String:
         """Returns a string representation of a `Span`.
 
         Parameters:
@@ -376,7 +368,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
     @no_inline
     fn write_to[
         U: Representable & Copyable, //
-    ](self: Span[U, *_], mut writer: Some[Writer]):
+    ](self: Span[U, ...], mut writer: Some[Writer]):
         """Write `my_span.__str__()` to a `Writer`.
 
         Parameters:
@@ -394,7 +386,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
         writer.write("]")
 
     @no_inline
-    fn __repr__[U: Representable & Copyable, //](self: Span[U, *_]) -> String:
+    fn __repr__[U: Representable & Copyable, //](self: Span[U, ...]) -> String:
         """Returns a string representation of a `Span`.
 
         Parameters:
@@ -479,12 +471,13 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
 
     @always_inline
     fn copy_from[
-        _origin: MutOrigin, //
-    ](self: Span[Self.T, _origin], other: Span[Self.T, _],):
+        _T: Copyable & ImplicitlyDestructible, _origin: MutOrigin, //
+    ](self: Span[_T, _origin], other: Span[_T, _]):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
 
         Parameters:
+            _T: List element type that supports implicit destruction.
             _origin: The inferred mutable origin of the data within the Span.
 
         Args:
@@ -557,11 +550,14 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
         """
         return not self == rhs
 
-    fn fill[_origin: MutOrigin, //](self: Span[Self.T, _origin], value: Self.T):
+    fn fill[
+        _T: Copyable & ImplicitlyDestructible, _origin: MutOrigin, //
+    ](self: Span[_T, _origin], value: _T):
         """
         Fill the memory that a span references with a given value.
 
         Parameters:
+            _T: List element type that supports implicit destruction.
             _origin: The inferred mutable origin of the data within the Span.
 
         Args:
@@ -594,7 +590,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
         var ptr = self.unsafe_ptr()
 
         # `a` and `b` may be equal, so we cannot use `swap` directly.
-        ptr.offset(a).swap_pointees(ptr.offset(b))
+        (ptr + a).swap_pointees(ptr + b)
 
     fn swap_elements(self: Span[mut=True, Self.T], a: Int, b: Int) raises:
         """
@@ -811,7 +807,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]](
     fn _binary_search_index[
         dtype: DType,
         //,
-    ](self: Span[Scalar[dtype], **_], needle: Scalar[dtype]) -> Optional[UInt]:
+    ](self: Span[Scalar[dtype], ...], needle: Scalar[dtype]) -> Optional[UInt]:
         """Finds the index of `needle` with binary search.
         Args:
             needle: The value to binary search for.

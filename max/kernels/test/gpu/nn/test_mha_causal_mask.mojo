@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from collections import OptionalReg
 from math import isclose
 from random import rand
@@ -200,7 +202,7 @@ fn test[
         UInt(depth),
         BK=OptionalReg[UInt](UInt(128 // size_of[qkv_type]())),
         num_pipeline_stages=UInt(4) if (
-            ctx.default_device_info is H100 or ctx.default_device_info is B200
+            ctx.default_device_info == H100 or ctx.default_device_info == B200
         ) else 2,
     )
 
@@ -361,13 +363,14 @@ fn construct_depths(is_sm90orsm100: Bool) -> List[Int]:
     if is_sm90orsm100:
         depths.append(72)
         depths.append(80)
+        depths.append(96)
         depths.append(256)
     return depths^
 
 
 def main():
     with DeviceContext() as ctx:
-        comptime is_sm90orsm100 = ctx.default_device_info is H100 or ctx.default_device_info is B200
+        comptime is_sm90orsm100 = ctx.default_device_info == H100 or ctx.default_device_info == B200
         comptime depths = construct_depths(is_sm90orsm100)
 
         @parameter
@@ -586,7 +589,7 @@ def main():
             ](1, 600, ctx)
 
             @parameter
-            if ctx.default_device_info is A100 or is_sm90orsm100:
+            if ctx.default_device_info == A100 or is_sm90orsm100:
                 test[
                     DType.bfloat16,
                     DType.bfloat16,

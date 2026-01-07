@@ -26,7 +26,9 @@ from utils import IndexList
 from utils.index import Index
 from utils.numerics import isnan
 from internal_utils import assert_almost_equal
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
@@ -216,7 +218,7 @@ fn run_matvec_with_epilogue_fn(
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var const_val = 4.0
+    var const_val: Float32 = 4.0
 
     @parameter
     @always_inline

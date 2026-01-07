@@ -30,6 +30,7 @@ trait MixedTupleLike(ImplicitlyCopyable, Representable):
 
     comptime VariadicType: Variadic.TypesOfTrait[MixedTupleLike]
     comptime STATIC_VALUE: Int
+    comptime IS_STATIC_VALUE = False
     comptime IS_TUPLE = False
     comptime IS_VALUE = not Self.IS_TUPLE
     comptime DTYPE = DType.invalid
@@ -90,6 +91,7 @@ struct ComptimeInt[val: Int](MixedTupleLike):
     ].element_types
     comptime STATIC_VALUE: Int = Self.val
     comptime DTYPE = DType.int
+    comptime IS_STATIC_VALUE = True
 
     fn __init__(out self):
         """Initialize a compile-time integer with the specified value."""
@@ -216,9 +218,16 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     comptime IS_TUPLE = True
     comptime ALL_DIMS_KNOWN = _AllStatic[*Self.element_types]
     comptime STATIC_PRODUCT = _StaticProduct[*Self.element_types]
+    comptime rank = Variadic.size(Self.element_types)
 
     var _storage: Tuple[*Self.element_types]
     """The underlying MLIR storage for the tuple elements."""
+
+    fn __init__(out self) where Self.ALL_DIMS_KNOWN:
+        """
+        Empty initialize a tensor with static dims.
+        """
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @staticmethod
     @always_inline("nodebug")
@@ -280,7 +289,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     fn __init__(
         out self,
         *,
-        var storage: VariadicPack[_, _, MixedTupleLike, *Self.element_types],
+        var storage: VariadicPack[_, MixedTupleLike, *Self.element_types],
     ):
         """Construct from a low-level variadic pack.
 
@@ -290,8 +299,9 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         var t = Tuple(
             storage=rebind_var[
                 VariadicPack[
+                    elt_is_mutable = type_of(storage).elt_is_mutable,
+                    origin = type_of(storage).origin,
                     type_of(storage).is_owned,
-                    type_of(storage).origin,
                     Movable,
                     *Self.element_types,
                 ]
@@ -599,7 +609,13 @@ fn crd2idx[
 
             return result
         else:  # "int" tuple tuple
-            var crd_int = 0 if crd_len == 0 else crd.value()
+            var crd_int: Int
+
+            @parameter
+            if Index.IS_TUPLE:
+                crd_int = 0 if crd_len == 0 else crd.tuple()[0].value()
+            else:
+                crd_int = 0 if crd_len == 0 else crd.value()
 
             comptime last_elem_idx = shape_len - 1
 
@@ -617,10 +633,91 @@ fn crd2idx[
 
         @parameter
         if crd_len > 1:
-            constrained[False, "crd is a tuple but shape and stride are not"]()
-            abort()
+            abort("crd is a tuple but shape and stride are not")
         else:
             return crd.value() * stride.value()
+
+
+# Implementation based off crd2idx - computes the inverse operation
+fn idx2crd[
+    Shape: MixedTupleLike,
+    Stride: MixedTupleLike,
+    out_dtype: DType = DType.int64,
+](idx: Int, shape: Shape, stride: Stride) -> MixedTuple[
+    *_Splatted[RuntimeInt[out_dtype], Shape.__len__()]
+]:
+    """Calculate the coordinate tuple from a linear index.
+
+    This is the inverse of crd2idx - given a linear index, shape, and stride,
+    it computes the multi-dimensional coordinates.
+
+    Parameters:
+        Shape: The shape type (must be MixedTupleLike).
+        Stride: The stride type (must be MixedTupleLike).
+        out_dtype: The output data type for coordinate values.
+
+    Args:
+        idx: The linear index to convert.
+        shape: The shape of the tensor.
+        stride: The stride of the tensor.
+
+    Returns:
+        A MixedTuple containing the coordinate values for each dimension.
+
+    Examples:
+        For a 2D tensor with shape (3, 4) and row-major strides (4, 1):
+
+        - idx2crd(0, shape, stride) returns (0, 0).
+        - idx2crd(5, shape, stride) returns (1, 1).
+        - idx2crd(11, shape, stride) returns (2, 3).
+    """
+    comptime shape_len = Shape.__len__()
+    comptime stride_len = Stride.__len__()
+
+    debug_assert(
+        shape_len == stride_len,
+        "Shape length (",
+        shape_len,
+        ") must match stride length (",
+        stride_len,
+        ")",
+    )
+
+    comptime Result = MixedTuple[*_Splatted[RuntimeInt[out_dtype], shape_len]]
+    var result: Result
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(result))
+
+    @parameter
+    if Shape.IS_TUPLE and Stride.IS_TUPLE and shape_len == stride_len:
+        var stride_t = stride.tuple()
+        var remaining_idx = idx
+
+        # Process dimensions in order of decreasing stride
+        # For each dimension, compute coordinate = remaining_idx // stride
+        # then update remaining_idx = remaining_idx % stride
+        @parameter
+        for i in range(shape_len):
+            var stride_val = stride_t[i].value()
+            var coord_val = remaining_idx // stride_val
+            remaining_idx = remaining_idx % stride_val
+            UnsafePointer(to=result[i]).init_pointee_copy(
+                rebind[Result.element_types[i]](
+                    RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                )
+            )
+    else:
+        # Single dimension case
+        var coord_val = idx // stride.value()
+
+        @parameter
+        for i in range(shape_len):
+            UnsafePointer(to=result[i]).init_pointee_copy(
+                rebind[Result.element_types[i]](
+                    RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                )
+            )
+
+    return result^
 
 
 fn mixed_int_tuple_to_int_tuple[
@@ -654,6 +751,64 @@ fn mixed_int_tuple_to_int_tuple[
         else:
             # Convert value elements to integers
             result.append(IntTuple(value[i].value()))
+
+    return result
+
+
+@always_inline
+fn mixed_int_tuple_to_index_list[
+    *element_types: MixedTupleLike
+](value: MixedTuple[*element_types]) -> std.utils.IndexList[value.rank]:
+    """Convert a flat MixedTuple to an IndexList.
+
+    Parameters:
+        element_types: The variadic pack of element types in the MixedTuple.
+
+    Args:
+        value: The MixedTuple to convert.
+
+    Returns:
+        An IndexList with the same rank and values as the input MixedTuple.
+    """
+    var result = std.utils.IndexList[value.rank]()
+
+    @parameter
+    for i in range(MixedTuple[*element_types].__len__()):
+        result[i] = value[i].value()
+
+    return result
+
+
+fn mixed_int_tuple_to_int_tuple[*element_types: MixedTupleLike]() -> IntTuple:
+    """Convert a MixedTuple to an IntTuple, preserving the nested structure.
+
+    This function recursively traverses the MixedTuple and converts each element:
+    - Value elements (ComptimeInt, RuntimeInt) become integer values in the IntTuple
+    - Tuple elements (nested MixedTuple) become nested IntTuples
+
+    Parameters:
+        element_types: The variadic pack of element types in the MixedTuple.
+
+    Returns:
+        An IntTuple with the same structure and values as the input MixedTuple.
+    """
+    var result = IntTuple()
+
+    @parameter
+    for i in range(Variadic.size(element_types)):
+        comptime T = element_types[i]
+
+        @parameter
+        if T.IS_TUPLE:
+            # Recursively convert nested tuples
+            result.append(mixed_int_tuple_to_int_tuple[element_types[i]]())
+        else:
+
+            @parameter
+            if T.IS_STATIC_VALUE:
+                result.append(IntTuple(T.STATIC_VALUE))
+            else:
+                result.append(layout.UNKNOWN_VALUE)
 
     return result
 
@@ -826,14 +981,14 @@ comptime _AllStaticReducer[
     Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.TypesOfTrait[MixedTupleLike],
     idx: Int,
-] = (Variadic.values[From[idx].STATIC_VALUE != -1 and Prev[0]])
+] = (Variadic.values[From[idx].IS_STATIC_VALUE and Prev[0]])
 
 
 comptime _AllStatic[
     *element_types: MixedTupleLike
 ] = _ReduceVariadicAndIdxToValue[
     BaseVal = Variadic.values[True],
-    VariadicType = _Flattened[*element_types],
+    VariadicType=element_types,
     Reducer=_AllStaticReducer,
 ][
     0
@@ -872,7 +1027,7 @@ comptime _StaticProduct[
     *element_types: MixedTupleLike
 ] = _ReduceVariadicAndIdxToValue[
     BaseVal = Variadic.values[1],
-    VariadicType = _Flattened[*element_types],
+    VariadicType=element_types,
     Reducer=_StaticProductReducer,
 ][
     0

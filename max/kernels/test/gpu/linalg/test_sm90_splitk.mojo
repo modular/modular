@@ -17,7 +17,9 @@ import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from internal_utils import (
     assert_almost_equal,
@@ -128,7 +130,7 @@ fn test_warp_specialize_gemm_with_multicasting[
 
     comptime wgmma_shape = Index(
         64, BN, 32
-    ) if a_type is DType.float8_e4m3fn else Index(64, BN, 16)
+    ) if a_type == DType.float8_e4m3fn else Index(64, BN, 16)
 
     print(
         "wgmma_n",

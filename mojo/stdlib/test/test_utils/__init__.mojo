@@ -24,12 +24,15 @@ from .types import (
     DelRecorder,
     ExplicitCopyOnly,
     ImplicitCopyOnly,
+    ConfigureTrivial,
     MoveCopyCounter,
     MoveCounter,
     MoveOnly,
+    NonMovable,
     Observable,
     ObservableDel,
     ObservableMoveOnly,
+    ExplicitDelOnly,
     TriviallyCopyableMoveCounter,
 )
 from .words import (

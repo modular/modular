@@ -10,18 +10,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides iterator utilities for common iteration patterns.
+
+This module includes functions for creating specialized iterators:
+
+- `count()` - Creates an infinite counter with customizable start and step values
+- `product()` - Computes the Cartesian product of two, three, or four iterables
+- `repeat()` - Repeats an element a specified number of times
+
+These utilities enable functional-style iteration patterns and composable iterator
+operations.
+"""
+
 # ===-----------------------------------------------------------------------===#
 # count
 # ===-----------------------------------------------------------------------===#
 
 from builtin.constrained import _constrained_conforms_to
+from builtin.rebind import downcast
+from builtin.variadics import Variadic
 
 
 @fieldwise_init
 @register_passable("trivial")
 struct _CountIterator(Iterable, Iterator):
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Int
     var start: Int
@@ -32,14 +46,10 @@ struct _CountIterator(Iterable, Iterator):
         return self
 
     @always_inline
-    fn __next__(mut self) -> Int:
+    fn __next__(mut self) raises StopIteration -> Int:
         var result = self.start
         self.start += self.step
         return result
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return True
 
 
 @always_inline
@@ -63,14 +73,14 @@ fn count(start: Int = 0, step: Int = 1) -> _CountIterator:
 
 
 @fieldwise_init
-struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
+struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
     Copyable, Iterable, Iterator
 ):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var _inner_a: Self.IteratorTypeA
@@ -88,32 +98,26 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
         self._inner_a_elem = None
         self._initial_inner_b = inner_b^
 
+    fn __copyinit__(out self, existing: Self):
+        _constrained_conforms_to[
+            conforms_to(Self.IteratorTypeA, Copyable),
+            Parent=Self,
+            Element = Self.IteratorTypeA,
+            ParentConformsTo="Copyable",
+        ]()
+        self._inner_a = rebind_var[Self.IteratorTypeA](
+            trait_downcast[Copyable](existing._inner_a).copy()
+        )
+        self._inner_b = existing._inner_b.copy()
+        self._inner_a_elem = existing._inner_a_elem.copy()
+        self._initial_inner_b = existing._initial_inner_b.copy()
+
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn copy(self) -> Self:
-        return Self(
-            self._inner_a.copy(),
-            self._inner_b.copy(),
-            self._inner_a_elem.copy(),
-            self._initial_inner_b.copy(),
-        )
-
-    fn __has_next__(self) -> Bool:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        # Take the first element from 'a' if we haven't got it yet.
         if not self._inner_a_elem:
-            return self._inner_a.__has_next__()
-        if self._inner_b.__has_next__():
-            return True
-        # If _inner_b is exhausted, but _inner_a has more elements, we can reset _inner_b and continue
-        return self._inner_a.__has_next__()
-
-    fn __next__(mut self) -> Self.Element:
-        if not self._inner_a_elem:
-            self._inner_a_elem = next(self._inner_a)
-        if not self._inner_b.__has_next__():
-            # reset if we reach the end of the B iterator and grab the next
-            # item from the A iterator.
-            self._inner_b = self._initial_inner_b.copy()
             self._inner_a_elem = next(self._inner_a)
 
         _constrained_conforms_to[
@@ -124,12 +128,25 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
             ElementConformsTo="Copyable",
         ]()
 
-        var elem = trait_downcast[Copyable](
-            self._inner_a_elem.unsafe_value()
-        ).copy()
-        return rebind_var[Self.IteratorTypeA.Element](elem^), next(
-            self._inner_b
-        )
+        try:
+            # Get the next element from 'b' if it exists.
+            var b_val = next(self._inner_b)
+
+            var elem = trait_downcast[Copyable](
+                self._inner_a_elem.unsafe_value()
+            ).copy()
+            return rebind_var[Self.IteratorTypeA.Element](elem^), b_val^
+        except:
+            # reset if we reach the end of the B iterator and grab the next
+            # item from the A iterator.
+            self._inner_b = self._initial_inner_b.copy()
+            self._inner_a_elem = next(self._inner_a)
+            var b_val = next(self._inner_b)
+            # If a and b iterators had more elements, return this one.
+            var elem = trait_downcast[Copyable](
+                self._inner_a_elem.unsafe_value()
+            ).copy()
+            return rebind_var[Self.IteratorTypeA.Element](elem^), b_val^
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         # compute a * initial_b + b for lower and upper
@@ -156,7 +173,7 @@ fn product[
     IterableTypeA: Iterable, IterableTypeB: Iterable
 ](ref iterable_a: IterableTypeA, ref iterable_b: IterableTypeB) -> _Product2[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    IterableTypeB.IteratorType[origin_of(iterable_b)],
+    downcast[type_of(iter(iterable_b)), Copyable & Iterator],
 ]:
     """Returns an iterator that yields tuples of the elements of the outer
     product of the iterables.
@@ -182,7 +199,12 @@ fn product[
         print(a, b)
     ```
     """
-    return {iter(iterable_a), iter(iterable_b)}
+    return {
+        iter(iterable_a),
+        rebind_var[downcast[type_of(iter(iterable_b)), Copyable & Iterator]](
+            iter(iterable_b)
+        ),
+    }
 
 
 # ===-----------------------------------------------------------------------===#
@@ -192,7 +214,9 @@ fn product[
 
 @fieldwise_init
 struct _Product3[
-    IteratorTypeA: Iterator, IteratorTypeB: Iterator, IteratorTypeC: Iterator
+    IteratorTypeA: Iterator,
+    IteratorTypeB: Copyable & Iterator,
+    IteratorTypeC: Copyable & Iterator,
 ](Copyable, Iterable, Iterator):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
@@ -200,7 +224,7 @@ struct _Product3[
         Self.IteratorTypeC.Element,
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     comptime _Product2Type = _Product2[Self.IteratorTypeB, Self.IteratorTypeC]
@@ -225,10 +249,7 @@ struct _Product3[
     fn copy(self) -> Self:
         return Self(_inner=self._inner.copy())
 
-    fn __has_next__(self) -> Bool:
-        return self._inner.__has_next__()
-
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA.Element, Copyable),
             Parent=Self,
@@ -277,8 +298,8 @@ fn product[
     ref iterable_c: IterableTypeC,
 ) -> _Product3[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    IterableTypeB.IteratorType[origin_of(iterable_b)],
-    IterableTypeC.IteratorType[origin_of(iterable_c)],
+    downcast[type_of(iter(iterable_b)), Copyable & Iterator],
+    downcast[type_of(iter(iterable_c)), Copyable & Iterator],
 ]:
     """Returns an iterator that yields tuples of the elements of the outer
     product of three iterables.
@@ -307,7 +328,15 @@ fn product[
         print(a, b, c)
     ```
     """
-    return {iter(iterable_a), iter(iterable_b), iter(iterable_c)}
+    return {
+        iter(iterable_a),
+        rebind_var[downcast[type_of(iter(iterable_b)), Copyable & Iterator]](
+            iter(iterable_b)
+        ),
+        rebind_var[downcast[type_of(iter(iterable_c)), Copyable & Iterator]](
+            iter(iterable_c)
+        ),
+    }
 
 
 # ===-----------------------------------------------------------------------===#
@@ -318,9 +347,9 @@ fn product[
 @fieldwise_init
 struct _Product4[
     IteratorTypeA: Iterator,
-    IteratorTypeB: Iterator,
-    IteratorTypeC: Iterator,
-    IteratorTypeD: Iterator,
+    IteratorTypeB: Copyable & Iterator,
+    IteratorTypeC: Copyable & Iterator,
+    IteratorTypeD: Copyable & Iterator,
 ](Copyable, Iterable, Iterator):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
@@ -329,7 +358,7 @@ struct _Product4[
         Self.IteratorTypeD.Element,
     ]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     comptime _Product3Type = _Product3[
@@ -355,10 +384,7 @@ struct _Product4[
     fn copy(self) -> Self:
         return Self(_inner=self._inner.copy())
 
-    fn __has_next__(self) -> Bool:
-        return self._inner.__has_next__()
-
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA.Element, Copyable),
             Parent=Self,
@@ -422,9 +448,9 @@ fn product[
     ref iterable_d: IterableTypeD,
 ) -> _Product4[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    IterableTypeB.IteratorType[origin_of(iterable_b)],
-    IterableTypeC.IteratorType[origin_of(iterable_c)],
-    IterableTypeD.IteratorType[origin_of(iterable_d)],
+    downcast[type_of(iter(iterable_b)), Copyable & Iterator],
+    downcast[type_of(iter(iterable_c)), Copyable & Iterator],
+    downcast[type_of(iter(iterable_d)), Copyable & Iterator],
 ]:
     """Returns an iterator that yields tuples of the elements of the outer
     product of four iterables.
@@ -458,9 +484,15 @@ fn product[
     """
     return {
         iter(iterable_a),
-        iter(iterable_b),
-        iter(iterable_c),
-        iter(iterable_d),
+        rebind_var[downcast[type_of(iter(iterable_b)), Copyable & Iterator]](
+            iter(iterable_b)
+        ),
+        rebind_var[downcast[type_of(iter(iterable_c)), Copyable & Iterator]](
+            iter(iterable_c)
+        ),
+        rebind_var[downcast[type_of(iter(iterable_d)), Copyable & Iterator]](
+            iter(iterable_d)
+        ),
     }
 
 
@@ -470,7 +502,9 @@ fn product[
 
 
 @fieldwise_init
-struct _RepeatIterator[ElementType: Copyable](Copyable, Iterable, Iterator):
+struct _RepeatIterator[ElementType: Copyable & ImplicitlyDestructible](
+    Copyable, Iterable, Iterator
+):
     """Iterator that repeats an element a specified number of times.
 
     Parameters:
@@ -479,7 +513,7 @@ struct _RepeatIterator[ElementType: Copyable](Copyable, Iterable, Iterator):
 
     comptime Element = Self.ElementType
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var element: Self.ElementType
@@ -494,18 +528,16 @@ struct _RepeatIterator[ElementType: Copyable](Copyable, Iterable, Iterator):
         return Self(self.element.copy(), self.remaining)
 
     @always_inline
-    fn __next__(mut self) -> Self.ElementType:
+    fn __next__(mut self) raises StopIteration -> Self.ElementType:
+        if self.remaining <= 0:
+            raise StopIteration()
         self.remaining -= 1
         return self.element.copy()
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.remaining > 0
 
 
 @always_inline
 fn repeat[
-    ElementType: Copyable
+    ElementType: Copyable & ImplicitlyDestructible
 ](element: ElementType, *, times: Int) -> _RepeatIterator[ElementType]:
     """Constructs an iterator that repeats the given element a specified number of times.
 

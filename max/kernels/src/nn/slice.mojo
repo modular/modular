@@ -52,7 +52,7 @@ fn _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
 fn slice_dim_as_view[
     dtype: DType, dim: Int
 ](
-    tensor: LayoutTensor[dtype, **_], start: Int, end: Int, step: Int
+    tensor: LayoutTensor[dtype, ...], start: Int, end: Int, step: Int
 ) -> LayoutTensor[
     dtype,
     Layout.row_major[tensor.rank](),
@@ -107,10 +107,10 @@ fn slice_as_view[
     end_type: DType,
     step_type: DType,
 ](
-    tensor: LayoutTensor[dtype, **_],
-    starts: LayoutTensor[start_type, **_],
-    ends: LayoutTensor[end_type, **_],
-    steps: LayoutTensor[step_type, **_],
+    tensor: LayoutTensor[dtype, ...],
+    starts: LayoutTensor[start_type, ...],
+    ends: LayoutTensor[end_type, ...],
+    steps: LayoutTensor[step_type, ...],
 ) -> LayoutTensor[
     dtype,
     Layout.row_major[tensor.rank](),
@@ -137,7 +137,7 @@ fn slice_as_view[
         stop = _normalize_and_clamp_dim(stop, step, dim_i)
 
         var new_offset = start * stride_i
-        new_data = new_data.offset(new_offset)
+        new_data = new_data + new_offset
 
         # Stride == number of elements to the next index in this dimension.
         # So to step we can just increase the stride.
@@ -175,11 +175,11 @@ fn copy_to_slice[
     step_type: DType,
     target: StaticString = "cpu",
 ](
-    buffer: LayoutTensor[mut=True, dtype, **_],
-    in_slice: LayoutTensor[dtype, **_],
-    start: LayoutTensor[start_type, **_],
-    end: LayoutTensor[end_type, **_],
-    step: LayoutTensor[step_type, **_],
+    buffer: LayoutTensor[mut=True, dtype, ...],
+    in_slice: LayoutTensor[dtype, ...],
+    start: LayoutTensor[start_type, ...],
+    end: LayoutTensor[end_type, ...],
+    step: LayoutTensor[step_type, ...],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     var expected_shape = slice_shape[single_thread_blocking_override=True](
@@ -236,11 +236,11 @@ fn slice_as_copy[
     dtype: DType,
     index_type: DType,
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
-    tensor: LayoutTensor[dtype, **_],
-    start: LayoutTensor[index_type, **_],
-    end: LayoutTensor[index_type, **_],
-    step: LayoutTensor[index_type, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
+    tensor: LayoutTensor[dtype, ...],
+    start: LayoutTensor[index_type, ...],
+    end: LayoutTensor[index_type, ...],
+    step: LayoutTensor[index_type, ...],
 ) raises:
     __comptime_assert output.rank == tensor.rank
     # Apply slice to the tensor
@@ -281,10 +281,10 @@ fn slice_shape[
     step_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: LayoutTensor[input_type, **_],
-    start_buf: LayoutTensor[start_type, **_],
-    stop_buf: LayoutTensor[stop_type, **_],
-    step_buf: LayoutTensor[step_type, **_],
+    input_buf: LayoutTensor[input_type, ...],
+    start_buf: LayoutTensor[start_type, ...],
+    stop_buf: LayoutTensor[stop_type, ...],
+    step_buf: LayoutTensor[step_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     __comptime_assert start_buf.rank == 1, "start_buf.rank must be 1"
     __comptime_assert stop_buf.rank == 1, "stop_buf.rank must be 1"
@@ -339,10 +339,10 @@ fn sliced_add[
     //,
     target: StaticString,
 ](
-    c: LayoutTensor[mut=True, dtype, *_, **_],
-    a: LayoutTensor[dtype, *_, **_],
-    b: LayoutTensor[dtype, *_, **_],
-    lora_end_idx: LayoutTensor[DType.int64, *_, **_],
+    c: LayoutTensor[mut=True, dtype, ...],
+    a: LayoutTensor[dtype, ...],
+    b: LayoutTensor[dtype, ...],
+    lora_end_idx: LayoutTensor[DType.int64, ...],
     ctx: Optional[DeviceContext],
 ) raises:
     """Adds tensors a and b element-wise for rows < lora_end_idx, otherwise copies a.

@@ -62,7 +62,7 @@ pixi add pip
 
 # If you cloned main:
 pip install --pre modular \
-  --index-url https://dl.modular.com/public/nightly/python/simple/
+  --extra-index-url https://whl.modular.com/nightly/simple/
 
 # If you cloned stable:
 # pip install modular

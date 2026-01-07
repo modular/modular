@@ -13,10 +13,15 @@
 """Inverse real FFT kernel using cuFFT."""
 
 from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
     UnsafePointer as UnsafePointerV2,
 )
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
+
 from sys.ffi import external_call
 
 from _cufft.cufft import (
@@ -151,13 +156,15 @@ fn _irfft[
     input: LayoutTensor[
         input_type,
         alignment=alignment,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     output: LayoutTensor[
         mut=True,
         output_type,
         alignment=alignment,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     n: Int,
     buffer_size_mb: Int,
@@ -167,10 +174,10 @@ fn _irfft[
         input.rank == output.rank
     ), "Input and output must have the same rank"
     __comptime_assert (
-        input_type is DType.float32
+        input_type == DType.float32
     ), "Only Float32 is supported for IRFFT"
     __comptime_assert (
-        output_type is DType.float32
+        output_type == DType.float32
     ), "Only Float32 is supported for IRFFT"
     # we allocate 64 MB more than the buffer size because the estimation might
     # not be exact.
@@ -317,13 +324,15 @@ fn irfft[
     input: LayoutTensor[
         input_type,
         alignment=alignment,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     output: LayoutTensor[
         mut=True,
         output_type,
         alignment=alignment,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     n: Int,
     buffer_size_mb: Int,

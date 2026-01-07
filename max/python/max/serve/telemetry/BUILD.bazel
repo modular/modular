@@ -11,7 +11,10 @@ modular_py_library(
         requirement("opentelemetry-sdk"),
         requirement("opentelemetry-exporter-otlp-proto-http"),
         requirement("opentelemetry-exporter-prometheus"),
+        requirement("opentelemetry-api"),
+        requirement("prometheus-client"),
         requirement("python-json-logger"),
+        requirement("requests"),
         requirement("uvicorn"),  # to host /metrics endpoint as it runs in a different process
     ],
 )

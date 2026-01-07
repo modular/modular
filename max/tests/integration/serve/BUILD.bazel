@@ -2,8 +2,9 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_test(
@@ -21,6 +22,7 @@ modular_py_test(
     env = {
         "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
     },
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -56,6 +58,7 @@ modular_py_test(
     },
     tags = [
         "manual",  # TODO(AITLIB-293)
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
         "run-in-hf-workflow",
@@ -93,6 +96,7 @@ modular_py_test(
     tags = [
         "gpu",
         "manual",  # TODO(AITLIB-293)
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
         "run-in-hf-workflow",
@@ -141,15 +145,24 @@ modular_py_test(
         "manual",
     ],
     deps = [
-        "//max/python/max/engine",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/serve",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/mocks",
+        "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/queue",
+        "//max/python/max/serve/schemas",
+        "//max/python/max/serve/telemetry",
+        "//max/tests/integration/pipelines/python/test_common:test_data",
         requirement("async-asgi-testclient"),
         requirement("pytest-asyncio"),
         requirement("sse-starlette"),
-        requirement("transformers"),
+        requirement("fastapi"),
     ],
 )
 
@@ -165,6 +178,7 @@ modular_py_test(
     tags = [
         "AITLIB-293",
         "manual",
+        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
         "run-in-hf-workflow",

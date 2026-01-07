@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import isclose
 from random import rand, random_float64, seed
 from sys import has_amd_gpu_accelerator
@@ -89,7 +91,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
         shape, out_device, rank - 1, ctx
     )
 
-    _softmax_cpu[type, 1, rank, origin_of(), input_fn_host](
+    _softmax_cpu[type, 1, rank, origin_of()._mlir_origin, input_fn_host](
         shape, out_ref, rank - 1
     )
 
@@ -288,7 +290,7 @@ fn test_gpu_online_softmax[
     ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
         return in_host.load[width=_simd_width](rebind[IndexList[rank]](coords))
 
-    _softmax_cpu[type, 1, rank, origin_of(), input_fn_host](
+    _softmax_cpu[type, 1, rank, origin_of()._mlir_origin, input_fn_host](
         shape, out_ref, rank - 1
     )
 

@@ -262,7 +262,7 @@ fn distribute[
         )
 
     var res = NDBuffer[dtype, rank, buff.origin, _result_shape](
-        buff.data.offset(Int(thread_offset)),
+        buff.data + Int(thread_offset),
         dynamic_shape=res_shape,
         dynamic_stride=res_strides,
     )
@@ -408,7 +408,7 @@ fn vectorize[
     shape: DimList,
     origin: MutOrigin,
     _res_shape: DimList = _vectorize_shape[*sizes](shape),
-](buff: NDBuffer[dtype, rank, origin, shape, *_]) -> Tuple[
+](buff: NDBuffer[dtype, rank, origin, shape, _]) -> Tuple[
     NDBuffer[
         dtype,
         rank,
@@ -461,7 +461,7 @@ fn _copy_nd_buffer_to_layout_tensor[
         mut=True,
         dtype,
         layout,
-        *_, **_,
+        ...,
     ],
     src: NDBuffer[dtype, src_rank, _, shape],
     buff_element_layout: ElementLayout[src_rank, buff_element_layout_shape],
@@ -508,7 +508,7 @@ fn _copy_nd_buffer_to_layout_tensor[
                     eviction_policy=eviction_policy,
                 ](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
-                var src_element = src.data.offset(src_idx).load[
+                var src_element = (src.data + src_idx).load[
                     width=vec_size, alignment=alignment
                 ]()
                 dst.ptr.store[alignment=alignment](dst_idx, src_element)
@@ -595,7 +595,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
         mut=True,
         dtype,
         layout,
-        *_, **_,
+        ...,
     ],
     src: NDBuffer[dtype, src_rank, _, shape],
     buff_element_layout: ElementLayout[src_rank, buff_element_layout_shape],
@@ -654,7 +654,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                     eviction_policy=eviction_policy,
                 ](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
-                var src_element = src.data.offset(src_idx).load[
+                var src_element = (src.data + src_idx).load[
                     width=vec_size, alignment=alignment
                 ]()
                 dst.ptr.store[alignment=alignment](dst_idx, src_element)
@@ -744,7 +744,7 @@ fn _copy_layout_tensor_to_nd_buffer[
     src: LayoutTensor[
         dtype,
         layout,
-        *_, **_,
+        ...,
     ],
 ):
     comptime src_rank = layout.rank()
@@ -778,7 +778,7 @@ fn _copy_layout_tensor_to_nd_buffer[
                 i * vec_size
             )
 
-            var src_element = src.ptr.offset(src_idx).load[
+            var src_element = (src.ptr + src_idx).load[
                 width=vec_size, alignment=alignment
             ]()
             dst.data.store[alignment=alignment](dst_idx, src_element)
@@ -840,7 +840,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
     src: LayoutTensor[
         dtype,
         layout,
-        *_, **_,
+        ...,
     ],
     tile_mask: TileMask[mask_rank, mask_element_size, mask_element_stride],
 ):
@@ -887,10 +887,10 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
                 i * vec_size
             )
 
-            var src_element = src.ptr.offset(src_idx).load[
+            var src_element = (src.ptr + src_idx).load[
                 width=vec_size, alignment=alignment
             ]()
-            dst.data.offset(dst_idx).store[alignment=alignment](src_element)
+            (dst.data + dst_idx).store[alignment=alignment](src_element)
 
     # 2d-vector load/store
     elif (
@@ -958,9 +958,9 @@ fn copy_from_nd_buffer[
         mut=True,
         dtype,
         dst_data_layout,
-        *_, **_,
+        ...,
     ],
-    src: NDBuffer[mut=True, dtype, *_],
+    src: NDBuffer[mut=True, dtype, _, _, _, _],
     thread_id: Int,
 ):
     comptime dst_rank = dst_data_layout.rank()
@@ -1028,7 +1028,7 @@ fn copy_from_nd_buffer_masked[
         mut=True,
         dtype,
         dst_data_layout,
-        *_, **_,
+        ...,
     ],
     src: NDBuffer[mut=True, dtype, src_rank, _, src_buff_shape],
     tile_mask: TileMask,
@@ -1120,7 +1120,7 @@ fn copy_to_nd_buffer[
     src_thread_local: LayoutTensor[
         dtype,
         src_data_layout,
-        *_, **_,
+        ...,
     ],
     thread_id: Int,
 ):
@@ -1179,7 +1179,7 @@ fn copy_to_nd_buffer_masked[
     src_thread_local: LayoutTensor[
         dtype,
         src_data_layout,
-        *_, **_,
+        ...,
     ],
     tile_mask: TileMask,
     thread_id: Int,
@@ -1264,7 +1264,7 @@ fn copy_from_nd_buffer_async[
         mut=True,
         dtype,
         dst_data_layout,
-        *_, **_,
+        ...,
     ],
     src_buffer: NDBuffer[mut=True, dtype, src_rank, _, src_buff_shape],
 ):

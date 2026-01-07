@@ -39,15 +39,15 @@ def test_operation[
     var prefix: String
 
     @parameter
-    if target_arch == "sm_80" and dtype is DType.bfloat16:
+    if target_arch == "sm_80" and dtype == DType.bfloat16:
         prefix = "fma.rn"
     else:
         prefix = String(op_name)
 
     @parameter
-    if dtype is DType.float16:
+    if dtype == DType.float16:
         suffix = ".f16"
-    elif dtype is DType.float32:
+    elif dtype == DType.float32:
         suffix = ".f32"
     else:
         suffix = ".bf16"
@@ -108,11 +108,11 @@ def test_fma[dtype: DType]():
         return x.fma(y, z)
 
     @parameter
-    if dtype is DType.bfloat16:
+    if dtype == DType.bfloat16:
         assert_true("fma.rn.bf16 " in _compile_code[fma[width=1]]())
         assert_true("fma.rn.bf16x2 " in _compile_code[fma[width=2]]())
         assert_true("fma.rn.bf16x2 " in _compile_code[fma[width=8]]())
-    elif dtype is DType.float32:
+    elif dtype == DType.float32:
         assert_true("fma.rn.f32 " in _compile_code[fma_manual[width=1]]())
         assert_true("fma.rn.f32x2 " in _compile_code[fma_manual[width=2]]())
         assert_true("fma.rn.f32x2 " in _compile_code[fma_manual[width=8]]())

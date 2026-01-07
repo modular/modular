@@ -14,7 +14,9 @@
 from collections import OptionalReg
 from math import ceildiv, exp2, recip
 from math.constants import log2e
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, env_get_int, simd_width_of, size_of
 
 import gpu.warp as warp
@@ -53,6 +55,7 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
+    RaggedTMA3DTile,
 )
 from nn.mha_fa3_utils import (
     _apply_mask,
@@ -208,12 +211,18 @@ fn mha_sm90_dispatch[
             decoding=decoding,
         ](ctx, q, num_rows_q)
     )
-    k_tma_op = k.create_tma_tile[Int(BN), Int(new_config.depth), swizzle_mode](
-        ctx
-    )
-    v_tma_op = v.create_tma_tile[Int(BN), Int(new_config.depth), swizzle_mode](
-        ctx
-    )
+    k_tma_op = k.create_tma_tile[
+        swizzle_mode,
+        BN = Int(new_config.block_n()),
+        depth = Int(new_config.depth),
+        BK = Int(new_config.padded_depth),
+    ](ctx)
+    v_tma_op = v.create_tma_tile[
+        swizzle_mode,
+        BN = Int(new_config.block_n()),
+        depth = Int(new_config.depth),
+        BK = Int(new_config.padded_depth),
+    ](ctx)
 
     # materialize scheduler, call max prompt len
     @parameter
@@ -395,13 +404,13 @@ fn _mha_sm90_sink_dispatch[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -538,13 +547,13 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -675,13 +684,13 @@ fn _mha_sm90_valid_length_dispatch[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -807,13 +816,13 @@ fn _mha_sm90_enqueue[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -929,13 +938,13 @@ fn _mha_sm90[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     o_ptr_arg: UnsafePointer[Scalar[output_type]],
     kv_lut: KVLUTType,
@@ -1594,7 +1603,7 @@ fn _mha_sm90[
 
             @parameter
             if decoding and PartitionType.do_partition:
-                output_ptr = output_ptr.offset(
+                output_ptr = output_ptr + (
                     depth * num_heads * batch_size * position.prompt_offset
                 )
             output_gmem_tile = position.q_out_gmem_tensor(output_ptr)

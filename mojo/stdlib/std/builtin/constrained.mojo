@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 from collections.string.string_slice import _get_kgen_string
-from compile.reflection import get_type_name
+from reflection import get_type_name
 
 
 @always_inline("nodebug")
@@ -82,8 +82,8 @@ fn constrained[cond: Bool]():
 fn _constrained_conforms_to[
     cond: Bool,
     *,
-    Parent: UnknownDestructibility,
-    Element: UnknownDestructibility,
+    Parent: AnyType,
+    Element: AnyType,
     ParentConformsTo: StaticString,
     ElementConformsTo: StaticString = ParentConformsTo,
 ]():

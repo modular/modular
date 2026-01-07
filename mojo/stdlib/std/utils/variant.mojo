@@ -14,6 +14,7 @@
 
 from builtin.constrained import _constrained_conforms_to
 from builtin.rebind import downcast
+from builtin.variadics import Variadic
 from os import abort
 from sys.intrinsics import _type_is_eq
 
@@ -22,7 +23,7 @@ from sys.intrinsics import _type_is_eq
 # ===----------------------------------------------------------------------=== #
 
 
-struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
+struct Variant[*Ts: AnyType](ImplicitlyCopyable):
     """A union that can hold a runtime-variant value from a set of predefined
     types.
 
@@ -122,6 +123,10 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
             implement `Copyable`.
     """
 
+    comptime __del__is_trivial = _all_trivial_del[*Self.Ts]()
+    comptime __copyinit__is_trivial = _all_trivial_copyinit[*Self.Ts]()
+    comptime __moveinit__is_trivial = _all_trivial_moveinit[*Self.Ts]()
+
     # Fields
     comptime _sentinel: Int = -1
     comptime _mlir_type = __mlir_type[
@@ -176,7 +181,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
                 Element=TUnknown,
                 ParentConformsTo="Copyable",
             ]()
-            comptime T = downcast[Copyable, TUnknown]
+            comptime T = downcast[TUnknown, Copyable]
 
             if self._get_discr() == i:
                 self._get_ptr[T]().init_pointee_copy(other._get_ptr[T]()[])
@@ -200,7 +205,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
                 Element=TUnknown,
                 ParentConformsTo="Movable",
             ]()
-            comptime T = downcast[Movable, TUnknown]
+            comptime T = downcast[TUnknown, Movable]
 
             if self._get_discr() == i:
                 # Calls the correct __moveinit__
@@ -219,7 +224,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
                 Element=TUnknown,
                 ParentConformsTo="ImplicitlyDestructible",
             ]()
-            comptime T = downcast[ImplicitlyDestructible, TUnknown]
+            comptime T = downcast[TUnknown, ImplicitlyDestructible]
 
             if self._get_discr() == i:
                 self._get_ptr[T]().destroy_pointee()
@@ -229,7 +234,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__[T: UnknownDestructibility](ref self) -> ref [self] T:
+    fn __getitem__[T: AnyType](ref self) -> ref [self] T:
         """Get the value out of the variant as a type-checked type.
 
         This explicitly check that your value is of that type!
@@ -255,9 +260,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn _get_ptr[
-        T: UnknownDestructibility
-    ](ref [_]self) -> UnsafePointer[T, origin_of(self)]:
+    fn _get_ptr[T: AnyType](ref [_]self) -> UnsafePointer[T, origin_of(self)]:
         comptime idx = Self._check[T]()
         __comptime_assert idx != Self._sentinel, "not a union element type"
         var ptr = UnsafePointer(to=self._impl).address
@@ -273,10 +276,10 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         var discr_ptr = __mlir_op.`pop.variant.discr_gep`[
             _type = __mlir_type.`!kgen.pointer<scalar<ui8>>`
         ](ptr)
-        return UnsafePointer(discr_ptr).bitcast[UInt8]()[]
+        return UnsafePointer[mut=True](discr_ptr).bitcast[UInt8]()[]
 
     @always_inline
-    fn take[T: Movable](mut self) -> T:
+    fn take[T: Movable](deinit self) -> T:
         """Take the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.
@@ -319,7 +322,10 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         return self._get_ptr[T]().take_pointee()
 
     @always_inline
-    fn replace[Tin: Movable, Tout: Movable](mut self, var value: Tin) -> Tout:
+    fn replace[
+        Tin: Movable & ImplicitlyDestructible,
+        Tout: Movable,
+    ](mut self, var value: Tin) -> Tout:
         """Replace the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.
@@ -386,7 +392,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         """
         self = Self(value^)
 
-    fn isa[T: UnknownDestructibility](self) -> Bool:
+    fn isa[T: AnyType](self) -> Bool:
         """Check if the variant contains the required type.
 
         Parameters:
@@ -398,7 +404,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         comptime idx = Self._check[T]()
         return self._get_discr() == idx
 
-    fn unsafe_get[T: UnknownDestructibility](ref self) -> ref [self] T:
+    fn unsafe_get[T: AnyType](ref self) -> ref [self] T:
         """Get the value out of the variant as a type-checked type.
 
         This doesn't explicitly check that your value is of that type!
@@ -419,7 +425,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         return self._get_ptr[T]()[]
 
     @staticmethod
-    fn _check[T: UnknownDestructibility]() -> Int:
+    fn _check[T: AnyType]() -> Int:
         @parameter
         for i in range(len(VariadicList(Self.Ts))):
             if _type_is_eq[Self.Ts[i], T]():
@@ -427,7 +433,7 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         return Self._sentinel
 
     @staticmethod
-    fn is_type_supported[T: UnknownDestructibility]() -> Bool:
+    fn is_type_supported[T: AnyType]() -> Bool:
         """Check if a type can be used by the `Variant`.
 
         Parameters:
@@ -455,3 +461,74 @@ struct Variant[*Ts: UnknownDestructibility](ImplicitlyCopyable):
         For example, the `Variant[Int, Bool]` permits `Int` and `Bool`.
         """
         return Self._check[T]() != Self._sentinel
+
+    # TODO(MOCO-2367): Use a `unified` closure parameter here instead.
+    fn destroy_with[T: AnyType](deinit self, destroy_func: fn (var T)):
+        """Destroy a value contained in this Variant in-place using a caller
+        provided destructor function.
+
+        This method can be used to destroy linear types in a `Variant` in-place,
+        without requiring that they be `Movable`.
+
+        This method will abort if this variant does not current contain an
+        element of the specified type `T`.
+
+        Parameters:
+            T: The element type the variant is expected to currently contain,
+                and which will be destroyed by `destroy_func`.
+
+        Args:
+            destroy_func: Caller-provided destructor function for destroying
+                an instance of `T`.
+        """
+        if not self.isa[T]():
+            abort("Variant.destroy_with: wrong variant type")
+
+        var ptr = self._get_ptr[T]()
+
+        ptr.destroy_pointee_with(destroy_func)
+
+
+# ===-------------------------------------------------------------------===#
+# Helper functions
+# ===-------------------------------------------------------------------===#
+
+
+fn _all_trivial_del[*Ts: AnyType]() -> Bool:
+    @parameter
+    for i in range(Variadic.size(Ts)):
+
+        @parameter
+        if conforms_to(Ts[i], ImplicitlyDestructible):
+            if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
+                return False
+        else:
+            return False
+    return True
+
+
+fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
+    @parameter
+    for i in range(Variadic.size(Ts)):
+
+        @parameter
+        if conforms_to(Ts[i], Copyable):
+            if not downcast[Ts[i], Copyable].__copyinit__is_trivial:
+                return False
+        else:
+            return False
+
+    return True
+
+
+fn _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
+    @parameter
+    for i in range(Variadic.size(Ts)):
+
+        @parameter
+        if conforms_to(Ts[i], Movable):
+            if not downcast[Ts[i], Movable].__moveinit__is_trivial:
+                return False
+        else:
+            return False
+    return True

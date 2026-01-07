@@ -10,14 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements a doubly-linked list data structure.
 
+This module provides the `LinkedList` type, a doubly-linked list where each
+element points to both the next and previous elements. This structure enables
+efficient insertion and deletion at any position, though random access requires
+traversal. The implementation includes iterator support for forward and reverse
+traversal.
+"""
 
 from collections._index_normalization import normalize_index
 from os import abort
 
 
 struct Node[
-    ElementType: Copyable,
+    ElementType: Copyable & ImplicitlyDestructible,
 ](Copyable):
     """A node in a linked list data structure.
 
@@ -53,7 +60,7 @@ struct Node[
         self.next = next.value() if next else Self._NodePointer()
 
     fn __str__[
-        _ElementType: Copyable & Writable
+        _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](self: Node[_ElementType]) -> String:
         """Convert this node's value to a string representation.
 
@@ -71,7 +78,7 @@ struct Node[
 
     @no_inline
     fn write_to[
-        _ElementType: Copyable & Writable
+        _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](self: Node[_ElementType], mut writer: Some[Writer]):
         """Write this node's value to the given writer.
 
@@ -89,15 +96,15 @@ struct Node[
 struct _LinkedListIter[
     mut: Bool,
     //,
-    ElementType: Copyable,
-    origin: Origin[mut],
+    ElementType: Copyable & ImplicitlyDestructible,
+    origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     var src: Pointer[LinkedList[Self.ElementType], Self.origin]
     var curr: UnsafePointer[Node[Self.ElementType], MutOrigin.external]
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     comptime Element = Self.ElementType  # FIXME(MOCO-2068): shouldn't be needed.
@@ -114,10 +121,11 @@ struct _LinkedListIter[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __has_next__(self) -> Bool:
-        return Bool(self.curr)
-
-    fn __next_ref__(mut self) -> ref [Self.origin] Self.Element:
+    fn __next__(
+        mut self,
+    ) raises StopIteration -> ref [Self.origin] Self.Element:
+        if not self.curr:
+            raise StopIteration()
         var old = self.curr
 
         @parameter
@@ -128,13 +136,9 @@ struct _LinkedListIter[
 
         return old[].value
 
-    @always_inline
-    fn __next__(mut self) -> Self.Element:
-        return self.__next_ref__().copy()
-
 
 struct LinkedList[
-    ElementType: Copyable,
+    ElementType: Copyable & ImplicitlyDestructible,
 ](Boolable, Copyable, Defaultable, Iterable, Sized):
     """A doubly-linked list implementation.
 
@@ -152,7 +156,7 @@ struct LinkedList[
     ]
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _LinkedListIter[Self.ElementType, iterable_origin]
     """The iterator type for this linked list.
 
@@ -750,7 +754,7 @@ struct LinkedList[
         return len(self) != 0
 
     fn __str__[
-        _ElementType: Copyable & Writable
+        _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](self: LinkedList[_ElementType]) -> String:
         """Convert the list to its string representation.
 
@@ -769,7 +773,7 @@ struct LinkedList[
         return writer
 
     fn __repr__[
-        _ElementType: Copyable & Writable
+        _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](self: LinkedList[_ElementType]) -> String:
         """Convert the list to its string representation.
 
@@ -788,7 +792,7 @@ struct LinkedList[
         return writer
 
     fn write_to[
-        _ElementType: Copyable & Writable
+        _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](self: LinkedList[_ElementType], mut writer: Some[Writer]):
         """Write the list to the given writer.
 
@@ -806,7 +810,7 @@ struct LinkedList[
 
     @no_inline
     fn _write[
-        W: Writer, _ElementType: Copyable & Writable
+        W: Writer, _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](
         self: LinkedList[_ElementType],
         mut writer: W,

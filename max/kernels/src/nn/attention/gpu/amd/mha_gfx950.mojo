@@ -278,7 +278,8 @@ struct KVBuffer[
         head_idx: UInt,
         shared_ptr: UnsafePointer[
             Scalar[Self.kv_t.dtype],
-            address_space = AddressSpace.SHARED, **_,
+            address_space = AddressSpace.SHARED,
+            ...,
         ],
         end: UInt,
         warp_id: UInt32,
@@ -431,7 +432,7 @@ struct KVBuffer[
                         tile_layout,
                         MutAnyOrigin,
                         address_space = smem_tile.address_space,
-                    ](smem_tile.ptr.offset(offset))
+                    ](smem_tile.ptr + offset)
                     frags[i, 0] = rebind[frags.element_type](
                         load_b_tr[Self.mma_shape](tile)
                     )
