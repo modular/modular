@@ -188,6 +188,7 @@ struct PythonObject(
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
     @doc_private
+    @implicit
     fn __init__(out self, none: NoneType._mlir_type):
         """Initialize a none value object from a `None` literal.
 

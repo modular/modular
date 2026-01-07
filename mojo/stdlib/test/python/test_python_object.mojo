@@ -377,6 +377,38 @@ fn test_none() raises:
     assert_true(n is PythonObject(None))
 
 
+fn test_none_implicit_conversion() raises:
+    # Test implicit conversion from None literal to PythonObject.
+
+    # Direct assignment.
+    var a: PythonObject = None
+    assert_equal(String(a), "None")
+    assert_true(a is Python.none())
+
+    # Reassignment.
+    var b = PythonObject(42)
+    b = None
+    assert_equal(String(b), "None")
+
+    # Function argument.
+    fn takes_python_object(obj: PythonObject) raises -> String:
+        return String(obj)
+
+    assert_equal(takes_python_object(None), "None")
+
+    # Return value.
+    fn returns_none() -> PythonObject:
+        return None
+
+    assert_true(returns_none() is Python.none())
+
+    # In a list.
+    var list = Python.evaluate("[]")
+    var none_val: PythonObject = None
+    list.append(none_val)
+    assert_equal(String(list), "[None]")
+
+
 fn test_getitem_raises() raises:
     custom_indexable = Python.import_module("custom_indexable")
 

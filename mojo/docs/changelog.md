@@ -254,6 +254,16 @@ what we publish.
 
 ### Library changes
 
+- `PythonObject` now supports implicit conversion from `None`, allowing more
+  natural Python-like code:
+
+  ```mojo
+  var obj: PythonObject = None  # Now works without explicit PythonObject(None)
+
+  fn returns_none() -> PythonObject:
+      return None  # Implicit conversion
+  ```
+
 - The `inlined_assembly` function is now publicly exported from the `sys` module,
   allowing users to embed raw assembly instructions directly into Mojo code.
   This provides fine-grained control over hardware operations using LLVM-style
