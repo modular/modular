@@ -262,7 +262,7 @@ fn distribute[
         )
 
     var res = NDBuffer[dtype, rank, buff.origin, _result_shape](
-        buff.data.offset(Int(thread_offset)),
+        buff.data + Int(thread_offset),
         dynamic_shape=res_shape,
         dynamic_stride=res_strides,
     )
@@ -508,7 +508,7 @@ fn _copy_nd_buffer_to_layout_tensor[
                     eviction_policy=eviction_policy,
                 ](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
-                var src_element = src.data.offset(src_idx).load[
+                var src_element = (src.data + src_idx).load[
                     width=vec_size, alignment=alignment
                 ]()
                 dst.ptr.store[alignment=alignment](dst_idx, src_element)
@@ -654,7 +654,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                     eviction_policy=eviction_policy,
                 ](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
-                var src_element = src.data.offset(src_idx).load[
+                var src_element = (src.data + src_idx).load[
                     width=vec_size, alignment=alignment
                 ]()
                 dst.ptr.store[alignment=alignment](dst_idx, src_element)
@@ -778,7 +778,7 @@ fn _copy_layout_tensor_to_nd_buffer[
                 i * vec_size
             )
 
-            var src_element = src.ptr.offset(src_idx).load[
+            var src_element = (src.ptr + src_idx).load[
                 width=vec_size, alignment=alignment
             ]()
             dst.data.store[alignment=alignment](dst_idx, src_element)
@@ -887,10 +887,10 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
                 i * vec_size
             )
 
-            var src_element = src.ptr.offset(src_idx).load[
+            var src_element = (src.ptr + src_idx).load[
                 width=vec_size, alignment=alignment
             ]()
-            dst.data.offset(dst_idx).store[alignment=alignment](src_element)
+            (dst.data + dst_idx).store[alignment=alignment](src_element)
 
     # 2d-vector load/store
     elif (

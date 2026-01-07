@@ -49,7 +49,7 @@ fn test_element_load():
             var offset = tensor_8x8_v_1_4.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_1_4.dtype, tensor_8x8_v_1_4.element_layout
-            ].load(tensor_8x8_v_1_4.ptr.offset(offset))
+            ].load(tensor_8x8_v_1_4.ptr + offset)
             print(elem, end=" ")
         print("")
 
@@ -63,7 +63,7 @@ fn test_element_load():
             var offset = tensor_8x8_v_4_1.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_4_1.dtype, tensor_8x8_v_4_1.element_layout
-            ].load(tensor_8x8_v_4_1.ptr.offset(offset))
+            ].load(tensor_8x8_v_4_1.ptr + offset)
             print(elem, end=" ")
         print("")
 
@@ -77,7 +77,7 @@ fn test_element_load():
             var offset = tensor_8x8_v_4_4.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_4_4.dtype, tensor_8x8_v_4_4.element_layout
-            ].load(tensor_8x8_v_4_4.ptr.offset(offset))
+            ].load(tensor_8x8_v_4_4.ptr + offset)
             print(elem, end=" ")
         print("")
 
@@ -106,9 +106,9 @@ fn test_element_store():
             var offset = tensor_8x8_v_1_4.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_1_4.dtype, tensor_8x8_v_1_4.element_layout
-            ].load(tensor_8x8_v_1_4.ptr.offset(offset))
+            ].load(tensor_8x8_v_1_4.ptr + offset)
             elem.element_data *= 10
-            elem.store(tensor_8x8_v_1_4.ptr.offset(offset))
+            elem.store(tensor_8x8_v_1_4.ptr + offset)
     print(tensor_8x8)
 
     # CHECK: vector_4x1
@@ -127,9 +127,9 @@ fn test_element_store():
             var offset = tensor_8x8_v_4_1.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_4_1.dtype, tensor_8x8_v_4_1.element_layout
-            ].load(tensor_8x8_v_4_1.ptr.offset(offset))
+            ].load(tensor_8x8_v_4_1.ptr + offset)
             elem.element_data *= 10
-            elem.store(tensor_8x8_v_4_1.ptr.offset(offset))
+            elem.store(tensor_8x8_v_4_1.ptr + offset)
     print(tensor_8x8)
 
     # CHECK: vector_4x4
@@ -148,9 +148,9 @@ fn test_element_store():
             var offset = tensor_8x8_v_4_4.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_4_4.dtype, tensor_8x8_v_4_4.element_layout
-            ].load(tensor_8x8_v_4_4.ptr.offset(offset))
+            ].load(tensor_8x8_v_4_4.ptr + offset)
             elem.element_data *= 10
-            elem.store(tensor_8x8_v_4_4.ptr.offset(offset))
+            elem.store(tensor_8x8_v_4_4.ptr + offset)
 
     print(tensor_8x8)
 
@@ -191,11 +191,11 @@ fn test_element_dynamic_layout() raises:
                 tensor_8x8_v_4_4.element_layout,
                 index_type = tensor_8x8_v_4_4.linear_idx_type,
             ].load(
-                tensor_8x8_v_4_4.ptr.offset(offset),
+                tensor_8x8_v_4_4.ptr + offset,
                 tensor_8x8_v_4_4.runtime_element_layout,
             )
             elem.element_data *= 10
-            elem.store(tensor_8x8_v_4_4.ptr.offset(offset))
+            elem.store(tensor_8x8_v_4_4.ptr + offset)
 
     # CHECK: 0.0 10.0 20.0 30.0 40.0 50.0 60.0 70.0
     # CHECK: 80.0 90.0 100.0 110.0 120.0 130.0 140.0 150.0

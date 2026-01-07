@@ -1399,7 +1399,7 @@ struct List[T: Copyable](
             ),
         )
         var ptr = self._data
-        ptr.offset(elt_idx_1).swap_pointees(ptr.offset(elt_idx_2))
+        (ptr + elt_idx_1).swap_pointees(ptr + elt_idx_2)
 
     fn unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //

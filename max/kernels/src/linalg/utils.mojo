@@ -717,10 +717,10 @@ fn packA_i8mm[
         @parameter
         for idx in range(nrow):
             var t0 = partial_simd_load[8](
-                a_ptr.offset((j + idx) * k + kl), 0, k - kl, 0
+                a_ptr + ((j + idx) * k + kl), 0, k - kl, 0
             )
             partial_simd_store(
-                a_packed_ptr.offset(kh * j + 2 * kl + 8 * idx),
+                a_packed_ptr + (kh * j + 2 * kl + 8 * idx),
                 0,
                 k - kl,
                 t0,

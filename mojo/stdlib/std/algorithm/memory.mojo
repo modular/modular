@@ -64,7 +64,7 @@ fn parallel_memcpy[
         if to_copy <= 0:
             return
 
-        memcpy(dest=dest.offset(begin), src=src.offset(begin), count=to_copy)
+        memcpy(dest=dest + begin, src=src + begin, count=to_copy)
 
     sync_parallelize[_parallel_copy](num_tasks)
 

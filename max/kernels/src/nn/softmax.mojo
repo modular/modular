@@ -592,7 +592,7 @@ fn _softmax_cpu[
                 Layout.row_major(UNKNOWN_VALUE),
                 address_space = output.address_space,
             ](
-                output.ptr.offset(buffer_offset),
+                output.ptr + buffer_offset,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     IndexList[1](inner_dim)
                 ),

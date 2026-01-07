@@ -646,13 +646,13 @@ struct Buffer(ImplicitlyCopyable):
     @always_inline
     fn get_header(self, ptr: UInt64) -> Header:
         return Header(
-            self._handle[].headers.offset(ptr & self._handle[].index_mask)
+            self._handle[].headers + (ptr & self._handle[].index_mask)
         )
 
     @always_inline
     fn get_payload(self, ptr: UInt64) -> Payload:
         return Payload(
-            self._handle[].payloads.offset(ptr & self._handle[].index_mask)
+            self._handle[].payloads + (ptr & self._handle[].index_mask)
         )
 
     fn pop(mut self, top: UnsafePointer[mut=True, UInt64, ...]) -> UInt64:
@@ -873,15 +873,13 @@ fn hostcall(
     compiled for, otherwise behaviour is undefined.
     """
     var buffer = Buffer(
-        implicitarg_ptr()
-        .bitcast[
+        implicitarg_ptr().bitcast[
             UnsafePointer[
                 buffer_t,
                 MutOrigin.external,
                 address_space = AddressSpace.GLOBAL,
             ]
-        ]()
-        .offset(10)[]
+        ]()[10]
     )
 
     var me = UInt32(lane_id())

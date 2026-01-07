@@ -612,7 +612,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             var fd = self._get_raw_fd()
             var bytes_written = external_call["write", c_ssize_t](
                 fd,
-                bytes.unsafe_ptr().offset(total_written),
+                bytes.unsafe_ptr() + total_written,
                 len(bytes) - total_written,
             )
 
@@ -680,7 +680,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         var total_written = 0
 
         while total_written < len:
-            var current_ptr = ptr.offset(total_written)
+            var current_ptr = ptr + total_written
             var bytes_written = external_call["write", c_ssize_t](
                 fd, current_ptr.address, len - total_written
             )

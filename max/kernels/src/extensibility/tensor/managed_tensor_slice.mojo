@@ -114,11 +114,11 @@ fn simd_store_into_managed_tensor_slice[
             var v = value.cast[DType.uint8]()
             strided_store(
                 v,
-                tensor._ptr.bitcast[UInt8]().offset(flat_index),
+                tensor._ptr.bitcast[UInt8]() + flat_index,
                 stride,
             )
         else:
-            return strided_store(value, tensor._ptr.offset(flat_index), stride)
+            return strided_store(value, tensor._ptr + flat_index, stride)
 
     @parameter
     if static_stride.is_dynamic():
@@ -280,13 +280,13 @@ fn simd_load_from_managed_tensor_slice[
         @parameter
         if dtype == DType.bool:
             var v = strided_load[simd_width, invariant=invariant](
-                tensor._ptr.bitcast[UInt8]().offset(flat_index),
+                tensor._ptr.bitcast[UInt8]() + flat_index,
                 stride,
             )
             return v.cast[dtype]()
         else:
             return strided_load[simd_width, invariant=invariant](
-                tensor._ptr.offset(flat_index), stride
+                tensor._ptr + flat_index, stride
             )
 
     @parameter
@@ -768,7 +768,7 @@ struct ManagedTensorSlice[
         for i in range(Self.rank):
             strides[i] = step[i] * slicer_strides[i]
 
-        self = Self(ptr.offset(start_offset), slice_spec, strides)
+        self = Self(ptr + start_offset, slice_spec, strides)
 
     fn __init__(
         out self,

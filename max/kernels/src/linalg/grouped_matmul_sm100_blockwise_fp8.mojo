@@ -1018,8 +1018,8 @@ fn multi_stage_reg_epilogue[
                     var global_i = coord_m + UInt(local_i)
                     var global_j = coord_n + UInt(local_j)
                     if global_i < UInt(group_end_idx):
-                        # src_ptr = c_smem_split.ptr.offset(swizzle(linear_idx))
-                        src_ptr = c_smem_split.ptr.offset(
+                        # src_ptr = c_smem_split.ptr + swizzle(linear_idx)
+                        src_ptr = c_smem_split.ptr + (
                             linear_idx if size_of[c_type]()
                             != 2 else swizzle(linear_idx)
                         )
@@ -1029,7 +1029,7 @@ fn multi_stage_reg_epilogue[
                         dst_crd = RuntimeTuple[
                             IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
                         ](Int(global_i), Int(global_j))
-                        dst_ptr = c.ptr.offset(c.runtime_layout(dst_crd))
+                        dst_ptr = c.ptr + c.runtime_layout(dst_crd)
                         dst_ptr.store[width=simd_size, alignment=alignment](src)
         else:
             var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](

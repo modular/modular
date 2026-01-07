@@ -689,6 +689,17 @@ or removed in future releases.
   Please migrate the code to use `enqueue_function_checked` and
   `compile_function_checked`.
 
+- The `UnsafePointer.offset()` method is now deprecated. Use pointer arithmetic
+  instead:
+
+  ```mojo
+  # Before
+  new_ptr = ptr.offset(n)
+
+  # After
+  new_ptr = ptr + n
+  ```
+
 ### 🛠️ Fixed
 
 - `Codepoint.unsafe_decode_utf8_codepoint()` no longer returns `Codepoint(0)`

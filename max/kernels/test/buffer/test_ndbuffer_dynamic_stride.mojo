@@ -37,7 +37,7 @@ def test_sub_matrix():
 
     # Extract a sub-matrix 2x2 at (1,1).
     var sub_matrix0 = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
-        matrix.data.offset(5),
+        matrix.data + 5,
         DimList(2, 2),
         Index(4, 1),
     )
@@ -56,7 +56,7 @@ def test_sub_matrix():
     # Extract a sub-matrix 2x2 at (1,1) with discontiguous last dim.
     # It includes (1,1) (1,3) (3,1) (3,3) of the original matrix.
     var sub_matrix1 = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
-        matrix.data.offset(1),
+        matrix.data + 1,
         DimList(2, 2),
         Index(8, 2),
     )
@@ -69,7 +69,7 @@ def test_sub_matrix():
     # Extract a contiguous 2x2 buffer starting at (1,1).
     # It includes (1,1) (1,2) (1,3) (2,1) of the original matrix.
     var sub_matrix2 = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
-        matrix.data.offset(5),
+        matrix.data + 5,
         DimList(2, 2),
         Index(2, 1),
     )

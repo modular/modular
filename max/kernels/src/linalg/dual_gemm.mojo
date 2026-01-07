@@ -771,7 +771,7 @@ fn multistage_dual_gemm_kernel[
                 var m = (Int(thread_offset) + dst_idx) // Int(N)
                 var n = (Int(thread_offset) + dst_idx) % Int(N)
                 if m < Int(M) and n < Int(N):
-                    var vec = c_reg_frag.ptr.offset(src_idx).load[
+                    var vec = (c_reg_frag.ptr + src_idx).load[
                         width=2, alignment = align_of[SIMD[c_type, 2]]()
                     ]()
                     epilogue[alignment=alignment]((Int(m), Int(n)), vec)
@@ -1228,7 +1228,7 @@ fn dual_gemv_kernel[
     ]()
 
     var tile_b0 = tile_w
-    var tile_b1 = tile_w.offset(tile_n_per_B * simd_width)
+    var tile_b1 = tile_w + tile_n_per_B * simd_width
 
     comptime align_act = align_of[SIMD[a_type, Int(simd_width)]]()
     comptime align_weight = align_of[SIMD[b_type, Int(simd_width)]]()

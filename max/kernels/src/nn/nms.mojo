@@ -288,7 +288,7 @@ fn non_max_suppression[
             var offset = scores.runtime_layout(
                 RuntimeTuple[scores.layout.shape](b, c, 0)
             )
-            var per_class_scores_ptr = scores.ptr.offset(offset)
+            var per_class_scores_ptr = scores.ptr + offset
 
             # Filter boxes by score threshold
             # This reduces the number of boxes to sort and process

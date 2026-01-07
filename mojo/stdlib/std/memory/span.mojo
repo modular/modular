@@ -590,7 +590,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
         var ptr = self.unsafe_ptr()
 
         # `a` and `b` may be equal, so we cannot use `swap` directly.
-        ptr.offset(a).swap_pointees(ptr.offset(b))
+        (ptr + a).swap_pointees(ptr + b)
 
     fn swap_elements(self: Span[mut=True, Self.T], a: Int, b: Int) raises:
         """

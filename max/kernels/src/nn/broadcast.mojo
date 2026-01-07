@@ -140,8 +140,8 @@ fn broadcast_impl[
 
     if axis == rightmost_broadcast_axis:
         _tile_1d(
-            output.ptr.offset(output_offset),
-            input.ptr.offset(input_offset),
+            output.ptr + output_offset,
+            input.ptr + input_offset,
             input_axis_stride,
             output.runtime_layout.dim(axis),
         )
@@ -172,11 +172,9 @@ fn broadcast_impl[
     # --> [[1, 1, 1], [0, 0, 0]]   after recursive call to next axis
     # --> [[1, 1, 1], [1, 1, 1]]   after duplicating data in output
     if input.runtime_layout.dim(axis) != output.runtime_layout.dim(axis):
-        var output_tile_start = output.ptr.offset(output_offset)
+        var output_tile_start = output.ptr + output_offset
         _tile_1d(
-            output_tile_start.offset(
-                output_axis_stride
-            ),  # 1st tile is already there
+            output_tile_start + output_axis_stride,  # 1st tile is already there
             output_tile_start,
             output_axis_stride,  # elems_to_copy
             output.runtime_layout.dim(axis) - 1,  # 1st tile is already there
@@ -205,4 +203,4 @@ fn _tile_1d[
     var dst_ptr = init_dst_ptr
     for _ in range(n):
         memcpy(dest=dst_ptr, src=src_ptr, count=tile_num_elems)
-        dst_ptr = dst_ptr.offset(tile_num_elems)
+        dst_ptr = dst_ptr + tile_num_elems

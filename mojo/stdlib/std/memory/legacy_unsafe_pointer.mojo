@@ -273,21 +273,6 @@ struct LegacyUnsafePointer[
         )
 
     @always_inline("nodebug")
-    fn offset[I: Indexer, //](self, idx: I) -> Self:
-        """Returns a new pointer shifted by the specified offset.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            idx: The offset of the new pointer.
-
-        Returns:
-            The new constructed LegacyUnsafePointer.
-        """
-        return __mlir_op.`pop.offset`(self.address, index(idx)._mlir_value)
-
-    @always_inline("nodebug")
     fn __getitem__[
         I: Indexer, //
     ](self, offset: I) -> ref [Self.origin, Self.address_space] Self.type:
@@ -317,7 +302,7 @@ struct LegacyUnsafePointer[
         Returns:
             An offset pointer.
         """
-        return self.offset(offset)
+        return __mlir_op.`pop.offset`(self.address, index(offset)._mlir_value)
 
     @always_inline
     fn __sub__[I: Indexer, //](self, offset: I) -> Self:
@@ -792,7 +777,7 @@ struct LegacyUnsafePointer[
             The loaded value.
         """
         __comptime_assert offset.dtype.is_integral(), "offset must be integer"
-        return self.offset(Int(offset)).load[
+        return (self + Int(offset)).load[
             width=width,
             alignment=alignment,
             volatile=volatile,
@@ -831,7 +816,7 @@ struct LegacyUnsafePointer[
         Returns:
             The loaded value.
         """
-        return self.offset(offset).load[
+        return (self + offset).load[
             width=width,
             alignment=alignment,
             volatile=volatile,
@@ -869,7 +854,7 @@ struct LegacyUnsafePointer[
             offset: The offset to store to.
             val: The value to store.
         """
-        self.offset(offset).store[alignment=alignment, volatile=volatile](val)
+        (self + offset).store[alignment=alignment, volatile=volatile](val)
 
     @always_inline("nodebug")
     fn store[
@@ -902,9 +887,7 @@ struct LegacyUnsafePointer[
             val: The value to store.
         """
         __comptime_assert offset_type.is_integral(), "offset must be integer"
-        self.offset(Int(offset))._store[alignment=alignment, volatile=volatile](
-            val
-        )
+        (self + Int(offset))._store[alignment=alignment, volatile=volatile](val)
 
     @always_inline("nodebug")
     fn store[

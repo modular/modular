@@ -125,8 +125,8 @@ fn _argn[
         for i in range(start, end):
             var input_offset = i * input_stride
             var output_offset = i * output_stride
-            var input_dim_ptr = input.ptr.offset(input_offset)
-            var output_dim_ptr = output.ptr.offset(output_offset)
+            var input_dim_ptr = input.ptr + input_offset
+            var output_dim_ptr = output.ptr + output_offset
             var global_val: Scalar[input.dtype]
 
             # initialize limits

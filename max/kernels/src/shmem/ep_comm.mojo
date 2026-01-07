@@ -110,7 +110,7 @@ fn ep_signal_completion[
     # If the target device is on the same node, we can directly write to its
     # receive count buffer.
     if my_p2p_world == dst_p2p_world:
-        var dst_p2p_ptr = recv_count_ptrs[dst_p2p_rank].offset(signal_offset)
+        var dst_p2p_ptr = recv_count_ptrs[dst_p2p_rank] + signal_offset
         store_release[scope = Scope.SYSTEM](
             dst_p2p_ptr,
             signal,
@@ -124,7 +124,7 @@ fn ep_signal_completion[
             # in order, the remote device can confirm all the tokens for the
             # expert has been received once the signal operation is received.
             shmem_signal_op(
-                recv_count_ptrs[my_p2p_rank].offset(signal_offset),
+                recv_count_ptrs[my_p2p_rank] + signal_offset,
                 signal,
                 SHMEM_SIGNAL_SET,
                 dst_rank,
@@ -641,11 +641,11 @@ fn dispatch_kernel[
             block_idx.x - UInt(n_aux_sms), num_tokens, n_comm_sms
         ):
             # First, all threads in the block copy the input token to the send buffer.
-            var curr_send_buf_ptr = send_buf_p.offset(
-                send_buf_layout(RtTuple_2(token_idx, 0))
+            var curr_send_buf_ptr = send_buf_p + send_buf_layout(
+                RtTuple_2(token_idx, 0)
             )
-            var input_tensor_ptr = input_tokens.ptr.offset(
-                input_tokens._offset(token_idx, 0)
+            var input_tensor_ptr = input_tokens.ptr + input_tokens._offset(
+                token_idx, 0
             )
             token_fmt_type.copy_token_to_send_buf[
                 input_type, UInt(num_threads)
@@ -699,14 +699,14 @@ fn dispatch_kernel[
                         )
                     slot_idx = warp.broadcast(slot_idx)
 
-                    var dst_recv_buf_ptr = recv_buf_ptrs[dst_p2p_rank].offset(
-                        recv_buf_layout(
-                            RtTuple_4(
-                                Int(dst_expert_local_idx),
-                                Int(my_rank),
-                                Int(slot_idx),
-                                0,
-                            )
+                    var dst_recv_buf_ptr = recv_buf_ptrs[
+                        dst_p2p_rank
+                    ] + recv_buf_layout(
+                        RtTuple_4(
+                            Int(dst_expert_local_idx),
+                            Int(my_rank),
+                            Int(slot_idx),
+                            0,
                         )
                     )
 
@@ -753,14 +753,12 @@ fn dispatch_kernel[
                         )
                         var dst_recv_buf_ptr = recv_buf_ptrs[
                             my_p2p_rank
-                        ].offset(
-                            recv_buf_layout(
-                                RtTuple_4(
-                                    Int(dst_expert_local_idx),
-                                    Int(my_rank),
-                                    Int(slot_idx),
-                                    0,
-                                )
+                        ] + recv_buf_layout(
+                            RtTuple_4(
+                                Int(dst_expert_local_idx),
+                                Int(my_rank),
+                                Int(slot_idx),
+                                0,
                             )
                         )
                         shmem_put_nbi[kind = SHMEMScope.default](
@@ -907,7 +905,7 @@ fn dispatch_cb_kernel[
             )
 
             if target_rank < UInt(n_ranks):
-                var target_count_ptr = recv_count_p.offset(expert_rank_offset)
+                var target_count_ptr = recv_count_p + expert_rank_offset
                 var token_count = load_acquire[scope = Scope.SYSTEM](
                     target_count_ptr
                 )
@@ -1004,7 +1002,7 @@ fn dispatch_cb_kernel[
 
         # Wait until the auxiliary SM has signaled that the data is ready, and
         # provided the offset where the tokens end in the output tensor.
-        var offset_ptr = atomic_counter.offset(expert_rank_offset * 2)
+        var offset_ptr = atomic_counter + expert_rank_offset * 2
         var output_offset = load_acquire[scope = Scope.GPU](offset_ptr)
         while output_offset < EP_DATA_READY_FLAG:
             output_offset = load_acquire[scope = Scope.GPU](offset_ptr)
@@ -1015,14 +1013,12 @@ fn dispatch_cb_kernel[
 
         for token_idx in range(warp_id_in_wg, token_count, wg_size):
             var token_pos = Int(token_idx + output_offset)
-            var recv_buf_ptr = recv_buf_p.offset(
-                recv_buf_layout(
-                    RtTuple_4(
-                        Int(local_expert_id),
-                        Int(target_rank),
-                        Int(token_idx),
-                        0,
-                    )
+            var recv_buf_ptr = recv_buf_p + recv_buf_layout(
+                RtTuple_4(
+                    Int(local_expert_id),
+                    Int(target_rank),
+                    Int(token_idx),
+                    0,
                 )
             )
 
@@ -1198,10 +1194,10 @@ fn combine_kernel[
                 var src_idx = src_token_info[0]
                 var src_topk_idx = src_token_info[1]
 
-                var dst_recv_buf_ptr = recv_buf_ptrs[dst_p2p_rank].offset(
-                    recv_buf_layout(
-                        RtTuple_3(Int(src_idx), Int(src_topk_idx), 0)
-                    )
+                var dst_recv_buf_ptr = recv_buf_ptrs[
+                    dst_p2p_rank
+                ] + recv_buf_layout(
+                    RtTuple_3(Int(src_idx), Int(src_topk_idx), 0)
                 )
                 block_memcpy[hid_dim * size_of[input_type](), WARP_SIZE](
                     dst_recv_buf_ptr,
@@ -1227,8 +1223,8 @@ fn combine_kernel[
                 for round_i in range(n_rounds):
                     var token_idx = token_start + round_i * n_warps + warp_id()
                     if token_idx < token_end:
-                        var curr_send_buf_ptr = send_buf_p.offset(
-                            send_buf_layout(RtTuple_2(Int(token_idx), 0))
+                        var curr_send_buf_ptr = send_buf_p + send_buf_layout(
+                            RtTuple_2(Int(token_idx), 0)
                         )
 
                         # To use SHMEM API, we need to copy the tokens to the
@@ -1259,17 +1255,14 @@ fn combine_kernel[
                             var src_idx = src_token_info[0]
                             var src_topk_idx = src_token_info[1]
 
-                            var curr_send_buf_ptr = send_buf_p.offset(
-                                send_buf_layout(RtTuple_2(Int(token_idx), 0))
+                            var curr_send_buf_ptr = (
+                                send_buf_p
+                                + send_buf_layout(RtTuple_2(Int(token_idx), 0))
                             )
                             var dst_recv_buf_ptr = recv_buf_ptrs[
                                 my_p2p_rank
-                            ].offset(
-                                recv_buf_layout(
-                                    RtTuple_3(
-                                        Int(src_idx), Int(src_topk_idx), 0
-                                    )
-                                )
+                            ] + recv_buf_layout(
+                                RtTuple_3(Int(src_idx), Int(src_topk_idx), 0)
                             )
 
                             shmem_put_nbi[kind = SHMEMScope.default](
@@ -1397,7 +1390,7 @@ fn combine_cb_kernel[
     # remote ranks.
     if sm_id < n_aux_sms:
         if tid < n_experts:
-            var target_count_ptr = recv_count_p.offset(tid)
+            var target_count_ptr = recv_count_p + tid
             while (
                 load_acquire[scope = Scope.SYSTEM](target_count_ptr)
                 == UInt64.MAX_FINITE
@@ -1416,7 +1409,7 @@ fn combine_cb_kernel[
     else:
         if tid == 0:
             while (
-                load_acquire[scope = Scope.GPU](atomic_counter.offset(sm_id))
+                load_acquire[scope = Scope.GPU](atomic_counter + sm_id)
                 != DATA_READY_FLAG
             ):
                 pass
@@ -1434,8 +1427,8 @@ fn combine_cb_kernel[
             # Copy the received tokens from all the experts.
             @parameter
             for topk_id in range(top_k):
-                var recv_buf_ptr = recv_buf_p.offset(
-                    recv_buf_layout(RtTuple_3(token_idx, topk_id, 0))
+                var recv_buf_ptr = recv_buf_p + recv_buf_layout(
+                    RtTuple_3(token_idx, topk_id, 0)
                 )
 
                 for i in range(tid, hid_dim // dst_simd_width, num_threads):

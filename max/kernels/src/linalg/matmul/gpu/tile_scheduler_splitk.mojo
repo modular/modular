@@ -602,7 +602,7 @@ struct SplitKTileScheduler[
     ):
         var sema = NamedBarrierSemaphore[
             Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
-        ](lock_ptr.offset(lock_idx), barrier_group_thread_idx)
+        ](lock_ptr + lock_idx, barrier_group_thread_idx)
         sema.wait_eq(barrier_id, Int32(val))
 
     @staticmethod
@@ -616,7 +616,7 @@ struct SplitKTileScheduler[
     ):
         var sema = NamedBarrierSemaphore[
             Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
-        ](lock_ptr.offset(lock_idx), barrier_group_thread_idx)
+        ](lock_ptr + lock_idx, barrier_group_thread_idx)
         sema.wait_lt(barrier_id, Int32(count))
 
     @staticmethod
@@ -630,7 +630,7 @@ struct SplitKTileScheduler[
     ):
         var sema = NamedBarrierSemaphore[
             Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
-        ](lock_ptr.offset(lock_idx), barrier_group_thread_idx)
+        ](lock_ptr + lock_idx, barrier_group_thread_idx)
         sema.arrive_set(barrier_id, Int32(increment))
 
     @always_inline

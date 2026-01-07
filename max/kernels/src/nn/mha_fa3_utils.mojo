@@ -369,10 +369,8 @@ struct MHAPosition[
         exp_sum_offset = Self.q_num_heads * (
             self.prompt_idx + batch_size * self.prompt_offset
         )
-        exp_sum_ptr = partition.get_exp_sum_qk_max_pointer().offset(
-            exp_sum_offset
-        )
-        qk_max_ptr = exp_sum_ptr.offset(
+        exp_sum_ptr = partition.get_exp_sum_qk_max_pointer() + exp_sum_offset
+        qk_max_ptr = exp_sum_ptr + (
             Self.q_num_heads * batch_size * partition.num_partitions()
         )
         return (exp_sum_ptr, qk_max_ptr)
@@ -1458,7 +1456,7 @@ fn output_reg_to_smem_st_matrix[
                 Int(local_warp_group_idx),
             )
             var accum_smem_idx = swizzle(st_matrix_rt_layout(st_matrix_args))
-            var offset = accum_smem_tile.ptr.offset(accum_smem_idx)
+            var offset = accum_smem_tile.ptr + accum_smem_idx
             var output_frag = (
                 output_reg_tile.tile[1, 8](m_mma, i)
                 .load[8](0, 0)

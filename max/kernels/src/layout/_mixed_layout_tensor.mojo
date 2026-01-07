@@ -537,7 +537,7 @@ struct MixedLayoutTensor[
             Self.origin,
             address_space = Self.address_space,
             linear_idx_type = Self.linear_idx_type,
-        ](self.ptr.offset(offset), new_layout^)
+        ](self.ptr + offset, new_layout^)
 
     # ===------------------------------------------------------------------=== #
     # Vectorization

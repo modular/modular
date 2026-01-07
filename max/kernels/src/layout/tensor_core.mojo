@@ -1407,9 +1407,7 @@ fn _load_matrix_frag[
         simd_size
     )
 
-    return ld_matrix[res.size, transpose=transposed](
-        mma_tile.ptr.offset(lane_offset)
-    )
+    return ld_matrix[res.size, transpose=transposed](mma_tile.ptr + lane_offset)
 
 
 @always_inline
@@ -1710,7 +1708,7 @@ fn _load_tr16_b64_row[
         var swizzled_bytes = swizzle.value()(byte_offset)
         offset = swizzled_bytes // size_of[tile.dtype]()
 
-    var ptr = tile.ptr.offset(offset)
+    var ptr = tile.ptr + offset
     return ds_read_tr16_b64(ptr)
 
 

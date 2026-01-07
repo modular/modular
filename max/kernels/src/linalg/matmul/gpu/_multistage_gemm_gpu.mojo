@@ -966,7 +966,7 @@ fn multistage_gemm_kernel[
             comptime alignment = align_of[SIMD[c_type, src_simd_width_y]]()
             var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
             if m < Int(M) and n < Int(N):
-                var vec = c_reg_frag.ptr.offset(src_idx).load[
+                var vec = (c_reg_frag.ptr + src_idx).load[
                     width=src_simd_width_y,
                     alignment = align_of[SIMD[c_type, src_simd_width_y]](),
                 ]()

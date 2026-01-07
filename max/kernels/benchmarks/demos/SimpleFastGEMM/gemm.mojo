@@ -96,7 +96,7 @@ fn kernel(
         for i in range(NR2):
             prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
-            ](b_ptr.offset(NR * pr + simd_size * (i + 16)))
+            ](b_ptr + NR * pr + simd_size * (i + 16))
 
         @parameter
         for idx0 in range(MR):

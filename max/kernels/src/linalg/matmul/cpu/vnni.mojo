@@ -83,7 +83,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         var b_offset = b_packed.runtime_layout(
             RuntimeTuple[b_packed.layout.shape](Index(n_outer_idx, kl // 4, 0))
         )
-        var b_ptr = b_packed.ptr.offset(b_offset).bitcast[Scalar[c_type]]()
+        var b_ptr = (b_packed.ptr + b_offset).bitcast[Scalar[c_type]]()
 
         @parameter
         if not is_tail:
@@ -101,7 +101,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                         .for_read()
                         .high_locality()
                         .to_data_cache()
-                    ](b_ptr.offset(prefetch_offset + idx * simd_size))
+                    ](b_ptr + (prefetch_offset + idx * simd_size))
 
         # This inner kernels works with non-transposed A.
         var K = a.dim[1]()
@@ -113,7 +113,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
             MutAnyOrigin,
             address_space = a.address_space,
         ].stack_allocation()
-        var a_base_ptr = a.ptr.offset(global_offset.M * K + global_k)
+        var a_base_ptr = a.ptr + (global_offset.M * K + global_k)
         var a_ptr = a_local.ptr if (
             is_tail
             and not CompilationTarget.has_avx512f()
@@ -145,12 +145,10 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                 var a_val = (
                     bitcast[c_type, 1](
                         partial_simd_load[4](
-                            a_ptr.offset(idx0 * a_ptr_stride), 0, tail_length, 0
+                            a_ptr + idx0 * a_ptr_stride, 0, tail_length, 0
                         )
-                    ) if (
-                        is_tail and CompilationTarget.has_avx512f()
-                    ) else a_ptr.offset(
-                        idx0 * a_ptr_stride
+                    ) if (is_tail and CompilationTarget.has_avx512f()) else (
+                        a_ptr + idx0 * a_ptr_stride
                     )
                     .bitcast[Scalar[c_type]]()
                     .load()
@@ -159,7 +157,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 # var c_idx = Index(idx0, idx1 * simd_size)
                 var c_val = c_local[idx0, idx1]
-                var b_val = b_ptr.offset(idx1 * simd_size).load[
+                var b_val = (b_ptr + idx1 * simd_size).load[
                     width=simd_size, alignment=alignment
                 ]()
 
@@ -204,7 +202,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
 
         var c_stride = c.dim[1]()
 
-        var c_ptr = c.ptr.offset(global_offset.M * c_stride + global_offset.N)
+        var c_ptr = c.ptr + (global_offset.M * c_stride + global_offset.N)
         var c_bound = Index(global_bound.M, global_bound.N) - Index(
             global_offset.M, global_offset.N
         )

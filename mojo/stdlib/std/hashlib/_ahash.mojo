@@ -57,7 +57,7 @@ fn _read_small(data: UnsafePointer[mut=False, UInt8], length: Int) -> U128:
             # len 4-8
             var a = data.bitcast[UInt32]().load().cast[DType.uint64]()
             var b = (
-                data.offset(length - 4)
+                (data + length - 4)
                 .bitcast[UInt32]()
                 .load()
                 .cast[DType.uint64]()
@@ -66,7 +66,7 @@ fn _read_small(data: UnsafePointer[mut=False, UInt8], length: Int) -> U128:
         else:
             # len 2-3
             var a = data.bitcast[UInt16]().load().cast[DType.uint64]()
-            var b = data.offset(length - 1).load().cast[DType.uint64]()
+            var b = (data + length - 1).load().cast[DType.uint64]()
             return U128(a, b)
     else:
         # len 0-1
@@ -133,20 +133,16 @@ struct AHasher[key: U256](Defaultable, Hasher):
         self.buffer = (self.buffer + length) * MULTIPLE
         if length > 8:
             if length > 16:
-                var tail = (
-                    ptr.offset(length - 16).bitcast[UInt64]().load[width=2]()
-                )
+                var tail = (ptr + length - 16).bitcast[UInt64]().load[width=2]()
                 self._large_update(tail)
                 var offset = 0
                 while length - offset > 16:
-                    var block = (
-                        ptr.offset(offset).bitcast[UInt64]().load[width=2]()
-                    )
+                    var block = (ptr + offset).bitcast[UInt64]().load[width=2]()
                     self._large_update(block)
                     offset += 16
             else:
                 var a = ptr.bitcast[UInt64]().load()
-                var b = ptr.offset(length - 8).bitcast[UInt64]().load()
+                var b = (ptr + length - 8).bitcast[UInt64]().load()
                 self._large_update(U128(a, b))
         else:
             var value = _read_small(ptr, length)

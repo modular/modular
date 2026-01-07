@@ -2658,7 +2658,7 @@ fn _mha_sm100[
 
             @parameter
             if decoding and PartitionType.do_partition:
-                output_ptr = output_ptr.offset(
+                output_ptr = output_ptr + (
                     depth * num_heads * batch_size * position.prompt_offset
                 )
             output_gmem_tile = position.q_out_gmem_tensor(output_ptr)

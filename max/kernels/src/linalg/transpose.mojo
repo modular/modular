@@ -1136,7 +1136,7 @@ fn _transpose_2d_serial_tiled[
     @always_inline
     fn process_tile[tile_size_m: Int, tile_size_n: Int](m: Int, n: Int):
         _process_tile[tile_size_m, tile_size_n, dtype](
-            m, n, M, N, output.data.offset(offset), input.data.offset(offset)
+            m, n, M, N, output.data + offset, input.data + offset
         )
 
     comptime tile_size = simd_width if simd_width <= 16 else 1
@@ -1227,8 +1227,8 @@ fn _transpose_2d_parallel_tiled[
                     n,
                     M,
                     N,
-                    output.data.offset(offset),
-                    input.data.offset(offset),
+                    output.data + offset,
+                    input.data + offset,
                 )
 
     sync_parallelize[_parallel_tile](num_tasks)
@@ -1310,8 +1310,8 @@ fn _transpose_4d_swap_middle_helper[
                     var in_off = l * M * N * K + m * N * K + n * K
                     var out_off = l * M * N * K + n * M * K + m * K
                     memcpy(
-                        dest=dst_ptr.offset(out_off),
-                        src=src_ptr.offset(in_off),
+                        dest=dst_ptr + out_off,
+                        src=src_ptr + in_off,
                         count=K,
                     )
         return
@@ -1337,8 +1337,8 @@ fn _transpose_4d_swap_middle_helper[
                 var in_off = l * M * N * K + m * N * K + n * K
                 var out_off = l * M * N * K + n * M * K + m * K
                 memcpy(
-                    dest=dst_ptr.offset(out_off),
-                    src=src_ptr.offset(in_off),
+                    dest=dst_ptr + out_off,
+                    src=src_ptr + in_off,
                     count=K,
                 )
 
@@ -1364,8 +1364,8 @@ fn transpose_4d_swap_middle[
     var M = simplified_input_shape[simplified_rank - 3]
     var N = simplified_input_shape[simplified_rank - 2]
     var K = simplified_input_shape[simplified_rank - 1]
-    var src_ptr = input.data.offset(0)
-    var dst_ptr = output.data.offset(0)
+    var src_ptr = input.data + 0
+    var dst_ptr = output.data + 0
     _transpose_4d_swap_middle_helper(dst_ptr, src_ptr, L, M, N, K)
 
 
@@ -1392,8 +1392,8 @@ fn transpose_3d_swap_outer[
     var M = simplified_input_shape[simplified_rank - 3]
     var N = simplified_input_shape[simplified_rank - 2]
     var K = simplified_input_shape[simplified_rank - 1]
-    var src_ptr = input.data.offset(0)
-    var dst_ptr = output.data.offset(0)
+    var src_ptr = input.data + 0
+    var dst_ptr = output.data + 0
     _transpose_4d_swap_middle_helper(dst_ptr, src_ptr, 1, M, N, K)
 
 
@@ -1437,8 +1437,8 @@ fn transpose_trivial_memcpy[
     output: NDBuffer[mut=True, dtype, rank, _, output_shape],
     input: NDBuffer[dtype, rank, _, input_shape],
 ):
-    var src_ptr = input.data.offset(0)
-    var dst_ptr = output.data.offset(0)
+    var src_ptr = input.data + 0
+    var dst_ptr = output.data + 0
 
     comptime KB = 1024
     comptime min_work_per_task = 1 * KB
@@ -1498,8 +1498,8 @@ fn _copy_with_strides[
     var output_axis_stride: Int = Int(output_strides.load(axis)[0]._mlir_value)
 
     if axis + 1 == rank:
-        var src_ptr = input.offset(input_offset)
-        var dst_ptr = output.data.offset(output_offset)
+        var src_ptr = input + input_offset
+        var dst_ptr = output.data + output_offset
         if input_axis_stride == 1 and output_axis_stride == 1:
             memcpy(dest=dst_ptr, src=src_ptr, count=axis_dim)
         else:
@@ -1518,8 +1518,8 @@ fn _copy_with_strides[
                     dst_ptr,
                     output_axis_stride,
                 )
-                src_ptr = src_ptr.offset(simd_width * input_axis_stride)
-                dst_ptr = dst_ptr.offset(simd_width * output_axis_stride)
+                src_ptr = src_ptr + simd_width * input_axis_stride
+                dst_ptr = dst_ptr + simd_width * output_axis_stride
 
             vectorize[simd_width_of[dtype]()](axis_dim, _copy)
 

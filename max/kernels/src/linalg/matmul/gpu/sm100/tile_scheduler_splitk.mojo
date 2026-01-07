@@ -472,7 +472,7 @@ struct TileScheduler[
         val: UInt32,
     ):
         var sema = NamedBarrierSemaphore[Int32(WARPGROUP_SIZE), 4, 1](
-            lock_ptr.offset(lock_idx), barrier_group_thread_idx
+            lock_ptr + lock_idx, barrier_group_thread_idx
         )
         sema.wait_eq(barrier_id, Int32(val))
 
@@ -497,7 +497,7 @@ struct TileScheduler[
         val: UInt32,
     ):
         var sema = NamedBarrierSemaphore[Int32(WARPGROUP_SIZE), 4, 1](
-            lock_ptr.offset(lock_idx), barrier_group_thread_idx
+            lock_ptr + lock_idx, barrier_group_thread_idx
         )
         sema.arrive_set(barrier_id, Int32(val))
 

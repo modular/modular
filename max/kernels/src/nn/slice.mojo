@@ -137,7 +137,7 @@ fn slice_as_view[
         stop = _normalize_and_clamp_dim(stop, step, dim_i)
 
         var new_offset = start * stride_i
-        new_data = new_data.offset(new_offset)
+        new_data = new_data + new_offset
 
         # Stride == number of elements to the next index in this dimension.
         # So to step we can just increase the stride.

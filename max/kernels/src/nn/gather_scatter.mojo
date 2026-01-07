@@ -294,7 +294,7 @@ fn gather[
 
     comptime prefetch_offset = 12  # TODO: search
 
-    var end_indices_ptr = indices.ptr.offset(indices.size())
+    var end_indices_ptr = indices.ptr + indices.size()
 
     @parameter
     @__copy_capture(end_indices_ptr)
@@ -392,7 +392,7 @@ fn gather[
 
     comptime prefetch_offset = 12  # TODO: search
 
-    var end_indices_ptr = indices.ptr.offset(indices.size())
+    var end_indices_ptr = indices.ptr + indices.size()
 
     @parameter
     @__copy_capture(end_indices_ptr)
