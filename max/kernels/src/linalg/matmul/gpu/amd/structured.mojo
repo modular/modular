@@ -11,9 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from memory import UnsafePointer
 from sys import align_of
 from gpu import WARP_SIZE
 from gpu.compute.mma import mma
@@ -158,7 +156,10 @@ struct AMDSharedMemoryBarrier(TrivialRegisterType):
     fn value(ref[AddressSpace.SHARED] self) -> Int32:
         var bar = rebind[
             UnsafePointer[
-                Scalar[DType.int32], address_space = AddressSpace.SHARED
+                mut=True,
+                Scalar[DType.int32],
+                MutAnyOrigin,
+                address_space = AddressSpace.SHARED,
             ]
         ](Pointer(to=self.__repr))
         return load_acquire(bar)
@@ -167,7 +168,10 @@ struct AMDSharedMemoryBarrier(TrivialRegisterType):
     fn increment(ref[AddressSpace.SHARED, MutAnyOrigin] self, warp_id: Int):
         var bar = rebind[
             UnsafePointer[
-                Scalar[DType.int32], address_space = AddressSpace.SHARED
+                mut=True,
+                Scalar[DType.int32],
+                MutAnyOrigin,
+                address_space = AddressSpace.SHARED,
             ]
         ](Pointer(to=self.__repr))
         store_release(bar, load_acquire(bar) + 1)
@@ -200,7 +204,10 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterType):
     fn increment(ref[AddressSpace.SHARED, MutAnyOrigin] self, warp_id: Int):
         var bar = rebind[
             UnsafePointer[
-                Scalar[DType.int32], address_space = AddressSpace.SHARED
+                mut=True,
+                Scalar[DType.int32],
+                MutAnyOrigin,
+                address_space = AddressSpace.SHARED,
             ]
         ](Pointer(to=self.__repr))
         bar[warp_id] += 1
