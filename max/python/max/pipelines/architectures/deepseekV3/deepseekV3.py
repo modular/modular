@@ -42,9 +42,11 @@ from max.nn import (
 )
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
+    TensorParallelLatentAttentionWithRope,
 )
 from max.nn.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
+    TensorParallelLatentAttentionWithRopeFp8,
 )
 from max.nn.comm.allreduce import Allreduce
 from max.nn.comm.ep import EPBatchManager
@@ -78,6 +80,14 @@ class DeepseekV3DecoderLayer(Module):
         self.config = config
         self.ep_manager = ep_manager
         num_devices = len(config.devices)
+        if config.data_parallel_degree not in (1, num_devices):
+            raise ValueError(
+                "data_parallel_degree must be 1 (TP attention) or match the "
+                f"number of devices ({num_devices})."
+            )
+        self.use_data_parallel_attention = (
+            config.data_parallel_degree == num_devices
+        )
 
         # Create Multi-head Latent Attention layer.
         mla_kwargs: dict[str, Any] = dict(
@@ -98,14 +108,24 @@ class DeepseekV3DecoderLayer(Module):
 
         mla_cls: (
             type[DataParallelLatentAttentionWithRope]
+            | type[TensorParallelLatentAttentionWithRope]
             | type[DataParallelLatentAttentionWithRopeFp8]
+            | type[TensorParallelLatentAttentionWithRopeFp8]
         )
         if config.float8_config is not None:
             mla_kwargs["float8_config"] = config.float8_config
-            mla_cls = DataParallelLatentAttentionWithRopeFp8
+            mla_cls = (
+                DataParallelLatentAttentionWithRopeFp8
+                if self.use_data_parallel_attention
+                else TensorParallelLatentAttentionWithRopeFp8
+            )
         else:
             mla_kwargs["dtype"] = config.dtype
-            mla_cls = DataParallelLatentAttentionWithRope
+            mla_cls = (
+                DataParallelLatentAttentionWithRope
+                if self.use_data_parallel_attention
+                else TensorParallelLatentAttentionWithRope
+            )
 
         self.self_attn = mla_cls(**mla_kwargs)
 
@@ -252,16 +272,17 @@ class DeepseekV3DecoderLayer(Module):
             for i in range(len(kv_blocks))
         ]
 
-        # we split the inputs outside the layer when using EP
+        # Split the inputs outside the layer for data-parallel attention.
         if self.config.ep_config is None:
-            original_shape = xs[0].shape
-            xs, input_row_offsets = split_batch_replicated(
-                self.config.devices,
-                xs,
-                input_row_offsets,
-                input_row_offsets_int64,
-                data_parallel_splits,
-            )
+            if self.use_data_parallel_attention:
+                original_shape = xs[0].shape
+                xs, input_row_offsets = split_batch_replicated(
+                    self.config.devices,
+                    xs,
+                    input_row_offsets,
+                    input_row_offsets_int64,
+                    data_parallel_splits,
+                )
             # Create MLA prefill inputs if not in decode mode
             if self.config.graph_mode != "decode":
                 mla_inputs = self.self_attn.create_mla_inputs(
@@ -301,11 +322,12 @@ class DeepseekV3DecoderLayer(Module):
                 x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)
             ]
 
-            hs = ops.allgather(hs, signal_buffers)
+            if self.use_data_parallel_attention:
+                hs = ops.allgather(hs, signal_buffers)
 
-            # Use rebind to assert that the gathered shape is the same as the
-            # original input shape
-            hs = [out.rebind(original_shape) for out in hs]
+                # Use rebind to assert that the gathered shape is the same as the
+                # original input shape
+                hs = [out.rebind(original_shape) for out in hs]
 
             # Post-attention norm (per-device)
             norm_outs = forward_sharded_layers(

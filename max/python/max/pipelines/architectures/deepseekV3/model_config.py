@@ -119,9 +119,9 @@ class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
         page_size: int = 128,
     ) -> KVCacheParams:
         data_parallel_degree = pipeline_config.model_config.data_parallel_degree
-        if len(devices) != data_parallel_degree:
+        if data_parallel_degree not in (1, len(devices)):
             raise ValueError(
-                "Number of devices must match data parallel degree"
+                "data_parallel_degree must be 1 or match the number of devices"
             )
         return KVCacheParams(
             dtype=cache_dtype,
