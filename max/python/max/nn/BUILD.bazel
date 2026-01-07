@@ -5,7 +5,6 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "nn",
     srcs = glob(["**/*.py"]),
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         requirement("numpy"),
         requirement("typing-extensions"),

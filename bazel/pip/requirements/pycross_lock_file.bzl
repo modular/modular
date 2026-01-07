@@ -48,6 +48,7 @@ PINS = {
     "docutils": "docutils@0.20.1",
     "einops": "einops@0.8.0",
     "einx": "einx@0.3.0",
+    "exceptiongroup": "exceptiongroup@1.2.2",
     "expandvars": "expandvars@1.1.2",
     "fastapi": "fastapi@0.124.4",
     "filelock": "filelock@3.16.1",

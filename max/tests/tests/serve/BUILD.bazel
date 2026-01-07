@@ -32,6 +32,7 @@ package(default_visibility = [
         deps = [
             "//max/python/max/nn",
             "//max/python/max/serve",
+            "//max/python/max/serve/mocks",
             "//max/python/max/serve/pipelines",
             "//max/python/max/serve/router",
             "//max/python/max/serve/scheduler",

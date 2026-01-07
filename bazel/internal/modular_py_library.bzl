@@ -63,6 +63,6 @@ def modular_py_library(
             ignore_extra_deps = ignore_extra_deps,
             ignore_unresolved_imports = ignore_unresolved_imports,
             imports = imports if imports != None else [],
-            srcs = kwargs.get("srcs", []),
+            srcs = kwargs.get("srcs", []) + kwargs.get("pyi_srcs", []),
             tags = ["pydeps"],
         )

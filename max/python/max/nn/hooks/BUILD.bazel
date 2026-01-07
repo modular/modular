@@ -16,11 +16,10 @@ modular_py_library(
 modular_py_library(
     name = "print_hook",
     srcs = ["print_hook.py"],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":base_print_hook",
-        "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn",
     ],
 )
 

@@ -143,18 +143,26 @@ modular_py_test(
         "requires-network",
         # TODO(E2EOPT-239): Re-enable once less flaky
         "manual",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
-        "//max/python/max/engine",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/serve",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/mocks",
+        "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/queue",
+        "//max/python/max/serve/schemas",
+        "//max/python/max/serve/telemetry",
+        "//max/tests/integration/pipelines/python/test_common:test_data",
         requirement("async-asgi-testclient"),
         requirement("pytest-asyncio"),
         requirement("sse-starlette"),
-        requirement("transformers"),
+        requirement("fastapi"),
     ],
 )
 

@@ -27,27 +27,44 @@ from typing_extensions import override
 # Ideally these can be determined from bazel, but some of them cannot be, specifically
 # ones that share a top-level namespace, like the google and otel ones.
 _THIRD_PARTY_IMPORTS = {
-    "opencv_python": "cv2",
-    "google_auth": "google.auth",
-    "google_cloud_bigquery": "google.cloud.bigquery",
-    "protobuf": "google.protobuf",
-    "ipython": "IPython",
-    "levenshtein": "Levenshtein",
-    "opentelemetry_exporter_otlp_proto_http": "opentelemetry.exporter.otlp.proto.http",
-    "opentelemetry_exporter_prometheus": "opentelemetry.exporter.prometheus",
-    "opentelemetry_sdk": "opentelemetry.sdk",
-    "pillow": "PIL",
-    "python_json_logger": "pythonjsonlogger",
-    "ruamel_yaml": "ruamel.yaml",
-    "pyyaml": "yaml",
-    "pyzmq": "zmq",
+    "google_auth": ["google.auth"],
+    "google_cloud_bigquery": ["google.cloud.bigquery"],
+    "grpcio": ["grpc"],
+    "protobuf": ["google.protobuf"],
+    "ipython": ["IPython"],
+    "levenshtein": ["Levenshtein"],
+    "opencv_python": ["cv2"],
+    "opentelemetry_api": [
+        "opentelemetry.attributes",
+        "opentelemetry.baggage",
+        "opentelemetry.context",
+        "opentelemetry.environment_variables",
+        "opentelemetry._events",
+        "opentelemetry._logs",
+        "opentelemetry.metrics",
+        "opentelemetry.propagate",
+        "opentelemetry.propagators",
+        "opentelemetry.trace",
+        "opentelemetry.util",
+        "opentelemetry.version",
+    ],
+    "opentelemetry_exporter_otlp_proto_http": [
+        "opentelemetry.exporter.otlp.proto.http"
+    ],
+    "opentelemetry_exporter_prometheus": ["opentelemetry.exporter.prometheus"],
+    "opentelemetry_sdk": ["opentelemetry.sdk"],
+    "pillow": ["PIL"],
+    "python_json_logger": ["pythonjsonlogger"],
+    "ruamel_yaml": ["ruamel.yaml"],
+    "pyyaml": ["yaml"],
+    "pyzmq": ["zmq"],
 }
 
 
 @dataclass(frozen=True)
 class _ThirdPartyDep:
     label: str
-    import_path: str
+    import_paths: list[str]
 
 
 # Raw label name, short name, import path
@@ -60,13 +77,13 @@ def _process_third_party_deps(
             # Format: @@rules_pycross++lock_file+modular_pip_lock_file_repo//deps:pytest@8.2.2
             name = dep.split(":")[-1].split("@")[0].replace("-", "_")
             if imports := _THIRD_PARTY_IMPORTS.get(name):
-                import_path = imports
+                import_paths = imports
             else:
-                import_path = name.replace("-", "_")
-            results.append(_ThirdPartyDep(dep, import_path))
+                import_paths = [name.replace("-", "_")]
+            results.append(_ThirdPartyDep(dep, import_paths))
         elif dep == "@@rules_python+//python/runfiles:runfiles":
-            import_path = "python.runfiles"
-            results.append(_ThirdPartyDep(dep, import_path))
+            import_paths = ["python.runfiles"]
+            results.append(_ThirdPartyDep(dep, import_paths))
         else:
             raise ValueError(f"Unsupported pycross dep format: {dep}")
 
@@ -117,6 +134,19 @@ def _get_imports_from_file(path: Path) -> set[PythonModule]:
     return set(
         PythonModule(imp) for imp in wrapper.resolve(_ImportFinder).values()
     )
+
+
+def _is_third_party_import(
+    third_party_deps: list[_ThirdPartyDep], mod: PythonModule
+) -> str | None:
+    """Checks if an import path is from a third party dependency. Returns the label of the dependency if so, otherwise None."""
+    for dep in third_party_deps:
+        # We can't check just `.startswith(dep.import_path)` here because
+        # some import paths are prefixes of others (e.g. `pydantic` vs `pydantic_settings`).
+        for path in dep.import_paths:
+            if mod._module.startswith(path + ".") or mod._module == path:
+                return dep.label
+    return None
 
 
 def check_dependencies_against_imports(
@@ -202,6 +232,9 @@ def check_dependencies_against_imports(
             if (
                 absolute_import.root() == "__future__"
                 or absolute_import.root() in sys.stdlib_module_names
+                # In the standard library too, but private.
+                # Maybe we shouldn't use this, but for the sake of this test it's valid.
+                or absolute_import.root() == "_typeshed"
             ):
                 continue
 
@@ -225,19 +258,8 @@ def check_dependencies_against_imports(
                     continue
 
             # 6. Third party dep
-            found = False
-            for dep in processed_third_party_deps:
-                # We can't check just `.startswith(dep.import_path)` here because
-                # some import paths are prefixes of others (e.g. `pydantic` vs `pydantic_settings`).
-                if (
-                    mod._module.startswith(dep.import_path + ".")
-                    or mod._module == dep.import_path
-                ):
-                    # Resolved as a dep pulled with rules_pycross
-                    used_deps.add(dep.label)
-                    found = True
-                    break
-            if found:
+            if label := _is_third_party_import(processed_third_party_deps, mod):
+                used_deps.add(label)
                 continue
 
             # 7. Manual ignore

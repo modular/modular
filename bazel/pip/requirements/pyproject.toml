@@ -18,6 +18,7 @@ dependencies = [
   "docutils",
   "einops",
   "einx",
+  "exceptiongroup",
   "expandvars",
   "fastapi[standard]>=0.115.3", # >=0.115.3 is required for resolving CVE-2024-47874
   "fire ", # For mistral-evals.
