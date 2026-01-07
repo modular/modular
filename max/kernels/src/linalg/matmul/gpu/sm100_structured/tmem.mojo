@@ -125,33 +125,31 @@ struct TmemAddress:
 
     var addr: UInt32
 
+    @always_inline
     fn __init__(out self, addr: UInt32):
         self.addr = addr
 
+    @always_inline
     fn __add__(self, offset: UInt32) -> Self:
         """Create new TmemAddress with column offset added."""
         return Self(self.addr + offset)
 
+    @always_inline
     fn __add__(self, offset: Int) -> Self:
         """Create new TmemAddress with column offset added."""
         return Self(self.addr + UInt32(offset))
 
+    @always_inline
     fn upper_addr(self) -> UInt32:
-        """Raw address for upper fragment (rows 0-15).
-
-        Use for direct tcgen05_ld/tcgen05_st calls when load_upper/load_lower
-        don't fit your use case.
-        """
+        """Raw address for upper fragment (rows 0-15)."""
         return self.addr
 
+    @always_inline
     fn lower_addr(self) -> UInt32:
-        """Raw address for lower fragment (rows 16-31).
-
-        Adds TMEM_LOWER_ROW_OFFSET to encode row 16 in the address.
-        Use for direct tcgen05_ld/tcgen05_st calls.
-        """
+        """Raw address for lower fragment (rows 16-31)."""
         return self.addr + TMEM_LOWER_ROW_OFFSET
 
+    @always_inline
     fn load_upper[
         dtype: DType,
         width: Int,
@@ -169,6 +167,7 @@ struct TmemAddress:
             width=width,
         ](self.upper_addr())
 
+    @always_inline
     fn load_lower[
         dtype: DType,
         width: Int,
@@ -186,6 +185,7 @@ struct TmemAddress:
             width=width,
         ](self.lower_addr())
 
+    @always_inline
     fn store_upper[
         dtype: DType,
         width: Int,
@@ -201,6 +201,7 @@ struct TmemAddress:
             pack=False,
         ](self.upper_addr(), data)
 
+    @always_inline
     fn store_lower[
         dtype: DType,
         width: Int,
@@ -217,11 +218,13 @@ struct TmemAddress:
         ](self.lower_addr(), data)
 
     @staticmethod
+    @always_inline
     fn wait_store():
         """Wait for TMEM store operations to complete."""
         tcgen05_store_wait()
 
     @staticmethod
+    @always_inline
     fn wait_load():
         """Wait for TMEM load operations to complete."""
         tcgen05_load_wait()
@@ -251,18 +254,22 @@ struct TmemStage[
     var base_addr: UInt32
     var index: UInt32
 
+    @always_inline
     fn __init__(out self, base_addr: UInt32, index: UInt32):
         self.base_addr = base_addr
         self.index = index
 
+    @always_inline
     fn offset(self) -> UInt32:
         """TMEM column address for this stage."""
         return self.base_addr + self.index * UInt32(Self.stage_stride)
 
+    @always_inline
     fn address(self) -> TmemAddress:
         """Get TmemAddress for this stage's offset."""
         return TmemAddress(self.offset())
 
+    @always_inline
     fn load_upper[
         dtype: DType,
         frag_size: Int,
@@ -275,6 +282,7 @@ struct TmemStage[
             dtype, frag_size, data_paths, bits, repeat
         ]()
 
+    @always_inline
     fn load_lower[
         dtype: DType,
         frag_size: Int,
@@ -288,6 +296,7 @@ struct TmemStage[
         ]()
 
     @staticmethod
+    @always_inline
     fn wait_load():
         """Wait for TMEM load operations to complete."""
         TmemAddress.wait_load()
