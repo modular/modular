@@ -233,9 +233,7 @@ class Qwen3VLMoE(MoE):
             )
             # Set sharding strategy for the stacked expert weights
             self._experts_gate_up_proj_weight.sharding_strategy = (
-                ShardingStrategy.axiswise(
-                    axis=2, num_devices=strategy.num_devices
-                )
+                ShardingStrategy.gate_up(strategy.num_devices)
             )
             self._experts_down_proj_weight.sharding_strategy = (
                 ShardingStrategy.axiswise(
