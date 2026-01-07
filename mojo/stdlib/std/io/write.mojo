@@ -149,8 +149,8 @@ trait Writable:
     """
 
     fn write_to(self, mut writer: Some[Writer]):
-        """
-        Formats the string representation of this type to the provided Writer.
+        """Formats the string representation of this type to the provided
+        `Writer`.
 
         For example, when you pass your type to
         [`print()`](/mojo/std/io/io/print/), it calls `write_to()` on your
@@ -159,7 +159,7 @@ trait Writable:
         that `print()` is writing to.
 
         Args:
-            writer: The type conforming to `Writable`.
+            writer: The type conforming to `Writer`.
         """
         ...
 
