@@ -441,15 +441,10 @@ class TotalContextTokenBudget(TokenBudget):
         elif total_length == tokens_remaining:
             return BudgetStatus.BUDGET_REACHED
 
-        # If we are not allowing chunking or the context has only 1 step, we return BUDGET_EXHAUSTED
-        # This is a hard limit, so we return BUDGET_EXHAUSTED instead of BUDGET_REACHED
-        if not self.allow_chunking or context.active_length == 1:
-            return BudgetStatus.BUDGET_EXHAUSTED
-
-        # Practically, there is no runtime reason to fail chunking.
-        # If it does, it is a bug in this token budget class, and should be fixed.
-        context.chunk(tokens_remaining)
-        return BudgetStatus.BUDGET_REACHED
+        # NOTE: Skip chunking since chunking only reduces the active window and
+        # cannot lower current_length, so it cannot make a total-context overage
+        # fit this budget.
+        return BudgetStatus.BUDGET_EXHAUSTED
 
     def add_to_budget(
         self,

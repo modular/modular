@@ -142,17 +142,14 @@ def test_token_budget__total_context_budget_num_steps_exhausted() -> None:
     assert status == BudgetStatus.BUDGET_EXHAUSTED
 
 
-def test_token_budget__total_context_budget_with_chunking_shrinks_context() -> (
+def test_token_budget__total_context_budget_with_chunking_exhausts_overage() -> (
     None
 ):
-    """TotalContextTokenBudget with chunking should trim contexts to fit capacity."""
-    # Budget capacity is smaller than the incoming context length; chunking should
-    # reduce the effective total length to exactly the remaining capacity.
+    """TotalContextTokenBudget should not chunk; total-context overage is exhausted."""
     total_budget = TotalContextTokenBudget(
         capacity=20, allow_chunking=True, applicable_types=[RequestType.CE]
     )
 
-    # Initial context is longer than the budget.
     context = TextContext(
         tokens=TokenBuffer(np.ones(30, dtype=np.int64)), max_length=100
     )
@@ -162,20 +159,31 @@ def test_token_budget__total_context_budget_with_chunking_shrinks_context() -> (
     status = total_budget.status_after_context(
         context, num_steps=1, request_type=RequestType.CE
     )
-    # Chunking should allow the context, exactly reaching the budget.
-    assert status == BudgetStatus.BUDGET_REACHED
-
-    # Context should have been chunked down to the remaining capacity.
-    # Current length is not affected by chunking.
+    assert status == BudgetStatus.BUDGET_EXHAUSTED
     assert context.current_length == 30
-    assert context.active_length == 20
+    assert context.active_length == 30
+    assert total_budget.used == 0
+    assert total_budget.remaining == 20
 
-    # After committing, the budget should be fully used.
-    total_budget.add_to_budget(
+
+def test_token_budget__total_context_budget_overage_does_not_chunk() -> None:
+    """TotalContextTokenBudget should not chunk even when remaining exceeds active_length."""
+    total_budget = TotalContextTokenBudget(
+        capacity=100, allow_chunking=True, applicable_types=[RequestType.CE]
+    )
+
+    context = TextContext(
+        tokens=TokenBuffer(np.ones(200, dtype=np.int64)), max_length=300
+    )
+    context.skip_processing(190)
+
+    assert context.current_length == 200
+    assert context.active_length == 10
+
+    status = total_budget.status_after_context(
         context, num_steps=1, request_type=RequestType.CE
     )
-    assert total_budget.used == 30
-    assert total_budget.remaining == -10
+    assert status == BudgetStatus.BUDGET_EXHAUSTED
 
 
 def test_token_budget__total_context_budget_chunking_disabled_for_unit_active_length() -> (
