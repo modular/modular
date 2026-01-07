@@ -23,7 +23,7 @@ from collections import OptionalReg
 from math import align_up, ceildiv
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import size_of
 
 from gpu.host import DeviceContext, FuncAttribute
@@ -36,22 +36,23 @@ from layout.tma_async import create_tma_tile
 from utils.index import Index
 from utils.static_tuple import StaticTuple
 
-from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
-from ..sm100.config import MatmulConfig
+from linalg.utils import (
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+)
+from linalg.matmul.gpu.sm100.config import MatmulConfig
 from .tile_scheduler_splitk import (
     get_required_locks_buffer_size_bytes,
     get_num_tiles,
 )
-from ..profiler import MatmulWarpSpecializationWorkSpaceManager
+from linalg.matmul.gpu.profiler import MatmulWarpSpecializationWorkSpaceManager
 
 # Import kernel structs and GPU functions from matmul_kernels
 from .matmul_kernels import (
     B200MatmulSmem,
     BlackwellMatmulSM100Kernel,
     BlackwellMatmulSM100FallbackKernel,
-    # Re-export for backward compatibility (used by warp_specialized_blockwise_fp8)
     WarpRole,
-    accum_arrive,
     consumer_main_loop,
     stsm_helper,
 )
@@ -74,9 +75,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
-    c_device: LayoutTensor[c_type, c_layout, *_, **_],
-    a_device: LayoutTensor[a_type, a_layout, *_, **_],
-    b_device: LayoutTensor[b_type, b_layout, *_, **_],
+    c_device: LayoutTensor[c_type, c_layout, ...],
+    a_device: LayoutTensor[a_type, a_layout, ...],
+    b_device: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
     __comptime_assert transpose_b, "Only support transposed B"
@@ -277,9 +278,9 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
-    c_device: LayoutTensor[c_type, c_layout, *_, **_],
-    a_device: LayoutTensor[a_type, a_layout, *_, **_],
-    b_device: LayoutTensor[b_type, b_layout, *_, **_],
+    c_device: LayoutTensor[c_type, c_layout, ...],
+    a_device: LayoutTensor[a_type, a_layout, ...],
+    b_device: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
     @parameter
@@ -375,9 +376,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     register_based_epilogue: Bool = True,
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
-    c_device: LayoutTensor[c_type, c_layout, *_, **_],
-    a_device: LayoutTensor[a_type, a_layout, *_, **_],
-    b_device: LayoutTensor[b_type, b_layout, *_, **_],
+    c_device: LayoutTensor[c_type, c_layout, ...],
+    a_device: LayoutTensor[a_type, a_layout, ...],
+    b_device: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
     __comptime_assert transpose_b, "Only support transposed B"
@@ -607,9 +608,9 @@ fn matmul_sm100_fallback[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, *_, **_],
-    a: LayoutTensor[a_type, a_layout, *_, **_],
-    b: LayoutTensor[b_type, b_layout, *_, **_],
+    c: LayoutTensor[c_type, c_layout, ...],
+    a: LayoutTensor[a_type, a_layout, ...],
+    b: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
     __comptime_assert transpose_b, "Only support transposed B"

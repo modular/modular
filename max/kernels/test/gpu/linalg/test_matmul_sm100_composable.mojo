@@ -28,7 +28,7 @@ from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 # Additional imports for testing
 from internal_utils import assert_almost_equal, random, zero

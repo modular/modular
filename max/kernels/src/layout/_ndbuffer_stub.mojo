@@ -408,7 +408,7 @@ fn vectorize[
     shape: DimList,
     origin: MutOrigin,
     _res_shape: DimList = _vectorize_shape[*sizes](shape),
-](buff: NDBuffer[dtype, rank, origin, shape, *_]) -> Tuple[
+](buff: NDBuffer[dtype, rank, origin, shape, _]) -> Tuple[
     NDBuffer[
         dtype,
         rank,
@@ -461,7 +461,7 @@ fn _copy_nd_buffer_to_layout_tensor[
         mut=True,
         dtype,
         layout,
-        *_, **_,
+        ...,
     ],
     src: NDBuffer[dtype, src_rank, _, shape],
     buff_element_layout: ElementLayout[src_rank, buff_element_layout_shape],
@@ -595,7 +595,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
         mut=True,
         dtype,
         layout,
-        *_, **_,
+        ...,
     ],
     src: NDBuffer[dtype, src_rank, _, shape],
     buff_element_layout: ElementLayout[src_rank, buff_element_layout_shape],
@@ -744,7 +744,7 @@ fn _copy_layout_tensor_to_nd_buffer[
     src: LayoutTensor[
         dtype,
         layout,
-        *_, **_,
+        ...,
     ],
 ):
     comptime src_rank = layout.rank()
@@ -840,7 +840,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
     src: LayoutTensor[
         dtype,
         layout,
-        *_, **_,
+        ...,
     ],
     tile_mask: TileMask[mask_rank, mask_element_size, mask_element_stride],
 ):
@@ -958,9 +958,9 @@ fn copy_from_nd_buffer[
         mut=True,
         dtype,
         dst_data_layout,
-        *_, **_,
+        ...,
     ],
-    src: NDBuffer[mut=True, dtype, *_],
+    src: NDBuffer[mut=True, dtype, _, _, _, _],
     thread_id: Int,
 ):
     comptime dst_rank = dst_data_layout.rank()
@@ -1028,7 +1028,7 @@ fn copy_from_nd_buffer_masked[
         mut=True,
         dtype,
         dst_data_layout,
-        *_, **_,
+        ...,
     ],
     src: NDBuffer[mut=True, dtype, src_rank, _, src_buff_shape],
     tile_mask: TileMask,
@@ -1120,7 +1120,7 @@ fn copy_to_nd_buffer[
     src_thread_local: LayoutTensor[
         dtype,
         src_data_layout,
-        *_, **_,
+        ...,
     ],
     thread_id: Int,
 ):
@@ -1179,7 +1179,7 @@ fn copy_to_nd_buffer_masked[
     src_thread_local: LayoutTensor[
         dtype,
         src_data_layout,
-        *_, **_,
+        ...,
     ],
     tile_mask: TileMask,
     thread_id: Int,
@@ -1264,7 +1264,7 @@ fn copy_from_nd_buffer_async[
         mut=True,
         dtype,
         dst_data_layout,
-        *_, **_,
+        ...,
     ],
     src_buffer: NDBuffer[mut=True, dtype, src_rank, _, src_buff_shape],
 ):

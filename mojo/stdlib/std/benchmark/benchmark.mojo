@@ -397,7 +397,7 @@ struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int]:
 
 @always_inline
 fn run[
-    func: fn () raises -> None
+    *, func1: fn () raises -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -411,7 +411,7 @@ fn run[
     `max_runtime_secs` OR `max_iters` is achieved.
 
     Parameters:
-        func: The function to benchmark.
+        func1: The function to benchmark.
 
     Args:
         num_warmup_iters: Number of warmup iterations.
@@ -435,7 +435,7 @@ fn run[
         @always_inline
         fn iter_fn() raises:
             for _ in range(num_iters):
-                func()
+                func1()
 
         return Int(time_function[iter_fn]())
 
@@ -452,7 +452,7 @@ fn run[
 
 @always_inline
 fn run[
-    func: fn () -> None
+    *, func2: fn () -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -466,7 +466,7 @@ fn run[
     `max_runtime_secs` OR `max_iters` is achieved.
 
     Parameters:
-        func: The function to benchmark.
+        func2: The function to benchmark.
 
     Args:
         num_warmup_iters: Number of warmup iterations.
@@ -485,9 +485,9 @@ fn run[
 
     @parameter
     fn raising_func() raises:
-        func()
+        func2()
 
-    return run[raising_func](
+    return run[func3=raising_func](
         num_warmup_iters,
         max_iters,
         min_runtime_secs,
@@ -498,7 +498,7 @@ fn run[
 
 @always_inline
 fn run[
-    func: fn () raises capturing [_] -> None
+    func3: fn () raises capturing [_] -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -512,7 +512,7 @@ fn run[
     `max_runtime_secs` OR `max_iters` is achieved.
 
     Parameters:
-        func: The function to benchmark.
+        func3: The function to benchmark.
 
     Args:
         num_warmup_iters: Number of warmup iterations.
@@ -536,7 +536,7 @@ fn run[
         @always_inline
         fn iter_fn() raises:
             for _ in range(num_iters):
-                func()
+                func3()
 
         return Int(time_function[iter_fn]())
 
@@ -553,7 +553,7 @@ fn run[
 
 @always_inline
 fn run[
-    func: fn () capturing [_] -> None
+    *, func4: fn () capturing [_] -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -567,7 +567,7 @@ fn run[
     `max_runtime_secs` OR `max_iters` is achieved.
 
     Parameters:
-        func: The function to benchmark.
+        func4: The function to benchmark.
 
     Args:
         num_warmup_iters: Number of warmup iterations.
@@ -586,7 +586,7 @@ fn run[
 
     @parameter
     fn raising_func() raises:
-        func()
+        func4()
 
     return run[raising_func](
         num_warmup_iters,

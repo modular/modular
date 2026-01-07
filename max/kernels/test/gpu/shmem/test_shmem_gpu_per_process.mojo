@@ -26,7 +26,7 @@ mpirun.
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os.path import dirname
 from pathlib import Path
 from shmem import *

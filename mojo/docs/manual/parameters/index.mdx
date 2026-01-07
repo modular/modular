@@ -11,9 +11,9 @@ languages have static or compile-time metaprogramming features, like C preproces
 macros and C++ templates. These can be limiting and hard to use.
 
 To support Modular's work in AI, Mojo aims to provide powerful, easy-to-use
-metaprogramming with zero runtime cost. This compile-time metaprogramming uses the same
-language as runtime programs, so you don't have to learn a new language—just a few new
-features.
+metaprogramming with zero runtime cost. This compile-time metaprogramming uses
+the same language as runtime programs, so you don't have to learn a new
+language—just a few new features.
 
 The main new feature is *parameters*. You can think of a parameter as a
 compile-time variable that becomes a runtime constant. This usage of "parameter"
@@ -111,9 +111,9 @@ Here's a quick overview of the special characters in the parameter list:
 
 - Double slash (`//`): parameters declared before the double slash are
   [infer-only parameters](#infer-only-parameters).
-- Slash (`/`): parameters declared before a slash are positional-only parameters. Positional-only
-  and keyword-only parameters follow the same rules as
-  [positional-only and keyword-only
+- Slash (`/`): parameters declared before a slash are positional-only
+  parameters. Positional-only and keyword-only parameters follow the same rules
+  as [positional-only and keyword-only
   arguments](/mojo/manual/functions#positional-only-and-keyword-only-arguments).
 - A parameter name prefixed with a star, like `*Types` identifies a
   [variadic parameter](#variadic-parameters) (not shown in the example above).
@@ -490,7 +490,7 @@ def main():
 
 Notice that the `x` argument is a `Scalar` type that's parameterized
 based on the `dt` function parameter. And note that the actual call to `rsqrt()`
-doesn't specify the `dt` parameter, because it can be _inferred_ from the
+doesn't specify the `dt` parameter, because it can be *inferred* from the
 argument's type (here, `Scalar[DType.float16]`).
 
 ### Parameter inference
@@ -772,12 +772,12 @@ struct MyTensor[*dimensions: Int]:
 
 Variadic parameters currently have some limitations that variadic arguments don't have:
 
-* Variadic parameters must be homogeneous—that is, all the values must be the
+- Variadic parameters must be homogeneous—that is, all the values must be the
   same type.
 
-* The parameter type must be register-passable.
+- The parameter type must be register-passable.
 
-* The parameter values aren't automatically projected into a `VariadicList`, so you
+- The parameter values aren't automatically projected into a `VariadicList`, so you
   need to construct the list explicitly:
 
 ```mojo
@@ -1132,55 +1132,37 @@ struct MyType[s: String, i: Int, i2: Int, b: Bool = True]:
 
 It can appear in code in the following forms:
 
-* *Fully bound*, with all of its parameters specified:
+- *Fully bound*, with all of its parameters specified:
 
   ```mojo
   def my_fn1(m1: MyType["Hello", 3, 4, True]):
       pass
   ```
 
-* *Partially bound*, with *some but not all* of its parameters specified:
+- *Partially bound*, with *some but not all* of its parameters specified:
 
   ```mojo
   def my_fn2(m2: MyType["Hola", _, _, True]):
       pass
   ```
 
-* *Unbound*, with no parameters specified:
+- *Unbound*, with no parameters specified:
 
   ```mojo
   def my_fn3(m3: MyType[_, _, _, _]):
       pass
   ```
 
-You can also use the star-underscore expression `*_` to unbind an arbitrary
-number of positional parameters at the end of a parameter list:
+You can also use the star-underscore expression `...` to unbind an arbitrary
+number of parameters at the end of a parameter list:
 
 ```mojo
 # These two types are equivalent
-MyType["Hello", *_]
+MyType["Hello", ...]
 MyType["Hello", _, _, _]
 ```
 
-The `*_` expression specifically matches any parameters that can be specified by
-position (positional-only or positional-or-keyword). To unbind all parameters
-that can be specified by keyword (positional-or-keyword or keyword-only), use
-the double-star-underscore expression, `**_`.
-
-```mojo
-@fieldwise_init
-struct KeyWordStruct[pos_or_kw: Int, *, kw_only: Int = 10]:
-    pass
-
-# Unbind both pos_or_kw and kw_only parameters
-fn use_kw_struct(k: KeyWordStruct[**_]):
-    pass
-
-def main():
-    use_kw_struct(KeyWordStruct[10, kw_only=11]())
-```
-
-When a parameter is explicitly unbound with the `_`, `*_`, or `**_` expressions,
+When a parameter is explicitly unbound with the `_`, or `...` expressions,
 you **must** specify a value for that parameter to use the type.
 The default values of explicitly unbound parameters are ignored.
 
@@ -1204,11 +1186,11 @@ fn my_func(t: MyComplicatedType):
     pass
 ```
 
-This is equivalent to `fn my_func(t: MyComplicatedType[*_, **_]): pass`.
+This is equivalent to `fn my_func(t: MyComplicatedType[...]): pass`.
 That is, all parameters (positional-only, positional-or-keyword, keyword-only)
 are unbound and their default values (if any) ignored.
 
-Note that when an argument type is _partially bound_, default values will be
+Note that when an argument type is *partially bound*, default values will be
 bound:
 
 ```mojo
@@ -1249,7 +1231,7 @@ float64
 ```
 
 In the above example, the `print_params()` function is automatically
-parameterized. The `vec` argument takes an argument of type `SIMD[*_]`. This is
+parameterized. The `vec` argument takes an argument of type `SIMD[...]`. This is
 an [unbound parameterized
 type](#fully-bound-partially-bound-and-unbound-types)—that is, it doesn't
 specify any parameter values for the type. Mojo treats the unbound parameters
@@ -1350,7 +1332,7 @@ We can write a function that takes a `Fudge` argument with just one bound
 parameter (it's *partially bound*):
 
 ```mojo
-fn eat(f: Fudge[5, *_]):
+fn eat(f: Fudge[5, ...]):
     print("Ate " + String(f))
 ```
 
@@ -1449,7 +1431,7 @@ nibble(Fudge[5, 4, 7]())
 Ate Fudge (5,4,7)
 ```
 
-Here, `Fudge[5]` works like `Fudge[5, *_]` **except** in the handling of
+Here, `Fudge[5]` works like `Fudge[5, ...]` **except** in the handling of
 parameters with default values. Instead of discarding the default value of
 `chocolate`, `Fudge[5]` binds the default value immediately, making it
 equivalent to: `Fudge[5, _, 7]`.

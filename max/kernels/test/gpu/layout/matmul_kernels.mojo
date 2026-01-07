@@ -27,7 +27,7 @@ from layout.tensor_core import TensorCore
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils.index import Index
 
 comptime NWARMUP = 1

@@ -36,7 +36,7 @@ from utils import StaticTuple
 
 @fieldwise_init
 @register_passable("trivial")
-struct LaunchAttributeID(Identifiable, Writable):
+struct LaunchAttributeID(Equatable, Writable):
     """Identifies the type of launch attribute for GPU kernel execution.
 
     This struct represents the various types of launch attributes that can be specified
@@ -184,19 +184,6 @@ struct LaunchAttributeID(Identifiable, Writable):
         """
         return not (self == other)
 
-    fn __is__(self, other: Self) -> Bool:
-        """Checks if two `LaunchAttribute` instances have the same value.
-
-        This is an identity comparison that delegates to equality comparison.
-
-        Args:
-            other: The other `LaunchAttribute instance to compare with.
-
-        Returns:
-            True if the attributes have the same value, False otherwise.
-        """
-        return self == other
-
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the `LaunchAttribute`.
@@ -271,7 +258,7 @@ struct LaunchAttributeValue(Defaultable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct AccessProperty(Identifiable, Writable):
+struct AccessProperty(Equatable, Writable):
     """Specifies performance hint with AccessPolicyWindow for hit_prop and
     miss_prop fields.
 
@@ -317,17 +304,6 @@ struct AccessProperty(Identifiable, Writable):
         """
         return not (self == other)
 
-    fn __is__(self, other: Self) -> Bool:
-        """Checks if two `AccessProperty` instances have the same value.
-
-        Args:
-            other: The `AccessProperty` to compare with.
-
-        Returns:
-            True if the instances have the same value, False otherwise.
-        """
-        return self == other
-
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the `AccessProperty`.
@@ -344,9 +320,9 @@ struct AccessProperty(Identifiable, Writable):
         Args:
             writer: The writer instance to write the formatted string to.
         """
-        if self is Self.NORMAL:
+        if self == Self.NORMAL:
             return writer.write("NORMAL")
-        if self is Self.STREAMING:
+        if self == Self.STREAMING:
             return writer.write("STREAMING")
         return writer.write("PERSISTING")
 
@@ -466,7 +442,7 @@ struct AccessPolicyWindow(Defaultable, Writable):
     ](
         out self,
         *,
-        base_ptr: UnsafePointer[T, *_, **_],
+        base_ptr: UnsafePointer[T, ...],
         count: Int,
         hit_ratio: Float32,
         hit_prop: AccessProperty = AccessProperty.NORMAL,

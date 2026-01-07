@@ -21,7 +21,7 @@ from internal_utils import InitializationType, Timer, init_vector_launch
 from internal_utils._utils import initialize
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 

@@ -36,6 +36,7 @@ mojo_test(
 
 # Tests requiring higher GPU memory allocation (20GB instead of 4GB)
 HIGH_GPU_MEMORY_TESTS = [
+    "test_p2p_ep_combine.mojo",
     "test_p2p_ep_dispatch.mojo",
     "test_p2p_ep_dispatch_fp8.mojo",
 ]

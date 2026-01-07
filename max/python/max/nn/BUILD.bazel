@@ -5,9 +5,12 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "nn",
     srcs = glob(["**/*.py"]),
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         requirement("numpy"),
-        "//max/python/max/_core_mojo",
+        requirement("typing-extensions"),
+        requirement("rich"),
+        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/experimental",

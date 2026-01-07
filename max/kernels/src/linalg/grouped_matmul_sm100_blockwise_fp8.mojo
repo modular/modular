@@ -60,7 +60,7 @@ from logger import Logger
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
@@ -516,13 +516,13 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, *_, **_],
-    a: LayoutTensor[a_type, a_layout, *_, **_],
-    b: LayoutTensor[b_type, b_layout, *_, **_],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, *_, **_],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, *_, **_],
-    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, *_, **_],
-    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, *_, **_],
+    c: LayoutTensor[c_type, c_layout, ...],
+    a: LayoutTensor[a_type, a_layout, ...],
+    b: LayoutTensor[b_type, b_layout, ...],
+    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ...],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
+    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, ...],
+    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, ...],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -530,7 +530,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     __comptime_assert config.transpose_b, "Only support transposed B"
 
     __comptime_assert (
-        a_type == b_type and a_type is DType.float8_e4m3fn
+        a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn for A and B"
 
     comptime accum_type = get_accum_type[a_type]()
@@ -849,14 +849,14 @@ fn multi_stage_reg_epilogue[
         accum_layout,
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
-        *_, **_,
+        ...,
     ],
     c_lower_main_tile: LayoutTensor[
         accum_type,
         accum_layout,
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
-        *_, **_,
+        ...,
     ],
     c_iter: LayoutTensorIter[
         c_type,
@@ -1092,14 +1092,14 @@ fn promote_accumulators[
         accum_layout,
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
-        *_, **_,
+        ...,
     ],
     c_lower_main_tile: LayoutTensor[
         accum_type,
         accum_layout,
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
-        *_, **_,
+        ...,
     ],
     mma_output_pipeline: ProducerConsumerPipeline[
         Int(num_accum_pipeline_stages)
@@ -1986,13 +1986,13 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, *_, **_],
-    a: LayoutTensor[a_type, a_layout, *_, **_],
-    b: LayoutTensor[b_type, b_layout, *_, **_],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, *_, **_],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, *_, **_],
-    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, *_, **_],
-    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, *_, **_],
+    c: LayoutTensor[c_type, c_layout, ...],
+    a: LayoutTensor[a_type, a_layout, ...],
+    b: LayoutTensor[b_type, b_layout, ...],
+    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ...],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
+    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, ...],
+    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, ...],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -2008,7 +2008,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     __comptime_assert transpose_b, "Only support transposed B"
 
     __comptime_assert (
-        a_type == b_type and a_type is DType.float8_e4m3fn
+        a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     __comptime_assert (
@@ -2259,7 +2259,7 @@ fn grouped_matmul_dynamic_scaled_fp8[
     ctx: DeviceContext,
 ) raises:
     __comptime_assert (
-        ctx.default_device_info is B200 or ctx.default_device_info is H100
+        ctx.default_device_info == B200 or ctx.default_device_info == H100
     ), "Only support SM100 or SM90"
     __comptime_assert (
         m_scale_granularity == 1
@@ -2302,7 +2302,7 @@ fn grouped_matmul_dynamic_scaled_fp8[
         return
 
     @parameter
-    if ctx.default_device_info is B200 and tokens_padded_per_expert:
+    if ctx.default_device_info == B200 and tokens_padded_per_expert:
         comptime umma_shape: IndexList[3] = Index(64, 64, 32)
 
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](

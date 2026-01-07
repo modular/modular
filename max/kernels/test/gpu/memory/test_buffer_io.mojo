@@ -21,7 +21,7 @@ from gpu.intrinsics import AMDBufferResource
 from gpu.memory import CacheOperation
 from memory import LegacyUnsafePointer, stack_allocation
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal, assert_true
 
 comptime size = 257
@@ -253,5 +253,5 @@ def main():
         test_buffer_lds[DType.float32, 1](ctx)
 
         @parameter
-        if ctx.default_device_info is MI355X:
+        if ctx.default_device_info == MI355X:
             test_buffer_lds[DType.bfloat16, 8](ctx)

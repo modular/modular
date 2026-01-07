@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys.info import _cdna_4_or_newer
 from sys import env_get_bool
 

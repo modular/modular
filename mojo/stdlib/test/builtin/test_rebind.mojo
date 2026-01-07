@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin.rebind import downcast
 from testing import TestSuite, assert_equal
 from test_utils import MoveCopyCounter, DelCounter
 
@@ -86,6 +87,13 @@ def test_rebind_does_not_call_del():
     assert_equal(n_dels, 0)
     _ = rebound
     assert_equal(n_dels, 1)
+
+
+def test_downcast():
+    comptime DefaultWitnessTable = downcast[String, Defaultable]()
+    var a = String()
+    var b = DefaultWitnessTable.__init__()
+    assert_equal(a, b)
 
 
 def main():

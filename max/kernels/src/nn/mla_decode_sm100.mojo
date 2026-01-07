@@ -424,7 +424,7 @@ struct MLA_Decode_Pack[
 fn num_matrix_view_rows_decode[
     dtype: DType,
     //,
-](q: LayoutTensor[dtype, **_]) -> Int:
+](q: LayoutTensor[dtype, ...]) -> Int:
     # q and out are (batch x seq_len=1 x num_heads , depth)
     var num_rows: Int = q.dim[0]()
 
@@ -454,16 +454,16 @@ fn mla_decode_sm100[
     decoding_warp_split_k: Bool = False,
 ](
     q: LayoutTensor[
-        q_type, q_layout, address_space = AddressSpace.GENERIC, **_
+        q_type, q_layout, address_space = AddressSpace.GENERIC, ...
     ],
     k: k_t,
-    output: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
+    output: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
     scale: Float32,
     batch_size: Int,
     num_partitions: Int,
     max_cache_valid_length: Int,  # longest KV cache entry
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
     score_mod: score_mod_t,

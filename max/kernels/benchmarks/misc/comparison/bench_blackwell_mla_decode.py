@@ -44,6 +44,27 @@ from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 
 LINE = "=" * 80
 
+
+def to_float8(
+    x: torch.Tensor, dtype: torch.dtype = torch.float8_e4m3fn
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantize a tensor to FP8 format.
+
+    Args:
+        x: Input tensor to quantize
+        dtype: Target FP8 dtype (default: float8_e4m3fn)
+
+    Returns:
+        Tuple of (quantized_tensor, scale) where scale is the dequantization scale
+    """
+    finfo = torch.finfo(dtype)
+    min_val, max_val = x.aminmax()
+    amax = torch.maximum(min_val.abs(), max_val.abs()).clamp(min=1e-12)
+    scale = finfo.max / amax
+    x_scl_sat = (x * scale).clamp(min=finfo.min, max=finfo.max)
+    return x_scl_sat.to(dtype), scale.float().reciprocal()
+
+
 # Try importing external libraries (installed via Bazel pycross_wheel_library)
 _flashinfer: types.ModuleType | None
 try:
@@ -86,9 +107,18 @@ def calculate_mla_memory_bytes(
     qk_rope_head_dim = model_config.qk_rope_head_dim
 
     # MLA reads compressed KV cache and query, writes output
-    # Read: query + kv_cache
-    # Write: output
-    bytes_per_element = 2 if dtype in [torch.bfloat16, torch.float16] else 4
+    # Read: query + kv_cache (in input dtype)
+    # Write: output (always bf16 for FP8 inputs, otherwise same as input dtype)
+    if dtype in [torch.float8_e4m3fn, torch.float8_e5m2]:
+        input_bytes_per_element = 1
+        # FP8 MLA kernels produce bf16 output (see bmm2_scale comment in bench_flashinfer_trtllm)
+        output_bytes_per_element = 2
+    elif dtype in [torch.bfloat16, torch.float16]:
+        input_bytes_per_element = 2
+        output_bytes_per_element = 2
+    else:
+        input_bytes_per_element = 4
+        output_bytes_per_element = 4
 
     # Input: query [batch_size, q_len_per_request, num_q_heads, kv_lora_rank + qk_rope_head_dim]
     query_bytes = (
@@ -96,7 +126,7 @@ def calculate_mla_memory_bytes(
         * q_len_per_request
         * num_q_heads
         * (kv_lora_rank + qk_rope_head_dim)
-        * bytes_per_element
+        * input_bytes_per_element
     )
 
     # KV cache: [num_blocks, page_size, kv_lora_rank + qk_rope_head_dim] (read only what's needed)
@@ -104,7 +134,7 @@ def calculate_mla_memory_bytes(
         batch_size
         * cache_len
         * (kv_lora_rank + qk_rope_head_dim)
-        * bytes_per_element
+        * input_bytes_per_element
     )
 
     # Output: [batch_size, q_len_per_request, num_q_heads, kv_lora_rank]
@@ -113,7 +143,7 @@ def calculate_mla_memory_bytes(
         * q_len_per_request
         * num_q_heads
         * kv_lora_rank
-        * bytes_per_element
+        * output_bytes_per_element
     )
 
     total_bytes = query_bytes + kv_bytes + output_bytes
@@ -135,9 +165,8 @@ def bench_flashinfer_trtllm(
         batch_size: Number of sequences
         cache_len: KV cache length per sequence (max sequence length)
         page_size: Page/block size for paged KV cache
-        dtype: torch dtype for inputs
+        dtype: torch dtype for inputs (supports bfloat16, float16, float8_e4m3fn)
         q_len_per_request: Query length per request (1 for decode, >1 for chunked prefill)
-        backend: Backend to use ("trtllm-gen" for TensorRT-LLM generation, "xqa" for XQA)
         enable_pdl: Enable PDL (Persistent Dynamic Load) optimization
     """
     if _flashinfer is None:
@@ -145,6 +174,7 @@ def bench_flashinfer_trtllm(
         return None
 
     device = "cuda"
+    is_fp8 = dtype == torch.float8_e4m3fn
 
     # DeepSeek MLA configuration
     num_q_heads = model_config.num_q_heads
@@ -152,13 +182,16 @@ def bench_flashinfer_trtllm(
     qk_rope_head_dim = model_config.qk_rope_head_dim
     kv_lora_rank = model_config.kv_lora_rank
 
+    # For FP8: generate in bf16 first, then quantize for proper scaling
+    gen_dtype = torch.bfloat16 if is_fp8 else dtype
+
     # Query tensor: [batch_size, q_len_per_request, num_q_heads, kv_lora_rank + qk_rope_head_dim]
-    query = torch.randn(
+    query_raw = torch.randn(
         batch_size,
         q_len_per_request,
         num_q_heads,
         kv_lora_rank + qk_rope_head_dim,
-        dtype=dtype,
+        dtype=gen_dtype,
         device=device,
     )
 
@@ -180,21 +213,38 @@ def bench_flashinfer_trtllm(
 
     # Create MLA KV cache: [num_blocks, page_size, kv_lora_rank + qk_rope_head_dim]
     # This is the compressed format for MLA - stores ckv (compressed kv) and kpe (key positional encoding)
-    kv_cache = torch.randn(
+    kv_cache_raw = torch.randn(
         num_blocks,
         page_size,
         kv_lora_rank + qk_rope_head_dim,
-        dtype=dtype,
+        dtype=gen_dtype,
         device=device,
     )
+
+    # For FP8: quantize and compute proper scales
+    # bmm1_scale = q_scale * k_scale * sm_scale (where sm_scale = 1/sqrt(head_dim))
+    # bmm2_scale = v_scale * o_scale (typically 1.0 for bf16 output)
+    if is_fp8:
+        query, q_scale = to_float8(query_raw)
+        kv_cache, kv_scale = to_float8(kv_cache_raw)
+        q_scale_val = q_scale.item()
+        kv_scale_val = kv_scale.item()
+        sm_scale = 1.0 / math.sqrt(qk_nope_head_dim + qk_rope_head_dim)
+        bmm1_scale = q_scale_val * kv_scale_val * sm_scale
+        bmm2_scale = (
+            kv_scale_val  # v_scale * o_scale (o_scale=1 for bf16 output)
+        )
+    else:
+        query = query_raw
+        kv_cache = kv_cache_raw
+        sm_scale = 1.0 / math.sqrt(qk_nope_head_dim + qk_rope_head_dim)
+        bmm1_scale = sm_scale
+        bmm2_scale = 1.0
 
     # Workspace buffer (must be zero-initialized for trtllm-gen backend)
     workspace_buffer = torch.zeros(
         128 * 1024 * 1024, dtype=torch.int8, device=device
     )
-
-    # Scale for attention computation
-    scale = 1.0 / math.sqrt(qk_nope_head_dim + qk_rope_head_dim)
 
     def run_kernel() -> torch.Tensor:
         return _flashinfer.decode.trtllm_batch_decode_with_kv_cache_mla(
@@ -209,8 +259,8 @@ def bench_flashinfer_trtllm(
             block_tables=block_tables,
             seq_lens=seq_lens_tensor,
             max_seq_len=cache_len,
-            bmm1_scale=scale,
-            bmm2_scale=1.0,
+            bmm1_scale=bmm1_scale,
+            bmm2_scale=bmm2_scale,
             enable_pdl=enable_pdl,
             backend="trtllm-gen",
         )
@@ -595,8 +645,8 @@ if __name__ == "__main__":
         "--dtype",
         type=str,
         default="bfloat16",
-        choices=["float16", "bfloat16", "float32"],
-        help="Data type",
+        choices=["float16", "bfloat16", "float32", "float8_e4m3fn"],
+        help="Data type (float8_e4m3fn for FP8 quantized MLA)",
     )
 
     parser.add_argument(
@@ -623,6 +673,7 @@ if __name__ == "__main__":
         "float16": torch.float16,
         "bfloat16": torch.bfloat16,
         "float32": torch.float32,
+        "float8_e4m3fn": torch.float8_e4m3fn,
     }
 
     result = bench_mla_decode(

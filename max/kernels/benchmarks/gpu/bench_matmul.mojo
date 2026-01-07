@@ -31,7 +31,7 @@ from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
 from memory import LegacyUnsafePointer, bitcast
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from random import Random
 from internal_utils._utils import (
     InitializationType,

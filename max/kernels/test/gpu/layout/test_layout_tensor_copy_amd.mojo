@@ -27,7 +27,7 @@ from layout.layout_tensor import (
 )
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import simd_width_of
 from utils import IndexList
 from benchmark import keep
