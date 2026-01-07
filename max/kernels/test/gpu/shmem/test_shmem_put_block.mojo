@@ -16,7 +16,7 @@
 from os import abort
 
 from gpu import block_dim, block_idx, global_idx
-from memory import LegacyUnsafePointer
+from memory import LegacyUnsafePointer, alloc
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from shmem import *
@@ -88,7 +88,7 @@ fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
         block_dim=threads_per_block,
     )
 
-    var host = ctx.enqueue_create_host_buffer[DType.float32](Int(num_elems))
+    var host = alloc[Float32](Int(num_elems))
     recv_data.enqueue_copy_to(host)
 
     # The completion of the non-blocking version of `shmem_put` is

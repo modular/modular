@@ -135,11 +135,11 @@ def bench_ring_reduce(ctx: SHMEMContext):
 
     var dst = ctx.enqueue_create_buffer[DType.int32](max_ints)
     var src = ctx.enqueue_create_buffer[DType.int32](max_ints)
-    var data_h = ctx.enqueue_create_host_buffer[DType.int32](max_ints)
+    var data_h = alloc[Int32](max_ints)
     var signal = shmem_calloc[DType.uint64](num_blocks)
 
     # Initialize test data - each element has value equal to its index
-    iota(data_h.unsafe_ptr(), max_ints)
+    iota(data_h, max_ints)
 
     # Copy test data to source buffer
     src.enqueue_copy_from(data_h)

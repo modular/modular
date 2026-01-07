@@ -24,7 +24,7 @@ mpirun.
 # RUN: %mpirun -n $NUM_GPUS %t
 
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer
+from memory import LegacyUnsafePointer, alloc
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os.path import dirname
@@ -49,7 +49,7 @@ def main():
     with SHMEMContext() as ctx:
         # Set up buffers to test devices are communicating with the correct IDs
         var target_device = ctx.enqueue_create_buffer[DType.int32](1)
-        var target_host = ctx.enqueue_create_host_buffer[DType.int32](1)
+        var target_host = alloc[Int32](1)
 
         # SHMEMContext takes care of initializing device state into
         # `simple_shift_kernel` constant memory

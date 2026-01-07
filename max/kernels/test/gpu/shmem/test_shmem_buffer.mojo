@@ -16,17 +16,18 @@
 from math import iota
 
 from shmem import SHMEMBuffer, SHMEMContext, shmem_launch
+from memory import alloc
 from testing import assert_equal
 
 
 def test_buffer_copy(ctx: SHMEMContext):
     comptime length = 1024
 
-    var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var host_buffer_2 = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var host_buffer = alloc[Float32](length)
+    var host_buffer_2 = alloc[Float32](length)
     var shmem_buffer = ctx.enqueue_create_buffer[DType.float32](length)
 
-    iota(host_buffer.unsafe_ptr(), length)
+    iota(host_buffer, length)
 
     shmem_buffer.enqueue_copy_from(host_buffer)
     shmem_buffer.enqueue_copy_to(host_buffer_2)
