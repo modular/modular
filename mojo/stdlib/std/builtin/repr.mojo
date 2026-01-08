@@ -80,22 +80,6 @@ fn repr[T: Representable](value: T) -> String:
     return value.__repr__()
 
 
-fn repr[U: KeyElement & Representable](value: Set[U]) -> String:
-    """Returns the string representation of an `Set[U]`.
-
-    Args:
-        value: A `Set` of elements `U`.
-
-    Parameters:
-        U: A type that implements `KeyElement` and `Representable`.
-
-    Returns:
-        The string representation of `Set[U]`.
-    """
-    # TODO: remove when `Set` can conform conditionally to `Representable`.
-    return value.__repr__()
-
-
 fn repr[U: Copyable & Writable](value: LinkedList[U]) -> String:
     """Returns the string representation of an `LinkedList[U]`.
 

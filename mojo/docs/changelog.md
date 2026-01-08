@@ -541,6 +541,7 @@ what we publish.
   - `List` now conforms to `Equatable`, `Writable`, `Stringable`,
     and `Representable`.
   - `Dict` now conforms to `Writable`, `Stringable`, and `Representable`.
+  - `Set` now conforms to `Writable`, `Stringable`, and `Representable`.
   - `Deque` now conforms to `Writable`, `Stringable`, and `Representable`.
   - `Iterator` no longer requires its type to be `Copyable`.
 
