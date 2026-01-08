@@ -95,7 +95,8 @@ modular_py_test(
             "*_distributed_gpu.py",
             "test_conv_transpose_gpu.py",
             "test_linear_fp8_amd_gpu.py",
-            "test_lora_sgmv_kernels_gpu.py",
+            "test_lora_kernels_gpu.py",
+            "test_sgmv_kernels_gpu.py",
         ],
     ) + ["conftest.py"],
     exec_properties = {
@@ -207,11 +208,38 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "sgmv_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_sgmv_kernels_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "b200",
+        "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/serve",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
     name = "lora_tests",
     size = "large",
     srcs = [
         "conftest.py",
-        "test_lora_sgmv_kernels_gpu.py",
+        "test_lora_kernels_gpu.py",
     ],
     exec_properties = {
         "test.resources:gpu-memory": "2",

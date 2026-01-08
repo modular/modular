@@ -21,7 +21,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.kernels import (
-    sgmv_kernel,
     sgmv_lora_kernel,
     sgmv_lora_qkv_shrink,
 )
@@ -204,53 +203,6 @@ def torch_sgmv_lora_qkv_shrink(
     return output
 
 
-def run_sgmv_kernel(
-    input: torch.Tensor,
-    lora: torch.Tensor,
-    lora_ids: npt.NDArray[np.int32],
-    offsets: npt.NDArray[np.uint32],
-    max_lora_seq_len: int,
-) -> torch.Tensor:
-    session, device_ref, device = create_session()
-
-    M, K = input.shape
-    num_adapters, N, _ = lora.shape
-    num_groups = len(lora_ids)
-
-    with Graph(
-        "sgmv_kernel_test",
-        input_types=[
-            TensorType(DTYPE, [M, K], device=device_ref),
-            TensorType(DTYPE, [num_adapters, N, K], device=device_ref),
-            TensorType(DType.int32, ["lora_ids"], device=device_ref),
-            TensorType(DType.uint32, ["lora_ranks"], device=DeviceRef.CPU()),
-            TensorType(
-                DType.uint32, ["lora_grouped_offsets"], device=device_ref
-            ),
-        ],
-    ) as graph:
-        x, lora_in, ids, ranks, offs = graph.inputs
-        output = sgmv_kernel(
-            input=x.tensor,
-            lora=lora_in.tensor,
-            lora_ids=ids.tensor,
-            lora_ranks=ranks.tensor,
-            input_row_offsets=offs.tensor,
-            max_lora_seq_len=max_lora_seq_len,
-        )
-        graph.output(output)
-
-    compiled = session.load(graph)
-    result = compiled.execute(
-        to_max_tensor(input, device),
-        to_max_tensor(lora, device),
-        Tensor.from_numpy(lora_ids.astype(np.int32)).to(device),
-        Tensor.from_numpy(np.ones(num_groups, dtype=np.uint32)),
-        Tensor.from_numpy(offsets.astype(np.uint32)).to(device),
-    )
-    return to_torch(result[0])
-
-
 def run_sgmv_lora_kernel(
     input: torch.Tensor,
     lora_a: torch.Tensor,
@@ -262,17 +214,19 @@ def run_sgmv_lora_kernel(
 ) -> torch.Tensor:
     session, device_ref, device = create_session()
 
-    M, in_dim = input.shape
-    num_adapters, rank, _ = lora_a.shape
-    _, out_dim, _ = lora_b.shape
+    _, rank, _ = lora_a.shape
     num_groups = len(lora_ids)
 
     with Graph(
         "sgmv_lora_kernel_test",
         input_types=[
-            TensorType(DTYPE, [M, in_dim], device=device_ref),
-            TensorType(DTYPE, [num_adapters, rank, in_dim], device=device_ref),
-            TensorType(DTYPE, [num_adapters, out_dim, rank], device=device_ref),
+            TensorType(DTYPE, ["M", "in_dim"], device=device_ref),
+            TensorType(
+                DTYPE, ["num_adapters", "rank", "in_dim"], device=device_ref
+            ),
+            TensorType(
+                DTYPE, ["num_adapters", "out_dim", "rank"], device=device_ref
+            ),
             TensorType(DType.int32, ["lora_ids"], device=device_ref),
             TensorType(DType.uint32, ["lora_ranks"], device=DeviceRef.CPU()),
             TensorType(
@@ -322,15 +276,12 @@ def run_sgmv_lora_qkv_shrink(
 ) -> torch.Tensor:
     session, device_ref, device = create_session()
 
-    M, K = input.shape
-    num_adapters, combined_rank, _ = lora_a.shape
-
     with Graph(
         "sgmv_lora_qkv_shrink_test",
         input_types=[
-            TensorType(DTYPE, [M, K], device=device_ref),
+            TensorType(DTYPE, ["M", "K"], device=device_ref),
             TensorType(
-                DTYPE, [num_adapters, combined_rank, K], device=device_ref
+                DTYPE, ["num_adapters", "combined_rank", "K"], device=device_ref
             ),
             TensorType(DType.int32, ["lora_ids"], device=device_ref),
             TensorType(
@@ -369,57 +320,6 @@ def run_sgmv_lora_qkv_shrink(
 # -----------------------------------------------------------------------------
 # Verification Functions
 # -----------------------------------------------------------------------------
-
-
-def verify_sgmv_kernel(
-    seq_lens: list[int],
-    lora_ids: list[int],
-    num_adapters: int,
-    K: int = 256,
-    N: int = 64,
-    seed: int = 42,
-) -> None:
-    """
-    Verify sgmv_kernel correctness for a given configuration.
-
-    Args:
-        seq_lens: List of sequence lengths (all sequences, LoRA first then non-LoRA)
-        lora_ids: List of adapter IDs for LoRA sequences only.
-                  Length determines how many sequences have LoRA applied.
-        num_adapters: Number of distinct LoRA adapters
-        K: Input dimension
-        N: Output dimension
-        seed: Random seed
-
-    Note: The kernel only processes LoRA sequences. Non-LoRA rows in the output
-    buffer are not guaranteed to be zeros, so we only verify the LoRA portion.
-    """
-    num_lora_seqs = len(lora_ids)
-    lora_seq_lens = seq_lens[:num_lora_seqs]
-
-    lora_end = sum(lora_seq_lens)
-    M = sum(seq_lens)
-
-    input_tensor = rand_tensor((M, K), seed=seed)
-    lora = rand_tensor((num_adapters, N, K), seed=seed + 1)
-
-    lora_ids_arr = np.array(lora_ids, dtype=np.int32)
-    offsets = calc_input_row_offsets(lora_seq_lens)
-
-    actual = run_sgmv_kernel(
-        input_tensor,
-        lora,
-        lora_ids_arr,
-        offsets,
-        max_lora_seq_len=max(lora_seq_lens) if lora_seq_lens else 1,
-    )
-    expected = torch_sgmv_kernel(input_tensor, lora, lora_ids_arr, offsets)
-
-    if lora_end > 0:
-        assert_close(actual[:lora_end], expected[:lora_end])
-        assert actual[:lora_end].abs().sum() > 0, (
-            "LoRA output should be non-zero"
-        )
 
 
 def verify_sgmv_lora_kernel(
@@ -533,43 +433,6 @@ def verify_qkv_shrink(
 
     if lora_end_idx > 0:
         assert actual.abs().sum() > 0, "QKV shrink output should be non-zero"
-
-
-# -----------------------------------------------------------------------------
-# SGMV Kernel Tests
-# -----------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "seq_lens, lora_ids, num_adapters, K, N",
-    [
-        # Single sequence with single adapter
-        ([16], [0], 1, 128, 64),
-        # Multiple sequences, same adapter
-        ([8, 12, 10], [0, 0, 0], 1, 128, 64),
-        # Multiple sequences, different adapters
-        ([80, 120, 100, 140], [0, 1, 2, 3], 4, 128, 256),
-        # 3 LoRA + 3 non-LoRA, single adapter
-        ([18, 10, 12, 8, 10, 12], [0, 0, 0], 1, 256, 64),
-        # 4 LoRA + 2 non-LoRA, multiple adapters
-        ([18, 10, 12, 14, 8, 10], [0, 1, 2, 1], 3, 256, 64),
-    ],
-)
-def test_sgmv_kernel(
-    seq_lens: list[int],
-    lora_ids: list[int],
-    num_adapters: int,
-    K: int,
-    N: int,
-) -> None:
-    """Test sgmv_kernel with various configurations."""
-    verify_sgmv_kernel(
-        seq_lens=seq_lens,
-        lora_ids=lora_ids,
-        num_adapters=num_adapters,
-        K=K,
-        N=N,
-    )
 
 
 # -----------------------------------------------------------------------------
