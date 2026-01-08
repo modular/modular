@@ -106,7 +106,6 @@ class ParallelArrayOps:
         self,
         arrays: Sequence[npt.NDArray[Any]],
         axis: int = 0,
-        default_copy: bool = True,
         min_chunk_size_mb: float = 50.0,
         accelerator: Device | None = None,
     ) -> Tensor:
@@ -117,27 +116,20 @@ class ParallelArrayOps:
         workers, maximizing memory bandwidth utilization. Uses intelligent heuristics
         to avoid splitting when overhead would exceed benefits.
 
-        Note: By default, this matches np.concatenate's behavior of always returning a copy,
-        even when arrays contains a single array. For performance optimization, you can set
-        default_copy=False to avoid the arbitrary unnecessary copy and return the single
-        array directly without copying.
+        This matches np.concatenate's behavior of always returning a copy,
+        even when arrays contains a single array.
 
         Args:
             arrays: List of numpy arrays to concatenate. Must have compatible shapes
                 (same shape except along concatenation axis) and identical dtypes.
             axis: Axis along which to concatenate. Negative values count from the end.
                 Default is 0.
-            default_copy: If True (default), return a copy when arrays contains a single
-                array, matching np.concatenate's behavior. If False, return the array
-                directly without copying to avoid unnecessary memory allocation and
-                improve performance.
             min_chunk_size_mb: Minimum chunk size in MB when splitting arrays. Default is
                 50 MB. Prevents creating too many small work items that would have excessive
                 overhead. Arrays are only split if the resulting chunks would be at least
                 this size.
-            accelerator: If provided, the result may be allocated on a pinned buffer on
-                the specified accelerator. The output will not be pinned if the number
-                of arrays is one and default_copy is False.
+            accelerator: If provided, the result will be allocated on a pinned buffer on
+                the specified accelerator.
 
         Returns:
             Concatenated array with the same dtype as the input arrays.
@@ -171,20 +163,17 @@ class ParallelArrayOps:
 
         if n == 1:
             # This copy is likely not needed, but it mocks the exact behaviour of numpy.concatenate.
-            if default_copy:
-                if accelerator is None:
-                    return Tensor.from_numpy(first.copy())
-                else:
-                    out_max = Tensor(
-                        shape=first.shape,
-                        dtype=DType.from_numpy(first.dtype),
-                        device=accelerator,
-                        pinned=True,
-                    )
-                    np.copyto(out_max.to_numpy(), first)
-                    return out_max
+            if accelerator is None:
+                return Tensor.from_numpy(first.copy())
             else:
-                return Tensor.from_numpy(first)
+                out_max = Tensor(
+                    shape=first.shape,
+                    dtype=DType.from_numpy(first.dtype),
+                    device=accelerator,
+                    pinned=True,
+                )
+                np.copyto(out_max.to_numpy(), first)
+                return out_max
 
         # Pre-compute expected shape slices for efficient validation
         # All arrays must match: shape[:axis] and shape[axis+1:]
