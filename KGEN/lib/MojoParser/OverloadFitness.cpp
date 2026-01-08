@@ -792,6 +792,16 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       signature.getInputParamTypes(), signature.getParamListAttrs(),
       inferenceDiags, allowImplicitConversions);
 
+  // TODO: inferForCall will eventually be separated. We will eventually blend
+  // parameter inference into overload resolution have something like:
+  //
+  //  inference.inferFromParamBinding(...)
+  //
+  //  for (arg in callexpr) {
+  //    case call_conv:
+  //       inference.inferOneOperand(...)
+  //    ...
+  //  }
   if (failed(inference.inferForCall(signature, operands, variadicKwOperands,
                                     returnsSelf, hasCTADParams))) {
     // FIXME: Unfortunately, `inferFailed` does not imply that there is an

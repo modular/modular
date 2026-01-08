@@ -117,6 +117,11 @@ public:
                              const OperandValueList &variadicKwOperands,
                              bool returnsSelf, bool hasCTADParams);
 
+  /// FIXME: This is a temporary flag that will soon go away. This is used to
+  /// distinguish parameter inference for overload resolution or struct
+  /// parameter binding. We are migrating one part at a time.
+  bool hasInferredForCall = false;
+
   /// Given an incomplete parameter binding set, try to infer parameters on Self
   /// of a method from the first argument.
   LogicalResult inferCTADParams(FnTypeGeneratorType signature,

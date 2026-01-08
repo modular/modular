@@ -357,8 +357,6 @@ ParamBindings::verifyBindingsImpl(
   // context.
   IREmitter emitter(declScope, EC_ParameterList);
 
-  // The next positional (or explicitly-specified inferred) binding index.
-  size_t posBindingIdx = 0;
   size_t numBindings = operands.size();
 
   auto inferParameter = [&](Type requestedType) {
@@ -479,6 +477,10 @@ ParamBindings::verifyBindingsImpl(
          << paramVal.getType() << binding.expr->getRange();
   };
 
+  // The next positional (or explicitly-specified inferred) binding index.
+  size_t posBindingIdx = 0;
+  inference.inferFromParamList(partial);
+
   for (auto [idx, sigType, pog] : llvm::enumerate(expectedParamTypes, pogs)) {
     // This is the refined type expected by the signature.
     Type requestedType = evaluator.getReboundType(sigType);
@@ -547,10 +549,14 @@ ParamBindings::verifyBindingsImpl(
         return {{}, fitness};
       }
 
-      // The param name matches this operand. Consume this operand.
+      // The param name matches this operand. Consume this operand, the
+      // parameter must have been installed in the ParamInfState, simply pull it
+      // out. If there is no pValue, this is a type mismatch.
+      //
+      // TODO: is it always a type mismatch error? We probably should not guess
+      // here and instead let `ParamInfState` determine the error kind.
       OperandValue &binding = operands[posBindingIdx];
-      PValue pValue =
-          emitSingleParameterValue(binding, expectedType, emitter, evaluator);
+      PValue pValue = inference.getInferredValue(newBindings.size());
       if (!pValue) {
         emitTypeMismatch(idx, binding, expectedType);
         return {{}, fitness};
@@ -791,9 +797,6 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
   ParamInfState inference(declScope, getParameters(), getNumPreCheckedParams(),
                           paramTypes, paramList, inferenceDiags,
                           /*allowImplicitConversions=*/true);
-
-  inference.inferFromParamList(/*hasArguments*/ partial);
-
   std::optional<MojoInflightDiag> diag;
   auto [bindings, _] = verifyBindingsImpl(
       parameters, paramTypes, paramList, inference, inferenceDiags,
@@ -860,9 +863,6 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
   ParamInfState inference(declScope, getParameters(), getNumPreCheckedParams(),
                           expectedParamTypes, paramListAttr, inferenceDiags,
                           /*allowImplicitConversions=*/true);
-  // Infer information from the current parameter list.
-  inference.inferFromParamList(partial);
-
   std::optional<MojoInflightDiag> diag;
   auto getDiags = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
     diag = shared.emitError(loc ? *loc : getExprLoc());
