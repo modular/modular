@@ -805,9 +805,9 @@ class Tensor(DLPackArray, HasTensorValue):
     @classmethod
     def arange(
         cls,
-        start: int = 0,
-        stop: int | None = None,
-        step: int = 1,
+        start: TensorValueLike = 0,
+        stop: TensorValueLike | None = None,
+        step: TensorValueLike = 1,
         *,
         dtype: DType | None = None,
         device: Device | None = None,
@@ -816,8 +816,8 @@ class Tensor(DLPackArray, HasTensorValue):
 
         Returns a new 1D tensor containing a sequence of values starting from
         ``start`` (inclusive) and ending before ``stop`` (exclusive), with values
-        spaced by `step`. This is similar to Python's built-in ``range()`` function
-        and NumPy's ``arange()``.
+        spaced by ``step``. This is similar to Python's built-in ``range()``
+        function and NumPy's ``arange()``.
 
         .. code-block:: python
 
@@ -836,12 +836,20 @@ class Tensor(DLPackArray, HasTensorValue):
             z = tensor.Tensor.arange(0, 5, dtype=DType.float32)
             # Result: [0.0, 1.0, 2.0, 3.0, 4.0]
 
+            # Create a range with float step (like numpy/pytorch)
+            w = tensor.Tensor.arange(0.0, 1.0, 0.2, dtype=DType.float32)
+            # Result: [0.0, 0.2, 0.4, 0.6, 0.8]
+
+            # Create a descending range with negative step
+            v = tensor.Tensor.arange(5, 0, -1, dtype=DType.float32)
+            # Result: [5.0, 4.0, 3.0, 2.0, 1.0]
+
         Args:
             start: The starting value of the sequence. If ``stop`` is not provided,
                 this becomes the ``stop`` value and ``start`` defaults to 0.
             stop: The end value of the sequence (exclusive). If not specified,
                 the sequence ends at ``start`` and begins at 0.
-            step: The spacing between values in the sequence.
+            step: The spacing between values in the sequence. Must be non-zero.
             dtype: The data type for the tensor elements. If not specified,
                 defaults to :obj:`DType.float32` for CPU devices and
                 :obj:`DType.bfloat16` for accelerator devices.
