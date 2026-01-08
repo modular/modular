@@ -206,13 +206,13 @@ fn run_selective_scan_fwd[
 
     # Scale A to be negative for stability
     for i in range(dim * dstate):
-        var val = A_h.ptr.offset(i).load()
-        A_h.ptr.offset(i).store(Scalar[dtype](Float32(val) * -0.5))
+        var val = A_h.ptr.load(i)
+        A_h.ptr.store(i, Scalar[dtype](Float32(val) * -0.5))
 
     # Scale delta to be positive
     for i in range(batch * dim * seqlen):
-        var val = delta_h.ptr.offset(i).load()
-        delta_h.ptr.offset(i).store(Scalar[dtype](abs(Float32(val)) * 0.5))
+        var val = delta_h.ptr.load(i)
+        delta_h.ptr.store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
 
     var output_buf = output_h
     var x_buf = x_h

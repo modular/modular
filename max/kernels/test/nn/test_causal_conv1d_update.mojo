@@ -223,7 +223,7 @@ fn run_causal_conv1d_update[
         for c in range(dim):
             var cur_bias: Scalar[dtype] = Scalar[dtype](0.0)
             if has_bias:
-                cur_bias = bias_buf.ptr.offset(c).load()
+                cur_bias = bias_buf.ptr.load(c)
 
             # Process each position in the input sequence
             for l in range(seqlen):
@@ -242,7 +242,7 @@ fn run_causal_conv1d_update[
                             + c * x_c_stride
                             + x_l_pos * x_l_stride
                         )
-                        input_val = input_buf.ptr.offset(x_offset).load()
+                        input_val = input_buf.ptr.load(x_offset)
                     elif src_pos >= 0:
                         # Read from conv_state
                         var conv_state_offset = (
@@ -250,15 +250,13 @@ fn run_causal_conv1d_update[
                             + c * conv_state_c_stride
                             + src_pos * conv_state_l_stride
                         )
-                        input_val = conv_state_ref_buf.ptr.offset(
-                            conv_state_offset
-                        ).load()
+                        input_val = conv_state_ref_buf.ptr.load(conv_state_offset)
                     # else: src_pos < 0, treat as 0 (zero padding)
 
                     var weight_offset = (
                         c * weight_c_stride + w * weight_width_stride
                     )
-                    var weight_val = weight_buf.ptr.offset(weight_offset).load()
+                    var weight_val = weight_buf.ptr.load(weight_offset)
                     conv_sum = conv_sum + input_val * weight_val
 
                 # Write output
@@ -268,7 +266,7 @@ fn run_causal_conv1d_update[
                 var out_val = conv_sum
                 if silu_activation:
                     out_val = silu_ref[dtype](out_val)
-                result_unfused_buf.ptr.offset(out_offset).store(out_val)
+                result_unfused_buf.ptr.store(out_offset, out_val)
 
             # Update conv_state: shift old values and add new x values
             if seqlen >= state_len:
@@ -280,15 +278,13 @@ fn run_causal_conv1d_update[
                         + c * x_c_stride
                         + x_l_pos * x_l_stride
                     )
-                    var x_val = input_buf.ptr.offset(x_offset).load()
+                    var x_val = input_buf.ptr.load(x_offset)
                     var conv_state_offset = (
                         b * conv_state_batch_stride
                         + c * conv_state_c_stride
                         + s * conv_state_l_stride
                     )
-                    conv_state_ref_buf.ptr.offset(conv_state_offset).store(
-                        x_val
-                    )
+                    conv_state_ref_buf.ptr.store(conv_state_offset, x_val)
             else:
                 # Shift conv_state left by seqlen positions, then append x
                 for s in range(state_len - seqlen):
@@ -302,23 +298,21 @@ fn run_causal_conv1d_update[
                         + c * conv_state_c_stride
                         + s * conv_state_l_stride
                     )
-                    var val = conv_state_ref_buf.ptr.offset(src_offset).load()
-                    conv_state_ref_buf.ptr.offset(dst_offset).store(val)
+                    var val = conv_state_ref_buf.ptr.load(src_offset)
+                    conv_state_ref_buf.ptr.store(dst_offset, val)
 
                 # Copy x values to the end
                 for l in range(seqlen):
                     var x_offset = (
                         b * x_batch_stride + c * x_c_stride + l * x_l_stride
                     )
-                    var x_val = input_buf.ptr.offset(x_offset).load()
+                    var x_val = input_buf.ptr.load(x_offset)
                     var conv_state_offset = (
                         b * conv_state_batch_stride
                         + c * conv_state_c_stride
                         + (state_len - seqlen + l) * conv_state_l_stride
                     )
-                    conv_state_ref_buf.ptr.offset(conv_state_offset).store(
-                        x_val
-                    )
+                    conv_state_ref_buf.ptr.store(conv_state_offset, x_val)
 
     # Compare results
     var flattened_size = batch * dim * seqlen

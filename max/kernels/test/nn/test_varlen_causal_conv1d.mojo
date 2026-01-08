@@ -94,10 +94,10 @@ fn run_varlen_causal_conv1d_fwd[
         RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
     )
     var cumsum = 0
-    query_start_loc_h.ptr.offset(0).store(Scalar[DType.int32](0))
+    query_start_loc_h.ptr.store(0, Scalar[DType.int32](0))
     for i in range(batch):
         cumsum += seq_lengths[i]
-        query_start_loc_h.ptr.offset(i + 1).store(Scalar[DType.int32](cumsum))
+        query_start_loc_h.ptr.store(i + 1, Scalar[DType.int32](cumsum))
 
     # cache_indices: (batch,) - identity mapping
     var cache_indices_heap = alloc[Scalar[DType.int32]](batch)
@@ -105,7 +105,7 @@ fn run_varlen_causal_conv1d_fwd[
         cache_indices_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
     for i in range(batch):
-        cache_indices_h.ptr.offset(i).store(Scalar[DType.int32](i))
+        cache_indices_h.ptr.store(i, Scalar[DType.int32](i))
 
     # has_initial_state: (batch,) - all False
     var has_initial_state_heap = alloc[Scalar[DType.bool]](batch)
@@ -113,7 +113,7 @@ fn run_varlen_causal_conv1d_fwd[
         has_initial_state_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
     for i in range(batch):
-        has_initial_state_h.ptr.offset(i).store(Scalar[DType.bool](False))
+        has_initial_state_h.ptr.store(i, Scalar[DType.bool](False))
 
     # conv_states: (batch, dim, width - 1)
     var state_len = width - 1
@@ -222,12 +222,12 @@ fn run_varlen_causal_conv1d_fwd[
     # Reference implementation
     var width_minus_1: Int = width - 1
     for b in range(batch):
-        var seq_start = Int(query_start_loc_buf.ptr.offset(b).load())
-        var seq_end = Int(query_start_loc_buf.ptr.offset(b + 1).load())
+        var seq_start = Int(query_start_loc_buf.ptr.load(b))
+        var seq_end = Int(query_start_loc_buf.ptr.load(b + 1))
         var seqlen = seq_end - seq_start
 
         for d in range(dim):
-            var bias_val = bias_buf.ptr.offset(d).load()
+            var bias_val = bias_buf.ptr.load(d)
 
             for l in range(seqlen):
                 var conv_sum: Scalar[dtype] = bias_val
@@ -241,12 +241,12 @@ fn run_varlen_causal_conv1d_fwd[
                             d * x_dim_stride
                             + (seq_start + input_l) * x_seqlen_stride
                         )
-                        input_val = x_buf.ptr.offset(x_offset).load()
+                        input_val = x_buf.ptr.load(x_offset)
 
                     var weight_offset = (
                         d * weight_dim_stride + w_idx * weight_width_stride
                     )
-                    var weight_val = weight_buf.ptr.offset(weight_offset).load()
+                    var weight_val = weight_buf.ptr.load(weight_offset)
                     conv_sum = conv_sum + input_val * weight_val
 
                 var out_val = conv_sum
@@ -256,7 +256,7 @@ fn run_varlen_causal_conv1d_fwd[
                 var out_offset = (
                     d * out_dim_stride + (seq_start + l) * out_seqlen_stride
                 )
-                output_ref_buf.ptr.offset(out_offset).store(out_val)
+                output_ref_buf.ptr.store(out_offset, out_val)
 
     # Compare results
     var flattened_size = dim * total_seqlen
@@ -328,7 +328,7 @@ fn run_varlen_causal_conv1d_update[
         cache_seqlens_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
     for i in range(batch):
-        cache_seqlens_h.ptr.offset(i).store(Scalar[DType.int32](0))
+        cache_seqlens_h.ptr.store(i, Scalar[DType.int32](0))
 
     # conv_state_indices: (batch,) - identity mapping
     var conv_state_indices_heap = alloc[Scalar[DType.int32]](batch)
@@ -336,7 +336,7 @@ fn run_varlen_causal_conv1d_update[
         DType.int32, layout_1d, MutAnyOrigin
     ](conv_state_indices_heap, RuntimeLayout[layout_1d].row_major(Index(batch)))
     for i in range(batch):
-        conv_state_indices_h.ptr.offset(i).store(Scalar[DType.int32](i))
+        conv_state_indices_h.ptr.store(i, Scalar[DType.int32](i))
 
     # output: (batch, dim, seqlen)
     var output_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
@@ -447,7 +447,7 @@ fn run_varlen_causal_conv1d_update[
         var state_batch_idx = b
 
         for d in range(dim):
-            var bias_val = bias_buf.ptr.offset(d).load()
+            var bias_val = bias_buf.ptr.load(d)
 
             for l in range(seqlen):
                 var conv_sum: Scalar[dtype] = bias_val
@@ -461,7 +461,7 @@ fn run_varlen_causal_conv1d_update[
                         var state_pos: Int
                         # has_cache_seqlens is True in our test, so use circular buffer
                         var cache_seqlen = Int(
-                            cache_seqlens_buf.ptr.offset(b).load()
+                            cache_seqlens_buf.ptr.load(b)
                         )
                         state_pos = (
                             cache_seqlen + rel_pos + l + state_len
@@ -473,9 +473,7 @@ fn run_varlen_causal_conv1d_update[
                                 + d * conv_state_dim_stride
                                 + state_pos * conv_state_seqlen_stride
                             )
-                            input_val = conv_state_ref_buf.ptr.offset(
-                                state_offset
-                            ).load()
+                            input_val = conv_state_ref_buf.ptr.load(state_offset)
                     else:
                         # Read from x
                         var x_l = rel_pos + l
@@ -485,12 +483,12 @@ fn run_varlen_causal_conv1d_update[
                                 + d * x_dim_stride
                                 + x_l * x_seqlen_stride
                             )
-                            input_val = x_buf.ptr.offset(x_offset).load()
+                            input_val = x_buf.ptr.load(x_offset)
 
                     var weight_offset = (
                         d * weight_dim_stride + w_idx * weight_width_stride
                     )
-                    var weight_val = weight_buf.ptr.offset(weight_offset).load()
+                    var weight_val = weight_buf.ptr.load(weight_offset)
                     conv_sum = conv_sum + input_val * weight_val
 
                 var out_val = conv_sum
@@ -502,7 +500,7 @@ fn run_varlen_causal_conv1d_update[
                     + d * out_dim_stride
                     + l * out_seqlen_stride
                 )
-                output_ref_buf.ptr.offset(out_offset).store(out_val)
+                output_ref_buf.ptr.store(out_offset, out_val)
 
             # Update state with new x values
             # This matches the CPU implementation logic exactly
@@ -510,11 +508,11 @@ fn run_varlen_causal_conv1d_update[
                 var x_offset = (
                     b * x_batch_stride + d * x_dim_stride + l * x_seqlen_stride
                 )
-                var x_val = x_buf.ptr.offset(x_offset).load()
+                var x_val = x_buf.ptr.load(x_offset)
 
                 var state_pos: Int
                 # has_cache_seqlens is True in our test, so use circular buffer
-                var cache_seqlen = Int(cache_seqlens_buf.ptr.offset(b).load())
+                var cache_seqlen = Int(cache_seqlens_buf.ptr.load(b))
                 state_pos = (cache_seqlen + l) % state_len
 
                 var state_offset = (
@@ -522,7 +520,7 @@ fn run_varlen_causal_conv1d_update[
                     + d * conv_state_dim_stride
                     + state_pos * conv_state_seqlen_stride
                 )
-                conv_state_ref_buf.ptr.offset(state_offset).store(x_val)
+                conv_state_ref_buf.ptr.store(state_offset, x_val)
 
     # Compare results
     var flattened_size = batch * dim * seqlen
@@ -586,10 +584,10 @@ fn run_varlen_causal_conv1d_states[
         cu_seqlens_heap, RuntimeLayout[layout_1d].row_major(Index(batch + 1))
     )
     var cumsum = 0
-    cu_seqlens_h.ptr.offset(0).store(Scalar[DType.int32](0))
+    cu_seqlens_h.ptr.store(0, Scalar[DType.int32](0))
     for i in range(batch):
         cumsum += seq_lengths[i]
-        cu_seqlens_h.ptr.offset(i + 1).store(Scalar[DType.int32](cumsum))
+        cu_seqlens_h.ptr.store(i + 1, Scalar[DType.int32](cumsum))
 
     # states: (batch, dim, state_len)
     var states_heap = alloc[Scalar[dtype]](batch * dim * state_len)
@@ -645,8 +643,8 @@ fn run_varlen_causal_conv1d_states[
 
     # Reference implementation
     for b in range(batch):
-        var end_idx = Int(cu_seqlens_buf.ptr.offset(b + 1).load())
-        var start_idx_seq = Int(cu_seqlens_buf.ptr.offset(b).load())
+        var end_idx = Int(cu_seqlens_buf.ptr.load(b + 1))
+        var start_idx_seq = Int(cu_seqlens_buf.ptr.load(b))
         var start_idx = max(start_idx_seq, end_idx - state_len)
         var num_elements = end_idx - start_idx
 
@@ -661,8 +659,8 @@ fn run_varlen_causal_conv1d_states[
                     + d * states_dim_stride
                     + states_seq_idx * states_seqlen_stride
                 )
-                var val = x_buf.ptr.offset(x_offset).load()
-                states_ref_buf.ptr.offset(states_offset).store(val)
+                var val = x_buf.ptr.load(x_offset)
+                states_ref_buf.ptr.store(states_offset, val)
 
     # Compare results
     var flattened_size = batch * dim * state_len

@@ -182,10 +182,10 @@ fn run_varlen_selective_scan_fwd[
         RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
     )
     var cumsum = 0
-    query_start_loc_h.ptr.offset(0).store(Scalar[DType.int32](0))
+    query_start_loc_h.ptr.store(0, Scalar[DType.int32](0))
     for i in range(batch):
         cumsum += seq_lengths[i]
-        query_start_loc_h.ptr.offset(i + 1).store(Scalar[DType.int32](cumsum))
+        query_start_loc_h.ptr.store(i + 1, Scalar[DType.int32](cumsum))
 
     # cache_indices: (batch,) - can be empty or identity mapping
     var cache_indices_heap = alloc[Scalar[DType.int32]](batch)
@@ -193,7 +193,7 @@ fn run_varlen_selective_scan_fwd[
         cache_indices_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
     for i in range(batch):
-        cache_indices_h.ptr.offset(i).store(Scalar[DType.int32](i))
+        cache_indices_h.ptr.store(i, Scalar[DType.int32](i))
 
     # has_initial_state: (batch,) - can be empty or all False
     var has_initial_state_heap = alloc[Scalar[DType.bool]](batch)
@@ -201,7 +201,7 @@ fn run_varlen_selective_scan_fwd[
         has_initial_state_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
     for i in range(batch):
-        has_initial_state_h.ptr.offset(i).store(Scalar[DType.bool](False))
+        has_initial_state_h.ptr.store(i, Scalar[DType.bool](False))
 
     # Initialize input data
     random(u_h)
@@ -218,13 +218,13 @@ fn run_varlen_selective_scan_fwd[
 
     # Scale A to be negative for stability
     for i in range(dim * dstate):
-        var val = A_h.ptr.offset(i).load()
-        A_h.ptr.offset(i).store(Scalar[dtype](Float32(val) * -0.5))
+        var val = A_h.ptr.load(i)
+        A_h.ptr.store(i, Scalar[dtype](Float32(val) * -0.5))
 
     # Scale delta to be positive
     for i in range(dim * total_length):
-        var val = delta_h.ptr.offset(i).load()
-        delta_h.ptr.offset(i).store(Scalar[dtype](abs(Float32(val)) * 0.5))
+        var val = delta_h.ptr.load(i)
+        delta_h.ptr.store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
 
     var u_buf = u_h
     var delta_buf = delta_h
@@ -327,7 +327,7 @@ fn run_varlen_selective_scan_fwd[
     var output_to_check = z_buf if has_z else output_buf
     var output_size = dim * total_length
     for i in range(output_size):
-        if abs(Float32(output_to_check.ptr.offset(i).load())) > 1e-6:
+        if abs(Float32(output_to_check.ptr.load(i))) > 1e-6:
             has_nonzero = True
             break
 
@@ -468,7 +468,7 @@ fn run_varlen_selective_state_update[
         RuntimeLayout[layout_1d].row_major(Index(batch)),
     )
     for i in range(batch):
-        state_batch_indices_h.ptr.offset(i).store(Scalar[DType.int32](i))
+        state_batch_indices_h.ptr.store(i, Scalar[DType.int32](i))
 
     # Initialize input data
     random(x_h)
@@ -485,13 +485,13 @@ fn run_varlen_selective_state_update[
 
     # Scale A to be negative for stability
     for i in range(nheads * dim * dstate):
-        var val = A_h.ptr.offset(i).load()
-        A_h.ptr.offset(i).store(Scalar[dtype](Float32(val) * -0.5))
+        var val = A_h.ptr.load(i)
+        A_h.ptr.store(i, Scalar[dtype](Float32(val) * -0.5))
 
     # Scale dt to be positive
     for i in range(batch * nheads * dim):
-        var val = dt_h.ptr.offset(i).load()
-        dt_h.ptr.offset(i).store(Scalar[dtype](abs(Float32(val)) * 0.5))
+        var val = dt_h.ptr.load(i)
+        dt_h.ptr.store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
 
     var state_buf = state_h
     var output_buf = output_h
@@ -604,7 +604,7 @@ fn run_varlen_selective_state_update[
     # Basic sanity check: output should not be all zeros
     var has_nonzero = False
     for i in range(batch * nheads * dim):
-        if abs(Float32(output_h.ptr.offset(i).load())) > 1e-6:
+        if abs(Float32(output_h.ptr.load(i))) > 1e-6:
             has_nonzero = True
             break
 

@@ -137,7 +137,7 @@ fn run_causal_conv1d[
     var width_minus_1: Int = width - 1
     for b in range(batch):
         for c in range(dim):
-            var cur_bias = bias_buf.ptr.offset(c).load()
+            var cur_bias = bias_buf.ptr.load(c)
             for l in range(seqlen):
                 var conv_sum: Scalar[dtype] = cur_bias
                 for w in range(width):
@@ -148,13 +148,11 @@ fn run_causal_conv1d[
                             + c * x_c_stride
                             + input_l * x_l_stride
                         )
-                        var input_val = input_buf.ptr.offset(x_offset).load()
+                        var input_val = input_buf.ptr.load(x_offset)
                         var weight_offset = (
                             c * weight_c_stride + w * weight_width_stride
                         )
-                        var weight_val = weight_buf.ptr.offset(
-                            weight_offset
-                        ).load()
+                        var weight_val = weight_buf.ptr.load(weight_offset)
                         conv_sum = conv_sum + input_val * weight_val
 
                 var out_val = conv_sum
@@ -164,7 +162,7 @@ fn run_causal_conv1d[
                 var out_offset = (
                     b * out_batch_stride + c * out_c_stride + l * out_l_stride
                 )
-                result_unfused_buf.ptr.offset(out_offset).store(out_val)
+                result_unfused_buf.ptr.store(out_offset, out_val)
 
     # Compare results
     var flattened_size = batch * dim * seqlen

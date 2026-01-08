@@ -155,13 +155,13 @@ fn run_selective_scan_gpu[
 
     # Scale A to be negative for stability
     for i in range(dim * dstate):
-        var val = A_h.offset(i).load()
-        A_h.offset(i).store(Scalar[dtype](Float32(val) * -0.5))
+        var val = A_h.load(i)
+        A_h.store(i, Scalar[dtype](Float32(val) * -0.5))
 
     # Scale delta to be positive
     for i in range(batch * dim * seqlen):
-        var val = delta_h.offset(i).load()
-        delta_h.offset(i).store(Scalar[dtype](abs(Float32(val)) * 0.5))
+        var val = delta_h.load(i)
+        delta_h.store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
 
     # Allocate device memory
     var output_cpu_d = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
@@ -508,8 +508,8 @@ fn run_selective_scan_gpu[
     var flattened_size = batch * dim * seqlen
     for i in range(flattened_size):
         assert_almost_equal(
-            output_cpu_h.offset(i).load(),
-            output_gpu_h.offset(i).load(),
+            output_cpu_h.load(i),
+            output_gpu_h.load(i),
             rtol=rtol,
         )
 
@@ -633,8 +633,8 @@ fn run_selective_scan_update_gpu[
 
     # Scale A to be negative for stability
     for i in range(dim * dstate):
-        var val = A_h.offset(i).load()
-        A_h.offset(i).store(Scalar[dtype](Float32(val) * -0.5))
+        var val = A_h.load(i)
+        A_h.store(i, Scalar[dtype](Float32(val) * -0.5))
 
     # Copy state_in for CPU and GPU
     for i in range(batch * dim * dstate):
