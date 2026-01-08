@@ -88,7 +88,7 @@ bt-b200 //max/tests/integration/pipelines/python/llama3:tests_gpu
 ```bash
 # Generate text with a model
 ./bazelw run //max/python/max/entrypoints:pipelines -- generate \
-  --model state-spaces/mamba-130m-hf \
+  --model modularai/Llama-3.1-8B-Instruct-GGUF \
   --prompt "Hello, world!"
 
 # Serve a model locally
