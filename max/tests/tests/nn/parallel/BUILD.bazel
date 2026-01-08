@@ -2,8 +2,9 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_test(
@@ -16,7 +17,10 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/engine",

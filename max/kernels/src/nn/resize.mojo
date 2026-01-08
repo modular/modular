@@ -14,7 +14,7 @@
 from math import ceil, floor
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
@@ -141,8 +141,8 @@ fn resize_nearest_neighbor[
     round_mode: RoundMode,
     dtype: DType,
 ](
-    input: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    input: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
 ) raises:
     __comptime_assert (
         input.rank == output.rank
@@ -241,10 +241,10 @@ fn interpolate_point_1d[
     out_coords: IndexList[in_layout.rank()],
     scale: Float32,
     input: LayoutTensor[
-        dtype, in_layout, address_space = AddressSpace.GENERIC, **_
+        dtype, in_layout, address_space = AddressSpace.GENERIC, ...
     ],
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ):
     var center = (
@@ -286,9 +286,9 @@ fn resize_linear[
     antialias: Bool,
     dtype: DType,
 ](
-    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ):
     """Resizes input to output shape using linear interpolation.
@@ -318,9 +318,9 @@ fn _resize[
     antialias: Bool,
     dtype: DType,
 ](
-    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ):
     __comptime_assert (

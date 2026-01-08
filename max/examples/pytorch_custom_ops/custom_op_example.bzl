@@ -7,7 +7,8 @@ def custom_op_example_py_binary(
         srcs,
         create_test = True,
         extra_data = [],
-        extra_deps = []):
+        extra_deps = [],
+        **kwargs):
     modular_py_binary(
         name = name,
         srcs = srcs,
@@ -20,7 +21,10 @@ def custom_op_example_py_binary(
             "//max:layout",
             "@mojo//:std",
             "//max:tensor",
-        ],
+        ] + select({
+            "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+            "//conditions:default": [],
+        }),
         deps = [
             "//max/python/max/driver",
             "//max/python/max/engine",
@@ -29,6 +33,7 @@ def custom_op_example_py_binary(
         ] + extra_deps,
         visibility = ["//visibility:private"],
         testonly = True,
+        **kwargs
     )
 
     # Run each example as a simple non-zero-exit-code test.

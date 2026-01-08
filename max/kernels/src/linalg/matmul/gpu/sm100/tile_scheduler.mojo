@@ -14,7 +14,7 @@
 from math import ceildiv
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import _RegisterPackType, size_of
 from sys._assembly import inlined_assembly
 
@@ -228,9 +228,9 @@ struct TileScheduler[
     fn initial_work_info(self) -> WorkInfo:
         return self.work_info_from_cluster(
             WorkInfo(
-                block_idx.x,
-                block_idx.y,
-                block_idx.z,
+                UInt32(block_idx.x),
+                UInt32(block_idx.y),
+                UInt32(block_idx.z),
                 is_valid_tile=True,
             ),
             self.cluster_dim,

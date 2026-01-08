@@ -179,6 +179,233 @@ def test_get_type_name_unprintable():
     assert_equal(name, "std.sys.info.CompilationTarget[<unprintable>]")
 
 
+# Generic struct for testing types with constructor calls in parameters
+struct WrapperWithValue[T: AnyType, //, value: T]:
+    pass
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct SimpleParam:
+    var b: Bool
+
+
+@fieldwise_init
+struct MemoryOnlyParam:
+    var b: Bool
+
+
+# Struct with field that has a constructor call in type parameter
+struct StructWithCtorParam:
+    var field: WrapperWithValue[SimpleParam(True)]
+
+
+# Struct with memory-only type constructor in parameter
+struct StructWithMemoryOnlyCtorParam:
+    var field: WrapperWithValue[MemoryOnlyParam(True)]
+
+
+def test_get_type_name_ctor_param_from_field_types():
+    """Ensure get_type_name doesn't crash with constructor calls in type params.
+
+    Issue #5732: using get_type_name on types with constructor calls (like
+    A[B(True)]) extracted via struct_field_types would crash the compiler.
+    """
+    comptime types = struct_field_types[StructWithCtorParam]()
+    var name = get_type_name[types[0]]()
+    # Register-passable type: type is <unprintable> but Bool value can be evaluated
+    assert_equal(name, "test_reflection.WrapperWithValue[<unprintable>, True]")
+
+
+def test_get_type_name_memory_only_ctor_param_from_field_types():
+    """Ensure memory-only types with constructor calls don't crash.
+
+    Memory-only types use `apply_result_slot` instead of `apply`, which was also
+    affected by issue #5732. Both the type and value print as "<unprintable>"
+    since memory-only constructors can't be fully evaluated in this context.
+    """
+    comptime types = struct_field_types[StructWithMemoryOnlyCtorParam]()
+    var name = get_type_name[types[0]]()
+    # Memory-only type: both type and value are <unprintable>
+    assert_equal(
+        name, "test_reflection.WrapperWithValue[<unprintable>, <unprintable>]"
+    )
+
+
+def test_get_type_name_ctor_param_direct():
+    """Test that direct usage of types with constructor calls works.
+
+    This demonstrates that the issue is specifically with types extracted via
+    struct_field_types, not with constructor call parameters in general.
+    """
+    # Direct usage works fine - the constructor is evaluated
+    var name = get_type_name[WrapperWithValue[SimpleParam(True)]]()
+    assert_equal(
+        name,
+        "test_reflection.WrapperWithValue[test_reflection.SimpleParam, True]",
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# Nested Parametric Type Tests (Issue #5723)
+# ===----------------------------------------------------------------------=== #
+
+
+# Generic struct for testing nested parametric types
+struct GenericWrapper[T: AnyType]:
+    pass
+
+
+# Struct with nested parametric type fields for issue #5723 regression tests
+struct NestedParametricStruct:
+    var simple: GenericWrapper[String]
+    var nested: GenericWrapper[List[String]]
+
+
+# More deeply nested parametric types
+struct DeeplyNestedStruct:
+    var single: GenericWrapper[Int]
+    var double: GenericWrapper[GenericWrapper[Int]]
+
+
+def test_get_type_name_nested_parametric_from_field_types():
+    """Test that get_type_name doesn't crash with nested parametric types from struct_field_types.
+
+    This is a regression test for issue #5723 where using get_type_name on
+    nested parametric types (like GenericWrapper[List[String]]) extracted via
+    struct_field_types would cause a compiler crash.
+
+    The fix makes these print "<unprintable>" for the type parameter
+    instead of crashing. Note that type parameters from struct_field_types
+    may not fully resolve, so we expect <unprintable> for the inner type.
+    """
+    # Both fields should not crash - they print <unprintable> for the type parameter
+    comptime types = struct_field_types[NestedParametricStruct]()
+    var name0 = get_type_name[types[0]]()
+    assert_equal(name0, "test_reflection.GenericWrapper[<unprintable>]")
+
+    # Nested parametric type should not crash either
+    var name1 = get_type_name[types[1]]()
+    assert_equal(name1, "test_reflection.GenericWrapper[<unprintable>]")
+
+
+def test_get_type_name_deeply_nested_parametric_from_field_types():
+    """Test deeply nested parametric types from struct_field_types don't crash.
+
+    This tests the case where we have GenericWrapper[GenericWrapper[T]] - both
+    single and double nested types should not crash when accessed via struct_field_types.
+    """
+    comptime types = struct_field_types[DeeplyNestedStruct]()
+
+    # Single level parametric from struct_field_types - should not crash
+    var name0 = get_type_name[types[0]]()
+    assert_equal(name0, "test_reflection.GenericWrapper[<unprintable>]")
+
+    # Double nested should not crash either
+    var name1 = get_type_name[types[1]]()
+    assert_equal(name1, "test_reflection.GenericWrapper[<unprintable>]")
+
+
+def test_get_type_name_nested_parametric_direct():
+    """Test that directly using nested parametric types works (not from struct_field_types).
+
+    This demonstrates that the issue is specifically with types extracted via
+    struct_field_types, not with nested parametric types in general.
+    """
+    # Direct usage works fine
+    var name = get_type_name[GenericWrapper[List[String]]]()
+    assert_equal(name, "test_reflection.GenericWrapper[List[String]]")
+
+    # Deeply nested direct usage also works
+    name = get_type_name[GenericWrapper[GenericWrapper[Int]]]()
+    assert_equal(
+        name,
+        "test_reflection.GenericWrapper[test_reflection.GenericWrapper[Int]]",
+    )
+
+
+# Additional edge case structs for issue #5723
+struct Pair[T: AnyType, U: AnyType]:
+    """Struct with multiple type parameters."""
+
+    pass
+
+
+struct StructWithMultipleParametricFields:
+    """Struct with multiple different parametric field types."""
+
+    var list_field: List[Int]
+    var optional_field: Optional[String]
+    var simd_field: SIMD[DType.float32, 4]
+
+
+struct StructWithPair:
+    """Struct with a field that has multiple type parameters."""
+
+    var pair: Pair[String, List[Int]]
+
+
+struct TripleNested:
+    """Struct with three levels of nesting."""
+
+    var triple: GenericWrapper[GenericWrapper[GenericWrapper[Int]]]
+
+
+def test_get_type_name_multiple_type_params_from_field_types():
+    """Test parametric types with multiple type parameters from struct_field_types.
+    """
+    comptime types = struct_field_types[StructWithPair]()
+    var name = get_type_name[types[0]]()
+    # Should not crash - inner types show as <unprintable>
+    assert_equal(name, "test_reflection.Pair[<unprintable>, <unprintable>]")
+
+
+def test_get_type_name_various_stdlib_parametric_from_field_types():
+    """Test various stdlib parametric types (List, Optional, SIMD) from struct_field_types.
+    """
+    comptime types = struct_field_types[StructWithMultipleParametricFields]()
+
+    # List[Int] - should not crash (type parameter shows as <unprintable>)
+    var name0 = get_type_name[types[0]]()
+    assert_equal(name0, "List[<unprintable>]")
+
+    # Optional[String] - should not crash (type parameter shows as <unprintable>)
+    var name1 = get_type_name[types[1]]()
+    assert_equal(name1, "std.collections.optional.Optional[<unprintable>]")
+
+    # SIMD[DType.float32, 4] - value parameters (not type parameters) print correctly
+    var name2 = get_type_name[types[2]]()
+    assert_equal(name2, "SIMD[DType.float32, 4]")
+
+
+def test_get_type_name_triple_nested_from_field_types():
+    """Test three levels of nesting from struct_field_types."""
+    comptime types = struct_field_types[TripleNested]()
+    var name = get_type_name[types[0]]()
+    # Should not crash - deeply nested types show <unprintable>
+    assert_equal(name, "test_reflection.GenericWrapper[<unprintable>]")
+
+
+def test_iterate_parametric_field_types_no_crash():
+    """Test that iterating over parametric field types in a loop doesn't crash.
+
+    This tests the common pattern of using struct_field_types in a @parameter for loop.
+    """
+    var count = 0
+
+    @parameter
+    for i in range(struct_field_count[StructWithMultipleParametricFields]()):
+        comptime field_type = struct_field_types[
+            StructWithMultipleParametricFields
+        ]()[i]
+        # Getting type name in a loop should not crash
+        var name = get_type_name[field_type]()
+        _ = name
+        count += 1
+
+    assert_equal(count, 3)
+
+
 def test_get_type_name_alias():
     comptime T = Bar[5]
     var name = get_type_name[T]()
@@ -191,6 +418,70 @@ def test_get_type_name_alias():
     name = get_type_name[R]()
     assert_equal(
         name, "test_reflection.Bar[?, 1.29999995 : SIMD[DType.float32, 1]]"
+    )
+
+
+fn _count_fields_generic[T: AnyType]() -> Int:
+    """Helper function to test struct_field_count through generic parameter."""
+    return struct_field_count[T]()
+
+
+fn _get_field_names_generic[T: AnyType]() -> StaticString:
+    """Helper function to test struct_field_names through generic parameter."""
+    return struct_field_names[T]()[0]
+
+
+fn _get_type_name_generic[T: AnyType]() -> StaticString:
+    """Helper function to test get_type_name through generic parameter."""
+    return get_type_name[T]()
+
+
+def test_reflection_on_int():
+    """Test that reflection functions work on Int (issue #5731).
+
+    Int is a struct with one field (_mlir_value). Previously passing Int
+    through a generic parameter to reflection functions would crash the
+    compiler.
+    """
+    assert_equal(struct_field_count[Int](), 1)
+    assert_equal(_count_fields_generic[Int](), 1)
+
+    assert_equal(struct_field_names[Int]()[0], "_mlir_value")
+    assert_equal(_get_field_names_generic[Int](), "_mlir_value")
+
+    # get_type_name through generic (direct is tested elsewhere)
+    assert_equal(_get_type_name_generic[Int](), "Int")
+
+
+def test_reflection_on_origin():
+    """Test that reflection functions work on Origin (issue #5731).
+
+    Origin is a struct with one field (_mlir_origin). Previously this would
+    crash the compiler when passed through generic parameters.
+    """
+    assert_equal(_count_fields_generic[Origin[mut=True]](), 1)
+    assert_equal(_count_fields_generic[Origin[mut=False]](), 1)
+
+    assert_equal(_get_field_names_generic[Origin[mut=True]](), "_mlir_origin")
+
+    assert_equal(
+        _get_type_name_generic[Origin[mut=True]](),
+        "std.builtin.type_aliases.Origin[True]",
+    )
+
+
+def test_reflection_on_nonetype():
+    """Test that reflection functions work on NoneType (issue #5731).
+
+    NoneType is a struct with one field (_value). Previously this would crash
+    the compiler when passed through generic parameters.
+    """
+    assert_equal(_count_fields_generic[NoneType](), 1)
+
+    assert_equal(_get_field_names_generic[NoneType](), "_value")
+
+    assert_equal(
+        _get_type_name_generic[NoneType](), "std.builtin.none.NoneType"
     )
 
 

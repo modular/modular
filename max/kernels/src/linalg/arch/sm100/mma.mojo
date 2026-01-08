@@ -30,7 +30,7 @@ from layout.tensor_core_async import (
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils.index import Index, IndexList, product
 
 
@@ -92,9 +92,7 @@ fn max_contiguous_tile_shape[
 fn _create_mma_desc[
     dtype: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
 ](
-    ptr: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED, *_, **_
-    ]
+    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED, ...]
 ) -> MMASmemDescriptor:
     # Extract the stride values from the canonical layout
     # The canonical layout is expected to have at least 2 dimensions
@@ -111,9 +109,7 @@ fn _create_mma_desc[
 fn _create_mma_desc_pair[
     dtype: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
 ](
-    ptr: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED, *_, **_
-    ]
+    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED, ...]
 ) -> MMASmemDescriptorPair:
     # Extract the stride values from the canonical layout
     # The canonical layout is expected to have at least 2 dimensions
@@ -137,9 +133,7 @@ fn smem_descriptor[
     swizzle_mode: TensorMapSwizzle,
     is_k_major: Bool,
 ](
-    ptr: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED, *_, **_
-    ]
+    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED, ...]
 ) -> MMASmemDescriptorPair:
     comptime smem_layout = tile_layout_k_major[
         dtype, BMN, BK, swizzle_mode
@@ -213,8 +207,8 @@ struct MmaOpSM100_SS[
             #             o x o o
             self.mask = (
                 dim0_mask
-                << (block_id_in_cluster.y * UInt(Self.cluster_shape[0]))
-            ) | (dim1_mask << block_id_in_cluster.x)
+                << UInt16((block_id_in_cluster.y * UInt(Self.cluster_shape[0])))
+            ) | (dim1_mask << UInt16(block_id_in_cluster.x))
 
             # Include peer cta's row
             # Example mask for cta (0, 1) is cluster (4,4)
@@ -224,13 +218,13 @@ struct MmaOpSM100_SS[
             #             o x o o
             @parameter
             if Self.cta_group == 2:
-                self.mask |= dim1_mask << (block_id_in_cluster.x ^ 1)
+                self.mask |= dim1_mask << UInt16(block_id_in_cluster.x ^ 1)
 
     @always_inline
     fn mma(
         self,
-        a: LayoutTensor[address_space = AddressSpace.SHARED, *_, **_],
-        b: LayoutTensor[address_space = AddressSpace.SHARED, *_, **_],
+        a: LayoutTensor[address_space = AddressSpace.SHARED, ...],
+        b: LayoutTensor[address_space = AddressSpace.SHARED, ...],
         c_tmem: UInt32,
         init_c: Bool,
     ):
@@ -280,7 +274,7 @@ struct MmaOpSM100_SS[
     @always_inline
     fn commit(
         self,
-        ptr_mbar: UnsafePointer[address_space = AddressSpace.SHARED, *_, **_],
+        ptr_mbar: UnsafePointer[address_space = AddressSpace.SHARED, ...],
     ):
         @parameter
         if product(Self.cluster_shape) == 1:
@@ -380,8 +374,8 @@ struct MmaOpSM100_BlockScaled_SS[
             #             o x o o
             self.mask = (
                 dim0_mask
-                << (block_id_in_cluster.y * UInt(Self.cluster_shape[0]))
-            ) | (dim1_mask << block_id_in_cluster.x)
+                << UInt16((block_id_in_cluster.y * UInt(Self.cluster_shape[0])))
+            ) | (dim1_mask << UInt16(block_id_in_cluster.x))
 
             # Include peer cta's row
             # Example mask for cta (0, 1) is cluster (4,4)
@@ -391,13 +385,13 @@ struct MmaOpSM100_BlockScaled_SS[
             #             o x o o
             @parameter
             if Self.cta_group == 2:
-                self.mask |= dim1_mask << (block_id_in_cluster.x ^ 1)
+                self.mask |= dim1_mask << UInt16((block_id_in_cluster.x ^ 1))
 
     @always_inline
     fn mma(
         self,
-        a: LayoutTensor[address_space = AddressSpace.SHARED, *_, **_],
-        b: LayoutTensor[address_space = AddressSpace.SHARED, *_, **_],
+        a: LayoutTensor[address_space = AddressSpace.SHARED, ...],
+        b: LayoutTensor[address_space = AddressSpace.SHARED, ...],
         c_tmem: UInt32,
         sfa_tmem: UInt32,
         sfb_tmem: UInt32,
@@ -460,7 +454,7 @@ struct MmaOpSM100_BlockScaled_SS[
     @always_inline
     fn commit(
         self,
-        ptr_mbar: UnsafePointer[address_space = AddressSpace.SHARED, *_, **_],
+        ptr_mbar: UnsafePointer[address_space = AddressSpace.SHARED, ...],
     ):
         @parameter
         if product(Self.cluster_shape) == 1:

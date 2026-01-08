@@ -20,7 +20,7 @@ struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Stringable):
         )
 
 
-fn eat(f: Fudge[5, *_]):
+fn eat(f: Fudge[5, ...]):
     print("Ate " + String(f))
 
 

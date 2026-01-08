@@ -34,7 +34,7 @@ from layout.tma_async import SharedMemBarrier
 from layout.layout import blocked_product, logical_product
 from memory import LegacyUnsafePointer, stack_allocation
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 struct ScatterGatherAmd[
@@ -67,7 +67,7 @@ struct ScatterGatherAmd[
     fn copy(
         self,
         dst_reg_tile: LayoutTensor[
-            mut=True, *_, address_space = AddressSpace.LOCAL, **_
+            mut=True, address_space = AddressSpace.LOCAL, ...
         ],
         src_gmem_tile: LayoutTensor,
         offset: OptionalReg[UInt] = None,
@@ -89,8 +89,8 @@ struct ScatterGatherAmd[
     @always_inline("nodebug")
     fn copy(
         self,
-        dst_gmem_tile: LayoutTensor[mut=True, *_, **_],
-        src_reg_tile: LayoutTensor[*_, address_space = AddressSpace.LOCAL, **_],
+        dst_gmem_tile: LayoutTensor[mut=True, ...],
+        src_reg_tile: LayoutTensor[address_space = AddressSpace.LOCAL, ...],
     ):
         """Copy registers to DRAM.
 
@@ -136,7 +136,7 @@ struct IteratorScatterGatherAmd[
     @always_inline
     fn copy(
         self,
-        dst_reg_tile: LayoutTensor[mut=True, *_, **_],
+        dst_reg_tile: LayoutTensor[mut=True, ...],
         src_gmem_tile_iter: LayoutTensorIter,
     ):
         """Copy DRAM to registers via iterator.
@@ -245,13 +245,25 @@ struct SMemTileArrayType[
         alignment = Self.alignment,
     ]
 
-    comptime storage_size = Self.layout.size() * size_of[
-        Self.dtype
-    ]() * Self.num_tiles
+    comptime num_elements = Self.layout.size() * Self.num_tiles
+
+    comptime storage_size = Self.num_elements * size_of[Self.dtype]()
+
+    comptime StorageType = InlineArray[Scalar[Self.dtype], Self.num_elements]
 
     var ptr: UnsafePointer[
         Scalar[Self.dtype], address_space = AddressSpace.SHARED
     ]
+
+    fn __init__(
+        ref [AddressSpace.SHARED]storage: Self.StorageType,
+    ) -> Self:
+        """Initialize with StorageType.
+
+        Args:
+            storage: StorageType.
+        """
+        return Self(storage.unsafe_ptr())
 
     fn __init__[
         mut: Bool, //, origin: Origin[mut=mut]
@@ -322,6 +334,7 @@ struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
         Self.type, address_space = AddressSpace.SHARED
     ]
     comptime storage_size = Self.size * size_of[Self.type]()
+    comptime StorageType = InlineArray[Self.type, Self.size]
 
     var ptr: Self.ptr_type
 
@@ -337,6 +350,10 @@ struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
         """
         self.ptr = unsafe_ptr
 
+    fn __init__(ref [AddressSpace.SHARED]storage: Self.StorageType) -> Self:
+        """Initialize from StorageType."""
+        return Self(rebind[Self.ptr_type](storage.unsafe_ptr()))
+
     @always_inline
     fn __getitem__[T: Intable](self, index: T) -> Self.ptr_type:
         """Get a pointer to the element at index.
@@ -347,7 +364,7 @@ struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
         Returns:
             Pointer to element.
         """
-        return self.ptr.offset(Int(index))
+        return self.ptr + Int(index)
 
     @always_inline
     @staticmethod
@@ -440,7 +457,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
             Allocated tile.
         """
         var result = T(
-            self.base_ptr.offset(self.offset).bitcast[Scalar[dtype]](),
+            (self.base_ptr + self.offset).bitcast[Scalar[dtype]](),
         )
         self.offset += T.storage_size
         return result
@@ -459,7 +476,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
             Allocated tile array.
         """
         var result = T(
-            self.base_ptr.offset(self.offset).bitcast[Scalar[dtype]](),
+            (self.base_ptr + self.offset).bitcast[Scalar[dtype]](),
         )
         self.offset += T.storage_size
         return result
@@ -476,7 +493,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
         Returns:
             Allocated array.
         """
-        var result = self.base_ptr.offset(self.offset).bitcast[type]()
+        var result = (self.base_ptr + self.offset).bitcast[type]()
         self.offset += T.storage_size
         return T(result)
 

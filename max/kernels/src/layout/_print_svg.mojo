@@ -29,7 +29,7 @@ fn print_svg[
     swizzle: Optional[Swizzle] = None,
     memory_bank: Optional[Tuple[Int, Int]] = None,
 ](
-    tensor_base: LayoutTensor[mut=False, **_],
+    tensor_base: LayoutTensor[mut=False, ...],
     tensors: List[
         LayoutTensor[
             dtype,
@@ -65,7 +65,7 @@ fn _print_svg_impl[
     swizzle: Optional[Swizzle] = None,
     memory_bank: Optional[Tuple[Int, Int]] = None,
 ](
-    tensor_base: LayoutTensor[mut=False, **_],
+    tensor_base: LayoutTensor[mut=False, ...],
     tensors: List[
         LayoutTensor[
             dtype,

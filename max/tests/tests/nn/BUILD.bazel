@@ -1,9 +1,10 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_test")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 # MambaKernelAPI contains selective_scan kernels that need to be available for tests
@@ -15,12 +16,18 @@ MAMBA_MOJOPKGS = [
 modular_py_test(
     name = "nn",
     srcs = glob(["*.py"]),
+    mojo_deps = select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
+        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/mlir",
         "//max/python/max/nn",
-        requirement("numpy"),
     ],
     mojo_deps = select({
         "//:emit_mojo_enabled": MAMBA_MOJOPKGS,

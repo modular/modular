@@ -154,7 +154,7 @@ trait SMemTileWriter:
     @always_inline
     fn write_tile(
         self,
-        src: SMemTileType[Self._dtype, _, alignment=128, **_],
+        src: SMemTileType[Self._dtype, _, alignment=128, ...],
         coords: Tuple[UInt, UInt],
     ):
         """Write a tile from shared memory to global memory.
@@ -209,7 +209,7 @@ struct TileWriterTMA[
     @always_inline
     fn write_tile(
         self,
-        src: SMemTileType[Self._dtype, _, alignment=128, **_],
+        src: SMemTileType[Self._dtype, _, alignment=128, ...],
         coords: Tuple[UInt, UInt],
     ):
         """Write a tile using TMA hardware acceleration.
@@ -284,7 +284,7 @@ struct TileWriterThreadwise[
     @always_inline
     fn write_tile(
         self,
-        src: SMemTileType[Self._dtype, _, alignment=128, **_],
+        src: SMemTileType[Self._dtype, _, alignment=128, ...],
         coords: Tuple[UInt, UInt],
     ):
         """Write a tile using thread-distributed stores.
@@ -479,7 +479,7 @@ struct FragmentToSMemWriter[
         n_frag: Int,
     ](
         self,
-        smem_tile: SMemTileType[Self.c_type, Self.st_matrix_layout, **_],
+        smem_tile: SMemTileType[Self.c_type, Self.st_matrix_layout, ...],
         data: SIMD[Self.c_type, elements_per_op],
     ) -> None:
         """Store register data to shared memory using st.matrix instruction.
@@ -503,7 +503,7 @@ struct FragmentToSMemWriter[
 
         # Execute st.matrix hardware instruction
         st_matrix[simd_width=packed_width](
-            smem_tile.ptr.offset(swizzled_offset), packed_data
+            smem_tile.ptr + swizzled_offset, packed_data
         )
 
     @always_inline
@@ -788,7 +788,7 @@ struct RegisterToGMemWriter[
     ](
         self,
         gmem_frag: LayoutTensor[
-            Self.c_type, _, MutAnyOrigin, address_space=_, *_, **_
+            Self.c_type, _, MutAnyOrigin, address_space=_, ...
         ],
         c_reg_frag: RegTileType,
         mma_id: Int,

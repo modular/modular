@@ -18,7 +18,7 @@ from gpu.host.compile import _compile_code
 from gpu.intrinsics import ldg
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import *
 
 

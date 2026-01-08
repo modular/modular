@@ -7,7 +7,6 @@ modular_py_library(
     srcs = glob(["*.py"]),
     deps = [
         "//max/python/max/interfaces",
-        "//max/python/max/profiler",
         requirement("psutil"),
         requirement("pyzmq"),
     ],

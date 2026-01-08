@@ -145,7 +145,7 @@ struct MatmulTileWriter[
         epilogue_fn: Self.lambda_type
     ](
         self,
-        output_tile: LayoutTensor[Self.dtype, _, MutAnyOrigin, *_, **_],
+        output_tile: LayoutTensor[Self.dtype, _, MutAnyOrigin, ...],
         tile_row_offset: Int,
         tile_col_offset: Int,
         max_row: UInt32,
@@ -253,7 +253,7 @@ struct MatmulTileWriter[
         self,
         tma_op: TMATensorTile[Self.dtype, tma_layout, desc_layout],
         reg_tile: RegTileType[accum_type, reg_tile_layout],
-        output_tile: LayoutTensor[Self.dtype, _, MutAnyOrigin, *_, **_],
+        output_tile: LayoutTensor[Self.dtype, _, MutAnyOrigin, ...],
         tile_origin: Self.CTensorType.CornerCoordsType,
     ):
         """Use st.matrix instructions for optimized bf16 output."""
@@ -359,7 +359,7 @@ struct MatmulTileWriter[
                     var tma_writer = TileWriterTMA(Pointer(to=tma_op))
 
                     if self.local_thread_idx < UInt(Self.WG_BN // TMA_BN):
-                        var smem_offset = self.smem_tile.ptr.offset(
+                        var smem_offset = self.smem_tile.ptr + (
                             Self.WG_BM * TMA_BN * Int(self.local_thread_idx)
                         )
                         var tma_tile = SMemTileType[
@@ -424,7 +424,7 @@ struct MatmulTileWriter[
         # Check if st.matrix optimization can be used
         # fmt: off
         comptime can_use_stmatrix = (
-            accum_type is DType.float32 and Self.dtype is DType.bfloat16  # F32→BF16
+            accum_type == DType.float32 and Self.dtype == DType.bfloat16  # F32→BF16
             and Self.frag_size % 4 == 0                               # Register count
             and Self.BM % Self.wgmma_shape[0] == 0                              # M alignment
             and Self.WG_BN % 16 == 0                                  # Shared memory

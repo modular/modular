@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 
 from gpu import lane_id, thread_idx, block_idx
@@ -125,7 +125,7 @@ fn copy_local_to_dram2[
                 dst_idx += dst_fragments.runtime_layout(i)
 
             var src_element = Element[index_type = src.linear_idx_type].load(
-                src.ptr.offset(src_idx),
+                src.ptr + src_idx,
                 src.runtime_element_layout,
             )
 
@@ -385,7 +385,7 @@ struct GlobalMemoryManager[
         //,
     ](
         self,
-        ptr: UnsafePointer[Scalar[kvtype], **_],
+        ptr: UnsafePointer[Scalar[kvtype], ...],
         kv_tile_num_rows: UInt32,
         out result: LayoutTensor[
             kvtype,
@@ -414,7 +414,7 @@ comptime _no_alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.Loca
 
 @always_inline
 fn _load_tr16_b64_row(
-    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
+    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]
 ) -> SIMD[tile.dtype, 4]:
     # ds_read_tr16_b64 uses a set of 4x4 lanes (amd calls 16 lanes a "row")
     # to load a 4x16 tile. Each lane loads 4 contiguous elements from the tile.
@@ -436,7 +436,7 @@ fn _load_tr16_b64_row(
         thread_layout
     ](lane_in_row)
     var offset = dist_result[2]
-    var ptr = tile.ptr.offset(offset)
+    var ptr = tile.ptr + offset
 
     var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
         _type = __mlir_type.`!llvm.ptr<3>`
@@ -461,9 +461,9 @@ fn _load_tr16_b64_row(
 @always_inline
 fn _load_tr16_b64_warp[
     mma_shape: IndexList[3],
-](
-    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
-) -> SIMD[tile.dtype, 4]:
+](tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]) -> SIMD[
+    tile.dtype, 4
+]:
     # for 8x32 we need 2x2 distribution of rows (16 lanes), 2x2 x 4x16 = 8x32
     # for 16x16 we need 4x1 distribution of rows (16 lanes), 4x1 x 4x16 = 16x16
     comptime row_layout = Layout.row_major(2, 2) if mma_shape[
@@ -497,9 +497,9 @@ fn _load_tr16_b64_warp[
 @always_inline
 fn load_b_tr[
     mma_shape: IndexList[3]
-](
-    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
-) -> SIMD[tile.dtype, 8]:
+](tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]) -> SIMD[
+    tile.dtype, 8
+]:
     """Loads the b operand tile for AMD tensor core MFMA instructions using transposed memory access.
 
     This function supports double-rate MFMA shapes (32x32x16, 16x16x32) with bfloat16 input.
@@ -686,7 +686,7 @@ fn load_b_[
 
     var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
         _type = __mlir_type.`!llvm.ptr<3>`
-    ](src.ptr.offset(offset))
+    ](src.ptr + offset)
 
     var llvm_res = __mlir_op.`llvm.load`[
         _type = __mlir_type.`vector<8 x bf16>`,

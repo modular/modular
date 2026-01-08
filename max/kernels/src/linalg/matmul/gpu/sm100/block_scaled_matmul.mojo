@@ -15,7 +15,7 @@ from collections import OptionalReg
 from math import align_up, ceildiv
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 
 from bit import next_power_of_two, prev_power_of_two
@@ -221,7 +221,7 @@ fn copy_sf_tmem[
     TILE_MN: Int,
     cta_group: Int,
 ](
-    sf_smem: LayoutTensor[address_space = AddressSpace.SHARED, *_, **_],
+    sf_smem: LayoutTensor[address_space = AddressSpace.SHARED, ...],
     sf_tmem: UInt32,
 ):
     comptime sf_smem_size = sf_smem_layout.size()
@@ -352,11 +352,13 @@ fn load_AB[
         if elect_one_cta:
             tma_mbar[0].expect_bytes(expected_bytes)
 
-        for j in range(k_group_size):
-            var a_smem_tile = a_smem.next(stage * k_group_size + j)[]
-            var b_smem_tile = b_smem.next(stage * k_group_size + j)[]
-            var sfa_smem_tile = sfa_smem.next(stage * k_group_size + j)[]
-            var sfb_smem_tile = sfb_smem.next(stage * k_group_size + j)[]
+        for jj in range(k_group_size):
+            var j = UInt32(jj)
+            var offset = stage * UInt32(k_group_size) + j
+            var a_smem_tile = a_smem.next(offset)[]
+            var b_smem_tile = b_smem.next(offset)[]
+            var sfa_smem_tile = sfa_smem.next(offset)[]
+            var sfb_smem_tile = sfb_smem.next(offset)[]
 
             var a_smem_slice = type_of(a_smem_tile)(
                 a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
@@ -496,18 +498,16 @@ fn consumer_main_loop[
 
     # Compose TMEM address: accum stage encoded in column field with stride in columns.
     if elect_one_sync():
-        for j in range(k_group_size):
-            var a_smem_tile = a_smem_iter.next(stage * k_group_size + j)[]
-            var b_smem_tile = b_smem_iter.next(stage * k_group_size + j)[]
-            var sfa_smem_tile = sfa_smem_iter.next(stage * k_group_size + j)[]
-            var sfb_smem_tile = sfb_smem_iter.next(stage * k_group_size + j)[]
+        for jj in range(k_group_size):
+            var j = UInt32(jj)
+            var offset = stage * UInt32(k_group_size) + j
+            var a_smem_tile = a_smem_iter.next(offset)[]
+            var b_smem_tile = b_smem_iter.next(offset)[]
+            var sfa_smem_tile = sfa_smem_iter.next(offset)[]
+            var sfb_smem_tile = sfb_smem_iter.next(offset)[]
 
-            var sfa_tmem_offset = (
-                sfa_tmem + (stage * k_group_size + j) * SFA_NUM_COLS
-            )
-            var sfb_tmem_offset = (
-                sfb_tmem + (stage * k_group_size + j) * SFB_NUM_COLS
-            )
+            var sfa_tmem_offset = sfa_tmem + offset * UInt32(SFA_NUM_COLS)
+            var sfb_tmem_offset = sfb_tmem + offset * UInt32(SFB_NUM_COLS)
 
             copy_sf_tmem[sfa_dtype, sfa_smem_layout, BM, cta_group](
                 sfa_smem_tile, sfa_tmem_offset
@@ -584,7 +584,7 @@ fn multi_stage_store_C[
     # TODO (GEX-2630): This is a temporary workaround to support float32 compute epilogue for FP8 models for which we use compute lambda for dequantization.
     # We should remove this once GEX-2630 is fixed.
     comptime epilogue_dtype = (
-        c_type if input_type is DType.bfloat16 else DType.float32
+        c_type if input_type == DType.bfloat16 else DType.float32
     )
 
     comptime N_dim = 0 if transpose_c else 1
@@ -596,7 +596,7 @@ fn multi_stage_store_C[
     var mma_output_stage = mma_output_pipeline.consumer_stage()
     mma_output_pipeline.wait_producer()
 
-    var tmem_offset = mma_output_stage * stage_stride_cols + tmem_addr
+    var tmem_offset = mma_output_stage * UInt32(stage_stride_cols) + tmem_addr
 
     copy_accum_to_gmem[
         repeat=rep,
@@ -697,8 +697,8 @@ fn copy_accum_to_gmem[
     var warp_id = get_warp_id()
 
     # lets keep track of the of the starting row and column in GMEM
-    var c_row = c_coord[0] * UInt(BM)
-    var c_col = c_coord[1] * UInt(MMA_N)
+    var c_row = c_coord[0] * UInt32(BM)
+    var c_col = c_coord[1] * UInt32(MMA_N)
 
     @parameter
     for stage in range(num_stages):
@@ -814,7 +814,7 @@ fn copy_accum_to_gmem[
                 )
 
                 # Guard the write to shared memory is done.
-                named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+                named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
 
                 @parameter
                 if elementwise_compute_lambda_fn:
@@ -870,7 +870,7 @@ fn copy_accum_to_gmem[
                 )
 
                 # Guard the write to shared memory is done.
-                named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+                named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
 
                 @parameter
                 if elementwise_compute_lambda_fn:
@@ -924,7 +924,7 @@ fn copy_accum_to_gmem[
                 )
 
             # Guard the write to shared memory is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
 
             @parameter
             if elementwise_compute_lambda_fn:
@@ -970,17 +970,19 @@ fn copy_accum_to_gmem[
             cg2_elect_one_warp if cta_group == 2 else cg1_elect_one_warp
         )
 
-        var coord_n_mma_m256 = c_coord[1] * UInt(MMA_N) + UInt(stage * stageN)
+        var coord_n_mma_m256 = c_coord[1] * UInt32(MMA_N) + UInt32(
+            stage * stageN
+        )
         var coord_n_mma_m128 = (
-            c_coord[1] * UInt(MMA_N)
-            + UInt(stage * stageN)
-            + UInt(BN * Int(warp_id // 2))
+            c_coord[1] * UInt32(MMA_N)
+            + UInt32(stage * stageN)
+            + UInt32(BN * Int(warp_id // 2))
         )
 
         var cg2_coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
         var cg1_coord_n = coord_n_mma_m256
         var coord_n = cg2_coord_n if cta_group == 2 else cg1_coord_n
-        var coord_m = c_coord[0] * UInt(BM)
+        var coord_m = c_coord[0] * UInt32(BM)
         var coord_b = c_coord[2]
 
         if elect_one_warp and lane == 0:
@@ -1060,7 +1062,7 @@ fn copy_accum_to_gmem[
         @parameter
         if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
 
 
 @parameter
@@ -1083,7 +1085,7 @@ fn _convert_input_to_batched_tensor[
     layout: Layout,
     reshape_layout: Layout = _reshape_to_3d[layout](),
 ](
-    tensor: LayoutTensor[dtype, layout, *_, **_],
+    tensor: LayoutTensor[dtype, layout, ...],
 ) -> LayoutTensor[
     tensor.dtype,
     reshape_layout,
@@ -1130,9 +1132,9 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
-    c_tensor: LayoutTensor[c_type, c_layout, *_, **_],
-    a_tensor: LayoutTensor[a_type, a_layout, *_, **_],
-    b_tensor: LayoutTensor[b_type, b_layout, *_, **_],
+    c_tensor: LayoutTensor[c_type, c_layout, ...],
+    a_tensor: LayoutTensor[a_type, a_layout, ...],
+    b_tensor: LayoutTensor[b_type, b_layout, ...],
     a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
     b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
     ctx: DeviceContext,
@@ -1510,7 +1512,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],
 ):
-    __comptime_assert c_type is not DType.float32, "c_type cannot be float32"
+    __comptime_assert c_type != DType.float32, "c_type cannot be float32"
     __comptime_assert transpose_b, "only support k-major B"
 
     comptime num_output_warps = 4
@@ -1805,9 +1807,9 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     for i in range(CLUSTER_M // config.cta_group):
         b_multicast_mask |= 1 << (i * config.cta_group)
 
-    a_multicast_mask <<= rank_m
-    b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
+    a_multicast_mask <<= UInt16(rank_m)
+    b_multicast_mask <<= UInt16(peer_cta_coord[0])
+    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
@@ -1840,7 +1842,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     load_clc_pipeline.producer_step()
 
                 # DO TMA LOAD
-                for i in range(num_iters // config.k_group_size):
+                for i in range(num_iters // UInt32(config.k_group_size)):
                     load_AB[
                         block_tile_shape = config.block_tile_shape,
                         mma_shape = config.mma_shape,
@@ -1864,7 +1866,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         ),
                         a_multicast_mask,
                         b_multicast_mask,
-                        i * config.k_group_size,
+                        i * UInt32(config.k_group_size),
                         elect_one_cta,
                     )
                     load_mma_pipeline.producer_step()
@@ -1936,11 +1938,11 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             named_barrier_arrive[MMA_THREADS + EPILOGUE_THREADS](1)
 
             tmem_addr = ptr_tmem_addr[0]
-            var sfa_tmem = tmem_addr + config.num_accum_pipeline_stages * UInt(
-                MMA_N
+            var sfa_tmem = tmem_addr + UInt32(
+                config.num_accum_pipeline_stages * UInt(MMA_N)
             )
-            var sfb_tmem = (
-                sfa_tmem + UInt(SFA_NUM_COLS) * config.num_pipeline_stages
+            var sfb_tmem = sfa_tmem + UInt32(SFA_NUM_COLS) * UInt32(
+                config.num_pipeline_stages
             )
 
             while work_info.is_valid():
@@ -1959,7 +1961,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         mma_output_mma_stage * stage_stride_cols
                     )
 
-                    for i in range(num_iters // config.k_group_size):
+                    for i in range(num_iters // UInt32(config.k_group_size)):
                         consumer_main_loop[
                             block_tile_shape = config.block_tile_shape,
                             mma_shape = config.mma_shape,
@@ -1979,7 +1981,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                             load_mma_pipeline,
                             mma_op,
                             elect_one_warp,
-                            i * config.k_group_size,
+                            i * UInt32(config.k_group_size),
                             0,
                         )
                         load_mma_pipeline.consumer_step()

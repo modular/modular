@@ -53,7 +53,7 @@ run_fold((5,6), (3,2), stride=1, dilation=1, padding=0)
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.fold import fold
 from runtime.asyncrt import DeviceContextPtr

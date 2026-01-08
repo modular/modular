@@ -10,16 +10,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Tests for max.experimental.support."""
+
+from contextvars import ContextVar
+
+from max.experimental.support import contextvar_context
 
 
-import pytest
-from conftest import MiB, alloc_pinned
+def test_contextvar_context() -> None:
+    var: ContextVar[str] = ContextVar("test_var")
 
+    with contextvar_context(var, "outer") as value:
+        assert value == var.get() == "outer"
 
-def test_oom(memory_manager_config: None) -> None:
-    # We expect a OOM because we cannot allocate 101MiB when the limit is 100MiB.
-    with pytest.raises(
-        ValueError,
-        match=r"\[Use only memory manager mode\]: No room left in memory manager: .*\[0 - host\] on .* \(size: 101MB ; free: 0B ; cache_size: 0B ; max_cache_size: 100MB\)",
-    ):
-        _ = alloc_pinned(101 * MiB)
+        with contextvar_context(var, "inner") as value:
+            assert value == var.get() == "inner"
+
+        # reset to "outer"
+        assert var.get() == "outer"
+
+    # unset
+    assert var.get(None) is None

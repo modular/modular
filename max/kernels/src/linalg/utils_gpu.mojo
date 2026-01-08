@@ -15,7 +15,7 @@ from hashlib.hasher import Hasher
 from math import ceildiv
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
@@ -39,7 +39,7 @@ from utils.numerics import get_accum_type
 
 
 fn block_swizzle(
-    block_idx: IndexList[2, **_], grid_dim: type_of(block_idx)
+    block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)
 ) -> type_of(block_idx):
     return _block_swizzle_by_scale[3](block_idx, grid_dim)
 
@@ -47,7 +47,7 @@ fn block_swizzle(
 @always_inline
 fn _block_swizzle_by_scale[
     scale0: UInt
-](block_idx: IndexList[2, **_], grid_dim: type_of(block_idx)) -> type_of(
+](block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)) -> type_of(
     block_idx
 ):
     """
@@ -63,7 +63,7 @@ fn _block_swizzle_by_scale[
 
     This helps when N is very large e.g. 1024 x 32768 x 3072 in Replit 3B.
     """
-    var scale = scale0
+    var scale = Scalar[block_idx.element_type](scale0)
     # basically num_partitions = 2^3 = 8
     var num_partitions = 1 << Int(scale)
     # while griddim_x not divisible by num_partitions, reduce scale till scale is 0
@@ -432,7 +432,7 @@ fn select_config[
     # sm_80 is present in target.
     comptime _256x128_3 = Index(
         128, 256, 2 * _bk_base[a_type](), 3
-    ) if gpu_info is A100 else Index(1024, 1024, 1024, 1024)
+    ) if gpu_info == A100 else Index(1024, 1024, 1024, 1024)
 
     comptime opt_list = [_128x128_4, _256x64_4, _256x128_3]
 

@@ -24,7 +24,7 @@ from layout.layout_tensor import LayoutTensor
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils.index import Index, IndexList
 
 comptime elementwise_epilogue_type = fn[
@@ -92,9 +92,9 @@ struct GemmShape(ImplicitlyCopyable):
     fn get[
         transpose_b: Bool,
     ](
-        c: NDBuffer[rank=2, *_, **_],
-        a: NDBuffer[rank=2, *_, **_],
-        b: NDBuffer[rank=2, *_, **_],
+        c: NDBuffer[rank=2, ...],
+        a: NDBuffer[rank=2, ...],
+        b: NDBuffer[rank=2, ...],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -116,9 +116,9 @@ struct GemmShape(ImplicitlyCopyable):
         layout_a: Layout,
         layout_b: Layout,
     ](
-        c: LayoutTensor[_, layout_c, _, **_],
-        a: LayoutTensor[_, layout_a, _, **_],
-        b: LayoutTensor[_, layout_b, _, **_],
+        c: LayoutTensor[_, layout_c, _, ...],
+        a: LayoutTensor[_, layout_a, _, ...],
+        b: LayoutTensor[_, layout_b, _, ...],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -286,7 +286,7 @@ fn _get_tile_n_k[
     kernel_cols: Int,
     transpose_b: Bool,
     layout: Layout,
-](b: LayoutTensor[b_type, layout, _, **_]) -> IndexList[2]:
+](b: LayoutTensor[b_type, layout, _, ...]) -> IndexList[2]:
     __comptime_assert b.rank == 2
     var tile_n_k: IndexList[2]
 
@@ -626,14 +626,14 @@ fn use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
         and not CompilationTarget.has_neon_int8_matmul()
     ):
         return (
-            (a_type is DType.int8 and b_type is DType.int8)
-            or (a_type is DType.uint8 and b_type is DType.uint8)
-        ) and c_type is DType.int32
+            (a_type == DType.int8 and b_type == DType.int8)
+            or (a_type == DType.uint8 and b_type == DType.uint8)
+        ) and c_type == DType.int32
     elif CompilationTarget.has_avx2():
         return (
-            a_type is DType.uint8
-            and b_type is DType.int8
-            and c_type is DType.int32
+            a_type == DType.uint8
+            and b_type == DType.int8
+            and c_type == DType.int32
         )
     else:
         return False
@@ -646,9 +646,9 @@ fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
         # Return False for now until i8mm is fully ready.
         CompilationTarget.has_neon_int8_matmul()
         and (
-            (a_type is DType.uint8 and b_type is DType.uint8)
-            or (a_type is DType.uint8 and b_type is DType.int8)
-            or (a_type is DType.int8 and b_type is DType.int8)
+            (a_type == DType.uint8 and b_type == DType.uint8)
+            or (a_type == DType.uint8 and b_type == DType.int8)
+            or (a_type == DType.int8 and b_type == DType.int8)
         )
     )
 
@@ -717,10 +717,10 @@ fn packA_i8mm[
         @parameter
         for idx in range(nrow):
             var t0 = partial_simd_load[8](
-                a_ptr.offset((j + idx) * k + kl), 0, k - kl, 0
+                a_ptr + ((j + idx) * k + kl), 0, k - kl, 0
             )
             partial_simd_store(
-                a_packed_ptr.offset(kh * j + 2 * kl + 8 * idx),
+                a_packed_ptr + (kh * j + 2 * kl + 8 * idx),
                 0,
                 k - kl,
                 t0,

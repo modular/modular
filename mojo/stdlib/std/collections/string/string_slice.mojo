@@ -10,43 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The `StringSlice` type implementation for efficient string operations.
+"""Implements the `StringSlice` type and related utilities for efficient string operations."""
 
-This module provides the `StringSlice` type, which is a lightweight view into
-string data that enables zero-copy string operations. `StringSlice` is designed
-for high-performance string manipulation while maintaining memory safety and
-UTF-8 awareness.
-
-The `StringSlice` type is particularly useful for:
-- High-performance string operations without copying.
-- Efficient string parsing and tokenization.
-
-`StaticString` is an alias for an immutable constant `StringSlice`.
-
-`StringSlice` and `StaticString` are in the prelude, so they are automatically
-imported into every Mojo program.
-
-Example:
-
-```mojo
-# Create a string slice
-var text = StringSlice("Hello, 世界")
-
-# Zero-copy slicing
-var hello = text[0:5] # Hello
-
-# Unicode-aware operations
-var world = text[7:13]  # "世界"
-
-# String comparison
-if text.startswith("Hello"):
-    print("Found greeting")
-
-# String formatting
-var format_string = StaticString("{}: {}")
-print(format_string.format("bats", 6)) # bats: 6
-```
-"""
 from builtin.builtin_slice import ContiguousSlice
 from collections.string._unicode import (
     is_lowercase,
@@ -81,7 +46,31 @@ from memory import (
 from python import ConvertibleToPython, Python, PythonObject
 
 comptime StaticString = StringSlice[StaticConstantOrigin]
-"""An immutable static string slice."""
+"""An immutable static string slice.
+
+This is a type of
+[`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice)
+that's immutable and statically allocated. You might use this for situations
+that could also be done with a `String` type, but when you want to
+optimize memory usage with zero heap allocations.
+
+The key difference from `StringSlice` is that a `StaticString` is guaranteed
+to point to data (string literals, constants) that will never be deallocated
+(a regular `StringSlice` may point to any string data that might be freed).
+This makes `StaticString` safe to store long-term without lifetime concerns.
+
+Although you can reassign a `StaticString`-typed variable with a new value,
+you can't modify the underlying data of a `StaticString` after it's created
+the way you can with a `String`, such as using `+=` to append to it.
+
+Because this is still a `StringSlice` type, you can do all the same things
+with it, such as format a string:
+
+```mojo
+var format_string = StaticString("{}: {}")
+print(format_string.format("bats", 6))     # => bats: 6
+```
+"""
 
 
 struct CodepointSliceIter[
@@ -486,14 +475,53 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Writable,
     _CurlyEntryFormattable,
 ):
-    """A non-owning view to encoded string data.
+    """A non-owning view into encoded string data.
 
-    This type is guaranteed to have the same ABI (size, alignment, and field
-    layout) as the `llvm::StringRef` type.
+    A `StringSlice` is a lightweight view into string data that lets you look
+    at part (or all) of an string without copying the data. Unlike a
+    [`String`](/mojo/std/collections/string/string/String), a `StringSlice`
+    doesn't own the string data, but it knows where to find it and how long it
+    is. It's designed for efficient zero-copy string operations without memory
+    allocation, while maintaining memory safety and UTF-8 awareness.
 
-    See the
-    [`string_slice` module](/mojo/std/collections/string/string_slice/)
-    for more information and examples.
+    Key features:
+
+    - Zero-copy string operations for high performance.
+    - Lightweight view that doesn't own or allocate memory.
+    - UTF-8 aware string processing and character iteration.
+    - Compatible ABI with `llvm::StringRef` for C++ interoperability.
+    - Memory-safe slicing and substring operations.
+    - Efficient string parsing and tokenization.
+
+    Examples:
+
+    ```mojo
+    # Create a string slice
+    var text = StringSlice("Hello, 世界")
+
+    # Zero-copy slicing
+    var hello = text[0:5] # Hello
+
+    # Unicode-aware operations
+    var world = text[7:13]  # "世界"
+
+    # String comparison
+    if text.startswith("Hello"):
+        print("Found greeting")
+
+    # String formatting
+    var format_string = StaticString("{}: {}")
+    print(format_string.format("bats", 6)) # bats: 6
+    ```
+
+    Related types:
+
+    - [`String`](/mojo/std/collections/string/String): An owning,
+      mutable string that allocates and manages its own memory.
+    - [`StaticString`](/mojo/std/collections/string/string_slice/#StaticString): An
+      alias for an immutable constant `StringSlice`.
+    - [`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral/): A
+      string literal. String literals are compile-time values.
 
     Parameters:
         mut: Whether the slice is mutable.
@@ -564,7 +592,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         self = StaticString(lit.value)
 
     @always_inline("builtin")
-    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, Self.origin, **_]):
+    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, Self.origin, ...]):
         """Construct a new `StringSlice` from a sequence of UTF-8 encoded bytes.
 
         Args:
@@ -593,7 +621,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             mut = Self.mut,
             Byte,
             origin = Self.origin,
-            address_space = AddressSpace.GENERIC, **_,
+            address_space = AddressSpace.GENERIC,
+            ...,
         ],
     ):
         """Construct a new StringSlice from a `UnsafePointer[Byte]` pointing to
@@ -616,7 +645,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         )
         self = Self(unsafe_from_utf8=byte_slice)
 
-    fn __init__(out self, *, from_utf8: Span[Byte, Self.origin, **_]) raises:
+    fn __init__(out self, *, from_utf8: Span[Byte, Self.origin, ...]) raises:
         """Construct a new `StringSlice` from a buffer containing UTF-8 encoded
         data.
 
@@ -639,7 +668,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             mut = Self.mut,
             c_char,
             origin = Self.origin,
-            address_space = AddressSpace.GENERIC, **_,
+            address_space = AddressSpace.GENERIC,
+            ...,
         ],
     ):
         """Construct a new StringSlice from a `UnsafePointer[c_char]` pointing
@@ -664,7 +694,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             mut = Self.mut,
             Byte,
             origin = Self.origin,
-            address_space = AddressSpace.GENERIC, **_,
+            address_space = AddressSpace.GENERIC,
+            ...,
         ],
         length: Int,
     ):
@@ -832,7 +863,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Args:
             writer: The object to write to.
         """
-        writer.write_bytes(self.as_bytes())
+        writer.write_string(self)
 
     fn __bool__(self) -> Bool:
         """Check if a string slice is non-empty.
@@ -1187,12 +1218,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             The string concatenated `n` times.
         """
         var string = String()
-        var str_bytes = self.as_bytes()
         var buffer = _WriteBufferStack(string)
         for _ in range(n):
-            buffer.write_bytes(str_bytes)
+            buffer.write_string(self)
         buffer.flush()
-        return string
+        return string^
 
     @always_inline("nodebug")
     fn __merge_with__[
@@ -2456,7 +2486,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     fn join[
         T: Copyable & Writable,
         //,
-    ](self, elems: Span[T, *_]) -> String:
+    ](self, elems: Span[T, ...]) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
@@ -2562,7 +2592,7 @@ fn _to_string_list[
     O: Origin,
     //,
     # TODO(MOCO-1446): Make `T` parameter inferred
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     len_fn: fn (T) -> Int,
     unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, O],
 ](items: List[T]) -> List[String]:
@@ -2652,7 +2682,7 @@ fn _unsafe_strlen(
 fn _memchr[
     dtype: DType, //
 ](
-    source: Span[mut=False, Scalar[dtype], **_], char: Scalar[dtype]
+    source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]
 ) -> source.UnsafePointerType:
     if is_compile_time() or len(source) < simd_width_of[Scalar[dtype]]():
         var ptr = source.unsafe_ptr()
@@ -2669,7 +2699,7 @@ fn _memchr[
 fn _memchr_impl[
     dtype: DType, //
 ](
-    source: Span[mut=False, Scalar[dtype], **_],
+    source: Span[mut=False, Scalar[dtype], ...],
     char: Scalar[dtype],
     out output: source.UnsafePointerType,
 ):
@@ -2698,10 +2728,11 @@ fn _memchr_impl[
 fn _memmem[
     dtype: DType, //
 ](
-    haystack_span: Span[mut=False, Scalar[dtype], **_],
+    haystack_span: Span[mut=False, Scalar[dtype], ...],
     needle_span: Span[
         mut=False,
-        Scalar[dtype], **_,
+        Scalar[dtype],
+        ...,
     ],
 ) -> haystack_span.UnsafePointerType:
     if is_compile_time() or len(haystack_span) < simd_width_of[Scalar[dtype]]():
@@ -2726,10 +2757,11 @@ fn _memmem[
 fn _memmem_impl[
     dtype: DType, //
 ](
-    haystack_span: Span[mut=False, Scalar[dtype], **_],
+    haystack_span: Span[mut=False, Scalar[dtype], ...],
     needle_span: Span[
         mut=False,
-        Scalar[dtype], **_,
+        Scalar[dtype],
+        ...,
     ],
     out output: haystack_span.UnsafePointerType,
 ):

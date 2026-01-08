@@ -30,7 +30,7 @@ from gpu.tcgen05 import *
 from internal_utils import assert_almost_equal
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout import (
     UNKNOWN_VALUE,
     IntTuple,
@@ -419,15 +419,13 @@ fn kernel_5[
             var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
 
             st_matrix[simd_width=4](
-                upper.ptr.offset(
-                    st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
-                ),
+                upper.ptr
+                + st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args)),
                 d_reg_upper_packed,
             )
             st_matrix[simd_width=4](
-                lower.ptr.offset(
-                    st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
-                ),
+                lower.ptr
+                + st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args)),
                 d_reg_lower_packed,
             )
 
@@ -442,9 +440,7 @@ fn kernel_5[
         var col_start = block_idx.y * UInt(MMA_N) + thread_idx.x * UInt(TMA_BN)
 
         fence_async_view_proxy()
-        var c_smem_offset = c_smem_tile.ptr.offset(
-            BM * TMA_BN * Int(thread_idx.x)
-        )
+        var c_smem_offset = c_smem_tile.ptr + BM * TMA_BN * Int(thread_idx.x)
 
         var c_tma_tile = LayoutTensor[
             c_type,
@@ -736,7 +732,7 @@ def test_blackwell_kernel_5[
 
 
 fn get_dic_of_shapes(
-    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], *_, **_]
+    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], ...]
 ) -> Tuple[Int, Int, Int]:
     try:
         return dic_bro[index]

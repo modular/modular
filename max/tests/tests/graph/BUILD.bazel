@@ -2,8 +2,9 @@ load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_test", "req
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 _MULTI_VERSION_TEST_SRCS = [
@@ -25,15 +26,25 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "TESTDATA_DIRECTORY": "max/tests/tests/graph/testdata",
     },
+    ignore_extra_deps = [
+        # Needed for loading gguf files, doesn't get pulled by default
+        requirement("gguf"),
+    ],
     imports = ["."],
     mojo_deps = [
         "//max/tests/integration:test_user_op",
         "@mojo//:std",
-    ],
+    ] + select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
     deps = [
+        "//max/python/max:_core",
+        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/mlir",
         "//max/python/max/nn",
         requirement("gguf"),
         requirement("hypothesis"),
@@ -50,12 +61,18 @@ modular_multi_py_version_test(
     data = ["//max/tests/tests/graph/testdata"],
     env = {"TESTDATA_DIRECTORY": "max/tests/tests/graph/testdata"},
     exclude = ["3.14"],  # Current version of numpy doesn't build on 3.14
+    ignore_extra_deps = [
+        # `engine` directly depends on `graph`, this is a circular import
+        # needed just for initialization of the graph. This can be removed
+        # when GEX-1846 is fixed.
+        "//max/python/max/engine",
+    ],
     imports = ["."],
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/mlir",
         requirement("hypothesis"),
         requirement("numpy"),
     ],

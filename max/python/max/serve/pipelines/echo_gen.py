@@ -26,6 +26,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TokenBuffer,
     TokenSlice,
 )
 from max.pipelines.core import TextContext
@@ -64,11 +65,16 @@ class EchoPipelineTokenizer(
         If prompt is already a sequence of ints, we use it directly.
         """
         if isinstance(prompt, str):
+            if not prompt:
+                raise ValueError("Prompt cannot be empty")
             # Convert string characters to ASCII values as token IDs
-            return np.array([ord(char) for char in prompt], dtype=np.int32)
+            return np.array([ord(char) for char in prompt], dtype=np.int64)
         else:
             # Already a sequence of integers
-            return np.array(list(prompt), dtype=np.int32)
+            tokens = list(prompt)
+            if not tokens:
+                raise ValueError("Prompt cannot be empty")
+            return np.array(tokens, dtype=np.int64)
 
     async def decode(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
@@ -119,11 +125,15 @@ class EchoPipelineTokenizer(
         )
         max_length = len(encoded_prompt) + max_new_tokens
 
+        token_buffer = TokenBuffer(
+            array=encoded_prompt.astype(np.int64, copy=False),
+        )
+
         # Create TextContext manually
         context = TextContext(
             request_id=request.request_id,
             max_length=max_length,
-            tokens=encoded_prompt,
+            tokens=token_buffer,
             eos_token_ids={self.eos},  # Set containing the EOS token
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,

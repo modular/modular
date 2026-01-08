@@ -2,8 +2,9 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 # Normal CPU tests
@@ -11,6 +12,13 @@ package(default_visibility = [
     modular_py_test(
         name = src.split("/")[-1].split(".")[0],
         srcs = [src],
+        mojo_deps = select({
+            "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+            "//conditions:default": [],
+        }),
+        tags = [
+            "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
+        ],
         deps = [":common"],
     )
     for src in glob(
@@ -27,6 +35,11 @@ package(default_visibility = [
 modular_py_test(
     name = "test_di",
     srcs = ["test_di.py"],
+    mojo_deps = select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     target_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
@@ -49,7 +62,14 @@ modular_py_test(
             "//:apple_gpu": ["@platforms//:incompatible"],
             "//conditions:default": [],
         }),
-        tags = ["gpu"],
+        mojo_deps = select({
+            "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+            "//conditions:default": [],
+        }),
+        tags = [
+            "gpu",
+            "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
+        ],
         deps = [":common"],
     )
     for src in glob(
@@ -62,6 +82,7 @@ modular_py_library(
     name = "common",
     srcs = ["common.py"],
     imports = ["../../.."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/nn",
         "//max/python/max/serve",

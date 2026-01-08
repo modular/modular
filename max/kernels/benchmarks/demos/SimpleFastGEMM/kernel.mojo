@@ -20,7 +20,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 comptime mr = 6
 comptime nr = 64
@@ -71,16 +71,16 @@ fn kernel6x4(
         var bv2 = b.load[width=simd_size](4 * simd_size * pr + simd_size * 2)
         var bv3 = b.load[width=simd_size](4 * simd_size * pr + simd_size * 3)
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
-            b_ptr.offset(4 * simd_size * pr + simd_size * 16)
+            b_ptr + 4 * simd_size * pr + simd_size * 16
         )
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
-            b_ptr.offset(4 * simd_size * pr + simd_size * 17)
+            b_ptr + 4 * simd_size * pr + simd_size * 17
         )
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
-            b_ptr.offset(4 * simd_size * pr + simd_size * 18)
+            b_ptr + 4 * simd_size * pr + simd_size * 18
         )
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
-            b_ptr.offset(4 * simd_size * pr + simd_size * 19)
+            b_ptr + 4 * simd_size * pr + simd_size * 19
         )
 
         var av = a_ptr[0 * k + pr].cast[DType.float32]()

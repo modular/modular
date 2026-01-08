@@ -14,7 +14,7 @@
 from math import ceildiv, isclose
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import argv
 
 from buffer import DimList, NDBuffer

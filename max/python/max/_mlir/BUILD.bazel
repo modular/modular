@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "copy_files", "modular_py_library")
+load("//bazel:api.bzl", "copy_files", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -18,8 +18,12 @@ modular_py_library(
         "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
         "//conditions:default": [],
     }),
-    tags = ["no-mypy"],  # Upstream files with violations
+    tags = [
+        "no-mypy",  # Upstream files with violations
+        "no-pydeps",  # Works internally but not externally
+    ],
     deps = [
         "//max/python/max/_mlir/_mlir_libs:_mlir",
+        requirement("numpy"),
     ],
 )

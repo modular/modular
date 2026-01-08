@@ -299,55 +299,6 @@ struct SHMEMContext(ImplicitlyCopyable):
         """
         return SHMEMBuffer[dtype](self._ctx, size)
 
-    fn enqueue_create_host_buffer[
-        dtype: DType
-    ](self, size: Int) raises -> HostBuffer[dtype]:
-        """Enqueues the creation of a HostBuffer.
-
-        This function allocates memory on the host that is accessible by the device.
-        The memory is page-locked (pinned) for efficient data transfer between host and device.
-
-        Pinned memory is guaranteed to remain resident in the host's RAM, not be
-        paged/swapped out to disk. Memory allocated normally (for example, using
-        [`alloc()`](/mojo/std/memory/unsafe_pointer/alloc)
-        is pageable—individual pages of memory can be moved to secondary storage
-        (disk/SSD) when main memory fills up.
-
-        Using pinned memory allows devices to make fast transfers
-        between host memory and device memory, because they can use direct
-        memory access (DMA) to transfer data without relying on the CPU.
-
-        Allocating too much pinned memory can cause performance issues, since it
-        reduces the amount of memory available for other processes.
-
-        Parameters:
-            dtype: The data type to be stored in the allocated memory.
-
-        Args:
-            size: The number of elements of `type` to allocate memory for.
-
-        Returns:
-            A `HostBuffer` object that wraps the allocated host memory.
-
-        Raises:
-            If memory allocation fails or if the device context is invalid.
-
-        Example:
-
-        ```mojo
-        from gpu.host import DeviceContext
-
-        with DeviceContext() as ctx:
-            # Allocate host memory accessible by the device
-            var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](1024)
-
-            # Use the host buffer for device operations
-            # ...
-        ```
-        """
-        var host_ptr = alloc[Scalar[dtype]](size)
-        return HostBuffer[dtype](self._ctx, host_ptr, size, owning=True)
-
     @always_inline
     @parameter
     fn enqueue_function_checked[

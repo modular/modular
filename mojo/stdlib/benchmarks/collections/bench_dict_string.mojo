@@ -131,7 +131,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
             self.keys = keys
 
         memcpy(
-            dest=self.keys.offset(prev_end),
+            dest=self.keys + prev_end,
             src=UnsafePointer(key.unsafe_ptr()),
             count=key_length,
         )
@@ -154,7 +154,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         var start = 0 if index == 0 else Int(self.keys_end[index - 1])
         var length = Int(self.keys_end[index]) - start
         return StringSlice(
-            unsafe_from_utf8=Span(ptr=self.keys.offset(start), length=length)
+            unsafe_from_utf8=Span(ptr=self.keys + start, length=length)
         )
 
     @always_inline
@@ -333,13 +333,13 @@ struct StringDict[
     fn _is_deleted(self, index: Int) -> Bool:
         var offset = index >> 3
         var bit_index = index & 7
-        return self.deleted_mask.offset(offset).load() & (1 << bit_index) != 0
+        return (self.deleted_mask + offset).load() & (1 << bit_index) != 0
 
     @always_inline
     fn _deleted(self, index: Int):
         var offset = index >> 3
         var bit_index = index & 7
-        var p = self.deleted_mask.offset(offset)
+        var p = self.deleted_mask + offset
         var mask = p.load()
         p.store(mask | (1 << bit_index))
 
@@ -347,7 +347,7 @@ struct StringDict[
     fn _not_deleted(self, index: Int):
         var offset = index >> 3
         var bit_index = index & 7
-        var p = self.deleted_mask.offset(offset)
+        var p = self.deleted_mask + offset
         var mask = p.load()
         p.store(mask & ~(1 << bit_index))
 

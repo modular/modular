@@ -81,8 +81,8 @@ fn reversed[T: ReversibleRange](value: T) -> _StridedRange:
 
 
 fn reversed[
-    T: Copyable & ImplicitlyDestructible
-](ref value: List[T, *_]) -> _ListIter[T, origin_of(value), False]:
+    T: Copyable
+](ref value: List[T, ...]) -> _ListIter[T, origin_of(value), False]:
     """Get a reversed iterator of the input list.
 
     **Note**: iterators are currently non-raising.
@@ -206,7 +206,7 @@ fn reversed[
 
 @always_inline
 fn reversed[
-    T: Copyable & ImplicitlyDestructible
+    T: Copyable
 ](value: Span[T]) -> _SpanIter[T, value.origin, forward=False]:
     """Get a reversed iterator of the input Span.
 

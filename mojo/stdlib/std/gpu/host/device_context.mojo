@@ -478,7 +478,7 @@ struct HostBuffer[dtype: DType](
         )
         return HostBuffer[view_type](new_handle, new_host_ptr)
 
-    fn enqueue_copy_to(self, dst: HostBuffer[Self.dtype, **_]) raises:
+    fn enqueue_copy_to(self, dst: HostBuffer[Self.dtype, ...]) raises:
         """Enqueues an asynchronous copy from this buffer to another host buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -493,7 +493,7 @@ struct HostBuffer[dtype: DType](
         """
         dst.context().enqueue_copy(dst, self)
 
-    fn enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype, **_]) raises:
+    fn enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype, ...]) raises:
         """Enqueues an asynchronous copy from this buffer to a device buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -527,7 +527,7 @@ struct HostBuffer[dtype: DType](
         __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self.context().enqueue_copy(dst_ptr, self)
 
-    fn enqueue_copy_from(self, src: HostBuffer[Self.dtype, **_]) raises:
+    fn enqueue_copy_from(self, src: HostBuffer[Self.dtype, ...]) raises:
         """Enqueues an asynchronous copy to this buffer from another host buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -543,7 +543,7 @@ struct HostBuffer[dtype: DType](
         __comptime_assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src)
 
-    fn enqueue_copy_from(self, src: DeviceBuffer[Self.dtype, **_]) raises:
+    fn enqueue_copy_from(self, src: DeviceBuffer[Self.dtype, ...]) raises:
         """Enqueues an asynchronous copy to this buffer from a device buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -927,7 +927,7 @@ struct DeviceBuffer[dtype: DType](
     ](
         out self: DeviceBuffer[_dtype],
         ctx: DeviceContext,
-        ptr: UnsafePointer[Scalar[_dtype], *_, **_],
+        ptr: UnsafePointer[Scalar[_dtype], ...],
         size: Int,
         *,
         owning: Bool,
@@ -1086,7 +1086,7 @@ struct DeviceBuffer[dtype: DType](
         )
         return DeviceBuffer[view_type](new_handle, new_device_ptr)
 
-    fn enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype, **_]) raises:
+    fn enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype, ...]) raises:
         """Enqueues an asynchronous copy from this buffer to another device buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -1102,7 +1102,7 @@ struct DeviceBuffer[dtype: DType](
         __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         dst.context().enqueue_copy(dst, self)
 
-    fn enqueue_copy_to(self, dst: HostBuffer[Self.dtype, **_]) raises:
+    fn enqueue_copy_to(self, dst: HostBuffer[Self.dtype, ...]) raises:
         """Enqueues an asynchronous copy from this buffer to a host buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -1136,7 +1136,7 @@ struct DeviceBuffer[dtype: DType](
         __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         self.context().enqueue_copy(dst_ptr, self)
 
-    fn enqueue_copy_from(self, src: DeviceBuffer[Self.dtype, **_]) raises:
+    fn enqueue_copy_from(self, src: DeviceBuffer[Self.dtype, ...]) raises:
         """Enqueues an asynchronous copy to this buffer from another device buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -1152,7 +1152,7 @@ struct DeviceBuffer[dtype: DType](
         __comptime_assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src)
 
-    fn enqueue_copy_from(self, src: HostBuffer[Self.dtype, **_]) raises:
+    fn enqueue_copy_from(self, src: HostBuffer[Self.dtype, ...]) raises:
         """Enqueues an asynchronous copy to this buffer from a host buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -2295,7 +2295,7 @@ struct DeviceFunction[
             # Because this closure uses stack allocated ptrs
             # to store the captured values in dense_args_addrs, they need to
             # not go out of the scope before dense_args_addr is being use.
-            var capture_args_start = dense_args_addrs.offset(num_args)
+            var capture_args_start = dense_args_addrs + num_args
             populate(capture_args_start.bitcast[NoneType]())
 
             _checked_call[Self.func](
@@ -2444,7 +2444,7 @@ struct DeviceFunction[
             # Because this closure uses stack allocated ptrs
             # to store the captured values in dense_args_addrs, they need to
             # not go out of the scope before dense_args_addr is being use.
-            var capture_args_start = dense_args_addrs.offset(num_args)
+            var capture_args_start = dense_args_addrs + num_args
             populate(capture_args_start.bitcast[NoneType]())
             _checked_call[Self.func](
                 external_call[
@@ -2524,7 +2524,7 @@ struct DeviceFunction[
                 @parameter
                 if conforms_to(declared_arg_type, DevicePassable):
                     return downcast[
-                        DevicePassable, declared_arg_type
+                        declared_arg_type, DevicePassable
                     ].get_type_name()
                 else:
                     return get_type_name[declared_arg_type]()
@@ -2649,7 +2649,7 @@ struct DeviceFunction[
             # Because this closure uses stack allocated ptrs
             # to store the captured values in dense_args_addrs, they need to
             # not go out of the scope before dense_args_addr is being use.
-            var capture_args_start = dense_args_addrs.offset(num_args)
+            var capture_args_start = dense_args_addrs + num_args
             populate(capture_args_start.bitcast[NoneType]())
             _checked_call[Self.func](
                 external_call[
@@ -2834,9 +2834,7 @@ struct DeviceFunction[
             # Because this closure uses stack allocated ptrs
             # to store the captured values in dense_args_addrs, they need to
             # not go out of the scope before dense_args_addr is being use.
-            var capture_args_start = dense_args_addrs.offset(
-                num_translated_args
-            )
+            var capture_args_start = dense_args_addrs + num_translated_args
             populate(capture_args_start.bitcast[NoneType]())
 
         _checked_call[Self.func](
@@ -4969,7 +4967,7 @@ struct DeviceContext(ImplicitlyCopyable):
         *Ts: DevicePassable,
     ](
         self,
-        f: DeviceFunction[func, declared_arg_types, **_],
+        f: DeviceFunction[func, declared_arg_types, ...],
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -5406,8 +5404,8 @@ struct DeviceContext(ImplicitlyCopyable):
         dtype: DType
     ](
         self,
-        dst_buf: DeviceBuffer[dtype, **_],
-        src_ptr: UnsafePointer[Scalar[dtype], **_],
+        dst_buf: DeviceBuffer[dtype, ...],
+        src_ptr: UnsafePointer[Scalar[dtype], ...],
     ) raises:
         """Enqueues an async copy from the host to the provided device
         buffer. The number of bytes copied is determined by the size of the
@@ -5443,8 +5441,8 @@ struct DeviceContext(ImplicitlyCopyable):
         dtype: DType
     ](
         self,
-        dst_buf: HostBuffer[dtype, **_],
-        src_ptr: UnsafePointer[Scalar[dtype], **_],
+        dst_buf: HostBuffer[dtype, ...],
+        src_ptr: UnsafePointer[Scalar[dtype], ...],
     ) raises:
         """Enqueues an async copy from the host to the provided device
         buffer. The number of bytes copied is determined by the size of the
@@ -5480,8 +5478,8 @@ struct DeviceContext(ImplicitlyCopyable):
         dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[Scalar[dtype], **_],
-        src_buf: DeviceBuffer[dtype, **_],
+        dst_ptr: UnsafePointer[Scalar[dtype], ...],
+        src_buf: DeviceBuffer[dtype, ...],
     ) raises:
         """Enqueues an async copy from the device to the host. The
         number of bytes copied is determined by the size of the device buffer.
@@ -5516,8 +5514,8 @@ struct DeviceContext(ImplicitlyCopyable):
         dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[Scalar[dtype], **_],
-        src_buf: HostBuffer[dtype, **_],
+        dst_ptr: UnsafePointer[Scalar[dtype], ...],
+        src_buf: HostBuffer[dtype, ...],
     ) raises:
         """Enqueues an async copy from the device to the host. The
         number of bytes copied is determined by the size of the device buffer.
@@ -5552,8 +5550,8 @@ struct DeviceContext(ImplicitlyCopyable):
         dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[Scalar[dtype], **_],
-        src_ptr: UnsafePointer[Scalar[dtype], **_],
+        dst_ptr: UnsafePointer[Scalar[dtype], ...],
+        src_ptr: UnsafePointer[Scalar[dtype], ...],
         size: Int,
     ) raises:
         """Enqueues an async copy of `size` elements from a device pointer to
@@ -5592,8 +5590,8 @@ struct DeviceContext(ImplicitlyCopyable):
         dtype: DType
     ](
         self,
-        dst_buf: DeviceBuffer[dtype, **_],
-        src_buf: DeviceBuffer[dtype, **_],
+        dst_buf: DeviceBuffer[dtype, ...],
+        src_buf: DeviceBuffer[dtype, ...],
     ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
@@ -5628,7 +5626,7 @@ struct DeviceContext(ImplicitlyCopyable):
     fn enqueue_copy[
         dtype: DType
     ](
-        self, dst_buf: DeviceBuffer[dtype, **_], src_buf: HostBuffer[dtype, **_]
+        self, dst_buf: DeviceBuffer[dtype, ...], src_buf: HostBuffer[dtype, ...]
     ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
@@ -5663,7 +5661,7 @@ struct DeviceContext(ImplicitlyCopyable):
     fn enqueue_copy[
         dtype: DType
     ](
-        self, dst_buf: HostBuffer[dtype, **_], src_buf: DeviceBuffer[dtype, **_]
+        self, dst_buf: HostBuffer[dtype, ...], src_buf: DeviceBuffer[dtype, ...]
     ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
@@ -5698,7 +5696,7 @@ struct DeviceContext(ImplicitlyCopyable):
     fn enqueue_copy[
         dtype: DType
     ](
-        self, dst_buf: HostBuffer[dtype, **_], src_buf: HostBuffer[dtype, **_]
+        self, dst_buf: HostBuffer[dtype, ...], src_buf: HostBuffer[dtype, ...]
     ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
@@ -5732,7 +5730,7 @@ struct DeviceContext(ImplicitlyCopyable):
     @always_inline
     fn enqueue_memset[
         dtype: DType
-    ](self, dst: DeviceBuffer[dtype, **_], val: Scalar[dtype]) raises:
+    ](self, dst: DeviceBuffer[dtype, ...], val: Scalar[dtype]) raises:
         """Enqueues an async memset operation, setting all of the elements in
         the destination device buffer to the specified value.
 
@@ -5781,7 +5779,7 @@ struct DeviceContext(ImplicitlyCopyable):
 
     fn enqueue_memset[
         dtype: DType
-    ](self, dst: HostBuffer[dtype, **_], val: Scalar[dtype]) raises:
+    ](self, dst: HostBuffer[dtype, ...], val: Scalar[dtype]) raises:
         """Enqueues an async memset operation, setting all of the elements in
         the destination host buffer to the specified value.
 
@@ -5956,10 +5954,10 @@ struct DeviceContext(ImplicitlyCopyable):
         """
         var result = _DeviceStreamPtr()
 
-        # const char *AsyncRT_streamCreate(const DeviceStream **stream, int priority, const DeviceContext *ctx)
+        # const char *AsyncRT_DeviceContext_createStream(const DeviceStream **stream, int priority, const DeviceContext *ctx)
         _checked(
             external_call[
-                "AsyncRT_DeviceContext_streamCreate",
+                "AsyncRT_DeviceContext_createStream",
                 _ConstCharPtr,
             ](UnsafePointer(to=result), c_int(priority), self._handle)
         )

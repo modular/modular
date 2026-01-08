@@ -2,17 +2,20 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_test(
     name = "module_v3",
+    timeout = "long",
     srcs = glob(["**/*.py"]),
     args = [
         "-n",
         "auto",
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],

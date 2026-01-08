@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from collections import Optional
 from math import exp, isclose
 from random import rand, seed
@@ -38,19 +38,19 @@ from utils.index import Index
 def reference_attention_bshd[
     dtype: DType
 ](
-    q_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    k_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    v_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    mask_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    k_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    v_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    mask_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     output_nd: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
 ):
     comptime layout_4d = Layout.row_major[4]()
 
     fn reshape_4d(
-        buf: LayoutTensor[dtype, **_]
+        buf: LayoutTensor[dtype, ...]
     ) -> LayoutTensor[
         dtype, layout_4d, buf.origin, address_space = buf.address_space
     ]:
@@ -62,7 +62,7 @@ def reference_attention_bshd[
         ](buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d))
 
     fn reshape_mask_4d(
-        buf: LayoutTensor[dtype, **_]
+        buf: LayoutTensor[dtype, ...]
     ) -> LayoutTensor[
         dtype, layout_4d, buf.origin, address_space = buf.address_space
     ]:
@@ -170,12 +170,12 @@ def reference_attention_bshd[
 def reference_attention_bshd_with_sinks[
     dtype: DType
 ](
-    q_nd: LayoutTensor[dtype, **_],
-    k_nd: LayoutTensor[dtype, **_],
-    v_nd: LayoutTensor[dtype, **_],
-    mask_nd: LayoutTensor[dtype, **_],
+    q_nd: LayoutTensor[dtype, ...],
+    k_nd: LayoutTensor[dtype, ...],
+    v_nd: LayoutTensor[dtype, ...],
+    mask_nd: LayoutTensor[dtype, ...],
     sink_weights_nd: LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE)],
-    output_nd: LayoutTensor[mut=True, dtype, **_],
+    output_nd: LayoutTensor[mut=True, dtype, ...],
     scale: Float32,
 ):
     """Reference implementation of attention with sink weights."""
@@ -183,7 +183,7 @@ def reference_attention_bshd_with_sinks[
     comptime layout_4d = Layout.row_major[4]()
 
     fn reshape_4d(
-        buf: LayoutTensor[dtype, **_]
+        buf: LayoutTensor[dtype, ...]
     ) -> LayoutTensor[
         dtype, layout_4d, buf.origin, address_space = buf.address_space
     ]:
@@ -195,7 +195,7 @@ def reference_attention_bshd_with_sinks[
         ](buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d))
 
     fn reshape_mask_4d(
-        buf: LayoutTensor[dtype, **_]
+        buf: LayoutTensor[dtype, ...]
     ) -> LayoutTensor[
         dtype, layout_4d, buf.origin, address_space = buf.address_space
     ]:
@@ -382,8 +382,8 @@ struct TestCaseConfig[batch_rank: Int](ImplicitlyCopyable):
 def verify_output[
     dtype: DType, batch_rank: Int
 ](
-    output: LayoutTensor[dtype, **_],
-    ref_output: LayoutTensor[dtype, **_],
+    output: LayoutTensor[dtype, ...],
+    ref_output: LayoutTensor[dtype, ...],
     cfg: TestCaseConfig[batch_rank],
 ) -> None:
     """Compares `output` and `ref_output` elementwise, printing up to 5 mismatches.

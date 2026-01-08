@@ -19,7 +19,7 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
 from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
 from gpu.globals import WARPGROUP_SIZE
@@ -190,7 +190,7 @@ fn naive_grouped_matmul_kernel[
     if elementwise_lambda_fn:
         comptime elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](
-            Index(a_start_row + m, n), accum.cast[c_type]()
+            Index(a_start_row + UInt32(m), n), accum.cast[c_type]()
         )
     else:
         c_by_expert = c.data + a_start_row * N
@@ -1057,8 +1057,8 @@ fn grouped_matmul[
     comptime is_expert_shape_static = b_shape.all_known[
         3
     ]() and a_shape.has_value[1]() and c_shape.has_value[1]()
-    comptime is_sm90_kernel_applicable = ctx.default_device_info is H100 and is_expert_shape_static
-    comptime is_sm100_kernel_applicable = ctx.default_device_info is B200 and is_expert_shape_static
+    comptime is_sm90_kernel_applicable = ctx.default_device_info == H100 and is_expert_shape_static
+    comptime is_sm100_kernel_applicable = ctx.default_device_info == B200 and is_expert_shape_static
     comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and is_expert_shape_static
 
     @parameter

@@ -63,7 +63,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
 from memory import LegacyUnsafePointer, stack_allocation
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils import IndexList
 from utils.index import Index
@@ -267,7 +267,7 @@ fn gemv_kernel_vector[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn gemv_split_k[
     c_type: DType,
@@ -517,9 +517,9 @@ fn gemv_gpu_dispatch[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     kernel_func: GEMVAlgorithm,
-    c: NDBuffer[rank=2, *_, **_],
-    a: NDBuffer[rank=2, *_, **_],
-    b: NDBuffer[rank=2, *_, **_],
+    c: NDBuffer[rank=2, ...],
+    a: NDBuffer[rank=2, ...],
+    b: NDBuffer[rank=2, ...],
     ctx: DeviceContext,
 ) raises:
     var shape = GemmShape.get[transpose_b=False](c, a, b)
@@ -851,9 +851,9 @@ fn gemv_gpu[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[rank=2, *_, **_],
-    a: NDBuffer[rank=2, *_, **_],
-    b: NDBuffer[rank=2, *_, **_],
+    c: NDBuffer[rank=2, ...],
+    a: NDBuffer[rank=2, ...],
+    b: NDBuffer[rank=2, ...],
     ctx: DeviceContext,
 ) raises:
     var shape = GemmShape.get[transpose_b=False](c, a, b)
@@ -879,7 +879,7 @@ fn gemv_gpu[
     if n == 1:
 
         @parameter
-        if a.type is DType.bfloat16:
+        if a.type == DType.bfloat16:
             if k % simd_width == 0:
                 kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
             else:
@@ -890,7 +890,7 @@ fn gemv_gpu[
     elif m == 1 and transpose_b == True:
 
         @parameter
-        if a.type is DType.bfloat16:
+        if a.type == DType.bfloat16:
             if k % simd_width == 0:
                 if ceildiv(n, 2) <= ctx.get_attribute(
                     DeviceAttribute.MAX_GRID_DIM_Y

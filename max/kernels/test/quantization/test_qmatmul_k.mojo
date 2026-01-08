@@ -14,7 +14,7 @@
 from math import ceildiv, isclose
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from random import rand, random_float64
 from sys import size_of
 
@@ -57,7 +57,7 @@ fn random_float16(min: Float64 = 0, max: Float64 = 1) -> Float16:
 
 fn quantize_a_Q8[
     group_size: Int
-](a: UnsafePointer[Float32, **_], a_quant: UnsafePointer[Int8, **_]) -> Float32:
+](a: UnsafePointer[Float32, ...], a_quant: UnsafePointer[Int8, ...]) -> Float32:
     var fp_data = a.load[width=group_size]()
     var max_value = abs(fp_data).reduce_max()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
@@ -74,9 +74,9 @@ fn dot_product_QK_K[
     group_size: Int,
     b_zero_point: Int32 = 0,
 ](
-    a_quant_data: UnsafePointer[Int8, **_],
-    b_quant_data: UnsafePointer[UInt8, **_],
-    b_scales: UnsafePointer[Scalar[b_scales_type], **_],
+    a_quant_data: UnsafePointer[Int8, ...],
+    b_quant_data: UnsafePointer[UInt8, ...],
+    b_scales: UnsafePointer[Scalar[b_scales_type], ...],
 ) -> Int32:
     var sum: Int32 = 0
     for i in range(_block_QK_K.quantized_k):

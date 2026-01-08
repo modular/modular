@@ -41,7 +41,7 @@ from gpu.grid_controls import PDLLevel
 from internal_utils import InitializationType, arg_parse
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal, assert_true
 from algorithm import sync_parallelize
 
@@ -52,13 +52,13 @@ from utils.index import IndexList, StaticTuple
 fn _pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
     # Returns (rtol, atol) modeled after PyTorch defaults.
     @parameter
-    if dtype is DType.float16:
+    if dtype == DType.float16:
         return (1e-3, 1e-5)
-    elif dtype is DType.bfloat16:
+    elif dtype == DType.bfloat16:
         return (1.6e-2, 1e-5)
-    elif dtype is DType.float32:
+    elif dtype == DType.float32:
         return (1.3e-6, 1e-5)
-    elif dtype is DType.float64:
+    elif dtype == DType.float64:
         return (1e-7, 1e-7)
     else:
         return (0.0, 0.0)
@@ -110,7 +110,6 @@ fn bench_reduce[
     cache_busting: Bool,
     use_vendor_ccl: Bool = False,
 ](
-    mut m: Bench,
     list_of_ctx: List[DeviceContext],
     num_bytes: Int,
     max_num_blocks: Optional[Int],
@@ -119,7 +118,9 @@ fn bench_reduce[
     __comptime_assert rank == 1, "this test code currently assumes rank 1"
 
     var name = String(
-        _get_test_str[dtype, use_multimem, use_vendor_ccl](ngpus, num_bytes)
+        _get_test_str[dtype, use_multimem, use_vendor_ccl, cache_busting](
+            ngpus, num_bytes
+        )
     )
 
     # Create device buffers for all GPUs
@@ -392,10 +393,11 @@ fn bench_reduce[
 
 
 fn _get_test_str[
-    dtype: DType, use_multimem: Bool, use_vendorccl: Bool
+    dtype: DType, use_multimem: Bool, use_vendorccl: Bool, cache_busting: Bool
 ](ngpus: Int, num_bytes: Int) -> String:
     var multimem_tag = "-multimem" if use_multimem else ""
     var vendorccl_tag = "-vendorccl" if use_vendorccl else ""
+    var cache_tag = "-cachebust" if cache_busting else ""
     return String(
         "allreduce-",
         dtype,
@@ -403,6 +405,7 @@ fn _get_test_str[
         ngpus,
         multimem_tag,
         vendorccl_tag,
+        cache_tag,
         "-",
         _human_memory(num_bytes),
     )
@@ -441,8 +444,6 @@ def main():
         print("P2P not enabled, skipping benchmark.")
         return
 
-    var m = Bench()
-
     bench_reduce[
         dtype=dtype,
         rank=rank,
@@ -451,4 +452,4 @@ def main():
         use_quickreduce=use_quickreduce,
         cache_busting=cache_busting,
         use_vendor_ccl=use_vendor_ccl,
-    ](m, ctx, num_bytes, max_num_blocks)
+    ](ctx, num_bytes, max_num_blocks)

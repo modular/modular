@@ -2157,7 +2157,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
     b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
-    comptime size_factor = 2 if a_type is DType.float32 else 1
+    comptime size_factor = 2 if a_type == DType.float32 else 1
     comptime mma_k = 16 // size_factor
     comptime BK = 64 // size_factor
 
@@ -2445,9 +2445,18 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 return DISPATCH_HIT
 
     @parameter
+    if a_is_bfloat16_or_float32 and (static_N == 4096 and static_K == 1536):
+        if m > 64:
+            comptime nk_idx_list = miscellaneous_table.query_index[rule_eq_nk]()
+            if (
+                _search[miscellaneous_table, domain=nk_idx_list]()
+                == DISPATCH_HIT
+            ):
+                return DISPATCH_HIT
+
+    @parameter
     if a_is_bfloat16_or_float32 and (
         (static_N == 1536 and static_K == 4096)
-        or (static_N == 4096 and static_K == 1536)
         or (static_N == 1536 and static_K == 4608)
     ):
         comptime nk_idx_list = miscellaneous_table.query_index[rule_eq_nk]()
@@ -2841,104 +2850,79 @@ fn matmul_dispatch_sm90_bf16_fp32[
     # Fallback path with vectorized output and cp.async.ca load if K
     # is not multiple of 16B.
     @parameter
-    if a_type is DType.bfloat16 and BN != -1:
-        if m <= 128:
-            comptime default_bf16_config = MatmulConfig[
-                a_type, b_type, c_type, transpose_b
-            ](
-                block_tile_shape=Index(64, BN, BK),
-                mma_shape=Index(64, BN, mma_k),
-                cluster_shape=Index(1, 1, 1),
-                num_pipeline_stages=4,
-                num_consumer=1,
-                partitioned_multicast=False,
-                pdl_level=pdl_level,
-            )
-            warp_specialize_gemm_with_multicasting[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                config=default_bf16_config,
-                schedule = MatmulSchedule.NONE,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
-                ctx,
-            )
-            return DISPATCH_HIT
-        else:
+    if a_type == DType.bfloat16 and BN != -1:
 
+        @parameter
+        fn get_k_groups[N: Int]() -> OptionalReg[UInt]:
             @parameter
-            fn get_k_groups[N: Int]() -> OptionalReg[UInt]:
-                @parameter
-                if N == 1536:
-                    return None
-                else:
-                    return UInt(1)
+            if N == 1536:
+                return None
+            else:
+                return UInt(1)
 
+        @parameter
+        fn get_consumer_groups[N: Int]() -> OptionalReg[Int]:
             @parameter
-            fn get_consumer_groups[N: Int]() -> OptionalReg[Int]:
-                @parameter
-                if N == 1536:
-                    return 1
-                else:
-                    return None
+            if N == 1536:
+                return 1
+            else:
+                return None
 
-            comptime k_groups = get_k_groups[static_N]()
-            comptime consumer_groups = get_consumer_groups[static_N]()
+        comptime k_groups = get_k_groups[static_N]()
+        comptime consumer_groups = get_consumer_groups[static_N]()
 
-            var runtime_config = MatmulConfigSM90[
-                a_type, b_type, c_type, transpose_b
-            ](
-                m,
-                static_N,
-                static_K,
-                num_k_partitions=1,
-                partitioned_multicast=False,
-                pdl_level=pdl_level,
-                k_groups=k_groups,
-                consumer_groups=consumer_groups,
-            )
+        var runtime_config = MatmulConfigSM90[
+            a_type, b_type, c_type, transpose_b
+        ](
+            m,
+            static_N,
+            static_K,
+            num_k_partitions=1,
+            partitioned_multicast=False,
+            pdl_level=pdl_level,
+            k_groups=k_groups,
+            consumer_groups=consumer_groups,
+        )
 
-            # Build compile-time configs (using same parameters)
-            comptime configs = build_configs[
-                a_type,
-                b_type,
-                c_type,
-                static_N,
-                static_K,
-                transpose_b,
-                1,
-                False,
-                pdl_level,
-                k_groups=k_groups,
-                consumer_groups=consumer_groups,
-            ]()
+        # Build compile-time configs (using same parameters)
+        comptime configs = build_configs[
+            a_type,
+            b_type,
+            c_type,
+            static_N,
+            static_K,
+            transpose_b,
+            1,
+            False,
+            pdl_level,
+            k_groups=k_groups,
+            consumer_groups=consumer_groups,
+        ]()
 
-            @parameter
-            for config in configs:
-                # Compare SM90 configs directly
-                if runtime_config == config:
-                    # Only convert to base config after match is found
-                    comptime base_config = config.to_base_config()
-                    warp_specialize_gemm_with_multicasting[
-                        transpose_b=transpose_b,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                        config=base_config,
-                        schedule = MatmulSchedule.NONE,
-                    ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                        rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
-                        ctx,
-                    )
-                    return DISPATCH_HIT
+        @parameter
+        for config in configs:
+            # Compare SM90 configs directly
+            if runtime_config == config:
+                # Only convert to base config after match is found
+                comptime base_config = config.to_base_config()
+
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=base_config,
+                    schedule = MatmulSchedule.NONE,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+                return DISPATCH_HIT
 
     # Fallback path, will use scalar 2B output and lots of OOB check.
     @parameter
-    if a_type is DType.bfloat16:
+    if a_type == DType.bfloat16:
         comptime BN = 256
         comptime default_bf16_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b

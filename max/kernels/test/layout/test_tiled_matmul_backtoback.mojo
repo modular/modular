@@ -24,7 +24,7 @@ from layout.layout import expand_modes_alike, flatten
 from layout.layout_tensor import LayoutTensor
 from memory import LegacyUnsafePointer, stack_allocation
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_false
 
 from utils import StaticTuple
@@ -127,7 +127,7 @@ fn matmul_ukern[
         # to remain in the l1 cache, but freely evict `B`.
         # Repeatedly re-touching the cachelines of `A` helps us achieve this.
         var Atmp: UnsafePointer[Scalar[elt]] = Ao
-        Ao = Ao.offset(1)
+        Ao = Ao + 1
         for _ in range(kf):
 
             @parameter
@@ -151,8 +151,8 @@ fn matmul_ukern[
                         acc[n + m * nr] = fma(
                             Abroadcast, Bloads[n], acc[n + m * nr]
                         )
-                Atmp = Atmp.offset(mr * Astride)
-                Bo = Bo.offset(nr * width)
+                Atmp = Atmp + mr * Astride
+                Bo = Bo + nr * width
     if inc:
         # Note, `C` would have spilled from the L1 cache by the time
         # we load it again had we loaded before the reduction loop.
@@ -306,9 +306,9 @@ fn matmul[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pck, pak, pbk, kc != 0
                         )
-                        pbk = pbk.offset(WNr * Kc)
-                        pck = pck.offset(Mr * WNr)
-                    pak = pak.offset(Mr * Kc)
+                        pbk = pbk + WNr * Kc
+                        pck = pck + Mr * WNr
+                    pak = pak + Mr * Kc
                 pb = pbk
             pc = pck
         pa = pak
@@ -324,7 +324,7 @@ fn alloc_tensor[
 
 fn alloc_tensor[
     elt: DType, layout: Layout
-](rtlayout: RuntimeLayout[layout, **_]) -> LayoutTensor[
+](rtlayout: RuntimeLayout[layout, ...]) -> LayoutTensor[
     elt, layout, MutAnyOrigin
 ]:
     return LayoutTensor[elt, layout, MutAnyOrigin](
@@ -718,9 +718,9 @@ fn matmulb2b[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pabk, pak, pbk, kc != 0
                         )
-                        pbk = pbk.offset(WNr * Kc)
-                        pabk = pabk.offset(Mr * WNr)
-                    pak = pak.offset(Mr * Kc)
+                        pbk = pbk + WNr * Kc
+                        pabk = pabk + Mr * WNr
+                    pak = pak + Mr * Kc
                 pb = pbk
             pdk = pd
             for _ in range(
@@ -775,9 +775,9 @@ fn matmulb2b[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pdk, pabk, pck, lc != 0
                         )
-                        pck = pck.offset(WNr * Kc)
-                        pdk = pdk.offset(Mr * WNr)
-                    pabk = pabk.offset(Mr * Kc)
+                        pck = pck + WNr * Kc
+                        pdk = pdk + Mr * WNr
+                    pabk = pabk + Mr * Kc
                 pc = pck
         pa = pak
         pd = pdk
@@ -915,7 +915,9 @@ fn bench_b2b[
 
     var flops = 2e-9 * (M * K * L + M * L * N)
     if do_benchmark:
-        var secs_tile = benchmark.run[test_tile_fn](max_runtime_secs=1.0).mean()
+        var secs_tile = benchmark.run[func3=test_tile_fn](
+            max_runtime_secs=1.0
+        ).mean()
         print("GFLOPS Tile: ", flops / secs_tile)
     else:
         test_tile_fn()
@@ -930,7 +932,7 @@ fn bench_b2b[
         )
 
     if do_benchmark:
-        var secs_tile_b2b = benchmark.run[test_tile_b2b_fn](
+        var secs_tile_b2b = benchmark.run[func3=test_tile_b2b_fn](
             max_runtime_secs=1.0
         ).mean()
         print("GFLOPS B2B:  ", flops / secs_tile_b2b)

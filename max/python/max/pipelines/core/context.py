@@ -33,6 +33,7 @@ from max.interfaces import (
     SamplingParams,
     TextGenerationContext,
     TextGenerationOutput,
+    TokenBuffer,
     TokenSlice,
     VLMTextGenerationContext,
 )
@@ -61,20 +62,13 @@ class TextContext:
         min_tokens: Minimum number of new tokens to generate.
         target_endpoint: Optional target endpoint identifier for routing requests
         _status: Current generation status (active, finished, etc)
-        _size: Current allocated size of token array
-        _start_idx: Start index of current generation window
-        _active_idx: Current position in token sequence
-        _end_idx: End index of valid tokens
-        _completion_start_idx: Start index of completion tokens
-        _completion_end_idx: End index of completion tokens
-        _prompt_len: Length of original prompt
         _log_probabilities_data: Token log probabilities data
         _is_initial_prompt: Whether this is the initial prompt encoding
         _draft_offset: Offset for draft decoding
     """
 
     max_length: int
-    tokens: TokenSlice
+    tokens: TokenBuffer
     request_id: RequestID = field(default_factory=RequestID)
     eos_token_ids: set[int] = field(default_factory=set)
     eos_sequences: list[list[int]] = field(default_factory=list)
@@ -86,13 +80,6 @@ class TextContext:
     model_name: str = field(default="")
     _matcher: Any | None = field(default=None)
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
-    _size: int = field(default=-1)
-    _start_idx: int = field(default=0)
-    _active_idx: int = field(default=-1)
-    _end_idx: int = field(default=-1)
-    _completion_start_idx: int = field(default=-1)
-    _completion_end_idx: int = field(default=-1)
-    _prompt_len: int = field(default=-1)
     _log_probabilities_data: dict[int, LogProbabilities] = field(
         default_factory=dict
     )
@@ -106,47 +93,11 @@ class TextContext:
         """Initialize context state after deserialization.
 
         This method is called each time the model is deserialized from msgspec.
-        We only update fields that have their default initialization values (-1),
-        preserving any explicitly set values during deserialization.
-
-        The method:
-        1. Validates token array dimensionality
-        2. Initializes size based on token length if not already set
-        3. Sets active/end indices to token length if not already set
-        4. Sets completion indices to match active index if not already set
-        5. Resizes token array to match size if needed
-
-        Raises:
-            ValueError: If tokens array is not one-dimensional
         """
-        if self.tokens.ndim != 1:
+
+        if self.min_tokens + self.tokens.prompt_length > self.max_length:
             raise ValueError(
-                f"tokens must be one dimensional array: got shape '{self.tokens.shape}'"
-            )
-
-        if self._size == -1:
-            self._size = int(
-                np.ceil(len(self.tokens) / CHUNK_SIZE) * CHUNK_SIZE
-            )
-
-        if self._active_idx == -1:
-            self._active_idx = len(self.tokens)
-
-        if self._end_idx == -1:
-            self._end_idx = self._active_idx
-
-        if self._completion_start_idx == -1:
-            self._completion_start_idx = self._active_idx
-
-        if self._completion_end_idx == -1:
-            self._completion_end_idx = self._active_idx
-
-        if self._prompt_len == -1:
-            self._prompt_len = self._active_idx
-
-        if self.min_tokens + self._prompt_len > self.max_length:
-            raise ValueError(
-                f"min_tokens ({self.min_tokens}) + prompt_len ({self._prompt_len}) must be less than or equal to max_length ({self.max_length})"
+                f"min_tokens ({self.min_tokens}) + prompt_len ({self.tokens.prompt_length}) must be less than or equal to max_length ({self.max_length})"
             )
 
         if self.target_endpoint is not None:
@@ -162,19 +113,9 @@ class TextContext:
                     f"target_endpoint must contain a port if using tcp: {self.target_endpoint}"
                 )
 
-        # Ensure the array is writable even when copy=False
-        # This is necessary because frombuffer creates read-only arrays
-        if not self.tokens.flags.writeable:
-            self.tokens = self.tokens.copy()
-
-        # Resize Data Up
-        # Ensure the tokens array is at least self._size
-        if self._end_idx < self._size:
-            self.tokens = np.resize(self.tokens, self._size)
-
     @property
     def all_tokens(self) -> TokenSlice:
-        return self.tokens[: self._end_idx]
+        return self.tokens.all
 
     @property
     def is_done(self) -> bool:
@@ -182,11 +123,11 @@ class TextContext:
 
     @property
     def processed_length(self) -> int:
-        return self._start_idx + self._draft_offset
+        return self.tokens.processed_length
 
     @property
     def current_position(self) -> int:
-        return self._active_idx
+        return self.tokens.current_position
 
     def skip_processing(self, n: int) -> None:
         """Advance the processing window start by n.
@@ -196,7 +137,7 @@ class TextContext:
         Args:
             n (int): The number of tokens to skip.
         """
-        self._bump_token_indices(start_idx=n)
+        self.tokens.skip_processing(n)
 
     def rewind_processing(self, n: int) -> None:
         """Rewind the processing window start by n.
@@ -205,7 +146,7 @@ class TextContext:
         Args:
             n (int): The number of tokens to rewind.
         """
-        self._bump_token_indices(start_idx=-n)
+        self.tokens.rewind_processing(n)
 
     def chunk(self, chunk_size: int) -> None:
         """Optionally chunk the active token window to enforce a maximum size.
@@ -224,18 +165,7 @@ class TextContext:
                 current number of active tokens (``active_length``).
 
         """
-
-        if chunk_size < 0 or chunk_size >= self.active_length:
-            raise ValueError(
-                f"chunk size must be non-negative and less than active_length: got {chunk_size}"
-            )
-
-        # Calculate how much to bump the token indices by
-        # If chunk_size = 10, and available_active_tokens = 30, we have to move back the current_position
-        # by 20.
-        self._bump_token_indices(
-            current_position=chunk_size - self.active_length
-        )
+        self.tokens.chunk(chunk_size)
 
     @property
     def min_tokens(self) -> int:
@@ -243,7 +173,7 @@ class TextContext:
         return self.sampling_params.min_new_tokens
 
     def apply_processing_offset(self, offset: int) -> None:
-        self._draft_offset = offset
+        self.tokens.apply_processing_offset(offset)
 
     def get_min_token_logit_mask(
         self, num_steps: int
@@ -259,10 +189,13 @@ class TextContext:
         """
 
         ret_list: list[npt.NDArray[np.int32]] = []
-        start_range = self._prompt_len
-        end_range = self._prompt_len + self.min_tokens
+        start_range = self.tokens.prompt_length
+        end_range = self.tokens.prompt_length + self.min_tokens
 
-        for i in range(self._active_idx, self._active_idx + num_steps):
+        for i in range(
+            self.tokens.current_position,
+            self.tokens.current_position + num_steps,
+        ):
             if i < start_range or i >= end_range:
                 ret_list.append(np.zeros((0, 2), dtype=np.int32))
                 continue
@@ -285,7 +218,7 @@ class TextContext:
     @property
     def current_length(self) -> int:
         """The current length of the sequence, including completed and active tokens."""
-        return self._end_idx
+        return len(self.tokens)
 
     @property
     def active_length(self) -> int:
@@ -294,7 +227,7 @@ class TextContext:
         This will be the prompt size for context encoding, and simply 1 (or more) for
         token generation.
         """
-        return self._active_idx - self._start_idx
+        return self.tokens.active_length
 
     def to_generation_output(self) -> TextGenerationOutput:
         """Get completion tokens that are ready to be returned to the user.
@@ -306,77 +239,45 @@ class TextContext:
             TextGenerationOutput: The completion tokens and their associated
             log probabilities, if available.
         """
-        tokens: list[int] = []
+
+        # Return early, if we have no outstanding generated tokens
+        if not self.tokens.has_outstanding_generated_tokens:
+            return TextGenerationOutput(
+                request_id=self.request_id,
+                tokens=[],
+                log_probabilities=None,
+                final_status=self.status,
+            )
+
+        # Retrieve Log Probabilities
         log_probabilities: list[LogProbabilities] | None = None
-        for token_idx in range(
-            self._completion_start_idx, self._completion_end_idx
-        ):
-            tokens.append(int(self.tokens[token_idx]))
+        element_ids = range(
+            self.tokens._completion_range.start,
+            self.tokens._completion_range.end,
+        )
+        for token_idx in element_ids:
             if token_idx in self._log_probabilities_data:
                 if log_probabilities is None:
                     log_probabilities = []
-                # We are using a pop here instead of a get, as we should not have
-                # to maintain this data once it is returned. The expectation is that
-                # this method never returns the same tokens more than once.
-                log_probability = self._log_probabilities_data.pop(token_idx)
-                log_probabilities.append(log_probability)
 
-        self._completion_start_idx = self._completion_end_idx
+                log_probabilities.append(
+                    self._log_probabilities_data.pop(token_idx)
+                )
+
+        # Consume Generated Tokens
+        if len(element_ids) > 0:
+            generated_tokens: list[int] = [
+                int(x) for x in self.tokens.consume_recently_generated_tokens()
+            ]
+        else:
+            generated_ids: list[int] = []
 
         return TextGenerationOutput(
             request_id=self.request_id,
-            tokens=tokens,
+            tokens=generated_tokens,
             log_probabilities=log_probabilities,
             final_status=self.status,
         )
-
-    def _bump_token_indices(
-        self,
-        start_idx: int = 0,
-        current_position: int = 0,
-        end_idx: int = 0,
-    ) -> None:
-        """Update the start_idx, current_position and end_idx without manipulating the token array."""
-        new_start_idx = start_idx + self._start_idx
-        new_active_idx = current_position + self._active_idx
-        new_end_idx = end_idx + self._end_idx
-
-        self._set_token_indices(
-            start_idx=new_start_idx,
-            current_position=new_active_idx,
-            end_idx=new_end_idx,
-        )
-
-    def _set_token_indices(
-        self,
-        start_idx: int | None = None,
-        current_position: int | None = None,
-        end_idx: int | None = None,
-    ) -> None:
-        """Set the token indices without manipulating the token array."""
-        new_start_idx = start_idx if start_idx is not None else self._start_idx
-        new_active_idx = (
-            current_position
-            if current_position is not None
-            else self._active_idx
-        )
-        new_end_idx = end_idx if end_idx is not None else self._end_idx
-
-        if new_start_idx >= new_active_idx:
-            raise ValueError(f"""
-            current_position must always be greater than start_idx, unable to bump token indices
-            as new start_idx ({new_start_idx}) is greater than new current_position ({new_active_idx}).
-            """)
-
-        if new_active_idx > new_end_idx:
-            raise ValueError(f"""
-            end_idx must always be greater than current_position, unable to bump token indices
-            as new current_position ({new_active_idx}) is greater than new end_idx ({new_end_idx}).
-            """)
-
-        self._start_idx = new_start_idx
-        self._active_idx = new_active_idx
-        self._end_idx = new_end_idx
 
     @property
     def next_tokens(self) -> TokenSlice:
@@ -385,7 +286,7 @@ class TextContext:
         Returns:
             np.ndarray: Array of tokens that have been generated but not yet processed.
         """
-        return self.tokens[self._start_idx : self._active_idx]
+        return self.tokens.active
 
     @property
     def prompt_tokens(self) -> TokenSlice:
@@ -394,7 +295,7 @@ class TextContext:
         Returns:
             np.ndarray: Array of tokens from the initial prompt.
         """
-        return self.tokens[: self._prompt_len]
+        return self.tokens.prompt
 
     @property
     def generated_tokens(self) -> TokenSlice:
@@ -403,7 +304,7 @@ class TextContext:
         Returns:
             np.ndarray: Array of generated tokens from prompt_len to end_idx.
         """
-        return self.tokens[self._prompt_len : self._end_idx]
+        return self.tokens.generated
 
     def get_last_generated_token(self) -> int:
         """Returns the most recently generated token. If no tokens have been generated, raises an error.
@@ -413,20 +314,10 @@ class TextContext:
         Returns:
             int: The most recently generated token.
         """
-        if self._end_idx == self._prompt_len:
+        if len(self.tokens.generated) == 0:
             raise ValueError("No tokens have been generated")
-        # The `int(...)` is needed or else the returned value is a numpy.int64
-        # which is not serializable by msgspec!
-        return int(self.tokens[self._end_idx - 1])
 
-    def _upsize(self) -> None:
-        """Increases the size of the token array if needed.
-
-        Resizes the token array by CHUNK_SIZE if end_idx has reached the current size.
-        """
-        if self._end_idx >= self._size:
-            self._size += CHUNK_SIZE
-            self.tokens = np.resize(self.tokens, self._size)
+        return int(self.tokens.generated[-1])
 
     def _is_eos(self, new_token: int) -> bool:
         """
@@ -443,7 +334,7 @@ class TextContext:
             return False
 
         for eos in self.eos_sequences:
-            if self._end_idx - self._prompt_len < len(eos):
+            if len(self.tokens.generated) < len(eos):
                 continue
 
             comp_tokens = self.generated_tokens
@@ -460,35 +351,24 @@ class TextContext:
         log_probabilities: LogProbabilities | None = None,
     ) -> None:
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
-        # This is required for chunked prefill.
-        # The scheduler will update the current_position via _bump_token_indices and pass through the model
-        # To accommodate this, if we identify that the current_position is not at the end of the completed
-        # token array, we only update the start_idx and current_position, leaving the token array alone.
-        if self._active_idx < self._end_idx:
-            self._start_idx = self._active_idx
-            self._active_idx = self._end_idx
+
+        # Update the token buffer
+        if self.tokens.actively_chunked:
+            self.tokens.advance_chunk()
             return
 
-        # Update tokens and log probabilities data
-        self._upsize()
-        self.tokens[self._active_idx] = new_token
+        # Update the log probabilities data
         if log_probabilities:
-            self._log_probabilities_data[self._active_idx] = log_probabilities
+            self._log_probabilities_data[self.tokens.current_position] = (
+                log_probabilities
+            )
 
-        # Bump Indices
-        self._start_idx = self._active_idx
-        self._active_idx += 1
-        self._end_idx += 1
+        self.tokens.advance_with_token(new_token)
 
         if self._is_eos(new_token):
             self.status = GenerationStatus.END_OF_SEQUENCE
         elif self.current_position >= self.max_length:
             self.status = GenerationStatus.MAXIMUM_LENGTH
-            # We must return the last token that fits in max length.
-            self._completion_end_idx += 1
-
-        if self.status == GenerationStatus.ACTIVE:
-            self._completion_end_idx += 1
 
         # Accept the token, and move the FSM for constrained decoding forward.
         if self.matcher:
@@ -498,20 +378,20 @@ class TextContext:
 
     def jump_ahead(self, new_token: int) -> None:
         """Updates the token array, while ensuring the new token is returned to the user."""
-        self._upsize()
 
-        # Update tokens
-        self.tokens[self._active_idx] = new_token
+        # Update the token buffer
+        if self.tokens.actively_chunked:
+            self.tokens.advance_chunk()
+            return
 
-        # Bump Indices
-        self._active_idx += 1
-        self._end_idx += 1
+        self.tokens.advance_with_token(
+            new_token, mark_previous_as_processed=False
+        )
 
         if self._is_eos(new_token):
             self.status = GenerationStatus.END_OF_SEQUENCE
-
-        if self.status == GenerationStatus.ACTIVE:
-            self._completion_end_idx += 1
+        elif self.current_position >= self.max_length:
+            self.status = GenerationStatus.MAXIMUM_LENGTH
 
         # Accept the token, and move the FSM for constrained decoding forward.
         if self.matcher:
@@ -521,9 +401,7 @@ class TextContext:
 
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
-        self._start_idx = 0
-        self._prompt_len = self._active_idx
-
+        self.tokens.reset_as_new_prompt()
         self._is_initial_prompt = True
 
     def compute_num_available_steps(
@@ -543,7 +421,7 @@ class TextContext:
         Returns:
             bool: True if the context needs CE, False otherwise.
         """
-        return self._start_idx < self._prompt_len
+        return self.tokens.generated_length == 0
 
     @property
     def is_initial_prompt(self) -> bool:
@@ -610,7 +488,7 @@ class TextAndVisionContext(TextContext):
                     raise ValueError("Images must be non-overlapping")
 
         for img in self.images:
-            if self._end_idx < img.end_idx:
+            if len(self.tokens) < img.end_idx:
                 raise ValueError(
                     "Images must be before the end of the token array"
                 )
@@ -673,49 +551,15 @@ class TextAndVisionContext(TextContext):
             raise ValueError(
                 f"It is invalid for the current_position ({self.current_position}) to bisect an image ({img})."
             )
-        if self.current_position != self._end_idx:
-            raise ValueError(
-                f"It is invalid for the current_position ({self.current_position}) to not be equal to the end_idx ({self._end_idx}) for VLM as chunked prefill is not supported."
-            )
-
-    def _bump_token_indices(
-        self,
-        start_idx: int = 0,
-        current_position: int = 0,
-        end_idx: int = 0,
-    ) -> None:
-        self._validate_state()
-        super()._bump_token_indices(
-            start_idx=start_idx,
-            current_position=current_position,
-            end_idx=end_idx,
-        )
-        self._validate_state()
-
-    def _set_token_indices(
-        self,
-        start_idx: int | None = None,
-        current_position: int | None = None,
-        end_idx: int | None = None,
-    ) -> None:
-        self._validate_state()
-        super()._set_token_indices(
-            start_idx=start_idx,
-            current_position=current_position,
-            end_idx=end_idx,
-        )
-        self._validate_state()
 
     def chunk(self, chunk_size: int) -> None:
-        super().chunk(chunk_size)
-        self._validate_state()
+        raise ValueError("Chunking is not supported for VLM.")
 
     def update(
         self,
         new_token: int,
         log_probabilities: LogProbabilities | None = None,
     ) -> None:
-        self._validate_state()
         super().update(new_token=new_token, log_probabilities=log_probabilities)
         self._validate_state()
 
@@ -783,10 +627,6 @@ class TTSContext(TextContext):
 
     def __post_init__(self) -> None:
         """Initialize TTSContext state after deserialization or construction.
-
-        We must run the base TextContext.__post_init__ to initialize token indices
-        (e.g., _active_idx, _end_idx, _prompt_len) and ensure the text `tokens`
-        buffer is correctly sized and writeable.
 
         In addition, we ensure that the speech token buffer `_speech_tokens` is
         writeable, copying only when necessary (e.g., after serialization).
@@ -867,7 +707,7 @@ if TYPE_CHECKING:
         return TextContext(
             request_id=RequestID(),
             max_length=5,
-            tokens=np.array([], dtype=np.int32),
+            tokens=TokenBuffer(np.array([0], dtype=np.int64)),
             eos_token_ids=set(),
         )
 
@@ -875,7 +715,7 @@ if TYPE_CHECKING:
         return TextAndVisionContext(
             request_id=RequestID(),
             max_length=5,
-            tokens=np.array([], dtype=np.int32),
+            tokens=TokenBuffer(np.array([0], dtype=np.int64)),
             eos_token_ids=set(),
             vision_token_ids=[],
             images=[],
@@ -897,16 +737,30 @@ def reserve_token_space_for_batch(
     Yields:
         None
     """
-    saved_indices: dict[RequestID, tuple[int, int]] = {
-        ctx.request_id: (ctx._active_idx, ctx._end_idx) for ctx in batch
-    }
-    try:
-        for ctx in batch:
-            ctx._active_idx += num_tokens
-            ctx._end_idx += num_tokens
+    if num_tokens == 0:
         yield
 
+    saved_state: dict[RequestID, tuple[int, int]] = {
+        ctx.request_id: (
+            ctx.tokens._processing_range.end,
+            ctx.tokens._current_length,
+        )
+        for ctx in batch
+    }
+
+    try:
+        for ctx in batch:
+            ctx.tokens._processing_range.bump_end(num_tokens)
+
+            new_length = ctx.tokens._current_length + num_tokens
+            if new_length < 0:
+                raise ValueError(
+                    f"Logical length {ctx.tokens._current_length} + num_tokens {num_tokens} must be >= 0"
+                )
+            ctx.tokens._current_length = new_length
+        yield
     finally:
         for ctx in batch:
-            ctx._active_idx = saved_indices[ctx.request_id][0]
-            ctx._end_idx = saved_indices[ctx.request_id][1]
+            proc_end, cur_len = saved_state[ctx.request_id]
+            ctx.tokens._processing_range.end = proc_end
+            ctx.tokens._current_length = cur_len

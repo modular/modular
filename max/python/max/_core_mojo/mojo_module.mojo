@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import abort
 from sys import size_of
 
@@ -89,7 +89,7 @@ fn _mojo_block_hasher[
     var num_bytes = block_size * size_of[dtype]()
     var hash_ptr_base = py_array_object_ptr[].data
     for block_idx in range(num_hashes):
-        var hash_ptr_ints = hash_ptr_base.offset(block_idx * block_size)
+        var hash_ptr_ints = hash_ptr_base + block_idx * block_size
         var hash_ptr_bytes = hash_ptr_ints.bitcast[Byte]()
         var token_hash = hash(hash_ptr_bytes, num_bytes)
         var pair_to_hash = SIMD[DType.uint64, 2](prev_hash, token_hash)
@@ -112,7 +112,7 @@ fn mojo_block_hasher(
 ) raises -> PythonObject:
     # Parse np array tokens input
     var py_array_object_ptr = LegacyUnsafePointer[
-        PyArrayObject[DType.int64], **_
+        PyArrayObject[DType.int64], ...
     ](unchecked_downcast_value=py_array_object)
 
     # Parse other arguments

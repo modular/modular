@@ -87,6 +87,9 @@ comptime c_float = Float32
 comptime c_double = Float64
 """C `double` type."""
 
+comptime c_pid_t = Int
+"""C `pid_t` type."""
+
 comptime MAX_PATH = _get_max_path()
 """Maximum path length for the current platform."""
 
@@ -687,7 +690,7 @@ struct _DLHandle(Boolable, Copyable):
 
 @always_inline
 fn _get_dylib_function[
-    dylib_global: _Global[StorageType=OwnedDLHandle, *_, **_],
+    dylib_global: _Global[StorageType=OwnedDLHandle, ...],
     func_name: StaticString,
     result_type: AnyTrivialRegType,
 ]() raises -> result_type:

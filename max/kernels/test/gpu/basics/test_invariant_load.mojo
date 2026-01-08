@@ -17,7 +17,7 @@ from gpu.intrinsics import ldg
 from layout import Layout, LayoutTensor
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_true
 
 

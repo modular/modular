@@ -585,7 +585,7 @@ struct VariadicListMem[
                 ParentConformsTo="ImplicitlyDestructible",
             ]()
             comptime TDestructible = downcast[
-                ImplicitlyDestructible, Self.element_type
+                Self.element_type, ImplicitlyDestructible
             ]
 
             for i in reversed(range(len(self))):

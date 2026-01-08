@@ -14,7 +14,7 @@
 from math import align_down, ceildiv, exp, rsqrt
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys.info import align_of, simd_width_of, size_of
 
 import gpu.warp as warp
@@ -431,7 +431,7 @@ fn layer_norm_gpu_block[
 
 fn layer_norm_reshape[
     rank: Int, //, output_rank: Int
-](shape: IndexList[rank, **_],) -> IndexList[output_rank]:
+](shape: IndexList[rank, ...],) -> IndexList[output_rank]:
     @parameter
     if rank == output_rank:
         return rebind[IndexList[output_rank]](shape)
@@ -455,8 +455,8 @@ fn layer_norm_gpu[
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
 ](
-    shape: IndexList[rank, **_],
-    beta: LayoutTensor[dtype, **_],
+    shape: IndexList[rank, ...],
+    beta: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     *,
     ctx: DeviceContext,
@@ -586,7 +586,7 @@ fn layer_norm_cpu[
 ](
     num_rows: Int,
     num_cols: Int,
-    beta: LayoutTensor[dtype, **_],
+    beta: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
 ) raises:
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
@@ -681,7 +681,7 @@ fn layer_norm_cpu[
     ) capturing -> None,
 ](
     shape: IndexList[rank],
-    beta: LayoutTensor[dtype, **_],
+    beta: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
 ):
     __comptime_assert beta.rank == 1, "beta must have rank 1"
@@ -753,7 +753,7 @@ fn layer_norm[
 ](
     shape: IndexList[rank],
     gamma_shape: IndexList[1],
-    beta: LayoutTensor[dtype, **_],
+    beta: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     ctx: DeviceContextPtr,
 ) raises:
@@ -799,7 +799,7 @@ fn layer_norm_shape[
     dtype: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: LayoutTensor[dtype, **_],
+    input: LayoutTensor[dtype, ...],
     gamma: LayoutTensor[dtype, Layout.row_major(1)],
     beta: LayoutTensor[dtype, Layout.row_major(1)],
     epsilon: Scalar[dtype],
@@ -839,7 +839,7 @@ fn _rms_norm_warp_tiling_subkernel[
     row: Int,
     idx: Int,
     vec_data: SIMD[accum_type, simd_width],
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[accum_type],
     weight_offset: Scalar[accum_type],
     num_cols: Int,
@@ -1014,7 +1014,7 @@ fn _rms_norm_gpu_block_subkernel[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_cols: Int,
@@ -1123,8 +1123,8 @@ fn rms_norm_gpu[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    shape: IndexList[rank, **_],
-    gamma: LayoutTensor[dtype, **_],
+    shape: IndexList[rank, ...],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
@@ -1272,7 +1272,7 @@ fn rms_norm_cpu[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
@@ -1342,7 +1342,7 @@ fn rms_norm_cpu[
     multiply_before_cast: Bool,
 ](
     shape: IndexList[rank],
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
 ):
@@ -1419,7 +1419,7 @@ fn _rms_norm_impl[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContextPtr,
@@ -1647,11 +1647,11 @@ fn rms_norm_fused_residual_add_gpu[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    shape: IndexList[rank, **_],
-    gamma1: LayoutTensor[dtype, **_],
+    shape: IndexList[rank, ...],
+    gamma1: LayoutTensor[dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: LayoutTensor[dtype, **_],
+    gamma2: LayoutTensor[dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,
@@ -1844,10 +1844,10 @@ fn rms_norm_fused_residual_add_cpu[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: LayoutTensor[dtype, **_],
+    gamma1: LayoutTensor[dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: LayoutTensor[dtype, **_],
+    gamma2: LayoutTensor[dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
 ) raises:
@@ -1925,7 +1925,7 @@ fn rms_norm[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContextPtr,
@@ -1979,10 +1979,10 @@ fn _rms_norm_fused_residual_add_impl[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: LayoutTensor[dtype, **_],
+    gamma1: LayoutTensor[dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: LayoutTensor[dtype, **_],
+    gamma2: LayoutTensor[dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContextPtr,
@@ -2072,10 +2072,10 @@ fn rms_norm_fused_residual_add[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: LayoutTensor[dtype, **_],
+    gamma1: LayoutTensor[dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: LayoutTensor[dtype, **_],
+    gamma2: LayoutTensor[dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContextPtr,
@@ -2731,8 +2731,8 @@ fn rms_norm_shape[
     dtype: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: LayoutTensor[dtype, **_],
-    gamma: LayoutTensor[dtype, **_],
+    input: LayoutTensor[dtype, ...],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
 ) -> IndexList[input.rank]:
@@ -2747,8 +2747,8 @@ fn group_norm_reshape[
     dtype: DType,
     rank: Int,
 ](
-    shape: IndexList[rank, **_],
-    buf: LayoutTensor[dtype, **_],
+    shape: IndexList[rank, ...],
+    buf: LayoutTensor[dtype, ...],
     channels_per_group: Int,
     spatial: Int,
     out result: LayoutTensor[
@@ -2964,9 +2964,9 @@ fn group_norm_gpu[
     gamma_fn: fn[width: Int] (IndexList[1]) capturing -> SIMD[dtype, width],
     beta_fn: fn[width: Int] (IndexList[1]) capturing -> SIMD[dtype, width],
 ](
-    shape: IndexList[rank, **_],
+    shape: IndexList[rank, ...],
     epsilon: Scalar[dtype],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
@@ -3118,7 +3118,7 @@ fn group_norm[
     shape: IndexList[rank],
     epsilon: Scalar[dtype],
     groups: Int32,
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     ctx: DeviceContextPtr,
 ) raises:
     __comptime_assert (
@@ -3178,9 +3178,9 @@ fn group_norm_shape[
     dtype: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: LayoutTensor[dtype, **_],
-    gamma: LayoutTensor[dtype, **_],
-    beta: LayoutTensor[dtype, **_],
+    input: LayoutTensor[dtype, ...],
+    gamma: LayoutTensor[dtype, ...],
+    beta: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     num_groups: Int32,
 ) -> IndexList[input.rank]:

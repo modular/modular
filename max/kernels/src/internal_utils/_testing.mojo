@@ -20,7 +20,7 @@ from buffer import NDBuffer
 from builtin._location import __call_location, _SourceLocation
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing.testing import _assert_cmp_error
 
 from utils.numerics import FPUtils
@@ -118,7 +118,7 @@ fn _assert_with_measure_impl[
         Int,
     ) -> Float64,
 ](
-    x: UnsafePointer[Scalar[dtype], **_],
+    x: UnsafePointer[Scalar[dtype], ...],
     y: type_of(x),
     n: Int,
     msg: String = "",

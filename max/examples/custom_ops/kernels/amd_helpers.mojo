@@ -164,7 +164,7 @@ fn copy_local_to_dram_32_32_8[
                 dst_idx += dst_fragments.runtime_layout(i)
 
             var src_element = Element[index_type = src.linear_idx_type].load(
-                src.ptr.offset(src_idx),
+                src.ptr + src_idx,
                 src.runtime_element_layout,
             )
 
@@ -242,7 +242,7 @@ fn mma[
 ](
     a_tiles: MMATileBuffers[mma_type=MMAType],
     b_tiles: MMATileBuffers[mma_type=MMAType],
-    c_reg_tile: LayoutTensor[mut=True, **_],
+    c_reg_tile: LayoutTensor[mut=True, ...],
 ):
     """
     AMD-style MMA operation wrapper for the AMD_MMA struct.

@@ -28,7 +28,7 @@ from utils.numerics import isnan
 from internal_utils import assert_almost_equal
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):

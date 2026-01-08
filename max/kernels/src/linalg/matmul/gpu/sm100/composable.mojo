@@ -15,7 +15,7 @@ from hashlib import default_comp_time_hasher
 from math import ceildiv
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
@@ -78,10 +78,10 @@ trait LoadOp(DevicePassable):
     fn __call__(
         self,
         a_smem_tile: LayoutTensor[
-            _, _, address_space = AddressSpace.SHARED, *_, **_
+            _, _, address_space = AddressSpace.SHARED, ...
         ],
         b_smem_tile: LayoutTensor[
-            _, _, address_space = AddressSpace.SHARED, *_, **_
+            _, _, address_space = AddressSpace.SHARED, ...
         ],
         m: UInt32,
         n: UInt32,
@@ -238,8 +238,8 @@ struct TMALoadOp[
     @staticmethod
     @always_inline
     def to_kernel_args(
-        a: LayoutTensor[Self.a_type, *_, **_],
-        b: LayoutTensor[Self.b_type, *_, **_],
+        a: LayoutTensor[Self.a_type, ...],
+        b: LayoutTensor[Self.b_type, ...],
         ctx: DeviceContext,
     ) -> Self.args_type:
         var a_tma_op = create_tma_tile[
@@ -267,10 +267,10 @@ struct TMALoadOp[
     fn __call__(
         self,
         a_smem_tile: LayoutTensor[
-            _, _, address_space = AddressSpace.SHARED, *_, **_
+            _, _, address_space = AddressSpace.SHARED, ...
         ],
         b_smem_tile: LayoutTensor[
-            _, _, address_space = AddressSpace.SHARED, *_, **_
+            _, _, address_space = AddressSpace.SHARED, ...
         ],
         m: UInt32,
         n: UInt32,
@@ -639,8 +639,8 @@ struct Pipeline[
         ]()
 
         var num_iters = args.num_iters
-        var m: UInt32 = block_idx.y * UInt(BM)
-        var n: UInt32 = block_idx.x * UInt(BN)
+        var m = UInt32(block_idx.y * UInt(BM))
+        var n = UInt32(block_idx.x * UInt(BN))
 
         for i in range(num_iters):
             if elect_one_thread:

@@ -11,10 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from gpu.memory import AddressSpace
-from layout.layout_tensor import LayoutTensorIter
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
-from ..tile_scheduler import RasterOrder
+from linalg.matmul.gpu.tile_scheduler import RasterOrder
 from layout.tma_async import SharedMemBarrier, PipelineState
 from utils.static_tuple import StaticTuple
 from gpu.id import grid_dim, thread_idx, lane_id
@@ -25,11 +24,10 @@ from gpu.tcgen05 import *
 from gpu.sync import named_barrier
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.bit import prev_power_of_two
 
-from ....structuring import SMemPtr
-from .pipeline import ProducerConsumerPipeline
+from linalg.structuring import SMemPtr
 
 
 @fieldwise_init
@@ -375,13 +373,16 @@ struct TileScheduler[
     comptime ROW_SIZE = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
     comptime ThrottlePipeline = Self.UnderlyingScheduler.ThrottlePipeline
 
+    # Typed barrier array aliases (delegate to underlying scheduler)
+    comptime ClcResponseArray = Self.UnderlyingScheduler.ClcResponseArray
+    comptime ClcBarrierArray = Self.UnderlyingScheduler.ClcBarrierArray
+    comptime ThrottleBarrierArray = Self.UnderlyingScheduler.ThrottleBarrierArray
+
     var locks_ptr: UnsafePointer[Int32]
     var scheduler: Self.UnderlyingScheduler
     var total_k_tiles: UInt32
     var k_tiles_per_split: UInt32
     var throttle_pipeline: Self.ThrottlePipeline
-
-    # ========== Barrier Initialization (called once) ==========
 
     @staticmethod
     fn init_throttle_barriers(
@@ -395,30 +396,29 @@ struct TileScheduler[
             storage_ptr, producer_arv_count, consumer_arv_count
         )
 
-    # ========== Constructor ==========
-
     @always_inline
     fn __init__(
         out self,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
-        clc_response_ptr: SMemPtr[UInt128],
-        full_mbar_ptr: SMemPtr[SharedMemBarrier],
-        empty_mbar_ptr: SMemPtr[SharedMemBarrier],
-        throttle_storage_ptr: SMemPtr[SharedMemBarrier],
+        clc_response: Self.ClcResponseArray,
+        clc_full: Self.ClcBarrierArray,
+        clc_empty: Self.ClcBarrierArray,
+        clc_throttle: Self.ThrottleBarrierArray,
         locks_ptr: UnsafePointer[UInt8],
     ):
+        """Initialize from typed barrier arrays."""
         self.scheduler = Self.UnderlyingScheduler(
             cluster_dim,
-            clc_response_ptr,
-            full_mbar_ptr,
-            empty_mbar_ptr,
-            throttle_storage_ptr,
+            clc_response,
+            clc_full,
+            clc_empty,
+            clc_throttle,
         )
         self.total_k_tiles = ceildiv(mnk[2], Self.reduction_tile_shape[2])
         self.k_tiles_per_split = ceildiv(self.total_k_tiles, Self.num_split_k)
         self.locks_ptr = locks_ptr.bitcast[Int32]()
-        self.throttle_pipeline = Self.ThrottlePipeline(throttle_storage_ptr)
+        self.throttle_pipeline = Self.ThrottlePipeline(clc_throttle.ptr)
 
     @always_inline
     fn convert_to_splitk_work_info(self, work_info: B200WorkInfo) -> WorkInfo:
@@ -554,7 +554,7 @@ struct TileScheduler[
 
     @always_inline
     fn output_tile_index(self, work_info: WorkInfo) -> UInt32:
-        return work_info.m * grid_dim.y + work_info.n
+        return work_info.m * UInt32(grid_dim.y) + work_info.n
 
     @always_inline
     fn _get_workspace_tile[
@@ -618,7 +618,7 @@ struct TileScheduler[
         widths: InlineArray[Int, 4],
         curr_stage: Int,
     ](
-        tensor: LayoutTensor[accum_type, layout, MutAnyOrigin, **_],
+        tensor: LayoutTensor[accum_type, layout, MutAnyOrigin, ...],
         out result: LayoutTensor[
             accum_type,
             Self._get_new_layout[layout, widths[curr_stage]](),
@@ -664,10 +664,7 @@ struct TileScheduler[
         comptime widths_per_stage = Self._get_widths_per_stage[128]()
         comptime widths = widths_per_stage[0]
         comptime num_widths = widths_per_stage[1]
-
-        # comptime stage_rep = width_per_stage // 8
         comptime fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
-        # comptime stage_frag_size = stage_rep * fragment_size
 
         var local_warp_id = epilogue_thread_idx // UInt(WARP_SIZE)
 
@@ -681,12 +678,14 @@ struct TileScheduler[
         var warp_id_x = local_warp_id if Self.BM == 128 else local_warp_id % 2
         var warp_id_y = 0 if Self.BM == 128 else local_warp_id // 2
 
+        from .tmem import TmemAddress
+
         var reduction_frag = workspace_tile.tile[REDUCTION_BM, REDUCTION_BN](
             Int(warp_id_x), Int(warp_id_y)
         )
         var reduction_upper = reduction_frag.tile[16, REDUCTION_BN](0, 0)
         var reduction_lower = reduction_frag.tile[16, REDUCTION_BN](1, 0)
-        var stage_tmem_addr = tmem_addr
+        var tmem = TmemAddress(tmem_addr)
 
         @parameter
         for stage in range(num_widths):
@@ -694,24 +693,13 @@ struct TileScheduler[
             comptime stage_rep = stage_width // 8
             comptime stage_frag_size = stage_rep * fragment_size
 
-            var stage_frag_upper = tcgen05_ld[
-                datapaths=data_paths,
-                bits=bits,
-                repeat=stage_rep,
-                dtype=accum_type,
-                pack=False,
-                width=stage_frag_size,
-            ](stage_tmem_addr)
-
-            var stage_frag_lower = tcgen05_ld[
-                datapaths=data_paths,
-                bits=bits,
-                repeat=stage_rep,
-                dtype=accum_type,
-                pack=False,
-                width=stage_frag_size,
-            ](stage_tmem_addr + (16 << 16))
-            tcgen05_load_wait()
+            var stage_frag_upper = tmem.load_upper[
+                accum_type, stage_frag_size, data_paths, bits, stage_rep
+            ]()
+            var stage_frag_lower = tmem.load_lower[
+                accum_type, stage_frag_size, data_paths, bits, stage_rep
+            ]()
+            TmemAddress.wait_load()
 
             var reduction_upper_subtile = Self._to_next_subtile[
                 widths=widths, curr_stage=stage
@@ -764,24 +752,18 @@ struct TileScheduler[
                         stage_frag_lower[2 * i] = v2_lower[0]
                         stage_frag_lower[2 * i + 1] = v2_lower[1]
 
-            # we can't hold all accumulators in registers, so we need to store to TMEM
+            # Can't hold all accumulators in registers, store back to TMEM.
             @parameter
             if not write_back:
-                tcgen05_st[
-                    datapaths=data_paths,
-                    bits=bits,
-                    repeat=stage_rep,
-                    pack=False,
-                ](stage_tmem_addr, stage_frag_upper)
-                tcgen05_st[
-                    datapaths=data_paths,
-                    bits=bits,
-                    repeat=stage_rep,
-                    pack=False,
-                ](stage_tmem_addr + (16 << 16), stage_frag_lower)
-                tcgen05_store_wait()
+                tmem.store_upper[
+                    data_paths=data_paths, bits=bits, repeat=stage_rep
+                ](stage_frag_upper)
+                tmem.store_lower[
+                    data_paths=data_paths, bits=bits, repeat=stage_rep
+                ](stage_frag_lower)
+                TmemAddress.wait_store()
 
-            stage_tmem_addr += stage_width
+            tmem = tmem + stage_width
 
     @always_inline
     fn reduction[
@@ -861,7 +843,7 @@ struct TileScheduler[
         val: UInt32,
     ):
         var sema = NamedBarrierSemaphore[Int32(WARPGROUP_SIZE), 4, 1](
-            lock_ptr.offset(lock_idx), barrier_group_thread_idx
+            lock_ptr + lock_idx, barrier_group_thread_idx
         )
         sema.wait_eq(barrier_id, Int32(val))
 
@@ -886,7 +868,7 @@ struct TileScheduler[
         val: UInt32,
     ):
         var sema = NamedBarrierSemaphore[Int32(WARPGROUP_SIZE), 4, 1](
-            lock_ptr.offset(lock_idx), barrier_group_thread_idx
+            lock_ptr + lock_idx, barrier_group_thread_idx
         )
         sema.arrive_set(barrier_id, Int32(val))
 

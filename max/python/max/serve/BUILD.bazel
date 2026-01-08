@@ -8,7 +8,6 @@ modular_py_library(
     deps = [
         requirement("pydantic"),
         requirement("pydantic-settings"),
-        "//max/python/max/serve/kvcache_agent",
         "//max/python/max/serve/queue",
         "//max/python/max/support",
     ],
@@ -19,6 +18,7 @@ modular_py_library(
     srcs = ["process_control.py"],
     deps = [
         requirement("taskgroup"),  # only for python < 3.11
+        requirement("exceptiongroup"),  # only for python < 3.11
     ],
 )
 
@@ -40,27 +40,17 @@ modular_py_library(
     ),
     deps = [
         ":config",
-        ":debug",
-        ":exceptions",
-        ":process_control",
-        "//max/python/max/serve/mocks",
-        "//max/python/max/serve/parser",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/queue",
         "//max/python/max/serve/recordreplay",
         "//max/python/max/serve/router",
         "//max/python/max/serve/scheduler",
-        "//max/python/max/serve/schemas",
         "//max/python/max/serve/telemetry",
-        "//max/python/max/support",
         requirement("fastapi"),
-        requirement("opentelemetry-api"),
         requirement("prometheus-client"),
-        requirement("pydantic-settings"),
-        requirement("pyinstrument"),
-        requirement("sse-starlette"),
-        requirement("transformers"),
         requirement("uvicorn"),
-        requirement("uvloop"),
     ],
 )
 

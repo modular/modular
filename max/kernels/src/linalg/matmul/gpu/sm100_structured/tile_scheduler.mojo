@@ -12,14 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 from sys import _RegisterPackType, size_of
 from sys._assembly import inlined_assembly
 
 from gpu.cluster import (
-    block_rank_in_cluster,
     clusterlaunchcontrol_query_cancel_get_first_ctaid_v4,
     clusterlaunchcontrol_query_cancel_is_canceled,
     clusterlaunchcontrol_try_cancel,
@@ -31,12 +27,12 @@ from layout.tma_async import PipelineState, SharedMemBarrier
 
 from utils.fast_div import FastDiv
 
-from ....structuring import SMemPtr
+from linalg.structuring import SMemPtr, SMemArrayType
 from .pipeline import ProducerConsumerPipeline
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
-from ..tile_scheduler import RasterOrder
+from linalg.matmul.gpu.tile_scheduler import RasterOrder
 
 
 @fieldwise_init
@@ -418,6 +414,13 @@ struct TileScheduler[
 
     comptime ThrottlePipeline = ProducerConsumerPipeline[Self.num_stages]
 
+    # Typed barrier array aliases for clean API
+    comptime ClcResponseArray = SMemArrayType[UInt128, Self.num_stages]
+    comptime ClcBarrierArray = SMemArrayType[SharedMemBarrier, Self.num_stages]
+    comptime ThrottleBarrierArray = SMemArrayType[
+        SharedMemBarrier, Self.num_stages * 2
+    ]
+
     var cluster_dim: StaticTuple[Int32, 3]
     var log_cluster_dim_m: FastDiv[DType.uint32]
     var log_cluster_dim_n: FastDiv[DType.uint32]
@@ -428,8 +431,6 @@ struct TileScheduler[
     var empty_mbar: SMemPtr[SharedMemBarrier]
     var throttle_pipeline: Self.ThrottlePipeline
 
-    # ========== Barrier Initialization (called once) ==========
-
     @staticmethod
     fn init_throttle_barriers(
         storage_ptr: SMemPtr[SharedMemBarrier],
@@ -437,26 +438,20 @@ struct TileScheduler[
         consumer_arv_count: Int32,
     ):
         """Initialize throttle pipeline barriers. Called once by elect_one thread.
-
-        Args:
-            storage_ptr: Pointer to shared memory barrier storage.
-            producer_arv_count: Expected arrival count for producer barriers.
-            consumer_arv_count: Expected arrival count for consumer barriers.
         """
         var pipeline = Self.ThrottlePipeline(storage_ptr)
         pipeline.init_mbars(producer_arv_count, consumer_arv_count)
-
-    # ========== Constructor ==========
 
     @always_inline
     fn __init__(
         out self,
         cluster_dim: StaticTuple[Int32, 3],
-        clc_response_ptr: SMemPtr[UInt128],
-        full_mbar_ptr: SMemPtr[SharedMemBarrier],
-        empty_mbar_ptr: SMemPtr[SharedMemBarrier],
-        throttle_storage_ptr: SMemPtr[SharedMemBarrier],
+        clc_response: Self.ClcResponseArray,
+        clc_full: Self.ClcBarrierArray,
+        clc_empty: Self.ClcBarrierArray,
+        clc_throttle: Self.ThrottleBarrierArray,
     ):
+        """Initialize from typed barrier arrays."""
         constrained[
             Self.block_swizzle_size in [0, 1, 2, 4, 8],
             "block_swizzle_size must be 0, 1, 2, 4, or 8",
@@ -466,10 +461,10 @@ struct TileScheduler[
         self.log_cluster_dim_m = FastDiv[DType.uint32](Int(cluster_dim[0]))
         self.log_cluster_dim_n = FastDiv[DType.uint32](Int(cluster_dim[1]))
         self.log_cluster_dim_k = FastDiv[DType.uint32](Int(cluster_dim[2]))
-        self.clc_response = clc_response_ptr
-        self.full_mbar = full_mbar_ptr
-        self.empty_mbar = empty_mbar_ptr
-        self.throttle_pipeline = Self.ThrottlePipeline(throttle_storage_ptr)
+        self.clc_response = clc_response.ptr
+        self.full_mbar = clc_full.ptr
+        self.empty_mbar = clc_empty.ptr
+        self.throttle_pipeline = Self.ThrottlePipeline(clc_throttle.ptr)
 
     @always_inline
     @staticmethod
@@ -569,9 +564,9 @@ struct TileScheduler[
     fn initial_work_info(self) -> WorkInfo:
         return self.work_info_from_cluster(
             WorkInfo(
-                block_idx.x,
-                block_idx.y,
-                block_idx.z,
+                UInt32(block_idx.x),
+                UInt32(block_idx.y),
+                UInt32(block_idx.z),
                 is_valid_tile=True,
             ),
             self.cluster_dim,

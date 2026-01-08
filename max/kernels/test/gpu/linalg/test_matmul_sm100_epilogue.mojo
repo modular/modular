@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from random import random_si64, random_float64
-from sys import align_of, size_of
+from sys import align_of, size_of, env_get_bool
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
@@ -21,7 +21,7 @@ from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal, random
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -263,10 +263,20 @@ def test_matmul_sm100_epilogue[
     _ = c_device_ref^
 
 
+# Quick mode: reduce test configs for faster iteration
+# QUICK_TEST=True: 48 tests (8 configs × 6 sizes) - ~30 seconds
+# FASTER_TEST=True: 8 tests (4 configs × 2 sizes) - ~5 seconds
+comptime QUICK_TEST = env_get_bool["QUICK_TEST", False]()
+comptime FASTER_TEST = env_get_bool["FASTER_TEST", False]()
+
+
 def main():
     comptime dtype = DType.bfloat16
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[dtype]())
     comptime MMA_K = 16
+
+    # FASTER mode: only 1 mma_n_scale, QUICK mode: 2-4, full: 1-16
+    comptime n_scale_max = 3 if FASTER_TEST else (5 if QUICK_TEST else 17)
 
     with DeviceContext() as ctx:
 
@@ -274,7 +284,12 @@ def main():
         for mma_m_scale in range(1, 3):
 
             @parameter
-            for mma_n_scale in range(1, 17):
+            for mma_n_scale in range(1, n_scale_max):
+                # Quick/Faster mode: skip odd n_scale values
+                @parameter
+                if (QUICK_TEST or FASTER_TEST) and mma_n_scale % 2 != 0:
+                    continue
+
                 comptime block_tile_shape = Index(
                     64 * mma_m_scale, 8 * mma_n_scale, BK
                 )
@@ -285,7 +300,7 @@ def main():
 
                 @parameter
                 for register_based_epilogue in [True, False]:
-                    # shared memory based epilogue has accuracy issues for MMA_M == 128 and MMA_N is not a multiple of 32
+                    # SMEM epilogue has issues for MMA_M==128 and odd MMA_N
                     @parameter
                     if (
                         not register_based_epilogue
@@ -294,105 +309,41 @@ def main():
                     ):
                         continue
 
-                    test_matmul_sm100_epilogue[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                        cta_group=2,
-                        test_lambda_fn=True,
-                        register_based_epilogue=register_based_epilogue,
-                    ](
-                        ctx,
-                        dynamic(1000),
-                        static[1024](),
-                        static[1024](),
-                    )
+                    # Helper to run test with varying cluster/k_group/sizes
+                    @parameter
+                    fn run[
+                        cluster_m: Int,
+                        cluster_n: Int,
+                        k_group: UInt = 1,
+                    ](m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
+                        test_matmul_sm100_epilogue[
+                            dtype,
+                            dtype,
+                            DType.bfloat16,
+                            block_tile_shape,
+                            umma_shape,
+                            cluster_shape = StaticTuple[Int32, 3](
+                                cluster_m, cluster_n, 1
+                            ),
+                            cta_group=2,
+                            test_lambda_fn=True,
+                            register_based_epilogue=register_based_epilogue,
+                            k_group_size=k_group,
+                        ](ctx, m, n, k)
 
-                    test_matmul_sm100_epilogue[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                        cta_group=2,
-                        test_lambda_fn=True,
-                        register_based_epilogue=register_based_epilogue,
-                    ](
-                        ctx,
-                        dynamic(512),
-                        static[4096](),
-                        static[1024](),
-                    )
+                    # FASTER mode: 2 key test cases only
+                    run[4, 4](dynamic(1000), static[1024](), static[1024]())
 
-                    test_matmul_sm100_epilogue[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                        cta_group=2,
-                        test_lambda_fn=True,
-                        register_based_epilogue=register_based_epilogue,
-                        k_group_size=2,
-                    ](
-                        ctx,
-                        dynamic(500),
-                        static[2048](),
-                        static[4096](),
-                    )
+                    @parameter
+                    if not FASTER_TEST:
+                        run[4, 4](dynamic(512), static[4096](), static[1024]())
+                        run[4, 4, k_group=2](
+                            dynamic(500), static[2048](), static[4096]()
+                        )
+                        run[8, 2](dynamic(1024), static[256](), static[128]())
 
-                    test_matmul_sm100_epilogue[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](8, 2, 1),
-                        cta_group=2,
-                        test_lambda_fn=True,
-                        register_based_epilogue=register_based_epilogue,
-                    ](
-                        ctx,
-                        dynamic(1024),
-                        static[256](),
-                        static[128](),
-                    )
+                    run[2, 2](static[1024](), static[1024](), static[2048]())
 
-                    test_matmul_sm100_epilogue[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
-                        cta_group=2,
-                        test_lambda_fn=True,
-                        register_based_epilogue=register_based_epilogue,
-                    ](
-                        ctx,
-                        static[1024](),
-                        static[1024](),
-                        static[2048](),
-                    )
-
-                    test_matmul_sm100_epilogue[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                        cta_group=2,
-                        test_lambda_fn=True,
-                        register_based_epilogue=register_based_epilogue,
-                    ](
-                        ctx,
-                        dynamic(8192),
-                        static[2560](),
-                        static[8192](),
-                    )
+                    @parameter
+                    if not FASTER_TEST:
+                        run[4, 4](dynamic(8192), static[2560](), static[8192]())

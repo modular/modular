@@ -21,7 +21,7 @@ import benchmark
 from buffer import NDBuffer
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from linalg.utils import (
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,
@@ -96,7 +96,7 @@ fn kernel(
         for i in range(NR2):
             prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
-            ](b_ptr.offset(NR * pr + simd_size * (i + 16)))
+            ](b_ptr + NR * pr + simd_size * (i + 16))
 
         @parameter
         for idx0 in range(MR):
@@ -233,7 +233,7 @@ def main():
         gemm(a.data, b2.data, c2.data, m, n, k, mc, nc, kc)
 
     var num_warmup: Int = 1
-    var time = benchmark.run[bench_gemm](num_warmup).mean()
+    var time = benchmark.run[func3=bench_gemm](num_warmup).mean()
     var flops = 2.0 * m * n * k / time / 1e9
     print(time, end="")
     print(" seconds")

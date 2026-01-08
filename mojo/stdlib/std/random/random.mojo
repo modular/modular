@@ -118,7 +118,7 @@ fn randint[
 fn rand[
     dtype: DType
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype], **_],
+    ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
     size: Int,
     /,
     *,
@@ -169,7 +169,7 @@ fn rand[
         return
 
     @parameter
-    if dtype is DType.bool or dtype.is_unsigned():
+    if dtype == DType.bool or dtype.is_unsigned():
         var min_ = math.max(0, min.cast[DType.uint64]())
         var max_ = math.min(
             max.cast[DType.uint64](), Scalar[dtype].MAX.cast[DType.uint64]()
@@ -197,7 +197,7 @@ fn randn_float64(
 fn randn[
     dtype: DType
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype], **_],
+    ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
     size: Int,
     mean: Float64 = 0.0,
     standard_deviation: Float64 = 1.0,
@@ -222,7 +222,7 @@ fn randn[
     return
 
 
-fn shuffle[T: Copyable & ImplicitlyDestructible, //](mut list: List[T]):
+fn shuffle[T: Copyable, //](mut list: List[T]):
     """Shuffles the elements of the list randomly.
 
     Performs an in-place Fisher-Yates shuffle on the provided list.
