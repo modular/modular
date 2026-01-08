@@ -1499,6 +1499,9 @@ void ParamInfState::inferOneParam(ASTExprAnd<AnyValue> binding,
 ///
 /// TODO: remove `installParam` and make it always true.
 void ParamInfState::inferFromParamList(bool hasArguments) {
+  if (hasInferredForCall)
+    return;
+
   if (declaredParamTypes.empty())
     return;
 
@@ -1639,9 +1642,9 @@ ParamInfState::inferForCall(FnTypeGeneratorType signature,
                             const CallOperands &operands,
                             const OperandValueList &variadicKwOperands,
                             bool returnsSelf, bool hasCTADParams) {
-
   // First try to infer parameters from the already provided bindings.
   inferFromParamList(/*hasArguments*/ true);
+  hasInferredForCall = true;
 
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be
