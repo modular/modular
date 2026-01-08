@@ -626,9 +626,12 @@ what we publish.
 - The Mojo compiler now supports the `-Werror` flag, which treats all warnings
   as compilation errors. This is useful for enforcing stricter code quality
   standards, particularly in CI/CD pipelines. The flag works with the Mojo
-  compiler tools (`mojo run`, `mojo build`, `mojo package`).
+  compiler tools (`mojo run`, `mojo build`, `mojo package`, `mojo doc`).
   When used with `--disable-warnings`, warnings are promoted to errors first,
   so the errors are not suppressed.
+- The `--validate-doc-strings` flag has been deprecated for `mojo doc` and
+  removed from other tools (`mojo build`, `mojo run`, `mojo package`). Use
+  `-Werror` instead to treat warnings as errors.
 - The Mojo compiler now "diffs" very long types in error messages to explain
   what is going on in a more easy to understand way.
 - Specifying CUDA architectures with `--target-accelerator` now expects a sm
@@ -655,10 +658,9 @@ what we publish.
 - The Mojo Debugger `mojo break-on-raise` feature now works correctly with
   multiple targets in a debugger instance. The setting is per-target.
 - Docstring validation now includes `comptime` aliases. The
-  `--validate-doc-strings` and `--diagnose-missing-doc-strings` flags now check
-  that public aliases have properly formatted docstrings (summary ends with
-  period, starts with capital letter). Parametric aliases are also checked for
-  proper `Parameters:` sections.
+  `--diagnose-missing-doc-strings` flag now checks that public aliases have
+  properly formatted docstrings (summary ends with period, starts with capital
+  letter). Parametric aliases are also checked for proper `Parameters:` sections.
 - Docstring validation with `--validate-doc-strings` now emits an
   error when an `fn` function is declared to raise an error (`raises`) but it's
   missing a [`Raises`
