@@ -69,24 +69,26 @@ struct Origin[*, mut: Bool]:
         """
         self._mlir_origin = other._mlir_origin
 
-    @always_inline("builtin")
-    fn __init__(out self, *, unsafe_cast: Origin):
-        """Allow converting an mutable origin to an immutable one.
 
-        Args:
-            other: The mutable origin to convert.
-        """
-        # TODO: Should use lit.origin.mutcast in the param domain.
-        self._mlir_origin = rebind[Self._mlir_type](unsafe_cast._mlir_origin)
-
-
-struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut=mut]]:
-    comptime result = __mlir_attr[
-        `#lit.indirect.origin<`,
-        Self.base._mlir_origin,
-        `> : `,
-        type_of(Self.base._mlir_origin),
+comptime unsafe_origin_mutcast[o: Origin, mut: Bool = True] = Origin(
+    __mlir_attr[
+        `#lit.origin.mutcast<`,
+        o._mlir_origin,
+        `> : !lit.origin<`,
+        mut._mlir_value,
+        `>`,
     ]
+)
+
+
+comptime _lit_indirect_origin[
+    mut: Bool, //, base: Origin[mut=mut]
+] = __mlir_attr[
+    `#lit.indirect.origin<`,
+    base._mlir_origin,
+    `> : `,
+    type_of(base._mlir_origin),
+]
 
 
 trait Iterable:
@@ -956,9 +958,7 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[mut = Self.elt_is_mutable](
-            unsafe_cast=origin_of(Self.origin, self)
-        )
+        unsafe_origin_mutcast[origin_of(Self.origin, self), Self.elt_is_mutable]
     ] Self.element_type:
         while True:
             pass
@@ -1212,7 +1212,7 @@ struct UnsafePointer[
     fn get_unique_item_ref[
         self_origin: ImmutOrigin
     ](ref [self_origin]self, offset: Int = 0) -> ref [
-        MutOrigin(unsafe_cast=_lit_indirect_origin[self_origin].result),
+        unsafe_origin_mutcast[_lit_indirect_origin[self_origin]],
         Self.address_space,
     ] Self.type:
         while __mlir_attr.true:
