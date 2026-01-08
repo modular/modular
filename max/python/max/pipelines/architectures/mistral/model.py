@@ -168,14 +168,14 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         # combined total_seq_len dimension.
         input_row_offsets = Tensor.from_numpy(
             np.cumsum(
-                [0] + [ctx.active_length for ctx in context_batch],
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
         ).to(self.devices[0])
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         next_tokens_batch = Tensor.from_numpy(
-            np.concatenate([ctx.next_tokens for ctx in context_batch])
+            np.concatenate([ctx.tokens.active for ctx in context_batch])
         ).to(self.devices[0])
 
         return MistralInputs(

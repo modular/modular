@@ -418,7 +418,7 @@ async def test_qwen_input_preparation__position_ids_after_reset(
         f"Expected Qwen2_5VLTextAndVisionContext, got {type(context)}"
     )
 
-    initial_current_length = context.current_length
+    initial_current_length = len(context.tokens)
 
     # ========================================================================
     # SECTION 3: Simulate Generation + Reset (Core Test Scenario)
@@ -427,17 +427,17 @@ async def test_qwen_input_preparation__position_ids_after_reset(
     for i in range(5):
         context.update(100 + i)  # Add tokens 100, 101, 102, 103, 104
 
-    assert context.current_length == initial_current_length + 5
+    assert len(context.tokens) == initial_current_length + 5
 
     # Reset the context (simulating preemption/restart)
     context.reset()
 
     # Verify reset state: indices reset, but tokens remain
-    assert context.processed_length == 0
+    assert context.tokens.processed_length == 0
     assert (
-        context.current_position == initial_current_length + 5
+        context.tokens.current_position == initial_current_length + 5
     )  # Includes the 5 added tokens
-    assert context.current_length == initial_current_length + 5
+    assert len(context.tokens) == initial_current_length + 5
 
     # Key point: decoder_position_ids shape (initial_current_length) doesn't match
     # current_length (initial_current_length + 5) because we added tokens.
@@ -461,10 +461,10 @@ async def test_qwen_input_preparation__position_ids_after_reset(
     # ========================================================================
     # Create a fresh context with the same token sequence as if we were starting
     # from scratch with all tokens (initial + 5 generated)
-    assert len(context.all_tokens) == initial_current_length + 5
+    assert len(context.tokens.all) == initial_current_length + 5
 
     request2 = TextGenerationRequest(
-        prompt=context.all_tokens.tolist(),  # Use all tokens
+        prompt=context.tokens.all.tolist(),  # Use all tokens
         request_id=RequestID("test-id-2"),
         model_name="test-model",
     )
@@ -614,7 +614,7 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
     )
     assert len(context.images) > 0, "Context should contain image metadata"
 
-    initial_current_length = context.current_length
+    initial_current_length = len(context.tokens)
     initial_images = context.images
 
     # ========================================================================
@@ -624,15 +624,15 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
     for i in range(3):
         context.update(200 + i)  # Add tokens 200, 201, 202
 
-    assert context.current_length == initial_current_length + 3
+    assert len(context.tokens) == initial_current_length + 3
 
     # Reset the context (simulating preemption/restart)
     context.reset()
 
     # Verify reset state: indices reset, tokens and images remain
-    assert context.processed_length == 0
-    assert context.current_position == initial_current_length + 3
-    assert context.current_length == initial_current_length + 3
+    assert context.tokens.processed_length == 0
+    assert context.tokens.current_position == initial_current_length + 3
+    assert len(context.tokens) == initial_current_length + 3
     assert len(context.images) == len(initial_images), (
         "Images should be preserved after reset"
     )
@@ -666,7 +666,7 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
                 ],
             )
         ],
-        prompt=context.all_tokens.tolist(),  # Override with full token sequence
+        prompt=context.tokens.all.tolist(),  # Override with full token sequence
         request_id=RequestID("test-id-with-image-2"),
         model_name="test-model",
     )
@@ -675,7 +675,7 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
 
     # Verify fresh context has same properties
     assert len(context2.images) == len(context.images)
-    assert context2.current_length == context.current_length
+    assert len(context2.tokens) == len(context.tokens)
 
     # Get position IDs from fresh context
     fresh_qwen_inputs = model.prepare_initial_token_inputs(
@@ -784,9 +784,9 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
     )
 
     # Verify initial state: prefill phase (start_idx=0, active range covers all tokens).
-    assert ctx.processed_length == 0
-    assert ctx.current_position == L
-    assert ctx.current_length == L
+    assert ctx.tokens.processed_length == 0
+    assert ctx.tokens.current_position == L
+    assert len(ctx.tokens) == L
 
     # Build inputs for prefill phase.
     dummy_kv_inputs = Mock(spec=KVCacheInputs)

@@ -450,7 +450,7 @@ class SpeculativeDecodingPipelineBase(
 
         if num_available_steps <= 0:
             raise ValueError(
-                f"Request {context.request_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
+                f"Request {context.request_id} length ({len(context.tokens)}) is larger than or equal to the configured max_length ({max_seq_len})"
             )
 
         return min(num_available_steps, num_steps)
@@ -610,7 +610,7 @@ class SpeculativeDecodingPipelineBase(
             # If all draft tokens are accepted, then the draft model has not
             # processed the bonus token. In this case only the draft needs to
             # go one step back. At the moment we do this for all cases.
-            context.rewind_processing(1)
+            context.tokens.rewind_processing(1)
 
         # Update metrics
         self._metrics.update(
@@ -640,7 +640,7 @@ class SpeculativeDecodingPipelineBase(
             )
 
             # Break early if beyond max length
-            current_length = context.processed_length + 1
+            current_length = context.tokens.processed_length + 1
             if current_length >= context_max_length:
                 context.status = GenerationStatus.MAXIMUM_LENGTH
 

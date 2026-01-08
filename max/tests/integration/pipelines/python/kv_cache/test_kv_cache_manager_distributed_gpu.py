@@ -114,7 +114,7 @@ def test_step() -> None:
 
     # Assert that each cache_length is initialized appropriately as 0
     for ctx in batch:
-        assert ctx.processed_length == 0
+        assert ctx.tokens.processed_length == 0
 
     # Update these values a few times
     for j in range(3):
@@ -126,13 +126,15 @@ def test_step() -> None:
         kv_manager.step(batch)
 
         for i, ctx in enumerate(batch):
-            assert ctx.processed_length == prompt_lens[i] * (j + 1)
+            assert ctx.tokens.processed_length == prompt_lens[i] * (j + 1)
 
         for i, ctx in enumerate(batch):
-            orig_processed_length = ctx.processed_length
+            orig_processed_length = ctx.tokens.processed_length
             for _ in range(prompt_lens[i] - 1):
                 ctx.update(42)
-            ctx.rewind_processing(ctx.processed_length - orig_processed_length)
+            ctx.tokens.rewind_processing(
+                ctx.tokens.processed_length - orig_processed_length
+            )
 
 
 @dataclass

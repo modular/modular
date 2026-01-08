@@ -81,7 +81,7 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
         self, inputs: AudioGenerationInputs[TTSContext]
     ) -> dict[RequestID, AudioGenerationOutput]:
         METRICS.input_tokens(
-            sum(ctx.active_length for ctx in inputs.batch.values())
+            sum(ctx.tokens.active_length for ctx in inputs.batch.values())
         )
 
         next_chunk = getattr(self.pipeline_model, "next_chunk")  # noqa: B009

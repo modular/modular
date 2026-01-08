@@ -216,7 +216,7 @@ def test_context__eos() -> None:
     assert context.is_initial_prompt
     context.update(4)
     assert not context.is_initial_prompt
-    assert context.current_length == 5
+    assert len(context.tokens) == 5
     assert context.status == GenerationStatus.END_OF_SEQUENCE
 
 
@@ -239,12 +239,12 @@ def test_context__current_length() -> None:
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
     )
 
-    assert context.current_length == 4
+    assert len(context.tokens) == 4
     assert context.is_initial_prompt
 
     context.update(4)
     assert not context.is_initial_prompt
-    assert context.current_length == 5
+    assert len(context.tokens) == 5
 
     # Currently, there are 5 tokens, we are saying
     # here is the next one, and we've generated 3 tokens
@@ -253,7 +253,7 @@ def test_context__current_length() -> None:
     for i in range(3):
         context.update(5 + i)
 
-    assert context.current_length == 8
+    assert len(context.tokens) == 8
 
 
 def test_context__seq_len() -> None:
@@ -263,12 +263,12 @@ def test_context__seq_len() -> None:
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
     )
 
-    assert context.active_length == 4
+    assert context.tokens.active_length == 4
     context.update(4)
-    assert context.active_length == 1
+    assert context.tokens.active_length == 1
     for i in range(5):
         context.update(5 + i)
-    assert context.active_length == 1
+    assert context.tokens.active_length == 1
 
 
 def test_context__needs_ce() -> None:
@@ -279,31 +279,31 @@ def test_context__needs_ce() -> None:
     )
 
     # There are 4 unencoded prompt tokens
-    assert context.active_length == 4
+    assert context.tokens.active_length == 4
     assert context.needs_ce is True
 
     # Encode 2/4 prompt tokens
-    context.chunk(2)
-    assert context.active_length == 2
+    context.tokens.chunk(2)
+    assert context.tokens.active_length == 2
     assert context.needs_ce
     context.update(98)  # token 98 is discarded
-    assert context.all_tokens.tolist() == [0, 1, 2, 3]
+    assert context.tokens.all.tolist() == [0, 1, 2, 3]
 
     # There are 2 unencoded prompt tokens left
     assert context.needs_ce is True
-    assert context.active_length == 2
+    assert context.tokens.active_length == 2
 
     # Create a bunch of draft tokens like in spec decoding
     context.update(99)
     context.update(100)
     context.update(101)
     context.update(102)
-    assert context.all_tokens.tolist() == [0, 1, 2, 3, 99, 100, 101, 102]
-    context.rewind_processing(2)
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 99, 100, 101, 102]
+    context.tokens.rewind_processing(2)
 
     # Even though the active length is 3, we are not in CE mode!
-    assert context.next_tokens.tolist() == [100, 101, 102]
-    assert context.active_length == 3
+    assert context.tokens.active.tolist() == [100, 101, 102]
+    assert context.tokens.active_length == 3
     assert context.needs_ce is False
 
 
@@ -316,22 +316,22 @@ def test_context__skip_processing() -> None:
 
     # Can't trim more tokens than the context has.
     with pytest.raises(ValueError):
-        context.skip_processing(n=999)
+        context.tokens.skip_processing(n=999)
 
     # Trimming 0 tokens does nothing.
-    assert (context.next_tokens == np.array([0, 1, 2, 3])).all()
-    assert context.active_length == 4
-    assert context.current_length == 4
+    assert (context.tokens.active == np.array([0, 1, 2, 3])).all()
+    assert context.tokens.active_length == 4
+    assert len(context.tokens) == 4
 
     # Trimming 2 tokens should remove the first 2 tokens of prompt.
-    context.skip_processing(n=2)
-    assert (context.next_tokens == np.array([2, 3])).all()
-    assert context.active_length == 2
-    assert context.current_length == 4  # does not change
+    context.tokens.skip_processing(n=2)
+    assert (context.tokens.active == np.array([2, 3])).all()
+    assert context.tokens.active_length == 2
+    assert len(context.tokens) == 4  # does not change
 
     # Can't trim prompt to 0 tokens.
     with pytest.raises(ValueError):
-        context.skip_processing(n=2)
+        context.tokens.skip_processing(n=2)
 
 
 def test_context__update_beyond_chunk_size() -> None:
@@ -358,17 +358,17 @@ def test_context__reset() -> None:
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
     )
-    assert context.active_length == 4
-    assert context.next_tokens.tolist() == [0, 1, 2, 3]
+    assert context.tokens.active_length == 4
+    assert context.tokens.active.tolist() == [0, 1, 2, 3]
     context.update(4)
-    assert context.active_length == 1
-    assert context.next_tokens.tolist() == [4]
+    assert context.tokens.active_length == 1
+    assert context.tokens.active.tolist() == [4]
     context.reset()
-    assert context.active_length == 5
-    assert context.next_tokens.tolist() == [0, 1, 2, 3, 4]
+    assert context.tokens.active_length == 5
+    assert context.tokens.active.tolist() == [0, 1, 2, 3, 4]
     context.update(5)
-    assert context.active_length == 1
-    assert context.next_tokens.tolist() == [5]
+    assert context.tokens.active_length == 1
+    assert context.tokens.active.tolist() == [5]
 
 
 def test_context_sampling_params_integration() -> None:
@@ -413,9 +413,9 @@ def test_context_sampling_params_stop() -> None:
 
     context.update(1)
     context.update(2)
-    print(context.generated_tokens)
+    print(context.tokens.generated)
     assert context.is_done
-    assert np.array_equal(context.generated_tokens, np.array([1, 2]))
+    assert np.array_equal(context.tokens.generated, np.array([1, 2]))
 
     context = TextContext(
         request_id=RequestID(),
@@ -428,7 +428,7 @@ def test_context_sampling_params_stop() -> None:
     context.update(3)
 
     assert not context.is_done
-    assert np.array_equal(context.generated_tokens, np.array([1, 3]))
+    assert np.array_equal(context.tokens.generated, np.array([1, 3]))
 
 
 def test_context_sampling_params_eos_token_ids() -> None:
@@ -446,7 +446,7 @@ def test_context_sampling_params_eos_token_ids() -> None:
     context.update(2)
 
     assert context.is_done
-    assert np.array_equal(context.generated_tokens, np.array([1, 2]))
+    assert np.array_equal(context.tokens.generated, np.array([1, 2]))
 
     context = TextContext(
         request_id=RequestID(),
@@ -459,7 +459,7 @@ def test_context_sampling_params_eos_token_ids() -> None:
     context.update(6)
 
     assert not context.is_done
-    assert np.array_equal(context.generated_tokens, np.array([3, 6]))
+    assert np.array_equal(context.tokens.generated, np.array([3, 6]))
 
 
 def test_sampling_params_from_input_and_generation_config_defaults_override() -> (
@@ -751,8 +751,8 @@ def test_vision_context_reset() -> None:
     )
     assert len(context.images) == 1
     assert context.images[0].pixel_values.tolist() == [10, 11, 12, 13, 14]
-    assert context.processed_length == 0
-    assert context.active_length == 5
+    assert context.tokens.processed_length == 0
+    assert context.tokens.active_length == 5
     assert context.needs_vision_encoding is True
 
     # The pixel values should remain set after update, but needs_vision_encoding should be False.
@@ -760,15 +760,15 @@ def test_vision_context_reset() -> None:
     assert len(context.images) == 1
     assert context.images[0].pixel_values.tolist() == [10, 11, 12, 13, 14]
     assert context.needs_vision_encoding is False
-    assert context.processed_length == 5
-    assert context.active_length == 1
+    assert context.tokens.processed_length == 5
+    assert context.tokens.active_length == 1
 
     # The pixel values should be restored after reset.
     context.reset()
     assert len(context.images) == 1
     assert context.images[0].pixel_values.tolist() == [10, 11, 12, 13, 14]
-    assert context.processed_length == 0
-    assert context.active_length == 6
+    assert context.tokens.processed_length == 0
+    assert context.tokens.active_length == 6
     assert context.needs_vision_encoding is True
 
 
@@ -794,7 +794,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
     )
 
     # Verify initial state
-    assert context.active_length == n
+    assert context.tokens.active_length == n
     assert context.needs_ce is True
     assert context.tokens.prompt_length == n
     assert context.tokens.generated_length == 0
@@ -804,7 +804,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
         context.update(n + i)
 
     # Verify we've generated the expected number of tokens
-    assert context.current_length == n + m
+    assert len(context.tokens) == n + m
     assert (
         context.needs_ce is False
     )  # All original prompt processed, completion generated
@@ -815,7 +815,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
 
     # After reset, all tokens become the new prompt
     new_prompt_len = n + m
-    assert context.active_length == new_prompt_len
+    assert context.tokens.active_length == new_prompt_len
     assert context.tokens.prompt_length == new_prompt_len
     assert context.needs_ce is True
     assert context.status == GenerationStatus.ACTIVE
@@ -831,7 +831,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
         remaining_tokens = new_prompt_len - processed_tokens
         current_chunk_size = min(remaining_tokens, chunk_size)
         if current_chunk_size < remaining_tokens:
-            context.chunk(current_chunk_size)
+            context.tokens.chunk(current_chunk_size)
 
         # Before simulating the update call, verify needs_ce
         assert context.needs_ce is True, (
@@ -843,7 +843,10 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
         context.update(1)
 
         # Verify that indices were updated correctly
-        assert context.processed_length == processed_tokens + current_chunk_size
+        assert (
+            context.tokens.processed_length
+            == processed_tokens + current_chunk_size
+        )
         processed_tokens += current_chunk_size
 
         # Key test: verify needs_ce behavior after chunk processing
@@ -876,10 +879,8 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
 
     # Verify final state - the single generated token from chunked prefill was consumed
     _ = context.to_generation_output()
-    assert context.processed_length == new_prompt_len
-    assert context.active_length == 1
-    # After consuming, no outstanding tokens remain, but generated_length is still 1
-    assert not context.tokens.has_outstanding_generated_tokens
+    assert context.tokens.processed_length == new_prompt_len
+    assert context.tokens.active_length == 1
     assert context.tokens.generated_length == 1
 
     # Now simulate generating the first completion token
@@ -887,7 +888,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
     context.update(999)  # Generate first actual completion token
 
     # Verify proper transition to completion generation
-    assert context.active_length == 1
+    assert context.tokens.active_length == 1
     assert context.needs_ce is False  # Now we genuinely don't need CE
     assert context.tokens.generated_length == 2
     assert (
@@ -969,17 +970,17 @@ def test_text_and_vision_context_happy_case() -> None:
     assert ctx.needs_vision_encoding is True
     assert len(ctx.next_images) == 2
 
-    ctx.skip_processing(9)
+    ctx.tokens.skip_processing(9)
     assert ctx.image_idx == 1
     assert ctx.needs_vision_encoding is True
     assert len(ctx.next_images) == 1
 
-    ctx.skip_processing(5)
+    ctx.tokens.skip_processing(5)
     assert ctx.image_idx == 1
     assert ctx.needs_vision_encoding is True
     assert len(ctx.next_images) == 1
 
-    ctx.skip_processing(5)
+    ctx.tokens.skip_processing(5)
     assert ctx.image_idx == 2
     assert ctx.needs_vision_encoding is False
     assert len(ctx.next_images) == 0
@@ -1092,9 +1093,8 @@ def test_text_and_vision_context_sad_case() -> None:
 
 def does_not_raise_due_to_check_in_property_method() -> None:
     """This test ensures that `isinstance`, `hasattr`, and other class introspection
-    methods do not execute the body of `get_last_generated_token()` and throw an
-    exception. If `get_last_generated_token()` was instead a @property method
-    called via `ctx.last_generated_token`, this test would fail.
+    methods do not execute the body of any methods and throw an
+    exception.
     """
 
     ctx = TTSContext(
@@ -1102,13 +1102,6 @@ def does_not_raise_due_to_check_in_property_method() -> None:
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
     )
 
-    # Verify that calling get_last_generated_token() raises an exception
-    with pytest.raises(ValueError, match="No tokens have been generated"):
-        _ = ctx.get_last_generated_token()
-
-    # Try very hard to execute body of last_generated_token to throw exception
-    _ = hasattr(ctx, "get_last_generated_token")
-    _ = getattr(ctx, "get_last_generated_token", None)
     # Protocol structural checks should NOT trigger the method body!
     # (TextGenerationContext and VLMTextGenerationContext are Protocols)
     _ = isinstance(ctx, TextGenerationContext)

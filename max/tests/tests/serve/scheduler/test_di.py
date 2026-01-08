@@ -201,8 +201,8 @@ def test_decode_sends_request_to_prefill() -> None:
     assert isinstance(prefill_request, PrefillRequest)
     ctx2 = prefill_request.context
     assert client_identity2 == client_identity
-    assert ctx2.processed_length == 0
-    assert ctx2.active_length == 100
+    assert ctx2.tokens.processed_length == 0
+    assert ctx2.tokens.active_length == 100
 
 
 def test_prefill_sends_new_token_to_decode() -> None:

@@ -220,7 +220,7 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
             for _ in range(num_tokens):
                 context.update(new_token=rand(1)[0])
 
-                if context.current_length == context.max_length:
+                if len(context.tokens) == context.max_length:
                     resp = AudioGenerationOutput(
                         GenerationStatus.MAXIMUM_LENGTH,
                         steps_executed=num_tokens,
@@ -343,7 +343,7 @@ def enqueue_request(
         max_seq_len=max_seq_len,
         shared_prefix=shared_prefix,
     )
-    assert context.active_length == prompt_len
+    assert context.tokens.active_length == prompt_len
     queue.put_nowait(context)
 
 

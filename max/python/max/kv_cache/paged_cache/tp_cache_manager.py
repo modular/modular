@@ -195,7 +195,7 @@ class _TPPagedKVCacheManager:
         self, ctx: TextGenerationContext, num_steps: int
     ) -> bool:
         """Determines if a request needs additional blocks."""
-        seq_len = ctx.current_length + num_steps - 1
+        seq_len = len(ctx.tokens) + num_steps - 1
         num_blocks = len(self.block_manager.req_to_blocks[ctx.request_id])
         return seq_len > num_blocks * self.page_size
 
@@ -261,7 +261,7 @@ class _TPPagedKVCacheManager:
                 )
 
             # Compute the total sequence length
-            seq_len = ctx.current_length + num_steps - 1
+            seq_len = len(ctx.tokens) + num_steps - 1
             max_seq_len = max(max_seq_len, seq_len)
 
         # Allocate the buffers containing metadata about the batch.
@@ -284,7 +284,7 @@ class _TPPagedKVCacheManager:
             blocks = self.block_manager.get_req_blocks(ctx.request_id)
 
             # Sanity check that we have enough blocks.
-            seq_len = ctx.current_length + num_steps - 1
+            seq_len = len(ctx.tokens) + num_steps - 1
             num_required_blocks = ceildiv(seq_len, self.page_size)
             assert len(blocks) >= num_required_blocks
             if len(blocks) > num_required_blocks:
@@ -296,11 +296,11 @@ class _TPPagedKVCacheManager:
             )
 
             # Get the existing cache length for this sequence.
-            cache_length = ctx.processed_length
+            cache_length = ctx.tokens.processed_length
             cache_lengths_np[batch_idx] = cache_length
 
             # Update the maximum lengths seen so far.
-            prompt_tokens = ctx.active_length
+            prompt_tokens = ctx.tokens.active_length
             max_prompt_len = max(max_prompt_len, prompt_tokens)
             max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
 

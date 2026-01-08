@@ -162,7 +162,7 @@ def test_tokenizer__truncates_to_max_length(
         prompt="Short message",
     )
     context: TextContext = asyncio.run(tokenizer.new_context(short_request))
-    assert context.current_length < 12
+    assert len(context.tokens) < 12
 
     long_request = TextGenerationRequest(
         request_id=RequestID("request_with_short_message"),
@@ -249,7 +249,7 @@ async def test_tokenizer__encode_and_decode(
         max_length=10,
         tokens=TokenBuffer(np.array(encoded, dtype=np.int64)),
     )
-    assert context.current_length == len(encoded)
+    assert len(context.tokens) == len(encoded)
     decoded = await tokenizer.decode(encoded)
     assert test_string == decoded
 
@@ -789,7 +789,7 @@ ASSISTANT: """
     assert len(context.tokens) > 0
 
     # Decode the prompt tokens to verify our custom template was used
-    prompt_tokens = context.prompt_tokens
+    prompt_tokens = context.tokens.prompt
     decoded_prompt = await tokenizer.decode(prompt_tokens)
 
     # Should contain our custom format

@@ -308,7 +308,7 @@ class TextGenerationPipeline(
 
         if num_available_steps <= 0:
             raise ValueError(
-                f"Request {context.request_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
+                f"Request {context.request_id} length ({len(context.tokens)}) is larger than or equal to the configured max_length ({max_seq_len})"
             )
 
         return min(num_available_steps, num_steps)
@@ -504,8 +504,8 @@ class TextGenerationPipeline(
         """
         self.batch_infos.append(
             BatchInfo(
-                past_seq_lens=[x.processed_length for x in contexts],
-                seq_lens=[x.active_length for x in contexts],
+                past_seq_lens=[x.tokens.processed_length for x in contexts],
+                seq_lens=[x.tokens.active_length for x in contexts],
                 num_steps=num_steps,
             )
         )
@@ -624,9 +624,11 @@ class TextGenerationPipeline(
                 except Exception:
                     batch_size = len(flat_batch)
                     cache_tokens = sum(
-                        ctx.processed_length for ctx in flat_batch
+                        ctx.tokens.processed_length for ctx in flat_batch
                     )
-                    input_tokens = sum(ctx.active_length for ctx in flat_batch)
+                    input_tokens = sum(
+                        ctx.tokens.active_length for ctx in flat_batch
+                    )
                     logger.error(
                         "Encountered an exception while executing batch: "
                         f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}, {num_steps=:}"

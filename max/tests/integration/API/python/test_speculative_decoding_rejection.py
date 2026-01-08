@@ -139,8 +139,8 @@ def test_speculative_decoding_no_rejection(
     context2 = setup_speculative_decoding_pipeline.context2
     num_steps = setup_speculative_decoding_pipeline.num_steps
 
-    assert context1.processed_length == 0
-    assert context2.processed_length == 0
+    assert context1.tokens.processed_length == 0
+    assert context2.tokens.processed_length == 0
 
     # Generate draft tokens.
     draft_inputs, draft_num_steps = pipeline.prepare_batch(
@@ -195,15 +195,15 @@ def test_speculative_decoding_no_rejection(
     context1, context2 = context_batch
 
     # subtract 1 because all draft tokens are accepted, next draft input includes the token generated from the target model
-    assert context1.processed_length == (
-        len(context1.prompt_tokens) + num_steps - 1
+    assert context1.tokens.processed_length == (
+        len(context1.tokens.prompt) + num_steps - 1
     )
-    assert context2.processed_length == (
-        len(context2.prompt_tokens) + num_steps - 1
+    assert context2.tokens.processed_length == (
+        len(context2.tokens.prompt) + num_steps - 1
     )
 
-    assert np.all(context1.generated_tokens[:-1] == draft_tokens.to_numpy()[0])
-    assert np.all(context2.generated_tokens[:-1] == draft_tokens.to_numpy()[1])
+    assert np.all(context1.tokens.generated[:-1] == draft_tokens.to_numpy()[0])
+    assert np.all(context2.tokens.generated[:-1] == draft_tokens.to_numpy()[1])
 
 
 def test_speculative_decoding_partial_rejection(
@@ -215,8 +215,8 @@ def test_speculative_decoding_partial_rejection(
     context2 = setup_speculative_decoding_pipeline.context2
     num_steps = setup_speculative_decoding_pipeline.num_steps
 
-    assert context1.processed_length == 0
-    assert context2.processed_length == 0
+    assert context1.tokens.processed_length == 0
+    assert context2.tokens.processed_length == 0
 
     # Generate draft tokens.
     draft_inputs, _draft_num_steps = pipeline.prepare_batch(
@@ -291,18 +291,18 @@ def test_speculative_decoding_partial_rejection(
     context1, context2 = context_batch
 
     # subtract 1 because recovered token has not been processed by either model
-    assert context1.processed_length == (
-        len(context1.prompt_tokens) + (num_steps // 2) - 1
+    assert context1.tokens.processed_length == (
+        len(context1.tokens.prompt) + (num_steps // 2) - 1
     )
     # subtract 1 because all draft tokens are accepted, next draft input includes the token generated from the target model
-    assert context2.processed_length == (
-        len(context2.prompt_tokens) + num_steps - 1
+    assert context2.tokens.processed_length == (
+        len(context2.tokens.prompt) + num_steps - 1
     )
 
     assert np.all(
-        context1.generated_tokens[:-1] == draft_tokens_host[0, : num_steps // 2]
+        context1.tokens.generated[:-1] == draft_tokens_host[0, : num_steps // 2]
     )
-    assert np.all(context2.generated_tokens[:-1] == draft_tokens_host[1])
+    assert np.all(context2.tokens.generated[:-1] == draft_tokens_host[1])
 
 
 def test_speculative_decoding_multiple_token_without_rejection(
@@ -314,8 +314,8 @@ def test_speculative_decoding_multiple_token_without_rejection(
     pipeline_request = setup_speculative_decoding_pipeline.pipeline_request
     num_steps = setup_speculative_decoding_pipeline.num_steps
 
-    context1_len = context1.current_length
-    context2_len = context2.current_length
+    context1_len = len(context1.tokens)
+    context2_len = len(context2.tokens)
     for _ in range(5):
         inputs = TextGenerationInputs(
             batches=[pipeline_request], num_steps=num_steps
@@ -323,8 +323,8 @@ def test_speculative_decoding_multiple_token_without_rejection(
         pipeline.execute(inputs)
 
         # num_steps generated from draft and +1 from the target
-        assert context1.current_length == context1_len + (num_steps + 1)
-        assert context2.current_length == context2_len + (num_steps + 1)
+        assert len(context1.tokens) == context1_len + (num_steps + 1)
+        assert len(context2.tokens) == context2_len + (num_steps + 1)
 
-        context1_len = context1.current_length
-        context2_len = context2.current_length
+        context1_len = len(context1.tokens)
+        context2_len = len(context2.tokens)

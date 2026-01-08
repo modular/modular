@@ -63,9 +63,9 @@ def test_mock_text_tokenizer() -> None:
 
     new_context = asyncio.run(tokenizer.new_context(request))
 
-    assert new_context.current_length == len(test_prompt)
+    assert len(new_context.tokens) == len(test_prompt)
 
-    decoded = asyncio.run(tokenizer.decode(new_context.next_tokens))
+    decoded = asyncio.run(tokenizer.decode(new_context.tokens.active))
     assert test_prompt == decoded
 
 

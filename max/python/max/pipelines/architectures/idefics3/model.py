@@ -583,12 +583,12 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         batch_offset = 0
 
         for ctx in context_batch:
-            input_ids = ctx.next_tokens
+            input_ids = ctx.tokens.active
             special_image_token_mask = input_ids == self.image_token_id
             indices = np.where(special_image_token_mask)[0].tolist()
 
             indices_and_offsets.append([idx + batch_offset for idx in indices])
-            batch_offset += ctx.active_length
+            batch_offset += ctx.tokens.active_length
 
         if not indices_and_offsets:
             return None
@@ -694,14 +694,14 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Input row offset type: ["input_row_offsets_len"], UInt32
         input_row_offsets = Tensor.from_numpy(
             np.cumsum(
-                [0] + [ctx.active_length for ctx in context_batch],
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
         ).to(self.devices[0])
 
         # Input Ids: ["total_seq_len"], Int64
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
+        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
         input_ids = Tensor.from_numpy(tokens).to(self.devices[0])
 
         # Batch image token indices, offsetting for position in the batch.

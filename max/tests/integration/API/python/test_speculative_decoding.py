@@ -252,12 +252,12 @@ def test_speculative_decoding_context_update(
 
     # length of prompt + length of non rejected draft tokens + 1 for the new token
     assert (
-        context1.current_length
-        == len(context1.prompt_tokens) + reject_token1_idx + 1
+        len(context1.tokens)
+        == len(context1.tokens.prompt) + reject_token1_idx + 1
     )
     assert (
-        context2.current_length
-        == len(context2.prompt_tokens) + reject_token2_idx + 1
+        len(context2.tokens)
+        == len(context2.tokens.prompt) + reject_token2_idx + 1
     )
 
     assert context1._draft_offset == 0
@@ -266,21 +266,21 @@ def test_speculative_decoding_context_update(
     # subtract 1 because the recovered token has not been processed by the draft
     # or dtarget model
     assert (
-        context1.processed_length
-        == len(context1.prompt_tokens) + reject_token1_idx - 1
+        context1.tokens.processed_length
+        == len(context1.tokens.prompt) + reject_token1_idx - 1
     )
 
     # subtract 1 because the bonus token has not been run through the draft model
     assert (
-        context2.processed_length
-        == len(context2.prompt_tokens) + reject_token2_idx - 1
+        context2.tokens.processed_length
+        == len(context2.tokens.prompt) + reject_token2_idx - 1
     )
 
     assert np.all(
-        context1.all_tokens
+        context1.tokens.all
         == np.concatenate(
             (
-                context1.prompt_tokens,
+                context1.tokens.prompt,
                 draft_tokens[0, :reject_token1_idx],
                 recovered_tokens[0, reject_token1_idx][np.newaxis],
             )
@@ -288,10 +288,10 @@ def test_speculative_decoding_context_update(
     )
 
     assert np.all(
-        context2.all_tokens
+        context2.tokens.all
         == np.concatenate(
             (
-                context2.prompt_tokens,
+                context2.tokens.prompt,
                 draft_tokens[1, :reject_token2_idx],
                 bonus_tokens[1],
             )

@@ -154,7 +154,7 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
             if not self._pipeline_config.pool_embeddings:
                 # Remove padded tokens from embeddings
                 request_embeddings = request_embeddings[
-                    : context_batch[batch_index].active_length, :
+                    : context_batch[batch_index].tokens.active_length, :
                 ]
             res[request_id] = EmbeddingsGenerationOutput(request_embeddings)
         return res

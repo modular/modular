@@ -218,7 +218,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         Returns:
             Tuple of (ModelInputs for draft model, num_steps)
         """
-        start_indices = [context.processed_length for context in batch]
+        start_indices = [context.tokens.processed_length for context in batch]
 
         # kv cache needs to fetch starting from 0
         for context in batch:
@@ -241,13 +241,13 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         for i, context in enumerate(batch):
             if needs_ce:
                 # Skip the first token in CE
-                context.skip_processing(1)
+                context.tokens.skip_processing(1)
             else:
-                delta = start_indices[i] - context.processed_length
+                delta = start_indices[i] - context.tokens.processed_length
                 if delta > 0:
-                    context.skip_processing(delta)
+                    context.tokens.skip_processing(delta)
                 else:
-                    context.rewind_processing(-delta)
+                    context.tokens.rewind_processing(-delta)
 
         base_inputs = model.prepare_initial_token_inputs(
             replica_batches=[batch],
@@ -261,13 +261,13 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         for i, context in enumerate(batch):
             self._draft_kv_start_idx[context.request_id] += (
-                context.active_length
+                context.tokens.active_length
             )
-            delta = start_indices[i] - context.processed_length
+            delta = start_indices[i] - context.tokens.processed_length
             if delta > 0:
-                context.skip_processing(delta)
+                context.tokens.skip_processing(delta)
             else:
-                context.rewind_processing(-delta)
+                context.tokens.rewind_processing(-delta)
             context.apply_processing_offset(0)
 
         return (base_inputs, num_steps)

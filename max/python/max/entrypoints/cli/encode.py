@@ -57,7 +57,7 @@ async def _run_pipeline_encode(
     )
 
     if metrics:
-        metrics.prompt_size = context.current_length
+        metrics.prompt_size = len(context.tokens)
         metrics.signpost("begin_encoding")
 
     response = pipeline.execute(pipeline_request)

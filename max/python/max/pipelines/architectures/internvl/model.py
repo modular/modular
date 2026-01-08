@@ -743,7 +743,7 @@ class InternVLModel(
             if "image_token_indices" in ctx.extra_model_args:
                 indices = ctx.extra_model_args["image_token_indices"]
                 indices_and_offsets.append(indices + batch_offset)
-            batch_offset += ctx.active_length
+            batch_offset += ctx.tokens.active_length
 
         if not indices_and_offsets:
             return None
@@ -858,7 +858,7 @@ class InternVLModel(
         # Input row offset type: ["input_row_offsets_len"], UInt32
         input_row_offsets_host = Tensor.from_numpy(
             np.cumsum(
-                [0] + [ctx.active_length for ctx in context_batch],
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
                 dtype=np.uint32,
             ),
         )
@@ -868,7 +868,7 @@ class InternVLModel(
 
         # Input Ids: ["total_seq_len"], Int64
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
+        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
         input_ids = Tensor.from_numpy(tokens).to(self.devices[0])
 
         # Batch image token indices, offsetting for position in the batch.

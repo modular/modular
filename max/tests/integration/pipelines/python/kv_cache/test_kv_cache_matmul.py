@@ -92,7 +92,7 @@ def _dump_k_or_v_cache_to_torch_tensor(
     device_tensor_torch = device_tensor_torch[:, key_or_value.value, :, :, :, :]
 
     # [seq_len, num_layers, n_heads, head_dim]
-    seq_len = ctx.processed_length
+    seq_len = ctx.tokens.processed_length
     res = torch.empty(
         (
             seq_len,

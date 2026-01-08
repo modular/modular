@@ -205,13 +205,13 @@ class PrefillScheduler(Scheduler):
         assert not context.needs_ce, (
             f"Invalid Context: Expected needs_ce to be False. Found: {context}"
         )
-        assert context.processed_length > 0, (
+        assert context.tokens.processed_length > 0, (
             f"Invalid Context: Expected start_idx to be greater than 0. Found: {context}"
         )
         self.dispatcher.send_reply_nowait(
             PrefillResponse(
                 id=req_id,
-                generated_token_id=context.get_last_generated_token(),
+                generated_token_id=int(context.tokens[-1]),
                 transfer_metadata=transfer_data,
             ),
             identity,
