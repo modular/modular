@@ -229,7 +229,7 @@ class TestSelectiveScanFn:
 
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
 
-        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
+        u, delta, A, B, C, D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
 
@@ -376,7 +376,7 @@ class TestSelectiveScanFn:
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
 
         # Create test data
-        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
+        u, delta, A, B, C, D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
 
@@ -443,7 +443,7 @@ class TestSelectiveScanFn:
     ) -> None:
         """Test basic selective scan forward pass."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
-        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
+        u, delta, A, B, C, D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
 
@@ -509,7 +509,7 @@ class TestSelectiveScanFn:
     ) -> None:
         """Test selective scan with gate tensor z."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
-        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
+        u, delta, A, B, C, D, z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
 
@@ -579,7 +579,7 @@ class TestSelectiveScanFn:
     ) -> None:
         """Test selective scan with delta_bias."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
-        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
+        u, delta, A, B, C, D, _z, delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
 
@@ -649,7 +649,7 @@ class TestSelectiveScanFn:
     ) -> None:
         """Test selective scan with return_last_state=True."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
-        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
+        u, delta, A, B, C, D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
 
@@ -719,7 +719,7 @@ class TestSelectiveScanFn:
     ) -> None:
         """Test selective scan with delta_softplus=True."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
-        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
+        u, delta, A, B, C, D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
 
@@ -2493,6 +2493,7 @@ class TestMambaInnerFn:
                 D_tensor,
                 delta_bias_tensor,
             )
+            graph.output(result)
 
         # Load and run
         compiled_model = session.load(graph)

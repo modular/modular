@@ -531,16 +531,16 @@ def mamba_inner_fn_simplified(
 
     # Create simple tensors directly instead of complex operations
     u_tensor = ops.constant(
-        np.random.randn(batch_dim, intermediate_size, seqlen).astype(
-            np.float32
-        ),
+        np.random.randn(
+            int(batch_dim), int(intermediate_size), int(seqlen)
+        ).astype(np.float32),
         dtype=xz.dtype,
         device=xz.device,
     )
     delta_tensor = ops.constant(
-        np.random.randn(batch_dim, intermediate_size, seqlen).astype(
-            np.float32
-        ),
+        np.random.randn(
+            int(batch_dim), int(intermediate_size), int(seqlen)
+        ).astype(np.float32),
         dtype=xz.dtype,
         device=xz.device,
     )
@@ -551,18 +551,22 @@ def mamba_inner_fn_simplified(
         A
         if A is not None
         else ops.constant(
-            np.random.randn(intermediate_size, d_state).astype(np.float32),
+            np.random.randn(int(intermediate_size), d_state).astype(np.float32),
             dtype=xz.dtype,
             device=xz.device,
         )
     )
     B_tensor = ops.constant(
-        np.random.randn(batch_dim, 1, d_state, seqlen).astype(np.float32),
+        np.random.randn(int(batch_dim), 1, d_state, int(seqlen)).astype(
+            np.float32
+        ),
         dtype=xz.dtype,
         device=xz.device,
     )
     C_tensor = ops.constant(
-        np.random.randn(batch_dim, 1, d_state, seqlen).astype(np.float32),
+        np.random.randn(int(batch_dim), 1, d_state, int(seqlen)).astype(
+            np.float32
+        ),
         dtype=xz.dtype,
         device=xz.device,
     )
@@ -583,8 +587,15 @@ def mamba_inner_fn_simplified(
     # Ensure we have a TensorValue, not a tuple
     assert not isinstance(out, tuple)
 
-    # Simple output projection
-    output = ops.matmul(out, ops.transpose(out_proj_weight, 0, 1))
+    # Reshape for output projection: (batch, intermediate_size, seqlen) -> (batch, seqlen, intermediate_size)
+    # Use permute instead of reshape to preserve correct dimension mapping: (B, D, S) -> (B, S, D)
+    out_permuted = ops.permute(out, [0, 2, 1])
+
+    # Apply output projection: (batch, seqlen, intermediate_size) @ out_proj_weight.T
+    # out_proj_weight: (hidden_size, intermediate_size)
+    output = ops.matmul(
+        out_permuted, ops.transpose(out_proj_weight, 0, 1)
+    )  # (batch, seqlen, hidden_size)
     if out_proj_bias is not None:
         output = output + out_proj_bias
 

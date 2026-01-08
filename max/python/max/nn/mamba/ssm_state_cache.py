@@ -182,14 +182,16 @@ class SSMStateCacheParams:
             ),
             dtype=self.dtype.to_numpy(),
         )
-        conv_state = Tensor.from_numpy(conv_state_np).to(self.device)
+        conv_state = Tensor.from_numpy(conv_state_np).to(
+            self.device.to_device()
+        )
 
         # Initialize ssm_state to zeros
         ssm_state_np = np.zeros(
             (self.num_layers, batch_size, self.intermediate_size, self.d_state),
             dtype=self.dtype.to_numpy(),
         )
-        ssm_state = Tensor.from_numpy(ssm_state_np).to(self.device)
+        ssm_state = Tensor.from_numpy(ssm_state_np).to(self.device.to_device())
 
         # Initialize seqlen_offset to 0 (prefill mode)
         seqlen_offset = Tensor.from_numpy(np.array([0], dtype=np.int64))

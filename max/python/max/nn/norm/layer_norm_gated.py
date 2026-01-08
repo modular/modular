@@ -324,7 +324,6 @@ class RMSNorm(Module, Shardable):
 
         # Create weight (RMSNorm doesn't use bias)
         self.weight = Weight("weight", dtype, (hidden_size,), device=devices[0])
-        self.register_parameter("bias", None)
 
         # Initialize weights
         self.reset_parameters()

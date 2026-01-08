@@ -19,12 +19,14 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorType, TensorValue, Weight, ops
 from max.nn import Layer, Linear, Module
 from max.nn.conv import causal_conv1d_fn, causal_conv1d_update_fn
 from max.nn.norm import layer_norm_fn
+from max.nn.norm.layer_norm_gated import LayerNorm, RMSNorm
 from max.nn.selective_scan import mamba_inner_fn
 
 
@@ -241,7 +243,7 @@ class MambaSSM(Module):
         self,
         x: TensorValue,
         input_row_offsets: TensorValue | None = None,
-        inference_params: dict | None = None,
+        inference_params: dict[Any, Any] | None = None,
         **kwargs,
     ) -> TensorValue:
         """Forward pass through the SSM layer.
@@ -258,10 +260,9 @@ class MambaSSM(Module):
         # Step 1: Check if we should use step method (autoregressive mode)
         # Only use step when we *know* we have a single token (seqlen==1); otherwise fall back to prefill
         use_step = False
+        seqlen_offset = 0
         if inference_params is not None and self.layer_idx is not None:
             seqlen_offset = inference_params.get("seqlen_offset", 0)
-        else:
-            seqlen_offset = 0
 
             def _is_one(dim: Dim | int) -> bool:
                 try:
@@ -328,7 +329,10 @@ class MambaSSM(Module):
             )
 
             # Update cache
-            if "key_value_memory_dict" in inference_params:
+            if (
+                inference_params is not None
+                and "key_value_memory_dict" in inference_params
+            ):
                 inference_params["key_value_memory_dict"][self.layer_idx] = (
                     conv_state,
                     ssm_state,
@@ -741,7 +745,7 @@ class MambaSSM(Module):
 
     def _get_states_from_cache(
         self,
-        inference_params: dict,
+        inference_params: dict[Any, Any],
         batch_size: int,
         initialize_states: bool = False,
     ) -> tuple[TensorValue, TensorValue]:
@@ -812,8 +816,8 @@ class Block(Module):
         dim: int,
         mixer: Module,
         mlp: Layer | None = None,
-        norm: Layer | None = None,
-        norm2: Layer | None = None,
+        norm: LayerNorm | RMSNorm | None = None,
+        norm2: LayerNorm | RMSNorm | None = None,
         fused_add_norm: bool = False,
         residual_in_fp32: bool = False,
     ) -> None:
@@ -869,7 +873,7 @@ class Block(Module):
         hidden_states: TensorValue,
         residual: TensorValue | None = None,
         input_row_offsets: TensorValue | None = None,
-        inference_params: dict | None = None,
+        inference_params: dict[Any, Any] | None = None,
         **mixer_kwargs,
     ) -> tuple[TensorValue, TensorValue]:
         """Forward pass through the block.

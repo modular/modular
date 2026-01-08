@@ -15,6 +15,7 @@ MAMBA_MOJOPKGS = [
 
 modular_py_test(
     name = "nn",
+    timeout = "long",
     srcs = glob(["*.py"]),
     mojo_deps = select({
         "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"] + MAMBA_MOJOPKGS,

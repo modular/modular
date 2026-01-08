@@ -116,12 +116,12 @@ fn causal_conv1d_varlen_states_cpu[
                     + d * states_dim_stride
                     + s * states_seqlen_stride
                 )
-                states.ptr.offset(states_offset).store(Scalar[states_dtype](0))
+                states.ptr[states_offset] = Scalar[states_dtype](0)
 
     # Extract states for each sequence
     for b in range(batch):
-        var end_idx = Int(cu_seqlens.ptr.offset(b + 1).load())
-        var start_idx_seq = Int(cu_seqlens.ptr.offset(b).load())
+        var end_idx = Int(cu_seqlens.ptr[b + 1])
+        var start_idx_seq = Int(cu_seqlens.ptr[b])
         var start_idx = max(start_idx_seq, end_idx - state_len)
         var num_elements = end_idx - start_idx
 
@@ -138,10 +138,8 @@ fn causal_conv1d_varlen_states_cpu[
                     + d * states_dim_stride
                     + states_seq_idx * states_seqlen_stride
                 )
-                var val = x.ptr.offset(x_offset).load()
-                states.ptr.offset(states_offset).store(
-                    Scalar[states_dtype](val)
-                )
+                var val = x.ptr[x_offset]
+                states.ptr[states_offset] = Scalar[states_dtype](val)
 
 
 fn causal_conv1d_varlen_fwd_cpu[
@@ -218,30 +216,30 @@ fn causal_conv1d_varlen_fwd_cpu[
     for b in range(batch):
         # Check if this is a padded entry
         if has_cache_indices:
-            var cache_idx_val = Int32(cache_indices.ptr.offset(b).load())
+            var cache_idx_val = Int32(cache_indices.ptr[b])
             if cache_idx_val == pad_slot_id:
                 continue
 
-        var seq_start = Int(query_start_loc.ptr.offset(b).load())
-        var seq_end = Int(query_start_loc.ptr.offset(b + 1).load())
+        var seq_start = Int(query_start_loc.ptr[b])
+        var seq_end = Int(query_start_loc.ptr[b + 1])
         var seqlen = seq_end - seq_start
 
         # Determine if we should use initial state
         var use_initial_state = False
         if has_initial_state_flag:
-            use_initial_state = Bool(has_initial_state.ptr.offset(b).load())
+            use_initial_state = Bool(has_initial_state.ptr[b])
 
         # Get cache index for this batch
         var cache_idx: Int = b
         if has_cache_indices:
-            cache_idx = Int(cache_indices.ptr.offset(b).load())
+            cache_idx = Int(cache_indices.ptr[b])
 
         # Process each channel
         for d in range(dim):
             # Load bias
             var bias_val: Scalar[output_dtype] = 0
             if has_bias:
-                bias_val = Scalar[output_dtype](bias.ptr.offset(d).load())
+                bias_val = Scalar[output_dtype](bias.ptr[d])
 
             # Load weights for this channel
             var weights = List[Scalar[weight_dtype]]()
@@ -249,7 +247,7 @@ fn causal_conv1d_varlen_fwd_cpu[
                 var weight_offset = (
                     d * weight_dim_stride + w_idx * weight_width_stride
                 )
-                weights.append(weight.ptr.offset(weight_offset).load())
+                weights.append(weight.ptr[weight_offset])
 
             # Process each position in the sequence
             for l in range(seqlen):
@@ -266,7 +264,7 @@ fn causal_conv1d_varlen_fwd_cpu[
                             d * x_dim_stride
                             + (seq_start + input_l) * x_seqlen_stride
                         )
-                        input_val = x.ptr.offset(x_offset).load()
+                        input_val = x.ptr[x_offset]
                     elif use_initial_state and has_conv_states:
                         # Use initial state from conv_states
                         var state_idx = (
@@ -279,7 +277,7 @@ fn causal_conv1d_varlen_fwd_cpu[
                                 + state_idx * conv_states_width_stride
                             )
                             input_val = Scalar[x_dtype](
-                                conv_states.ptr.offset(state_offset).load()
+                                conv_states.ptr[state_offset]
                             )
 
                     conv_sum += Scalar[output_dtype](
@@ -295,7 +293,7 @@ fn causal_conv1d_varlen_fwd_cpu[
                 var out_offset = (
                     d * out_dim_stride + (seq_start + l) * out_seqlen_stride
                 )
-                output.ptr.offset(out_offset).store(out_val)
+                output.ptr[out_offset] = out_val
 
             # Update conv_states with final state if provided
             if has_conv_states:
@@ -309,9 +307,7 @@ fn causal_conv1d_varlen_fwd_cpu[
                             d * x_dim_stride
                             + (seq_start + src_l) * x_seqlen_stride
                         )
-                        val = Scalar[conv_states_dtype](
-                            x.ptr.offset(x_offset).load()
-                        )
+                        val = Scalar[conv_states_dtype](x.ptr[x_offset])
                     elif use_initial_state:
                         # Carry over from initial state
                         var state_idx = width_minus_1 + src_l - (width_minus_1)
@@ -321,14 +317,14 @@ fn causal_conv1d_varlen_fwd_cpu[
                                 + d * conv_states_dim_stride
                                 + state_idx * conv_states_width_stride
                             )
-                            val = conv_states.ptr.offset(state_offset).load()
+                            val = conv_states.ptr[state_offset]
 
                     var state_offset = (
                         cache_idx * conv_states_batch_stride
                         + d * conv_states_dim_stride
                         + s * conv_states_width_stride
                     )
-                    conv_states.ptr.offset(state_offset).store(val)
+                    conv_states.ptr[state_offset] = val
 
 
 fn causal_conv1d_varlen_update_cpu[
@@ -400,20 +396,20 @@ fn causal_conv1d_varlen_update_cpu[
     for b in range(batch):
         # Check for padded entry
         if has_conv_state_indices:
-            var state_idx_val = Int32(conv_state_indices.ptr.offset(b).load())
+            var state_idx_val = Int32(conv_state_indices.ptr[b])
             if state_idx_val == pad_slot_id:
                 continue
 
         # Determine actual batch index for conv_state
         var state_batch_idx = b
         if has_conv_state_indices:
-            state_batch_idx = Int(conv_state_indices.ptr.offset(b).load())
+            state_batch_idx = Int(conv_state_indices.ptr[b])
 
         for d in range(dim):
             # Load bias
             var bias_val: Scalar[output_dtype] = 0
             if has_bias:
-                bias_val = Scalar[output_dtype](bias.ptr.offset(d).load())
+                bias_val = Scalar[output_dtype](bias.ptr[d])
 
             # Load weights
             var weights = List[Scalar[weight_dtype]]()
@@ -421,13 +417,13 @@ fn causal_conv1d_varlen_update_cpu[
                 var weight_offset = (
                     d * weight_dim_stride + w_idx * weight_width_stride
                 )
-                weights.append(weight.ptr.offset(weight_offset).load())
+                weights.append(weight.ptr[weight_offset])
 
             for l in range(seqlen):
                 # Get cache position for circular buffer
                 var cache_offset = 0
                 if has_cache_seqlens:
-                    var cache_seqlen = Int(cache_seqlens.ptr.offset(b).load())
+                    var cache_seqlen = Int(cache_seqlens.ptr[b])
                     cache_offset = (cache_seqlen + l) % state_len
 
                 # Gather input values from state and current x
@@ -443,9 +439,7 @@ fn causal_conv1d_varlen_update_cpu[
                         var state_pos: Int
                         if has_cache_seqlens:
                             # Circular buffer
-                            var cache_seqlen = Int(
-                                cache_seqlens.ptr.offset(b).load()
-                            )
+                            var cache_seqlen = Int(cache_seqlens.ptr[b])
                             state_pos = (
                                 cache_seqlen + rel_pos + l + state_len
                             ) % state_len
@@ -460,7 +454,7 @@ fn causal_conv1d_varlen_update_cpu[
                                 + state_pos * conv_state_seqlen_stride
                             )
                             input_val = Scalar[x_dtype](
-                                conv_state.ptr.offset(state_offset).load()
+                                conv_state.ptr[state_offset]
                             )
                     else:
                         # Read from current x
@@ -471,7 +465,7 @@ fn causal_conv1d_varlen_update_cpu[
                                 + d * x_dim_stride
                                 + x_l * x_seqlen_stride
                             )
-                            input_val = x.ptr.offset(x_offset).load()
+                            input_val = x.ptr[x_offset]
 
                     input_vals.append(input_val)
 
@@ -493,19 +487,19 @@ fn causal_conv1d_varlen_update_cpu[
                     + d * out_dim_stride
                     + l * out_seqlen_stride
                 )
-                output.ptr.offset(out_offset).store(out_val)
+                output.ptr[out_offset] = out_val
 
             # Update state with new x values
             for l in range(seqlen):
                 var x_offset = (
                     b * x_batch_stride + d * x_dim_stride + l * x_seqlen_stride
                 )
-                var x_val = x.ptr.offset(x_offset).load()
+                var x_val = x.ptr[x_offset]
 
                 var state_pos: Int
                 if has_cache_seqlens:
                     # Circular buffer
-                    var cache_seqlen = Int(cache_seqlens.ptr.offset(b).load())
+                    var cache_seqlen = Int(cache_seqlens.ptr[b])
                     state_pos = (cache_seqlen + l) % state_len
                 else:
                     # Shift state left and add new value at end
@@ -522,8 +516,8 @@ fn causal_conv1d_varlen_update_cpu[
                                 + d * conv_state_dim_stride
                                 + s * conv_state_seqlen_stride
                             )
-                            var val = conv_state.ptr.offset(src_offset).load()
-                            conv_state.ptr.offset(dst_offset).store(val)
+                            var val = conv_state.ptr[src_offset]
+                            conv_state.ptr[dst_offset] = val
                     state_pos = state_len - seqlen + l
 
                 var state_offset = (
@@ -531,9 +525,7 @@ fn causal_conv1d_varlen_update_cpu[
                     + d * conv_state_dim_stride
                     + state_pos * conv_state_seqlen_stride
                 )
-                conv_state.ptr.offset(state_offset).store(
-                    Scalar[conv_state_dtype](x_val)
-                )
+                conv_state.ptr[state_offset] = Scalar[conv_state_dtype](x_val)
 
 
 # ============================================================================
@@ -606,8 +598,8 @@ fn causal_conv1d_varlen_states_gpu[
     var tid_col = Int(thread_idx.x)
 
     # Load sequence boundaries
-    var end_idx = Int(cu_seqlens.ptr.offset(batch_idx + 1).load())
-    var start_idx_seq = Int(cu_seqlens.ptr.offset(batch_idx).load())
+    var end_idx = Int(cu_seqlens.ptr[batch_idx + 1])
+    var start_idx_seq = Int(cu_seqlens.ptr[batch_idx])
     var start_idx = max(start_idx_seq, end_idx - state_len)
 
     # Calculate row indices (processing from end backwards)
@@ -618,7 +610,7 @@ fn causal_conv1d_varlen_states_gpu[
     var val: Scalar[states_dtype] = 0
     if row >= start_idx and col < dim:
         var x_offset = row * x_seqlen_stride + col * x_dim_stride
-        val = Scalar[states_dtype](x.ptr.offset(x_offset).load())
+        val = Scalar[states_dtype](x.ptr[x_offset])
 
     # Calculate state row index
     var states_row = state_len - (block_row * BLOCK_M + tid_row + 1)
@@ -630,7 +622,7 @@ fn causal_conv1d_varlen_states_gpu[
             + col * states_dim_stride
             + states_row * states_seqlen_stride
         )
-        states.ptr.offset(states_offset).store(val)
+        states.ptr[states_offset] = val
 
 
 fn causal_conv1d_varlen_fwd_gpu[
@@ -708,13 +700,13 @@ fn causal_conv1d_varlen_fwd_gpu[
 
     # Check for padding
     if has_cache_indices != 0:
-        var cache_idx_val = Int32(cache_indices.ptr.offset(batch_idx).load())
+        var cache_idx_val = Int32(cache_indices.ptr[batch_idx])
         if cache_idx_val == pad_slot_id:
             return
 
     # Get sequence bounds
-    var seq_start = Int(query_start_loc.ptr.offset(batch_idx).load())
-    var seq_end = Int(query_start_loc.ptr.offset(batch_idx + 1).load())
+    var seq_start = Int(query_start_loc.ptr[batch_idx])
+    var seq_end = Int(query_start_loc.ptr[batch_idx + 1])
     var seqlen = seq_end - seq_start
 
     if d >= dim:
@@ -723,23 +715,23 @@ fn causal_conv1d_varlen_fwd_gpu[
     # Check for initial state
     var use_initial_state = False
     if has_initial_state_flag != 0:
-        use_initial_state = Bool(has_initial_state.ptr.offset(batch_idx).load())
+        use_initial_state = Bool(has_initial_state.ptr[batch_idx])
 
     # Get cache index
     var cache_idx: Int = batch_idx
     if has_cache_indices != 0:
-        cache_idx = Int(cache_indices.ptr.offset(batch_idx).load())
+        cache_idx = Int(cache_indices.ptr[batch_idx])
 
     # Load bias
     var bias_val: Scalar[output_dtype] = 0
     if has_bias != 0:
-        bias_val = Scalar[output_dtype](bias.ptr.offset(d).load())
+        bias_val = Scalar[output_dtype](bias.ptr[d])
 
     # Load weights into registers
     var weights = SIMD[weight_dtype, 8](0)  # Initialize with zeros
     for w_idx in range(WIDTH):
         var weight_offset = d * weight_dim_stride + w_idx * weight_width_stride
-        weights[w_idx] = weight.ptr.offset(weight_offset).load()
+        weights[w_idx] = weight.ptr[weight_offset]
 
     comptime WIDTH_MINUS_1 = WIDTH - 1
 
@@ -757,7 +749,7 @@ fn causal_conv1d_varlen_fwd_gpu[
                 var x_offset = (
                     d * x_dim_stride + (seq_start + input_l) * x_seqlen_stride
                 )
-                input_val = x.ptr.offset(x_offset).load()
+                input_val = x.ptr[x_offset]
             elif use_initial_state and has_conv_states != 0:
                 var state_idx = WIDTH_MINUS_1 + input_l
                 if state_idx >= 0:
@@ -766,9 +758,7 @@ fn causal_conv1d_varlen_fwd_gpu[
                         + d * conv_states_dim_stride
                         + state_idx * conv_states_width_stride
                     )
-                    input_val = Scalar[x_dtype](
-                        conv_states.ptr.offset(state_offset).load()
-                    )
+                    input_val = Scalar[x_dtype](conv_states.ptr[state_offset])
 
             conv_sum += Scalar[output_dtype](
                 input_val * Scalar[x_dtype](weights[w_idx])
@@ -783,7 +773,7 @@ fn causal_conv1d_varlen_fwd_gpu[
         var out_offset = (
             d * out_dim_stride + (seq_start + l) * out_seqlen_stride
         )
-        output.ptr.offset(out_offset).store(out_val)
+        output.ptr[out_offset] = out_val
 
     # Update conv_states
     if has_conv_states != 0:
@@ -797,14 +787,14 @@ fn causal_conv1d_varlen_fwd_gpu[
                 var x_offset = (
                     d * x_dim_stride + (seq_start + src_l) * x_seqlen_stride
                 )
-                val = Scalar[conv_states_dtype](x.ptr.offset(x_offset).load())
+                val = Scalar[conv_states_dtype](x.ptr[x_offset])
 
             var state_offset = (
                 cache_idx * conv_states_batch_stride
                 + d * conv_states_dim_stride
                 + s * conv_states_width_stride
             )
-            conv_states.ptr.offset(state_offset).store(val)
+            conv_states.ptr[state_offset] = val
 
 
 fn causal_conv1d_varlen_update_gpu[
@@ -875,9 +865,7 @@ fn causal_conv1d_varlen_update_gpu[
 
     # Check for padding
     if has_conv_state_indices != 0:
-        var state_idx_val = Int32(
-            conv_state_indices.ptr.offset(batch_idx).load()
-        )
+        var state_idx_val = Int32(conv_state_indices.ptr[batch_idx])
         if state_idx_val == pad_slot_id:
             return
 
@@ -887,18 +875,18 @@ fn causal_conv1d_varlen_update_gpu[
     # Get state batch index
     var state_batch_idx: Int = batch_idx
     if has_conv_state_indices != 0:
-        state_batch_idx = Int(conv_state_indices.ptr.offset(batch_idx).load())
+        state_batch_idx = Int(conv_state_indices.ptr[batch_idx])
 
     # Load bias
     var bias_val: Scalar[output_dtype] = 0
     if has_bias != 0:
-        bias_val = Scalar[output_dtype](bias.ptr.offset(d).load())
+        bias_val = Scalar[output_dtype](bias.ptr[d])
 
     # Load weights
     var weights = SIMD[weight_dtype, 8](0)  # Initialize with zeros
     for w_idx in range(WIDTH):
         var weight_offset = d * weight_dim_stride + w_idx * weight_width_stride
-        weights[w_idx] = weight.ptr.offset(weight_offset).load()
+        weights[w_idx] = weight.ptr[weight_offset]
 
     comptime WIDTH_MINUS_1 = WIDTH - 1
 
@@ -906,7 +894,7 @@ fn causal_conv1d_varlen_update_gpu[
         # Get cache position
         var cache_offset = 0
         if has_cache_seqlens != 0:
-            var cache_seqlen = Int(cache_seqlens.ptr.offset(batch_idx).load())
+            var cache_seqlen = Int(cache_seqlens.ptr[batch_idx])
             cache_offset = cache_seqlen
 
         # Gather inputs and compute
@@ -933,9 +921,7 @@ fn causal_conv1d_varlen_update_gpu[
                         + d * conv_state_dim_stride
                         + state_pos * conv_state_seqlen_stride
                     )
-                    input_val = Scalar[x_dtype](
-                        conv_state.ptr.offset(state_offset).load()
-                    )
+                    input_val = Scalar[x_dtype](conv_state.ptr[state_offset])
             else:
                 # From x
                 var x_l = rel_pos + l
@@ -945,12 +931,11 @@ fn causal_conv1d_varlen_update_gpu[
                         + d * x_dim_stride
                         + x_l * x_seqlen_stride
                     )
-                    input_val = x.ptr.offset(x_offset).load()
+                    input_val = x.ptr[x_offset]
 
             conv_sum += Scalar[output_dtype](
                 input_val * Scalar[x_dtype](weights[w_idx])
             )
-
         # Apply activation
         var out_val = conv_sum
         if silu_activation != 0:
@@ -962,13 +947,13 @@ fn causal_conv1d_varlen_update_gpu[
             + d * out_dim_stride
             + l * out_seqlen_stride
         )
-        output.ptr.offset(out_offset).store(out_val)
+        output.ptr[out_offset] = out_val
 
         # Update state
         var x_offset = (
             batch_idx * x_batch_stride + d * x_dim_stride + l * x_seqlen_stride
         )
-        var x_val = x.ptr.offset(x_offset).load()
+        var x_val = x.ptr[x_offset]
 
         var state_pos: Int
         if has_cache_seqlens != 0:
@@ -981,6 +966,4 @@ fn causal_conv1d_varlen_update_gpu[
             + d * conv_state_dim_stride
             + state_pos * conv_state_seqlen_stride
         )
-        conv_state.ptr.offset(state_offset).store(
-            Scalar[conv_state_dtype](x_val)
-        )
+        conv_state.ptr[state_offset] = Scalar[conv_state_dtype](x_val)
