@@ -84,92 +84,113 @@ fn run_selective_scan_fwd[
     """Test selective scan forward kernel against reference implementation."""
     if dstate > MAX_DSTATE:
         return  # Skip if dstate exceeds kernel limit
-    
+
     var group_size = dim // n_groups
     var chunk_size = 2048
     var n_chunks = (seqlen + chunk_size - 1) // chunk_size
-    
+
     # Allocate host memory
     comptime layout_3d = Layout.row_major[3]()
     comptime layout_4d = Layout.row_major[4]()
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    
+
     # output: (batch, dim, seqlen)
     var output_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var output_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        output_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        output_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     ).fill(0)
-    
+
     # x: (batch, dim, n_chunks, 2*dstate) - checkpoint tensor
     var x_heap = alloc[Scalar[dtype]](batch * dim * n_chunks * 2 * dstate)
     var x_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        x_heap, RuntimeLayout[layout_4d].row_major(Index(batch, dim, n_chunks, 2 * dstate))
+        x_heap,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, dim, n_chunks, 2 * dstate)
+        ),
     ).fill(0)
-    
+
     # out_z: (batch, dim, seqlen)
     var out_z_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var out_z_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        out_z_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        out_z_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     ).fill(0)
-    
+
     # u: (batch, dim, seqlen)
     var u_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var u_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
         u_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
     )
-    
+
     # delta: (batch, dim, seqlen)
     var delta_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var delta_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        delta_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        delta_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
-    
+
     # A: (dim, dstate)
     var A_heap = alloc[Scalar[dtype]](dim * dstate)
     var A_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         A_heap, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
     )
-    
+
     # B: (batch, n_groups, dstate, seqlen)
     var B_heap = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
     var B_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        B_heap, RuntimeLayout[layout_4d].row_major(Index(batch, n_groups, dstate, seqlen))
+        B_heap,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, n_groups, dstate, seqlen)
+        ),
     )
-    
+
     # C: (batch, n_groups, dstate, seqlen)
     var C_heap = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
     var C_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        C_heap, RuntimeLayout[layout_4d].row_major(Index(batch, n_groups, dstate, seqlen))
+        C_heap,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, n_groups, dstate, seqlen)
+        ),
     )
-    
+
     # D: (dim,) or empty
     var D_size = dim if has_D else 0
     var D_heap = alloc[Scalar[dtype]](max(D_size, 1))
     var D_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         D_heap, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
-    
+
     # z: (batch, dim, seqlen) or empty
     var z_size = batch * dim * seqlen if has_z else 0
     var z_heap = alloc[Scalar[dtype]](max(z_size, 1))
     var z_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        z_heap, RuntimeLayout[layout_3d].row_major(Index(batch if has_z else 0, dim if has_z else 0, seqlen if has_z else 0))
+        z_heap,
+        RuntimeLayout[layout_3d].row_major(
+            Index(
+                batch if has_z else 0,
+                dim if has_z else 0,
+                seqlen if has_z else 0,
+            )
+        ),
     )
-    
+
     # delta_bias: (dim,) or empty
     var delta_bias_size = dim if has_delta_bias else 0
     var delta_bias_heap = alloc[Scalar[dtype]](max(delta_bias_size, 1))
     var delta_bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        delta_bias_heap, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
+        delta_bias_heap,
+        RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
     )
-    
+
     # Reference output
     var output_ref_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var output_ref_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        output_ref_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        output_ref_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     ).fill(0)
-    
+
     # Initialize input data
     random(u_h)
     random(delta_h)
@@ -182,17 +203,17 @@ fn run_selective_scan_fwd[
         random(z_h)
     if has_delta_bias:
         random(delta_bias_h)
-    
+
     # Scale A to be negative for stability
     for i in range(dim * dstate):
         var val = A_h.ptr.offset(i).load()
         A_h.ptr.offset(i).store(Scalar[dtype](Float32(val) * -0.5))
-    
+
     # Scale delta to be positive
     for i in range(batch * dim * seqlen):
         var val = delta_h.ptr.offset(i).load()
         delta_h.ptr.offset(i).store(Scalar[dtype](abs(Float32(val)) * 0.5))
-    
+
     var output_buf = output_h
     var x_buf = x_h
     var out_z_buf = out_z_h
@@ -205,7 +226,7 @@ fn run_selective_scan_fwd[
     var z_buf = z_h
     var delta_bias_buf = delta_bias_h
     var output_ref_buf = output_ref_h
-    
+
     # Strides for row-major layout
     var output_b_stride: UInt32 = dim * seqlen
     var output_d_stride: UInt32 = seqlen
@@ -238,7 +259,7 @@ fn run_selective_scan_fwd[
     var z_d_stride: UInt32 = seqlen
     var z_t_stride: UInt32 = 1
     var delta_bias_stride: UInt32 = 1
-    
+
     # Call fused kernel
     selective_scan_fwd_cpu[
         dtype,
@@ -303,22 +324,24 @@ fn run_selective_scan_fwd[
         z_t_stride,
         delta_bias_stride,
     )
-    
+
     # For now, just verify the kernel executes without errors
     # A full reference implementation would require matching the exact chunking
     # and checkpoint logic, which is complex. This test verifies the kernel
     # runs correctly and produces reasonable outputs.
-    
+
     # Basic sanity check: output should not be all zeros
     var has_nonzero = False
     for i in range(batch * dim * seqlen):
         if abs(Float32(output_h.ptr[i])) > 1e-6:
             has_nonzero = True
             break
-    
+
     if not has_nonzero:
-        raise Error("Output is all zeros - kernel may not be executing correctly")
-    
+        raise Error(
+            "Output is all zeros - kernel may not be executing correctly"
+        )
+
     # Cleanup
     output_heap.free()
     x_heap.free()
@@ -336,63 +359,103 @@ fn run_selective_scan_fwd[
 
 def main():
     # Test basic selective scan
-    run_selective_scan_fwd[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=False](
-        batch=2, dim=4, seqlen=8, dstate=4, n_groups=1
-    )
+    run_selective_scan_fwd[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
     print("✓ Basic selective scan test passed")
-    
+
     # Test without D
-    run_selective_scan_fwd[DType.float32, has_D=False, has_z=True, has_delta_bias=True, delta_softplus=False](
-        batch=2, dim=4, seqlen=8, dstate=4, n_groups=1
-    )
+    run_selective_scan_fwd[
+        DType.float32,
+        has_D=False,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
     print("✓ Selective scan without D test passed")
-    
+
     # Test without z
-    run_selective_scan_fwd[DType.float32, has_D=True, has_z=False, has_delta_bias=True, delta_softplus=False](
-        batch=2, dim=4, seqlen=8, dstate=4, n_groups=1
-    )
+    run_selective_scan_fwd[
+        DType.float32,
+        has_D=True,
+        has_z=False,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
     print("✓ Selective scan without z test passed")
-    
+
     # Test with delta_softplus
-    run_selective_scan_fwd[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=True](
-        batch=2, dim=4, seqlen=8, dstate=4, n_groups=1
-    )
+    run_selective_scan_fwd[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=True,
+    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
     print("✓ Selective scan with delta_softplus test passed")
-    
+
     # Test longer sequence
-    run_selective_scan_fwd[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=False](
-        batch=2, dim=8, seqlen=32, dstate=8, n_groups=1
-    )
+    run_selective_scan_fwd[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=8, seqlen=32, dstate=8, n_groups=1)
     print("✓ Selective scan longer sequence test passed")
-    
+
     # Test selective scan update
-    run_selective_scan_update[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=False](
-        batch=2, dim=4, dstate=4, n_groups=1
-    )
+    run_selective_scan_update[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, dstate=4, n_groups=1)
     print("✓ Basic selective scan update test passed")
-    
+
     # Test update without D
-    run_selective_scan_update[DType.float32, has_D=False, has_z=True, has_delta_bias=True, delta_softplus=False](
-        batch=2, dim=4, dstate=4, n_groups=1
-    )
+    run_selective_scan_update[
+        DType.float32,
+        has_D=False,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, dstate=4, n_groups=1)
     print("✓ Selective scan update without D test passed")
-    
+
     # Test update without z
-    run_selective_scan_update[DType.float32, has_D=True, has_z=False, has_delta_bias=True, delta_softplus=False](
-        batch=2, dim=4, dstate=4, n_groups=1
-    )
+    run_selective_scan_update[
+        DType.float32,
+        has_D=True,
+        has_z=False,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, dstate=4, n_groups=1)
     print("✓ Selective scan update without z test passed")
-    
+
     # Test update with delta_softplus
-    run_selective_scan_update[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=True](
-        batch=2, dim=4, dstate=4, n_groups=1
-    )
+    run_selective_scan_update[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=True,
+    ](batch=2, dim=4, dstate=4, n_groups=1)
     print("✓ Selective scan update with delta_softplus test passed")
-    
+
     # Test update with larger dimensions
-    run_selective_scan_update[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=False](
-        batch=4, dim=8, dstate=8, n_groups=1
-    )
+    run_selective_scan_update[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=4, dim=8, dstate=8, n_groups=1)
     print("✓ Selective scan update larger dimensions test passed")
 
 
@@ -412,94 +475,102 @@ fn run_selective_scan_update[
     """Test selective scan update kernel against reference implementation."""
     if dstate > MAX_DSTATE:
         return  # Skip if dstate exceeds kernel limit
-    
+
     var group_size = dim // n_groups
-    
+
     # Allocate host memory
     comptime layout_3d = Layout.row_major[3]()
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    
+
     # state_in: (batch, dim, dstate)
     var state_in_heap = alloc[Scalar[dtype]](batch * dim * dstate)
     var state_in_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        state_in_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate))
+        state_in_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
     )
-    
+
     # state_out: (batch, dim, dstate)
     var state_out_heap = alloc[Scalar[dtype]](batch * dim * dstate)
     var state_out_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        state_out_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate))
+        state_out_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
     ).fill(0)
-    
+
     # output: (batch, dim)
     var output_heap = alloc[Scalar[dtype]](batch * dim)
     var output_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         output_heap, RuntimeLayout[layout_2d].row_major(Index(batch, dim))
     ).fill(0)
-    
+
     # x: (batch, dim)
     var x_heap = alloc[Scalar[dtype]](batch * dim)
     var x_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         x_heap, RuntimeLayout[layout_2d].row_major(Index(batch, dim))
     )
-    
+
     # dt: (batch, dim)
     var dt_heap = alloc[Scalar[dtype]](batch * dim)
     var dt_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         dt_heap, RuntimeLayout[layout_2d].row_major(Index(batch, dim))
     )
-    
+
     # A: (dim, dstate)
     var A_heap = alloc[Scalar[dtype]](dim * dstate)
     var A_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         A_heap, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
     )
-    
+
     # B: (batch, n_groups, dstate)
     var B_heap = alloc[Scalar[dtype]](batch * n_groups * dstate)
     var B_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        B_heap, RuntimeLayout[layout_3d].row_major(Index(batch, n_groups, dstate))
+        B_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, n_groups, dstate)),
     )
-    
+
     # C: (batch, n_groups, dstate)
     var C_heap = alloc[Scalar[dtype]](batch * n_groups * dstate)
     var C_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        C_heap, RuntimeLayout[layout_3d].row_major(Index(batch, n_groups, dstate))
+        C_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, n_groups, dstate)),
     )
-    
+
     # D: (dim,) or empty
     var D_size = dim if has_D else 0
     var D_heap = alloc[Scalar[dtype]](max(D_size, 1))
     var D_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         D_heap, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
-    
+
     # z: (batch, dim) or empty
     var z_size = batch * dim if has_z else 0
     var z_heap = alloc[Scalar[dtype]](max(z_size, 1))
     var z_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        z_heap, RuntimeLayout[layout_2d].row_major(Index(batch if has_z else 0, dim if has_z else 0))
+        z_heap,
+        RuntimeLayout[layout_2d].row_major(
+            Index(batch if has_z else 0, dim if has_z else 0)
+        ),
     )
-    
+
     # dt_bias: (dim,) or empty
     var dt_bias_size = dim if has_delta_bias else 0
     var dt_bias_heap = alloc[Scalar[dtype]](max(dt_bias_size, 1))
     var dt_bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         dt_bias_heap, RuntimeLayout[layout_1d].row_major(Index(dt_bias_size))
     )
-    
+
     # Reference output
     var state_out_ref_heap = alloc[Scalar[dtype]](batch * dim * dstate)
     var state_out_ref_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        state_out_ref_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate))
+        state_out_ref_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
     ).fill(0)
-    
+
     var output_ref_heap = alloc[Scalar[dtype]](batch * dim)
     var output_ref_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         output_ref_heap, RuntimeLayout[layout_2d].row_major(Index(batch, dim))
     ).fill(0)
-    
+
     # Initialize input data
     random(state_in_h)
     random(x_h)
@@ -513,16 +584,16 @@ fn run_selective_scan_update[
         random(z_h)
     if has_delta_bias:
         random(dt_bias_h)
-    
+
     # Scale A to be negative for stability
     for i in range(dim * dstate):
         var val = A_h.ptr[i]
         A_h.ptr[i] = Scalar[dtype](Float32(val) * -0.5)
-    
+
     # Copy state_in for reference
     for i in range(batch * dim * dstate):
         state_out_ref_h.ptr[i] = state_in_h.ptr[i]
-    
+
     var state_in_buf = state_in_h
     var state_out_buf = state_out_h
     var output_buf = output_h
@@ -534,43 +605,43 @@ fn run_selective_scan_update[
     var D_buf = D_h
     var z_buf = z_h
     var dt_bias_buf = dt_bias_h
-    
+
     # Strides for row-major layout
     var state_out_b_stride: UInt32 = dim * dstate
     var state_out_d_stride: UInt32 = dstate
     var state_out_n_stride: UInt32 = 1
-    
+
     var output_b_stride: UInt32 = dim
     var output_d_stride: UInt32 = 1
-    
+
     var state_in_b_stride: UInt32 = dim * dstate
     var state_in_d_stride: UInt32 = dstate
     var state_in_n_stride: UInt32 = 1
-    
+
     var x_b_stride: UInt32 = dim
     var x_d_stride: UInt32 = 1
-    
+
     var dt_b_stride: UInt32 = dim
     var dt_d_stride: UInt32 = 1
-    
+
     var A_d_stride: UInt32 = dstate
     var A_n_stride: UInt32 = 1
-    
+
     var B_b_stride: UInt32 = n_groups * dstate
     var B_g_stride: UInt32 = dstate
     var B_n_stride: UInt32 = 1
-    
+
     var C_b_stride: UInt32 = n_groups * dstate
     var C_g_stride: UInt32 = dstate
     var C_n_stride: UInt32 = 1
-    
+
     var D_stride: UInt32 = 1
-    
+
     var z_b_stride: UInt32 = dim
     var z_d_stride: UInt32 = 1
-    
+
     var dt_bias_stride: UInt32 = 1
-    
+
     # Run kernel
     selective_scan_update_cpu[
         dtype,
@@ -627,81 +698,81 @@ fn run_selective_scan_update[
         z_d_stride,
         dt_bias_stride,
     )
-    
+
     # Reference implementation
     for b in range(batch):
         for d in range(dim):
             var group_id = d // group_size
-            
+
             # Load dt value
             var dt_offset = b * dim + d
             var dt_val = Float32(dt_buf.ptr[dt_offset])
-            
+
             # Apply dt_bias if present
             if has_delta_bias:
                 var bias_val = Float32(dt_bias_buf.ptr[d])
                 dt_val += bias_val
-            
+
             # Apply softplus if requested
             if delta_softplus:
                 dt_val = softplus_ref(dt_val)
-            
+
             # Load x value
             var x_offset = b * dim + d
             var x_val = Float32(x_buf.ptr[x_offset])
-            
+
             # Load A values and compute dA
             var dA_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
                 var A_offset = d * dstate + n
                 var A_val = Float32(A_buf.ptr[A_offset]) * LOG2E
                 dA_vals[n] = exp2(A_val * dt_val)
-            
+
             # Load B values and compute dB
             var dB_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
                 var B_offset = b * n_groups * dstate + group_id * dstate + n
                 var B_val = Float32(B_buf.ptr[B_offset])
                 dB_vals[n] = B_val * dt_val
-            
+
             # Load current state
             var state_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
                 var state_offset = b * dim * dstate + d * dstate + n
                 state_vals[n] = Float32(state_out_ref_h.ptr[state_offset])
-            
+
             # Update state
             state_vals = state_vals * dA_vals + dB_vals * x_val
-            
+
             # Store updated state
             for n in range(dstate):
                 var state_offset = b * dim * dstate + d * dstate + n
                 state_out_ref_h.ptr[state_offset] = Scalar[dtype](state_vals[n])
-            
+
             # Load C values
             var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
                 var C_offset = b * n_groups * dstate + group_id * dstate + n
                 C_vals[n] = Float32(C_buf.ptr[C_offset])
-            
+
             # Compute output
             var out_val = (state_vals * C_vals).reduce_add()
-            
+
             # Add skip connection
             if has_D:
                 var D_val = Float32(D_buf.ptr[d])
                 out_val += x_val * D_val
-            
+
             # Apply gating
             if has_z:
                 var z_offset = b * dim + d
                 var z_val = Float32(z_buf.ptr[z_offset])
                 out_val *= z_val * sigmoid_ref(z_val)
-            
+
             # Store output
             var out_offset = b * dim + d
             output_ref_h.ptr[out_offset] = Scalar[dtype](out_val)
-    
+
     # Compare results
     var state_size = batch * dim * dstate
     for i in range(state_size):
@@ -710,7 +781,7 @@ fn run_selective_scan_update[
             state_out_ref_h.ptr[i],
             rtol=rtol,
         )
-    
+
     var output_size = batch * dim
     for i in range(output_size):
         assert_almost_equal(
@@ -718,7 +789,7 @@ fn run_selective_scan_update[
             output_ref_h.ptr[i],
             rtol=rtol,
         )
-    
+
     # Cleanup
     state_in_heap.free()
     state_out_heap.free()
@@ -733,4 +804,3 @@ fn run_selective_scan_update[
     dt_bias_heap.free()
     state_out_ref_heap.free()
     output_ref_heap.free()
-

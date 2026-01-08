@@ -36,9 +36,9 @@ from .layer import Layer, LayerList, Module, Shardable
 from .linear import (
     MLP,
     MLPV1,
-    GatedMLP,
     ColumnParallelLinear,
     DistributedGemmConfig,
+    GatedMLP,
     GPTQLinear,
     Linear,
     LinearV1,
@@ -46,12 +46,12 @@ from .linear import (
 from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
 from .norm import (
     ConstantLayerNorm,
+    FusedRMSNorm,
     GroupNorm,
     LayerNorm,
     LayerNormV1,
     RMSNorm,
     RMSNormV1,
-    FusedRMSNorm,
     layer_norm_fn,
     rms_norm_fn,
 )
@@ -66,6 +66,12 @@ from .rotary_embedding import (
     YarnRotaryEmbedding,
     YarnScalingParams,
 )
+from .selective_scan import (
+    mamba_inner_fn,
+    mamba_inner_ref,
+    selective_scan_fn,
+    selective_state_update_fn,
+)
 from .sequential import Sequential
 from .transformer import (
     DistributedTransformer,
@@ -75,12 +81,10 @@ from .transformer import (
     Transformer,
     TransformerBlock,
 )
-from .selective_scan import (selective_scan_fn, selective_state_update_fn, mamba_inner_fn, mamba_inner_ref)
 
 __all__ = [
     "MLP",
     "MLPV1",
-    "GatedMLP",
     "Allreduce",
     "AttentionWithRope",
     "AttentionWithRopeAndLoRA",
@@ -89,7 +93,6 @@ __all__ = [
     "Conv1D",
     "Conv2d",
     "Conv3D",
-    "causal_conv1d_fn",
     "ConvTranspose1d",
     "DistributedAttentionImpl",
     "DistributedTransformer",
@@ -101,9 +104,11 @@ __all__ = [
     "Float8ScaleGranularity",
     "Float8ScaleOrigin",
     "Float8WeightScaleSpec",
+    "FusedRMSNorm",
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "GPTQLinear",
+    "GatedMLP",
     "GroupNorm",
     "Identity",
     "Layer",
@@ -121,9 +126,6 @@ __all__ = [
     "Module",
     "RMSNorm",
     "RMSNormV1",
-    "FusedRMSNorm",
-    "layer_norm_fn",
-    "rms_norm_fn",
     "RaggedAttention",
     "ReturnHiddenStates",
     "ReturnLogits",
@@ -139,9 +141,12 @@ __all__ = [
     "WeightNormConvTranspose1d",
     "YarnRotaryEmbedding",
     "YarnScalingParams",
+    "causal_conv1d_fn",
     "clamp",
-    "selective_scan_fn",
-    "selective_state_update_fn",
+    "layer_norm_fn",
     "mamba_inner_fn",
     "mamba_inner_ref",
+    "rms_norm_fn",
+    "selective_scan_fn",
+    "selective_state_update_fn",
 ]

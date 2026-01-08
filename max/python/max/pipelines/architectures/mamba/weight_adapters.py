@@ -14,9 +14,8 @@
 from __future__ import annotations
 
 import numpy as np
-from max.dtype import DType
 from max.graph.weights import WeightData, Weights
-from max.pipelines.lib import MAXModelConfig, PipelineConfig, SupportedEncoding
+from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 
 # Maps from Safetensor to MAX weight names.
@@ -48,7 +47,7 @@ def convert_safetensor_state_dict(
     **unused_kwargs,
 ) -> dict[str, WeightData]:
     """Convert safetensor state dict to MAX format.
-    
+
     This function handles weight name mapping from HuggingFace Mamba format to MAX format.
     Key weight names that are handled:
     - layers.{i}.mixer.A_log: State transition matrix in log space (intermediate_size, d_state)
@@ -60,13 +59,13 @@ def convert_safetensor_state_dict(
     - layers.{i}.mixer.dt_proj.weight: Delta projection weight
     - layers.{i}.mixer.dt_proj.bias: Delta projection bias (dt_bias)
     - layers.{i}.mixer.out_proj.weight: Output projection weight
-    
+
     Args:
         state_dict: Dictionary mapping weight names to Weights objects from safetensors.
         huggingface_config: HuggingFace model configuration.
         pipeline_config: MAX pipeline configuration.
         **unused_kwargs: Additional unused keyword arguments.
-        
+
     Returns:
         Dictionary mapping MAX weight names to WeightData objects.
     """
@@ -76,9 +75,9 @@ def convert_safetensor_state_dict(
         max_name = safetensor_name
         for before, after in MAMBA_SAFETENSOR_MAPPING.items():
             max_name = max_name.replace(before, after)
-        
+
         weight_data = value.data()
-        
+
         # Handle conv1d weight shape conversion
         # HuggingFace: [out_channels, 1, kernel_size] -> MAX: [out_channels, kernel_size]
         if "conv1d_weight" in max_name:
@@ -87,9 +86,11 @@ def convert_safetensor_state_dict(
                 # Squeeze the middle dimension (in_channels/groups = 1)
                 # Convert via DLPack protocol to numpy
                 arr = np.from_dlpack(weight_data)
-                arr = arr.reshape(shape[0], shape[2]).copy()  # copy to ensure contiguity
+                arr = arr.reshape(
+                    shape[0], shape[2]
+                ).copy()  # copy to ensure contiguity
                 weight_data = WeightData.from_numpy(arr, max_name)
-        
+
         new_state_dict[max_name] = weight_data
 
     model_config = pipeline_config.model_config
@@ -106,4 +107,3 @@ def convert_safetensor_state_dict(
                 new_state_dict[key] = weight_data.astype(cast_to.dtype)
 
     return new_state_dict
-

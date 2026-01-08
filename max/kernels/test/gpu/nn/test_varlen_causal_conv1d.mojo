@@ -68,41 +68,42 @@ fn run_varlen_causal_conv1d_fwd_gpu[
     var total_seqlen = 0
     for i in range(batch):
         total_seqlen += seq_lengths[i]
-    
+
     # Allocate host memory
     comptime layout_3d = Layout.row_major[3]()
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    
+
     # x: (dim, total_seqlen) for varlen - sequences concatenated
     var x_heap = alloc[Scalar[dtype]](dim * total_seqlen)
     var x_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         x_heap, RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen))
     )
-    
+
     # weight: (dim, width)
     var weight_heap = alloc[Scalar[dtype]](dim * width)
     var weight_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         weight_heap, RuntimeLayout[layout_2d].row_major(Index(dim, width))
     )
-    
+
     # bias: (dim,)
     var bias_heap = alloc[Scalar[dtype]](dim)
     var bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         bias_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
     )
-    
+
     # query_start_loc: (batch + 1,) - cumulative sequence lengths
     var query_start_loc_heap = alloc[Scalar[DType.int32]](batch + 1)
     var query_start_loc_h = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
-        query_start_loc_heap, RuntimeLayout[layout_1d].row_major(Index(batch + 1))
+        query_start_loc_heap,
+        RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
     )
     var cumsum = 0
     query_start_loc_h.ptr.offset(0).store(Scalar[DType.int32](0))
     for i in range(batch):
         cumsum += seq_lengths[i]
         query_start_loc_h.ptr.offset(i + 1).store(Scalar[DType.int32](cumsum))
-    
+
     # cache_indices: (batch,) - identity mapping
     var cache_indices_heap = alloc[Scalar[DType.int32]](batch)
     var cache_indices_h = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
@@ -110,7 +111,7 @@ fn run_varlen_causal_conv1d_fwd_gpu[
     )
     for i in range(batch):
         cache_indices_h.ptr.offset(i).store(Scalar[DType.int32](i))
-    
+
     # has_initial_state: (batch,) - all False
     var has_initial_state_heap = alloc[Scalar[DType.bool]](batch)
     var has_initial_state_h = LayoutTensor[DType.bool, layout_1d, MutAnyOrigin](
@@ -118,30 +119,33 @@ fn run_varlen_causal_conv1d_fwd_gpu[
     )
     for i in range(batch):
         has_initial_state_h.ptr.offset(i).store(Scalar[DType.bool](False))
-    
+
     # conv_states: (batch, dim, width - 1)
     var state_len = width - 1
     var conv_states_heap = alloc[Scalar[dtype]](batch * dim * state_len)
     var conv_states_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        conv_states_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len))
+        conv_states_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
     ).fill(0)
-    
+
     # output: (dim, total_seqlen)
     var output_gpu_heap = alloc[Scalar[dtype]](dim * total_seqlen)
     var output_gpu_h = LayoutTensor[dtype, layout_2d](
-        output_gpu_heap, RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen))
+        output_gpu_heap,
+        RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen)),
     ).fill(0)
-    
+
     var output_cpu_heap = alloc[Scalar[dtype]](dim * total_seqlen)
     var output_cpu_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        output_cpu_heap, RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen))
+        output_cpu_heap,
+        RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen)),
     ).fill(0)
-    
+
     # Initialize input data
     rand[dtype](x_h.ptr, x_h.size())
     rand[dtype](weight_h.ptr, weight_h.size())
     rand[dtype](bias_h.ptr, bias_h.size())
-    
+
     var x_buf = x_h
     var weight_buf = weight_h
     var bias_buf = bias_h
@@ -151,7 +155,7 @@ fn run_varlen_causal_conv1d_fwd_gpu[
     var conv_states_buf = conv_states_h
     var output_gpu_buf = output_gpu_h
     var output_cpu_buf = output_cpu_h
-    
+
     # Strides for row-major layout
     var x_dim_stride: UInt32 = total_seqlen
     var x_seqlen_stride: UInt32 = 1
@@ -162,20 +166,24 @@ fn run_varlen_causal_conv1d_fwd_gpu[
     var conv_states_batch_stride: UInt32 = dim * state_len
     var conv_states_dim_stride: UInt32 = state_len
     var conv_states_width_stride: UInt32 = 1
-    
+
     var silu_activation = activation == "silu"
     var silu_activation_int8 = Int8(silu_activation)
-    
+
     # Allocate device buffers
     var x_device = ctx.enqueue_create_buffer[dtype](dim * total_seqlen)
     var weight_device = ctx.enqueue_create_buffer[dtype](dim * width)
     var bias_device = ctx.enqueue_create_buffer[dtype](dim)
-    var query_start_loc_device = ctx.enqueue_create_buffer[DType.int32](batch + 1)
+    var query_start_loc_device = ctx.enqueue_create_buffer[DType.int32](
+        batch + 1
+    )
     var cache_indices_device = ctx.enqueue_create_buffer[DType.int32](batch)
     var has_initial_state_device = ctx.enqueue_create_buffer[DType.bool](batch)
-    var conv_states_device = ctx.enqueue_create_buffer[dtype](batch * dim * state_len)
+    var conv_states_device = ctx.enqueue_create_buffer[dtype](
+        batch * dim * state_len
+    )
     var output_device = ctx.enqueue_create_buffer[dtype](dim * total_seqlen)
-    
+
     # Copy data to device
     with ctx.push_context():
         ctx.enqueue_copy(x_device, x_buf.ptr)
@@ -185,7 +193,7 @@ fn run_varlen_causal_conv1d_fwd_gpu[
         ctx.enqueue_copy(cache_indices_device, cache_indices_buf.ptr)
         ctx.enqueue_copy(has_initial_state_device, has_initial_state_buf.ptr)
         ctx.enqueue_copy(conv_states_device, conv_states_buf.ptr)
-    
+
     # Create device LayoutTensors
     var x_device_tensor = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         x_device.unsafe_ptr(),
@@ -199,19 +207,27 @@ fn run_varlen_causal_conv1d_fwd_gpu[
         bias_device.unsafe_ptr(),
         RuntimeLayout[layout_1d].row_major(Index(dim)),
     )
-    var query_start_loc_device_tensor = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
+    var query_start_loc_device_tensor = LayoutTensor[
+        DType.int32, layout_1d, MutAnyOrigin
+    ](
         query_start_loc_device.unsafe_ptr(),
         RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
     )
-    var cache_indices_device_tensor = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
+    var cache_indices_device_tensor = LayoutTensor[
+        DType.int32, layout_1d, MutAnyOrigin
+    ](
         cache_indices_device.unsafe_ptr(),
         RuntimeLayout[layout_1d].row_major(Index(batch)),
     )
-    var has_initial_state_device_tensor = LayoutTensor[DType.bool, layout_1d, MutAnyOrigin](
+    var has_initial_state_device_tensor = LayoutTensor[
+        DType.bool, layout_1d, MutAnyOrigin
+    ](
         has_initial_state_device.unsafe_ptr(),
         RuntimeLayout[layout_1d].row_major(Index(batch)),
     )
-    var conv_states_device_tensor = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var conv_states_device_tensor = LayoutTensor[
+        dtype, layout_3d, MutAnyOrigin
+    ](
         conv_states_device.unsafe_ptr(),
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
     )
@@ -219,11 +235,11 @@ fn run_varlen_causal_conv1d_fwd_gpu[
         output_device.unsafe_ptr(),
         RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen)),
     )
-    
+
     # Run GPU kernel
     comptime BLOCK_DIM = 128
     comptime BLOCK_SEQ = 1
-    
+
     if width == 1:
         comptime kWidth = 1
         var compiled_func = ctx.compile_function_checked[
@@ -537,13 +553,15 @@ fn run_varlen_causal_conv1d_fwd_gpu[
                 block_dim=(BLOCK_DIM, BLOCK_SEQ),
             )
     else:
-        raise Error("Unsupported kernel width: only widths 1, 2, 3, 4 are supported")
-    
+        raise Error(
+            "Unsupported kernel width: only widths 1, 2, 3, 4 are supported"
+        )
+
     # Copy GPU results back to host
     with ctx.push_context():
         ctx.enqueue_copy(output_gpu_buf.ptr, output_device)
     ctx.synchronize()
-    
+
     # Run CPU reference
     causal_conv1d_varlen_fwd_cpu[
         x_buf.dtype,
@@ -591,7 +609,7 @@ fn run_varlen_causal_conv1d_fwd_gpu[
         True,  # has_conv_states
         True,  # has_bias
     )
-    
+
     # Compare results
     var flattened_size = dim * total_seqlen
     for i in range(flattened_size):
@@ -600,7 +618,7 @@ fn run_varlen_causal_conv1d_fwd_gpu[
             output_cpu_h.ptr[i],
             rtol=rtol,
         )
-    
+
     # Cleanup
     x_heap.free()
     weight_heap.free()
@@ -630,31 +648,32 @@ fn run_varlen_causal_conv1d_update_gpu[
     comptime layout_3d = Layout.row_major[3]()
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    
+
     # x: (batch, dim, seqlen)
     var x_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var x_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
         x_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
     )
-    
+
     # weight: (dim, width)
     var weight_heap = alloc[Scalar[dtype]](dim * width)
     var weight_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         weight_heap, RuntimeLayout[layout_2d].row_major(Index(dim, width))
     )
-    
+
     # bias: (dim,)
     var bias_heap = alloc[Scalar[dtype]](dim)
     var bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         bias_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
     )
-    
+
     # conv_state: (batch, dim, state_len)
     var conv_state_heap = alloc[Scalar[dtype]](batch * dim * state_len)
     var conv_state_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        conv_state_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len))
+        conv_state_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
     )
-    
+
     # cache_seqlens: (batch,) - all zeros
     var cache_seqlens_heap = alloc[Scalar[DType.int32]](batch)
     var cache_seqlens_h = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
@@ -662,48 +681,52 @@ fn run_varlen_causal_conv1d_update_gpu[
     )
     for i in range(batch):
         cache_seqlens_h.ptr.offset(i).store(Scalar[DType.int32](0))
-    
+
     # conv_state_indices: (batch,) - identity mapping
     var conv_state_indices_heap = alloc[Scalar[DType.int32]](batch)
-    var conv_state_indices_h = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
-        conv_state_indices_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
-    )
+    var conv_state_indices_h = LayoutTensor[
+        DType.int32, layout_1d, MutAnyOrigin
+    ](conv_state_indices_heap, RuntimeLayout[layout_1d].row_major(Index(batch)))
     for i in range(batch):
         conv_state_indices_h.ptr.offset(i).store(Scalar[DType.int32](i))
-    
+
     # output: (batch, dim, seqlen)
     var output_gpu_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var output_gpu_h = LayoutTensor[dtype, layout_3d](
-        output_gpu_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        output_gpu_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     ).fill(0)
-    
+
     var output_cpu_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var output_cpu_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        output_cpu_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        output_cpu_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     ).fill(0)
-    
+
     # Copy of conv_state for CPU and GPU
     var conv_state_cpu_heap = alloc[Scalar[dtype]](batch * dim * state_len)
     var conv_state_cpu_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        conv_state_cpu_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len))
+        conv_state_cpu_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
     )
-    
+
     var conv_state_gpu_heap = alloc[Scalar[dtype]](batch * dim * state_len)
     var conv_state_gpu_h = LayoutTensor[dtype, layout_3d](
-        conv_state_gpu_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len))
+        conv_state_gpu_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
     )
-    
+
     # Initialize input data
     rand[dtype](x_h.ptr, x_h.size())
     rand[dtype](conv_state_h.ptr, conv_state_h.size())
     rand[dtype](weight_h.ptr, weight_h.size())
     rand[dtype](bias_h.ptr, bias_h.size())
-    
+
     # Copy conv_state for CPU and GPU
     for i in range(batch * dim * state_len):
         conv_state_cpu_h.ptr[i] = conv_state_h.ptr[i]
         conv_state_gpu_h.ptr[i] = conv_state_h.ptr[i]
-    
+
     var x_buf = x_h
     var weight_buf = weight_h
     var bias_buf = bias_h
@@ -713,7 +736,7 @@ fn run_varlen_causal_conv1d_update_gpu[
     var conv_state_indices_buf = conv_state_indices_h
     var output_gpu_buf = output_gpu_h
     var output_cpu_buf = output_cpu_h
-    
+
     # Strides for row-major layout
     var x_batch_stride: UInt32 = dim * seqlen
     var x_dim_stride: UInt32 = seqlen
@@ -726,19 +749,23 @@ fn run_varlen_causal_conv1d_update_gpu[
     var out_batch_stride: UInt32 = dim * seqlen
     var out_dim_stride: UInt32 = seqlen
     var out_seqlen_stride: UInt32 = 1
-    
+
     var silu_activation = activation == "silu"
     var silu_activation_int8 = Int8(silu_activation)
-    
+
     # Allocate device buffers
     var x_device = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
     var weight_device = ctx.enqueue_create_buffer[dtype](dim * width)
     var bias_device = ctx.enqueue_create_buffer[dtype](dim)
-    var conv_state_device = ctx.enqueue_create_buffer[dtype](batch * dim * state_len)
+    var conv_state_device = ctx.enqueue_create_buffer[dtype](
+        batch * dim * state_len
+    )
     var cache_seqlens_device = ctx.enqueue_create_buffer[DType.int32](batch)
-    var conv_state_indices_device = ctx.enqueue_create_buffer[DType.int32](batch)
+    var conv_state_indices_device = ctx.enqueue_create_buffer[DType.int32](
+        batch
+    )
     var output_device = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
-    
+
     # Copy data to device
     with ctx.push_context():
         ctx.enqueue_copy(x_device, x_buf.ptr)
@@ -747,7 +774,7 @@ fn run_varlen_causal_conv1d_update_gpu[
         ctx.enqueue_copy(conv_state_device, conv_state_gpu_buf.ptr)
         ctx.enqueue_copy(cache_seqlens_device, cache_seqlens_buf.ptr)
         ctx.enqueue_copy(conv_state_indices_device, conv_state_indices_buf.ptr)
-    
+
     # Create device LayoutTensors
     var x_device_tensor = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
         x_device.unsafe_ptr(),
@@ -765,11 +792,15 @@ fn run_varlen_causal_conv1d_update_gpu[
         conv_state_device.unsafe_ptr(),
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
     )
-    var cache_seqlens_device_tensor = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
+    var cache_seqlens_device_tensor = LayoutTensor[
+        DType.int32, layout_1d, MutAnyOrigin
+    ](
         cache_seqlens_device.unsafe_ptr(),
         RuntimeLayout[layout_1d].row_major(Index(batch)),
     )
-    var conv_state_indices_device_tensor = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
+    var conv_state_indices_device_tensor = LayoutTensor[
+        DType.int32, layout_1d, MutAnyOrigin
+    ](
         conv_state_indices_device.unsafe_ptr(),
         RuntimeLayout[layout_1d].row_major(Index(batch)),
     )
@@ -777,10 +808,10 @@ fn run_varlen_causal_conv1d_update_gpu[
         output_device.unsafe_ptr(),
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
-    
+
     # Run GPU kernel
     comptime BLOCK_DIM = 128
-    
+
     if width == 1:
         comptime kWidth = 1
         var compiled_func = ctx.compile_function_checked[
@@ -1074,14 +1105,16 @@ fn run_varlen_causal_conv1d_update_gpu[
                 block_dim=(BLOCK_DIM),
             )
     else:
-        raise Error("Unsupported kernel width: only widths 1, 2, 3, 4 are supported")
-    
+        raise Error(
+            "Unsupported kernel width: only widths 1, 2, 3, 4 are supported"
+        )
+
     # Copy results back from device
     with ctx.push_context():
         ctx.enqueue_copy(output_gpu_buf.ptr, output_device)
         ctx.enqueue_copy(conv_state_gpu_buf.ptr, conv_state_device)
     ctx.synchronize()
-    
+
     # Run CPU reference
     causal_conv1d_varlen_update_cpu[
         x_buf.dtype,
@@ -1128,7 +1161,7 @@ fn run_varlen_causal_conv1d_update_gpu[
         True,  # has_cache_seqlens
         True,  # has_bias
     )
-    
+
     # Compare results
     var flattened_size = batch * dim * seqlen
     for i in range(flattened_size):
@@ -1137,7 +1170,7 @@ fn run_varlen_causal_conv1d_update_gpu[
             output_cpu_h.ptr[i],
             rtol=rtol,
         )
-    
+
     # Compare conv_state updates
     var conv_state_size = batch * dim * state_len
     for i in range(conv_state_size):
@@ -1146,7 +1179,7 @@ fn run_varlen_causal_conv1d_update_gpu[
             conv_state_cpu_h.ptr[i],
             rtol=rtol,
         )
-    
+
     # Cleanup
     x_heap.free()
     weight_heap.free()
@@ -1165,25 +1198,25 @@ def main():
     if not ctx.is_compatible():
         print("GPU not available, skipping GPU tests")
         return
-    
+
     # Test varlen_causal_conv1d_fwd with equal-length sequences
     run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=3, ctx=ctx
     )
     print("✓ GPU varlen causal conv1d fwd (equal lengths) test passed")
-    
+
     # Test varlen_causal_conv1d_fwd with variable-length sequences
     run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
         batch=3, dim=4, seq_lengths=Index(10, 6, 1), width=3, ctx=ctx
     )
     print("✓ GPU varlen causal conv1d fwd (variable lengths) test passed")
-    
+
     # Test with SiLU activation
     run_varlen_causal_conv1d_fwd_gpu[DType.float32, "silu"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=3, ctx=ctx
     )
     print("✓ GPU varlen causal conv1d fwd with SiLU test passed")
-    
+
     # Test various widths
     run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=2, ctx=ctx
@@ -1192,25 +1225,25 @@ def main():
         batch=2, dim=4, seq_lengths=Index(8, 8), width=4, ctx=ctx
     )
     print("✓ GPU varlen causal conv1d fwd various widths test passed")
-    
+
     # Test varlen_causal_conv1d_update
     run_varlen_causal_conv1d_update_gpu[DType.float32, "none"](
         batch=2, dim=4, seqlen=1, width=3, state_len=4, ctx=ctx
     )
     print("✓ GPU varlen causal conv1d update test passed")
-    
+
     # Test update with SiLU
     run_varlen_causal_conv1d_update_gpu[DType.float32, "silu"](
         batch=2, dim=4, seqlen=1, width=3, state_len=4, ctx=ctx
     )
     print("✓ GPU varlen causal conv1d update with SiLU test passed")
-    
+
     # Test update with seqlen > 1
     run_varlen_causal_conv1d_update_gpu[DType.float32, "none"](
         batch=2, dim=4, seqlen=4, width=3, state_len=4, ctx=ctx
     )
     print("✓ GPU varlen causal conv1d update with seqlen > 1 test passed")
-    
+
     # Test various widths for update
     run_varlen_causal_conv1d_update_gpu[DType.float32, "none"](
         batch=2, dim=4, seqlen=1, width=2, state_len=3, ctx=ctx
@@ -1219,4 +1252,3 @@ def main():
         batch=2, dim=4, seqlen=1, width=4, state_len=5, ctx=ctx
     )
     print("✓ GPU varlen causal conv1d update various widths test passed")
-

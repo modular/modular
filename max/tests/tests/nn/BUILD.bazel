@@ -20,6 +20,10 @@ modular_py_test(
         "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
         "//conditions:default": [],
     }),
+    mojo_deps = select({
+        "//:emit_mojo_enabled": MAMBA_MOJOPKGS,
+        "//conditions:default": MAMBA_MOJOPKGS,
+    }),
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/driver",
@@ -29,8 +33,4 @@ modular_py_test(
         "//max/python/max/mlir",
         "//max/python/max/nn",
     ],
-    mojo_deps = select({
-        "//:emit_mojo_enabled": MAMBA_MOJOPKGS,
-        "//conditions:default": MAMBA_MOJOPKGS,
-    }),
 )

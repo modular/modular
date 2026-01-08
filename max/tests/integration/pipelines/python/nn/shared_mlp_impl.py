@@ -35,7 +35,14 @@ from max.graph import (
     ops,
 )
 from max.graph.ops.allreduce import matmul_allreduce
-from max.nn import GatedMLP, MLP, Allreduce, DistributedGemmConfig, Module, Signals
+from max.nn import (
+    MLP,
+    Allreduce,
+    DistributedGemmConfig,
+    GatedMLP,
+    Module,
+    Signals,
+)
 from test_common.graph_utils import are_all_buffer_values_sequence
 
 DTYPE = DType.float32
@@ -503,7 +510,9 @@ def gated_mlp_output(
                     gated_mlp_shards, distributed_inputs, strict=True
                 )
             ]
-            graph_output = gated_mlp_allreduce(gated_mlp_outputs, graph_signal_buffers)
+            graph_output = gated_mlp_allreduce(
+                gated_mlp_outputs, graph_signal_buffers
+            )
 
         if isinstance(graph_output, list):
             graph.output(*graph_output)
@@ -559,14 +568,19 @@ def compare_gated_mlp_outputs(
     # Calculate hidden_features if not provided (matching GatedMLP default)
     if hidden_features is None:
         hidden_features = int(8 * in_features / 3)
-    hidden_features = (hidden_features + multiple_of - 1) // multiple_of * multiple_of
+    hidden_features = (
+        (hidden_features + multiple_of - 1) // multiple_of * multiple_of
+    )
 
     if out_features is None:
         out_features = in_features
 
     # Generate weights: fc1 outputs 2 * hidden_features
     fc1_w = generate_tensor(
-        (2 * hidden_features, in_features), torch_dtype, hidden_features, seed=42
+        (2 * hidden_features, in_features),
+        torch_dtype,
+        hidden_features,
+        seed=42,
     )
     fc2_w = generate_tensor(
         (out_features, hidden_features), torch_dtype, hidden_features, seed=43
@@ -576,12 +590,14 @@ def compare_gated_mlp_outputs(
         fc1_b = generate_tensor(
             (2 * hidden_features,), torch_dtype, hidden_features, seed=42
         )
-        fc2_b = generate_tensor((out_features,), torch_dtype, hidden_features, seed=43)
+        fc2_b = generate_tensor(
+            (out_features,), torch_dtype, hidden_features, seed=43
+        )
 
     device = "cuda" if n_gpus > 0 else "cpu"
-    x = generate_tensor((seq_len, in_features), torch_dtype, hidden_features, seed=45).to(
-        device
-    )
+    x = generate_tensor(
+        (seq_len, in_features), torch_dtype, hidden_features, seed=45
+    ).to(device)
 
     if has_bias:
         max_output = gated_mlp_output(

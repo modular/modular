@@ -54,8 +54,8 @@ if TYPE_CHECKING:
 from ..config_enums import RepoType
 from ..hf_utils import download_weight_files
 from ..interfaces import PipelineModel
-from ..interfaces.kv_cache import KVCacheMixin
 from ..interfaces.generate import GenerateMixin
+from ..interfaces.kv_cache import KVCacheMixin
 from ..sampling import (
     FusedSamplingProcessor,
     apply_logits_processors,
@@ -448,7 +448,9 @@ class TextGenerationPipeline(
                 self.update_for_structured_output(context, bitmask, i)
 
             if isinstance(self._pipeline_model, KVCacheMixin):
-                if not self._pipeline_model.kv_manager.contains(context.request_id):
+                if not self._pipeline_model.kv_manager.contains(
+                    context.request_id
+                ):
                     self._pipeline_model.kv_manager.claim(
                         context.request_id, replica_idx=replica_idx
                     )
@@ -464,8 +466,10 @@ class TextGenerationPipeline(
         # Retrieve the KV Cache Inputs (only for models that use KV cache).
         kv_cache_inputs = None
         if isinstance(self._pipeline_model, KVCacheMixin):
-            kv_cache_inputs = self._pipeline_model.kv_manager.get_runtime_inputs(
-                flat_batch, num_steps
+            kv_cache_inputs = (
+                self._pipeline_model.kv_manager.get_runtime_inputs(
+                    flat_batch, num_steps
+                )
             )
 
         # Log batch details
@@ -473,7 +477,10 @@ class TextGenerationPipeline(
             self._record_batch_info(flat_batch, num_steps)
 
         # Prepare initial token inputs
-        if isinstance(self._pipeline_model, KVCacheMixin) and kv_cache_inputs is not None:
+        if (
+            isinstance(self._pipeline_model, KVCacheMixin)
+            and kv_cache_inputs is not None
+        ):
             return (
                 self._pipeline_model.prepare_initial_token_inputs(
                     replica_batches=replica_batches,
@@ -710,7 +717,9 @@ class TextGenerationPipeline(
                 )
                 assert isinstance(
                     curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
-                ), "increment_cache_lengths instantiates and passes this as a list"
+                ), (
+                    "increment_cache_lengths instantiates and passes this as a list"
+                )
                 curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
                     self._pipeline_model.kv_manager.increment_cache_lengths(
                         curr_step_inputs.kv_cache_inputs.kv_cache_inputs,

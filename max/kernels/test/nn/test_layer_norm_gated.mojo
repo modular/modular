@@ -55,10 +55,7 @@ fn run_layer_norm_gated[
     has_bias: Bool = True,
     is_rms_norm: Bool = False,
     norm_before_gate: Bool = True,
-](
-    shape: IndexList[rank],
-    rtol: Float64 = 0.01,
-) raises:
+](shape: IndexList[rank], rtol: Float64 = 0.01,) raises:
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
@@ -190,22 +187,24 @@ fn run_layer_norm_gated[
     # Unfused reference implementation
     for row in range(rows):
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
-        
+
         # First pass: compute statistics
         var sum_val = Scalar[intermediate_type](0.0)
         var sum_sq_val = Scalar[intermediate_type](0.0)
-        
+
         for col in range(0, cols, simd_width):
             var actual_width = min(simd_width, cols - col)
             indices[rank - 1] = col
-            
+
             var x_idx = input_buf.runtime_layout(
                 RuntimeTuple[fill_like(input_buf.layout.shape, UNKNOWN_VALUE)](
                     indices.canonicalize()
                 )
             )
-            var x = input_buf.ptr.load[width=simd_width](x_idx).cast[intermediate_type]()
-            
+            var x = input_buf.ptr.load[width=simd_width](x_idx).cast[
+                intermediate_type
+            ]()
+
             # Apply gating if z is provided and norm_before_gate is False
             if has_z and not norm_before_gate:
                 var z_idx = z_buf.runtime_layout(
@@ -213,37 +212,43 @@ fn run_layer_norm_gated[
                         indices.canonicalize()
                     )
                 )
-                var z = z_buf.ptr.load[width=simd_width](z_idx).cast[intermediate_type]()
+                var z = z_buf.ptr.load[width=simd_width](z_idx).cast[
+                    intermediate_type
+                ]()
                 var z_silu = silu_ref[intermediate_type, simd_width](z)
                 x = x * z_silu
-            
+
             # Accumulate for mean/variance computation
             for i in range(actual_width):
                 sum_val += x[i]
                 sum_sq_val += x[i] * x[i]
-        
+
         var mean_val = sum_val / Scalar[intermediate_type](cols)
         var variance_val: Scalar[intermediate_type]
-        
+
         if is_rms_norm:
             variance_val = sum_sq_val / Scalar[intermediate_type](cols)
         else:
-            variance_val = (sum_sq_val / Scalar[intermediate_type](cols)) - mean_val * mean_val
-        
+            variance_val = (
+                sum_sq_val / Scalar[intermediate_type](cols)
+            ) - mean_val * mean_val
+
         var rstd = rsqrt(variance_val + epsilon.cast[intermediate_type]())
-        
+
         # Second pass: normalize and apply transformation
         for col in range(0, cols, simd_width):
             var actual_width = min(simd_width, cols - col)
             indices[rank - 1] = col
-            
+
             var x_idx = input_buf.runtime_layout(
                 RuntimeTuple[fill_like(input_buf.layout.shape, UNKNOWN_VALUE)](
                     indices.canonicalize()
                 )
             )
-            var x = input_buf.ptr.load[width=simd_width](x_idx).cast[intermediate_type]()
-            
+            var x = input_buf.ptr.load[width=simd_width](x_idx).cast[
+                intermediate_type
+            ]()
+
             # Apply gating if z is provided and norm_before_gate is False
             if has_z and not norm_before_gate:
                 var z_idx = z_buf.runtime_layout(
@@ -251,44 +256,50 @@ fn run_layer_norm_gated[
                         indices.canonicalize()
                     )
                 )
-                var z = z_buf.ptr.load[width=simd_width](z_idx).cast[intermediate_type]()
+                var z = z_buf.ptr.load[width=simd_width](z_idx).cast[
+                    intermediate_type
+                ]()
                 var z_silu = silu_ref[intermediate_type, simd_width](z)
                 x = x * z_silu
-            
+
             # Normalize
             var x_normalized: SIMD[intermediate_type, simd_width]
             if is_rms_norm:
                 x_normalized = x * rstd
             else:
                 x_normalized = (x - mean_val) * rstd
-            
+
             # Apply gamma and beta
             var gamma_val = SIMD[intermediate_type, simd_width]()
             var beta_val = SIMD[intermediate_type, simd_width]()
-            
+
             for i in range(actual_width):
                 if col + i < cols:
                     var gamma_col_idx = gamma.runtime_layout(
-                        RuntimeTuple[fill_like(gamma.layout.shape, UNKNOWN_VALUE)](
-                            IndexList[1](col + i)
-                        )
+                        RuntimeTuple[
+                            fill_like(gamma.layout.shape, UNKNOWN_VALUE)
+                        ](IndexList[1](col + i))
                     )
-                    gamma_val[i] = gamma.ptr.load[width=1](gamma_col_idx)[0].cast[intermediate_type]()
-                    
+                    gamma_val[i] = gamma.ptr.load[width=1](gamma_col_idx)[
+                        0
+                    ].cast[intermediate_type]()
+
                     if has_bias:
                         var beta_col_idx = beta.runtime_layout(
-                            RuntimeTuple[fill_like(beta.layout.shape, UNKNOWN_VALUE)](
-                                IndexList[1](col + i)
-                            )
+                            RuntimeTuple[
+                                fill_like(beta.layout.shape, UNKNOWN_VALUE)
+                            ](IndexList[1](col + i))
                         )
-                        beta_val[i] = beta.ptr.load[width=1](beta_col_idx)[0].cast[intermediate_type]()
+                        beta_val[i] = beta.ptr.load[width=1](beta_col_idx)[
+                            0
+                        ].cast[intermediate_type]()
                     else:
                         beta_val[i] = Scalar[intermediate_type](0.0)
-            
+
             var output_val = x_normalized * gamma_val
             if has_bias:
                 output_val = output_val + beta_val
-            
+
             # Apply gating if z is provided and norm_before_gate is True
             if has_z and norm_before_gate:
                 var z_idx = z_buf.runtime_layout(
@@ -296,16 +307,18 @@ fn run_layer_norm_gated[
                         indices.canonicalize()
                     )
                 )
-                var z = z_buf.ptr.load[width=simd_width](z_idx).cast[intermediate_type]()
+                var z = z_buf.ptr.load[width=simd_width](z_idx).cast[
+                    intermediate_type
+                ]()
                 var z_silu = silu_ref[intermediate_type, simd_width](z)
                 output_val = output_val * z_silu
-            
+
             # Write output
             var output_final = output_val.cast[dtype]()
             var output_idx = result_unfused_buf.runtime_layout(
-                RuntimeTuple[fill_like(result_unfused_buf.layout.shape, UNKNOWN_VALUE)](
-                    indices.canonicalize()
-                )
+                RuntimeTuple[
+                    fill_like(result_unfused_buf.layout.shape, UNKNOWN_VALUE)
+                ](indices.canonicalize())
             )
             result_unfused_buf.ptr.store[width=simd_width, alignment=1](
                 output_idx, output_final
@@ -319,7 +332,7 @@ fn run_layer_norm_gated[
             result_unfused_h.ptr[i],
             rtol=rtol,
         )
-    
+
     # Cleanup
     input_heap.free()
     z_heap.free()
@@ -331,25 +344,84 @@ fn run_layer_norm_gated[
 
 def main():
     # Test CPU LayerNorm with gating (norm_before_gate=True)
-    run_layer_norm_gated[DType.float32, has_z=True, has_bias=True, is_rms_norm=False, norm_before_gate=True](Index(5))
-    run_layer_norm_gated[DType.float32, has_z=True, has_bias=True, is_rms_norm=False, norm_before_gate=True](Index(3, 4, 10, 20, 8))
-    
+    run_layer_norm_gated[
+        DType.float32,
+        has_z=True,
+        has_bias=True,
+        is_rms_norm=False,
+        norm_before_gate=True,
+    ](Index(5))
+    run_layer_norm_gated[
+        DType.float32,
+        has_z=True,
+        has_bias=True,
+        is_rms_norm=False,
+        norm_before_gate=True,
+    ](Index(3, 4, 10, 20, 8))
+
     # Test CPU LayerNorm with gating (norm_before_gate=False)
-    run_layer_norm_gated[DType.float32, has_z=True, has_bias=True, is_rms_norm=False, norm_before_gate=False](Index(5))
-    run_layer_norm_gated[DType.float32, has_z=True, has_bias=True, is_rms_norm=False, norm_before_gate=False](Index(2, 128))
-    
+    run_layer_norm_gated[
+        DType.float32,
+        has_z=True,
+        has_bias=True,
+        is_rms_norm=False,
+        norm_before_gate=False,
+    ](Index(5))
+    run_layer_norm_gated[
+        DType.float32,
+        has_z=True,
+        has_bias=True,
+        is_rms_norm=False,
+        norm_before_gate=False,
+    ](Index(2, 128))
+
     # Test CPU RMSNorm with gating
-    run_layer_norm_gated[DType.float32, has_z=True, has_bias=False, is_rms_norm=True, norm_before_gate=True](Index(5))
-    run_layer_norm_gated[DType.float32, has_z=True, has_bias=False, is_rms_norm=True, norm_before_gate=True](Index(2, 128))
-    
+    run_layer_norm_gated[
+        DType.float32,
+        has_z=True,
+        has_bias=False,
+        is_rms_norm=True,
+        norm_before_gate=True,
+    ](Index(5))
+    run_layer_norm_gated[
+        DType.float32,
+        has_z=True,
+        has_bias=False,
+        is_rms_norm=True,
+        norm_before_gate=True,
+    ](Index(2, 128))
+
     # Test CPU without gating
-    run_layer_norm_gated[DType.float32, has_z=False, has_bias=True, is_rms_norm=False, norm_before_gate=True](Index(5))
-    run_layer_norm_gated[DType.float32, has_z=False, has_bias=True, is_rms_norm=False, norm_before_gate=True](Index(2, 128))
-    
+    run_layer_norm_gated[
+        DType.float32,
+        has_z=False,
+        has_bias=True,
+        is_rms_norm=False,
+        norm_before_gate=True,
+    ](Index(5))
+    run_layer_norm_gated[
+        DType.float32,
+        has_z=False,
+        has_bias=True,
+        is_rms_norm=False,
+        norm_before_gate=True,
+    ](Index(2, 128))
+
     # Test CPU without bias
-    run_layer_norm_gated[DType.float32, has_z=True, has_bias=False, is_rms_norm=False, norm_before_gate=True](Index(5))
-    run_layer_norm_gated[DType.float32, has_z=True, has_bias=False, is_rms_norm=False, norm_before_gate=True](Index(2, 128))
-    
+    run_layer_norm_gated[
+        DType.float32,
+        has_z=True,
+        has_bias=False,
+        is_rms_norm=False,
+        norm_before_gate=True,
+    ](Index(5))
+    run_layer_norm_gated[
+        DType.float32,
+        has_z=True,
+        has_bias=False,
+        is_rms_norm=False,
+        norm_before_gate=True,
+    ](Index(2, 128))
+
     # Note: GPU tests should be added in a separate GPU test file (e.g., in max/kernels/test/gpu/nn/)
     # since DeviceContext requires GPU architecture at compile time
-

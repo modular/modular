@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import gc
 import os
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
-from max.dtype import DType
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, ops
 from max.nn.conv import causal_conv1d_fn
@@ -37,49 +38,47 @@ from max.nn.selective_scan import (
 
 def _get_mamba_kernel_api_path() -> Path | None:
     """Get path to MambaKernelAPI.mojopkg for custom extensions.
-    
+
     Looks for MambaKernelAPI.mojopkg in MODULAR_MOJO_MAX_IMPORT_PATH
     environment variable set by Bazel when mojo_deps are specified.
     """
     import_path_env = os.environ.get("MODULAR_MOJO_MAX_IMPORT_PATH", "")
     if not import_path_env:
         return None
-    
+
     for entry in import_path_env.split(","):
         if not entry.strip():
             continue
-        
+
         entry_path = Path(entry.strip())
         if not entry_path.is_absolute():
             resolved = Path.cwd() / entry_path
             if not resolved.exists():
                 resolved = entry_path
             entry_path = resolved
-        
+
         if not entry_path.exists():
             continue
-        
+
         # If it's already a .mojopkg file
         if entry_path.suffix == ".mojopkg":
             if "MambaKernelAPI" in entry_path.name:
                 return entry_path.resolve()
             continue
-        
+
         # If it's a directory, search for MambaKernelAPI.mojopkg
         if entry_path.is_dir():
             for mojopkg in entry_path.rglob("*.mojopkg"):
                 if "MambaKernelAPI" in mojopkg.name:
                     return mojopkg.resolve()
-    
+
     return None
 
 
-
-
 @pytest.fixture(scope="function")
-def session():
+def session() -> Generator[InferenceSession, None, None]:
     """Create an inference session for testing.
-    
+
     Using function scope with explicit cleanup to ensure each test gets a fresh session,
     preventing GPU state corruption between tests.
     """
@@ -111,46 +110,49 @@ def create_test_data(
     dstate: int = 2,
     n_groups: int = 1,
     dtype: DType = DType.float32,
-    ) -> tuple[np.ndarray[Any, Any], ...]:
+) -> tuple[np.ndarray[Any, Any], ...]:
     """Create test data for selective scan.
-    
+
     Returns:
         Tuple of (u, delta, A, B, C, D, z, delta_bias) as numpy arrays.
     """
     np_dtype = np.float32 if dtype == DType.float32 else np.float16
-    
+
     # u: (batch, dim, seqlen)
     u = np.random.randn(batch, dim, seqlen).astype(np_dtype)
-    
+
     # delta: (batch, dim, seqlen) - positive values
     delta = np.random.uniform(0.1, 1.0, (batch, dim, seqlen)).astype(np_dtype)
-    
+
     # A: (dim, dstate) - typically negative for stability
     A = np.random.uniform(-2.0, -0.1, (dim, dstate)).astype(np_dtype)
-    
+
     # B: (batch, n_groups, dstate, seqlen)
     B = np.random.randn(batch, n_groups, dstate, seqlen).astype(np_dtype)
-    
+
     # C: (batch, n_groups, dstate, seqlen)
     C = np.random.randn(batch, n_groups, dstate, seqlen).astype(np_dtype)
-    
+
     # D: (dim,) - skip connection
     D = np.random.randn(dim).astype(np_dtype)
-    
+
     # z: (batch, dim, seqlen) - gate tensor
     z = np.random.randn(batch, dim, seqlen).astype(np_dtype)
-    
+
     # delta_bias: (dim,)
     delta_bias = np.random.randn(dim).astype(np_dtype)
-    
+
     return u, delta, A, B, C, D, z, delta_bias
 
 
 class TestSelectiveScanFn:
     """Tests for selective_scan_fn."""
-    
+
     def test_selective_scan_minimal_gpu(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Minimal GPU test - no optional params, simplest possible case."""
         batch, dim, seqlen, dstate, n_groups = 1, 2, 4, 2, 1
@@ -159,7 +161,9 @@ class TestSelectiveScanFn:
         np.random.seed(42)
         u = np.random.randn(batch, dim, seqlen).astype(np.float32)
         delta = np.random.randn(batch, dim, seqlen).astype(np.float32)
-        A = -np.random.rand(dim, dstate).astype(np.float32)  # Negative for stability
+        A = -np.random.rand(dim, dstate).astype(
+            np.float32
+        )  # Negative for stability
         B = np.random.randn(batch, n_groups, dstate, seqlen).astype(np.float32)
         C = np.random.randn(batch, n_groups, dstate, seqlen).astype(np.float32)
 
@@ -214,7 +218,7 @@ class TestSelectiveScanFn:
         results = compiled_model.execute(*inputs)
 
         assert results[0].shape == (batch, dim, seqlen)
-    
+
     def test_selective_scan_cpu_only(
         self, mamba_kernel_path: list[Path]
     ) -> None:
@@ -225,7 +229,7 @@ class TestSelectiveScanFn:
 
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
 
-        u, delta, A, B, C, D, z, delta_bias = create_test_data(
+        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
 
@@ -234,8 +238,12 @@ class TestSelectiveScanFn:
             TensorType(dtype, [batch, dim, seqlen], cpu_device),  # u
             TensorType(dtype, [batch, dim, seqlen], cpu_device),  # delta
             TensorType(dtype, [dim, dstate], cpu_device),  # A
-            TensorType(dtype, [batch, n_groups, dstate, seqlen], cpu_device),  # B
-            TensorType(dtype, [batch, n_groups, dstate, seqlen], cpu_device),  # C
+            TensorType(
+                dtype, [batch, n_groups, dstate, seqlen], cpu_device
+            ),  # B
+            TensorType(
+                dtype, [batch, n_groups, dstate, seqlen], cpu_device
+            ),  # C
             TensorType(dtype, [dim], cpu_device),  # D
         ]
 
@@ -281,7 +289,7 @@ class TestSelectiveScanFn:
         assert len(results) == 1
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
-    
+
     def test_selective_scan_minimal_cpu(
         self, mamba_kernel_path: list[Path]
     ) -> None:
@@ -289,39 +297,44 @@ class TestSelectiveScanFn:
         # Force CPU device
         cpu_session = InferenceSession(devices=[CPU()])
         cpu_device = DeviceRef.CPU()
-        
+
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
-        
-        
+
         np.random.seed(42)
         u = np.random.randn(batch, dim, seqlen).astype(np.float32)
-        delta = np.random.uniform(0.1, 1.0, (batch, dim, seqlen)).astype(np.float32)
+        delta = np.random.uniform(0.1, 1.0, (batch, dim, seqlen)).astype(
+            np.float32
+        )
         A = np.random.uniform(-2.0, -0.1, (dim, dstate)).astype(np.float32)
         B = np.random.randn(batch, n_groups, dstate, seqlen).astype(np.float32)
         C = np.random.randn(batch, n_groups, dstate, seqlen).astype(np.float32)
-        
+
         dtype = DType.float32
         input_types = [
             TensorType(dtype, [batch, dim, seqlen], cpu_device),  # u
             TensorType(dtype, [batch, dim, seqlen], cpu_device),  # delta
             TensorType(dtype, [dim, dstate], cpu_device),  # A
-            TensorType(dtype, [batch, n_groups, dstate, seqlen], cpu_device),  # B
-            TensorType(dtype, [batch, n_groups, dstate, seqlen], cpu_device),  # C
+            TensorType(
+                dtype, [batch, n_groups, dstate, seqlen], cpu_device
+            ),  # B
+            TensorType(
+                dtype, [batch, n_groups, dstate, seqlen], cpu_device
+            ),  # C
         ]
-        
+
         graph = Graph(
             "test_selective_scan_minimal_cpu",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             u_val = graph.inputs[0].tensor
             delta_val = graph.inputs[1].tensor
             A_val = graph.inputs[2].tensor
             B_val = graph.inputs[3].tensor
             C_val = graph.inputs[4].tensor
-            
+
             # Call with minimal params - no D, z, or delta_bias
             output = selective_scan_fn(
                 u=u_val,
@@ -336,9 +349,9 @@ class TestSelectiveScanFn:
             )
             assert not isinstance(output, tuple)
             graph.output(output)
-        
+
         compiled_model = cpu_session.load(graph)
-        
+
         inputs = [
             Tensor.from_numpy(u).to(cpu_session.devices[0]),
             Tensor.from_numpy(delta).to(cpu_session.devices[0]),
@@ -346,28 +359,29 @@ class TestSelectiveScanFn:
             Tensor.from_numpy(B).to(cpu_session.devices[0]),
             Tensor.from_numpy(C).to(cpu_session.devices[0]),
         ]
-        
+
         results = compiled_model.execute(*inputs)
-        
+
         assert len(results) == 1
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
-    
+
     def test_selective_scan_debug(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Debug test to print tensor information."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
-        
-        
+
         # Create test data
-        u, delta, A, B, C, D, z, delta_bias = create_test_data(
+        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
-        
-        
+
         # Expected strides for contiguous tensors (in bytes, float32 = 4 bytes)
-        
+
         dtype = DType.float32
         input_types = [
             TensorType(dtype, [batch, dim, seqlen], device),  # u
@@ -377,13 +391,13 @@ class TestSelectiveScanFn:
             TensorType(dtype, [batch, n_groups, dstate, seqlen], device),  # C
             TensorType(dtype, [dim], device),  # D
         ]
-        
+
         graph = Graph(
             "test_selective_scan_debug",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             u_val = graph.inputs[0].tensor
             delta_val = graph.inputs[1].tensor
@@ -391,8 +405,7 @@ class TestSelectiveScanFn:
             B_val = graph.inputs[3].tensor
             C_val = graph.inputs[4].tensor
             D_val = graph.inputs[5].tensor
-            
-            
+
             output = selective_scan_fn(
                 u=u_val,
                 delta=delta_val,
@@ -404,9 +417,9 @@ class TestSelectiveScanFn:
             )
             assert not isinstance(output, tuple)
             graph.output(output)
-        
+
         compiled_model = session.load(graph)
-        
+
         inputs = [
             Tensor.from_numpy(u).to(session.devices[0]),
             Tensor.from_numpy(delta).to(session.devices[0]),
@@ -415,22 +428,25 @@ class TestSelectiveScanFn:
             Tensor.from_numpy(C).to(session.devices[0]),
             Tensor.from_numpy(D).to(session.devices[0]),
         ]
-        
+
         results = compiled_model.execute(*inputs)
-        
+
         assert len(results) == 1
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
-    
+
     def test_selective_scan_basic(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Test basic selective scan forward pass."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
-        u, delta, A, B, C, D, z, delta_bias = create_test_data(
+        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
-        
+
         dtype = DType.float32
         input_types = [
             TensorType(dtype, [batch, dim, seqlen], device),  # u
@@ -440,13 +456,13 @@ class TestSelectiveScanFn:
             TensorType(dtype, [batch, n_groups, dstate, seqlen], device),  # C
             TensorType(dtype, [dim], device),  # D
         ]
-        
+
         graph = Graph(
             "test_selective_scan_basic",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             u_val = graph.inputs[0].tensor
             delta_val = graph.inputs[1].tensor
@@ -454,7 +470,7 @@ class TestSelectiveScanFn:
             B_val = graph.inputs[3].tensor
             C_val = graph.inputs[4].tensor
             D_val = graph.inputs[5].tensor
-            
+
             output = selective_scan_fn(
                 u=u_val,
                 delta=delta_val,
@@ -467,7 +483,7 @@ class TestSelectiveScanFn:
             # output is always TensorValue when return_last_state=False
             assert not isinstance(output, tuple)
             graph.output(output)
-        
+
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
@@ -479,21 +495,24 @@ class TestSelectiveScanFn:
             Tensor.from_numpy(D).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
-        
+
         # Verify output shape
         assert len(results) == 1
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
-    
+
     def test_selective_scan_with_z(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective scan with gate tensor z."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
-        u, delta, A, B, C, D, z, delta_bias = create_test_data(
+        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
-        
+
         dtype = DType.float32
         input_types = [
             TensorType(dtype, [batch, dim, seqlen], device),  # u
@@ -504,13 +523,13 @@ class TestSelectiveScanFn:
             TensorType(dtype, [dim], device),  # D
             TensorType(dtype, [batch, dim, seqlen], device),  # z
         ]
-        
+
         graph = Graph(
             "test_selective_scan_with_z",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             u_val = graph.inputs[0].tensor
             delta_val = graph.inputs[1].tensor
@@ -519,7 +538,7 @@ class TestSelectiveScanFn:
             C_val = graph.inputs[4].tensor
             D_val = graph.inputs[5].tensor
             z_val = graph.inputs[6].tensor
-            
+
             output = selective_scan_fn(
                 u=u_val,
                 delta=delta_val,
@@ -533,7 +552,7 @@ class TestSelectiveScanFn:
             # output is always TensorValue when return_last_state=False
             assert not isinstance(output, tuple)
             graph.output(output)
-        
+
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
@@ -546,21 +565,24 @@ class TestSelectiveScanFn:
             Tensor.from_numpy(z).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
-        
+
         # Verify output shape
         assert len(results) == 1
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
-    
+
     def test_selective_scan_with_delta_bias(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective scan with delta_bias."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
-        u, delta, A, B, C, D, z, delta_bias = create_test_data(
+        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
-        
+
         dtype = DType.float32
         input_types = [
             TensorType(dtype, [batch, dim, seqlen], device),  # u
@@ -571,13 +593,13 @@ class TestSelectiveScanFn:
             TensorType(dtype, [dim], device),  # D
             TensorType(dtype, [dim], device),  # delta_bias
         ]
-        
+
         graph = Graph(
             "test_selective_scan_with_delta_bias",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             u_val = graph.inputs[0].tensor
             delta_val = graph.inputs[1].tensor
@@ -586,7 +608,7 @@ class TestSelectiveScanFn:
             C_val = graph.inputs[4].tensor
             D_val = graph.inputs[5].tensor
             delta_bias_val = graph.inputs[6].tensor
-            
+
             output = selective_scan_fn(
                 u=u_val,
                 delta=delta_val,
@@ -600,7 +622,7 @@ class TestSelectiveScanFn:
             # output is always TensorValue when return_last_state=False
             assert not isinstance(output, tuple)
             graph.output(output)
-        
+
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
@@ -613,21 +635,24 @@ class TestSelectiveScanFn:
             Tensor.from_numpy(delta_bias).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
-        
+
         # Verify output shape
         assert len(results) == 1
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
-    
+
     def test_selective_scan_return_last_state(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective scan with return_last_state=True."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
-        u, delta, A, B, C, D, z, delta_bias = create_test_data(
+        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
-        
+
         dtype = DType.float32
         input_types = [
             TensorType(dtype, [batch, dim, seqlen], device),  # u
@@ -637,13 +662,13 @@ class TestSelectiveScanFn:
             TensorType(dtype, [batch, n_groups, dstate, seqlen], device),  # C
             TensorType(dtype, [dim], device),  # D
         ]
-        
+
         graph = Graph(
             "test_selective_scan_return_last_state",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             u_val = graph.inputs[0].tensor
             delta_val = graph.inputs[1].tensor
@@ -651,7 +676,7 @@ class TestSelectiveScanFn:
             B_val = graph.inputs[3].tensor
             C_val = graph.inputs[4].tensor
             D_val = graph.inputs[5].tensor
-            
+
             result = selective_scan_fn(
                 u=u_val,
                 delta=delta_val,
@@ -666,7 +691,7 @@ class TestSelectiveScanFn:
             assert isinstance(result, tuple)
             output, last_state = result
             graph.output(output, last_state)
-        
+
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
@@ -678,23 +703,26 @@ class TestSelectiveScanFn:
             Tensor.from_numpy(D).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
-        
+
         # Verify output shapes
         assert len(results) == 2
         output_tensor = results[0]
         last_state_tensor = results[1]
         assert output_tensor.shape == (batch, dim, seqlen)
         assert last_state_tensor.shape == (batch, dim, dstate)
-    
+
     def test_selective_scan_delta_softplus(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective scan with delta_softplus=True."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
-        u, delta, A, B, C, D, z, delta_bias = create_test_data(
+        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
-        
+
         dtype = DType.float32
         input_types = [
             TensorType(dtype, [batch, dim, seqlen], device),  # u
@@ -704,13 +732,13 @@ class TestSelectiveScanFn:
             TensorType(dtype, [batch, n_groups, dstate, seqlen], device),  # C
             TensorType(dtype, [dim], device),  # D
         ]
-        
+
         graph = Graph(
             "test_selective_scan_delta_softplus",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             u_val = graph.inputs[0].tensor
             delta_val = graph.inputs[1].tensor
@@ -718,7 +746,7 @@ class TestSelectiveScanFn:
             B_val = graph.inputs[3].tensor
             C_val = graph.inputs[4].tensor
             D_val = graph.inputs[5].tensor
-            
+
             output = selective_scan_fn(
                 u=u_val,
                 delta=delta_val,
@@ -731,7 +759,7 @@ class TestSelectiveScanFn:
             # output is always TensorValue when return_last_state=False
             assert not isinstance(output, tuple)
             graph.output(output)
-        
+
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
@@ -743,7 +771,7 @@ class TestSelectiveScanFn:
             Tensor.from_numpy(D).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
-        
+
         # Verify output shape
         assert len(results) == 1
         output_tensor = results[0]
@@ -752,36 +780,39 @@ class TestSelectiveScanFn:
 
 class TestSelectiveStateUpdateFn:
     """Tests for selective_state_update_fn."""
-    
+
     def test_selective_state_update_basic(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Test basic selective state update."""
         batch, dim, dstate, n_groups = 2, 4, 2, 1
         dtype = DType.float32
         np_dtype = np.float32
-        
+
         # state: (batch, dim, dstate)
         state = np.random.randn(batch, dim, dstate).astype(np_dtype)
-        
+
         # x: (batch, dim)
         x = np.random.randn(batch, dim).astype(np_dtype)
-        
+
         # dt: (batch, dim)
         dt = np.random.uniform(0.1, 1.0, (batch, dim)).astype(np_dtype)
-        
+
         # A: (dim, dstate)
         A = np.random.uniform(-2.0, -0.1, (dim, dstate)).astype(np_dtype)
-        
+
         # B: (batch, n_groups, dstate)
         B = np.random.randn(batch, n_groups, dstate).astype(np_dtype)
-        
+
         # C: (batch, n_groups, dstate)
         C = np.random.randn(batch, n_groups, dstate).astype(np_dtype)
-        
+
         # D: (dim,)
         D = np.random.randn(dim).astype(np_dtype)
-        
+
         input_types = [
             TensorType(dtype, [batch, dim, dstate], device),  # state
             TensorType(dtype, [batch, dim], device),  # x
@@ -791,13 +822,13 @@ class TestSelectiveStateUpdateFn:
             TensorType(dtype, [batch, n_groups, dstate], device),  # C
             TensorType(dtype, [dim], device),  # D
         ]
-        
+
         graph = Graph(
             "test_selective_state_update_basic",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             state_val = graph.inputs[0].tensor
             x_val = graph.inputs[1].tensor
@@ -806,7 +837,7 @@ class TestSelectiveStateUpdateFn:
             B_val = graph.inputs[4].tensor
             C_val = graph.inputs[5].tensor
             D_val = graph.inputs[6].tensor
-            
+
             updated_state, output = selective_state_update_fn(
                 state=state_val,
                 x=x_val,
@@ -818,7 +849,7 @@ class TestSelectiveStateUpdateFn:
                 dt_softplus=False,
             )
             graph.output(updated_state, output)
-        
+
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
@@ -831,46 +862,49 @@ class TestSelectiveStateUpdateFn:
             Tensor.from_numpy(D).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
-        
+
         # Verify output shapes
         assert len(results) == 2
         updated_state_tensor = results[0]
         output_tensor = results[1]
         assert updated_state_tensor.shape == (batch, dim, dstate)
         assert output_tensor.shape == (batch, dim)
-    
+
     def test_selective_state_update_with_z(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective state update with gate tensor z."""
         batch, dim, dstate, n_groups = 2, 4, 2, 1
         dtype = DType.float32
         np_dtype = np.float32
-        
+
         # state: (batch, dim, dstate)
         state = np.random.randn(batch, dim, dstate).astype(np_dtype)
-        
+
         # x: (batch, dim)
         x = np.random.randn(batch, dim).astype(np_dtype)
-        
+
         # dt: (batch, dim)
         dt = np.random.uniform(0.1, 1.0, (batch, dim)).astype(np_dtype)
-        
+
         # A: (dim, dstate)
         A = np.random.uniform(-2.0, -0.1, (dim, dstate)).astype(np_dtype)
-        
+
         # B: (batch, n_groups, dstate)
         B = np.random.randn(batch, n_groups, dstate).astype(np_dtype)
-        
+
         # C: (batch, n_groups, dstate)
         C = np.random.randn(batch, n_groups, dstate).astype(np_dtype)
-        
+
         # D: (dim,)
         D = np.random.randn(dim).astype(np_dtype)
-        
+
         # z: (batch, dim)
         z = np.random.randn(batch, dim).astype(np_dtype)
-        
+
         input_types = [
             TensorType(dtype, [batch, dim, dstate], device),  # state
             TensorType(dtype, [batch, dim], device),  # x
@@ -881,13 +915,13 @@ class TestSelectiveStateUpdateFn:
             TensorType(dtype, [dim], device),  # D
             TensorType(dtype, [batch, dim], device),  # z
         ]
-        
+
         graph = Graph(
             "test_selective_state_update_with_z",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             state_val = graph.inputs[0].tensor
             x_val = graph.inputs[1].tensor
@@ -897,7 +931,7 @@ class TestSelectiveStateUpdateFn:
             C_val = graph.inputs[5].tensor
             D_val = graph.inputs[6].tensor
             z_val = graph.inputs[7].tensor
-            
+
             updated_state, output = selective_state_update_fn(
                 state=state_val,
                 x=x_val,
@@ -910,7 +944,7 @@ class TestSelectiveStateUpdateFn:
                 dt_softplus=False,
             )
             graph.output(updated_state, output)
-        
+
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
@@ -924,46 +958,49 @@ class TestSelectiveStateUpdateFn:
             Tensor.from_numpy(z).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
-        
+
         # Verify output shapes
         assert len(results) == 2
         updated_state_tensor = results[0]
         output_tensor = results[1]
         assert updated_state_tensor.shape == (batch, dim, dstate)
         assert output_tensor.shape == (batch, dim)
-    
+
     def test_selective_state_update_with_dt_bias(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective state update with dt_bias."""
         batch, dim, dstate, n_groups = 2, 4, 2, 1
         dtype = DType.float32
         np_dtype = np.float32
-        
+
         # state: (batch, dim, dstate)
         state = np.random.randn(batch, dim, dstate).astype(np_dtype)
-        
+
         # x: (batch, dim)
         x = np.random.randn(batch, dim).astype(np_dtype)
-        
+
         # dt: (batch, dim)
         dt = np.random.uniform(0.1, 1.0, (batch, dim)).astype(np_dtype)
-        
+
         # A: (dim, dstate)
         A = np.random.uniform(-2.0, -0.1, (dim, dstate)).astype(np_dtype)
-        
+
         # B: (batch, n_groups, dstate)
         B = np.random.randn(batch, n_groups, dstate).astype(np_dtype)
-        
+
         # C: (batch, n_groups, dstate)
         C = np.random.randn(batch, n_groups, dstate).astype(np_dtype)
-        
+
         # D: (dim,)
         D = np.random.randn(dim).astype(np_dtype)
-        
+
         # dt_bias: (dim,)
         dt_bias = np.random.randn(dim).astype(np_dtype)
-        
+
         input_types = [
             TensorType(dtype, [batch, dim, dstate], device),  # state
             TensorType(dtype, [batch, dim], device),  # x
@@ -974,13 +1011,13 @@ class TestSelectiveStateUpdateFn:
             TensorType(dtype, [dim], device),  # D
             TensorType(dtype, [dim], device),  # dt_bias
         ]
-        
+
         graph = Graph(
             "test_selective_state_update_with_dt_bias",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             state_val = graph.inputs[0].tensor
             x_val = graph.inputs[1].tensor
@@ -990,7 +1027,7 @@ class TestSelectiveStateUpdateFn:
             C_val = graph.inputs[5].tensor
             D_val = graph.inputs[6].tensor
             dt_bias_val = graph.inputs[7].tensor
-            
+
             updated_state, output = selective_state_update_fn(
                 state=state_val,
                 x=x_val,
@@ -1003,7 +1040,7 @@ class TestSelectiveStateUpdateFn:
                 dt_softplus=False,
             )
             graph.output(updated_state, output)
-        
+
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
@@ -1017,43 +1054,46 @@ class TestSelectiveStateUpdateFn:
             Tensor.from_numpy(dt_bias).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
-        
+
         # Verify output shapes
         assert len(results) == 2
         updated_state_tensor = results[0]
         output_tensor = results[1]
         assert updated_state_tensor.shape == (batch, dim, dstate)
         assert output_tensor.shape == (batch, dim)
-    
+
     def test_selective_state_update_dt_softplus(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective state update with dt_softplus=True."""
         batch, dim, dstate, n_groups = 2, 4, 2, 1
         dtype = DType.float32
         np_dtype = np.float32
-        
+
         # state: (batch, dim, dstate)
         state = np.random.randn(batch, dim, dstate).astype(np_dtype)
-        
+
         # x: (batch, dim)
         x = np.random.randn(batch, dim).astype(np_dtype)
-        
+
         # dt: (batch, dim)
         dt = np.random.uniform(0.1, 1.0, (batch, dim)).astype(np_dtype)
-        
+
         # A: (dim, dstate)
         A = np.random.uniform(-2.0, -0.1, (dim, dstate)).astype(np_dtype)
-        
+
         # B: (batch, n_groups, dstate)
         B = np.random.randn(batch, n_groups, dstate).astype(np_dtype)
-        
+
         # C: (batch, n_groups, dstate)
         C = np.random.randn(batch, n_groups, dstate).astype(np_dtype)
-        
+
         # D: (dim,)
         D = np.random.randn(dim).astype(np_dtype)
-        
+
         input_types = [
             TensorType(dtype, [batch, dim, dstate], device),  # state
             TensorType(dtype, [batch, dim], device),  # x
@@ -1063,13 +1103,13 @@ class TestSelectiveStateUpdateFn:
             TensorType(dtype, [batch, n_groups, dstate], device),  # C
             TensorType(dtype, [dim], device),  # D
         ]
-        
+
         graph = Graph(
             "test_selective_state_update_dt_softplus",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             state_val = graph.inputs[0].tensor
             x_val = graph.inputs[1].tensor
@@ -1078,7 +1118,7 @@ class TestSelectiveStateUpdateFn:
             B_val = graph.inputs[4].tensor
             C_val = graph.inputs[5].tensor
             D_val = graph.inputs[6].tensor
-            
+
             updated_state, output = selective_state_update_fn(
                 state=state_val,
                 x=x_val,
@@ -1090,7 +1130,7 @@ class TestSelectiveStateUpdateFn:
                 dt_softplus=True,
             )
             graph.output(updated_state, output)
-        
+
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
@@ -1103,7 +1143,7 @@ class TestSelectiveStateUpdateFn:
             Tensor.from_numpy(D).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
-        
+
         # Verify output shapes
         assert len(results) == 2
         updated_state_tensor = results[0]
@@ -1114,67 +1154,92 @@ class TestSelectiveStateUpdateFn:
 
 class TestMambaInnerFn:
     """Tests for mamba_inner_fn."""
-    
+
     def test_mamba_inner_basic(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Test basic mamba_inner_fn forward pass."""
         batch, intermediate_size, seqlen, hidden_size = 2, 8, 16, 4
         d_state, delta_rank, conv_width = 2, 4, 4
         dtype = DType.float32
         np_dtype = np.float32
-        
+
         # xz: (batch, 2 * intermediate_size, seqlen)
-        xz = np.random.randn(batch, 2 * intermediate_size, seqlen).astype(np_dtype)
-        
+        xz = np.random.randn(batch, 2 * intermediate_size, seqlen).astype(
+            np_dtype
+        )
+
         # conv1d_weight: (intermediate_size, conv_width)
-        conv1d_weight = np.random.randn(intermediate_size, conv_width).astype(np_dtype)
-        
+        conv1d_weight = np.random.randn(intermediate_size, conv_width).astype(
+            np_dtype
+        )
+
         # conv1d_bias: (intermediate_size,)
         conv1d_bias = np.random.randn(intermediate_size).astype(np_dtype)
-        
+
         # x_proj_dim = delta_rank + 2 * d_state
         x_proj_dim = delta_rank + 2 * d_state
         # x_proj_weight: (x_proj_dim, intermediate_size)
-        x_proj_weight = np.random.randn(x_proj_dim, intermediate_size).astype(np_dtype)
-        
+        x_proj_weight = np.random.randn(x_proj_dim, intermediate_size).astype(
+            np_dtype
+        )
+
         # delta_proj_weight: (intermediate_size, delta_rank)
-        delta_proj_weight = np.random.randn(intermediate_size, delta_rank).astype(np_dtype)
-        
+        delta_proj_weight = np.random.randn(
+            intermediate_size, delta_rank
+        ).astype(np_dtype)
+
         # out_proj_weight: (hidden_size, intermediate_size)
-        out_proj_weight = np.random.randn(hidden_size, intermediate_size).astype(np_dtype)
-        
+        out_proj_weight = np.random.randn(
+            hidden_size, intermediate_size
+        ).astype(np_dtype)
+
         # out_proj_bias: (hidden_size,)
         out_proj_bias = np.random.randn(hidden_size).astype(np_dtype)
-        
+
         # A: (intermediate_size, d_state)
-        A = np.random.uniform(-2.0, -0.1, (intermediate_size, d_state)).astype(np_dtype)
-        
+        A = np.random.uniform(-2.0, -0.1, (intermediate_size, d_state)).astype(
+            np_dtype
+        )
+
         # D: (intermediate_size,)
         D = np.random.randn(intermediate_size).astype(np_dtype)
-        
+
         # delta_bias: (intermediate_size,)
         delta_bias = np.random.randn(intermediate_size).astype(np_dtype)
-        
+
         input_types = [
-            TensorType(dtype, [batch, 2 * intermediate_size, seqlen], device),  # xz
-            TensorType(dtype, [intermediate_size, conv_width], device),  # conv1d_weight
+            TensorType(
+                dtype, [batch, 2 * intermediate_size, seqlen], device
+            ),  # xz
+            TensorType(
+                dtype, [intermediate_size, conv_width], device
+            ),  # conv1d_weight
             TensorType(dtype, [intermediate_size], device),  # conv1d_bias
-            TensorType(dtype, [x_proj_dim, intermediate_size], device),  # x_proj_weight
-            TensorType(dtype, [intermediate_size, delta_rank], device),  # delta_proj_weight
-            TensorType(dtype, [hidden_size, intermediate_size], device),  # out_proj_weight
+            TensorType(
+                dtype, [x_proj_dim, intermediate_size], device
+            ),  # x_proj_weight
+            TensorType(
+                dtype, [intermediate_size, delta_rank], device
+            ),  # delta_proj_weight
+            TensorType(
+                dtype, [hidden_size, intermediate_size], device
+            ),  # out_proj_weight
             TensorType(dtype, [hidden_size], device),  # out_proj_bias
             TensorType(dtype, [intermediate_size, d_state], device),  # A
             TensorType(dtype, [intermediate_size], device),  # D
             TensorType(dtype, [intermediate_size], device),  # delta_bias
         ]
-        
+
         graph = Graph(
             "test_mamba_inner_basic",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             xz_val = graph.inputs[0].tensor
             conv1d_weight_val = graph.inputs[1].tensor
@@ -1186,7 +1251,7 @@ class TestMambaInnerFn:
             A_val = graph.inputs[7].tensor
             D_val = graph.inputs[8].tensor
             delta_bias_val = graph.inputs[9].tensor
-            
+
             output = mamba_inner_fn(
                 xz=xz_val,
                 conv1d_weight=conv1d_weight_val,
@@ -1201,7 +1266,7 @@ class TestMambaInnerFn:
                 delta_softplus=True,
             )
             graph.output(output)
-        
+
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
@@ -1217,76 +1282,96 @@ class TestMambaInnerFn:
             Tensor.from_numpy(delta_bias).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
-        
+
         # Verify output shape
         assert len(results) == 1
         output_tensor = results[0]
         assert output_tensor.shape == (batch, seqlen, hidden_size)
-    
-    def test_mamba_inner_basic_cpu(
-        self, mamba_kernel_path: list[Path]
-    ) -> None:
+
+    def test_mamba_inner_basic_cpu(self, mamba_kernel_path: list[Path]) -> None:
         """Test basic mamba_inner_fn forward pass on CPU."""
         # Force CPU device
         cpu_session = InferenceSession(devices=[CPU()])
         cpu_device = DeviceRef.CPU()
-        
+
         batch, intermediate_size, seqlen, hidden_size = 2, 8, 16, 4
         d_state, delta_rank, conv_width = 2, 4, 4
         dtype = DType.float32
         np_dtype = np.float32
-        
+
         # xz: (batch, 2 * intermediate_size, seqlen)
-        xz = np.random.randn(batch, 2 * intermediate_size, seqlen).astype(np_dtype)
-        
+        xz = np.random.randn(batch, 2 * intermediate_size, seqlen).astype(
+            np_dtype
+        )
+
         # conv1d_weight: (intermediate_size, conv_width)
-        conv1d_weight = np.random.randn(intermediate_size, conv_width).astype(np_dtype)
-        
+        conv1d_weight = np.random.randn(intermediate_size, conv_width).astype(
+            np_dtype
+        )
+
         # conv1d_bias: (intermediate_size,)
         conv1d_bias = np.random.randn(intermediate_size).astype(np_dtype)
-        
+
         # x_proj_dim = delta_rank + 2 * d_state
         x_proj_dim = delta_rank + 2 * d_state
         # x_proj_weight: (x_proj_dim, intermediate_size)
-        x_proj_weight = np.random.randn(x_proj_dim, intermediate_size).astype(np_dtype)
-        
+        x_proj_weight = np.random.randn(x_proj_dim, intermediate_size).astype(
+            np_dtype
+        )
+
         # delta_proj_weight: (intermediate_size, delta_rank)
-        delta_proj_weight = np.random.randn(intermediate_size, delta_rank).astype(np_dtype)
-        
+        delta_proj_weight = np.random.randn(
+            intermediate_size, delta_rank
+        ).astype(np_dtype)
+
         # out_proj_weight: (hidden_size, intermediate_size)
-        out_proj_weight = np.random.randn(hidden_size, intermediate_size).astype(np_dtype)
-        
+        out_proj_weight = np.random.randn(
+            hidden_size, intermediate_size
+        ).astype(np_dtype)
+
         # out_proj_bias: (hidden_size,)
         out_proj_bias = np.random.randn(hidden_size).astype(np_dtype)
-        
+
         # A: (intermediate_size, d_state)
-        A = np.random.uniform(-2.0, -0.1, (intermediate_size, d_state)).astype(np_dtype)
-        
+        A = np.random.uniform(-2.0, -0.1, (intermediate_size, d_state)).astype(
+            np_dtype
+        )
+
         # D: (intermediate_size,)
         D = np.random.randn(intermediate_size).astype(np_dtype)
-        
+
         # delta_bias: (intermediate_size,)
         delta_bias = np.random.randn(intermediate_size).astype(np_dtype)
-        
+
         input_types = [
-            TensorType(dtype, [batch, 2 * intermediate_size, seqlen], cpu_device),  # xz
-            TensorType(dtype, [intermediate_size, conv_width], cpu_device),  # conv1d_weight
+            TensorType(
+                dtype, [batch, 2 * intermediate_size, seqlen], cpu_device
+            ),  # xz
+            TensorType(
+                dtype, [intermediate_size, conv_width], cpu_device
+            ),  # conv1d_weight
             TensorType(dtype, [intermediate_size], cpu_device),  # conv1d_bias
-            TensorType(dtype, [x_proj_dim, intermediate_size], cpu_device),  # x_proj_weight
-            TensorType(dtype, [intermediate_size, delta_rank], cpu_device),  # delta_proj_weight
-            TensorType(dtype, [hidden_size, intermediate_size], cpu_device),  # out_proj_weight
+            TensorType(
+                dtype, [x_proj_dim, intermediate_size], cpu_device
+            ),  # x_proj_weight
+            TensorType(
+                dtype, [intermediate_size, delta_rank], cpu_device
+            ),  # delta_proj_weight
+            TensorType(
+                dtype, [hidden_size, intermediate_size], cpu_device
+            ),  # out_proj_weight
             TensorType(dtype, [hidden_size], cpu_device),  # out_proj_bias
             TensorType(dtype, [intermediate_size, d_state], cpu_device),  # A
             TensorType(dtype, [intermediate_size], cpu_device),  # D
             TensorType(dtype, [intermediate_size], cpu_device),  # delta_bias
         ]
-        
+
         graph = Graph(
             "test_mamba_inner_basic_cpu",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             xz_val = graph.inputs[0].tensor
             conv1d_weight_val = graph.inputs[1].tensor
@@ -1298,7 +1383,7 @@ class TestMambaInnerFn:
             A_val = graph.inputs[7].tensor
             D_val = graph.inputs[8].tensor
             delta_bias_val = graph.inputs[9].tensor
-            
+
             output = mamba_inner_fn(
                 xz=xz_val,
                 conv1d_weight=conv1d_weight_val,
@@ -1313,7 +1398,7 @@ class TestMambaInnerFn:
                 delta_softplus=True,
             )
             graph.output(output)
-        
+
         # Compile and execute on CPU
         compiled_model = cpu_session.load(graph)
         inputs = [
@@ -1329,54 +1414,63 @@ class TestMambaInnerFn:
             Tensor.from_numpy(delta_bias).to(cpu_session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
-        
+
         # Verify output shape
         assert len(results) == 1
         output_tensor = results[0]
         assert output_tensor.shape == (batch, seqlen, hidden_size)
-    
+
     def test_mamba_inner_simplified_gpu(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Simplified test to isolate GPU issue - test just selective_scan_fn with manually constructed inputs."""
         # Skip if not GPU
         if device.device_type != "gpu":
             pytest.skip("This test is for GPU only")
-        
+
         batch, intermediate_size, seqlen = 2, 8, 16
         d_state, n_groups = 2, 1
         dtype = DType.float32
         np_dtype = np.float32
-        
+
         # Create minimal inputs for selective_scan_fn
         # u: (batch, dim, seqlen)
         u = np.random.randn(batch, intermediate_size, seqlen).astype(np_dtype)
         # delta: (batch, dim, seqlen)
-        delta = np.random.uniform(0.1, 1.0, (batch, intermediate_size, seqlen)).astype(np_dtype)
+        delta = np.random.uniform(
+            0.1, 1.0, (batch, intermediate_size, seqlen)
+        ).astype(np_dtype)
         # A: (dim, dstate)
-        A = np.random.uniform(-2.0, -0.1, (intermediate_size, d_state)).astype(np_dtype)
+        A = np.random.uniform(-2.0, -0.1, (intermediate_size, d_state)).astype(
+            np_dtype
+        )
         # B: (batch, n_groups, dstate, seqlen)
         B = np.random.randn(batch, n_groups, d_state, seqlen).astype(np_dtype)
         # C: (batch, n_groups, dstate, seqlen)
         C = np.random.randn(batch, n_groups, d_state, seqlen).astype(np_dtype)
         # D: (dim,)
         D = np.random.randn(intermediate_size).astype(np_dtype)
-        
+
         input_types = [
             TensorType(dtype, [batch, intermediate_size, seqlen], device),  # u
-            TensorType(dtype, [batch, intermediate_size, seqlen], device),  # delta
+            TensorType(
+                dtype, [batch, intermediate_size, seqlen], device
+            ),  # delta
             TensorType(dtype, [intermediate_size, d_state], device),  # A
             TensorType(dtype, [batch, n_groups, d_state, seqlen], device),  # B
             TensorType(dtype, [batch, n_groups, d_state, seqlen], device),  # C
             TensorType(dtype, [intermediate_size], device),  # D
         ]
-        
+
         graph = Graph(
             "test_mamba_inner_simplified_gpu",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             u_val = graph.inputs[0].tensor
             delta_val = graph.inputs[1].tensor
@@ -1384,7 +1478,7 @@ class TestMambaInnerFn:
             B_val = graph.inputs[3].tensor
             C_val = graph.inputs[4].tensor
             D_val = graph.inputs[5].tensor
-            
+
             # Test just selective_scan_fn directly
             output = selective_scan_fn(
                 u=u_val,
@@ -1398,7 +1492,7 @@ class TestMambaInnerFn:
             # selective_scan_fn returns TensorValue when return_last_state=False
             assert not isinstance(output, tuple)
             graph.output(output)
-        
+
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
@@ -1410,14 +1504,17 @@ class TestMambaInnerFn:
             Tensor.from_numpy(D).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
-        
+
         # Verify output shape
         assert len(results) == 1
         output_tensor = results[0]
         assert output_tensor.shape == (batch, intermediate_size, seqlen)
 
     def test_mamba_inner_tensor_construction_isolated(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective_scan_fn with tensors constructed the same way as mamba_inner_fn."""
         # Skip if not GPU
@@ -1457,8 +1554,12 @@ class TestMambaInnerFn:
             )
 
             # Create delta_proj_weight for matrix multiplication
-            delta_proj_weight_np = np.random.randn(intermediate_size, delta_rank).astype(np_dtype)
-            delta_proj_weight_val = ops.constant(delta_proj_weight_np, dtype=dtype, device=device)
+            delta_proj_weight_np = np.random.randn(
+                intermediate_size, delta_rank
+            ).astype(np_dtype)
+            delta_proj_weight_val = ops.constant(
+                delta_proj_weight_np, dtype=dtype, device=device
+            )
 
             # Project delta: dt @ delta_proj_weight.T
             delta_flat = dt @ delta_proj_weight_val.T
@@ -1485,10 +1586,14 @@ class TestMambaInnerFn:
             )
 
             # Create other tensors
-            u_np = np.random.randn(batch, intermediate_size, seqlen).astype(np_dtype)
+            u_np = np.random.randn(batch, intermediate_size, seqlen).astype(
+                np_dtype
+            )
             u_val = ops.constant(u_np, dtype=dtype, device=device)
 
-            A_np = np.random.uniform(-2.0, -0.1, (intermediate_size, d_state)).astype(np_dtype)
+            A_np = np.random.uniform(
+                -2.0, -0.1, (intermediate_size, d_state)
+            ).astype(np_dtype)
             A_val = ops.constant(A_np, dtype=dtype, device=device)
 
             D_np = np.random.randn(intermediate_size).astype(np_dtype)
@@ -1523,7 +1628,10 @@ class TestMambaInnerFn:
         assert output_tensor.shape == (batch, intermediate_size, seqlen)
 
     def test_mamba_inner_causal_conv_isolated(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective_scan_fn with tensors created from causal_conv1d_fn output."""
         # Skip if not GPU
@@ -1536,18 +1644,36 @@ class TestMambaInnerFn:
         np_dtype = np.float32
 
         # Create inputs like mamba_inner_fn
-        xz_np = np.random.randn(batch, 2 * intermediate_size, seqlen).astype(np_dtype)
-        conv1d_weight_np = np.random.randn(intermediate_size, conv_width).astype(np_dtype)
+        xz_np = np.random.randn(batch, 2 * intermediate_size, seqlen).astype(
+            np_dtype
+        )
+        conv1d_weight_np = np.random.randn(
+            intermediate_size, conv_width
+        ).astype(np_dtype)
         conv1d_bias_np = np.random.randn(intermediate_size).astype(np_dtype)
-        x_proj_weight_np = np.random.randn(delta_rank + 2 * n_groups * d_state, intermediate_size).astype(np_dtype)
-        delta_proj_weight_np = np.random.randn(intermediate_size, delta_rank).astype(np_dtype)
+        x_proj_weight_np = np.random.randn(
+            delta_rank + 2 * n_groups * d_state, intermediate_size
+        ).astype(np_dtype)
+        delta_proj_weight_np = np.random.randn(
+            intermediate_size, delta_rank
+        ).astype(np_dtype)
 
         input_types = [
-            TensorType(dtype, [batch, 2 * intermediate_size, seqlen], device),  # xz
-            TensorType(dtype, [intermediate_size, conv_width], device),  # conv1d_weight
+            TensorType(
+                dtype, [batch, 2 * intermediate_size, seqlen], device
+            ),  # xz
+            TensorType(
+                dtype, [intermediate_size, conv_width], device
+            ),  # conv1d_weight
             TensorType(dtype, [intermediate_size], device),  # conv1d_bias
-            TensorType(dtype, [delta_rank + 2 * n_groups * d_state, intermediate_size], device),  # x_proj_weight
-            TensorType(dtype, [intermediate_size, delta_rank], device),  # delta_proj_weight
+            TensorType(
+                dtype,
+                [delta_rank + 2 * n_groups * d_state, intermediate_size],
+                device,
+            ),  # x_proj_weight
+            TensorType(
+                dtype, [intermediate_size, delta_rank], device
+            ),  # delta_proj_weight
         ]
 
         graph = Graph(
@@ -1564,7 +1690,9 @@ class TestMambaInnerFn:
             delta_proj_weight_val = graph.inputs[4].tensor
 
             # Split xz like mamba_inner_fn does
-            x, z = ops.split(xz_val, [intermediate_size, intermediate_size], axis=1)
+            x, _z = ops.split(
+                xz_val, [intermediate_size, intermediate_size], axis=1
+            )
 
             # Apply causal conv1d like mamba_inner_fn
             conv1d_out = causal_conv1d_fn(
@@ -1617,14 +1745,18 @@ class TestMambaInnerFn:
             )
 
             # Create other tensors
-            A_np = np.random.uniform(-2.0, -0.1, (intermediate_size, d_state)).astype(np_dtype)
+            A_np = np.random.uniform(
+                -2.0, -0.1, (intermediate_size, d_state)
+            ).astype(np_dtype)
             A_val = ops.constant(A_np, dtype=dtype, device=device)
 
             D_np = np.random.randn(intermediate_size).astype(np_dtype)
             D_val = ops.constant(D_np, dtype=dtype, device=device)
 
             # Force contiguous copy of conv1d_out by adding zero
-            conv1d_out_contiguous = conv1d_out + ops.constant(0.0, dtype=conv1d_out.dtype, device=conv1d_out.device)
+            conv1d_out_contiguous = conv1d_out + ops.constant(
+                0.0, dtype=conv1d_out.dtype, device=conv1d_out.device
+            )
 
             # Test selective_scan_fn
             output = selective_scan_fn(
@@ -1658,31 +1790,56 @@ class TestMambaInnerFn:
         assert output_tensor.shape == (batch, intermediate_size, seqlen)
 
     def test_mamba_inner_exact_construction(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective_scan_fn with exact same tensor construction as mamba_inner_fn."""
         # Skip if not GPU
         if device.device_type != "gpu":
             pytest.skip("This test is for GPU only")
 
-        batch, intermediate_size, seqlen = 1, 4, 8  # Smaller dimensions to debug
+        batch, intermediate_size, seqlen = (
+            1,
+            4,
+            8,
+        )  # Smaller dimensions to debug
         d_state, n_groups, delta_rank, conv_width = 2, 1, 4, 4
         dtype = DType.float32
         np_dtype = np.float32
 
         # Create inputs exactly like mamba_inner_fn
-        xz_np = np.random.randn(batch, 2 * intermediate_size, seqlen).astype(np_dtype)
-        conv1d_weight_np = np.random.randn(intermediate_size, conv_width).astype(np_dtype)
+        xz_np = np.random.randn(batch, 2 * intermediate_size, seqlen).astype(
+            np_dtype
+        )
+        conv1d_weight_np = np.random.randn(
+            intermediate_size, conv_width
+        ).astype(np_dtype)
         conv1d_bias_np = np.random.randn(intermediate_size).astype(np_dtype)
-        x_proj_weight_np = np.random.randn(delta_rank + 2 * n_groups * d_state, intermediate_size).astype(np_dtype)
-        delta_proj_weight_np = np.random.randn(intermediate_size, delta_rank).astype(np_dtype)
+        x_proj_weight_np = np.random.randn(
+            delta_rank + 2 * n_groups * d_state, intermediate_size
+        ).astype(np_dtype)
+        delta_proj_weight_np = np.random.randn(
+            intermediate_size, delta_rank
+        ).astype(np_dtype)
 
         input_types = [
-            TensorType(dtype, [batch, 2 * intermediate_size, seqlen], device),  # xz
-            TensorType(dtype, [intermediate_size, conv_width], device),  # conv1d_weight
+            TensorType(
+                dtype, [batch, 2 * intermediate_size, seqlen], device
+            ),  # xz
+            TensorType(
+                dtype, [intermediate_size, conv_width], device
+            ),  # conv1d_weight
             TensorType(dtype, [intermediate_size], device),  # conv1d_bias
-            TensorType(dtype, [delta_rank + 2 * n_groups * d_state, intermediate_size], device),  # x_proj_weight
-            TensorType(dtype, [intermediate_size, delta_rank], device),  # delta_proj_weight
+            TensorType(
+                dtype,
+                [delta_rank + 2 * n_groups * d_state, intermediate_size],
+                device,
+            ),  # x_proj_weight
+            TensorType(
+                dtype, [intermediate_size, delta_rank], device
+            ),  # delta_proj_weight
         ]
 
         graph = Graph(
@@ -1699,7 +1856,9 @@ class TestMambaInnerFn:
             delta_proj_weight_val = graph.inputs[4].tensor
 
             # Exact same construction as mamba_inner_fn
-            x, z = ops.split(xz_val, [intermediate_size, intermediate_size], axis=1)
+            x, _z = ops.split(
+                xz_val, [intermediate_size, intermediate_size], axis=1
+            )
 
             conv1d_out = causal_conv1d_fn(
                 x,
@@ -1750,7 +1909,9 @@ class TestMambaInnerFn:
             )
 
             # Use conv1d_out as u (same as mamba_inner_fn)
-            A_np = np.random.uniform(-2.0, -0.1, (intermediate_size, d_state)).astype(np_dtype)
+            A_np = np.random.uniform(
+                -2.0, -0.1, (intermediate_size, d_state)
+            ).astype(np_dtype)
             A_val = ops.constant(A_np, dtype=dtype, device=device)
 
             D_np = np.random.randn(intermediate_size).astype(np_dtype)
@@ -1806,12 +1967,17 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, intermediate_size, seqlen)
 
-    def test_selective_scan_isolation(self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]) -> None:
+    def test_selective_scan_isolation(
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
+    ) -> None:
         """Test selective_scan_fn in complete isolation using the working pattern."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
 
         # Create test data using the same create_test_data function as working tests
-        u, delta, A, B, C, D, z, delta_bias = create_test_data(
+        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
 
@@ -1867,12 +2033,17 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
 
-    def test_selective_scan_with_reshape(self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]) -> None:
+    def test_selective_scan_with_reshape(
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
+    ) -> None:
         """Test selective_scan_fn with ops.reshape() to isolate which operation breaks it."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
 
         # Create test data
-        u, delta, A, B, C, D, z, delta_bias = create_test_data(
+        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
 
@@ -1899,7 +2070,9 @@ class TestMambaInnerFn:
             C_val = graph.inputs[4].tensor
 
             # Add ops.reshape() - this might be the problematic operation
-            u_reshaped = ops.reshape(u_val, u_val.shape)  # Reshape to same shape
+            u_reshaped = ops.reshape(
+                u_val, u_val.shape
+            )  # Reshape to same shape
             delta_reshaped = ops.reshape(delta_val, delta_val.shape)
             B_reshaped = ops.reshape(B_val, B_val.shape)
             C_reshaped = ops.reshape(C_val, C_val.shape)
@@ -1931,19 +2104,28 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
 
-    def test_selective_scan_with_split(self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]) -> None:
+    def test_selective_scan_with_split(
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
+    ) -> None:
         """Test selective_scan_fn with ops.split() to isolate the problematic operation."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
 
         # Create test data - create a tensor that can be split
-        xz = np.random.randn(batch, dim * 2, seqlen).astype(np.float32)  # Shape for splitting
-        delta, A, B, C, D, z, delta_bias = create_test_data(
+        xz = np.random.randn(batch, dim * 2, seqlen).astype(
+            np.float32
+        )  # Shape for splitting
+        delta, A, B, C, _D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )[1:]  # Skip u, we'll create it from split
 
         dtype = DType.float32
         input_types = [
-            TensorType(dtype, [batch, dim * 2, seqlen], device),  # xz for splitting
+            TensorType(
+                dtype, [batch, dim * 2, seqlen], device
+            ),  # xz for splitting
             TensorType(dtype, [batch, dim, seqlen], device),  # delta
             TensorType(dtype, [dim, dstate], device),  # A
             TensorType(dtype, [batch, n_groups, dstate, seqlen], device),  # B
@@ -1964,7 +2146,7 @@ class TestMambaInnerFn:
             C_val = graph.inputs[4].tensor
 
             # Add ops.split() - this might be the problematic operation
-            x, y = ops.split(xz_val, [dim, dim], axis=1)
+            x, _y = ops.split(xz_val, [dim, dim], axis=1)
 
             output = selective_scan_fn(
                 u=x,  # Use result of split
@@ -1993,12 +2175,17 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
 
-    def test_selective_scan_with_matmul(self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]) -> None:
+    def test_selective_scan_with_matmul(
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
+    ) -> None:
         """Test selective_scan_fn with matrix multiplication."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
 
         # Create test data
-        u, delta, A, B, C, D, z, delta_bias = create_test_data(
+        u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
 
@@ -2065,19 +2252,28 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
 
-    def test_selective_scan_with_slice(self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]) -> None:
+    def test_selective_scan_with_slice(
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
+    ) -> None:
         """Test selective_scan_fn with ops.slice_tensor()."""
         batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
 
         # Create test data - create a larger tensor for slicing
-        large_tensor = np.random.randn(batch, dim * 2, seqlen).astype(np.float32)
-        delta, A, B, C, D, z, delta_bias = create_test_data(
+        large_tensor = np.random.randn(batch, dim * 2, seqlen).astype(
+            np.float32
+        )
+        delta, A, B, C, _D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )[1:]  # Skip u
 
         dtype = DType.float32
         input_types = [
-            TensorType(dtype, [batch, dim * 2, seqlen], device),  # large tensor for slicing
+            TensorType(
+                dtype, [batch, dim * 2, seqlen], device
+            ),  # large tensor for slicing
             TensorType(dtype, [batch, dim, seqlen], device),  # delta
             TensorType(dtype, [dim, dstate], device),  # A
             TensorType(dtype, [batch, n_groups, dstate, seqlen], device),  # B
@@ -2130,17 +2326,26 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
 
-    def test_selective_scan_with_causal_conv1d(self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]) -> None:
+    def test_selective_scan_with_causal_conv1d(
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
+    ) -> None:
         """Test selective_scan_fn with causal_conv1d_fn output - this might be the problematic operation."""
         batch, intermediate_size, seqlen, d_state, conv_width = 2, 8, 16, 2, 4
 
         # Create test data
         x = np.random.randn(batch, intermediate_size, seqlen).astype(np.float32)
-        conv_weight = np.random.randn(intermediate_size, conv_width).astype(np.float32)
+        conv_weight = np.random.randn(intermediate_size, conv_width).astype(
+            np.float32
+        )
         conv_bias = np.random.randn(intermediate_size).astype(np.float32)
 
         # Create other tensors
-        delta = np.random.randn(batch, intermediate_size, seqlen).astype(np.float32)
+        delta = np.random.randn(batch, intermediate_size, seqlen).astype(
+            np.float32
+        )
         A = np.random.randn(intermediate_size, d_state).astype(np.float32)
         B = np.random.randn(batch, 1, d_state, seqlen).astype(np.float32)
         C = np.random.randn(batch, 1, d_state, seqlen).astype(np.float32)
@@ -2148,9 +2353,13 @@ class TestMambaInnerFn:
         dtype = DType.float32
         input_types = [
             TensorType(dtype, [batch, intermediate_size, seqlen], device),  # x
-            TensorType(dtype, [intermediate_size, conv_width], device),  # conv_weight
+            TensorType(
+                dtype, [intermediate_size, conv_width], device
+            ),  # conv_weight
             TensorType(dtype, [intermediate_size], device),  # conv_bias
-            TensorType(dtype, [batch, intermediate_size, seqlen], device),  # delta
+            TensorType(
+                dtype, [batch, intermediate_size, seqlen], device
+            ),  # delta
             TensorType(dtype, [intermediate_size, d_state], device),  # A
             TensorType(dtype, [batch, 1, d_state, seqlen], device),  # B
             TensorType(dtype, [batch, 1, d_state, seqlen], device),  # C
@@ -2208,7 +2417,12 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, intermediate_size, seqlen)
 
-    def test_mamba_inner_simplified(self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]) -> None:
+    def test_mamba_inner_simplified(
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
+    ) -> None:
         """Test simplified mamba_inner_fn that bypasses complex operations."""
         batch, intermediate_size, seqlen, hidden_size = 2, 8, 16, 4
         d_state, delta_rank, conv_width = 2, 4, 4
@@ -2216,29 +2430,55 @@ class TestMambaInnerFn:
         np_dtype = np.float32
 
         # Create test data - simplified version
-        xz = np.random.randn(batch, 2 * intermediate_size, seqlen).astype(np_dtype)
-        conv1d_weight = np.random.randn(intermediate_size, conv_width).astype(np_dtype)
+        xz = np.random.randn(batch, 2 * intermediate_size, seqlen).astype(
+            np_dtype
+        )
+        conv1d_weight = np.random.randn(intermediate_size, conv_width).astype(
+            np_dtype
+        )
         conv1d_bias = np.random.randn(intermediate_size).astype(np_dtype)
-        x_proj_weight = np.random.randn(intermediate_size, intermediate_size).astype(np_dtype)
-        delta_proj_weight = np.random.randn(intermediate_size, delta_rank).astype(np_dtype)
-        out_proj_weight = np.random.randn(hidden_size, intermediate_size).astype(np_dtype)
+        x_proj_weight = np.random.randn(
+            intermediate_size, intermediate_size
+        ).astype(np_dtype)
+        delta_proj_weight = np.random.randn(
+            intermediate_size, delta_rank
+        ).astype(np_dtype)
+        out_proj_weight = np.random.randn(
+            hidden_size, intermediate_size
+        ).astype(np_dtype)
         out_proj_bias = np.random.randn(hidden_size).astype(np_dtype)
         A = np.random.randn(intermediate_size, d_state).astype(np_dtype)
         D = np.random.randn(intermediate_size).astype(np_dtype)
         delta_bias = np.random.randn(intermediate_size).astype(np_dtype)
 
         # Create graph
-        with Graph("test_mamba_inner_simplified", custom_extensions=mamba_kernel_path) as graph:
+        with Graph(
+            "test_mamba_inner_simplified", custom_extensions=mamba_kernel_path
+        ) as graph:
             xz_tensor = ops.constant(xz, dtype=dtype, device=device)
-            conv1d_weight_tensor = ops.constant(conv1d_weight, dtype=dtype, device=device)
-            conv1d_bias_tensor = ops.constant(conv1d_bias, dtype=dtype, device=device)
-            x_proj_weight_tensor = ops.constant(x_proj_weight, dtype=dtype, device=device)
-            delta_proj_weight_tensor = ops.constant(delta_proj_weight, dtype=dtype, device=device)
-            out_proj_weight_tensor = ops.constant(out_proj_weight, dtype=dtype, device=device)
-            out_proj_bias_tensor = ops.constant(out_proj_bias, dtype=dtype, device=device)
+            conv1d_weight_tensor = ops.constant(
+                conv1d_weight, dtype=dtype, device=device
+            )
+            conv1d_bias_tensor = ops.constant(
+                conv1d_bias, dtype=dtype, device=device
+            )
+            x_proj_weight_tensor = ops.constant(
+                x_proj_weight, dtype=dtype, device=device
+            )
+            delta_proj_weight_tensor = ops.constant(
+                delta_proj_weight, dtype=dtype, device=device
+            )
+            out_proj_weight_tensor = ops.constant(
+                out_proj_weight, dtype=dtype, device=device
+            )
+            out_proj_bias_tensor = ops.constant(
+                out_proj_bias, dtype=dtype, device=device
+            )
             A_tensor = ops.constant(A, dtype=dtype, device=device)
             D_tensor = ops.constant(D, dtype=dtype, device=device)
-            delta_bias_tensor = ops.constant(delta_bias, dtype=dtype, device=device)
+            delta_bias_tensor = ops.constant(
+                delta_bias, dtype=dtype, device=device
+            )
 
             # Call simplified mamba_inner_fn
             result = mamba_inner_fn_simplified(
@@ -2266,48 +2506,73 @@ class TestMambaInnerFn:
 
 class TestMambaInnerRef:
     """Tests for mamba_inner_ref."""
-    
+
     def test_mamba_inner_ref_basic(
-        self, session: InferenceSession, device: DeviceRef, mamba_kernel_path: list[Path]
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        mamba_kernel_path: list[Path],
     ) -> None:
         """Test basic mamba_inner_ref forward pass."""
         batch, intermediate_size, seqlen, hidden_size = 2, 8, 16, 4
         d_state, delta_rank, conv_width = 2, 4, 4
         dtype = DType.float32
         np_dtype = np.float32
-        
+
         # Create test data
-        xz = np.random.randn(batch, 2 * intermediate_size, seqlen).astype(np_dtype)
-        conv1d_weight = np.random.randn(intermediate_size, conv_width).astype(np_dtype)
+        xz = np.random.randn(batch, 2 * intermediate_size, seqlen).astype(
+            np_dtype
+        )
+        conv1d_weight = np.random.randn(intermediate_size, conv_width).astype(
+            np_dtype
+        )
         conv1d_bias = np.random.randn(intermediate_size).astype(np_dtype)
         x_proj_dim = delta_rank + 2 * d_state
-        x_proj_weight = np.random.randn(x_proj_dim, intermediate_size).astype(np_dtype)
-        delta_proj_weight = np.random.randn(intermediate_size, delta_rank).astype(np_dtype)
-        out_proj_weight = np.random.randn(hidden_size, intermediate_size).astype(np_dtype)
+        x_proj_weight = np.random.randn(x_proj_dim, intermediate_size).astype(
+            np_dtype
+        )
+        delta_proj_weight = np.random.randn(
+            intermediate_size, delta_rank
+        ).astype(np_dtype)
+        out_proj_weight = np.random.randn(
+            hidden_size, intermediate_size
+        ).astype(np_dtype)
         out_proj_bias = np.random.randn(hidden_size).astype(np_dtype)
-        A = np.random.uniform(-2.0, -0.1, (intermediate_size, d_state)).astype(np_dtype)
+        A = np.random.uniform(-2.0, -0.1, (intermediate_size, d_state)).astype(
+            np_dtype
+        )
         D = np.random.randn(intermediate_size).astype(np_dtype)
         delta_bias = np.random.randn(intermediate_size).astype(np_dtype)
-        
+
         input_types = [
-            TensorType(dtype, [batch, 2 * intermediate_size, seqlen], device),  # xz
-            TensorType(dtype, [intermediate_size, conv_width], device),  # conv1d_weight
+            TensorType(
+                dtype, [batch, 2 * intermediate_size, seqlen], device
+            ),  # xz
+            TensorType(
+                dtype, [intermediate_size, conv_width], device
+            ),  # conv1d_weight
             TensorType(dtype, [intermediate_size], device),  # conv1d_bias
-            TensorType(dtype, [x_proj_dim, intermediate_size], device),  # x_proj_weight
-            TensorType(dtype, [intermediate_size, delta_rank], device),  # delta_proj_weight
-            TensorType(dtype, [hidden_size, intermediate_size], device),  # out_proj_weight
+            TensorType(
+                dtype, [x_proj_dim, intermediate_size], device
+            ),  # x_proj_weight
+            TensorType(
+                dtype, [intermediate_size, delta_rank], device
+            ),  # delta_proj_weight
+            TensorType(
+                dtype, [hidden_size, intermediate_size], device
+            ),  # out_proj_weight
             TensorType(dtype, [hidden_size], device),  # out_proj_bias
             TensorType(dtype, [intermediate_size, d_state], device),  # A
             TensorType(dtype, [intermediate_size], device),  # D
             TensorType(dtype, [intermediate_size], device),  # delta_bias
         ]
-        
+
         graph = Graph(
             "test_mamba_inner_ref_basic",
             input_types=input_types,
             custom_extensions=mamba_kernel_path,
         )
-        
+
         with graph:
             xz_val = graph.inputs[0].tensor
             conv1d_weight_val = graph.inputs[1].tensor
@@ -2319,7 +2584,7 @@ class TestMambaInnerRef:
             A_val = graph.inputs[7].tensor
             D_val = graph.inputs[8].tensor
             delta_bias_val = graph.inputs[9].tensor
-            
+
             output = mamba_inner_ref(
                 xz=xz_val,
                 conv1d_weight=conv1d_weight_val,
@@ -2334,7 +2599,7 @@ class TestMambaInnerRef:
                 delta_softplus=True,
             )
             graph.output(output)
-        
+
         # Compile and execute
         compiled_model = session.load(graph)
         inputs = [
@@ -2350,7 +2615,7 @@ class TestMambaInnerRef:
             Tensor.from_numpy(delta_bias).to(session.devices[0]),
         ]
         results = compiled_model.execute(*inputs)
-        
+
         # Verify output shape
         assert len(results) == 1
         output_tensor = results[0]

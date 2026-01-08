@@ -45,4 +45,3 @@ mamba_arch = SupportedArchitecture(
     },
     task=PipelineTask.TEXT_GENERATION,
 )
-

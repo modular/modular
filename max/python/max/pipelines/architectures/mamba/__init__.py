@@ -14,4 +14,3 @@
 from .arch import mamba_arch
 
 __all__ = ["mamba_arch"]
-

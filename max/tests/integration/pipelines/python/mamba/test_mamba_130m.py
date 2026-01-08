@@ -18,7 +18,9 @@ import pytest
 from max.entrypoints import pipelines
 
 MAMBA_130M_HF_REPO_ID = "state-spaces/mamba-130m-hf"
-MAMBA_130M_HF_REVISION = hf_repo_lock.revision_for_hf_repo(MAMBA_130M_HF_REPO_ID)
+MAMBA_130M_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
+    MAMBA_130M_HF_REPO_ID
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -49,7 +51,9 @@ def test_mamba_130m_hf_generation(capsys: pytest.CaptureFixture[str]) -> None:
     assert len(captured.out) > 0, "Expected output from model generation"
 
 
-def test_mamba_130m_hf_generation_gpu(capsys: pytest.CaptureFixture[str]) -> None:
+def test_mamba_130m_hf_generation_gpu(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test running state-spaces/mamba-130m-hf using the mamba pipeline on GPU."""
     assert isinstance(MAMBA_130M_HF_REVISION, str), (
         "MAMBA_130M_HF_REVISION must be a string and present in hf-repo-lock.tsv"
@@ -75,4 +79,3 @@ def test_mamba_130m_hf_generation_gpu(capsys: pytest.CaptureFixture[str]) -> Non
         )
     captured = capsys.readouterr()
     assert len(captured.out) > 0, "Expected output from model generation"
-

@@ -206,4 +206,3 @@ def compute_data_parallel_splits(
     splits_summed = np.cumsum(splits)
 
     return splits_summed
-

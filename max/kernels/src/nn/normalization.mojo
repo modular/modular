@@ -2132,13 +2132,16 @@ fn rms_norm_fused_residual_add[
 # rms_norm_fused_residual: Single RMSNorm with fused residual connection
 # ===----------------------------------------------------------------------=== #
 
+
 # Core 2D implementation that uses simple (row, col) indices to avoid
 # compile-time evaluation issues with IndexList[rank] lambda functions.
 fn _rms_norm_fused_residual_cpu_2d[
     dtype: DType,
     //,
     input_fn: fn[width: Int] (Int, Int) capturing -> SIMD[dtype, width],
-    residual_input_fn: fn[width: Int] (Int, Int) capturing -> SIMD[dtype, width],
+    residual_input_fn: fn[width: Int] (Int, Int) capturing -> SIMD[
+        dtype, width
+    ],
     output_fn: fn[width: Int, alignment: Int] (
         Int, Int, SIMD[dtype, width]
     ) capturing -> None,
@@ -2155,7 +2158,7 @@ fn _rms_norm_fused_residual_cpu_2d[
     seed: UInt64 = 0,
 ):
     """Core 2D implementation of RMSNorm with fused residual.
-    
+
     Uses simple (row, col) indexing to avoid compile-time evaluation issues.
     """
     __comptime_assert gamma.rank == 1, "gamma must have rank 1"
@@ -2177,39 +2180,42 @@ fn _rms_norm_fused_residual_cpu_2d[
     for row in range(num_rows):
         # First compute sum of squared (input + residual) for RMSNorm
         var sum_simd = SIMD[intermediate_type, simd_width]()
-        
+
         # SIMD loop
         for col in range(0, simd_loop_end, simd_width):
             var input_vals = input_fn[simd_width](row, col)
             var residual_vals = residual_input_fn[simd_width](row, col)
-            
+
             # Apply dropout if enabled
             if dropout_p > zero_scalar:
+
                 @parameter
                 for i in range(simd_width):
                     var element_offset = row * num_cols + col + i
-                    var generator = Random(seed=seed, offset=UInt64(element_offset))
+                    var generator = Random(
+                        seed=seed, offset=UInt64(element_offset)
+                    )
                     var rng = generator.step_uniform()
                     var rng_val = rng[0].cast[dtype]()
                     if rng_val >= dropout_p:
                         input_vals[i] = input_vals[i] * dropout_scale
                     else:
                         input_vals[i] = zero_scalar
-            
+
             var sum_vals = input_vals + residual_vals
-            
+
             # Output pre-normalized value (x + residual)
             output_residual_fn[simd_width, 1](row, col, sum_vals)
-            
+
             # Accumulate for RMSNorm
             sum_simd += sum_vals.cast[intermediate_type]() ** 2
-        
+
         # Scalar loop for remainder
         var sum_val = sum_simd.reduce_add()
         for col in range(simd_loop_end, num_cols):
             var input_val = input_fn[1](row, col)[0]
             var residual_val = residual_input_fn[1](row, col)[0]
-            
+
             # Apply dropout if enabled
             if dropout_p > zero_scalar:
                 var element_offset = row * num_cols + col
@@ -2220,46 +2226,51 @@ fn _rms_norm_fused_residual_cpu_2d[
                     input_val = input_val * dropout_scale
                 else:
                     input_val = zero_scalar
-            
+
             var sum_val_scalar = input_val + residual_val
-            
+
             # Output pre-normalized value
             output_residual_fn[1, 1](row, col, sum_val_scalar)
-            
+
             # Accumulate for RMSNorm
             sum_val += sum_val_scalar.cast[intermediate_type]() ** 2
-        
+
         # Compute normalization factor
         var mean_val = _sum_to_mean(sum_val, num_cols)
         var norm_factor = rsqrt(mean_val + epsilon.cast[intermediate_type]())
-        
+
         # Second pass: apply normalization
         fn _normalize[sw: Int](col: Int) unified {mut}:
             # Re-read the pre-normalized values (input + residual)
             var input_vals = input_fn[sw](row, col)
             var residual_vals = residual_input_fn[sw](row, col)
-            
+
             # Apply dropout again (same pattern to get same result)
             if dropout_p > zero_scalar:
+
                 @parameter
                 for i in range(sw):
                     var element_offset = row * num_cols + col + i
-                    var generator = Random(seed=seed, offset=UInt64(element_offset))
+                    var generator = Random(
+                        seed=seed, offset=UInt64(element_offset)
+                    )
                     var rng = generator.step_uniform()
                     var rng_val = rng[0].cast[dtype]()
                     if rng_val >= dropout_p:
                         input_vals[i] = input_vals[i] * dropout_scale
                     else:
                         input_vals[i] = zero_scalar
-            
-            var sum_vals = (input_vals + residual_vals).cast[intermediate_type]()
-            
+
+            var sum_vals = (input_vals + residual_vals).cast[
+                intermediate_type
+            ]()
+
             var gamma_col = gamma.runtime_layout(
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](col)
             )
             var gamma_val = gamma.ptr.load[width=sw](gamma_col)
             var norm_val: SIMD[dtype, sw]
-            
+
             if multiply_before_cast:
                 var gamma_offset = gamma_val + weight_offset
                 norm_val = (sum_vals * norm_factor).cast[dtype]() * gamma_offset
@@ -2267,9 +2278,9 @@ fn _rms_norm_fused_residual_cpu_2d[
                 norm_val = (sum_vals * norm_factor).cast[dtype]() * (
                     gamma_val + weight_offset
                 )
-            
+
             output_fn[sw, 1](row, col, norm_val)
-        
+
         vectorize[simd_width](num_cols, _normalize)
 
 
@@ -2300,7 +2311,7 @@ fn rms_norm_fused_residual_cpu[
     seed: UInt64 = 0,
 ) raises:
     """Generic rank wrapper that delegates to the 2D core implementation.
-    
+
     Creates 2D wrapper lambdas that translate (row, col) to IndexList[rank]
     at runtime, avoiding compile-time evaluation issues with _lambda_load.
     """
@@ -2312,14 +2323,18 @@ fn rms_norm_fused_residual_cpu[
     # Create 2D wrapper lambdas that translate indices at runtime
     @parameter
     @always_inline
-    fn input_fn_2d[simd_width: Int](row: Int, col: Int) -> SIMD[dtype, simd_width]:
+    fn input_fn_2d[
+        simd_width: Int
+    ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width, rank](indices)
 
     @parameter
     @always_inline
-    fn residual_input_fn_2d[simd_width: Int](row: Int, col: Int) -> SIMD[dtype, simd_width]:
+    fn residual_input_fn_2d[
+        simd_width: Int
+    ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return residual_input_fn[simd_width, rank](indices)
@@ -2404,17 +2419,21 @@ fn rms_norm_fused_residual_gpu_block[
 
         if idx < UInt(num_cols):
             var input_val = input_fn[simd_width](Int(row), Int(idx))
-            
+
             # Apply dropout if enabled
             var zero_scalar = Scalar[dtype](0.0)
             if dropout_p > zero_scalar:
                 var one_scalar = Scalar[dtype](1.0)
                 var dropout_scale = one_scalar / (one_scalar - dropout_p)
-                
+
                 for i in range(simd_width):
                     if Int(idx) + i < num_cols:
                         # Use element position as offset for RNG to ensure different values per element
-                        var element_offset = UInt64(row) * UInt64(num_cols) + UInt64(idx) + UInt64(i)
+                        var element_offset = (
+                            UInt64(row) * UInt64(num_cols)
+                            + UInt64(idx)
+                            + UInt64(i)
+                        )
                         var generator = Random(seed=seed, offset=element_offset)
                         var rng = generator.step_uniform()
                         var rng_val = rng[0].cast[dtype]()
@@ -2422,19 +2441,20 @@ fn rms_norm_fused_residual_gpu_block[
                             input_val[i] = input_val[i] * dropout_scale
                         else:
                             input_val[i] = zero_scalar
-            
+
             var residual_val = residual_input_fn[simd_width](Int(row), Int(idx))
             var residual_add_val = input_val + residual_val
-            
+
             # Output the pre-normalized value (x + residual) for prenorm mode
             output_residual_fn[simd_width, align_of[SIMD[dtype, simd_width]]()](
                 Int(row), Int(idx), residual_add_val
             )
-            
+
             # Store in shared memory for normalization
-            shared_mem.store[width=simd_width, alignment=align_of[SIMD[dtype, simd_width]]()](
-                Int(idx), residual_add_val
-            )
+            shared_mem.store[
+                width=simd_width,
+                alignment = align_of[SIMD[dtype, simd_width]](),
+            ](Int(idx), residual_add_val)
 
         barrier()
 
@@ -3196,19 +3216,20 @@ fn group_norm_shape[
 # Gated LayerNorm/RMSNorm
 # ===----------------------------------------------------------------------=== #
 
+
 @always_inline
 fn silu[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute SiLU (Sigmoid Linear Unit): x * sigmoid(x) = x / (1 + exp(-x)).
-    
+
     Parameters:
         dtype: DType used for the computation.
         simd_width: SIMD width used for the computation.
-    
+
     Args:
         x: The input value.
-    
+
     Returns:
         The result of the SiLU operation.
     """
@@ -3244,88 +3265,101 @@ fn layer_norm_gated_cpu[
     has_bias: Bool,
     is_rms_norm: Bool,
     norm_before_gate: Bool,
-](
-    shape: IndexList[rank],
-    epsilon: Scalar[dtype],
-):
+](shape: IndexList[rank], epsilon: Scalar[dtype],):
     __comptime_assert rank > 0, "rank must be > 0"
-    
+
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
-    
+
     comptime simd_width = simd_width_of[dtype]()
     comptime intermediate_type = get_accum_type[dtype]()
-    
+
     for row in range(prod_all_but_last_dim):
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
-        
+
         # Compute mean and variance (or just variance for RMSNorm)
         var sum_val = Scalar[intermediate_type](0.0)
         var sum_sq_val = Scalar[intermediate_type](0.0)
-        
+
         # First pass: compute statistics
         for col in range(0, last_dim, simd_width):
             var actual_width = min(simd_width, last_dim - col)
             indices[rank - 1] = col
-            
-            var x = input_fn[simd_width, rank](indices.canonicalize()).cast[intermediate_type]()
-            
+
+            var x = input_fn[simd_width, rank](indices.canonicalize()).cast[
+                intermediate_type
+            ]()
+
             # Apply gating if z is provided and norm_before_gate is False
             if has_z and not norm_before_gate:
-                var z = z_fn[simd_width, rank](indices.canonicalize()).cast[intermediate_type]()
+                var z = z_fn[simd_width, rank](indices.canonicalize()).cast[
+                    intermediate_type
+                ]()
                 var z_silu = silu[intermediate_type, simd_width](z)
                 x = x * z_silu
-            
+
             # Accumulate for mean/variance computation
             # Only process elements that are within bounds
             for i in range(actual_width):
                 if col + i < last_dim:
                     sum_val += x[i]
                     sum_sq_val += x[i] * x[i]
-        
+
         var mean_val = sum_val / Scalar[intermediate_type](last_dim)
         var variance_val: Scalar[intermediate_type]
-        
+
         if is_rms_norm:
             variance_val = sum_sq_val / Scalar[intermediate_type](last_dim)
         else:
-            variance_val = (sum_sq_val / Scalar[intermediate_type](last_dim)) - mean_val * mean_val
-        
+            variance_val = (
+                sum_sq_val / Scalar[intermediate_type](last_dim)
+            ) - mean_val * mean_val
+
         var rstd = rsqrt(variance_val + epsilon.cast[intermediate_type]())
-        
+
         # Second pass: normalize and apply transformation
         for col in range(0, last_dim, simd_width):
             indices[rank - 1] = col
-            
-            var x = input_fn[simd_width, rank](indices.canonicalize()).cast[intermediate_type]()
-            
+
+            var x = input_fn[simd_width, rank](indices.canonicalize()).cast[
+                intermediate_type
+            ]()
+
             # Apply gating if z is provided and norm_before_gate is False
             if has_z and not norm_before_gate:
-                var z = z_fn[simd_width, rank](indices.canonicalize()).cast[intermediate_type]()
+                var z = z_fn[simd_width, rank](indices.canonicalize()).cast[
+                    intermediate_type
+                ]()
                 var z_silu = silu[intermediate_type, simd_width](z)
                 x = x * z_silu
-            
+
             # Normalize
             var x_normalized: SIMD[intermediate_type, simd_width]
             if is_rms_norm:
                 x_normalized = x * rstd
             else:
                 x_normalized = (x - mean_val) * rstd
-            
+
             # Apply gamma and beta
-            var gamma = gamma_fn[simd_width, rank](indices.canonicalize()).cast[intermediate_type]()
+            var gamma = gamma_fn[simd_width, rank](indices.canonicalize()).cast[
+                intermediate_type
+            ]()
             var output_val = x_normalized * gamma
-            
+
             if has_bias:
-                var beta = beta_fn[simd_width, rank](indices.canonicalize()).cast[intermediate_type]()
+                var beta = beta_fn[simd_width, rank](
+                    indices.canonicalize()
+                ).cast[intermediate_type]()
                 output_val = output_val + beta
-            
+
             # Apply gating if z is provided and norm_before_gate is True
             if has_z and norm_before_gate:
-                var z = z_fn[simd_width, rank](indices.canonicalize()).cast[intermediate_type]()
+                var z = z_fn[simd_width, rank](indices.canonicalize()).cast[
+                    intermediate_type
+                ]()
                 var z_silu = silu[intermediate_type, simd_width](z)
                 output_val = output_val * z_silu
-            
+
             # Cast back to output dtype and write
             var output_final = output_val.cast[dtype]()
             output_fn[simd_width, 1](indices.canonicalize(), output_final)
@@ -3342,9 +3376,7 @@ fn layer_norm_gated_gpu_warp_tiling[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    z_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
-        dtype, width
-    ],
+    z_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[dtype, width],
     gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
@@ -3387,7 +3419,7 @@ fn layer_norm_gated_gpu_warp_tiling[
             vec_data = input_fn[Int(simd_width)](Int(row), Int(idx)).cast[
                 accum_type
             ]()
-            
+
             # Apply gating if z is provided and norm_before_gate is False
             if has_z and not norm_before_gate:
                 vec_z = z_fn[Int(simd_width)](Int(row), Int(idx)).cast[
@@ -3407,7 +3439,10 @@ fn layer_norm_gated_gpu_warp_tiling[
                     else:
                         # For LayerNorm, use Welford's algorithm
                         welford_update(
-                            vec_data[Int(i)], thread_mean, thread_m2, thread_count
+                            vec_data[Int(i)],
+                            thread_mean,
+                            thread_m2,
+                            thread_count,
                         )
 
         # A whole block computes part of the row mean and variance and broadcasts to
@@ -3421,8 +3456,12 @@ fn layer_norm_gated_gpu_warp_tiling[
             var count_broadcast = stack_allocation[
                 1, accum_type, address_space = AddressSpace.SHARED
             ]()
-            var block_m2 = block_reduce[accum_type, max_warps_per_block](thread_m2)
-            var block_count = block_reduce[accum_type, max_warps_per_block](thread_count)
+            var block_m2 = block_reduce[accum_type, max_warps_per_block](
+                thread_m2
+            )
+            var block_count = block_reduce[accum_type, max_warps_per_block](
+                thread_count
+            )
             if tid == 0:
                 m2_broadcast.store(0, block_m2)
                 count_broadcast.store(0, block_count)
@@ -3433,7 +3472,12 @@ fn layer_norm_gated_gpu_warp_tiling[
             norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
         else:
             welford_block_all_reduce(
-                thread_mean, thread_m2, thread_count, row_mean, row_m2, row_count
+                thread_mean,
+                thread_m2,
+                thread_count,
+                row_mean,
+                row_m2,
+                row_count,
             )
             var row_var = max(row_m2 / row_count, 0.0)
             norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
@@ -3443,7 +3487,7 @@ fn layer_norm_gated_gpu_warp_tiling[
             vec_data = input_fn[Int(simd_width)](Int(row), Int(idx)).cast[
                 accum_type
             ]()
-            
+
             # Apply gating if z is provided and norm_before_gate is False
             if has_z and not norm_before_gate:
                 vec_z = z_fn[Int(simd_width)](Int(row), Int(idx)).cast[
@@ -3451,20 +3495,20 @@ fn layer_norm_gated_gpu_warp_tiling[
                 ]()
                 var z_silu = silu[accum_type, Int(simd_width)](vec_z)
                 vec_data = vec_data * z_silu
-            
+
             # Normalize
             var norm_val: SIMD[accum_type, Int(simd_width)]
             if is_rms_norm:
                 norm_val = vec_data * norm_factor
             else:
                 norm_val = (vec_data - row_mean) * norm_factor
-            
+
             # Apply gamma and beta
             var gamma_val = gamma_fn[Int(simd_width)](Index(Int(idx))).cast[
                 accum_type
             ]()
             norm_val = norm_val * gamma_val
-            
+
             if has_bias:
                 var beta_idx = beta.runtime_layout(
                     RuntimeTuple[IntTuple(UNKNOWN_VALUE)](Int(idx))
@@ -3473,7 +3517,7 @@ fn layer_norm_gated_gpu_warp_tiling[
                     width = Int(simd_width), alignment=align
                 ](beta_idx).cast[accum_type]()
                 norm_val = norm_val + beta_val
-            
+
             # Apply gating if z is provided and norm_before_gate is True
             if has_z and norm_before_gate:
                 vec_z = z_fn[Int(simd_width)](Int(row), Int(idx)).cast[
@@ -3481,7 +3525,7 @@ fn layer_norm_gated_gpu_warp_tiling[
                 ]()
                 var z_silu = silu[accum_type, Int(simd_width)](vec_z)
                 norm_val = norm_val * z_silu
-            
+
             output_fn[Int(simd_width), align](
                 Int(row), Int(idx), norm_val.cast[dtype]()
             )
@@ -3498,9 +3542,7 @@ fn layer_norm_gated_gpu_block[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    z_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
-        dtype, width
-    ],
+    z_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[dtype, width],
     gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
@@ -3546,7 +3588,7 @@ fn layer_norm_gated_gpu_block[
                 var vec_data = input_fn[Int(simd_width)](
                     Int(row), Int(offset)
                 ).cast[accum_type]()
-                
+
                 # Apply gating if z is provided and norm_before_gate is False
                 if has_z and not norm_before_gate:
                     var vec_z = z_fn[Int(simd_width)](
@@ -3568,7 +3610,10 @@ fn layer_norm_gated_gpu_block[
                     for i in range(simd_width):
                         if offset + UInt(i) < num_cols:
                             welford_update(
-                                vec_data[Int(i)], thread_mean, thread_m2, thread_count
+                                vec_data[Int(i)],
+                                thread_mean,
+                                thread_m2,
+                                thread_count,
                             )
 
             # A whole block computes part of the row mean and variance and broadcasts to
@@ -3581,8 +3626,12 @@ fn layer_norm_gated_gpu_block[
                 var count_broadcast = stack_allocation[
                     1, accum_type, address_space = AddressSpace.SHARED
                 ]()
-                var block_m2 = block_reduce[accum_type, max_warps_per_block](thread_m2)
-                var block_count = block_reduce[accum_type, max_warps_per_block](thread_count)
+                var block_m2 = block_reduce[accum_type, max_warps_per_block](
+                    thread_m2
+                )
+                var block_count = block_reduce[accum_type, max_warps_per_block](
+                    thread_count
+                )
                 if tid == 0:
                     m2_broadcast.store(0, block_m2)
                     count_broadcast.store(0, block_count)
@@ -3614,7 +3663,7 @@ fn layer_norm_gated_gpu_block[
                 var vec_data = input_fn[Int(simd_width)](
                     Int(row), Int(offset)
                 ).cast[accum_type]()
-                
+
                 # Apply gating if z is provided and norm_before_gate is False
                 if has_z and not norm_before_gate:
                     var vec_z = z_fn[Int(simd_width)](
@@ -3622,19 +3671,19 @@ fn layer_norm_gated_gpu_block[
                     ).cast[accum_type]()
                     var z_silu = silu[accum_type, Int(simd_width)](vec_z)
                     vec_data = vec_data * z_silu
-                
+
                 # Normalize
                 var norm_val: SIMD[accum_type, Int(simd_width)]
                 if is_rms_norm:
                     norm_val = vec_data * norm_factor
                 else:
                     norm_val = (vec_data - row_mean) * norm_factor
-                
-                var gamma_val = gamma_fn[Int(simd_width)](Index(Int(offset))).cast[
-                    accum_type
-                ]()
+
+                var gamma_val = gamma_fn[Int(simd_width)](
+                    Index(Int(offset))
+                ).cast[accum_type]()
                 norm_val = norm_val * gamma_val
-                
+
                 if has_bias:
                     var beta_offset = beta.runtime_layout(
                         RuntimeTuple[IntTuple(UNKNOWN_VALUE)](Int(offset))
@@ -3643,7 +3692,7 @@ fn layer_norm_gated_gpu_block[
                         width = Int(simd_width), alignment=align
                     ](beta_offset).cast[accum_type]()
                     norm_val = norm_val + beta_val
-                
+
                 # Apply gating if z is provided and norm_before_gate is True
                 if has_z and norm_before_gate:
                     var vec_z = z_fn[Int(simd_width)](
@@ -3651,7 +3700,7 @@ fn layer_norm_gated_gpu_block[
                     ).cast[accum_type]()
                     var z_silu = silu[accum_type, Int(simd_width)](vec_z)
                     norm_val = norm_val * z_silu
-                
+
                 output_fn[Int(simd_width), align](
                     Int(row), Int(offset), norm_val.cast[dtype]()
                 )
@@ -3688,7 +3737,7 @@ fn layer_norm_gated_gpu[
     ctx: DeviceContext,
 ) raises:
     __comptime_assert beta.rank == 1, "beta must have rank 1"
-    
+
     if rank == 0:
         return
 
@@ -3713,9 +3762,7 @@ fn layer_norm_gated_gpu[
 
     @parameter
     @always_inline
-    fn z_fn_2d[
-        simd_width: Int
-    ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
+    fn z_fn_2d[simd_width: Int](row: Int, col: Int) -> SIMD[dtype, simd_width]:
         # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
@@ -3866,6 +3913,9 @@ fn _layer_norm_gated_impl[
     elif is_gpu[target]():
         # For GPU, beta is always required (caller should provide dummy tensor when has_bias is False)
         # This will be handled by the registration layer
-        raise Error("GPU gated layernorm requires beta tensor to be provided (use dummy tensor when has_bias is False)")
+        raise Error(
+            "GPU gated layernorm requires beta tensor to be provided (use dummy"
+            " tensor when has_bias is False)"
+        )
     else:
         constrained[False, "unsupported target " + target]()

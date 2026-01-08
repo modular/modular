@@ -30,4 +30,3 @@ __all__ = [
     "SSMStateValues",
     "create_ssm_state_params",
 ]
-

@@ -255,9 +255,9 @@ fn run_rms_norm_fused_residual_gpu[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = result_gpu_buf.runtime_layout(
-            RuntimeTuple[
-                fill_like(result_gpu_buf.layout.shape, UNKNOWN_VALUE)
-            ](coords)
+            RuntimeTuple[fill_like(result_gpu_buf.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
         )
         result_gpu_buf.ptr.store[width=width, alignment=alignment](idx, val)
 
@@ -309,7 +309,7 @@ fn run_rms_norm_fused_residual_gpu[
             residual_cpu_h[i],
             rtol=rtol,
         )
-    
+
     # Cleanup
     input_h.free()
     residual_h.free()
@@ -323,19 +323,34 @@ fn run_rms_norm_fused_residual_gpu[
 def main():
     with DeviceContext() as ctx:
         # Test various shapes without dropout
-        # Note: Using shapes with column sizes that are multiples of 4 to avoid 
+        # Note: Using shapes with column sizes that are multiples of 4 to avoid
         # CUDA misaligned address errors in the shared memory kernel.
         # Also, column sizes are limited to ~4096 due to GPU block thread limits.
-        run_rms_norm_fused_residual_gpu[DType.float32](Index(2, 64), ctx, dropout_p=0.0)
-        run_rms_norm_fused_residual_gpu[DType.float32](Index(2, 128), ctx, dropout_p=0.0)
-        run_rms_norm_fused_residual_gpu[DType.float32](Index(4, 256), ctx, dropout_p=0.0)
-        run_rms_norm_fused_residual_gpu[DType.float32](Index(1, 5, 6, 10, 128), ctx, dropout_p=0.0)
-        run_rms_norm_fused_residual_gpu[DType.float32](Index(2, 1024), ctx, dropout_p=0.0)
-        run_rms_norm_fused_residual_gpu[DType.float32](Index(4, 2048), ctx, dropout_p=0.0)
+        run_rms_norm_fused_residual_gpu[DType.float32](
+            Index(2, 64), ctx, dropout_p=0.0
+        )
+        run_rms_norm_fused_residual_gpu[DType.float32](
+            Index(2, 128), ctx, dropout_p=0.0
+        )
+        run_rms_norm_fused_residual_gpu[DType.float32](
+            Index(4, 256), ctx, dropout_p=0.0
+        )
+        run_rms_norm_fused_residual_gpu[DType.float32](
+            Index(1, 5, 6, 10, 128), ctx, dropout_p=0.0
+        )
+        run_rms_norm_fused_residual_gpu[DType.float32](
+            Index(2, 1024), ctx, dropout_p=0.0
+        )
+        run_rms_norm_fused_residual_gpu[DType.float32](
+            Index(4, 2048), ctx, dropout_p=0.0
+        )
         print("✓ RMSNorm fused residual without dropout passed")
-        
-        # Test with dropout
-        run_rms_norm_fused_residual_gpu[DType.float32](Index(2, 128), ctx, dropout_p=0.1)
-        run_rms_norm_fused_residual_gpu[DType.float32](Index(4, 256), ctx, dropout_p=0.2)
-        print("✓ RMSNorm fused residual with dropout passed")
 
+        # Test with dropout
+        run_rms_norm_fused_residual_gpu[DType.float32](
+            Index(2, 128), ctx, dropout_p=0.1
+        )
+        run_rms_norm_fused_residual_gpu[DType.float32](
+            Index(4, 256), ctx, dropout_p=0.2
+        )
+        print("✓ RMSNorm fused residual with dropout passed")

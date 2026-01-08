@@ -1395,7 +1395,9 @@ class GatedMLP(Module, Shardable):
         # First linear layer outputs 2 * hidden_features
         y = self.fc1(x)
         # Split into main path and gate path
-        y, gate = ops.split(y, [self.hidden_features, self.hidden_features], axis=-1)
+        y, gate = ops.split(
+            y, [self.hidden_features, self.hidden_features], axis=-1
+        )
         # Apply activation to gate and multiply with main path
         y = y * self.activation_function(gate)
         # Second linear layer
@@ -1448,7 +1450,9 @@ class GatedMLP(Module, Shardable):
         sharded_fc2s = self.fc2.shard(devices)
 
         shards = []
-        for device, fc1, fc2 in zip(devices, sharded_fc1s, sharded_fc2s, strict=True):
+        for device, fc1, fc2 in zip(
+            devices, sharded_fc1s, sharded_fc2s, strict=True
+        ):
             # Create new GatedMLP instance with the sharded layers
             sharded = GatedMLP(
                 in_features=self.in_features,

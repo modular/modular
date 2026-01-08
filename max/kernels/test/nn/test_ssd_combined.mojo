@@ -83,98 +83,119 @@ fn run_ssd_combined[
     """Test SSD combined kernel against reference implementation."""
     if dstate > MAX_DSTATE:
         return  # Skip if dstate exceeds kernel limit
-    
+
     var group_size = dim // n_groups
     var chunk_size = 2048
     var n_chunks = (seqlen + chunk_size - 1) // chunk_size
-    
+
     # Allocate host memory
     comptime layout_3d = Layout.row_major[3]()
     comptime layout_4d = Layout.row_major[4]()
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    
+
     # output: (batch, dim, seqlen)
     var output_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var output_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        output_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        output_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     ).fill(0)
-    
+
     # x: (batch, dim, num_chunks, 2*dstate) - checkpoint tensor
     var x_heap = alloc[Scalar[dtype]](batch * dim * n_chunks * 2 * dstate)
     var x_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        x_heap, RuntimeLayout[layout_4d].row_major(Index(batch, dim, n_chunks, 2 * dstate))
+        x_heap,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, dim, n_chunks, 2 * dstate)
+        ),
     ).fill(0)
-    
+
     # out_z: (batch, dim, seqlen) - gated output
     var out_z_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var out_z_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        out_z_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        out_z_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     ).fill(0)
-    
+
     # residual: (batch, dim, seqlen)
     var residual_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var residual_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        residual_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        residual_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
-    
+
     # u: (batch, dim, seqlen)
     var u_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var u_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
         u_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
     )
-    
+
     # delta: (batch, dim, seqlen)
     var delta_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var delta_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        delta_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        delta_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
-    
+
     # A: (dim, dstate)
     var A_heap = alloc[Scalar[dtype]](dim * dstate)
     var A_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         A_heap, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
     )
-    
+
     # B: (batch, n_groups, dstate, seqlen)
     var B_heap = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
     var B_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        B_heap, RuntimeLayout[layout_4d].row_major(Index(batch, n_groups, dstate, seqlen))
+        B_heap,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, n_groups, dstate, seqlen)
+        ),
     )
-    
+
     # C: (batch, n_groups, dstate, seqlen)
     var C_heap = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
     var C_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        C_heap, RuntimeLayout[layout_4d].row_major(Index(batch, n_groups, dstate, seqlen))
+        C_heap,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, n_groups, dstate, seqlen)
+        ),
     )
-    
+
     # D: (dim,) - optional
     var D_size = dim if has_D else 0
     var D_heap = alloc[Scalar[dtype]](max(D_size, 1))
     var D_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         D_heap, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
-    
+
     # z: (batch, dim, seqlen) - optional
     var z_size = batch * dim * seqlen if has_z else 0
     var z_heap = alloc[Scalar[dtype]](max(z_size, 1))
     var z_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        z_heap, RuntimeLayout[layout_3d].row_major(Index(batch if has_z else 0, dim if has_z else 0, seqlen if has_z else 0))
+        z_heap,
+        RuntimeLayout[layout_3d].row_major(
+            Index(
+                batch if has_z else 0,
+                dim if has_z else 0,
+                seqlen if has_z else 0,
+            )
+        ),
     )
-    
+
     # delta_bias: (dim,) - optional
     var delta_bias_size = dim if has_delta_bias else 0
     var delta_bias_heap = alloc[Scalar[dtype]](max(delta_bias_size, 1))
     var delta_bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        delta_bias_heap, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
+        delta_bias_heap,
+        RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
     )
-    
+
     # gamma: (dim,) - for normalization
     var gamma_heap = alloc[Scalar[dtype]](dim)
     var gamma_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         gamma_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
     )
-    
+
     # Initialize data
     random(u_h)
     random(delta_h)
@@ -189,14 +210,14 @@ fn run_ssd_combined[
     if has_delta_bias:
         random(delta_bias_h)
     random(gamma_h)
-    
+
     # Initialize gamma to positive values
     for i in range(dim):
         gamma_h.ptr[i] = abs(gamma_h.ptr[i]) + Scalar[dtype](0.1)
-    
+
     var epsilon = Scalar[dtype](0.001)
     var weight_offset = Scalar[dtype](0.0)
-    
+
     # Strides for row-major layout
     var output_b_stride: UInt32 = dim * seqlen
     var output_d_stride: UInt32 = seqlen
@@ -233,7 +254,7 @@ fn run_ssd_combined[
     var z_t_stride: UInt32 = 1
     var delta_bias_stride: UInt32 = 1
     var gamma_stride: UInt32 = 1
-    
+
     # Call kernel
     ssd_combined_cpu[
         dtype,
@@ -308,7 +329,7 @@ fn run_ssd_combined[
         delta_bias_stride,
         gamma_stride,
     )
-    
+
     # Basic sanity check: output should not be all zeros
     # Check a few sample outputs to verify kernel executed
     var has_nonzero = False
@@ -318,10 +339,12 @@ fn run_ssd_combined[
         if abs(val) > 1e-8:
             has_nonzero = True
             break
-    
+
     if not has_nonzero:
-        raise Error("Output is all zeros - kernel may not be executing correctly")
-    
+        raise Error(
+            "Output is all zeros - kernel may not be executing correctly"
+        )
+
     # Cleanup
     output_heap.free()
     x_heap.free()
@@ -340,40 +363,63 @@ fn run_ssd_combined[
 
 def main():
     # Test basic ssd_combined
-    run_ssd_combined[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=False](
-        batch=2, dim=4, seqlen=8, dstate=4, n_groups=1
-    )
+    run_ssd_combined[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
     print("✓ Basic SSD combined test passed")
-    
-    # Test without D
-    run_ssd_combined[DType.float32, has_D=False, has_z=True, has_delta_bias=True, delta_softplus=False](
-        batch=2, dim=4, seqlen=8, dstate=4, n_groups=1
-    )
-    print("✓ SSD combined without D test passed")
-    
-    # Test without z
-    run_ssd_combined[DType.float32, has_D=True, has_z=False, has_delta_bias=True, delta_softplus=False](
-        batch=2, dim=4, seqlen=8, dstate=4, n_groups=1
-    )
-    print("✓ SSD combined without z test passed")
-    
-    # Test without delta_bias
-    run_ssd_combined[DType.float32, has_D=True, has_z=True, has_delta_bias=False, delta_softplus=False](
-        batch=2, dim=4, seqlen=8, dstate=4, n_groups=1
-    )
-    print("✓ SSD combined without delta_bias test passed")
-    
-    # Test with delta_softplus
-    run_ssd_combined[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=True](
-        batch=2, dim=4, seqlen=8, dstate=4, n_groups=1
-    )
-    print("✓ SSD combined with delta_softplus test passed")
-    
-    # Test larger shapes
-    run_ssd_combined[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=False](
-        batch=4, dim=8, seqlen=16, dstate=8, n_groups=1
-    )
-    print("✓ SSD combined larger shapes test passed")
-    
-    print("All SSD combined tests passed!")
 
+    # Test without D
+    run_ssd_combined[
+        DType.float32,
+        has_D=False,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
+    print("✓ SSD combined without D test passed")
+
+    # Test without z
+    run_ssd_combined[
+        DType.float32,
+        has_D=True,
+        has_z=False,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
+    print("✓ SSD combined without z test passed")
+
+    # Test without delta_bias
+    run_ssd_combined[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=False,
+        delta_softplus=False,
+    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
+    print("✓ SSD combined without delta_bias test passed")
+
+    # Test with delta_softplus
+    run_ssd_combined[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=True,
+    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
+    print("✓ SSD combined with delta_softplus test passed")
+
+    # Test larger shapes
+    run_ssd_combined[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=4, dim=8, seqlen=16, dstate=8, n_groups=1)
+    print("✓ SSD combined larger shapes test passed")
+
+    print("All SSD combined tests passed!")

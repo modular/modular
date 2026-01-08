@@ -14,22 +14,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import partial
-from collections.abc import Callable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.nn import (
     ConstantLayerNorm,
     Embedding,
+    FusedRMSNorm,
     LayerList,
     Linear,
     Module,
-    LayerNorm,
-    FusedRMSNorm,
-    Identity,
-    GatedMLP,
-    Conv1D
 )
 from max.nn.mamba import Block, MambaSSM
 from max.pipelines.lib.lora import LoRAManager
@@ -68,9 +64,7 @@ class Mamba(Module):
         # Select linear layer class.
         linear_cls: Callable[..., Linear]
 
-        linear_cls = partial(
-            Linear, float8_config=config.float8_config
-        )
+        linear_cls = partial(Linear, float8_config=config.float8_config)
 
         # Create Mamba blocks
         layers = []
@@ -82,7 +76,9 @@ class Mamba(Module):
                 device=config.devices[0],
                 linear_cls=linear_cls,
                 d_state=config.d_state,
-                dt_rank=config.dt_rank if config.dt_rank is not None else "auto",
+                dt_rank=config.dt_rank
+                if config.dt_rank is not None
+                else "auto",
                 conv_bias=config.use_conv_bias,
                 bias=config.use_bias,
                 delta_softplus=True,  # Always True for Mamba
@@ -157,7 +153,7 @@ class Mamba(Module):
         """
         # Embed tokens
         h = self.embedding(tokens)
-        
+
         # Process through Mamba blocks
         # Block returns (hidden_states, residual), so we need to handle that
         # Our Block returns (mixer_output, residual) where residual accumulates sums
@@ -170,24 +166,24 @@ class Mamba(Module):
                 residual=residual,
                 input_row_offsets=input_row_offsets,
             )
-        
+
         # After all layers, h is the last mixer output and residual contains the
         # accumulated sum. We need to add them before the final norm.
         # This matches HuggingFace's MambaBlock which does: hidden_states = residual + hidden_states
         if residual is not None:
             h = h + residual
-        
+
         # Apply final normalization
         h = self.norm(h)
-        
+
         # Get last token logits
         last_token_indices = input_row_offsets[1:] - 1
         last_h = ops.gather(h, last_token_indices, axis=0)
         last_logits = ops.cast(self.output(last_h), DType.float32)
-        
+
         # TODO: Implement variable logits and hidden states return logic
         # similar to Transformer class if needed
-        
+
         return (last_logits,)
 
     def input_types(
@@ -269,4 +265,3 @@ class Mamba(Module):
             input_row_offsets_type,
             return_n_logits_type,
         )
-

@@ -14,17 +14,22 @@
 
 from __future__ import annotations
 
-import functools
 import logging
-from collections import defaultdict
+from collections.abc import Callable
+from functools import partial
 
 from max.dtype import DType
-from max.graph import BufferType, BufferValue, DeviceRef, TensorType, TensorValue, Value, ops
-from max.graph.quantization import QuantizationEncoding
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.nn import (
-    ColumnParallelLinear,
-    FusedRMSNorm,
     ConstantLayerNorm,
+    FusedRMSNorm,
     LayerList,
     Linear,
     Module,
@@ -32,8 +37,6 @@ from max.nn import (
     VocabParallelEmbedding,
 )
 from max.nn.mamba import Block, MambaSSM
-from functools import partial
-from typing import Callable
 
 logger = logging.getLogger("max.pipelines")
 from .model_config import MambaConfig
@@ -73,10 +76,7 @@ class DistributedMamba(Module):
 
         # Select linear layer class - use regular Linear for now since tensor parallelism
         # for Mamba is complex due to sequential SSM dependencies
-        linear_cls = partial(
-            Linear,
-            float8_config=config.float8_config
-        )
+        linear_cls = partial(Linear, float8_config=config.float8_config)
 
         # Create Mamba blocks
         layers = []
@@ -88,7 +88,9 @@ class DistributedMamba(Module):
                 device=config.devices[0],  # Use first device for now
                 linear_cls=linear_cls,
                 d_state=config.d_state,
-                dt_rank=config.dt_rank if config.dt_rank is not None else "auto",
+                dt_rank=config.dt_rank
+                if config.dt_rank is not None
+                else "auto",
                 conv_bias=config.use_conv_bias,
                 bias=config.use_bias,
                 delta_softplus=True,  # Always True for Mamba
@@ -220,4 +222,3 @@ class DistributedMamba(Module):
         else:
             # Return all logits (this is a simplified implementation)
             return (logits,)
-

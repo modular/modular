@@ -201,7 +201,7 @@ class MemoryEstimator:
         devices: list[Device],
     ) -> None:
         from max.pipelines.lib import KVCacheMixin
-        
+
         huggingface_config = model_config.huggingface_config
         is_draft_model = (
             pipeline_config.draft_model_config is not None

@@ -21,4 +21,3 @@ mojo_library(
     validate_missing_docs = False,
     deps = mojo_lib_deps,
 )
-

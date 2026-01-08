@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Literal, Any
+from typing import Any, Literal
 
 logger = logging.getLogger("max.pipelines")
 
@@ -128,7 +128,6 @@ class MambaConfigBase(MAXModelConfigBase):
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     """Whether to return hidden states from the model."""
 
-
     @staticmethod
     def help() -> dict[str, str]:
         return {}
@@ -141,12 +140,12 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         """Get the number of layers from HuggingFace config.
-        
+
         Checks both num_hidden_layers and n_layer for compatibility.
         """
-        return getattr(huggingface_config, "num_hidden_layers", None) or getattr(
-            huggingface_config, "n_layer", 64
-        )
+        return getattr(
+            huggingface_config, "num_hidden_layers", None
+        ) or getattr(huggingface_config, "n_layer", 64)
 
     @staticmethod
     def calculate_max_seq_len(
@@ -195,13 +194,13 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
 
         # Map model architecture fields
         # hidden_size can come from d_model or hidden_size
-        hidden_size = getattr(huggingface_config, "hidden_size", None) or getattr(
-            huggingface_config, "d_model", 2560
-        )
-        
+        hidden_size = getattr(
+            huggingface_config, "hidden_size", None
+        ) or getattr(huggingface_config, "d_model", 2560)
+
         # expand factor for intermediate size calculation
         expand = getattr(huggingface_config, "expand", 2)
-        
+
         # intermediate_size can come from d_inner, d_intermediate, or intermediate_size
         # If not provided or 0, calculate as expand * hidden_size (matches reference: d_inner = int(expand * d_model))
         intermediate_size = (
@@ -211,7 +210,7 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
         )
         if intermediate_size is None or intermediate_size == 0:
             intermediate_size = int(expand * hidden_size)
-        
+
         # num_hidden_layers can come from num_hidden_layers or n_layer
         num_hidden_layers = getattr(
             huggingface_config, "num_hidden_layers", None
@@ -312,4 +311,3 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
             return_logits=return_logits,
             return_hidden_states=return_hidden_states,
         )
-

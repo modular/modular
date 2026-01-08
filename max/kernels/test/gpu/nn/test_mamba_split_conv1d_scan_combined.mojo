@@ -53,7 +53,7 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
 ) raises:
     var group_size = dim // nheads
     var n_chunks = ceildiv(seqlen, chunk_size)
-    
+
     # Allocate host memory
     var zxbcdt_channels = 2 * dim + 2 * ngroups * dstate + nheads
     var zxbcdt_size = batch * seqlen * zxbcdt_channels
@@ -91,18 +91,22 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
     var output_size = batch * seqlen * (out_dim if has_outproj else dim)
     var output_cpu_h = alloc[Scalar[dtype]](output_size)
     var output_gpu_h = alloc[Scalar[dtype]](output_size)
-    
+
     # Create LayoutTensors for initialization
     comptime layout_3d = Layout.row_major(UNKNOWN_VALUE)
     comptime layout_4d = Layout.row_major(UNKNOWN_VALUE)
     comptime layout_2d = Layout.row_major(UNKNOWN_VALUE)
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    
+
     var zxbcdt_init = LayoutTensor[dtype, layout_3d](
-        zxbcdt_h, RuntimeLayout[layout_3d].row_major(Index(batch, seqlen, zxbcdt_channels))
+        zxbcdt_h,
+        RuntimeLayout[layout_3d].row_major(
+            Index(batch, seqlen, zxbcdt_channels)
+        ),
     )
     var conv_weight_init = LayoutTensor[dtype, layout_2d](
-        conv_weight_h, RuntimeLayout[layout_2d].row_major(Index(conv_weight_channels, width))
+        conv_weight_h,
+        RuntimeLayout[layout_2d].row_major(Index(conv_weight_channels, width)),
     )
     var conv_bias_init = LayoutTensor[dtype, layout_1d](
         conv_bias_h, RuntimeLayout[layout_1d].row_major(Index(conv_bias_size))
@@ -114,18 +118,29 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
         A_h, RuntimeLayout[layout_1d].row_major(Index(A_size))
     )
     var D_init = LayoutTensor[dtype, layout_2d](
-        D_h, RuntimeLayout[layout_2d].row_major(Index(nheads if has_D else 0, headdim if has_D and D_size > nheads else 0))
+        D_h,
+        RuntimeLayout[layout_2d].row_major(
+            Index(
+                nheads if has_D else 0,
+                headdim if has_D and D_size > nheads else 0,
+            )
+        ),
     )
     var rmsnorm_weight_init = LayoutTensor[dtype, layout_1d](
-        rmsnorm_weight_h, RuntimeLayout[layout_1d].row_major(Index(rmsnorm_weight_size))
+        rmsnorm_weight_h,
+        RuntimeLayout[layout_1d].row_major(Index(rmsnorm_weight_size)),
     )
     var outproj_weight_init = LayoutTensor[dtype, layout_2d](
-        outproj_weight_h, RuntimeLayout[layout_2d].row_major(Index(out_dim if has_outproj else 0, dim if has_outproj else 0))
+        outproj_weight_h,
+        RuntimeLayout[layout_2d].row_major(
+            Index(out_dim if has_outproj else 0, dim if has_outproj else 0)
+        ),
     )
     var outproj_bias_init = LayoutTensor[dtype, layout_1d](
-        outproj_bias_h, RuntimeLayout[layout_1d].row_major(Index(outproj_bias_size))
+        outproj_bias_h,
+        RuntimeLayout[layout_1d].row_major(Index(outproj_bias_size)),
     )
-    
+
     # Initialize with random data
     random(zxbcdt_init)
     random(conv_weight_init)
@@ -141,7 +156,7 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
     if has_outproj:
         random(outproj_weight_init)
         random(outproj_bias_init)
-    
+
     # Allocate GPU memory
     var zxbcdt_d = ctx.enqueue_create_buffer[dtype](zxbcdt_size)
     var conv_weight_d = ctx.enqueue_create_buffer[dtype](conv_weight_size)
@@ -155,12 +170,18 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
     var B_d = ctx.enqueue_create_buffer[dtype](B_size)
     var C_d = ctx.enqueue_create_buffer[dtype](C_size)
     var z_d = ctx.enqueue_create_buffer[dtype](z_size)
-    var rmsnorm_weight_d = ctx.enqueue_create_buffer[dtype](max(rmsnorm_weight_size, 1))
-    var outproj_weight_d = ctx.enqueue_create_buffer[dtype](max(outproj_weight_size, 1))
-    var outproj_bias_d = ctx.enqueue_create_buffer[dtype](max(outproj_bias_size, 1))
+    var rmsnorm_weight_d = ctx.enqueue_create_buffer[dtype](
+        max(rmsnorm_weight_size, 1)
+    )
+    var outproj_weight_d = ctx.enqueue_create_buffer[dtype](
+        max(outproj_weight_size, 1)
+    )
+    var outproj_bias_d = ctx.enqueue_create_buffer[dtype](
+        max(outproj_bias_size, 1)
+    )
     var output_cpu_d = ctx.enqueue_create_buffer[dtype](output_size)
     var output_gpu_d = ctx.enqueue_create_buffer[dtype](output_size)
-    
+
     # Copy to GPU
     with ctx.push_context():
         ctx.enqueue_copy(zxbcdt_d, zxbcdt_h)
@@ -175,13 +196,17 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
         if has_outproj:
             ctx.enqueue_copy(outproj_weight_d, outproj_weight_h)
             ctx.enqueue_copy(outproj_bias_d, outproj_bias_h)
-    
+
     # Create LayoutTensors for GPU
     var zxbcdt_gpu_lt = LayoutTensor[dtype, layout_3d](
-        zxbcdt_d, RuntimeLayout[layout_3d].row_major(Index(batch, seqlen, zxbcdt_channels))
+        zxbcdt_d,
+        RuntimeLayout[layout_3d].row_major(
+            Index(batch, seqlen, zxbcdt_channels)
+        ),
     )
     var conv_weight_gpu_lt = LayoutTensor[dtype, layout_2d](
-        conv_weight_d, RuntimeLayout[layout_2d].row_major(Index(conv_weight_channels, width))
+        conv_weight_d,
+        RuntimeLayout[layout_2d].row_major(Index(conv_weight_channels, width)),
     )
     var conv_bias_gpu_lt = LayoutTensor[dtype, layout_1d](
         conv_bias_d, RuntimeLayout[layout_1d].row_major(Index(conv_bias_size))
@@ -193,10 +218,19 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
         A_d, RuntimeLayout[layout_1d].row_major(Index(A_size))
     )
     var D_gpu_lt = LayoutTensor[dtype, layout_2d](
-        D_d, RuntimeLayout[layout_2d].row_major(Index(nheads if has_D else 0, headdim if has_D and D_size > nheads else 0))
+        D_d,
+        RuntimeLayout[layout_2d].row_major(
+            Index(
+                nheads if has_D else 0,
+                headdim if has_D and D_size > nheads else 0,
+            )
+        ),
     )
     var x_gpu_lt = LayoutTensor[dtype, layout_4d](
-        x_d, RuntimeLayout[layout_4d].row_major(Index(batch, dim, n_chunks, 2 * dstate))
+        x_d,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, dim, n_chunks, 2 * dstate)
+        ),
     )
     var out_z_gpu_lt = LayoutTensor[dtype, layout_3d](
         out_z_d, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
@@ -205,36 +239,57 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
         dt_d, RuntimeLayout[layout_3d].row_major(Index(batch, nheads, seqlen))
     )
     var B_gpu_lt = LayoutTensor[dtype, layout_4d](
-        B_d, RuntimeLayout[layout_4d].row_major(Index(batch, ngroups, dstate, seqlen))
+        B_d,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, ngroups, dstate, seqlen)
+        ),
     )
     var C_gpu_lt = LayoutTensor[dtype, layout_4d](
-        C_d, RuntimeLayout[layout_4d].row_major(Index(batch, ngroups, dstate, seqlen))
+        C_d,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, ngroups, dstate, seqlen)
+        ),
     )
     var z_gpu_lt = LayoutTensor[dtype, layout_3d](
         z_d, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
     )
     var rmsnorm_weight_gpu_lt = LayoutTensor[dtype, layout_1d](
-        rmsnorm_weight_d, RuntimeLayout[layout_1d].row_major(Index(rmsnorm_weight_size))
+        rmsnorm_weight_d,
+        RuntimeLayout[layout_1d].row_major(Index(rmsnorm_weight_size)),
     )
     var outproj_weight_gpu_lt = LayoutTensor[dtype, layout_2d](
-        outproj_weight_d, RuntimeLayout[layout_2d].row_major(Index(out_dim if has_outproj else 0, dim if has_outproj else 0))
+        outproj_weight_d,
+        RuntimeLayout[layout_2d].row_major(
+            Index(out_dim if has_outproj else 0, dim if has_outproj else 0)
+        ),
     )
     var outproj_bias_gpu_lt = LayoutTensor[dtype, layout_1d](
-        outproj_bias_d, RuntimeLayout[layout_1d].row_major(Index(outproj_bias_size))
+        outproj_bias_d,
+        RuntimeLayout[layout_1d].row_major(Index(outproj_bias_size)),
     )
     var output_cpu_gpu_lt = LayoutTensor[dtype, layout_3d](
-        output_cpu_d, RuntimeLayout[layout_3d].row_major(Index(batch, seqlen, out_dim if has_outproj else dim))
+        output_cpu_d,
+        RuntimeLayout[layout_3d].row_major(
+            Index(batch, seqlen, out_dim if has_outproj else dim)
+        ),
     )
     var output_gpu_gpu_lt = LayoutTensor[dtype, layout_3d](
-        output_gpu_d, RuntimeLayout[layout_3d].row_major(Index(batch, seqlen, out_dim if has_outproj else dim))
+        output_gpu_d,
+        RuntimeLayout[layout_3d].row_major(
+            Index(batch, seqlen, out_dim if has_outproj else dim)
+        ),
     )
-    
+
     # Create CPU LayoutTensors for reference
     var zxbcdt_cpu_lt = LayoutTensor[dtype, layout_3d](
-        zxbcdt_h, RuntimeLayout[layout_3d].row_major(Index(batch, seqlen, zxbcdt_channels))
+        zxbcdt_h,
+        RuntimeLayout[layout_3d].row_major(
+            Index(batch, seqlen, zxbcdt_channels)
+        ),
     )
     var conv_weight_cpu_lt = LayoutTensor[dtype, layout_2d](
-        conv_weight_h, RuntimeLayout[layout_2d].row_major(Index(conv_weight_channels, width))
+        conv_weight_h,
+        RuntimeLayout[layout_2d].row_major(Index(conv_weight_channels, width)),
     )
     var conv_bias_cpu_lt = LayoutTensor[dtype, layout_1d](
         conv_bias_h, RuntimeLayout[layout_1d].row_major(Index(conv_bias_size))
@@ -246,10 +301,19 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
         A_h, RuntimeLayout[layout_1d].row_major(Index(A_size))
     )
     var D_cpu_lt = LayoutTensor[dtype, layout_2d](
-        D_h, RuntimeLayout[layout_2d].row_major(Index(nheads if has_D else 0, headdim if has_D and D_size > nheads else 0))
+        D_h,
+        RuntimeLayout[layout_2d].row_major(
+            Index(
+                nheads if has_D else 0,
+                headdim if has_D and D_size > nheads else 0,
+            )
+        ),
     )
     var x_cpu_lt = LayoutTensor[dtype, layout_4d](
-        x_h, RuntimeLayout[layout_4d].row_major(Index(batch, dim, n_chunks, 2 * dstate))
+        x_h,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, dim, n_chunks, 2 * dstate)
+        ),
     )
     var out_z_cpu_lt = LayoutTensor[dtype, layout_3d](
         out_z_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
@@ -258,29 +322,43 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
         dt_h, RuntimeLayout[layout_3d].row_major(Index(batch, nheads, seqlen))
     )
     var B_cpu_lt = LayoutTensor[dtype, layout_4d](
-        B_h, RuntimeLayout[layout_4d].row_major(Index(batch, ngroups, dstate, seqlen))
+        B_h,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, ngroups, dstate, seqlen)
+        ),
     )
     var C_cpu_lt = LayoutTensor[dtype, layout_4d](
-        C_h, RuntimeLayout[layout_4d].row_major(Index(batch, ngroups, dstate, seqlen))
+        C_h,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, ngroups, dstate, seqlen)
+        ),
     )
     var z_cpu_lt = LayoutTensor[dtype, layout_3d](
         z_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
     )
     var rmsnorm_weight_cpu_lt = LayoutTensor[dtype, layout_1d](
-        rmsnorm_weight_h, RuntimeLayout[layout_1d].row_major(Index(rmsnorm_weight_size))
+        rmsnorm_weight_h,
+        RuntimeLayout[layout_1d].row_major(Index(rmsnorm_weight_size)),
     )
     var outproj_weight_cpu_lt = LayoutTensor[dtype, layout_2d](
-        outproj_weight_h, RuntimeLayout[layout_2d].row_major(Index(out_dim if has_outproj else 0, dim if has_outproj else 0))
+        outproj_weight_h,
+        RuntimeLayout[layout_2d].row_major(
+            Index(out_dim if has_outproj else 0, dim if has_outproj else 0)
+        ),
     )
     var outproj_bias_cpu_lt = LayoutTensor[dtype, layout_1d](
-        outproj_bias_h, RuntimeLayout[layout_1d].row_major(Index(outproj_bias_size))
+        outproj_bias_h,
+        RuntimeLayout[layout_1d].row_major(Index(outproj_bias_size)),
     )
     var output_cpu_cpu_lt = LayoutTensor[dtype, layout_3d](
-        output_cpu_h, RuntimeLayout[layout_3d].row_major(Index(batch, seqlen, out_dim if has_outproj else dim))
+        output_cpu_h,
+        RuntimeLayout[layout_3d].row_major(
+            Index(batch, seqlen, out_dim if has_outproj else dim)
+        ),
     )
-    
+
     var epsilon = Scalar[dtype](0.001)
-    
+
     # Strides for row-major layout
     var zxbcdt_b_stride: UInt32 = seqlen * zxbcdt_channels
     var zxbcdt_s_stride: UInt32 = zxbcdt_channels
@@ -289,7 +367,7 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
     var conv_weight_w_stride: UInt32 = 1
     var conv_bias_stride: UInt32 = 1
     var output_b_stride: UInt32 = seqlen * (out_dim if has_outproj else dim)
-    var output_s_stride: UInt32 = (out_dim if has_outproj else dim)
+    var output_s_stride: UInt32 = out_dim if has_outproj else dim
     var output_c_stride: UInt32 = 1
     var x_b_stride: UInt32 = dim * n_chunks * 2 * dstate
     var x_d_stride: UInt32 = n_chunks * 2 * dstate
@@ -320,7 +398,7 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
     var outproj_weight_out_stride: UInt32 = dim
     var outproj_weight_in_stride: UInt32 = 1
     var outproj_bias_stride: UInt32 = 1
-    
+
     # Run CPU kernel
     mamba_split_conv1d_scan_combined_cpu[
         dtype,
@@ -410,12 +488,12 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
         outproj_weight_in_stride,
         outproj_bias_stride,
     )
-    
+
     # Run GPU kernel
     var total_batch_dim = batch * dim
     comptime BLOCK_SIZE = 128
     var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
-    
+
     var compiled_kernel = ctx.compile_function_checked[
         mamba_split_conv1d_scan_combined_gpu[
             dtype,
@@ -454,9 +532,9 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
             rmsnorm_weight_gpu_lt.layout,
             outproj_weight_gpu_lt.layout,
             outproj_bias_gpu_lt.layout,
-        ]
+        ],
     ]()
-    
+
     ctx.enqueue_function_checked(
         compiled_kernel,
         total_batch_dim,
@@ -531,12 +609,12 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
         grid_dim=(num_blocks,),
         block_dim=(BLOCK_SIZE,),
     )
-    
+
     # Copy results back
     with ctx.push_context():
         ctx.enqueue_copy(output_cpu_h, output_cpu_d)
         ctx.enqueue_copy(output_gpu_h, output_gpu_d)
-    
+
     # Compare results
     for i in range(output_size):
         assert_almost_equal(
@@ -544,7 +622,7 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
             output_gpu_h[i],
             rtol=rtol,
         )
-    
+
     # Cleanup
     zxbcdt_h.free()
     conv_weight_h.free()
@@ -585,36 +663,137 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
 
 def main():
     var ctx = DeviceContext()
-    
-    run_mamba_split_conv1d_scan_combined_gpu[DType.float32, has_D=True, has_rmsnorm=False, has_outproj=False, norm_before_gate=True, delta_softplus=True](
-        batch=2, seqlen=8, dim=4, nheads=2, headdim=2, dstate=4, ngroups=1, width=4, chunk_size=4, ctx=ctx
+
+    run_mamba_split_conv1d_scan_combined_gpu[
+        DType.float32,
+        has_D=True,
+        has_rmsnorm=False,
+        has_outproj=False,
+        norm_before_gate=True,
+        delta_softplus=True,
+    ](
+        batch=2,
+        seqlen=8,
+        dim=4,
+        nheads=2,
+        headdim=2,
+        dstate=4,
+        ngroups=1,
+        width=4,
+        chunk_size=4,
+        ctx=ctx,
     )
     print("✓ Basic mamba_split_conv1d_scan_combined GPU test passed")
-    
-    run_mamba_split_conv1d_scan_combined_gpu[DType.float32, has_D=False, has_rmsnorm=False, has_outproj=False, norm_before_gate=True, delta_softplus=True](
-        batch=2, seqlen=8, dim=4, nheads=2, headdim=2, dstate=4, ngroups=1, width=4, chunk_size=4, ctx=ctx
+
+    run_mamba_split_conv1d_scan_combined_gpu[
+        DType.float32,
+        has_D=False,
+        has_rmsnorm=False,
+        has_outproj=False,
+        norm_before_gate=True,
+        delta_softplus=True,
+    ](
+        batch=2,
+        seqlen=8,
+        dim=4,
+        nheads=2,
+        headdim=2,
+        dstate=4,
+        ngroups=1,
+        width=4,
+        chunk_size=4,
+        ctx=ctx,
     )
     print("✓ mamba_split_conv1d_scan_combined GPU without D test passed")
-    
-    run_mamba_split_conv1d_scan_combined_gpu[DType.float32, has_D=True, has_rmsnorm=True, has_outproj=False, norm_before_gate=True, delta_softplus=True](
-        batch=2, seqlen=8, dim=4, nheads=2, headdim=2, dstate=4, ngroups=1, width=4, chunk_size=4, ctx=ctx
+
+    run_mamba_split_conv1d_scan_combined_gpu[
+        DType.float32,
+        has_D=True,
+        has_rmsnorm=True,
+        has_outproj=False,
+        norm_before_gate=True,
+        delta_softplus=True,
+    ](
+        batch=2,
+        seqlen=8,
+        dim=4,
+        nheads=2,
+        headdim=2,
+        dstate=4,
+        ngroups=1,
+        width=4,
+        chunk_size=4,
+        ctx=ctx,
     )
     print("✓ mamba_split_conv1d_scan_combined GPU with RMSNorm test passed")
-    
-    run_mamba_split_conv1d_scan_combined_gpu[DType.float32, has_D=True, has_rmsnorm=False, has_outproj=False, norm_before_gate=False, delta_softplus=True](
-        batch=2, seqlen=8, dim=4, nheads=2, headdim=2, dstate=4, ngroups=1, width=4, chunk_size=4, ctx=ctx
+
+    run_mamba_split_conv1d_scan_combined_gpu[
+        DType.float32,
+        has_D=True,
+        has_rmsnorm=False,
+        has_outproj=False,
+        norm_before_gate=False,
+        delta_softplus=True,
+    ](
+        batch=2,
+        seqlen=8,
+        dim=4,
+        nheads=2,
+        headdim=2,
+        dstate=4,
+        ngroups=1,
+        width=4,
+        chunk_size=4,
+        ctx=ctx,
     )
-    print("✓ mamba_split_conv1d_scan_combined GPU with norm_after_gate test passed")
-    
-    run_mamba_split_conv1d_scan_combined_gpu[DType.float32, has_D=True, has_rmsnorm=False, has_outproj=False, norm_before_gate=True, delta_softplus=False](
-        batch=2, seqlen=8, dim=4, nheads=2, headdim=2, dstate=4, ngroups=1, width=4, chunk_size=4, ctx=ctx
+    print(
+        "✓ mamba_split_conv1d_scan_combined GPU with norm_after_gate test"
+        " passed"
     )
-    print("✓ mamba_split_conv1d_scan_combined GPU without delta_softplus test passed")
-    
-    run_mamba_split_conv1d_scan_combined_gpu[DType.float32, has_D=True, has_rmsnorm=False, has_outproj=False, norm_before_gate=True, delta_softplus=True](
-        batch=1, seqlen=32, dim=16, nheads=4, headdim=4, dstate=8, ngroups=2, width=4, chunk_size=8, ctx=ctx
+
+    run_mamba_split_conv1d_scan_combined_gpu[
+        DType.float32,
+        has_D=True,
+        has_rmsnorm=False,
+        has_outproj=False,
+        norm_before_gate=True,
+        delta_softplus=False,
+    ](
+        batch=2,
+        seqlen=8,
+        dim=4,
+        nheads=2,
+        headdim=2,
+        dstate=4,
+        ngroups=1,
+        width=4,
+        chunk_size=4,
+        ctx=ctx,
+    )
+    print(
+        "✓ mamba_split_conv1d_scan_combined GPU without delta_softplus test"
+        " passed"
+    )
+
+    run_mamba_split_conv1d_scan_combined_gpu[
+        DType.float32,
+        has_D=True,
+        has_rmsnorm=False,
+        has_outproj=False,
+        norm_before_gate=True,
+        delta_softplus=True,
+    ](
+        batch=1,
+        seqlen=32,
+        dim=16,
+        nheads=4,
+        headdim=4,
+        dstate=8,
+        ngroups=2,
+        width=4,
+        chunk_size=8,
+        ctx=ctx,
     )
     print("✓ Larger mamba_split_conv1d_scan_combined GPU test passed")
-    
-    print("All mamba_split_conv1d_scan_combined GPU tests passed!")
 
+    print("All mamba_split_conv1d_scan_combined GPU tests passed!")

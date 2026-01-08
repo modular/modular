@@ -42,12 +42,12 @@ def layer_norm_fn(
     is_rms_norm: bool = False,
 ) -> TensorValue | tuple[TensorValue, TensorValue]:
     """Layer normalization function matching Mamba API.
-    
+
     This function provides a functional interface for layer normalization
     with optional residual connections, matching the Mamba implementation.
-    
+
     Reference: https://github.com/state-spaces/mamba/blob/main/mamba_ssm/ops/triton/layer_norm.py
-    
+
     Args:
         x: Input tensor to normalize.
         weight: Weight tensor (gamma) for normalization.
@@ -60,7 +60,7 @@ def layer_norm_fn(
         residual_in_fp32: If True and residual is provided, keeps the
             residual addition in float32 precision.
         is_rms_norm: If True, uses RMSNorm instead of LayerNorm.
-            
+
     Returns:
         If prenorm=False: Normalized tensor.
         If prenorm=True: Tuple of (normalized_output, pre_normalized_input).
@@ -72,7 +72,7 @@ def layer_norm_fn(
             raise ValueError(
                 f"Residual shape {residual.shape} must match input shape {x.shape}"
             )
-        
+
         # Handle residual_in_fp32
         if residual_in_fp32:
             x_fp32 = x.cast(DType.float32)
@@ -85,21 +85,29 @@ def layer_norm_fn(
                 residual = residual.cast(x.dtype)
             x_input = x
             residual_input = residual
-        
+
         # Use fused kernel if available (for RMSNorm with residual)
         if is_rms_norm:
             # Use fused RMSNorm kernel with residual
             weight_cast = weight.cast(x_input.dtype)
             if x_input.device:
                 weight_cast = weight_cast.to(x_input.device)
-            
+
             # Prepare constants
-            eps_constant = ops.constant(eps, dtype=x_input.dtype, device=DeviceRef.CPU())
-            weight_offset_constant = ops.constant(0.0, dtype=x_input.dtype, device=DeviceRef.CPU())
-            dropout_p_constant = ops.constant(dropout_p, dtype=x_input.dtype, device=DeviceRef.CPU())
+            eps_constant = ops.constant(
+                eps, dtype=x_input.dtype, device=DeviceRef.CPU()
+            )
+            weight_offset_constant = ops.constant(
+                0.0, dtype=x_input.dtype, device=DeviceRef.CPU()
+            )
+            dropout_p_constant = ops.constant(
+                dropout_p, dtype=x_input.dtype, device=DeviceRef.CPU()
+            )
             seed = 0  # TODO: Make this configurable or generate from context
-            seed_constant = ops.constant(seed, dtype=DType.uint64, device=DeviceRef.CPU())
-            
+            seed_constant = ops.constant(
+                seed, dtype=DType.uint64, device=DeviceRef.CPU()
+            )
+
             # Call fused kernel - returns (normalized_output, residual_output)
             results = ops.custom(
                 "rms_norm_fused_residual",
@@ -114,15 +122,23 @@ def layer_norm_fn(
                     seed_constant,
                 ],
                 [
-                    TensorType(dtype=x_input.dtype, shape=x_input.shape, device=x_input.device),
-                    TensorType(dtype=x_input.dtype, shape=x_input.shape, device=x_input.device),
+                    TensorType(
+                        dtype=x_input.dtype,
+                        shape=x_input.shape,
+                        device=x_input.device,
+                    ),
+                    TensorType(
+                        dtype=x_input.dtype,
+                        shape=x_input.shape,
+                        device=x_input.device,
+                    ),
                 ],
                 parameters={"multiply_before_cast": True},
             )
-            
+
             normalized = results[0].tensor
             pre_normalized = results[1].tensor
-            
+
             # Cast back to original dtype if we used fp32
             if residual_in_fp32:
                 normalized = normalized.cast(x.dtype)
@@ -130,28 +146,32 @@ def layer_norm_fn(
         else:
             # For LayerNorm, add residual manually (no fused kernel yet)
             pre_normalized = x_input + residual_input
-            
+
             # Cast back to original dtype if we used fp32
             if residual_in_fp32:
                 pre_normalized = pre_normalized.cast(x.dtype)
-            
+
             # Prepare bias (beta)
             if bias is None:
                 # Create zero bias
                 bias = ops.broadcast_to(
-                    ops.constant(0.0, pre_normalized.dtype, device=pre_normalized.device or DeviceRef.CPU()),
+                    ops.constant(
+                        0.0,
+                        pre_normalized.dtype,
+                        device=pre_normalized.device or DeviceRef.CPU(),
+                    ),
                     shape=(pre_normalized.shape[-1],),
                 )
             else:
                 bias = bias.cast(pre_normalized.dtype)
                 if pre_normalized.device:
                     bias = bias.to(pre_normalized.device)
-            
+
             # Prepare weight (gamma)
             weight_cast = weight.cast(pre_normalized.dtype)
             if pre_normalized.device:
                 weight_cast = weight_cast.to(pre_normalized.device)
-            
+
             # Apply layer normalization
             normalized = ops.layer_norm(
                 pre_normalized,
@@ -162,23 +182,33 @@ def layer_norm_fn(
     else:
         # No residual, use regular normalization
         pre_normalized = x
-        
+
         if is_rms_norm:
             # Use regular RMSNorm kernel
             weight_cast = weight.cast(pre_normalized.dtype)
             if pre_normalized.device:
                 weight_cast = weight_cast.to(pre_normalized.device)
-            
+
             normalized = ops.custom(
                 "rms_norm",
                 pre_normalized.device,
                 [
                     pre_normalized,
                     weight_cast,
-                    ops.constant(eps, dtype=pre_normalized.dtype, device=DeviceRef.CPU()),
-                    ops.constant(0.0, dtype=pre_normalized.dtype, device=DeviceRef.CPU()),
+                    ops.constant(
+                        eps, dtype=pre_normalized.dtype, device=DeviceRef.CPU()
+                    ),
+                    ops.constant(
+                        0.0, dtype=pre_normalized.dtype, device=DeviceRef.CPU()
+                    ),
                 ],
-                [TensorType(dtype=pre_normalized.dtype, shape=pre_normalized.shape, device=pre_normalized.device)],
+                [
+                    TensorType(
+                        dtype=pre_normalized.dtype,
+                        shape=pre_normalized.shape,
+                        device=pre_normalized.device,
+                    )
+                ],
                 parameters={"multiply_before_cast": True},
             )[0].tensor
         else:
@@ -187,19 +217,23 @@ def layer_norm_fn(
             if bias is None:
                 # Create zero bias
                 bias = ops.broadcast_to(
-                    ops.constant(0.0, pre_normalized.dtype, device=pre_normalized.device or DeviceRef.CPU()),
+                    ops.constant(
+                        0.0,
+                        pre_normalized.dtype,
+                        device=pre_normalized.device or DeviceRef.CPU(),
+                    ),
                     shape=(pre_normalized.shape[-1],),
                 )
             else:
                 bias = bias.cast(pre_normalized.dtype)
                 if pre_normalized.device:
                     bias = bias.to(pre_normalized.device)
-            
+
             # Prepare weight (gamma)
             weight_cast = weight.cast(pre_normalized.dtype)
             if pre_normalized.device:
                 weight_cast = weight_cast.to(pre_normalized.device)
-            
+
             # Apply layer normalization
             normalized = ops.layer_norm(
                 pre_normalized,
@@ -207,7 +241,7 @@ def layer_norm_fn(
                 beta=bias,
                 epsilon=eps,
             )
-    
+
     # Return based on prenorm mode
     if prenorm:
         return (normalized, pre_normalized)
@@ -225,11 +259,11 @@ def rms_norm_fn(
     residual_in_fp32: bool = False,
 ) -> TensorValue | tuple[TensorValue, TensorValue]:
     """RMS normalization function matching Mamba API.
-    
+
     This is a convenience wrapper around layer_norm_fn with is_rms_norm=True.
-    
+
     Reference: https://github.com/state-spaces/mamba/blob/main/mamba_ssm/ops/triton/layer_norm.py
-    
+
     Args:
         x: Input tensor to normalize.
         weight: Weight tensor (gamma) for normalization.
@@ -241,7 +275,7 @@ def rms_norm_fn(
         prenorm: If True, returns both (normalized_output, pre_normalized_input).
         residual_in_fp32: If True and residual is provided, keeps the
             residual addition in float32 precision.
-            
+
     Returns:
         If prenorm=False: Normalized tensor.
         If prenorm=True: Tuple of (normalized_output, pre_normalized_input).
@@ -345,9 +379,13 @@ class RMSNorm(Module, Shardable):
                 [
                     x,
                     weight,
-                    ops.constant(self.eps, dtype=x.dtype, device=DeviceRef.CPU()),
                     ops.constant(
-                        self.weight_offset, dtype=x.dtype, device=DeviceRef.CPU()
+                        self.eps, dtype=x.dtype, device=DeviceRef.CPU()
+                    ),
+                    ops.constant(
+                        self.weight_offset,
+                        dtype=x.dtype,
+                        device=DeviceRef.CPU(),
                     ),
                 ],
                 [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
@@ -382,7 +420,9 @@ class RMSNorm(Module, Shardable):
             residual_input = residual
 
         # Prepare constants
-        eps_constant = ops.constant(self.eps, dtype=x.dtype, device=DeviceRef.CPU())
+        eps_constant = ops.constant(
+            self.eps, dtype=x.dtype, device=DeviceRef.CPU()
+        )
         weight_offset_constant = ops.constant(
             self.weight_offset, dtype=x.dtype, device=DeviceRef.CPU()
         )
@@ -390,7 +430,9 @@ class RMSNorm(Module, Shardable):
             dropout_p, dtype=x.dtype, device=DeviceRef.CPU()
         )
         seed = 0  # TODO: Make this configurable or generate from context
-        seed_constant = ops.constant(seed, dtype=DType.uint64, device=DeviceRef.CPU())
+        seed_constant = ops.constant(
+            seed, dtype=DType.uint64, device=DeviceRef.CPU()
+        )
 
         # Call fused kernel - returns (normalized_output, residual_output)
         results = ops.custom(
@@ -476,4 +518,3 @@ class RMSNorm(Module, Shardable):
             shards.append(sharded)
 
         return shards
-

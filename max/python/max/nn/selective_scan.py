@@ -29,12 +29,9 @@ Tensor shapes (matching mamba-ssm convention):
 from __future__ import annotations
 
 import numpy as np
-from typing import Union
-
-from max.dtype import DType
-from max.graph import DeviceRef, Dim, TensorValue, ops
-from max.graph.type import TensorType
+from max.graph import Dim, TensorValue, ops
 from max.graph.ops.elementwise import silu
+from max.graph.type import TensorType
 from max.nn.conv import causal_conv1d_fn
 
 
@@ -49,14 +46,14 @@ def selective_scan_fn(
     delta_bias: TensorValue | None = None,
     delta_softplus: bool = False,
     return_last_state: bool = False,
-) -> Union[TensorValue, tuple[TensorValue, TensorValue]]:
+) -> TensorValue | tuple[TensorValue, TensorValue]:
     """Selective scan forward pass.
-    
+
     Performs selective scan computation for sequence processing. This is the
     core operation used in Mamba models for efficient sequence modeling.
-    
+
     Reference: https://github.com/state-spaces/mamba/blob/main/mamba_ssm/ops/selective_scan_interface.py
-    
+
     Args:
         u: Input tensor of shape (batch, dim, seqlen).
         delta: Time step tensor of shape (batch, dim, seqlen).
@@ -69,7 +66,7 @@ def selective_scan_fn(
         delta_softplus: Whether to apply softplus to delta. Defaults to False.
         return_last_state: Whether to return the last state along with the output.
             If True, returns a tuple (output, last_state). Defaults to False.
-            
+
     Returns:
         If return_last_state is False:
             Output tensor of shape (batch, dim, seqlen). If z is provided, this is
@@ -81,36 +78,36 @@ def selective_scan_fn(
     """
     # Ensure all tensors are on the same device
     device = u.device
-    
+
     # Track whether optional inputs are actually provided
     has_z = z is not None
     has_D = D is not None
     has_delta_bias = delta_bias is not None
-    
+
     # Determine if we can use the minimal kernel (no optional params)
     # This avoids passing empty tensors with null pointers to GPU kernels
     use_minimal_kernel = not has_D and not has_z and not has_delta_bias
-    
+
     # Note: Graph inputs should already be contiguous, so we don't need to
     # call _ensure_contiguous here. The _ensure_contiguous function is needed
     # when tensors come from operations like slice, reshape, or permute.
-    
+
     # Determine output shapes
     # Output: (batch, dim, seqlen)
     # Intermediate state: (batch, dim, n_chunks, 2*dstate) - not returned unless return_last_state
     # out_z: (batch, dim, seqlen) if z is provided, else empty
-    
+
     batch_dim = u.shape[0]
     dim_dim = u.shape[1]
     seqlen = u.shape[2]  # This is a Dim object
     dstate = A.shape[1]  # This is a Dim object
-    
+
     # Number of chunks for intermediate state storage
     # Using chunk_size=2048 matching the Mojo kernel
     chunk_size = 2048
     # Use Dim arithmetic to handle both static and symbolic dimensions
     n_chunks = (seqlen + Dim(chunk_size) - Dim(1)) // Dim(chunk_size)
-    
+
     # Create output types
     output_type = TensorType(
         dtype=u.dtype,
@@ -159,7 +156,7 @@ def selective_scan_fn(
                 dtype=u.dtype,
                 device=device,
             )
-        
+
         results = ops.custom(
             "selective_scan_fwd",
             device=device,
@@ -167,14 +164,14 @@ def selective_scan_fn(
             out_types=[output_type, x_checkpoint_type, out_z_type],
             parameters={"delta_softplus": delta_softplus},
         )
-    
+
     # Get the checkpoint tensor (intermediate states)
     x_checkpoint = results[1].tensor  # (batch, dim, n_chunks, 2*dstate)
-    
+
     # Helper function to extract last state from checkpoint
     def extract_last_state(checkpoint: TensorValue) -> TensorValue:
         """Extract the last SSM state from the checkpoint tensor.
-        
+
         The checkpoint stores cum_a and cum_b interleaved:
         - cum_a at even indices (0, 2, 4, ..., 2*dstate-2)
         - cum_b at odd indices (1, 3, 5, ..., 2*dstate-1)
@@ -196,25 +193,25 @@ def selective_scan_fn(
             [slice(None), slice(None), 1, slice(None)],
         )
         return last_state
-    
+
     # Return appropriate output
     if has_z:
         # If z is provided, return the gated output (out_z)
         output = results[2].tensor
-        
+
         if return_last_state:
             last_state = extract_last_state(x_checkpoint)
             return output, last_state
-        
+
         return output
     else:
         # Otherwise return the direct SSM output
         output = results[0].tensor
-        
+
         if return_last_state:
             last_state = extract_last_state(x_checkpoint)
             return output, last_state
-        
+
         return output
 
 
@@ -229,12 +226,12 @@ def varlen_selective_scan_fn(
     delta_bias: TensorValue | None = None,
     delta_softplus: bool = False,
     return_last_state: bool = False,
-) -> Union[TensorValue, tuple[TensorValue, TensorValue]]:
+) -> TensorValue | tuple[TensorValue, TensorValue]:
     """Variable-length selective scan function.
-    
+
     Performs selective scan on variable-length sequences. This variant handles
     sequences of different lengths within a batch using padding or masking.
-    
+
     Args:
         u: Input tensor of shape (batch, dim, seqlen).
         delta: Time step tensor of shape (batch, dim, seqlen).
@@ -247,7 +244,7 @@ def varlen_selective_scan_fn(
         delta_softplus: Whether to apply softplus to delta. Defaults to False.
         return_last_state: Whether to return the last state along with the output.
             If True, returns a tuple (output, last_state). Defaults to False.
-            
+
     Returns:
         If return_last_state is False:
             Output tensor of shape (batch, dim, seqlen).
@@ -287,12 +284,12 @@ def selective_state_update_fn(
     dt_softplus: bool = False,
 ) -> tuple[TensorValue, TensorValue]:
     """Selective state update function for autoregressive generation.
-    
+
     Performs incremental selective scan update for token-by-token generation.
     This maintains the SSM state for efficient autoregressive inference.
-    
+
     Reference: https://github.com/state-spaces/mamba/blob/main/mamba_ssm/ops/triton/selective_state_update.py
-    
+
     Args:
         state: SSM state tensor of shape (batch, dim, dstate). This will be
             updated in-place by the kernel.
@@ -305,7 +302,7 @@ def selective_state_update_fn(
         z: Optional gate tensor of shape (batch, dim).
         dt_bias: Optional delta bias of shape (dim,).
         dt_softplus: Whether to apply softplus to dt. Defaults to False.
-        
+
     Returns:
         Tuple of (updated_state, output):
             - updated_state: Updated state tensor of shape (batch, dim, dstate).
@@ -313,7 +310,7 @@ def selective_state_update_fn(
     """
     # Ensure all tensors are on the same device
     device = state.device
-    
+
     # Ensure all input tensors are contiguous before passing to kernel
     # This is critical for GPU kernels that expect specific stride patterns
     state = _ensure_contiguous(state)
@@ -322,7 +319,7 @@ def selective_state_update_fn(
     A = _ensure_contiguous(A)
     B = _ensure_contiguous(B)
     C = _ensure_contiguous(C)
-    
+
     # Prepare optional inputs - create empty tensors if not provided
     if D is None:
         D = ops.constant(
@@ -332,7 +329,7 @@ def selective_state_update_fn(
         )
     else:
         D = _ensure_contiguous(D)
-    
+
     if z is None:
         z = ops.constant(
             np.array([], dtype=np.float32).reshape(0, 0),
@@ -341,7 +338,7 @@ def selective_state_update_fn(
         )
     else:
         z = _ensure_contiguous(z)
-    
+
     if dt_bias is None:
         dt_bias = ops.constant(
             np.array([], dtype=np.float32).reshape(0),
@@ -350,12 +347,12 @@ def selective_state_update_fn(
         )
     else:
         dt_bias = _ensure_contiguous(dt_bias)
-    
+
     # Determine output shapes
     batch_dim = state.shape[0]
     dim_dim = state.shape[1]
     dstate_dim = state.shape[2]
-    
+
     # Create output types
     state_out_type = TensorType(
         dtype=state.dtype,
@@ -367,7 +364,7 @@ def selective_state_update_fn(
         shape=[batch_dim, dim_dim],
         device=device,
     )
-    
+
     # Call custom operation
     # Note: state is the first input and will be updated in-place
     results = ops.custom(
@@ -377,11 +374,11 @@ def selective_state_update_fn(
         out_types=[state_out_type, output_type],
         parameters={"delta_softplus": dt_softplus},
     )
-    
+
     # Return updated state and output
     updated_state = results[0].tensor
     output = results[1].tensor
-    
+
     return updated_state, output
 
 
@@ -398,10 +395,10 @@ def varlen_selective_state_update_fn(
     dt_softplus: bool = False,
 ) -> tuple[TensorValue, TensorValue]:
     """Variable-length selective state update function.
-    
+
     Performs incremental selective scan update for variable-length sequences
     in autoregressive generation.
-    
+
     Args:
         state: SSM state tensor of shape (batch, dim, dstate).
         x: Input tensor of shape (batch, dim).
@@ -413,7 +410,7 @@ def varlen_selective_state_update_fn(
         z: Optional gate tensor of shape (batch, dim).
         dt_bias: Optional delta bias of shape (dim,).
         dt_softplus: Whether to apply softplus to dt. Defaults to False.
-        
+
     Returns:
         Tuple of (updated_state, output):
             - updated_state: Updated state tensor of shape (batch, dim, dstate).
@@ -439,14 +436,14 @@ def varlen_selective_state_update_fn(
 
 def _ensure_contiguous(x: TensorValue) -> TensorValue:
     """Ensure tensor has contiguous memory layout.
-    
+
     This function forces a contiguous copy by adding zero, which ensures
     the tensor has a memory layout compatible with GPU kernels that expect
     specific stride patterns.
-    
+
     Args:
         x: Input tensor that may have non-contiguous layout.
-        
+
     Returns:
         Tensor with guaranteed contiguous memory layout.
     """
@@ -460,12 +457,12 @@ def _rms_norm_forward(
     eps: float = 1e-6,
 ) -> TensorValue:
     """Apply RMS normalization to input tensor.
-    
+
     Args:
         x: Input tensor to normalize.
         weight: Weight tensor (gamma) for normalization.
         eps: Epsilon value for numerical stability.
-        
+
     Returns:
         Normalized tensor with same shape as input.
     """
@@ -534,27 +531,40 @@ def mamba_inner_fn_simplified(
 
     # Create simple tensors directly instead of complex operations
     u_tensor = ops.constant(
-        np.random.randn(batch_dim, intermediate_size, seqlen).astype(np.float32),
-        dtype=xz.dtype, device=xz.device
+        np.random.randn(batch_dim, intermediate_size, seqlen).astype(
+            np.float32
+        ),
+        dtype=xz.dtype,
+        device=xz.device,
     )
     delta_tensor = ops.constant(
-        np.random.randn(batch_dim, intermediate_size, seqlen).astype(np.float32),
-        dtype=xz.dtype, device=xz.device
+        np.random.randn(batch_dim, intermediate_size, seqlen).astype(
+            np.float32
+        ),
+        dtype=xz.dtype,
+        device=xz.device,
     )
 
     # Create A, B, C tensors
     d_state = 2  # Simple case
-    A_tensor = A if A is not None else ops.constant(
-        np.random.randn(intermediate_size, d_state).astype(np.float32),
-        dtype=xz.dtype, device=xz.device
+    A_tensor = (
+        A
+        if A is not None
+        else ops.constant(
+            np.random.randn(intermediate_size, d_state).astype(np.float32),
+            dtype=xz.dtype,
+            device=xz.device,
+        )
     )
     B_tensor = ops.constant(
         np.random.randn(batch_dim, 1, d_state, seqlen).astype(np.float32),
-        dtype=xz.dtype, device=xz.device
+        dtype=xz.dtype,
+        device=xz.device,
     )
     C_tensor = ops.constant(
         np.random.randn(batch_dim, 1, d_state, seqlen).astype(np.float32),
-        dtype=xz.dtype, device=xz.device
+        dtype=xz.dtype,
+        device=xz.device,
     )
 
     # Call selective_scan_fn with simple tensors
@@ -604,16 +614,16 @@ def mamba_inner_fn(
     b_c_dt_rms_eps: float = 1e-6,
 ) -> TensorValue:
     """Mamba inner function - forward pass of the Mamba block.
-    
+
     This function implements the core Mamba computation:
     1. Split input into x and z (gate and up)
     2. Apply causal convolution to x
     3. Project to get B, C, delta parameters
     4. Apply selective scan
     5. Apply output projection
-    
+
     Reference: https://github.com/state-spaces/mamba/blob/main/mamba_ssm/modules/mamba_simple.py
-    
+
     Args:
         xz: Input tensor of shape (batch, dim, seqlen) where dim = 2 * intermediate_size.
             Contains both x and z concatenated along the channel dimension.
@@ -638,7 +648,7 @@ def mamba_inner_fn(
         c_rms_weight: Optional RMS normalization weight for C.
         dt_rms_weight: Optional RMS normalization weight for delta.
         b_c_dt_rms_eps: Epsilon for RMS normalization. Defaults to 1e-6.
-        
+
     Returns:
         Output tensor of shape (batch, seqlen, hidden_size).
     """
@@ -646,7 +656,7 @@ def mamba_inner_fn(
     batch_dim = xz.shape[0]
     dim_dim = xz.shape[1]
     seqlen = xz.shape[2]
-    
+
     # Split xz into x and z using slice operations instead of split
     # xz: (batch, dim, seqlen) where dim = 2 * intermediate_size
     intermediate_size = dim_dim // 2
@@ -664,7 +674,7 @@ def mamba_inner_fn(
     )
     # Force contiguous copy after slicing (slice_tensor creates views)
     z = _ensure_contiguous(z)
-    
+
     # Reshape conv1d_weight if needed: (dim, 1, width) -> (dim, width)
     if len(conv1d_weight.shape) == 3:
         conv1d_weight_reshaped = ops.reshape(
@@ -673,7 +683,7 @@ def mamba_inner_fn(
         )
     else:
         conv1d_weight_reshaped = conv1d_weight
-    
+
     # Apply causal convolution to x
     # Note: We use causal_conv1d_fn which should produce contiguous tensors
     # But we ensure contiguous layout anyway to be safe
@@ -686,7 +696,7 @@ def mamba_inner_fn(
     )  # (batch, intermediate_size, seqlen)
     # Force contiguous copy to ensure GPU-compatible layout
     conv1d_out = _ensure_contiguous(conv1d_out)
-    
+
     # Reshape for linear projection: (batch, intermediate_size, seqlen) -> (batch * seqlen, intermediate_size)
     # First permute: (batch, intermediate_size, seqlen) -> (batch, seqlen, intermediate_size)
     conv1d_out_permuted = ops.permute(conv1d_out, [0, 2, 1])
@@ -705,11 +715,11 @@ def mamba_inner_fn(
     x_dbl = ops.matmul(conv1d_out_flat, ops.transpose(x_proj_weight, 0, 1))
     # Force contiguous copy after matmul
     x_dbl = _ensure_contiguous(x_dbl)
-    
+
     # Extract delta_rank from delta_proj_weight shape
     delta_rank_dim = delta_proj_weight.shape[1]
     d_state_dim = A.shape[1]
-    
+
     # Convert to int for use in slice operations (works for static dims)
     try:
         delta_rank = int(delta_rank_dim)
@@ -718,8 +728,8 @@ def mamba_inner_fn(
         # For symbolic dims, this will fail - need explicit values
         raise ValueError(
             "delta_rank and d_state must be static dimensions for mamba_inner_fn"
-        )
-    
+        ) from None
+
     # Compute n_groups from x_proj_dim
     # x_proj_dim = delta_rank + 2 * n_groups * d_state
     # So: n_groups = (x_proj_dim - delta_rank) / (2 * d_state)
@@ -734,7 +744,7 @@ def mamba_inner_fn(
         n_groups = 1
     if n_groups == 0:
         n_groups = 1  # Fallback to 1 if calculation gives 0
-    
+
     # Compute delta: x_dbl[:, :delta_rank] @ delta_proj_weight.T
     # First get x_dbl[:, :delta_rank]: (batch * seqlen, delta_rank)
     # Use explicit slice instead of slice(None) for more predictable layout
@@ -764,11 +774,11 @@ def mamba_inner_fn(
     delta = ops.permute(delta, [0, 2, 1])
     # Force contiguous copy after permute
     delta = _ensure_contiguous(delta)
-    
+
     # Handle variable B and C
     is_variable_B = B is None
     is_variable_C = C is None
-    
+
     if B is None:
         # Extract B from x_dbl: x_dbl[:, delta_rank:delta_rank + n_groups * d_state]
         # Use explicit slice indices instead of slice(None)
@@ -784,7 +794,7 @@ def mamba_inner_fn(
             B_flat = B_flat + B_proj_bias
             # Force contiguous copy after bias addition
             B_flat = _ensure_contiguous(B_flat)
-        
+
         # Reshape: (batch * seqlen, n_groups * d_state) -> (batch, n_groups, d_state, seqlen)
         # First reshape to (batch, seqlen, n_groups, d_state)
         B = ops.reshape(
@@ -795,7 +805,7 @@ def mamba_inner_fn(
         B = ops.permute(B, [0, 2, 3, 1])
         # Force contiguous copy after permute
         B = _ensure_contiguous(B)
-    
+
     if C is None:
         # Extract C from x_dbl: x_dbl[:, -n_groups * d_state:]
         # Use explicit positive indices instead of negative indices
@@ -812,7 +822,7 @@ def mamba_inner_fn(
             C_flat = C_flat + C_proj_bias
             # Force contiguous copy after bias addition
             C_flat = _ensure_contiguous(C_flat)
-        
+
         # Reshape: (batch * seqlen, n_groups * d_state) -> (batch, n_groups, d_state, seqlen)
         # First reshape to (batch, seqlen, n_groups, d_state)
         C = ops.reshape(
@@ -823,18 +833,22 @@ def mamba_inner_fn(
         C = ops.permute(C, [0, 2, 3, 1])
         # Force contiguous copy after permute
         C = _ensure_contiguous(C)
-    
+
     # Apply RMS normalization if provided
     if b_rms_weight is not None:
         # Reshape B: (batch, n_groups, d_state, seqlen) -> (batch * seqlen * n_groups, d_state)
         # First permute to (batch, seqlen, n_groups, d_state)
         B_flat = ops.permute(B, [0, 3, 1, 2])
-        B_flat = ops.reshape(B_flat, shape=[batch_dim * seqlen * Dim(n_groups), d_state_dim])
-        
+        B_flat = ops.reshape(
+            B_flat, shape=[batch_dim * seqlen * Dim(n_groups), d_state_dim]
+        )
+
         B_flat = _rms_norm_forward(B_flat, b_rms_weight, eps=b_c_dt_rms_eps)
-        
+
         # Reshape back: (batch * seqlen * n_groups, d_state) -> (batch, n_groups, d_state, seqlen)
-        B = ops.reshape(B_flat, shape=[batch_dim, seqlen, Dim(n_groups), d_state_dim])
+        B = ops.reshape(
+            B_flat, shape=[batch_dim, seqlen, Dim(n_groups), d_state_dim]
+        )
         B = ops.permute(B, [0, 2, 3, 1])
         # Force contiguous copy after reshape/permute
         B = _ensure_contiguous(B)
@@ -843,30 +857,40 @@ def mamba_inner_fn(
         # Reshape C: (batch, n_groups, d_state, seqlen) -> (batch * seqlen * n_groups, d_state)
         # First permute to (batch, seqlen, n_groups, d_state)
         C_flat = ops.permute(C, [0, 3, 1, 2])
-        C_flat = ops.reshape(C_flat, shape=[batch_dim * seqlen * Dim(n_groups), d_state_dim])
-        
+        C_flat = ops.reshape(
+            C_flat, shape=[batch_dim * seqlen * Dim(n_groups), d_state_dim]
+        )
+
         C_flat = _rms_norm_forward(C_flat, c_rms_weight, eps=b_c_dt_rms_eps)
-        
+
         # Reshape back: (batch * seqlen * n_groups, d_state) -> (batch, n_groups, d_state, seqlen)
-        C = ops.reshape(C_flat, shape=[batch_dim, seqlen, Dim(n_groups), d_state_dim])
+        C = ops.reshape(
+            C_flat, shape=[batch_dim, seqlen, Dim(n_groups), d_state_dim]
+        )
         C = ops.permute(C, [0, 2, 3, 1])
         # Force contiguous copy after reshape/permute
         C = _ensure_contiguous(C)
-    
+
     if dt_rms_weight is not None:
         # Reshape delta: (batch, intermediate_size, seqlen) -> (batch * seqlen, intermediate_size)
         # First permute to (batch, seqlen, intermediate_size)
         delta_flat = ops.permute(delta, [0, 2, 1])
-        delta_flat = ops.reshape(delta_flat, shape=[batch_dim * seqlen, intermediate_size])
-        
-        delta_flat = _rms_norm_forward(delta_flat, dt_rms_weight, eps=b_c_dt_rms_eps)
-        
+        delta_flat = ops.reshape(
+            delta_flat, shape=[batch_dim * seqlen, intermediate_size]
+        )
+
+        delta_flat = _rms_norm_forward(
+            delta_flat, dt_rms_weight, eps=b_c_dt_rms_eps
+        )
+
         # Reshape back: (batch * seqlen, intermediate_size) -> (batch, intermediate_size, seqlen)
-        delta = ops.reshape(delta_flat, shape=[batch_dim, seqlen, intermediate_size])
+        delta = ops.reshape(
+            delta_flat, shape=[batch_dim, seqlen, intermediate_size]
+        )
         delta = ops.permute(delta, [0, 2, 1])
         # Force contiguous copy after reshape/permute
         delta = _ensure_contiguous(delta)
-    
+
     # Ensure all tensors are contiguous before calling selective_scan_fn
     # The kernel expects specific stride patterns, so we ensure contiguous layout
     conv1d_out = _ensure_contiguous(conv1d_out)
@@ -909,7 +933,9 @@ def mamba_inner_fn(
     # Apply output projection: (batch, seqlen, intermediate_size) @ out_proj_weight.T
     # out_proj_weight: (hidden_size, intermediate_size)
     # Use explicit matmul and transpose instead of @ and .T
-    output = ops.matmul(out_permuted, ops.transpose(out_proj_weight, 0, 1))  # (batch, seqlen, hidden_size)
+    output = ops.matmul(
+        out_permuted, ops.transpose(out_proj_weight, 0, 1)
+    )  # (batch, seqlen, hidden_size)
     # Force contiguous copy after matmul
     output = _ensure_contiguous(output)
 
@@ -941,10 +967,10 @@ def mamba_inner_ref(
     delta_softplus: bool = True,
 ) -> TensorValue:
     """Reference implementation of Mamba inner function.
-    
+
     This is a simpler reference implementation without checkpointing or RMS normalization.
     Used for testing and validation.
-    
+
     Args:
         xz: Input tensor of shape (batch, dim, seqlen) where dim = 2 * intermediate_size.
         conv1d_weight: Convolution weight of shape (dim, width).
@@ -961,7 +987,7 @@ def mamba_inner_ref(
         B_proj_bias: Optional bias for B projection.
         C_proj_bias: Optional bias for C projection.
         delta_softplus: Whether to apply softplus to delta. Defaults to True.
-        
+
     Returns:
         Output tensor of shape (batch, seqlen, hidden_size).
     """
@@ -969,7 +995,7 @@ def mamba_inner_ref(
     batch_dim = xz.shape[0]
     dim_dim = xz.shape[1]
     seqlen = xz.shape[2]
-    
+
     # Split xz into x and z
     intermediate_size = dim_dim // 2
     x, z = ops.split(
@@ -977,7 +1003,7 @@ def mamba_inner_ref(
         [intermediate_size, intermediate_size],
         axis=1,
     )
-    
+
     # Reshape conv1d_weight if needed
     if len(conv1d_weight.shape) == 3:
         conv1d_weight_reshaped = ops.reshape(
@@ -986,7 +1012,7 @@ def mamba_inner_ref(
         )
     else:
         conv1d_weight_reshaped = conv1d_weight
-    
+
     # Apply causal convolution to x
     x = causal_conv1d_fn(
         x,
@@ -995,20 +1021,20 @@ def mamba_inner_ref(
         algorithm="optimized",
         activation="silu",
     )  # (batch, intermediate_size, seqlen)
-    
+
     # Reshape for linear projection: (batch, intermediate_size, seqlen) -> (batch * seqlen, intermediate_size)
     x_flat = ops.reshape(
         x,
         shape=[batch_dim * seqlen, intermediate_size],
     )
-    
+
     # Project to get x_dbl: (batch * seqlen, x_proj_dim)
     x_dbl = x_flat @ x_proj_weight.T
-    
+
     # Extract delta_rank and d_state
     delta_rank_dim = delta_proj_weight.shape[1]
     d_state_dim = A.shape[1]
-    
+
     # Convert to int for use in slice operations (works for static dims)
     try:
         delta_rank = int(delta_rank_dim)
@@ -1017,8 +1043,8 @@ def mamba_inner_ref(
         # For symbolic dims, this will fail - need explicit values
         raise ValueError(
             "delta_rank and d_state must be static dimensions for mamba_inner_ref"
-        )
-    
+        ) from None
+
     # Compute n_groups from x_proj_dim
     x_proj_dim = x_proj_weight.shape[0]
     bc_dim = x_proj_dim - delta_rank_dim
@@ -1031,7 +1057,7 @@ def mamba_inner_ref(
         n_groups = 1
     if n_groups == 0:
         n_groups = 1  # Fallback to 1 if calculation gives 0
-    
+
     # Compute delta: x_dbl[:, :delta_rank] @ delta_proj_weight.T
     x_dbl_delta = ops.slice_tensor(
         x_dbl,
@@ -1052,7 +1078,7 @@ def mamba_inner_ref(
     delta = ops.permute(delta, [0, 2, 1])
     # Force contiguous copy
     delta = _ensure_contiguous(delta)
-    
+
     # Handle variable B and C
     if B is None:
         B_flat = ops.slice_tensor(
@@ -1074,7 +1100,7 @@ def mamba_inner_ref(
         B = ops.permute(B, [0, 2, 3, 1])
         # Force contiguous copy after permute
         B = _ensure_contiguous(B)
-    
+
     if C is None:
         C_flat = ops.slice_tensor(
             x_dbl,
@@ -1095,7 +1121,7 @@ def mamba_inner_ref(
         C = ops.permute(C, [0, 2, 3, 1])
         # Force contiguous copy after permute
         C = _ensure_contiguous(C)
-    
+
     # Ensure all tensors are contiguous before calling selective_scan_fn
     x = _ensure_contiguous(x)
     delta = _ensure_contiguous(delta)
@@ -1128,12 +1154,12 @@ def mamba_inner_ref(
     # Reshape for output projection: (batch, intermediate_size, seqlen) -> (batch, seqlen, intermediate_size)
     # Use permute instead of reshape to preserve correct dimension mapping: (B, D, S) -> (B, S, D)
     y_permuted = ops.permute(y, [0, 2, 1])
-    
+
     # Apply output projection
     output = y_permuted @ out_proj_weight.T  # (batch, seqlen, hidden_size)
-    
+
     # Add bias if provided
     if out_proj_bias is not None:
         output = output + out_proj_bias
-    
+
     return output

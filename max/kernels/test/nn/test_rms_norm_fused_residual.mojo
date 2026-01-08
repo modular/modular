@@ -39,7 +39,9 @@ fn run_rms_norm_fused_residual[
     rank: Int,
     //,
     dtype: DType,
-](shape: IndexList[rank], rtol: Float64 = 0.01, dropout_p: Float64 = 0.0) raises:
+](
+    shape: IndexList[rank], rtol: Float64 = 0.01, dropout_p: Float64 = 0.0
+) raises:
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
@@ -170,51 +172,58 @@ fn run_rms_norm_fused_residual[
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
     comptime simd_width = simd_width_of[dtype]()
-    
+
     # Calculate dropout scale if needed
     var one_scalar = Scalar[dtype](1.0)
     var dropout_scale = one_scalar
     if dropout_p_scalar > zero_scalar:
         dropout_scale = one_scalar / (one_scalar - dropout_p_scalar)
-    
+
     # Process row by row to match kernel exactly
     for row in range(prod_all_but_last_dim):
         for col in range(0, last_dim, simd_width):
             var indices = _get_start_indices_of_nth_subvolume(row, shape)
             var input_vals = SIMD[dtype, simd_width](0)
             var residual_vals = SIMD[dtype, simd_width](0)
-            
+
             for i in range(simd_width):
                 if col + i < last_dim:
                     indices[rank - 1] = col + i
                     var input_val = input_fn[1](indices.canonicalize())[0]
-                    
+
                     # Apply dropout if enabled (matching kernel exactly)
                     if dropout_p_scalar > zero_scalar:
                         var element_offset = row * last_dim + col + i
-                        var generator = Random(seed=seed, offset=UInt64(element_offset))
+                        var generator = Random(
+                            seed=seed, offset=UInt64(element_offset)
+                        )
                         var rng = generator.step_uniform()
                         var rng_val = rng[0].cast[dtype]()
                         if rng_val >= dropout_p_scalar:
                             input_val = input_val * dropout_scale
                         else:
                             input_val = zero_scalar
-                    
+
                     input_vals[i] = input_val
-                    residual_vals[i] = residual_input_fn[1](indices.canonicalize())[0]
-            
+                    residual_vals[i] = residual_input_fn[1](
+                        indices.canonicalize()
+                    )[0]
+
             # Add residual and store in intermediate buffer
             var sum_vals = input_vals + residual_vals
-            
+
             for i in range(simd_width):
                 if col + i < last_dim:
                     indices[rank - 1] = col + i
-                    var intermediate_idx = unfused_intermediate_buf.runtime_layout(
-                        RuntimeTuple[
-                            fill_like(
-                                unfused_intermediate_buf.layout.shape, UNKNOWN_VALUE
-                            )
-                        ](indices)
+                    var intermediate_idx = (
+                        unfused_intermediate_buf.runtime_layout(
+                            RuntimeTuple[
+                                fill_like(
+                                    unfused_intermediate_buf.layout.shape,
+                                    UNKNOWN_VALUE,
+                                )
+                            ](indices)
+                        )
                     )
                     unfused_intermediate_buf.ptr.store[width=1, alignment=1](
                         intermediate_idx, sum_vals[i]
@@ -229,9 +238,7 @@ fn run_rms_norm_fused_residual[
     ](coords: IndexList[rank_]):
         var intermediate_idx = unfused_intermediate_buf.runtime_layout(
             RuntimeTuple[
-                fill_like(
-                    unfused_intermediate_buf.layout.shape, UNKNOWN_VALUE
-                )
+                fill_like(unfused_intermediate_buf.layout.shape, UNKNOWN_VALUE)
             ](coords)
         )
         var intermediate_val = unfused_intermediate_buf.ptr.load[width=width](
@@ -299,7 +306,7 @@ fn run_rms_norm_fused_residual[
             unfused_intermediate_h.ptr[i],
             rtol=rtol,
         )
-    
+
     # Cleanup
     input_heap.free()
     residual_heap.free()
@@ -313,8 +320,12 @@ fn run_rms_norm_fused_residual[
 def main():
     # Test various shapes without dropout
     run_rms_norm_fused_residual[DType.float32](Index(5), dropout_p=0.0)
-    run_rms_norm_fused_residual[DType.float32](Index(3, 4, 10, 20, 8), dropout_p=0.0)
-    run_rms_norm_fused_residual[DType.float32](Index(1, 5, 6, 10, 128), dropout_p=0.0)
+    run_rms_norm_fused_residual[DType.float32](
+        Index(3, 4, 10, 20, 8), dropout_p=0.0
+    )
+    run_rms_norm_fused_residual[DType.float32](
+        Index(1, 5, 6, 10, 128), dropout_p=0.0
+    )
     run_rms_norm_fused_residual[DType.float32](Index(2, 5), dropout_p=0.0)
     run_rms_norm_fused_residual[DType.float32](Index(2, 55), dropout_p=0.0)
     run_rms_norm_fused_residual[DType.float32](Index(7, 557), dropout_p=0.0)
@@ -327,4 +338,3 @@ def main():
     run_rms_norm_fused_residual[DType.float32](Index(2, 128), dropout_p=0.1)
     run_rms_norm_fused_residual[DType.float32](Index(4, 256), dropout_p=0.2)
     run_rms_norm_fused_residual[DType.float32](Index(2, 512), dropout_p=0.5)
-

@@ -62,10 +62,11 @@ fn run_causal_conv1d_gpu[
     comptime layout_3d = Layout.row_major[3]()
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    
+
     var input_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var input_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        input_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        input_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
     var weight_heap = alloc[Scalar[dtype]](dim * width)
     var weight_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
@@ -77,24 +78,26 @@ fn run_causal_conv1d_gpu[
     )
     var result_gpu_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var result_gpu_h = LayoutTensor[dtype, layout_3d](
-        result_gpu_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        result_gpu_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     ).fill(0)
     var result_cpu_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
     var result_cpu_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        result_cpu_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        result_cpu_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     ).fill(0)
-    
+
     # Initialize input data
     rand[dtype](input_h.ptr, input_h.size())
     rand[dtype](weight_h.ptr, weight_h.size())
     rand[dtype](bias_h.ptr, bias_h.size())
-    
+
     var input_buf = input_h
     var weight_buf = weight_h
     var bias_buf = bias_h
     var result_gpu_buf = result_gpu_h
     var result_cpu_buf = result_cpu_h
-    
+
     # Strides for channel-first layout (B, C, L)
     var x_batch_stride: UInt32 = dim * seqlen
     var x_c_stride: UInt32 = seqlen
@@ -105,9 +108,9 @@ fn run_causal_conv1d_gpu[
     var out_c_stride: UInt32 = seqlen
     var out_l_stride: UInt32 = 1
     var bias_stride: UInt32 = 1
-    
+
     var silu_activation = activation == "silu"
-    
+
     # Run CPU reference
     causal_conv1d_channel_first_fwd_cpu[
         input_buf.dtype,
@@ -138,19 +141,19 @@ fn run_causal_conv1d_gpu[
         bias_stride,
         silu_activation,
     )
-    
+
     # Allocate device buffers
     var input_device = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
     var weight_device = ctx.enqueue_create_buffer[dtype](dim * width)
     var bias_device = ctx.enqueue_create_buffer[dtype](dim)
     var output_device = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
-    
+
     # Copy data to device
     with ctx.push_context():
         ctx.enqueue_copy(input_device, input_buf.ptr)
         ctx.enqueue_copy(weight_device, weight_buf.ptr)
         ctx.enqueue_copy(bias_device, bias_buf.ptr)
-    
+
     # Create device LayoutTensors
     var input_device_tensor = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
         input_device.unsafe_ptr(),
@@ -168,11 +171,11 @@ fn run_causal_conv1d_gpu[
         output_device.unsafe_ptr(),
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
-    
+
     # Run GPU kernel
     comptime kNThreads = 128
     comptime kNElts = 4
-    
+
     if width == 1:
         comptime kWidth = 1
         var compiled_func = ctx.compile_function_checked[
@@ -394,13 +397,15 @@ fn run_causal_conv1d_gpu[
                 block_dim=(kNThreads),
             )
     else:
-        raise Error("Unsupported kernel width: only widths 1, 2, 3, 4 are supported")
-    
+        raise Error(
+            "Unsupported kernel width: only widths 1, 2, 3, 4 are supported"
+        )
+
     # Copy GPU results back to host
     with ctx.push_context():
         ctx.enqueue_copy(result_gpu_h.ptr, output_device)
     ctx.synchronize()
-    
+
     # Compare results
     var flattened_size = batch * dim * seqlen
     for i in range(flattened_size):
@@ -409,7 +414,7 @@ fn run_causal_conv1d_gpu[
             result_cpu_h.ptr[i],
             rtol=rtol,
         )
-    
+
     # Cleanup
     input_heap.free()
     weight_heap.free()
@@ -423,36 +428,41 @@ def main():
     if not ctx.is_compatible():
         print("GPU not available, skipping GPU tests")
         return
-    
+
     # Test basic cases
     run_causal_conv1d_gpu[DType.float32, "none"](2, 4, 8, 3, ctx=ctx)
     print("✓ Basic GPU causal conv1d test passed")
-    
+
     run_causal_conv1d_gpu[DType.float32, "silu"](2, 4, 8, 3, ctx=ctx)
     print("✓ GPU causal conv1d with SiLU test passed")
-    
+
     # Test all supported widths
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 1, ctx=ctx)
     print("✓ GPU causal conv1d width 1 test passed")
-    
+
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 2, ctx=ctx)
     print("✓ GPU causal conv1d width 2 test passed")
-    
+
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 3, ctx=ctx)
     print("✓ GPU causal conv1d width 3 test passed")
-    
+
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 4, ctx=ctx)
     print("✓ GPU causal conv1d width 4 test passed")
-    
+
     # Test larger sequences
     run_causal_conv1d_gpu[DType.float32, "none"](2, 16, 128, 3, ctx=ctx)
     print("✓ Large sequence GPU test passed")
-    
+
     # Test with mamba-130m-hf realistic dimensions
     # dim=1536, width=4 (conv_kernel)
     for seqlen in [5, 6, 7]:
-        run_causal_conv1d_gpu[DType.float32, "silu"](1, 1536, seqlen, 4, ctx=ctx)
+        run_causal_conv1d_gpu[DType.float32, "silu"](
+            1, 1536, seqlen, 4, ctx=ctx
+        )
         print("✓ Mamba-130m causal conv1d seqlen=" + String(seqlen) + " passed")
-    
+
     # Strict tolerance test
-    run_causal_conv1d_gpu[DType.float32, "silu"](1, 1536, 7, 4, ctx=ctx, rtol=0.0001)    print("✓ Strict tolerance (0.01%) causal conv1d seqlen=7 passed")
+    run_causal_conv1d_gpu[DType.float32, "silu"](
+        1, 1536, 7, 4, ctx=ctx, rtol=0.0001
+    )
+    print("✓ Strict tolerance (0.01%) causal conv1d seqlen=7 passed")

@@ -22,9 +22,8 @@ from typing import Any, Literal
 
 import numpy as np
 from max.driver import Device, Tensor
-from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, Value
+from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn import ReturnHiddenStates, ReturnLogits
@@ -75,7 +74,9 @@ def _get_kernel_library_paths() -> list[Path]:
     """
     import_path_env = os.environ.get(_MODULAR_MOJO_MAX_IMPORT_PATH, "")
     if not import_path_env:
-        logger.warning("MODULAR_MOJO_MAX_IMPORT_PATH not set, no custom kernels will be loaded")
+        logger.warning(
+            "MODULAR_MOJO_MAX_IMPORT_PATH not set, no custom kernels will be loaded"
+        )
         return []
 
     paths: list[Path] = []
@@ -85,7 +86,7 @@ def _get_kernel_library_paths() -> list[Path]:
             continue
 
         entry_path = Path(entry.strip())
-        
+
         # Handle relative paths - try to resolve them relative to current working directory
         if not entry_path.is_absolute():
             # Try resolving relative to current directory first
@@ -94,7 +95,7 @@ def _get_kernel_library_paths() -> list[Path]:
                 # If that doesn't work, try as-is (might be relative to runfiles root)
                 resolved = entry_path
             entry_path = resolved
-        
+
         if not entry_path.exists():
             continue
 
@@ -111,7 +112,9 @@ def _get_kernel_library_paths() -> list[Path]:
             # Search recursively for MambaKernelAPI.mojopkg files
             found = False
             for mojopkg in entry_path.rglob("*.mojopkg"):
-                if "MambaKernelAPI" in mojopkg.name and (mojopkg.is_file() or mojopkg.is_symlink()):
+                if "MambaKernelAPI" in mojopkg.name and (
+                    mojopkg.is_file() or mojopkg.is_symlink()
+                ):
                     resolved_path = mojopkg.resolve()
                     logger.info(f"Loading kernel library: {resolved_path}")
                     paths.append(resolved_path)
@@ -122,9 +125,13 @@ def _get_kernel_library_paths() -> list[Path]:
                 pass
 
     if not paths:
-        logger.warning(f"No MambaKernelAPI.mojopkg found in MODULAR_MOJO_MAX_IMPORT_PATH: {import_path_env}")
+        logger.warning(
+            f"No MambaKernelAPI.mojopkg found in MODULAR_MOJO_MAX_IMPORT_PATH: {import_path_env}"
+        )
     else:
-        logger.info(f"Found {len(paths)} MambaKernelAPI.mojopkg file(s): {[str(p) for p in paths]}")
+        logger.info(
+            f"Found {len(paths)} MambaKernelAPI.mojopkg file(s): {[str(p) for p in paths]}"
+        )
     return paths
 
 
@@ -154,7 +161,6 @@ class MambaInputs(ModelInputs):
     # so we can reprocess the full sequence each step
     accumulated_tokens: Tensor | None = None
     """All tokens seen so far (prompt + generated). Used for reprocessing in step mode."""
-
 
     def __init__(
         self,
@@ -242,7 +248,6 @@ class MambaModelBase(PipelineModel[TextContext]):
         self.model = self.load_model(session)
         self.logprobs_device = devices[0]
         self.logprobs_model = self.load_logprobs_model(session)
-
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
@@ -418,14 +423,14 @@ class MambaModelBase(PipelineModel[TextContext]):
         prev_model_inputs: ModelInputs,
     ) -> MambaInputs:
         """Prepare the inputs for the next token in multistep execution.
-        
+
         For Mamba models without SSM state caching, we need to reprocess
         the entire sequence (prompt + all generated tokens) each step.
         This is necessary because Mamba relies on sequential state that
         is not persisted between calls without explicit state caching.
         """
         assert isinstance(prev_model_inputs, MambaInputs)
-        
+
         # Concatenate new token(s) to accumulated tokens
         # This ensures the model sees the full context each step
         if prev_model_inputs.accumulated_tokens is not None:
@@ -438,12 +443,12 @@ class MambaModelBase(PipelineModel[TextContext]):
             )
         else:
             accumulated_tokens = next_tokens
-        
+
         # Update row offsets for the accumulated sequence
         # For batch_size=1: offsets = [0, accumulated_length]
         batch_size = prev_model_inputs.input_row_offsets.shape[0] - 1
         accumulated_length = accumulated_tokens.shape[0] // batch_size
-        
+
         # Create row offsets for the accumulated sequence
         # Assuming batch_size=1 for now (most common case)
         row_offsets = np.array(
@@ -515,7 +520,6 @@ class MambaModelBase(PipelineModel[TextContext]):
             DeviceRef.from_device(self.logprobs_device), levels=3
         )
         return session.load(graph)
-
 
     def _get_state_dict(
         self,
@@ -609,27 +613,37 @@ class MambaModelBase(PipelineModel[TextContext]):
 
             # Load weights.
             logger.info(f"Loading {len(state_dict)} weights into Mamba model")
-            
+
             # Check for weight name mismatches
             model_weights = set(single_model.state_dict().keys())
             provided_weights = set(state_dict.keys())
             missing = model_weights - provided_weights
             extra = provided_weights - model_weights
             # Log model weights containing 'output' or 'embedding'
-            emb_out_weights = [w for w in model_weights if 'output' in w or 'embedding' in w]
-            logger.info(f"Model embedding/output weights: {sorted(emb_out_weights)}")
+            emb_out_weights = [
+                w for w in model_weights if "output" in w or "embedding" in w
+            ]
+            logger.info(
+                f"Model embedding/output weights: {sorted(emb_out_weights)}"
+            )
             if missing:
-                logger.info(f"Weights expected but not in state_dict (will use defaults): {sorted(missing)}")
+                logger.info(
+                    f"Weights expected but not in state_dict (will use defaults): {sorted(missing)}"
+                )
             if extra:
-                logger.warning(f"Extra weights (provided but not expected): {list(extra)[:5]}{'...' if len(extra) > 5 else ''}")
-            
+                logger.warning(
+                    f"Extra weights (provided but not expected): {list(extra)[:5]}{'...' if len(extra) > 5 else ''}"
+                )
+
             single_model.load_state_dict(
                 state_dict,
                 override_quantization_encoding=True,
                 weight_alignment=1,
                 strict=False,
             )
-            logger.info(f"Model state dict has {len(single_model.state_dict())} weights after loading")
+            logger.info(
+                f"Model state dict has {len(single_model.state_dict())} weights after loading"
+            )
             self.state_dict = single_model.state_dict()
 
             with Graph(
@@ -739,4 +753,3 @@ class MambaModel(MambaModelBase):
             return_logits,
             return_hidden_states,
         )
-

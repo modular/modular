@@ -44,11 +44,11 @@ def layernorm_fn(
     is_rms_norm: bool = False,
 ) -> TensorValue:
     """Layer normalization function with optional gating, matching Mamba API.
-    
+
     If z is not None, we do norm(x) * silu(z) if norm_before_gate, else norm(x * silu(z)).
-    
+
     Reference: https://github.com/state-spaces/mamba/blob/main/mamba_ssm/ops/triton/layernorm_gated.py
-    
+
     Args:
         x: Input tensor to normalize.
         weight: Weight tensor (gamma) for normalization.
@@ -59,37 +59,37 @@ def layernorm_fn(
         norm_before_gate: If True, applies gating after normalization.
             If False, applies gating before normalization.
         is_rms_norm: If True, uses RMSNorm instead of LayerNorm.
-            
+
     Returns:
         Normalized tensor with optional gating applied.
     """
     if group_size is not None:
         raise NotImplementedError("group_size is not yet supported")
-    
+
     # Validate shapes
     if weight.shape != (x.shape[-1],):
         raise ValueError(
             f"Weight shape {weight.shape} must match last dimension of input {x.shape[-1]}"
         )
-    
+
     if bias is not None and bias.shape != (x.shape[-1],):
         raise ValueError(
             f"Bias shape {bias.shape} must match last dimension of input {x.shape[-1]}"
         )
-    
+
     if z is not None and z.shape != x.shape:
         raise ValueError(
             f"Z tensor shape {z.shape} must match input shape {x.shape}"
         )
-    
+
     # Prepare tensors
     weight_cast = weight.cast(x.dtype)
     if x.device:
         weight_cast = weight_cast.to(x.device)
-    
+
     # Track if z was actually provided (before creating dummy)
     has_z_provided = z is not None
-    
+
     # Create dummy z tensor if not provided (required by kernel)
     if z is None:
         z = ops.broadcast_to(
@@ -100,10 +100,10 @@ def layernorm_fn(
         z = z.cast(x.dtype)
         if x.device:
             z = z.to(x.device)
-    
+
     # Track if bias was actually provided (before creating dummy)
     has_bias_provided = bias is not None
-    
+
     # Create dummy beta tensor if not provided (required by kernel)
     if bias is None:
         beta = ops.broadcast_to(
@@ -114,10 +114,10 @@ def layernorm_fn(
         beta = bias.cast(x.dtype)
         if x.device:
             beta = beta.to(x.device)
-    
+
     # Prepare epsilon constant
     eps_constant = ops.constant(eps, dtype=x.dtype, device=DeviceRef.CPU())
-    
+
     # Call gated layernorm kernel
     result = ops.custom(
         "layer_norm_gated",
@@ -137,7 +137,7 @@ def layernorm_fn(
             "norm_before_gate": norm_before_gate,
         },
     )
-    
+
     return result[0].tensor
 
 
@@ -151,11 +151,11 @@ def rmsnorm_fn(
     norm_before_gate: bool = True,
 ) -> TensorValue:
     """RMS normalization function with optional gating, matching Mamba API.
-    
+
     If z is not None, we do rms_norm(x) * silu(z) if norm_before_gate, else rms_norm(x * silu(z)).
-    
+
     Reference: https://github.com/state-spaces/mamba/blob/main/mamba_ssm/ops/triton/layernorm_gated.py
-    
+
     Args:
         x: Input tensor to normalize.
         weight: Weight tensor (gamma) for normalization.
@@ -166,7 +166,7 @@ def rmsnorm_fn(
         group_size: Group size for group normalization (not yet supported).
         norm_before_gate: If True, applies gating after normalization.
             If False, applies gating before normalization.
-            
+
     Returns:
         Normalized tensor with optional gating applied.
     """
@@ -184,7 +184,7 @@ def rmsnorm_fn(
 
 class LayerNorm(Module, Shardable):
     """Layer normalization module with optional gating, matching Mamba API.
-    
+
     Reference: https://github.com/state-spaces/mamba/blob/main/mamba_ssm/ops/triton/layernorm_gated.py
     """
 
@@ -198,7 +198,7 @@ class LayerNorm(Module, Shardable):
         dtype: DType | None = None,
     ) -> None:
         """Initialize LayerNorm module.
-        
+
         Args:
             hidden_size: Size of the hidden dimension.
             eps: Epsilon value for numerical stability.
@@ -211,28 +211,28 @@ class LayerNorm(Module, Shardable):
         super().__init__()
         if group_size is not None:
             raise NotImplementedError("group_size is not yet supported")
-        
+
         self.hidden_size = hidden_size
         self.eps = eps
         self.group_size = group_size
         self.norm_before_gate = norm_before_gate
-        
+
         # Determine device and dtype
         if devices is None:
             devices = [DeviceRef.CPU()]
         if dtype is None:
             dtype = DType.float32
-        
+
         self.devices = devices
         self.dtype = dtype
-        
+
         # Create weights
         self.weight = Weight("weight", dtype, (hidden_size,), device=devices[0])
         self.bias = Weight("bias", dtype, (hidden_size,), device=devices[0])
-        
+
         # Initialize weights
         self.reset_parameters()
-        
+
         self._sharding_strategy: ShardingStrategy | None = None
 
     def reset_parameters(self) -> None:
@@ -242,15 +242,17 @@ class LayerNorm(Module, Shardable):
         # through the Weight system's initialization mechanism
         pass
 
-    def __call__(self, x: TensorValue, z: TensorValue | None = None) -> TensorValue:
+    def __call__(
+        self, x: TensorValue, z: TensorValue | None = None
+    ) -> TensorValue:
         """Forward pass.
-        
+
         If z is not None, we do norm(x) * silu(z) if norm_before_gate, else norm(x * silu(z)).
-        
+
         Args:
             x: Input tensor.
             z: Optional gating tensor.
-            
+
         Returns:
             Normalized tensor with optional gating applied.
         """
@@ -278,7 +280,7 @@ class LayerNorm(Module, Shardable):
 
 class RMSNorm(Module, Shardable):
     """RMS normalization module with optional gating, matching Mamba API.
-    
+
     Reference: https://github.com/state-spaces/mamba/blob/main/mamba_ssm/ops/triton/layernorm_gated.py
     """
 
@@ -292,7 +294,7 @@ class RMSNorm(Module, Shardable):
         dtype: DType | None = None,
     ) -> None:
         """Initialize RMSNorm module.
-        
+
         Args:
             hidden_size: Size of the hidden dimension.
             eps: Epsilon value for numerical stability.
@@ -305,28 +307,28 @@ class RMSNorm(Module, Shardable):
         super().__init__()
         if group_size is not None:
             raise NotImplementedError("group_size is not yet supported")
-        
+
         self.hidden_size = hidden_size
         self.eps = eps
         self.group_size = group_size
         self.norm_before_gate = norm_before_gate
-        
+
         # Determine device and dtype
         if devices is None:
             devices = [DeviceRef.CPU()]
         if dtype is None:
             dtype = DType.float32
-        
+
         self.devices = devices
         self.dtype = dtype
-        
+
         # Create weight (RMSNorm doesn't use bias)
         self.weight = Weight("weight", dtype, (hidden_size,), device=devices[0])
         self.register_parameter("bias", None)
-        
+
         # Initialize weights
         self.reset_parameters()
-        
+
         self._sharding_strategy: ShardingStrategy | None = None
 
     def reset_parameters(self) -> None:
@@ -336,15 +338,17 @@ class RMSNorm(Module, Shardable):
         # through the Weight system's initialization mechanism
         pass
 
-    def __call__(self, x: TensorValue, z: TensorValue | None = None) -> TensorValue:
+    def __call__(
+        self, x: TensorValue, z: TensorValue | None = None
+    ) -> TensorValue:
         """Forward pass.
-        
+
         If z is not None, we do rms_norm(x) * silu(z) if norm_before_gate, else rms_norm(x * silu(z)).
-        
+
         Args:
             x: Input tensor.
             z: Optional gating tensor.
-            
+
         Returns:
             Normalized tensor with optional gating applied.
         """
@@ -367,4 +371,3 @@ class RMSNorm(Module, Shardable):
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
         """Set the RMSNorm sharding strategy."""
         self._sharding_strategy = strategy
-

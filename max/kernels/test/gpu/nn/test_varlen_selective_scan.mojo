@@ -51,37 +51,47 @@ fn run_varlen_selective_scan_fwd_gpu[
     """Test varlen selective scan forward GPU kernel against CPU reference."""
     if dstate > 256:
         return  # Skip if dstate exceeds kernel limit
-    
+
     # Calculate total_length
     var total_length = 0
     for i in range(batch):
         total_length += seq_lengths[i]
-    
+
     # Allocate host memory
     comptime layout_3d = Layout.row_major[3]()
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    
-    var ssm_states_cpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * dstate)
-    var ssm_states_gpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * dstate)
+
+    var ssm_states_cpu_h = UnsafePointer[Scalar[dtype]].alloc(
+        batch * dim * dstate
+    )
+    var ssm_states_gpu_h = UnsafePointer[Scalar[dtype]].alloc(
+        batch * dim * dstate
+    )
     var output_cpu_h = UnsafePointer[Scalar[dtype]].alloc(dim * total_length)
     var output_gpu_h = UnsafePointer[Scalar[dtype]].alloc(dim * total_length)
     var u_h = UnsafePointer[Scalar[dtype]].alloc(dim * total_length)
     var delta_h = UnsafePointer[Scalar[dtype]].alloc(dim * total_length)
     var A_h = UnsafePointer[Scalar[dtype]].alloc(dim * dstate)
-    var B_h = UnsafePointer[Scalar[dtype]].alloc(ngroups * dstate * total_length)
-    var C_h = UnsafePointer[Scalar[dtype]].alloc(ngroups * dstate * total_length)
+    var B_h = UnsafePointer[Scalar[dtype]].alloc(
+        ngroups * dstate * total_length
+    )
+    var C_h = UnsafePointer[Scalar[dtype]].alloc(
+        ngroups * dstate * total_length
+    )
     var D_size = dim if has_D else 0
     var D_h = UnsafePointer[Scalar[dtype]].alloc(max(D_size, 1))
     var z_size = dim * total_length if has_z else 0
     var z_cpu_h = UnsafePointer[Scalar[dtype]].alloc(max(z_size, 1))
     var z_gpu_h = UnsafePointer[Scalar[dtype]].alloc(max(z_size, 1))
     var delta_bias_size = dim if has_delta_bias else 0
-    var delta_bias_h = UnsafePointer[Scalar[dtype]].alloc(max(delta_bias_size, 1))
+    var delta_bias_h = UnsafePointer[Scalar[dtype]].alloc(
+        max(delta_bias_size, 1)
+    )
     var query_start_loc_h = UnsafePointer[Scalar[DType.int32]].alloc(batch + 1)
     var cache_indices_h = UnsafePointer[Scalar[DType.int32]].alloc(batch)
     var has_initial_state_h = UnsafePointer[Scalar[DType.bool]].alloc(batch)
-    
+
     # Create LayoutTensors for initialization
     var u_init = LayoutTensor[dtype, layout_2d](
         u_h, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
@@ -93,21 +103,30 @@ fn run_varlen_selective_scan_fwd_gpu[
         A_h, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
     )
     var B_init = LayoutTensor[dtype, layout_3d](
-        B_h, RuntimeLayout[layout_3d].row_major(Index(ngroups, dstate, total_length))
+        B_h,
+        RuntimeLayout[layout_3d].row_major(
+            Index(ngroups, dstate, total_length)
+        ),
     )
     var C_init = LayoutTensor[dtype, layout_3d](
-        C_h, RuntimeLayout[layout_3d].row_major(Index(ngroups, dstate, total_length))
+        C_h,
+        RuntimeLayout[layout_3d].row_major(
+            Index(ngroups, dstate, total_length)
+        ),
     )
     var D_init = LayoutTensor[dtype, layout_1d](
         D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
     var z_init = LayoutTensor[dtype, layout_2d](
-        z_cpu_h, RuntimeLayout[layout_2d].row_major(Index(dim if has_z else 0, total_length if has_z else 0))
+        z_cpu_h,
+        RuntimeLayout[layout_2d].row_major(
+            Index(dim if has_z else 0, total_length if has_z else 0)
+        ),
     )
     var delta_bias_init = LayoutTensor[dtype, layout_1d](
         delta_bias_h, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
     )
-    
+
     # Initialize input data
     rand(u_init.ptr, u_init.size())
     rand(delta_init.ptr, delta_init.size())
@@ -120,47 +139,49 @@ fn run_varlen_selective_scan_fwd_gpu[
         rand(z_init.ptr, z_init.size())
     if has_delta_bias:
         rand(delta_bias_init.ptr, delta_bias_init.size())
-    
+
     # Scale A to be negative for stability
     for i in range(dim * dstate):
         var val = A_h.offset(i).load()
         A_h.offset(i).store(Scalar[dtype](Float32(val) * -0.5))
-    
+
     # Scale delta to be positive
     for i in range(dim * total_length):
         var val = delta_h.offset(i).load()
         delta_h.offset(i).store(Scalar[dtype](abs(Float32(val)) * 0.5))
-    
+
     # Initialize query_start_loc (cumulative lengths)
     var cumsum = 0
     query_start_loc_h.offset(0).store(Scalar[DType.int32](0))
     for i in range(batch):
         cumsum += seq_lengths[i]
         query_start_loc_h.offset(i + 1).store(Scalar[DType.int32](cumsum))
-    
+
     # Initialize cache_indices (identity mapping)
     for i in range(batch):
         cache_indices_h.offset(i).store(Scalar[DType.int32](i))
-    
+
     # Initialize has_initial_state (all False)
     for i in range(batch):
         has_initial_state_h.offset(i).store(Scalar[DType.bool](False))
-    
+
     # Copy z for GPU
     if has_z:
         for i in range(dim * total_length):
             z_gpu_h.offset(i).store(z_cpu_h.offset(i).load())
-    
+
     # Copy ssm_states for GPU
     for i in range(batch * dim * dstate):
         ssm_states_gpu_h.offset(i).store(ssm_states_cpu_h.offset(i).load())
-    
+
     # Create LayoutTensors for CPU kernel
     var ssm_states_cpu = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        ssm_states_cpu_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate))
+        ssm_states_cpu_h,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
     )
     var output_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        output_cpu_h, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
+        output_cpu_h,
+        RuntimeLayout[layout_2d].row_major(Index(dim, total_length)),
     )
     var u_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         u_h, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
@@ -172,30 +193,39 @@ fn run_varlen_selective_scan_fwd_gpu[
         A_h, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
     )
     var B_cpu = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        B_h, RuntimeLayout[layout_3d].row_major(Index(ngroups, dstate, total_length))
+        B_h,
+        RuntimeLayout[layout_3d].row_major(
+            Index(ngroups, dstate, total_length)
+        ),
     )
     var C_cpu = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        C_h, RuntimeLayout[layout_3d].row_major(Index(ngroups, dstate, total_length))
+        C_h,
+        RuntimeLayout[layout_3d].row_major(
+            Index(ngroups, dstate, total_length)
+        ),
     )
     var D_cpu = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
     var z_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        z_cpu_h, RuntimeLayout[layout_2d].row_major(Index(dim if has_z else 0, total_length if has_z else 0))
+        z_cpu_h,
+        RuntimeLayout[layout_2d].row_major(
+            Index(dim if has_z else 0, total_length if has_z else 0)
+        ),
     )
     var delta_bias_cpu = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         delta_bias_h, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
     )
-    var query_start_loc_cpu = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
-        query_start_loc_h, RuntimeLayout[layout_1d].row_major(Index(batch + 1))
-    )
+    var query_start_loc_cpu = LayoutTensor[
+        DType.int32, layout_1d, MutAnyOrigin
+    ](query_start_loc_h, RuntimeLayout[layout_1d].row_major(Index(batch + 1)))
     var cache_indices_cpu = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
         cache_indices_h, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
-    var has_initial_state_cpu = LayoutTensor[DType.bool, layout_1d, MutAnyOrigin](
-        has_initial_state_h, RuntimeLayout[layout_1d].row_major(Index(batch))
-    )
-    
+    var has_initial_state_cpu = LayoutTensor[
+        DType.bool, layout_1d, MutAnyOrigin
+    ](has_initial_state_h, RuntimeLayout[layout_1d].row_major(Index(batch)))
+
     # Strides for row-major layout
     var u_dim_stride: UInt32 = total_length
     var u_len_stride: UInt32 = 1
@@ -218,7 +248,7 @@ fn run_varlen_selective_scan_fwd_gpu[
     var ssm_dstate_stride: UInt32 = 1
     var out_dim_stride: UInt32 = total_length
     var out_len_stride: UInt32 = 1
-    
+
     # Run CPU kernel
     varlen_selective_scan_fwd_cpu[
         dtype,
@@ -277,9 +307,11 @@ fn run_varlen_selective_scan_fwd_gpu[
         out_dim_stride,
         out_len_stride,
     )
-    
+
     # Allocate device memory
-    var ssm_states_gpu_d = ctx.enqueue_create_buffer[dtype](batch * dim * dstate)
+    var ssm_states_gpu_d = ctx.enqueue_create_buffer[dtype](
+        batch * dim * dstate
+    )
     var output_gpu_d = ctx.enqueue_create_buffer[dtype](dim * total_length)
     var u_d = ctx.enqueue_create_buffer[dtype](dim * total_length)
     var delta_d = ctx.enqueue_create_buffer[dtype](dim * total_length)
@@ -292,7 +324,7 @@ fn run_varlen_selective_scan_fwd_gpu[
     var query_start_loc_d = ctx.enqueue_create_buffer[DType.int32](batch + 1)
     var cache_indices_d = ctx.enqueue_create_buffer[DType.int32](batch)
     var has_initial_state_d = ctx.enqueue_create_buffer[DType.bool](batch)
-    
+
     # Copy to device
     ctx.enqueue_copy(u_d, u_h)
     ctx.enqueue_copy(delta_d, delta_h)
@@ -309,13 +341,15 @@ fn run_varlen_selective_scan_fwd_gpu[
     ctx.enqueue_copy(cache_indices_d, cache_indices_h)
     ctx.enqueue_copy(has_initial_state_d, has_initial_state_h)
     ctx.enqueue_copy(ssm_states_gpu_d, ssm_states_gpu_h)
-    
+
     # Create LayoutTensors for GPU kernel
     var ssm_states_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        ssm_states_gpu_d, RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate))
+        ssm_states_gpu_d,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
     )
     var output_gpu_lt = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        output_gpu_d, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
+        output_gpu_d,
+        RuntimeLayout[layout_2d].row_major(Index(dim, total_length)),
     )
     var u_gpu_lt = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         u_d, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
@@ -327,129 +361,138 @@ fn run_varlen_selective_scan_fwd_gpu[
         A_d, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
     )
     var B_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        B_d, RuntimeLayout[layout_3d].row_major(Index(ngroups, dstate, total_length))
+        B_d,
+        RuntimeLayout[layout_3d].row_major(
+            Index(ngroups, dstate, total_length)
+        ),
     )
     var C_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        C_d, RuntimeLayout[layout_3d].row_major(Index(ngroups, dstate, total_length))
+        C_d,
+        RuntimeLayout[layout_3d].row_major(
+            Index(ngroups, dstate, total_length)
+        ),
     )
     var D_gpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         D_d, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
     var z_gpu_lt = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        z_d, RuntimeLayout[layout_2d].row_major(Index(dim if has_z else 0, total_length if has_z else 0))
+        z_d,
+        RuntimeLayout[layout_2d].row_major(
+            Index(dim if has_z else 0, total_length if has_z else 0)
+        ),
     )
     var delta_bias_gpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         delta_bias_d, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
     )
-    var query_start_loc_gpu_lt = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
-        query_start_loc_d, RuntimeLayout[layout_1d].row_major(Index(batch + 1))
-    )
-    var cache_indices_gpu_lt = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
-        cache_indices_d, RuntimeLayout[layout_1d].row_major(Index(batch))
-    )
-    var has_initial_state_gpu_lt = LayoutTensor[DType.bool, layout_1d, MutAnyOrigin](
-        has_initial_state_d, RuntimeLayout[layout_1d].row_major(Index(batch))
-    )
-    
+    var query_start_loc_gpu_lt = LayoutTensor[
+        DType.int32, layout_1d, MutAnyOrigin
+    ](query_start_loc_d, RuntimeLayout[layout_1d].row_major(Index(batch + 1)))
+    var cache_indices_gpu_lt = LayoutTensor[
+        DType.int32, layout_1d, MutAnyOrigin
+    ](cache_indices_d, RuntimeLayout[layout_1d].row_major(Index(batch)))
+    var has_initial_state_gpu_lt = LayoutTensor[
+        DType.bool, layout_1d, MutAnyOrigin
+    ](has_initial_state_d, RuntimeLayout[layout_1d].row_major(Index(batch)))
+
     # Launch GPU kernel
     comptime BLOCK_SIZE = 128
     var num_dim_blocks = (dim + BLOCK_SIZE - 1) // BLOCK_SIZE
-    
+
     var compiled_kernel = ctx.compile_function_checked[
         varlen_selective_scan_fwd_gpu[
-                dtype,
-                u_gpu_lt.layout,
-                delta_gpu_lt.layout,
-                A_gpu_lt.layout,
-                B_gpu_lt.layout,
-                C_gpu_lt.layout,
-                D_gpu_lt.layout,
-                z_gpu_lt.layout,
-                delta_bias_gpu_lt.layout,
-                ssm_states_gpu_lt.layout,
-                output_gpu_lt.layout,
-                query_start_loc_gpu_lt.layout,
-                cache_indices_gpu_lt.layout,
-                has_initial_state_gpu_lt.layout,
-            ],
-            varlen_selective_scan_fwd_gpu[
-                dtype,
-                u_gpu_lt.layout,
-                delta_gpu_lt.layout,
-                A_gpu_lt.layout,
-                B_gpu_lt.layout,
-                C_gpu_lt.layout,
-                D_gpu_lt.layout,
-                z_gpu_lt.layout,
-                delta_bias_gpu_lt.layout,
-                ssm_states_gpu_lt.layout,
-                output_gpu_lt.layout,
-                query_start_loc_gpu_lt.layout,
-                cache_indices_gpu_lt.layout,
-                has_initial_state_gpu_lt.layout,
-            ]
-        ]()
-    
+            dtype,
+            u_gpu_lt.layout,
+            delta_gpu_lt.layout,
+            A_gpu_lt.layout,
+            B_gpu_lt.layout,
+            C_gpu_lt.layout,
+            D_gpu_lt.layout,
+            z_gpu_lt.layout,
+            delta_bias_gpu_lt.layout,
+            ssm_states_gpu_lt.layout,
+            output_gpu_lt.layout,
+            query_start_loc_gpu_lt.layout,
+            cache_indices_gpu_lt.layout,
+            has_initial_state_gpu_lt.layout,
+        ],
+        varlen_selective_scan_fwd_gpu[
+            dtype,
+            u_gpu_lt.layout,
+            delta_gpu_lt.layout,
+            A_gpu_lt.layout,
+            B_gpu_lt.layout,
+            C_gpu_lt.layout,
+            D_gpu_lt.layout,
+            z_gpu_lt.layout,
+            delta_bias_gpu_lt.layout,
+            ssm_states_gpu_lt.layout,
+            output_gpu_lt.layout,
+            query_start_loc_gpu_lt.layout,
+            cache_indices_gpu_lt.layout,
+            has_initial_state_gpu_lt.layout,
+        ],
+    ]()
+
     ctx.enqueue_function_checked(
         compiled_kernel,
-            dim,
-            dstate,
-            ngroups,
-            batch,
-            Int32(-1),  # pad_slot_id
-            Int8(1) if delta_softplus else Int8(0),
-            u_gpu_lt,
-            delta_gpu_lt,
-            A_gpu_lt,
-            B_gpu_lt,
-            C_gpu_lt,
-            D_gpu_lt,
-            z_gpu_lt,
-            delta_bias_gpu_lt,
-            ssm_states_gpu_lt,
-            output_gpu_lt,
-            query_start_loc_gpu_lt,
-            cache_indices_gpu_lt,
-            has_initial_state_gpu_lt,
-            u_dim_stride,
-            u_len_stride,
-            delta_dim_stride,
-            delta_len_stride,
-            A_dim_stride,
-            A_dstate_stride,
-            B_group_stride,
-            B_dstate_stride,
-            B_len_stride,
-            C_group_stride,
-            C_dstate_stride,
-            C_len_stride,
-            D_dim_stride,
-            z_dim_stride,
-            z_len_stride,
-            delta_bias_dim_stride,
-            ssm_batch_stride,
-            ssm_dim_stride,
-            ssm_dstate_stride,
-            out_dim_stride,
-            out_len_stride,
-            grid_dim=(num_dim_blocks, batch, 1),
-            block_dim=(BLOCK_SIZE, 1, 1),
-        )
-        
+        dim,
+        dstate,
+        ngroups,
+        batch,
+        Int32(-1),  # pad_slot_id
+        Int8(1) if delta_softplus else Int8(0),
+        u_gpu_lt,
+        delta_gpu_lt,
+        A_gpu_lt,
+        B_gpu_lt,
+        C_gpu_lt,
+        D_gpu_lt,
+        z_gpu_lt,
+        delta_bias_gpu_lt,
+        ssm_states_gpu_lt,
+        output_gpu_lt,
+        query_start_loc_gpu_lt,
+        cache_indices_gpu_lt,
+        has_initial_state_gpu_lt,
+        u_dim_stride,
+        u_len_stride,
+        delta_dim_stride,
+        delta_len_stride,
+        A_dim_stride,
+        A_dstate_stride,
+        B_group_stride,
+        B_dstate_stride,
+        B_len_stride,
+        C_group_stride,
+        C_dstate_stride,
+        C_len_stride,
+        D_dim_stride,
+        z_dim_stride,
+        z_len_stride,
+        delta_bias_dim_stride,
+        ssm_batch_stride,
+        ssm_dim_stride,
+        ssm_dstate_stride,
+        out_dim_stride,
+        out_len_stride,
+        grid_dim=(num_dim_blocks, batch, 1),
+        block_dim=(BLOCK_SIZE, 1, 1),
+    )
+
     # Copy results back
     var output_to_check = z_d if has_z else output_gpu_d
     var output_to_check_host = z_gpu_h if has_z else output_gpu_h
     ctx.enqueue_copy(output_to_check_host, output_to_check)
-    
+
     # Compare outputs
     var output_to_check_cpu = z_cpu_h if has_z else output_cpu_h
     var output_size = dim * total_length
-    
+
     for i in range(output_size):
         var cpu_val = Float32(output_to_check_cpu.offset(i).load())
         var gpu_val = Float32(output_to_check_host.offset(i).load())
         assert_almost_equal(cpu_val, gpu_val, rtol=rtol)
-    
+
     # Cleanup
     u_h.free()
     delta_h.free()
@@ -474,32 +517,58 @@ def main():
         if not ctx.is_compatible():
             return
         # Test varlen_selective_scan_fwd with equal-length sequences
-        run_varlen_selective_scan_fwd_gpu[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=False](
-            batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx
-        )
+        run_varlen_selective_scan_fwd_gpu[
+            DType.float32,
+            has_D=True,
+            has_z=True,
+            has_delta_bias=True,
+            delta_softplus=False,
+        ](batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
         print("✓ Varlen selective scan fwd GPU (equal lengths) test passed")
-        
+
         # Test with variable-length sequences
-        run_varlen_selective_scan_fwd_gpu[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=False](
-            batch=3, dim=4, dstate=4, ngroups=1, seq_lengths=Index(10, 6, 1), ctx=ctx
+        run_varlen_selective_scan_fwd_gpu[
+            DType.float32,
+            has_D=True,
+            has_z=True,
+            has_delta_bias=True,
+            delta_softplus=False,
+        ](
+            batch=3,
+            dim=4,
+            dstate=4,
+            ngroups=1,
+            seq_lengths=Index(10, 6, 1),
+            ctx=ctx,
         )
         print("✓ Varlen selective scan fwd GPU (variable lengths) test passed")
-        
-        # Test without D
-        run_varlen_selective_scan_fwd_gpu[DType.float32, has_D=False, has_z=True, has_delta_bias=True, delta_softplus=False](
-            batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx
-        )
-        print("✓ Varlen selective scan fwd GPU without D test passed")
-        
-        # Test without z
-        run_varlen_selective_scan_fwd_gpu[DType.float32, has_D=True, has_z=False, has_delta_bias=True, delta_softplus=False](
-            batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx
-        )
-        print("✓ Varlen selective scan fwd GPU without z test passed")
-        
-        # Test with delta_softplus
-        run_varlen_selective_scan_fwd_gpu[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=True](
-            batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx
-        )
-        print("✓ Varlen selective scan fwd GPU with delta_softplus test passed")
 
+        # Test without D
+        run_varlen_selective_scan_fwd_gpu[
+            DType.float32,
+            has_D=False,
+            has_z=True,
+            has_delta_bias=True,
+            delta_softplus=False,
+        ](batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
+        print("✓ Varlen selective scan fwd GPU without D test passed")
+
+        # Test without z
+        run_varlen_selective_scan_fwd_gpu[
+            DType.float32,
+            has_D=True,
+            has_z=False,
+            has_delta_bias=True,
+            delta_softplus=False,
+        ](batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
+        print("✓ Varlen selective scan fwd GPU without z test passed")
+
+        # Test with delta_softplus
+        run_varlen_selective_scan_fwd_gpu[
+            DType.float32,
+            has_D=True,
+            has_z=True,
+            has_delta_bias=True,
+            delta_softplus=True,
+        ](batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
+        print("✓ Varlen selective scan fwd GPU with delta_softplus test passed")

@@ -52,24 +52,28 @@ fn run_selective_scan_gpu[
     """Test selective scan GPU kernel against CPU reference."""
     if dstate > 16:
         return  # Skip if dstate exceeds kernel limit
-    
+
     var group_size = dim // n_groups
     var chunk_size = 2048
     var n_chunks = (seqlen + chunk_size - 1) // chunk_size
-    
+
     # Allocate host memory
     comptime layout_3d = Layout.row_major[3]()
     comptime layout_4d = Layout.row_major[4]()
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    
+
     var output_cpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
     var output_gpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
-    var x_cpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * n_chunks * 2 * dstate)
-    var x_gpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * n_chunks * 2 * dstate)
+    var x_cpu_h = UnsafePointer[Scalar[dtype]].alloc(
+        batch * dim * n_chunks * 2 * dstate
+    )
+    var x_gpu_h = UnsafePointer[Scalar[dtype]].alloc(
+        batch * dim * n_chunks * 2 * dstate
+    )
     var out_z_cpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
     var out_z_gpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
-    
+
     # Initialize output buffers to zero
     for i in range(batch * dim * seqlen):
         output_cpu_h[i] = Scalar[dtype](0)
@@ -82,15 +86,21 @@ fn run_selective_scan_gpu[
     var u_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
     var delta_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
     var A_h = UnsafePointer[Scalar[dtype]].alloc(dim * dstate)
-    var B_h = UnsafePointer[Scalar[dtype]].alloc(batch * n_groups * dstate * seqlen)
-    var C_h = UnsafePointer[Scalar[dtype]].alloc(batch * n_groups * dstate * seqlen)
+    var B_h = UnsafePointer[Scalar[dtype]].alloc(
+        batch * n_groups * dstate * seqlen
+    )
+    var C_h = UnsafePointer[Scalar[dtype]].alloc(
+        batch * n_groups * dstate * seqlen
+    )
     var D_size = dim if has_D else 0
     var D_h = UnsafePointer[Scalar[dtype]].alloc(max(D_size, 1))
     var z_size = batch * dim * seqlen if has_z else 0
     var z_h = UnsafePointer[Scalar[dtype]].alloc(max(z_size, 1))
     var delta_bias_size = dim if has_delta_bias else 0
-    var delta_bias_h = UnsafePointer[Scalar[dtype]].alloc(max(delta_bias_size, 1))
-    
+    var delta_bias_h = UnsafePointer[Scalar[dtype]].alloc(
+        max(delta_bias_size, 1)
+    )
+
     # Create LayoutTensors for initialization
     var u_init = LayoutTensor[dtype, layout_3d](
         u_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
@@ -102,21 +112,34 @@ fn run_selective_scan_gpu[
         A_h, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
     )
     var B_init = LayoutTensor[dtype, layout_4d](
-        B_h, RuntimeLayout[layout_4d].row_major(Index(batch, n_groups, dstate, seqlen))
+        B_h,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, n_groups, dstate, seqlen)
+        ),
     )
     var C_init = LayoutTensor[dtype, layout_4d](
-        C_h, RuntimeLayout[layout_4d].row_major(Index(batch, n_groups, dstate, seqlen))
+        C_h,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, n_groups, dstate, seqlen)
+        ),
     )
     var D_init = LayoutTensor[dtype, layout_1d](
         D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
     var z_init = LayoutTensor[dtype, layout_3d](
-        z_h, RuntimeLayout[layout_3d].row_major(Index(batch if has_z else 0, dim if has_z else 0, seqlen if has_z else 0))
+        z_h,
+        RuntimeLayout[layout_3d].row_major(
+            Index(
+                batch if has_z else 0,
+                dim if has_z else 0,
+                seqlen if has_z else 0,
+            )
+        ),
     )
     var delta_bias_init = LayoutTensor[dtype, layout_1d](
         delta_bias_h, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
     )
-    
+
     # Initialize input data
     rand[dtype](u_init.ptr, u_init.size())
     rand[dtype](delta_init.ptr, delta_init.size())
@@ -129,33 +152,41 @@ fn run_selective_scan_gpu[
         rand[dtype](z_init.ptr, z_init.size())
     if has_delta_bias:
         rand[dtype](delta_bias_init.ptr, delta_bias_init.size())
-    
+
     # Scale A to be negative for stability
     for i in range(dim * dstate):
         var val = A_h.offset(i).load()
         A_h.offset(i).store(Scalar[dtype](Float32(val) * -0.5))
-    
+
     # Scale delta to be positive
     for i in range(batch * dim * seqlen):
         var val = delta_h.offset(i).load()
         delta_h.offset(i).store(Scalar[dtype](abs(Float32(val)) * 0.5))
-    
+
     # Allocate device memory
     var output_cpu_d = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
     var output_gpu_d = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
-    var x_cpu_d = ctx.enqueue_create_buffer[dtype](batch * dim * n_chunks * 2 * dstate)
-    var x_gpu_d = ctx.enqueue_create_buffer[dtype](batch * dim * n_chunks * 2 * dstate)
+    var x_cpu_d = ctx.enqueue_create_buffer[dtype](
+        batch * dim * n_chunks * 2 * dstate
+    )
+    var x_gpu_d = ctx.enqueue_create_buffer[dtype](
+        batch * dim * n_chunks * 2 * dstate
+    )
     var out_z_cpu_d = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
     var out_z_gpu_d = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
     var u_d = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
     var delta_d = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
     var A_d = ctx.enqueue_create_buffer[dtype](dim * dstate)
-    var B_d = ctx.enqueue_create_buffer[dtype](batch * n_groups * dstate * seqlen)
-    var C_d = ctx.enqueue_create_buffer[dtype](batch * n_groups * dstate * seqlen)
+    var B_d = ctx.enqueue_create_buffer[dtype](
+        batch * n_groups * dstate * seqlen
+    )
+    var C_d = ctx.enqueue_create_buffer[dtype](
+        batch * n_groups * dstate * seqlen
+    )
     var D_d = ctx.enqueue_create_buffer[dtype](max(D_size, 1))
     var z_d = ctx.enqueue_create_buffer[dtype](max(z_size, 1))
     var delta_bias_d = ctx.enqueue_create_buffer[dtype](max(delta_bias_size, 1))
-    
+
     # Copy to device
     ctx.enqueue_copy(u_d, u_h)
     ctx.enqueue_copy(delta_d, delta_h)
@@ -168,17 +199,22 @@ fn run_selective_scan_gpu[
         ctx.enqueue_copy(z_d, z_h)
     if has_delta_bias:
         ctx.enqueue_copy(delta_bias_d, delta_bias_h)
-    
+
     # Create LayoutTensors for CPU
     # Create CPU LayoutTensors with MutAnyOrigin for CPU function (using host memory)
     var output_cpu_buf = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        output_cpu_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        output_cpu_h,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
     var x_cpu_buf = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        x_cpu_h, RuntimeLayout[layout_4d].row_major(Index(batch, dim, n_chunks, 2 * dstate))
+        x_cpu_h,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, dim, n_chunks, 2 * dstate)
+        ),
     )
     var out_z_cpu_buf = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        out_z_cpu_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        out_z_cpu_h,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
     var u_cpu_buf = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
         u_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
@@ -190,31 +226,48 @@ fn run_selective_scan_gpu[
         A_h, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
     )
     var B_cpu_buf = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        B_h, RuntimeLayout[layout_4d].row_major(Index(batch, n_groups, dstate, seqlen))
+        B_h,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, n_groups, dstate, seqlen)
+        ),
     )
     var C_cpu_buf = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        C_h, RuntimeLayout[layout_4d].row_major(Index(batch, n_groups, dstate, seqlen))
+        C_h,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, n_groups, dstate, seqlen)
+        ),
     )
     var D_cpu_buf = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
     var z_cpu_buf = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        z_h, RuntimeLayout[layout_3d].row_major(Index(batch if has_z else 0, dim if has_z else 0, seqlen if has_z else 0))
+        z_h,
+        RuntimeLayout[layout_3d].row_major(
+            Index(
+                batch if has_z else 0,
+                dim if has_z else 0,
+                seqlen if has_z else 0,
+            )
+        ),
     )
     var delta_bias_cpu_buf = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         delta_bias_h, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
     )
-    
-    
+
     # Create LayoutTensors for GPU
     var output_gpu_buf = LayoutTensor[dtype, layout_3d](
-        output_gpu_d, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        output_gpu_d,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
     var x_gpu_buf = LayoutTensor[dtype, layout_4d](
-        x_gpu_d, RuntimeLayout[layout_4d].row_major(Index(batch, dim, n_chunks, 2 * dstate))
+        x_gpu_d,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, dim, n_chunks, 2 * dstate)
+        ),
     )
     var out_z_gpu_buf = LayoutTensor[dtype, layout_3d](
-        out_z_gpu_d, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+        out_z_gpu_d,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
     var u_gpu_buf = LayoutTensor[dtype, layout_3d](
         u_d, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
@@ -226,21 +279,34 @@ fn run_selective_scan_gpu[
         A_d, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
     )
     var B_gpu_buf = LayoutTensor[dtype, layout_4d](
-        B_d, RuntimeLayout[layout_4d].row_major(Index(batch, n_groups, dstate, seqlen))
+        B_d,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, n_groups, dstate, seqlen)
+        ),
     )
     var C_gpu_buf = LayoutTensor[dtype, layout_4d](
-        C_d, RuntimeLayout[layout_4d].row_major(Index(batch, n_groups, dstate, seqlen))
+        C_d,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch, n_groups, dstate, seqlen)
+        ),
     )
     var D_gpu_buf = LayoutTensor[dtype, layout_1d](
         D_d, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
     var z_gpu_buf = LayoutTensor[dtype, layout_3d](
-        z_d, RuntimeLayout[layout_3d].row_major(Index(batch if has_z else 0, dim if has_z else 0, seqlen if has_z else 0))
+        z_d,
+        RuntimeLayout[layout_3d].row_major(
+            Index(
+                batch if has_z else 0,
+                dim if has_z else 0,
+                seqlen if has_z else 0,
+            )
+        ),
     )
     var delta_bias_gpu_buf = LayoutTensor[dtype, layout_1d](
         delta_bias_d, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
     )
-    
+
     # Strides for row-major layout
     var output_b_stride: UInt32 = dim * seqlen
     var output_d_stride: UInt32 = seqlen
@@ -273,9 +339,9 @@ fn run_selective_scan_gpu[
     var z_d_stride: UInt32 = seqlen
     var z_t_stride: UInt32 = 1
     var delta_bias_stride: UInt32 = 1
-    
+
     comptime delta_softplus_int8: Int8 = Int8(1) if delta_softplus else Int8(0)
-    
+
     # Run CPU kernel
     selective_scan_fwd_cpu[
         dtype,
@@ -340,13 +406,14 @@ fn run_selective_scan_gpu[
         z_t_stride,
         delta_bias_stride,
     )
-    
+
     # Run GPU kernel
     var total_batch_dim = batch * dim
     comptime BLOCK_SIZE = 128
     from math import ceildiv
+
     var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
-    
+
     var compiled_kernel = ctx.compile_function_checked[
         selective_scan_fwd_gpu[
             dtype,
@@ -375,9 +442,9 @@ fn run_selective_scan_gpu[
             D_gpu_buf.layout,
             z_gpu_buf.layout,
             delta_bias_gpu_buf.layout,
-        ]
+        ],
     ]()
-    
+
     ctx.enqueue_function_checked(
         compiled_kernel,
         total_batch_dim,
@@ -432,11 +499,11 @@ fn run_selective_scan_gpu[
         grid_dim=(num_blocks,),
         block_dim=(BLOCK_SIZE,),
     )
-    
+
     # Copy GPU results back (CPU results are already in output_cpu_h)
     ctx.enqueue_copy(output_gpu_h, output_gpu_d)
     ctx.synchronize()
-    
+
     # Compare results
     var flattened_size = batch * dim * seqlen
     for i in range(flattened_size):
@@ -445,7 +512,7 @@ fn run_selective_scan_gpu[
             output_gpu_h.offset(i).load(),
             rtol=rtol,
         )
-    
+
     # Cleanup
     output_cpu_h.free()
     output_gpu_h.free()
@@ -480,17 +547,21 @@ fn run_selective_scan_update_gpu[
     """Test selective scan update GPU kernel against CPU reference."""
     if dstate > 16:
         return  # Skip if dstate exceeds kernel limit
-    
+
     var group_size = dim // n_groups
-    
+
     # Allocate host memory
     comptime layout_3d = Layout.row_major[3]()
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    
+
     var state_in_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * dstate)
-    var state_out_gpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * dstate)
-    var state_out_cpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * dstate)
+    var state_out_gpu_h = UnsafePointer[Scalar[dtype]].alloc(
+        batch * dim * dstate
+    )
+    var state_out_cpu_h = UnsafePointer[Scalar[dtype]].alloc(
+        batch * dim * dstate
+    )
     var output_gpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim)
     var output_cpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim)
     var x_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim)
@@ -504,7 +575,7 @@ fn run_selective_scan_update_gpu[
     var z_h = UnsafePointer[Scalar[dtype]].alloc(max(z_size, 1))
     var dt_bias_size = dim if has_delta_bias else 0
     var dt_bias_h = UnsafePointer[Scalar[dtype]].alloc(max(dt_bias_size, 1))
-    
+
     # Initialize output buffers to zero
     for i in range(batch * dim * dstate):
         state_out_gpu_h[i] = Scalar[dtype](0)
@@ -512,10 +583,11 @@ fn run_selective_scan_update_gpu[
     for i in range(batch * dim):
         output_gpu_h[i] = Scalar[dtype](0)
         output_cpu_h[i] = Scalar[dtype](0)
-    
+
     # Create LayoutTensors for initialization
     var state_in_init = LayoutTensor[dtype, layout_3d](
-        state_in_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate))
+        state_in_h,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
     )
     var x_init = LayoutTensor[dtype, layout_2d](
         x_h, RuntimeLayout[layout_2d].row_major(Index(batch, dim))
@@ -536,12 +608,15 @@ fn run_selective_scan_update_gpu[
         D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
     var z_init = LayoutTensor[dtype, layout_2d](
-        z_h, RuntimeLayout[layout_2d].row_major(Index(batch if has_z else 0, dim if has_z else 0))
+        z_h,
+        RuntimeLayout[layout_2d].row_major(
+            Index(batch if has_z else 0, dim if has_z else 0)
+        ),
     )
     var dt_bias_init = LayoutTensor[dtype, layout_1d](
         dt_bias_h, RuntimeLayout[layout_1d].row_major(Index(dt_bias_size))
     )
-    
+
     # Initialize input data
     rand[dtype](state_in_init.ptr, state_in_init.size())
     rand[dtype](x_init.ptr, x_init.size())
@@ -555,19 +630,21 @@ fn run_selective_scan_update_gpu[
         rand[dtype](z_init.ptr, z_init.size())
     if has_delta_bias:
         rand[dtype](dt_bias_init.ptr, dt_bias_init.size())
-    
+
     # Scale A to be negative for stability
     for i in range(dim * dstate):
         var val = A_h.offset(i).load()
         A_h.offset(i).store(Scalar[dtype](Float32(val) * -0.5))
-    
+
     # Copy state_in for CPU and GPU
     for i in range(batch * dim * dstate):
         state_out_cpu_h[i] = state_in_h[i]
-    
+
     # Allocate device buffers
     var state_in_device = ctx.enqueue_create_buffer[dtype](batch * dim * dstate)
-    var state_out_device = ctx.enqueue_create_buffer[dtype](batch * dim * dstate)
+    var state_out_device = ctx.enqueue_create_buffer[dtype](
+        batch * dim * dstate
+    )
     var output_device = ctx.enqueue_create_buffer[dtype](batch * dim)
     var x_device = ctx.enqueue_create_buffer[dtype](batch * dim)
     var dt_device = ctx.enqueue_create_buffer[dtype](batch * dim)
@@ -577,7 +654,7 @@ fn run_selective_scan_update_gpu[
     var D_device = ctx.enqueue_create_buffer[dtype](max(D_size, 1))
     var z_device = ctx.enqueue_create_buffer[dtype](max(z_size, 1))
     var dt_bias_device = ctx.enqueue_create_buffer[dtype](max(dt_bias_size, 1))
-    
+
     # Copy data to device
     with ctx.push_context():
         ctx.enqueue_copy(state_in_device, state_in_h)
@@ -592,7 +669,7 @@ fn run_selective_scan_update_gpu[
             ctx.enqueue_copy(z_device, z_h)
         if has_delta_bias:
             ctx.enqueue_copy(dt_bias_device, dt_bias_h)
-    
+
     # Create device tensors
     var state_in_device_tensor = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
         state_in_device.unsafe_ptr(),
@@ -632,49 +709,51 @@ fn run_selective_scan_update_gpu[
     )
     var z_device_tensor = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         z_device.unsafe_ptr(),
-        RuntimeLayout[layout_2d].row_major(Index(batch if has_z else 0, dim if has_z else 0)),
+        RuntimeLayout[layout_2d].row_major(
+            Index(batch if has_z else 0, dim if has_z else 0)
+        ),
     )
     var dt_bias_device_tensor = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         dt_bias_device.unsafe_ptr(),
         RuntimeLayout[layout_1d].row_major(Index(dt_bias_size)),
     )
-    
+
     # Strides for row-major layout
     var state_out_b_stride: UInt32 = dim * dstate
     var state_out_d_stride: UInt32 = dstate
     var state_out_n_stride: UInt32 = 1
-    
+
     var output_b_stride: UInt32 = dim
     var output_d_stride: UInt32 = 1
-    
+
     var state_in_b_stride: UInt32 = dim * dstate
     var state_in_d_stride: UInt32 = dstate
     var state_in_n_stride: UInt32 = 1
-    
+
     var x_b_stride: UInt32 = dim
     var x_d_stride: UInt32 = 1
-    
+
     var dt_b_stride: UInt32 = dim
     var dt_d_stride: UInt32 = 1
-    
+
     var A_d_stride: UInt32 = dstate
     var A_n_stride: UInt32 = 1
-    
+
     var B_b_stride: UInt32 = n_groups * dstate
     var B_g_stride: UInt32 = dstate
     var B_n_stride: UInt32 = 1
-    
+
     var C_b_stride: UInt32 = n_groups * dstate
     var C_g_stride: UInt32 = dstate
     var C_n_stride: UInt32 = 1
-    
+
     var D_stride: UInt32 = 1
-    
+
     var z_b_stride: UInt32 = dim
     var z_d_stride: UInt32 = 1
-    
+
     var dt_bias_stride: UInt32 = 1
-    
+
     # Run GPU kernel
     var total_batch_dim = batch * dim
     with ctx.push_context():
@@ -754,18 +833,20 @@ fn run_selective_scan_update_gpu[
             grid_dim=(ceildiv(total_batch_dim, 256),),
             block_dim=(256,),
         )
-    
+
     # Copy results back from device
     with ctx.push_context():
         ctx.enqueue_copy(state_out_gpu_h, state_out_device)
         ctx.enqueue_copy(output_gpu_h, output_device)
-    
+
     # Create CPU tensors for reference
     var state_in_cpu = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        state_in_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate))
+        state_in_h,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
     )
     var state_out_cpu = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        state_out_cpu_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate))
+        state_out_cpu_h,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
     )
     var output_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         output_cpu_h, RuntimeLayout[layout_2d].row_major(Index(batch, dim))
@@ -789,12 +870,15 @@ fn run_selective_scan_update_gpu[
         D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
     var z_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        z_h, RuntimeLayout[layout_2d].row_major(Index(batch if has_z else 0, dim if has_z else 0))
+        z_h,
+        RuntimeLayout[layout_2d].row_major(
+            Index(batch if has_z else 0, dim if has_z else 0)
+        ),
     )
     var dt_bias_cpu = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         dt_bias_h, RuntimeLayout[layout_1d].row_major(Index(dt_bias_size))
     )
-    
+
     # Run CPU reference
     selective_scan_update_cpu[
         dtype,
@@ -851,7 +935,7 @@ fn run_selective_scan_update_gpu[
         z_d_stride,
         dt_bias_stride,
     )
-    
+
     # Compare results
     var state_size = batch * dim * dstate
     for i in range(state_size):
@@ -860,7 +944,7 @@ fn run_selective_scan_update_gpu[
             state_out_cpu_h[i],
             rtol=rtol,
         )
-    
+
     var output_size = batch * dim
     for i in range(output_size):
         assert_almost_equal(
@@ -868,7 +952,7 @@ fn run_selective_scan_update_gpu[
             output_cpu_h[i],
             rtol=rtol,
         )
-    
+
     # Cleanup
     state_in_h.free()
     state_out_gpu_h.free()
@@ -888,81 +972,140 @@ fn run_selective_scan_update_gpu[
 def main():
     with DeviceContext() as ctx:
         # Test basic selective scan
-        run_selective_scan_gpu[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=False](
-            batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx
-        )
+        run_selective_scan_gpu[
+            DType.float32,
+            has_D=True,
+            has_z=True,
+            has_delta_bias=True,
+            delta_softplus=False,
+        ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx)
         print("✓ Basic selective scan GPU test passed")
-        
+
         # Test without D
-        run_selective_scan_gpu[DType.float32, has_D=False, has_z=True, has_delta_bias=True, delta_softplus=False](
-            batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx
-        )
+        run_selective_scan_gpu[
+            DType.float32,
+            has_D=False,
+            has_z=True,
+            has_delta_bias=True,
+            delta_softplus=False,
+        ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx)
         print("✓ Selective scan GPU without D test passed")
-        
+
         # Test without z
-        run_selective_scan_gpu[DType.float32, has_D=True, has_z=False, has_delta_bias=True, delta_softplus=False](
-            batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx
-        )
+        run_selective_scan_gpu[
+            DType.float32,
+            has_D=True,
+            has_z=False,
+            has_delta_bias=True,
+            delta_softplus=False,
+        ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx)
         print("✓ Selective scan GPU without z test passed")
-        
+
         # Test with delta_softplus
-        run_selective_scan_gpu[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=True](
-            batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx
-        )
+        run_selective_scan_gpu[
+            DType.float32,
+            has_D=True,
+            has_z=True,
+            has_delta_bias=True,
+            delta_softplus=True,
+        ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx)
         print("✓ Selective scan GPU with delta_softplus test passed")
-        
+
         # Test longer sequence
-        run_selective_scan_gpu[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=False](
-            batch=2, dim=8, seqlen=32, dstate=8, n_groups=1, ctx=ctx
-        )
+        run_selective_scan_gpu[
+            DType.float32,
+            has_D=True,
+            has_z=True,
+            has_delta_bias=True,
+            delta_softplus=False,
+        ](batch=2, dim=8, seqlen=32, dstate=8, n_groups=1, ctx=ctx)
         print("✓ Selective scan GPU longer sequence test passed")
-        
+
         # Test specific sequence lengths that might expose CPU tiling bugs
         # CPU uses TILE_SIZE=4, so test edge cases around multiples of 4
         for seqlen in [5, 6, 7, 9, 10, 11]:
-            run_selective_scan_gpu[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=False](
-                batch=1, dim=4, seqlen=seqlen, dstate=4, n_groups=1, ctx=ctx
-            )
-        
+            run_selective_scan_gpu[
+                DType.float32,
+                has_D=True,
+                has_z=True,
+                has_delta_bias=True,
+                delta_softplus=False,
+            ](batch=1, dim=4, seqlen=seqlen, dstate=4, n_groups=1, ctx=ctx)
+
         # Test with mamba-130m-hf realistic dimensions
         # dim=1536, dstate=16, n_groups=1
         for seqlen in [5, 6, 7]:
-            run_selective_scan_gpu[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=True](
-                batch=1, dim=1536, seqlen=seqlen, dstate=16, n_groups=1, ctx=ctx
-            )
-        
-        # Strict tolerance test - check if CPU/GPU have tiny differences that could compound
-        run_selective_scan_gpu[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=True](
-            batch=1, dim=1536, seqlen=7, dstate=16, n_groups=1, ctx=ctx, rtol=0.0001  # 0.01% tolerance
-        )
-        
-        # Test selective scan update
-        run_selective_scan_update_gpu[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=False](
-            batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx
-        )
-        print("✓ Basic selective scan update GPU test passed")
-        
-        # Test update without D
-        run_selective_scan_update_gpu[DType.float32, has_D=False, has_z=True, has_delta_bias=True, delta_softplus=False](
-            batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx
-        )
-        print("✓ Selective scan update GPU without D test passed")
-        
-        # Test update without z
-        run_selective_scan_update_gpu[DType.float32, has_D=True, has_z=False, has_delta_bias=True, delta_softplus=False](
-            batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx
-        )
-        print("✓ Selective scan update GPU without z test passed")
-        
-        # Test update with delta_softplus
-        run_selective_scan_update_gpu[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=True](
-            batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx
-        )
-        print("✓ Selective scan update GPU with delta_softplus test passed")
-        
-        # Test update with larger dimensions
-        run_selective_scan_update_gpu[DType.float32, has_D=True, has_z=True, has_delta_bias=True, delta_softplus=False](
-            batch=4, dim=8, dstate=8, n_groups=1, ctx=ctx
-        )
-        print("✓ Selective scan update GPU larger dimensions test passed")
+            run_selective_scan_gpu[
+                DType.float32,
+                has_D=True,
+                has_z=True,
+                has_delta_bias=True,
+                delta_softplus=True,
+            ](batch=1, dim=1536, seqlen=seqlen, dstate=16, n_groups=1, ctx=ctx)
 
+        # Strict tolerance test - check if CPU/GPU have tiny differences that could compound
+        run_selective_scan_gpu[
+            DType.float32,
+            has_D=True,
+            has_z=True,
+            has_delta_bias=True,
+            delta_softplus=True,
+        ](
+            batch=1,
+            dim=1536,
+            seqlen=7,
+            dstate=16,
+            n_groups=1,
+            ctx=ctx,
+            rtol=0.0001,  # 0.01% tolerance
+        )
+
+        # Test selective scan update
+        run_selective_scan_update_gpu[
+            DType.float32,
+            has_D=True,
+            has_z=True,
+            has_delta_bias=True,
+            delta_softplus=False,
+        ](batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx)
+        print("✓ Basic selective scan update GPU test passed")
+
+        # Test update without D
+        run_selective_scan_update_gpu[
+            DType.float32,
+            has_D=False,
+            has_z=True,
+            has_delta_bias=True,
+            delta_softplus=False,
+        ](batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx)
+        print("✓ Selective scan update GPU without D test passed")
+
+        # Test update without z
+        run_selective_scan_update_gpu[
+            DType.float32,
+            has_D=True,
+            has_z=False,
+            has_delta_bias=True,
+            delta_softplus=False,
+        ](batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx)
+        print("✓ Selective scan update GPU without z test passed")
+
+        # Test update with delta_softplus
+        run_selective_scan_update_gpu[
+            DType.float32,
+            has_D=True,
+            has_z=True,
+            has_delta_bias=True,
+            delta_softplus=True,
+        ](batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx)
+        print("✓ Selective scan update GPU with delta_softplus test passed")
+
+        # Test update with larger dimensions
+        run_selective_scan_update_gpu[
+            DType.float32,
+            has_D=True,
+            has_z=True,
+            has_delta_bias=True,
+            delta_softplus=False,
+        ](batch=4, dim=8, dstate=8, n_groups=1, ctx=ctx)
+        print("✓ Selective scan update GPU larger dimensions test passed")
