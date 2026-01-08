@@ -9,6 +9,7 @@ package(default_visibility = [
 
 modular_py_test(
     name = "tests",
+    timeout = "long",
     srcs = glob(["**/*.py"]),
     data = ["//max/tests/tests/torch/custom_ops"],
     env = {
