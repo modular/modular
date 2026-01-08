@@ -102,7 +102,7 @@ public:
   /// not handled by this call). When `installParam` is set, the parameter will
   /// be installed into evaluator.
   ///
-  /// TODO: remove `installParam` and make it always true.
+  /// TODO: shouldn't this return a `LogicalResult`?
   void inferFromParamList(bool hasArguments);
 
   /// Given an incomplete parameter binding set and the arguments for a call to
