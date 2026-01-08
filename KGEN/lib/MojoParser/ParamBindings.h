@@ -194,32 +194,6 @@ FnTypeGeneratorType substituteTraitAliasesIntoSignature(
     DeclResolver &declResolver, ASTDecl &traitDecl, FnOp candidateFunc,
     FnTypeGeneratorType desiredSignature, PValue selfPValue);
 
-/// Result of checking constraints.
-enum class ConstraintResult {
-  Violated,   // Some constraints are violated.
-  Unprovable, // No violated constraints but some constraints cannot be proven.
-  Satisfied,  // All constraints are satisfied.
-};
-
-/// Check that the given constraints are satisfied under the given scope. An
-/// optional callback can be provided to emit failures for constraint
-/// violations. If provided, unprovableConstraints will be populated with any
-/// unprovable constraints encountered. An optional ParameterEvaluator can be
-/// provided to substitute parameters into the constraints.
-ConstraintResult checkConstraints(
-    ASTDecl &declScope, PogListAttr paramListAttr,
-    ArrayRef<ConstraintAttr> constraints,
-    ArrayRef<ConstraintAttr> origConstraints,
-    llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
-    SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
-    ParameterEvaluator *evaluator);
-
-/// Emit a note explaining why a constraint is inconclusive. The incoming
-/// constraint is expected to be the folded form with all input parameters
-/// already substituted.
-void emitConstraintInconclusive(DeclResolver &resolver, MojoInflightDiag &diag,
-                                ConstraintAttr constraint);
-
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_PARAMBINDINGS_H

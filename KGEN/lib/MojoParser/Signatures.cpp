@@ -19,6 +19,7 @@
 #include "ParserEvaluationContext.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/Constraints.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 
 #include "KGEN/LITDialect/LITOps.h"

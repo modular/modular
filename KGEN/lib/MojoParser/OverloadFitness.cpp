@@ -13,6 +13,7 @@
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/Constraints.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
 #include "ParamInf.h"
