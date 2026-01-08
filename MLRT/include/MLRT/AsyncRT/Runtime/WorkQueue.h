@@ -74,14 +74,14 @@ using namespace std::chrono_literals;
 struct WorkItem {
   TaskFunction task;
 
-#ifdef TRACY_ENABLE
+#if defined(TRACY_ENABLE) && TRACY_VERBOSITY >= 2
   /// Assign a unique task id for the work item. This is used to identify the
-  /// work item between enqueue and execution. Only done when Tracy profiling
-  // is enabled to avoid performance overhead.
+  /// work item between enqueue and execution when Tracy NCT text zones are
+  /// enabled.
   uint64_t uniqueTaskId = getUniqueTaskIdForWorkItem();
 #else
   uint64_t uniqueTaskId = 0;
-#endif // TRACY_ENABLE
+#endif // defined(TRACY_ENABLE) && TRACY_VERBOSITY >= 2
 
   WorkItem() = default;
 
