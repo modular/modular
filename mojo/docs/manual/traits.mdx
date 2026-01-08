@@ -106,12 +106,12 @@ trait Quackable:
 ```
 
 A trait looks a lot like a struct, except it's introduced by the `trait`
-keyword. Note that the `quack()` method signature is followed three dots
+keyword. Note that the `quack()` method signature is followed by three dots
 (`...`). This indicates it isn't implemented within the trait. In this
 example, `quack` is a *required method* and must be implemented by
 any conforming struct.
 
-A trait can supply a default implementation so conforming structs
+A trait can supply a default implementation, so conforming structs
 don’t need to implement the method themselves. You can provide a full
 implementation or use the `pass` keyword. Using `pass` creates a
 no-op method that does nothing. In your conforming struct, you
@@ -133,7 +133,7 @@ traits that describe generic types. For more information, see
 
 ### Adding traits to structs
 
-Next we need some structs that conform to the `Quackable` trait. Since the
+Next, we need some structs that conform to the `Quackable` trait. Since the
 `Duck` and `StealthCow` structs above already implement the `quack()` method,
 all we need to do is add the `Quackable` trait to the traits it conforms to
 (in parenthesis, after the struct name).
@@ -155,7 +155,7 @@ struct StealthCow(Copyable, Quackable):
 
 The struct needs to implement any methods that are declared in the trait. The
 compiler enforces conformance: if a struct says it conforms to a trait, it must
-implement everything required by the trait or the code won't compile.
+implement everything required by the trait, or the code won't compile.
 
 ### Using a trait as a type bound
 
@@ -569,7 +569,7 @@ sequence of `Writable` arguments constituting the `String` representation of
 your type.
 
 An important feature of the `Writer` trait is that it **only accepts valid UTF-8
-text**. This means when you write data to a `Writer`, you can only use
+text**. This means that when you write data to a `Writer`, you can only use
 `StringSlice` values (via the
 [`write_string()`](/mojo/std/io/write/Writer#write_string) method) or other
 `Writable` types; you cannot write arbitrary bytes. This guarantee ensures that
@@ -653,8 +653,8 @@ unused without being explicitly destroyed.
 
 You can also use traits when defining a generic container. A generic container
 is a container (for example, an array or hashmap) that can hold different data
-types. In a dynamic language like Python it's easy to add  different types of
-items to a container. But in a statically-typed environment the compiler needs
+types. In a dynamic language like Python it's easy to add different types of
+items to a container. But in a statically-typed environment, the compiler needs
 to be able to identify the types at compile time. For example, if the container
 needs to copy a value, the compiler needs to verify that the type can be copied.
 
@@ -682,7 +682,7 @@ for i in range(len(list)):
 You can use traits to define requirements for elements that are stored in a
 container. For example, `List` requires elements that can be moved and
 copied. To store a struct in a `List`, the struct needs to conform to
-the `Copyable` trait, which require a
+the `Copyable` trait, which requires a
 [copy constructor](/mojo/manual/lifecycle/life#copy-constructor) and a
 [move constructor](/mojo/manual/lifecycle/life#move-constructor).
 

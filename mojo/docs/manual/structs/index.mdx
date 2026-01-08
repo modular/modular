@@ -234,7 +234,7 @@ To make a struct move-only, add the `Movable` trait:
   ...
   ```
 
-Mojo will generate a move constructor for you. You have rarely need to
+Mojo will generate a move constructor for you. You rarely need to
 write your own custom move constructor. For more information,
 see the section on
 [move constructors](/mojo/manual/lifecycle/life#move-constructor).
@@ -384,7 +384,7 @@ described in
 
 If you're writing code that you expect to use widely or distribute as a package,
 you may want to use `fn` functions for APIs that can't raise an error to limit
-the number of places users need to add error handling code.
+the number of places users need to add error-handling code.
 
 A struct's `__del__()` method, or destructor, **must** be a non-raising method,
 so it's always declared with `fn` (and without the `raises` keyword).
