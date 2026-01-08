@@ -876,8 +876,11 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       os << "MutAnyOrigin";
     else if (anyOrig.getType().isMutableKnown(false))
       os << "ImmutAnyOrigin";
-    else
-      os << "SomeAnyOrigin";
+    else {
+      os << "AnyOrigin[";
+      printParam(os, anyOrig.getType().getIsMutable(), diagShared);
+      os << "]";
+    }
     return;
   }
   if (auto comptimeOrig = sugarDynCast<ComptimeOriginAttr>(param)) {
@@ -893,6 +896,22 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
         os << "StaticConstantOrigin";
         return;
       }
+    }
+  }
+
+  if (auto unionAttr = dyn_cast<OriginUnionAttr>(param)) {
+    if (unionAttr.getNumOperands() == 0) {
+      // TODO(OriginDepTypes): Remove these.
+      if (unionAttr.getType().isMutableKnown(true))
+        os << "MutExternalOrigin";
+      else if (unionAttr.getType().isMutableKnown(false))
+        os << "ImmutExternalOrigin";
+      else {
+        os << "ExternalOrigin[";
+        printParam(os, unionAttr.getType().getIsMutable(), diagShared);
+        os << "]";
+      }
+      return;
     }
   }
 

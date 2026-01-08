@@ -183,26 +183,26 @@ kgen.generator @lifetime_union<x: !lit.origin<0>, y: !lit.origin<0>>() {
   // CHECK-NEXT: %a = lit.var.decl
   %a = lit.var.decl "a" imp : !lit.ref<index, mut z>
 
+  // CHECK-NEXT: "empty"() {a = #lit<origin.union > : !lit.origin<0>} : () -> ()
+  "empty"() {a = #lit.origin.union<> : !lit.origin<0>} : () -> ()
   // CHECK-NEXT: "a"() {a = #lit.any.origin : !lit.origin<0>} : () -> ()
-  "a"() {a = #lit.origin.union<#lit.any.origin : !lit.origin<0>> : !lit.origin<0>} : () -> ()
+  "a"() {a = #lit.origin.union<:origin<0> #lit.any.origin> : !lit.origin<0>} : () -> ()
   // CHECK-NEXT: "b"() {a = #kgen.param.decl.ref<"x"> : !lit.origin<0>}
-  "b"() {a = #lit.origin.union<#kgen.param.decl.ref<"x"> :!lit.origin<0>>
+  "b"() {a = #lit.origin.union<:origin<0> #kgen.param.decl.ref<"x">>
         : !lit.origin<0>} : () -> ()
-  // CHECK-NEXT: "c"() {a = #lit.origin.union<#kgen.param.decl.ref<"x"> : !lit.origin<0>, #kgen.param.decl.ref<"y"> : !lit.origin<0>> : !lit.origin<0>}
-  "c"() {a = #lit.origin.union<#kgen.param.decl.ref<"x"> :!lit.origin<0>,
-                                 #kgen.param.decl.ref<"y"> :!lit.origin<0>>
+  // CHECK-NEXT: "c"() {a = #lit<origin.union <:origin<0> x, :origin<0> y>> : !lit.origin<0>}
+  "c"() {a = #lit.origin.union<:origin<0> #kgen.param.decl.ref<"x">,
+                              :origin<0> #kgen.param.decl.ref<"y">>
         : !lit.origin<0>} : () -> ()
-  // CHECK-NEXT: "d"() {a = #lit.origin.union<
-  // CHECK-SAME:          #kgen.param.decl.ref<"x"> : !lit.origin<0>,
-  // CHECK-SAME:          #lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<0>, "field0"> : !lit.origin<0>
-  // CHECK-SAME:        > : !lit.origin<0>}
-  "d"() {a = #lit.origin.union<#kgen.param.decl.ref<"x"> :!lit.origin<0>,
-                                 #lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<0>, "field0"> :!lit.origin<0>,
-                                 #kgen.param.decl.ref<"x"> :!lit.origin<0>>
+  // CHECK-NEXT: "d"() {a = #lit<origin.union <:origin<0> x, :origin<0> x->field0>> : !lit.origin<0>}
+  "d"() {a = #lit.origin.union<:origin<0> #kgen.param.decl.ref<"x">,
+                               :origin<0> #lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<0>, "field0">,
+                               :origin<0> #kgen.param.decl.ref<"x">>
         : !lit.origin<0>} : () -> ()
 
-  // CHECK-NEXT: "e"() {a = #lit.origin.union<#lit.implicit.origin.ref<0, 1> : !lit.origin<0>, #lit.implicit.origin.ref<1, 0> : !lit.origin<0>> : !lit.origin<0>}
-  "e"() {a = #lit.origin.union<#lit.implicit.origin.ref<1, 0> : !lit.origin<0>, #lit.implicit.origin.ref<0, 1> : !lit.origin<0>> : !lit.origin<0>} : () -> ()
+  // CHECK-NEXT: "e"() {a = #lit<origin.union <:origin<0> *[0,1], :origin<0> *[1,0]>> : !lit.origin<0>}
+  "e"() {a = #lit.origin.union<:origin<0> #lit.implicit.origin.ref<1, 0>,
+                                :origin<0> #lit.implicit.origin.ref<0, 1>> : !lit.origin<0>} : () -> ()
 
   kgen.param.declare is_mut: i1 = <0>
   kgen.param.declare a: origin<1> = <?>

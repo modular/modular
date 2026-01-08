@@ -13,8 +13,20 @@ comptime float = __mlir_type.`!pop.scalar<f64>`
 comptime AnyTrivialRegType = __mlir_type.`!kgen.type`
 comptime ImmutOrigin = Origin[mut=False]
 comptime MutOrigin = Origin[mut=True]
-comptime ImmutAnyOrigin = Origin(__mlir_attr.`#lit.any.origin : !lit.origin<0>`)
-comptime MutAnyOrigin = Origin(__mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`)
+comptime AnyOrigin[mut: Bool] = Origin(
+    __mlir_attr[`#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`]
+)
+comptime ImmutAnyOrigin = AnyOrigin[False]
+comptime MutAnyOrigin = AnyOrigin[True]
+comptime ExternalOrigin[mut: Bool] = Origin[mut=mut](
+    __mlir_attr[
+        `#lit.origin.union<> : !lit.origin<`,
+        mut._mlir_value,
+        `>`,
+    ]
+)
+comptime ImmutExternalOrigin = ExternalOrigin[False]
+comptime MutExternalOrigin = ExternalOrigin[True]
 comptime StaticConstantOrigin = Origin(
     __mlir_attr[
         `#lit.origin.field<`,
@@ -37,8 +49,6 @@ struct Origin[*, mut: Bool]:
     ]
 
     var _mlir_origin: Self._mlir_type
-
-    comptime external = Self(unsafe_cast=origin_of())
 
     @always_inline("builtin")
     @implicit
