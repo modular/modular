@@ -109,7 +109,6 @@ PINS = {
     "psutil": "psutil@7.0.0",
     "py-cpuinfo": "py-cpuinfo@9.0.0",
     "pyarrow": "pyarrow@22.0.0",
-    "pyasn1": "pyasn1@0.6.0",
     "pydantic": "pydantic@2.12.5",
     "pydantic-settings": "pydantic-settings@2.3.4",
     "pygame": "pygame@2.6.1",
