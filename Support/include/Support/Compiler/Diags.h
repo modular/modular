@@ -378,15 +378,15 @@ void addToDiagnostic(FixIt fixIt, InflightDiag &diag);
 /// This concatenates another diagnostic.
 void addToDiagnostic(InflightDiag &&otherDiag, InflightDiag &diag);
 
-// Compiler passes can emit warnings using MLIR diagnostics, and those
-// warnings are not seen by the Diags class above. Instantiating this
-// scoped handler in the driver (mojo-run and mojo-build) ensures
-// that warning suppression works consistently across all warning
-// emission mechanisms.
-class ConditionallyDisableMLIRWarnings {
+/// Compiler passes can emit warnings using MLIR diagnostics, and those
+/// warnings are not seen by the Diags class above. Instantiating this
+/// scoped handler in the driver (mojo-run, mojo-build, mojo-package) ensures
+/// that warning handling works consistently across all warning emission
+/// mechanisms.
+class ScopedMLIRWarningHandler {
 public:
-  ConditionallyDisableMLIRWarnings(MLIRContext *ctx, bool disableWarnings,
-                                   bool warningsAsErrors);
+  ScopedMLIRWarningHandler(MLIRContext *ctx, bool disableWarnings,
+                           bool warningsAsErrors);
 
   /// Returns true if a warning was promoted to an error.
   bool wasErrorEmitted() const { return errorEmitted; }

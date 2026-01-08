@@ -483,7 +483,7 @@ static int package(const State &subcommandState) {
         args.getAllArgValues(options::OPT_bitcode_libs));
   }
 
-  ConditionallyDisableMLIRWarnings dwHandler(
+  ScopedMLIRWarningHandler warningHandler(
       &packageArgs.ctx, packageArgs.compileOptions.disableWarnings,
       packageArgs.compileOptions.warningsAsErrors);
 
@@ -536,7 +536,7 @@ static int package(const State &subcommandState) {
     state.assertNoUnusedArguments(args);
 
     // Check if any warnings were promoted to errors via -Werror.
-    return dwHandler.wasErrorEmitted() ? EXIT_FAILURE : EXIT_SUCCESS;
+    return warningHandler.wasErrorEmitted() ? EXIT_FAILURE : EXIT_SUCCESS;
   }
 
   // Build a new package op based off of the parsed package op. This new op is
@@ -556,7 +556,7 @@ static int package(const State &subcommandState) {
   state.assertNoUnusedArguments(args);
 
   // Check if any warnings were promoted to errors via -Werror.
-  return dwHandler.wasErrorEmitted() ? EXIT_FAILURE : EXIT_SUCCESS;
+  return warningHandler.wasErrorEmitted() ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 void M::registerPackageSubcommand(SubcommandRegistry &registry) {
