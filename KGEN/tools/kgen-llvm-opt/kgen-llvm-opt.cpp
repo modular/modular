@@ -67,6 +67,7 @@ struct CLOptions : public M::CLOptionsBase {
   bool outputAssembly = false;
   unsigned codeGenOptLevel = 0;
   bool disableOptimizationPasses = false;
+  bool downgradeIR = false;
 
 private:
   llvm::cl::OptionCategory cat{"Common command line options"};
@@ -120,6 +121,12 @@ private:
       cl::desc("Disable optimization passes and print input module. Useful to "
                "test Bitcode Writer"),
       cl::location(disableOptimizationPasses), cl::cat(cat)};
+
+  M::cl::MOpt<bool, true> downgradeIROpt{
+      "downgrade-llvm-ir",
+      cl::desc(
+          "Run LLVMIRDowngrade pass for llvm backends with older versions."),
+      cl::location(downgradeIR), cl::cat(cat)};
 };
 
 enum OutputKind {
@@ -152,7 +159,12 @@ buildPipeline(PassBuilder &pb, const CLOptions &clOptions, Triple triple) {
         "Specify optimization level. Support of running individual passes or "
         "custom pipeline is not implemented yet.");
   }
-  return M::KGEN::buildLLVMOptimizationPipeline(pb, options);
+  ModulePassManager mpm = M::KGEN::buildLLVMOptimizationPipeline(pb, options);
+
+  if (clOptions.downgradeIR) {
+    M::KGEN::addLLVMIRDowngradePass(mpm);
+  }
+  return mpm;
 }
 
 // Custom hack to handle Metal that is not supported in upstream
@@ -367,7 +379,8 @@ int main(int argc, char **argv) {
   pb.crossRegisterProxies(lam, fam, cgam, mam);
   mpm.run(*module, mam);
 
-  if (verifyModule(*module, &llvm::errs()))
+  // Don't verify IR with upstream main if we downgrade it.
+  if (!clOptions.downgradeIR && verifyModule(*module, &llvm::errs()))
     return 1;
 
   if (isMetalTriple && outputKind == OK_OutputBitcode) {
