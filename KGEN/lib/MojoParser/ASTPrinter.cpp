@@ -444,7 +444,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
   if (auto genAttr = dyn_cast<GeneratorAttr>(param)) {
-    os << "alias";
+    os << "comptime";
     TypedAttr reboundBody =
         printGeneratorInterface(os, genAttr.getInputParamTypes(),
                                 dyn_cast<PogListAttr>(genAttr.getMetadata()),

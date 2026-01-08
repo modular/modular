@@ -41,10 +41,10 @@ struct Dep[T: AnyType, v: T]:
 comptime MyDep[T: AnyType, v: T] = Dep[T, v]
 
 # expected-error @below {{'MyDep' needs more parameters bound before accessing attributes}}
-# expected-note @below {{'MyDep' is aka 'alias[T: AnyType, v: T] Dep[T, v]'}}
+# expected-note @below {{'MyDep' is aka 'comptime[T: AnyType, v: T] Dep[T, v]'}}
 comptime MyDepGetAlias0 = MyDep.hello
 
-# expected-error @below {{'alias[v: Int] Dep[Int, v]' needs more parameters bound before accessing attributes}}
+# expected-error @below {{'comptime[v: Int] Dep[Int, v]' needs more parameters bound before accessing attributes}}
 comptime MyDepGetAlias1 = MyDep[Int].hello
 
 # expected-error @below {{'Dep[Int, 2]' value has no attribute 'hello'}}
