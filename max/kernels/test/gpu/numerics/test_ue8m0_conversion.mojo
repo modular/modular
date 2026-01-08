@@ -92,6 +92,21 @@ fn test_simd_f32_to_ue8m0():
         )
 
 
+# CHECK-LABEL: test_simd_ue8m0_to_f32
+# CHECK: [2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0]
+fn test_simd_ue8m0_to_f32():
+    print("== test_simd_ue8m0_to_f32")
+
+    var f32_simd = SIMD[DType.float32, 8](
+        1.1, 2.23, 4.34, 8.45, 16.56, 32.67, 64.78, 128.89
+    )
+
+    var ue8m0_simd = f32_simd.cast[DType.float8_e8m0fnu]()
+
+    var ue8m0_casted_f32 = ue8m0_simd.cast[DType.float32]()
+    print(ue8m0_casted_f32)
+
+
 fn test_simd_f32_to_ue8m0_ptx_kernel[
     size: Int,
     target: DType,
@@ -176,8 +191,36 @@ fn test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
+fn test_simd_ue8m0_to_f32_ptx_kernel[
+    size: Int,
+    target: DType,
+](x: SIMD[DType.float8_e8m0fnu, size]):
+    var x_casted_to_fp32 = x.cast[target]()
+    print(x_casted_to_fp32)
+
+
+# CHECK-LABEL: test_simd_ue8m0_to_f32_ptx_path
+# CHECK: [2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0]
+fn test_simd_ue8m0_to_f32_ptx_path(ctx: DeviceContext) raises:
+    print("== test_simd_ue8m0_to_f32_ptx_path")
+
+    var f32_simd = SIMD[DType.float32, 8](
+        1.1, 2.23, 4.34, 8.45, 16.56, 32.67, 64.78, 128.89
+    )
+
+    var ue8m0_simd = f32_simd.cast[DType.float8_e8m0fnu]()
+
+    comptime kernel = test_simd_ue8m0_to_f32_ptx_kernel[8, DType.float32]
+    ctx.enqueue_function_experimental[kernel](
+        ue8m0_simd, grid_dim=1, block_dim=1
+    )
+    ctx.synchronize()
+
+
 def main():
     test_simd_f32_to_ue8m0()
+    test_simd_ue8m0_to_f32()
 
     with DeviceContext() as ctx:
         test_simd_f32_to_ue8m0_ptx_path(ctx)
+        test_simd_ue8m0_to_f32_ptx_path(ctx)
