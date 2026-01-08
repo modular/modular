@@ -20,7 +20,8 @@
 
 namespace M::KGEN {
 class ConstraintAttr;
-}
+class ParamDeclRefAttr;
+} // end namespace M::KGEN
 
 namespace M::KGEN::LIT {
 class StructType;
@@ -200,6 +201,12 @@ public:
       return ArrayRef(declsInScope->begin(), declsInScope->end());
     return {};
   }
+
+  /// Given a reference to a parameter, look at this declaration and enclosing
+  /// scopes to find the ASTDecl that defines it (e.g. the enclosing function,
+  /// struct or trait).  This can return null if not found.
+  std::tuple<const ASTDecl *, ArrayRef<ParamDeclAttr>, size_t>
+  lookupParamReference(ParamDeclRefAttr paramRef) const;
 
   //===--------------------------------------------------------------------===//
   // Other State management.

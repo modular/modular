@@ -301,59 +301,27 @@ static BodyT printGeneratorInterface(raw_ostream &os,
 /// This returns success when handled, failure otherwise.
 static void prettyPrintParamName(ParamDeclRefAttr declRef, SharedState &shared,
                                  raw_ostream &os) {
-  ASTDecl *curDecl = shared.declResolver->getDeclCurrentlyProcessing();
-
-  // Walk up the decl hierarchy to find the one that contains the parameter.
-  ssize_t paramIdx = -1;
-  PogListAttr paramListAttr;
-  ArrayRef<ParamDeclAttr> paramDecls;
-  for (; curDecl; curDecl = curDecl->getParentDecl()) {
-    Operation *declOp = curDecl->getIfOperation();
-    if (!declOp)
-      continue;
-
-    [[maybe_unused]] size_t numImplicitOrigins = 0;
-    // TODO: we need a decl interface to do this!
-    if (auto fnDecl = dyn_cast<LIT::FnOp>(declOp)) {
-      paramListAttr = fnDecl.getFuncTypeGenerator().getParamListAttrs();
-      paramDecls = fnDecl.getParams();
-      numImplicitOrigins =
-          fnDecl.getFuncTypeGenerator().getNumImplicitOriginDecls();
-    } else if (auto structDecl = dyn_cast<LIT::StructDeclOp>(declOp)) {
-      paramListAttr = structDecl.getSignature().getParamListAttrs();
-      paramDecls = structDecl.getParams();
-      numImplicitOrigins = 0;
-    } else
-      continue;
-
-    assert(paramListAttr.size() + numImplicitOrigins == paramDecls.size() &&
-           "Unexpected number of parameters");
-
-    for (auto [idx, param] : llvm::enumerate(paramDecls)) {
-      if (param.getName() == declRef.getName()) {
-        paramIdx = idx;
-        break;
-      }
-    }
-    if (paramIdx != -1)
-      break;
-  }
 
   // If this is an implicit parameter injected due to auto-parameterization,
   // then it will have a uniquing identifier on it, rip that off.
   auto demangledName = demangleParameterName(declRef.getName());
 
-  // If we didn't find it, or is something like an implicit origin reference
-  // then there is nothing to do.
-  if (paramIdx == -1) {
+  ASTDecl *ctxDecl = shared.declResolver->getDeclCurrentlyProcessing();
+  if (!ctxDecl) {
+    os << demangledName;
+    return;
+  }
+
+  // Walk up the decl hierarchy to find the one that contains the parameter.
+  auto [curDecl, paramDecls, paramIdx] = ctxDecl->lookupParamReference(declRef);
+
+  if (!curDecl) {
     os << demangledName;
     return;
   }
 
   // Handle implicit origins.
-  if (size_t(paramIdx) >= paramListAttr.size()) {
-    assert(isa<OriginType>(paramDecls[paramIdx].getType()) &&
-           "Only unnamed thing should be an implicit origin");
+  if (isa<OriginType>(paramDecls[paramIdx].getType())) {
     os << "origin_of(" << demangledName << ")";
     return;
   }
