@@ -4,25 +4,59 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_COMPILER_LLVMIR_BITCODE_VALUEENUMERATOR17_H
-#define KGEN_COMPILER_LLVMIR_BITCODE_VALUEENUMERATOR17_H
+//===- Bitcode/Writer/ValueEnumerator.h - Number values ---------*- C++ -*-===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// This class gives values and types Unique ID's.
+//
+//===----------------------------------------------------------------------===//
 
+// Copied this file from
+// llvm-project/llvm/lib/Bitcode/Writer/ValueEnumerator.cpp
+// with tag llvmorg-21.1.8
+
+#ifndef KGEN_COMPILER_LLVMIR_BITCODE_VALUEENUMERATOR21_H
+#define KGEN_COMPILER_LLVMIR_BITCODE_VALUEENUMERATOR21_H
+
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/UniqueVector.h"
 #include "llvm/IR/Attributes.h"
-#include "llvm/IR/Comdat.h"
-#include "llvm/IR/Metadata.h"
-#include "llvm/IR/Type.h"
 #include "llvm/IR/UseListOrder.h"
-#include "llvm/IR/ValueSymbolTable.h"
+#include <cassert>
+#include <cstdint>
+#include <utility>
 #include <vector>
+
+namespace llvm {
+
+class BasicBlock;
+class Comdat;
+class DIArgList;
+class Function;
+class Instruction;
+class LocalAsMetadata;
+class MDNode;
+class Metadata;
+class Module;
+class NamedMDNode;
+class raw_ostream;
+class Type;
+class Value;
+class ValueSymbolTable;
+} // namespace llvm
 
 namespace M::KGEN {
 
 // Import LLVM namespace for convenience
 using namespace llvm;
 
-class ValueEnumerator17 {
+class ValueEnumerator21 {
 public:
   using TypeList = std::vector<Type *>;
 
@@ -46,9 +80,6 @@ private:
 
   using ComdatSetType = UniqueVector<const Comdat *>;
   ComdatSetType Comdats;
-
-  /// Map to track Metal kernel arguments that need i64->i32 type correction
-  DenseMap<const Value *, Type *> MetalKernelArgTypeMap;
 
   std::vector<const Metadata *> MDs;
   std::vector<const Metadata *> FunctionMDs;
@@ -123,12 +154,9 @@ private:
   unsigned FirstInstID;
 
 public:
-  ValueEnumerator17(const Module &M, bool ShouldPreserveUseListOrder);
-  ValueEnumerator17(const ValueEnumerator17 &) = delete;
-  void operator=(const ValueEnumerator17 &) = delete;
-
-  //! signals that an attribute group id is invalid / should not be used
-  static constexpr const uint32_t invalid_attribute_group_id = 0x7FFF'FFFFu;
+  ValueEnumerator21(const Module &M, bool ShouldPreserveUseListOrder);
+  ValueEnumerator21(const ValueEnumerator21 &) = delete;
+  ValueEnumerator21 &operator=(const ValueEnumerator21 &) = delete;
 
   void dump() const;
   void print(raw_ostream &OS, const ValueMapType &Map, const char *Name) const;
@@ -136,22 +164,24 @@ public:
              const char *Name) const;
 
   unsigned getValueID(const Value *V) const;
+
   unsigned getMetadataID(const Metadata *MD) const {
     auto ID = getMetadataOrNullID(MD);
     assert(ID != 0 && "Metadata not in slotcalculator!");
     return ID - 1;
   }
+
   unsigned getMetadataOrNullID(const Metadata *MD) const {
     return MetadataMap.lookup(MD).ID;
   }
+
   unsigned numMDs() const { return MDs.size(); }
 
   bool shouldPreserveUseListOrder() const { return ShouldPreserveUseListOrder; }
 
   unsigned getTypeID(Type *T) const {
     TypeMapType::const_iterator I = TypeMap.find(T);
-
-    assert(I != TypeMap.end() && "Type not in ValueEnumerator17!");
+    assert(I != TypeMap.end() && "Type not in ValueEnumerator21!");
     return I->second - 1;
   }
 
@@ -163,7 +193,7 @@ public:
       return 0; // Null maps to zero.
     AttributeListMapType::const_iterator I = AttributeListMap.find(PAL);
     assert(I != AttributeListMap.end() &&
-           "Attribute not in ValueEnumerator17!");
+           "Attribute not in ValueEnumerator21!");
     return I->second;
   }
 
@@ -172,7 +202,7 @@ public:
       return 0; // Null maps to zero.
     AttributeGroupMapType::const_iterator I = AttributeGroupMap.find(Group);
     assert(I != AttributeGroupMap.end() &&
-           "Attribute not in ValueEnumerator17!");
+           "Attribute not in ValueEnumerator21!");
     return I->second;
   }
 
@@ -198,24 +228,18 @@ public:
     return ArrayRef(MDs).slice(NumModuleMDs).slice(NumMDStrings);
   }
 
-  ArrayRef<const Metadata *> getMDs() const { return ArrayRef(MDs); }
-  const MetadataMapType &getMetadataMap() const { return MetadataMap; }
-
   const TypeList &getTypes() const { return Types; }
+
   const std::vector<const BasicBlock *> &getBasicBlocks() const {
     return BasicBlocks;
   }
+
   const std::vector<AttributeList> &getAttributeLists() const {
     return AttributeLists;
   }
+
   const std::vector<IndexAndAttrSet> &getAttributeGroups() const {
     return AttributeGroups;
-  }
-
-  /// Get the corrected type for Metal kernel arguments (i64->i32)
-  Type *getMetalKernelArgType(const Value *V) const {
-    auto I = MetalKernelArgTypeMap.find(V);
-    return I != MetalKernelArgTypeMap.end() ? I->second : V->getType();
   }
 
   const ComdatSetType &getComdats() const { return Comdats; }
@@ -227,9 +251,9 @@ public:
   unsigned getGlobalBasicBlockID(const BasicBlock *BB) const;
 
   /// incorporateFunction/purgeFunction - If you'd like to deal with a function,
-  /// use these two methods to get its data into the ValueEnumerator17!
-  ///
+  /// use these two methods to get its data into the ValueEnumerator21!
   void incorporateFunction(const Function &F);
+
   void purgeFunction();
   uint64_t computeBitsRequiredForTypeIndices() const;
 
@@ -284,18 +308,19 @@ private:
   void EnumerateFunctionLocalMetadata(const Function &F,
                                       const LocalAsMetadata *Local);
   void EnumerateFunctionLocalMetadata(unsigned F, const LocalAsMetadata *Local);
+  void EnumerateFunctionLocalListMetadata(const Function &F,
+                                          const DIArgList *ArgList);
+  void EnumerateFunctionLocalListMetadata(unsigned F, const DIArgList *Arglist);
   void EnumerateNamedMDNode(const NamedMDNode *NMD);
   void EnumerateValue(const Value *V);
+  void EnumerateType(Type *T);
   void EnumerateOperandType(const Value *V);
   void EnumerateAttributes(AttributeList PAL);
 
   void EnumerateValueSymbolTable(const ValueSymbolTable &ST);
   void EnumerateNamedMetadata(const Module &M);
-
-public:
-  void EnumerateType(Type *T);
 };
 
 } // namespace M::KGEN
 
-#endif // KGEN_COMPILER_LLVMIR_BITCODE_VALUEENUMERATOR17_H
+#endif // KGEN_COMPILER_LLVMIR_BITCODE_VALUEENUMERATOR21_H
