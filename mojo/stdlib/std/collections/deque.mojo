@@ -931,7 +931,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Args:
             new_capacity: The new capacity of the buffer.
         """
-        deque_len = len(self) if self else self._capacity
+        # When head == tail, deque is either empty or full (capacity elements).
+        # Use new_capacity > _capacity to distinguish: growing means full, shrinking means empty.
+        var is_full = not self and new_capacity > self._capacity
+        var deque_len = self._capacity if is_full else len(self)
 
         tail_len = self._tail
         head_len = self._capacity - self._head
