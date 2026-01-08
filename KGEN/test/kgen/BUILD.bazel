@@ -19,6 +19,7 @@ lit_tests(
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/kgen-translate",
         "//KGEN/tools/llvm-module-split",
+        "@llvm-project//llvm:llvm-dis",
         "@llvm-project//llvm:llvm-objdump",
     ],
 )
