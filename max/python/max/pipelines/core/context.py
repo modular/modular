@@ -308,17 +308,6 @@ class TextContext:
         return max_seq_len - (len(self.tokens) - self.tokens.active_length)
 
     @property
-    def needs_ce(self) -> bool:
-        """Returns whether this context needs context encoding (CE).
-
-        CE mode indicates that the context has additional prompt tokens to encode.
-
-        Returns:
-            bool: True if the context needs CE, False otherwise.
-        """
-        return self.tokens.generated_length == 0
-
-    @property
     def is_initial_prompt(self) -> bool:
         """Returns true if the context has not been updated with tokens."""
         return self._is_initial_prompt

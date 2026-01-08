@@ -425,17 +425,6 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def needs_ce(self) -> bool:
-        """Returns whether this context needs context encoding (CE).
-
-        CE mode indicates that the context has additional prompt tokens to encode.
-
-        Returns:
-            bool: True if the context needs CE, False otherwise.
-        """
-        ...
-
-    @property
     def sampling_params(self) -> SamplingParams:
         """The sampling parameters configured for this generation request.
 
@@ -531,7 +520,7 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         )
         self.batch_type = BatchType.TG
         for req in self.batch.values():
-            if req.needs_ce:
+            if req.tokens.generated_length == 0:
                 self.batch_type = BatchType.CE
                 break
 

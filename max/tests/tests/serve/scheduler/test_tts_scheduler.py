@@ -188,7 +188,9 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
     def execute(
         self, inputs: AudioGenerationInputs[TTSContext]
     ) -> dict[RequestID, AudioGenerationOutput]:
-        needs_ce = next(iter(inputs.batch.values())).needs_ce
+        needs_ce = (
+            next(iter(inputs.batch.values())).tokens.generated_length == 0
+        )
 
         if needs_ce:
             num_tokens = 1

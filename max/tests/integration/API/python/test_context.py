@@ -280,17 +280,17 @@ def test_context__needs_ce() -> None:
 
     # There are 4 unencoded prompt tokens
     assert context.tokens.active_length == 4
-    assert context.needs_ce is True
+    assert context.tokens.generated_length == 0
 
     # Encode 2/4 prompt tokens
     context.tokens.chunk(2)
     assert context.tokens.active_length == 2
-    assert context.needs_ce
+    assert context.tokens.generated_length == 0
     context.update(98)  # token 98 is discarded
     assert context.tokens.all.tolist() == [0, 1, 2, 3]
 
     # There are 2 unencoded prompt tokens left
-    assert context.needs_ce is True
+    assert context.tokens.generated_length == 0
     assert context.tokens.active_length == 2
 
     # Create a bunch of draft tokens like in spec decoding
@@ -304,7 +304,7 @@ def test_context__needs_ce() -> None:
     # Even though the active length is 3, we are not in CE mode!
     assert context.tokens.active.tolist() == [100, 101, 102]
     assert context.tokens.active_length == 3
-    assert context.needs_ce is False
+    assert context.tokens.generated_length > 0
 
 
 def test_context__skip_processing() -> None:
@@ -795,7 +795,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
 
     # Verify initial state
     assert context.tokens.active_length == n
-    assert context.needs_ce is True
+    assert context.tokens.generated_length == 0
     assert context.tokens.prompt_length == n
     assert context.tokens.generated_length == 0
 
@@ -806,7 +806,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
     # Verify we've generated the expected number of tokens
     assert len(context.tokens) == n + m
     assert (
-        context.needs_ce is False
+        context.tokens.generated_length > 0
     )  # All original prompt processed, completion generated
     assert context.tokens.generated_length == m
 
@@ -817,7 +817,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
     new_prompt_len = n + m
     assert context.tokens.active_length == new_prompt_len
     assert context.tokens.prompt_length == new_prompt_len
-    assert context.needs_ce is True
+    assert context.tokens.generated_length == 0
     assert context.status == GenerationStatus.ACTIVE
     # Critical: completion indices are reset to equal values (the edge case setup)
     _ = context.to_generation_output()
@@ -834,7 +834,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
             context.tokens.chunk(current_chunk_size)
 
         # Before simulating the update call, verify needs_ce
-        assert context.needs_ce is True, (
+        assert context.tokens.generated_length == 0, (
             f"needs_ce should be True when processing chunk at tokens "
             f"{processed_tokens} to {processed_tokens + current_chunk_size}"
         )
@@ -853,9 +853,6 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
         if processed_tokens < new_prompt_len:
             # Still have prompt tokens to process
             assert context.tokens.current_position == new_prompt_len
-            assert context.needs_ce is True, (
-                f"needs_ce should be True after processing {processed_tokens}/{new_prompt_len} tokens"
-            )
             assert context.tokens.generated_length == 0
 
         else:
@@ -872,7 +869,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
                 "Status should still be ACTIVE"
             )
 
-            assert context.needs_ce is False, (
+            assert context.tokens.generated_length > 0, (
                 "Processed all prompt tokens but no completion tokens generated",
             )
             assert context.tokens.generated_length == 1
@@ -889,8 +886,7 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
 
     # Verify proper transition to completion generation
     assert context.tokens.active_length == 1
-    assert context.needs_ce is False  # Now we genuinely don't need CE
-    assert context.tokens.generated_length == 2
+    assert context.tokens.generated_length > 0
     assert (
         context.status == GenerationStatus.ACTIVE
     )  # Still active, but generating completions

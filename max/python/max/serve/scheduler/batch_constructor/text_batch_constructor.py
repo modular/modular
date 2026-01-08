@@ -421,7 +421,7 @@ class TextBatchConstructor:
         self._request_id_to_replica_idx[ctx.request_id] = replica_idx
 
         # Add the request to the appropriate dict based on whether it needs CE.
-        if ctx.needs_ce:
+        if ctx.tokens.generated_length == 0:
             replica.ce_reqs[ctx.request_id] = ctx
         else:
             replica.tg_reqs[ctx.request_id] = ctx
@@ -460,7 +460,7 @@ class TextBatchConstructor:
 
             # Move Chunked requests back to the CE request queue
             last_request = next(reversed(per_replica_batch.values()))
-            if last_request.needs_ce:
+            if last_request.tokens.generated_length == 0:
                 del replica.tg_reqs[last_request.request_id]
                 replica.ce_reqs[last_request.request_id] = last_request
                 replica.ce_reqs.move_to_end(last_request.request_id, last=False)

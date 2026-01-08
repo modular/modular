@@ -363,7 +363,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 4
     # The last request should be chunked
-    assert list(inputs.batches[0].values())[-1].needs_ce is True
+    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
 
     # Update a token for each request in the batch
     for batch in inputs.batches:
@@ -392,7 +392,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     # We only grab 2 new CE requests here, because we have 3 TG requests outstanding.
     # Since max_batch_size is 5, we can only have 5 requests outstanding at a time.
     assert len(inputs.batches[0]) == 2
-    assert list(inputs.batches[0].values())[-1].needs_ce is True
+    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
 
     for batch in inputs.batches:
         for context in batch.values():
@@ -509,7 +509,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
     assert batch_constructor._identify_priority(0) == RequestType.CE
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 4
-    assert list(inputs.batches[0].values())[-1].needs_ce is True
+    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
 
     # Update a token for each request in the batch
     for batch in inputs.batches:
@@ -538,7 +538,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
     # We should have 5 requests
     assert len(inputs.batches[0]) == 7
     # Last item should be chunked, with a length of 3
-    assert list(inputs.batches[0].values())[-1].needs_ce is True
+    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
 
     for batch in inputs.batches:
         for context in batch.values():
@@ -588,8 +588,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     assert batch_constructor._identify_priority(0) == RequestType.CE
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 4
-    print(f"inputs.batches[0]: {list(inputs.batches[0].values())[-1].needs_ce}")
-    assert list(inputs.batches[0].values())[-1].needs_ce is True
+    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
 
     # Update a token for each request in the batch
     for batch in inputs.batches:
@@ -612,10 +611,14 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     for i in range(len(inputs.batches[0])):
         if i < 4:
             # The first four requests are TG, and should not need CE
-            assert list(inputs.batches[0].values())[i].needs_ce is False
+            assert (
+                list(inputs.batches[0].values())[i].tokens.generated_length != 0
+            )
         else:
             # The second four requests are CE, and should need CE
-            assert list(inputs.batches[0].values())[i].needs_ce is True
+            assert (
+                list(inputs.batches[0].values())[i].tokens.generated_length == 0
+            )
 
     for batch in inputs.batches:
         for context in batch.values():

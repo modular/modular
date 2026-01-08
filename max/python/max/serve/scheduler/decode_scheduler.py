@@ -174,7 +174,7 @@ class DecodeScheduler(Scheduler):
             )
             self.remote_endpoints.add(data.target_endpoint)
 
-        assert data.needs_ce, (
+        assert data.tokens.generated_length == 0, (
             f"Invalid Context: Expected needs_ce to be True. Found: {data}"
         )
 

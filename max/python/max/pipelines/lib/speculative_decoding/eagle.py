@@ -705,7 +705,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         """
         context_batch = list(inputs.batch.values())
 
-        needs_ce = context_batch[0].needs_ce
+        needs_ce = context_batch[0].tokens.generated_length == 0
         if needs_ce:
             target_outputs, target_sampled_tokens = self._target_extend(inputs)
             assert target_outputs.hidden_states is not None
