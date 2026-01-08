@@ -109,6 +109,13 @@ static cl::opt<uint32_t> FlushThreshold(
 static cl::opt<bool> WriteRelBFToSummary(
     "bitcode19-write-relbf-to-summary", cl::Hidden, cl::init(false),
     cl::desc("Write relative block frequency to function summary "));
+
+// This is an extern vaiable in llvmorg-19.1.7. Set this to be false as
+// a placeholder value here for now.
+static cl::opt<bool> WriteNewDbgInfoFormatToBitcode(
+    "write-experimental-debuginfo-iterators-to-bitcode19", cl::Hidden,
+    cl::init(false));
+
 #pragma GCC diagnostic pop
 
 namespace M::KGEN::LLVM {
@@ -3784,9 +3791,6 @@ void ModuleBitcodeWriter::writeFunction(
       // when reading the bitcode, even though conceptually the debug locations
       // start "before" the instruction.
 
-      // This is an extern vaiable in llvmorg-19.1.7. Set this to be false as
-      // a placeholder value here for now.
-      bool WriteNewDbgInfoFormatToBitcode = false;
       if (I.hasDbgRecords() && WriteNewDbgInfoFormatToBitcode) {
         /// Try to push the value only (unwrapped), otherwise push the
         /// metadata wrapped value. Returns true if the value was pushed

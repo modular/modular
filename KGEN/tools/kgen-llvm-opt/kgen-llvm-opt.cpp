@@ -22,6 +22,7 @@
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/CommonCLOptions.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/Analysis/RuntimeLibcallInfo.h"
 #include "llvm/Bitcode/BitcodeWriterPass.h"
 #include "llvm/CodeGen/CommandFlags.h"
@@ -49,6 +50,12 @@
 using namespace llvm;
 
 namespace {
+// Debug emission kind
+enum class BCVersionNo : uint16_t {
+  DEFAULT = 0,
+  LLVM17 = 17,
+  LLVM19 = 19,
+};
 struct CLOptions : public M::CLOptionsBase {
   CLOptions(int argc, char **argv, bool skipInitLLVM = true)
       : M::CLOptionsBase(argc, argv, options, skipInitLLVM) {}
@@ -67,6 +74,8 @@ struct CLOptions : public M::CLOptionsBase {
   bool outputAssembly = false;
   unsigned codeGenOptLevel = 0;
   bool disableOptimizationPasses = false;
+  BCVersionNo outputBCVersion =
+      BCVersionNo::DEFAULT; // 0 means the same as current upstream main.
   bool downgradeIR = false;
 
 private:
@@ -121,6 +130,19 @@ private:
       cl::desc("Disable optimization passes and print input module. Useful to "
                "test Bitcode Writer"),
       cl::location(disableOptimizationPasses), cl::cat(cat)};
+
+  M::cl::MOpt<BCVersionNo, true> irVersion{
+      "output-bc-version",
+      cl::desc("output bitcode llvm version"),
+      cl::Hidden,
+      llvm::cl::values(
+          clEnumValN(BCVersionNo::DEFAULT, "default",
+                     "Default bitcode version, no downgrading."),
+          clEnumValN(BCVersionNo::LLVM17, "llvm17", "Bitcode version 17."),
+          clEnumValN(BCVersionNo::LLVM19, "llvm19", "Bitcode version 19.")),
+      cl::location(outputBCVersion),
+      cl::init(BCVersionNo::DEFAULT),
+      cl::cat(cat)};
 
   M::cl::MOpt<bool, true> downgradeIROpt{
       "downgrade-llvm-ir",
@@ -227,6 +249,9 @@ int main(int argc, char **argv) {
 
   cl::ParseCommandLineOptions(
       argc, argv, "llvm .bc -> .bc modular optimizer and analysis printer\n");
+
+  bool useCustomizedBitcodeWriter =
+      (clOptions.outputBCVersion != BCVersionNo::DEFAULT);
 
   LLVMContext context;
   SMDiagnostic err;
@@ -354,11 +379,12 @@ int main(int argc, char **argv) {
   case OK_OutputBitcode:
     // For metal use custom bitcode writer that emits AIR. That helps to test it
     // too.
-    if (!isMetalTriple)
+    if (!isMetalTriple && !useCustomizedBitcodeWriter) {
       mpm.addPass(BitcodeWriterPass(out->os(),
                                     /*ShouldPreserveBitcodeUseListOrder=*/false,
                                     /*EmitSummaryIndex=*/false,
                                     /*EmitModuleHash=*/false));
+    }
     break;
   case OK_OutputThinLTOBitcode:
     llvm_unreachable("Not implemented.");
@@ -377,6 +403,7 @@ int main(int argc, char **argv) {
   pb.registerFunctionAnalyses(fam);
   pb.registerLoopAnalyses(lam);
   pb.crossRegisterProxies(lam, fam, cgam, mam);
+
   mpm.run(*module, mam);
 
   // Don't verify IR with upstream main if we downgrade it.
@@ -389,6 +416,28 @@ int main(int argc, char **argv) {
                                         /*ModuleSummaryIndex =*/nullptr,
                                         /*GenerateHash = */ false,
                                         /*ModuleHash = */ nullptr);
+  } else if (outputKind == OK_OutputBitcode) {
+    switch (clOptions.outputBCVersion) {
+    case BCVersionNo::LLVM17:
+      M::KGEN::LLVM::WriteBitcode17ToFile(
+          *module, out->os(),
+          /*ShouldPreserveUseListOrder = */ false,
+          /*ModuleSummaryIndex =*/nullptr,
+          /*GenerateHash = */ false,
+          /*ModuleHash = */ nullptr);
+      break;
+
+    case BCVersionNo::LLVM19:
+      M::KGEN::LLVM::WriteBitcode19ToFile(
+          *module, out->os(),
+          /*ShouldPreserveUseListOrder = */ false,
+          /*ModuleSummaryIndex =*/nullptr,
+          /*GenerateHash = */ false,
+          /*ModuleHash = */ nullptr);
+      break;
+    default:
+      break;
+    }
   }
 
   // Declare success.
