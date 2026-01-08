@@ -1119,7 +1119,8 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
     os.paramBindings.add(srcValue.expr, PValue(otherType),
                          StringAttr::get(emitter.getContext(), "other_type"));
     CallOperands operands(srcValue.expr, {srcValue});
-    auto res = os.filterOverloadSet(operands, /*emitDiag*/ false, emitter);
+    auto res = os.filterOverloadSet(
+        operands, /*emitDiagnosticsOnFailure=*/false, emitter);
     if (!res)
       return {{}, {}};
     return {res, res.getType().getSignatureUserResultType()};

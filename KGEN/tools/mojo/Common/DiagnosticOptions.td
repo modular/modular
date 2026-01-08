@@ -27,10 +27,6 @@ def diagnose_missing_doc_strings : Flag<["--", "-"],
   "diagnose-missing-doc-strings">, Group<DiagnosticOptionGroup>, Index<1>,
   HelpText<"Emits diagnostics for missing or partial doc strings.">;
 
-def validate_doc_strings : Flag<["--", "-"],
-  "validate-doc-strings">, Group<DiagnosticOptionGroup>, Index<2>,
-  HelpText<"Emits errors for invalid doc strings instead of warnings.">;
-
 defm max_notes : CommandOption<["--", "-"], "max-notes-per-diagnostic",
   DiagnosticOptionGroup, Index<3>, MetaVarName<"INTEGER">,
   HelpText<"When the Mojo compiler emits diagnostics, it sometimes also prints "

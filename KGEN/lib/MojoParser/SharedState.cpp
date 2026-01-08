@@ -295,10 +295,6 @@ struct SharedState::Impl {
   /// Flag indicating if we should diagnose missing doc strings while parsing.
   bool diagnoseMissingDocStrings = false;
 
-  /// Flag indicating if errors should be emitted instead of warnings for
-  /// documentation issues.
-  bool errorOnInvalidDocStrings = false;
-
   /// This keeps track of body decorators for a given declaration, this is
   /// logically part of ASTDecl, but is stored out of line to reduce its size
   /// since these are uncommon.
@@ -392,7 +388,6 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
   }
   llvm::append_range(impl->autoImportDirs, options.extraSearchPaths);
   impl->diagnoseMissingDocStrings = config.diagnoseMissingDocStrings;
-  impl->errorOnInvalidDocStrings = config.errorOnInvalidDocStrings;
   docsBasePath = config.docsBasePath;
 
   preloadAllKGENDialects(config.context);
@@ -426,10 +421,6 @@ bool SharedState::shouldExportKgenModule() const { return exportKgenModule; }
 
 bool SharedState::shouldDiagnoseMissingDocStrings() const {
   return impl->diagnoseMissingDocStrings;
-}
-
-bool SharedState::shouldErrorOnInvalidDocStrings() const {
-  return impl->errorOnInvalidDocStrings;
 }
 
 void SharedState::initialize(ASTDecl &topLevelDecl) {

@@ -398,7 +398,6 @@ public:
       : sharedState(decl.getShared()),
         diagnoseMissingDocStrings(
             sharedState.shouldDiagnoseMissingDocStrings()),
-        errorOnInvalidDocStrings(sharedState.shouldErrorOnInvalidDocStrings()),
         docStr(decl.getDocString()
                    ? std::optional<DocString>(decl.getDocString())
                    : std::nullopt) {
@@ -814,8 +813,7 @@ private:
   }
   template <typename T>
   MojoInflightDiag emitDiag(T loc, const Twine &msg = {}) {
-    if (errorOnInvalidDocStrings)
-      return sharedState.emitError(loc, msg);
+    // Always emit warnings - the -Werror flag will promote them to errors.
     return sharedState.emitWarning(loc, msg);
   }
 
@@ -834,9 +832,6 @@ private:
 
   /// Flag indicating if we should diagnose missing doc strings.
   bool diagnoseMissingDocStrings;
-
-  /// Flag indicating if we should error on invalid doc strings.
-  bool errorOnInvalidDocStrings;
 
   /// The doc string currently being processed.
   std::optional<DocString> docStr;

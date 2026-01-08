@@ -70,9 +70,17 @@ static int doc(const State &subcommandState) {
   }
 
   if (int result = state.parseDiagnosticFormatArguments(
-          args, options::OPT_diagnostic_format, llvm::opt::OptSpecifier(),
-          llvm::opt::OptSpecifier()))
+          args, options::OPT_diagnostic_format,
+          /*disableWarningsId=*/llvm::opt::OptSpecifier(), options::OPT_werror))
     return result;
+
+  // Handle deprecated --validate-doc-strings flag as an alias for -Werror.
+  if (args.hasArg(options::OPT_validate_doc_strings)) {
+    state.reportWarning(
+        "--validate-doc-strings is deprecated, use -Werror instead");
+    state.warningsAsErrors = true;
+  }
+
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
 
@@ -108,11 +116,10 @@ static int doc(const State &subcommandState) {
   MLIRContext context{registry};
 
   CompilationOptions compilationOptions;
+  compilationOptions.warningsAsErrors = state.areWarningsAsErrors();
   LIT::ParserConfig parserConfig(&context, compilationOptions);
   parserConfig.diagnoseMissingDocStrings =
       args.hasArg(options::OPT_diagnose_missing_doc_strings);
-  parserConfig.errorOnInvalidDocStrings =
-      args.hasArg(options::OPT_validate_doc_strings);
   int maxNotes = 0;
   if (!args.getLastArgValue(options::OPT_max_notes).getAsInteger(10, maxNotes))
     parserConfig.maxNotesPerDiagnostic = maxNotes;

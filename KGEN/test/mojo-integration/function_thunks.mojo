@@ -11,7 +11,7 @@
 # RUN: kgen-opt %t.function-thunks/func_package_foo.mojopkg | FileCheck %s --check-prefix=THUNK
 # RUN: kgen-opt %t.function-thunks/func_package_bar.mojopkg | FileCheck %s --check-prefix=THUNK
 # RUN: kgen-translate -import-mojo %s --mojo-enable-prebuilt-packages -I %t.function-thunks | FileCheck %s
-# RUN: mojo doc --validate-doc-strings %s -o /dev/null -I %t.function-thunks
+# RUN: mojo doc -Werror %s -o /dev/null -I %t.function-thunks
 
 # THUNK-COUNT-1: lit.fn @"fn
 

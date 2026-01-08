@@ -80,7 +80,6 @@ struct CommonOptionIDs {
 
   // Parser options
   llvm::opt::OptSpecifier diagnoseMissingDocStrings;
-  llvm::opt::OptSpecifier validateDocStrings;
   llvm::opt::OptSpecifier maxNotes;
   llvm::opt::OptSpecifier defines;
   llvm::opt::OptSpecifier stripFilePrefix;
@@ -186,7 +185,6 @@ ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
     AsyncRT::Runtime &runtime, llvm::opt::OptSpecifier docDiagnoseMissingId,
-    llvm::opt::OptSpecifier docErrorOnInvalidDocId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier stripFilePrefixId,
     llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdlibPath,

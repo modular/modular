@@ -50,11 +50,6 @@ def diagnose_missing_doc_strings : Flag<["--", "-"],
   "diagnose-missing-doc-strings">, Group<ValidationOptionGroup>, Index<0>,
   HelpText<"Emits diagnostic warnings for missing or partial doc strings.">;
 
-def validate_doc_strings : Flag<["--", "-"],
-  "validate-doc-strings">, Group<ValidationOptionGroup>, Index<1>,
-  HelpText<"Emits errors for invalid doc strings instead of warnings. "
-           "Must be combined with `--diagnose-missing-doc-strings`.">;
-
 defm docs_base_path : CommandOption<["--", "-"], "docs-base-path",
   ValidationOptionGroup, Index<2>, MetaVarName<"PATH">,
   HelpText<"Sets the path prefix for generated documentation links.">>;
@@ -79,3 +74,12 @@ defm strip_file_prefix : CommandOptionHidden<["-"], "strip-file-prefix",
   DiagnosticOptionGroup, Index<4>, MetaVarName<"PATH">,
   HelpText<
     "Strip this prefix from filenames used for diagnostics & debugging.">>;
+
+def werror : Flag<["--", "-"], "Werror">,
+  Group<DiagnosticOptionGroup>, Index<5>,
+  HelpText<"Treat warnings as errors.">;
+
+def validate_doc_strings : Flag<["--", "-"], "validate-doc-strings">,
+  Group<DiagnosticOptionGroup>, Index<6>,
+  Flags<[HelpHidden]>,
+  HelpText<"Deprecated: use -Werror instead. Treat doc string warnings as errors.">;
