@@ -1,0 +1,24 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = ["//max:consumers"])
+
+# Dependencies needed for mamba kernels:
+# - nn: for causal_conv1d and selective_scan implementations
+# - tensor: for tensor types (InputTensor, OutputTensor, etc.)
+# - compiler_internal: for @compiler.register decorator
+# MOGGPrimitives provides runtime.asyncrt which has DeviceContextPtr
+mojo_lib_deps = [
+    "//max:compiler_internal",
+    "//max:nn",
+    "//max:tensor",
+    "//max:MOGGPrimitives",
+    "@mojo//:std",
+]
+
+mojo_library(
+    name = "MambaKernelAPI",
+    srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
+    deps = mojo_lib_deps,
+)
+

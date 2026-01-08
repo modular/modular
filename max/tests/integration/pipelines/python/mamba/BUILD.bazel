@@ -1,0 +1,53 @@
+# Mamba pipeline tests.
+
+load("@mojo//:mojo.bzl", "PROD_MOJOPKGS")
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//open-source/max/max/tests:__subpackages__",
+])
+
+# Mamba-specific kernels (causal_conv1d, selective_scan_fwd) are in a separate
+# package to avoid conflicts with default kernels.
+MAMBA_MOJOPKGS = [
+    "//max/kernels/src/Mogg/MambaKernelAPI:MambaKernelAPI",
+]
+
+modular_py_test(
+    name = "test_mamba_130m",
+    size = "enormous",
+    srcs = [
+        "test_mamba_130m.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "true",
+    },
+    exec_properties = {
+        # Request 8 GiB of GPU memory (after subtracting 0.6 GiB overhead,
+        # this gives ~7.4 GiB available to the memory manager)
+        "test.resources:gpu-memory": "8",
+    },
+    imports = [
+        "../",  # For hf_repo_lock
+    ],
+    mojo_deps = select({
+        "//:emit_mojo_enabled": MAMBA_MOJOPKGS,
+        "//conditions:default": MAMBA_MOJOPKGS,
+    }),
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/entrypoints:pipelines",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        requirement("transformers"),
+    ],
+)

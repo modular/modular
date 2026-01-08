@@ -200,11 +200,33 @@ class MemoryEstimator:
         model_config: MAXModelConfig,
         devices: list[Device],
     ) -> None:
+        from max.pipelines.lib import KVCacheMixin
+        
         huggingface_config = model_config.huggingface_config
         is_draft_model = (
             pipeline_config.draft_model_config is not None
             and model_config is pipeline_config.draft_model_config
         )
+
+        # Skip memory estimation for models that don't use KV cache
+        # (e.g., Mamba models use state-space models instead)
+        if not issubclass(pipeline_model, KVCacheMixin):
+            logger.info(
+                f"Skipping memory estimation for {pipeline_model.__name__} "
+                "(model does not use KV cache)"
+            )
+            if not pipeline_config.max_batch_size:
+                pipeline_config.max_batch_size = 1
+            if not pipeline_config.max_length:
+                pipeline_config.max_length = (
+                    pipeline_model.calculate_max_seq_len(
+                        pipeline_config, huggingface_config=huggingface_config
+                    )
+                )
+            # Set a dummy value for _available_cache_memory to satisfy config validation
+            # Non-KV-cache models don't actually use this value
+            model_config.kv_cache_config._available_cache_memory = 0
+            return
 
         # In virtual device mode (cross-compilation), skip memory estimation
         # since we're only compiling and not actually running the model.

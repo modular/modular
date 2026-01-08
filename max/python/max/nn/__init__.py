@@ -21,7 +21,7 @@ from .attention import (
 )
 from .clamp import clamp
 from .comm import Allreduce, Signals
-from .conv import Conv1D, Conv1DV1, Conv2d, Conv2dV1, Conv3D, Conv3DV1
+from .conv import Conv1D, Conv1DV1, Conv2d, Conv2dV1, Conv3D, Conv3DV1, causal_conv1d_fn
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
 from .embedding import Embedding, EmbeddingV1, VocabParallelEmbedding
 from .float8_config import (
@@ -36,6 +36,7 @@ from .layer import Layer, LayerList, Module, Shardable
 from .linear import (
     MLP,
     MLPV1,
+    GatedMLP,
     ColumnParallelLinear,
     DistributedGemmConfig,
     GPTQLinear,
@@ -50,6 +51,9 @@ from .norm import (
     LayerNormV1,
     RMSNorm,
     RMSNormV1,
+    FusedRMSNorm,
+    layer_norm_fn,
+    rms_norm_fn,
 )
 from .rotary_embedding import (
     DynamicRotaryEmbedding,
@@ -71,10 +75,12 @@ from .transformer import (
     Transformer,
     TransformerBlock,
 )
+from .selective_scan import (selective_scan_fn, selective_state_update_fn, mamba_inner_fn, mamba_inner_ref)
 
 __all__ = [
     "MLP",
     "MLPV1",
+    "GatedMLP",
     "Allreduce",
     "AttentionWithRope",
     "AttentionWithRopeAndLoRA",
@@ -86,6 +92,7 @@ __all__ = [
     "Conv2dV1",
     "Conv3D",
     "Conv3DV1",
+    "causal_conv1d_fn",
     "ConvTranspose1d",
     "DistributedAttentionImpl",
     "DistributedTransformer",
@@ -117,6 +124,9 @@ __all__ = [
     "Module",
     "RMSNorm",
     "RMSNormV1",
+    "FusedRMSNorm",
+    "layer_norm_fn",
+    "rms_norm_fn",
     "RaggedAttention",
     "ReturnHiddenStates",
     "ReturnLogits",
@@ -133,4 +143,8 @@ __all__ = [
     "YarnRotaryEmbedding",
     "YarnScalingParams",
     "clamp",
+    "selective_scan_fn",
+    "selective_state_update_fn",
+    "mamba_inner_fn",
+    "mamba_inner_ref",
 ]

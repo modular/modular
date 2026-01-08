@@ -6,6 +6,12 @@ package(default_visibility = [
     "//open-source/max/max/tests:__subpackages__",
 ])
 
+# MambaKernelAPI contains selective_scan kernels that need to be available for tests
+# MambaKernelAPI is separate from MOGGKernelAPI to avoid conflicts with default kernels
+MAMBA_MOJOPKGS = [
+    "//max/kernels/src/Mogg/MambaKernelAPI:MambaKernelAPI",
+]
+
 modular_py_test(
     name = "nn",
     srcs = glob(["*.py"]),
@@ -16,4 +22,8 @@ modular_py_test(
         "//max/python/max/nn",
         requirement("numpy"),
     ],
+    mojo_deps = select({
+        "//:emit_mojo_enabled": MAMBA_MOJOPKGS,
+        "//conditions:default": MAMBA_MOJOPKGS,
+    }),
 )

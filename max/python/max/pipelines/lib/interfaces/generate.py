@@ -116,10 +116,15 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
         for context in context_batch:
             req_id = context.request_id
             # Use whatever replica the main models KVCache recommends.
-            replica_idx = kv_managers[0].get_or_recommend_replica(context)
-            # Claim the slot for all kv_managers (eg: main + draft model)
-            for kv_manager in self.kv_managers:
-                kv_manager.claim(req_id, replica_idx=replica_idx)
+            # For models without KV cache, distribute evenly across replicas.
+            if len(kv_managers) > 0:
+                replica_idx = kv_managers[0].get_or_recommend_replica(context)
+                # Claim the slot for all kv_managers (eg: main + draft model)
+                for kv_manager in self.kv_managers:
+                    kv_manager.claim(req_id, replica_idx=replica_idx)
+            else:
+                # For models without KV cache, distribute requests evenly
+                replica_idx = len(batches[0]) % data_parallel_degree
             batches[replica_idx][req_id] = context
             batch_to_replica_idx[req_id] = replica_idx
 
@@ -137,6 +142,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             while done < len(context_batch):
                 for replica_batch in batches:
                     for ctx in replica_batch.values():
+                        # Allocate KV cache slots only for models that use KV cache
                         for kv_manager in self.kv_managers:
                             kv_manager.alloc(ctx, num_steps=num_steps)
                 step_outputs = self.execute(inputs)

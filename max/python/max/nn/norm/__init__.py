@@ -11,15 +11,29 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from .fused_norm import RMSNorm as FusedRMSNorm, layer_norm_fn, rms_norm_fn
 from .group_norm import GroupNorm
 from .layer_norm import ConstantLayerNorm, LayerNorm, LayerNormV1
+from .layer_norm_gated import (
+    LayerNorm as GatedLayerNorm,
+    RMSNorm as GatedRMSNorm,
+    layernorm_fn,
+    rmsnorm_fn,
+)
 from .rms_norm import RMSNorm, RMSNormV1
 
 __all__ = [
     "ConstantLayerNorm",
+    "FusedRMSNorm",
+    "GatedLayerNorm",
+    "GatedRMSNorm",
     "GroupNorm",
     "LayerNorm",
     "LayerNormV1",
+    "layer_norm_fn",
+    "layernorm_fn",
     "RMSNorm",
     "RMSNormV1",
+    "rms_norm_fn",
+    "rmsnorm_fn",
 ]

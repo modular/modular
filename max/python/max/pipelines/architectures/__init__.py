@@ -37,6 +37,7 @@ def register_all_models() -> None:
     from .llama3 import llama_arch
     from .llama4 import llama4_arch
     from .llama_vision import llama_vision_arch
+    from .mamba import mamba_arch
     from .mistral import mistral_arch
     from .mistral3 import mistral3_arch
     from .mpnet import mpnet_arch
@@ -64,6 +65,7 @@ def register_all_models() -> None:
         llama_arch,
         llama4_arch,
         llama_vision_arch,
+        mamba_arch,
         mistral_arch,
         mistral3_arch,
         mpnet_arch,

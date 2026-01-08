@@ -3,6 +3,12 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement"
 
 package(default_visibility = ["//max:consumers"])
 
+# Mamba-specific kernels (causal_conv1d, selective_scan_fwd) are in a separate
+# package to avoid conflicts with default kernels.
+MAMBA_MOJOPKGS = [
+    "//max/kernels/src/Mogg/MambaKernelAPI:MambaKernelAPI",
+]
+
 modular_py_library(
     name = "entrypoints",
     srcs = glob(
@@ -77,8 +83,8 @@ modular_py_binary(
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     mojo_deps = select({
-        "//:emit_mojo_enabled": PROD_MOJOPKGS,
-        "//conditions:default": [],
+        "//:emit_mojo_enabled": PROD_MOJOPKGS + MAMBA_MOJOPKGS,
+        "//conditions:default": MAMBA_MOJOPKGS,
     }),
     deps = [
         ":_pipelines",

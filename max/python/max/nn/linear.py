@@ -1264,3 +1264,210 @@ class MLP(Module, Shardable):
             shards.append(sharded)
 
         return shards
+
+
+class GatedMLP(Module, Shardable):
+    """Gated Multi-Layer Perceptron with activation gating.
+
+    This module implements a gated MLP where the first linear layer outputs
+    2 * hidden_features, which is split into a main path and a gate path.
+    The gate is activated and multiplied with the main path before the second
+    linear layer.
+
+    Reference: https://github.com/state-spaces/mamba/blob/main/mamba_ssm/modules/mlp.py
+
+    The forward pass computes:
+        y = fc1(x)
+        y, gate = split(y, 2, dim=-1)
+        y = y * activation(gate)
+        y = fc2(y)
+
+    Example:
+
+    .. code-block:: python
+
+        gated_mlp = GatedMLP(
+            in_features=256,
+            hidden_features=512,
+            out_features=256,
+            dtype=DType.float32,
+            device=DeviceRef.GPU(),
+            activation="silu",
+            has_bias=False,
+        )
+
+        # Input tensor of shape: [batch, ..., 256]
+        input_tensor: TensorValue
+        output = gated_mlp(input_tensor)
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        hidden_features: int | None = None,
+        out_features: int | None = None,
+        dtype: DType = DType.float32,
+        device: DeviceRef | None = None,
+        activation: str = "silu",
+        has_bias: bool = False,
+        multiple_of: int = 128,
+        quantization_encoding: QuantizationEncoding | None = None,
+        float8_config: Float8Config | None = None,
+        linear_cls: Callable[..., Linear] = Linear,
+        is_sharding: bool = False,
+    ) -> None:
+        """Initializes the GatedMLP layer.
+
+        Args:
+            in_features: Size of each input sample.
+            hidden_features: Size of the hidden layer. If None, defaults to
+                int(8 * in_features / 3) rounded up to a multiple of multiple_of.
+            out_features: Size of each output sample. If None, defaults to in_features.
+            dtype: DType to use for the layer weights.
+            device: DeviceRef where the layer weights reside.
+            activation: Activation function to apply to the gate. Options are:
+                - "silu" (default)
+                - "gelu"
+                - "gelu_tanh"
+                - "relu"
+                - "tanh"
+                - "sigmoid"
+            has_bias: Whether to include bias terms in the linear layers.
+            multiple_of: Round hidden_features up to a multiple of this value.
+            quantization_encoding: QuantizationEncoding of the layer weights.
+            float8_config: Float8Config for float8 quantization.
+            linear_cls: Linear class to use to create the projection layers.
+            is_sharding: Disable child layer creation during sharding.
+        """
+        super().__init__()
+
+        if out_features is None:
+            out_features = in_features
+
+        if hidden_features is None:
+            hidden_features = int(8 * in_features / 3)
+        hidden_features = ceildiv(hidden_features, multiple_of) * multiple_of
+
+        self.in_features = in_features
+        self.hidden_features = hidden_features
+        self.out_features = out_features
+        self.device = device
+        self.quantization_encoding = quantization_encoding
+        self.float8_config = float8_config
+
+        if not is_sharding:
+            # First linear layer outputs 2 * hidden_features
+            self.fc1 = linear_cls(
+                in_dim=in_features,
+                out_dim=2 * hidden_features,
+                dtype=dtype,
+                device=device,
+                quantization_encoding=quantization_encoding,
+                has_bias=has_bias,
+                float8_config=float8_config,
+            )
+            # Second linear layer projects from hidden_features to out_features
+            self.fc2 = linear_cls(
+                in_dim=hidden_features,
+                out_dim=out_features,
+                dtype=dtype,
+                device=device,
+                quantization_encoding=quantization_encoding,
+                has_bias=has_bias,
+                float8_config=float8_config,
+            )
+
+        assert activation in _ACTIVATION_FUNCTIONS
+        self._activation_function_name = activation
+        self.activation_function = _ACTIVATION_FUNCTIONS[activation]
+        self._sharding_strategy: ShardingStrategy | None = None
+
+    def __call__(self, x: TensorValueLike) -> TensorValue:
+        """Applies the GatedMLP transformation to the input.
+
+        Args:
+            x: Input tensor to transform.
+
+        Returns:
+            The transformed tensor after applying the gated MLP layers.
+        """
+        x = TensorValue(x)
+        # First linear layer outputs 2 * hidden_features
+        y = self.fc1(x)
+        # Split into main path and gate path
+        y, gate = ops.split(y, [self.hidden_features, self.hidden_features], axis=-1)
+        # Apply activation to gate and multiply with main path
+        y = y * self.activation_function(gate)
+        # Second linear layer
+        return self.fc2(y)
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the GatedMLP sharding strategy."""
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Set the sharding strategy for the GatedMLP layers.
+
+        Args:
+            strategy: The sharding strategy to apply.
+        """
+        self._sharding_strategy = strategy
+
+        if strategy.is_replicate:
+            # For replicate strategy, both layers use the same strategy
+            self.fc1.sharding_strategy = strategy
+            self.fc2.sharding_strategy = strategy
+        elif strategy.is_tensor_parallel:
+            # For tensor parallel, fc1 is row-wise (splits input dimension)
+            # and fc2 is column-wise (splits output dimension)
+            self.fc1.sharding_strategy = ShardingStrategy.rowwise(
+                strategy.num_devices
+            )
+            self.fc2.sharding_strategy = ShardingStrategy.columnwise(
+                strategy.num_devices
+            )
+        else:
+            raise ValueError(f"Unsupported sharding strategy: {strategy}")
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[GatedMLP]:
+        """Creates sharded views of this GatedMLP across multiple devices.
+
+        Args:
+            devices: Iterable of devices to place the shards on.
+
+        Returns:
+            List of sharded GatedMLP instances, one for each device.
+        """
+        if self.sharding_strategy is None:
+            raise ValueError("Sharding strategy is not set")
+
+        # Get sharded layers
+        sharded_fc1s = self.fc1.shard(devices)
+        sharded_fc2s = self.fc2.shard(devices)
+
+        shards = []
+        for device, fc1, fc2 in zip(devices, sharded_fc1s, sharded_fc2s, strict=True):
+            # Create new GatedMLP instance with the sharded layers
+            sharded = GatedMLP(
+                in_features=self.in_features,
+                hidden_features=self.hidden_features,
+                out_features=self.out_features,
+                dtype=self.fc1.weight.dtype,
+                device=device,
+                activation=self._activation_function_name,
+                has_bias=self.fc1.bias is not None,
+                quantization_encoding=self.quantization_encoding,
+                float8_config=self.float8_config,
+                linear_cls=type(self.fc1),
+                is_sharding=True,
+            )
+
+            # Assign the sharded linear layers
+            sharded.fc1 = fc1
+            sharded.fc2 = fc2
+
+            shards.append(sharded)
+
+        return shards

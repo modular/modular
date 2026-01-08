@@ -72,6 +72,7 @@ neubla/tiny-random-LlamaForCausalLM	1c81a3fba044af78df253edc66bdbab183184932
 openai/whisper-large-v3	06f233fe06e710322aca913c1bc4249a0d71fce1
 replit/replit-code-v1_5-3b	b85a5dd28ef6053ad095bf5113dd740a86a67597
 sentence-transformers/all-mpnet-base-v2	9a3225965996d404b775526de6dbfe85d3368642
+state-spaces/mamba-130m-hf	1e76775f628fbf1350fbe4dbb3d971ba64af25a1
 tngtech/OLMo-2-Instruct-Math-32B	a56b4594c7a3aa5c72c893519d962607be46db5e
 trl-internal-testing/tiny-random-LlamaForCausalLM	2c542e4731d42d3bb68324c4eca16df9f93b8b33
 unsloth/gpt-oss-20b-BF16	cc89b3e7fd423253264883a80a4fa5abc619649f

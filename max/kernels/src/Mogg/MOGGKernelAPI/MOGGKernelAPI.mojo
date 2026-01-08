@@ -20,6 +20,7 @@ from math import (
     acos,
     atanh,
     ceil,
+    ceildiv,
     cos,
     erf,
     exp,
@@ -199,11 +200,40 @@ from nn.mla_graph import (
 )
 from nn.moe import moe_create_indices, router_group_limited
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
+from nn.causal_conv1d import (
+    causal_conv1d_channel_first_fwd_cpu,
+    causal_conv1d_channel_first_fwd_cpu_no_bias,
+    causal_conv1d_channel_first_fwd_gpu,
+    causal_conv1d_channel_first_fwd_gpu_no_bias,
+    causal_conv1d_update_cpu,
+    causal_conv1d_update_cpu_no_bias,
+    causal_conv1d_update_gpu,
+    causal_conv1d_update_gpu_no_bias,
+)
+from nn.selective_scan import (
+    mamba_split_conv1d_scan_combined_cpu,
+    mamba_split_conv1d_scan_combined_gpu,
+    selective_scan_fwd_cpu,
+    selective_scan_fwd_gpu,
+    selective_scan_update_cpu,
+    selective_scan_update_gpu,
+    ssd_combined_cpu,
+    ssd_combined_gpu,
+)
+from nn.varlen_selective_scan import (
+    varlen_selective_state_update_cpu,
+    varlen_selective_state_update_gpu,
+    varlen_selective_scan_fwd_cpu,
+    varlen_selective_scan_fwd_gpu,
+)
 from nn.normalization import (
     group_norm,
     layer_norm,
     rms_norm,
+    rms_norm_fused_residual,
     rms_norm_fused_residual_add,
+    _layer_norm_gated_impl,
+    layer_norm_gated_gpu,
 )
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
 from nn.pad_gpu import pad_constant as pad_constant_gpu
@@ -3338,8 +3368,8 @@ struct RMSNormFusedResidualAdd:
     ](
         output: OutputTensor[dtype=dtype, rank=rank],
         residual_output: OutputTensor[dtype=dtype, rank=rank],
-        input: FusedInputTensor[dtype=dtype, rank=rank],
-        residual_input: FusedInputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[dtype=dtype, rank=rank],  # Changed from FusedInputTensor for GPU compatibility
+        residual_input: InputTensor[dtype=dtype, rank=rank],  # Changed from FusedInputTensor for GPU compatibility
         gamma1: InputTensor[dtype=dtype, rank=1],
         gamma2: InputTensor[dtype=dtype, rank=1],
         epsilon1: Scalar[dtype=dtype],
@@ -3359,7 +3389,8 @@ struct RMSNormFusedResidualAdd:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width](
+            # Use load instead of _lambda_load to avoid compile-time evaluation issues
+            return input.load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -3368,7 +3399,8 @@ struct RMSNormFusedResidualAdd:
         fn residual_input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return residual_input._lambda_load[width=width](
+            # Use load instead of _lambda_load to avoid compile-time evaluation issues
+            return residual_input.load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -3453,7 +3485,8 @@ struct RMSNorm:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width](
+            # Use _fused_load for FusedInputTensor
+            return input._fused_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -3491,6 +3524,257 @@ struct RMSNorm:
         gamma: InputTensor[dtype=dtype, rank=1],
         epsilon: Scalar[dtype=dtype],
         weight_offset: Scalar[dtype=dtype],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("rms_norm_fused_residual")
+struct RMSNormFusedResidual:
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        residual_output: OutputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[dtype=dtype, rank=rank],  # Changed from FusedInputTensor for GPU compatibility
+        residual_input: InputTensor[dtype=dtype, rank=rank],  # Changed from FusedInputTensor for GPU compatibility
+        gamma: InputTensor[dtype=dtype, rank=1],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        dropout_p: Scalar[dtype=dtype],
+        seed: Scalar[dtype=DType.uint64],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        if input.shape() != residual_input.shape():
+            raise Error("Input and residual input buffers are not same shape")
+
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            # Use load instead of _lambda_load to avoid compile-time evaluation issues
+            return input.load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn residual_input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            # Use load instead of _lambda_load to avoid compile-time evaluation issues
+            return residual_input.load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn output_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._fused_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        @parameter
+        @always_inline
+        fn residual_output_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            residual_output._fused_store[
+                width=width, element_alignment=alignment
+            ](
+                rebind[IndexList[residual_output.rank]](coords),
+                rebind[SIMD[residual_output.dtype, width]](val),
+            )
+
+        rms_norm_fused_residual[
+            input_fn,
+            residual_input_fn,
+            output_fn,
+            residual_output_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input.shape(),
+            gamma.to_layout_tensor(),
+            epsilon,
+            weight_offset,
+            ctx,
+            dropout_p,
+            UInt64(seed),
+        )
+
+    @staticmethod
+    fn shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank],
+        residual_input: InputTensor[dtype=dtype, rank=rank],
+        gamma: InputTensor[dtype=dtype, rank=1],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        dropout_p: Scalar[dtype=dtype],
+        seed: Scalar[dtype=DType.uint64],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("layer_norm_gated")
+struct LayerNormGated:
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        has_z: Bool = False,
+        has_bias: Bool = False,
+        is_rms_norm: Bool = False,
+        norm_before_gate: Bool = True,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        input: FusedInputTensor[dtype=dtype, rank=rank],
+        z: FusedInputTensor[dtype=dtype, rank=rank],
+        gamma: InputTensor[dtype=dtype, rank=1],
+        beta: InputTensor[dtype=dtype, rank=1],
+        epsilon: Scalar[dtype=dtype],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+        
+        if has_z and z.shape() != input.shape():
+            raise Error("z tensor shape must match input shape when has_z is True")
+
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn z_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            # Only load z if has_z is True (z is still required but may be dummy)
+            if has_z:
+                return z._lambda_load[width=width](
+                    rebind[IndexList[input.rank]](coords)
+                )
+            else:
+                # Return zeros when z is not used (shouldn't be called if has_z is False)
+                return SIMD[dtype, width](0)
+
+        @parameter
+        @always_inline
+        fn gamma_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            var col = coords[_rank - 1]
+            return gamma._lambda_load[width=width](
+                rebind[IndexList[1]](IndexList[1](col))
+            )
+
+        @parameter
+        @always_inline
+        fn beta_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            # Only load beta if has_bias is True
+            if has_bias:
+                var col = coords[_rank - 1]
+                return beta._lambda_load[width=width](
+                    rebind[IndexList[1]](IndexList[1](col))
+                )
+            else:
+                # Return zeros when beta is not used
+                return SIMD[dtype, width](0)
+
+        @parameter
+        @always_inline
+        fn output_fn_cpu[
+            width: Int, alignment: Int
+        ](idx: IndexList[rank], val: SIMD[dtype, width]):
+            output._fused_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](idx),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        @parameter
+        @always_inline
+        fn output_fn_gpu[
+            width: Int, rank: Int, alignment: Int
+        ](idx: IndexList[rank], val: SIMD[dtype, width]):
+            output._fused_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](idx),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        @parameter
+        if is_cpu[target]():
+            _layer_norm_gated_impl[
+                dtype,
+                rank,
+                input_fn,
+                z_fn,
+                gamma_fn,
+                beta_fn,
+                output_fn_cpu,
+                target=target,
+                has_z=has_z,
+                has_bias=has_bias,
+                is_rms_norm=is_rms_norm,
+                norm_before_gate=norm_before_gate,
+            ](
+                input.shape(),
+                epsilon,
+                ctx,
+            )
+        elif is_gpu[target]():
+            # For GPU, call the GPU kernel directly with beta tensor
+            var beta_tensor = beta.to_layout_tensor()
+            layer_norm_gated_gpu[
+                input_fn,
+                z_fn,
+                gamma_fn,
+                beta_fn,
+                output_fn_gpu,
+                has_z,
+                has_bias,
+                is_rms_norm,
+                norm_before_gate,
+            ](
+                input.shape(),
+                beta_tensor,
+                epsilon,
+                ctx=ctx.get_device_context(),
+            )
+        else:
+            constrained[False, "unsupported target " + target]()
+
+    @staticmethod
+    fn shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank],
+        z: InputTensor[dtype=dtype, rank=rank],
+        gamma: InputTensor[dtype=dtype, rank=1],
+        beta: InputTensor[dtype=dtype, rank=1],
+        epsilon: Scalar[dtype=dtype],
     ) -> IndexList[rank]:
         return input.shape()
 
@@ -9796,3 +10080,2049 @@ struct Struct_sliced_add_ragged:
                     lora_end_idx.to_layout_tensor(),
                     None,
                 )
+
+
+# ============================================================================
+# Causal Conv1D Registration
+# ============================================================================
+
+@compiler.register("causal_conv1d")
+struct CausalConv1D[activation: StaticString]:
+    """Causal 1D convolution operation with bias.
+    
+    Performs causal (autoregressive) 1D convolution where each output position
+    depends only on current and past input positions. Supports optional SiLU
+    activation with SIMD-vectorized implementations for widths 1, 2, 3, 4.
+    
+    Parameters:
+        activation: Activation function to apply after convolution.
+            - "none": No activation (identity).
+            - "silu": SiLU/Swish activation (x * sigmoid(x)).
+    
+    Tensor Shapes:
+        - input: (batch, channels, seqlen) - Input sequence tensor.
+        - weight: (channels, width) - Convolution weights per channel.
+        - bias: (channels,) - Per-channel bias to add.
+        - output: (batch, channels, seqlen) - Output tensor (same shape as input).
+    """
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[dtype=dtype, rank=rank],  # Changed from FusedInputTensor for GPU compatibility
+        weight: InputTensor[dtype=dtype, rank=2],
+        bias: InputTensor[dtype=dtype, rank=1],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        # Validate ranks using compile-time parameter (runtime checks are optimized away)
+        if rank != 3:
+            raise Error("Input tensor must be rank 3 (batch, channels, seqlen)")
+        if output.shape() != input.shape():
+            raise Error("Output shape must match input shape")
+
+        var X = input.to_layout_tensor()
+        var W = weight.to_layout_tensor()
+        var O = output.to_layout_tensor()
+        var B = bias.to_layout_tensor()
+
+        # Get dimensions and strides from original tensors before conversion
+        # This ensures we have valid values even if layout conversion has issues
+        var batch_size: Int = input.dim_size(0)
+        var dim: Int = input.dim_size(1)
+        var seqlen: Int = input.dim_size(2)
+        var width: Int = weight.dim_size(1)
+        
+        var x_batch_stride: UInt32 = UInt32(input.strides()[0])
+        var x_c_stride: UInt32 = UInt32(input.strides()[1])
+        var x_l_stride: UInt32 = UInt32(input.strides()[2])
+        
+        var weight_c_stride: UInt32 = UInt32(weight.strides()[0])
+        var weight_width_stride: UInt32 = UInt32(weight.strides()[1])
+        
+        var out_batch_stride: UInt32 = UInt32(output.strides()[0])
+        var out_c_stride: UInt32 = UInt32(output.strides()[1])
+        var out_l_stride: UInt32 = UInt32(output.strides()[2])
+        
+        var bias_stride: UInt32 = UInt32(bias.strides()[0])
+        
+        var silu_activation = Self.activation == "silu"
+        
+        @parameter
+        if is_cpu[target]():
+            causal_conv1d_channel_first_fwd_cpu[
+                X.dtype,
+                X.layout,
+                W.dtype,
+                W.layout,
+                O.dtype,
+                O.layout,
+                B.dtype,
+                B.layout,
+            ](
+                batch_size,
+                dim,
+                seqlen,
+                width,
+                X,
+                W,
+                O,
+                B,
+                x_batch_stride,
+                x_c_stride,
+                x_l_stride,
+                weight_c_stride,
+                weight_width_stride,
+                out_batch_stride,
+                out_c_stride,
+                out_l_stride,
+                bias_stride,
+                silu_activation,
+            )
+        elif is_gpu[target]():
+            var gpu_ctx: DeviceContext = ctx.get_device_context()
+            comptime kNThreads = 128
+            comptime kNElts = 4
+            if width == 1:
+                comptime kWidth = 1
+                var compiled_func = gpu_ctx.compile_function_checked[
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                ]()
+                var silu_activation_int8 = Int8(silu_activation)
+                gpu_ctx.enqueue_function_checked(
+                    compiled_func,
+                    batch_size,
+                    dim,
+                    seqlen,
+                    width,
+                    X,
+                    W,
+                    O,
+                    B,
+                    x_batch_stride,
+                    x_c_stride,
+                    x_l_stride,
+                    weight_c_stride,
+                    weight_width_stride,
+                    out_batch_stride,
+                    out_c_stride,
+                    out_l_stride,
+                    bias_stride,
+                    silu_activation_int8,
+                    grid_dim=(ceildiv(X.dim(2), kNThreads * kNElts), X.dim(1), X.dim(0)),
+                    block_dim=(kNThreads),
+                )
+            elif width == 2:
+                comptime kWidth = 2
+                var compiled_func = gpu_ctx.compile_function_checked[
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                ]()
+                var silu_activation_int8 = Int8(silu_activation)
+                gpu_ctx.enqueue_function_checked(
+                    compiled_func,
+                    batch_size,
+                    dim,
+                    seqlen,
+                    width,
+                    X,
+                    W,
+                    O,
+                    B,
+                    x_batch_stride,
+                    x_c_stride,
+                    x_l_stride,
+                    weight_c_stride,
+                    weight_width_stride,
+                    out_batch_stride,
+                    out_c_stride,
+                    out_l_stride,
+                    bias_stride,
+                    silu_activation_int8,
+                    grid_dim=(ceildiv(X.dim(2), kNThreads * kNElts), X.dim(1), X.dim(0)),
+                    block_dim=(kNThreads),
+                )
+            elif width == 3:
+                comptime kWidth = 3
+                var compiled_func = gpu_ctx.compile_function_checked[
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                ]()
+                var silu_activation_int8 = Int8(silu_activation)
+                gpu_ctx.enqueue_function_checked(
+                    compiled_func,
+                    batch_size,
+                    dim,
+                    seqlen,
+                    width,
+                    X,
+                    W,
+                    O,
+                    B,
+                    x_batch_stride,
+                    x_c_stride,
+                    x_l_stride,
+                    weight_c_stride,
+                    weight_width_stride,
+                    out_batch_stride,
+                    out_c_stride,
+                    out_l_stride,
+                    bias_stride,
+                    silu_activation_int8,
+                    grid_dim=(ceildiv(X.dim(2), kNThreads * kNElts), X.dim(1), X.dim(0)),
+                    block_dim=(kNThreads),
+                )
+            elif width == 4:
+                comptime kWidth = 4
+                var compiled_func = gpu_ctx.compile_function_checked[
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                ]()
+                var silu_activation_int8 = Int8(silu_activation)
+                gpu_ctx.enqueue_function_checked(
+                    compiled_func,
+                    batch_size,
+                    dim,
+                    seqlen,
+                    width,
+                    X,
+                    W,
+                    O,
+                    B,
+                    x_batch_stride,
+                    x_c_stride,
+                    x_l_stride,
+                    weight_c_stride,
+                    weight_width_stride,
+                    out_batch_stride,
+                    out_c_stride,
+                    out_l_stride,
+                    bias_stride,
+                    silu_activation_int8,
+                    grid_dim=(ceildiv(X.dim(2), kNThreads * kNElts), X.dim(1), X.dim(0)),
+                    block_dim=(kNThreads),
+                )
+            else:
+                raise Error("Unsupported kernel width: only widths 1, 2, 3, 4 are supported")
+        else:
+            raise Error("Unsupported target device")
+    
+    @staticmethod
+    fn shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank],
+        weight: InputTensor[dtype=dtype, rank=2],
+        bias: InputTensor[dtype=dtype, rank=1],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+# ===----------------------------------------------------------------------=== #
+# Causal Conv1D Update Operation (for autoregressive decode)
+# ===----------------------------------------------------------------------=== #
+
+fn _execute_causal_conv1d_update_with_bias[
+    activation: StaticString,
+    target: StaticString,
+](
+    output: OutputTensor,
+    conv_state: OutputTensor,  # Note: Output because it's modified in-place
+    input: FusedInputTensor[dtype=output.dtype, rank=output.rank],
+    weight: InputTensor[dtype=output.dtype, rank=2],
+    bias: InputTensor[dtype=output.dtype, rank=1],
+    ctx: DeviceContextPtr,
+) raises:
+    comptime dtype = output.dtype
+    comptime rank = output.rank
+    if input.rank != 3:
+        raise Error("Input tensor x must be rank 3 for update (B, C, L)")
+    if conv_state.rank != 3:
+        raise Error("conv_state must be rank 3 (B, C, S)")
+    # weight.rank is known at compile time (rank=2), so this check is optimized away
+    # but kept for documentation and consistency
+    if output.rank != 3:
+        raise Error("Output tensor must be rank 3 (B, C, L)")
+
+    var X = input.to_layout_tensor()
+    var W = weight.to_layout_tensor()
+    var O = output.to_layout_tensor()
+    var CS = conv_state.to_layout_tensor()
+    var B = bias.to_layout_tensor()
+
+    var batch_size: Int = input.dim_size(0)
+    var dim: Int = input.dim_size(1)
+    var seqlen: Int = input.dim_size(2)
+    var width: Int = weight.dim_size(1)
+    var state_len: Int = conv_state.dim_size(2)
+
+    var x_batch_stride: UInt32 = input.strides()[0]
+    var x_c_stride: UInt32 = input.strides()[1]
+    var x_l_stride: UInt32 = input.strides()[2]
+
+    var conv_state_batch_stride: UInt32 = conv_state.strides()[0]
+    var conv_state_c_stride: UInt32 = conv_state.strides()[1]
+    var conv_state_l_stride: UInt32 = conv_state.strides()[2]
+
+    var weight_c_stride: UInt32 = weight.strides()[0]
+    var weight_width_stride: UInt32 = weight.strides()[1]
+
+    var out_batch_stride: UInt32 = output.strides()[0]
+    var out_c_stride: UInt32 = output.strides()[1]
+    var out_l_stride: UInt32 = output.strides()[2]
+
+    var silu_activation = activation == "silu"
+                
+    @parameter
+    if target == "cpu":
+        causal_conv1d_update_cpu[
+            X.dtype,
+            X.layout,
+            CS.dtype,
+            CS.layout,
+            W.dtype,
+            W.layout,
+            O.dtype,
+            O.layout,
+            B.dtype,
+            B.layout,
+        ](
+            batch_size,
+            dim,
+            seqlen,
+            width,
+            state_len,
+            X,
+            CS,
+            W,
+            O,
+            B,
+            x_batch_stride,
+            x_c_stride,
+            x_l_stride,
+            conv_state_batch_stride,
+            conv_state_c_stride,
+            conv_state_l_stride,
+            weight_c_stride,
+            weight_width_stride,
+            out_batch_stride,
+            out_c_stride,
+            out_l_stride,
+            silu_activation
+        )
+    elif target == "gpu":
+        var gpu_ctx: DeviceContext = ctx.get_device_context()
+        comptime kNThreads = 128
+        var silu_activation_int8 = Int8(silu_activation)
+        var compiled_func = gpu_ctx.compile_function_checked[
+            causal_conv1d_update_gpu[
+                X.dtype,
+                X.layout,
+                CS.dtype,
+                CS.layout,
+                W.dtype,
+                W.layout,
+                O.dtype,
+                O.layout,
+                B.dtype,
+                B.layout,
+                kNThreads,
+            ],
+            causal_conv1d_update_gpu[
+                X.dtype,
+                X.layout,
+                CS.dtype,
+                CS.layout,
+                W.dtype,
+                W.layout,
+                O.dtype,
+                O.layout,
+                B.dtype,
+                B.layout,
+                kNThreads,
+            ]
+        ]()
+        gpu_ctx.enqueue_function_checked(
+            compiled_func,
+            batch_size,
+            dim,
+            seqlen,
+            width,
+            state_len,
+            X,
+            CS,
+            W,
+            O,
+            B,
+            x_batch_stride,
+            x_c_stride,
+            x_l_stride,
+            conv_state_batch_stride,
+            conv_state_c_stride,
+            conv_state_l_stride,
+            weight_c_stride,
+            weight_width_stride,
+            out_batch_stride,
+            out_c_stride,
+            out_l_stride,
+            silu_activation_int8,
+            grid_dim=(batch_size, ceildiv(dim, kNThreads)),
+            block_dim=(kNThreads),
+        )
+    else:
+        raise Error("Unsupported target device")
+
+
+fn _execute_causal_conv1d_update_no_bias[
+    activation: StaticString,
+    target: StaticString,
+](
+    output: OutputTensor,
+    conv_state: OutputTensor,
+    input: InputTensor[dtype=output.dtype, rank=output.rank],  # Changed from FusedInputTensor for GPU compatibility
+    weight: InputTensor[dtype=output.dtype, rank=2],
+    ctx: DeviceContextPtr,
+) raises:
+    comptime dtype = output.dtype
+    comptime rank = output.rank
+    if input.rank != 3:
+        raise Error("Input tensor x must be rank 3 for update (B, C, L)")
+    if conv_state.rank != 3:
+        raise Error("conv_state must be rank 3 (B, C, S)")
+    # weight.rank is known at compile time (rank=2), so this check is optimized away
+    # but kept for documentation and consistency
+    if output.rank != 3:
+        raise Error("Output tensor must be rank 3 (B, C, L)")
+
+    var X = input.to_layout_tensor()
+    var W = weight.to_layout_tensor()
+    var O = output.to_layout_tensor()
+    var CS = conv_state.to_layout_tensor()
+
+    var batch_size: Int = input.dim_size(0)
+    var dim: Int = input.dim_size(1)
+    var seqlen: Int = input.dim_size(2)
+    var width: Int = weight.dim_size(1)
+    var state_len: Int = conv_state.dim_size(2)
+
+    var x_batch_stride: UInt32 = input.strides()[0]
+    var x_c_stride: UInt32 = input.strides()[1]
+    var x_l_stride: UInt32 = input.strides()[2]
+
+    var conv_state_batch_stride: UInt32 = conv_state.strides()[0]
+    var conv_state_c_stride: UInt32 = conv_state.strides()[1]
+    var conv_state_l_stride: UInt32 = conv_state.strides()[2]
+
+    var weight_c_stride: UInt32 = weight.strides()[0]
+    var weight_width_stride: UInt32 = weight.strides()[1]
+
+    var out_batch_stride: UInt32 = output.strides()[0]
+    var out_c_stride: UInt32 = output.strides()[1]
+    var out_l_stride: UInt32 = output.strides()[2]
+
+    var silu_activation = activation == "silu"
+                
+    @parameter
+    if target == "cpu":
+        causal_conv1d_update_cpu_no_bias[
+            X.dtype,
+            X.layout,
+            CS.dtype,
+            CS.layout,
+            W.dtype,
+            W.layout,
+            O.dtype,
+            O.layout,
+        ](
+            batch_size,
+            dim,
+            seqlen,
+            width,
+            state_len,
+            X,
+            CS,
+            W,
+            O,
+            x_batch_stride,
+            x_c_stride,
+            x_l_stride,
+            conv_state_batch_stride,
+            conv_state_c_stride,
+            conv_state_l_stride,
+            weight_c_stride,
+            weight_width_stride,
+            out_batch_stride,
+            out_c_stride,
+            out_l_stride,
+            silu_activation
+        )
+    elif target == "gpu":
+        var gpu_ctx: DeviceContext = ctx.get_device_context()
+        comptime kNThreads = 128
+        var silu_activation_int8 = Int8(silu_activation)
+        var compiled_func = gpu_ctx.compile_function_checked[
+            causal_conv1d_update_gpu_no_bias[
+                X.dtype,
+                X.layout,
+                CS.dtype,
+                CS.layout,
+                W.dtype,
+                W.layout,
+                O.dtype,
+                O.layout,
+                kNThreads,
+            ],
+            causal_conv1d_update_gpu_no_bias[
+                X.dtype,
+                X.layout,
+                CS.dtype,
+                CS.layout,
+                W.dtype,
+                W.layout,
+                O.dtype,
+                O.layout,
+                kNThreads,
+            ]
+        ]()
+        gpu_ctx.enqueue_function_checked(
+            compiled_func,
+            batch_size,
+            dim,
+            seqlen,
+            width,
+            state_len,
+            X,
+            CS,
+            W,
+            O,
+            x_batch_stride,
+            x_c_stride,
+            x_l_stride,
+            conv_state_batch_stride,
+            conv_state_c_stride,
+            conv_state_l_stride,
+            weight_c_stride,
+            weight_width_stride,
+            out_batch_stride,
+            out_c_stride,
+            out_l_stride,
+            silu_activation_int8,
+            grid_dim=(batch_size, ceildiv(dim, kNThreads)),
+            block_dim=(kNThreads),
+        )
+    else:
+        raise Error("Unsupported target device")
+
+
+@compiler.register("causal_conv1d_update")
+struct CausalConv1DUpdate[activation: StaticString]:
+    """Incremental causal conv1d update for autoregressive decoding.
+    
+    This operation is designed for token-by-token generation where:
+        1. A sliding window of recent inputs is maintained in conv_state.
+        2. Each new input updates the state and produces an output.
+        3. The conv_state is modified in-place for efficiency.
+    
+    Use this for:
+        - Language model inference with autoregressive generation.
+        - Real-time streaming applications.
+        - Efficient incremental convolution without full sequence recomputation.
+    
+    Parameters:
+        activation: "none" or "silu" - activation function to apply.
+    
+    Tensor Shapes:
+        - input: (batch, channels, seqlen) - New input tokens (typically seqlen=1).
+        - weight: (channels, width) - Convolution weights.
+        - bias: (channels,) - Per-channel bias.
+        - conv_state: (batch, channels, state_len) - Sliding window state (modified in-place).
+        - output: (batch, channels, seqlen) - Convolution output for new tokens.
+    
+    State Management:
+        The conv_state maintains the last (width-1) inputs for each channel.
+        After update, the oldest values are shifted out and new inputs are appended.
+    """
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        conv_state: OutputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[dtype=dtype, rank=rank],  # Changed from FusedInputTensor for GPU compatibility
+        weight: InputTensor[dtype=dtype, rank=2],
+        bias: InputTensor[dtype=dtype, rank=1],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        # Validate ranks
+        if rank != 3:
+            raise Error("Input tensor must be rank 3 (batch, channels, seqlen)")
+        if output.shape() != input.shape():
+            raise Error("Output shape must match input shape")
+        if conv_state.dim_size(0) != input.dim_size(0) or conv_state.dim_size(1) != input.dim_size(1):
+            raise Error("conv_state batch and channel dimensions must match input")
+
+        var X = input.to_layout_tensor()
+        var CS = conv_state.to_layout_tensor()
+        var W = weight.to_layout_tensor()
+        var O = output.to_layout_tensor()
+        var B = bias.to_layout_tensor()
+
+        var batch_size: Int = input.dim_size(0)
+        var dim: Int = input.dim_size(1)
+        var seqlen: Int = input.dim_size(2)
+        var width: Int = weight.dim_size(1)
+        var state_len: Int = conv_state.dim_size(2)
+        
+        var x_batch_stride: UInt32 = UInt32(input.strides()[0])
+        var x_c_stride: UInt32 = UInt32(input.strides()[1])
+        var x_l_stride: UInt32 = UInt32(input.strides()[2])
+        
+        var conv_state_batch_stride: UInt32 = UInt32(conv_state.strides()[0])
+        var conv_state_c_stride: UInt32 = UInt32(conv_state.strides()[1])
+        var conv_state_l_stride: UInt32 = UInt32(conv_state.strides()[2])
+        
+        var weight_c_stride: UInt32 = UInt32(weight.strides()[0])
+        var weight_width_stride: UInt32 = UInt32(weight.strides()[1])
+        
+        var out_batch_stride: UInt32 = UInt32(output.strides()[0])
+        var out_c_stride: UInt32 = UInt32(output.strides()[1])
+        var out_l_stride: UInt32 = UInt32(output.strides()[2])
+        
+        var bias_stride: UInt32 = UInt32(bias.strides()[0])
+        
+        var silu_activation = Self.activation == "silu"
+        
+        @parameter
+        if is_cpu[target]():
+            causal_conv1d_update_cpu[
+                X.dtype,
+                X.layout,
+                CS.dtype,
+                CS.layout,
+                W.dtype,
+                W.layout,
+                O.dtype,
+                O.layout,
+                B.dtype,
+                B.layout,
+            ](
+                batch_size,
+                dim,
+                seqlen,
+                width,
+                state_len,
+                X,
+                CS,
+                W,
+                O,
+                B,
+                x_batch_stride,
+                x_c_stride,
+                x_l_stride,
+                conv_state_batch_stride,
+                conv_state_c_stride,
+                conv_state_l_stride,
+                weight_c_stride,
+                weight_width_stride,
+                out_batch_stride,
+                out_c_stride,
+                out_l_stride,
+                silu_activation,
+            )
+        elif is_gpu[target]():
+            var gpu_ctx: DeviceContext = ctx.get_device_context()
+            comptime kNThreads = 128
+            var compiled_func = gpu_ctx.compile_function_checked[
+                causal_conv1d_update_gpu[
+                    X.dtype,
+                    X.layout,
+                    CS.dtype,
+                    CS.layout,
+                    W.dtype,
+                    W.layout,
+                    O.dtype,
+                    O.layout,
+                    B.dtype,
+                    B.layout,
+                    kNThreads,
+                ],
+                causal_conv1d_update_gpu[
+                    X.dtype,
+                    X.layout,
+                    CS.dtype,
+                    CS.layout,
+                    W.dtype,
+                    W.layout,
+                    O.dtype,
+                    O.layout,
+                    B.dtype,
+                    B.layout,
+                    kNThreads,
+                ],
+            ]()
+            var silu_activation_int8 = Int8(silu_activation)
+            gpu_ctx.enqueue_function_checked(
+                compiled_func,
+                batch_size,
+                dim,
+                seqlen,
+                width,
+                state_len,
+                X,
+                CS,
+                W,
+                O,
+                B,
+                x_batch_stride,
+                x_c_stride,
+                x_l_stride,
+                conv_state_batch_stride,
+                conv_state_c_stride,
+                conv_state_l_stride,
+                weight_c_stride,
+                weight_width_stride,
+                out_batch_stride,
+                out_c_stride,
+                out_l_stride,
+                bias_stride,
+                silu_activation_int8,
+                grid_dim=(batch_size, ceildiv(dim, kNThreads)),
+                block_dim=(kNThreads),
+            )
+        else:
+            raise Error("Unsupported target device")
+    
+    @staticmethod
+    fn shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank],
+        weight: InputTensor[dtype=dtype, rank=2],
+        bias: InputTensor[dtype=dtype, rank=1],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("causal_conv1d_update_no_bias")
+struct CausalConv1DUpdateNoBias[activation: StaticString]:
+    """Incremental causal conv1d update without bias.
+    
+    Same as CausalConv1DUpdate but without the bias term. Use when your model
+    doesn't use per-channel bias in the convolution layer.
+    
+    Parameters:
+        activation: "none" or "silu" - activation function to apply.
+    
+    Tensor Shapes:
+        - input: (batch, channels, seqlen) - New input tokens.
+        - weight: (channels, width) - Convolution weights.
+        - conv_state: (batch, channels, state_len) - Sliding window state.
+        - output: (batch, channels, seqlen) - Output for new tokens.
+    
+    See Also:
+        CausalConv1DUpdate for the variant with bias.
+    """
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        conv_state: OutputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[dtype=dtype, rank=rank],  # Changed from FusedInputTensor for GPU compatibility
+        weight: InputTensor[dtype=dtype, rank=2],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        _execute_causal_conv1d_update_no_bias[Self.activation, target](
+            output, conv_state, input, weight, ctx
+        )
+    
+    @staticmethod
+    fn shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank],
+        weight: InputTensor[dtype=dtype, rank=2],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+# ===----------------------------------------------------------------------=== #
+# Selective Scan Forward Operation
+# ===----------------------------------------------------------------------=== #
+
+@compiler.register("selective_scan_fwd")
+struct SelectiveScanFwd[delta_softplus: Bool = False]:
+    """Selective scan forward pass operation for Mamba SSM.
+    
+    Performs the selective scan computation used in Mamba state space models.
+    This is the core operation that processes sequences through the SSM.
+    
+    Parameters:
+        delta_softplus: If True, applies softplus activation to delta values.
+    
+    Tensor Shapes:
+        - output: (batch, dim, seqlen) - Output tensor
+        - x: (batch, dim, num_chunks, 2*dstate) - Checkpoint tensor for chunking
+        - out_z: (batch, dim, seqlen) - Gated output (if z is provided)
+        - u: (batch, dim, seqlen) - Input tensor
+        - delta: (batch, dim, seqlen) - Time step tensor
+        - A: (dim, dstate) - State transition matrix
+        - B: (batch, n_groups, dstate, seqlen) - Input projection
+        - C: (batch, n_groups, dstate, seqlen) - Output projection
+        - D: (dim,) - Skip connection (optional, can be empty)
+        - z: (batch, dim, seqlen) - Gating tensor (optional, can be empty)
+        - delta_bias: (dim,) - Delta bias (optional, can be empty)
+    """
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3],
+        x: OutputTensor[dtype=dtype, rank=4],
+        out_z: OutputTensor[dtype=dtype, rank=3],
+        u: InputTensor[dtype=dtype, rank=3],  # Changed from FusedInputTensor for GPU compatibility
+        delta: InputTensor[dtype=dtype, rank=3],
+        A: InputTensor[dtype=dtype, rank=2],
+        B: InputTensor[dtype=dtype, rank=4],
+        C: InputTensor[dtype=dtype, rank=4],
+        D: InputTensor[dtype=dtype, rank=1],
+        z: InputTensor[dtype=dtype, rank=3],
+        delta_bias: InputTensor[dtype=dtype, rank=1],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        # Rank validation - output is always rank 3 for selective_scan_fwd
+        # Other tensors have fixed ranks that are validated by the compiler
+        if output.shape() != u.shape():
+            raise Error("Output shape must match input u shape")
+        
+        var batch = output.dim_size(0)
+        var dim = output.dim_size(1)
+        var seqlen = output.dim_size(2)
+        var dstate = A.dim_size(1)
+        var n_groups = B.dim_size(1)
+        var group_size = dim // n_groups
+        
+        var output_lt = output.to_layout_tensor()
+        var x_lt = x.to_layout_tensor()
+        var out_z_lt = out_z.to_layout_tensor()
+        var u_lt = u.to_layout_tensor()
+        var delta_lt = delta.to_layout_tensor()
+        var A_lt = A.to_layout_tensor()
+        var B_lt = B.to_layout_tensor()
+        var C_lt = C.to_layout_tensor()
+        var D_lt = D.to_layout_tensor()
+        var z_lt = z.to_layout_tensor()
+        var delta_bias_lt = delta_bias.to_layout_tensor()
+        
+        var output_strides = output.strides()
+        var x_strides = x.strides()
+        var out_z_strides = out_z.strides()
+        var u_strides = u.strides()
+        var delta_strides = delta.strides()
+        var A_strides = A.strides()
+        var B_strides = B.strides()
+        var C_strides = C.strides()
+        var D_strides = D.strides()
+        var z_strides = z.strides()
+        var delta_bias_strides = delta_bias.strides()
+        
+        comptime delta_softplus_int8: Int8 = Int8(1) if Self.delta_softplus else Int8(0)
+        
+        @parameter
+        if is_cpu[target]():
+            selective_scan_fwd_cpu[
+                dtype,
+                output_lt.layout,
+                x_lt.layout,
+                out_z_lt.layout,
+                u_lt.layout,
+                delta_lt.layout,
+                A_lt.layout,
+                B_lt.layout,
+                C_lt.layout,
+                D_lt.layout,
+                z_lt.layout,
+                delta_bias_lt.layout,
+            ](
+                batch,
+                dim,
+                seqlen,
+                dstate,
+                group_size,
+                delta_softplus_int8,
+                output_lt,
+                x_lt,
+                out_z_lt,
+                u_lt,
+                delta_lt,
+                A_lt,
+                B_lt,
+                C_lt,
+                D_lt,
+                z_lt,
+                delta_bias_lt,
+                UInt32(output_strides[0]),
+                UInt32(output_strides[1]),
+                UInt32(output_strides[2]),
+                UInt32(x_strides[0]),
+                UInt32(x_strides[1]),
+                UInt32(x_strides[2]),
+                UInt32(x_strides[3]),
+                UInt32(out_z_strides[0]),
+                UInt32(out_z_strides[1]),
+                UInt32(out_z_strides[2]),
+                UInt32(u_strides[0]),
+                UInt32(u_strides[1]),
+                UInt32(u_strides[2]),
+                UInt32(delta_strides[0]),
+                UInt32(delta_strides[1]),
+                UInt32(delta_strides[2]),
+                UInt32(A_strides[0]),
+                UInt32(A_strides[1]),
+                UInt32(B_strides[0]),
+                UInt32(B_strides[1]),
+                UInt32(B_strides[2]),
+                UInt32(B_strides[3]),
+                UInt32(C_strides[0]),
+                UInt32(C_strides[1]),
+                UInt32(C_strides[2]),
+                UInt32(C_strides[3]),
+                UInt32(D_strides[0]),
+                UInt32(z_strides[0]),
+                UInt32(z_strides[1]),
+                UInt32(z_strides[2]),
+                UInt32(delta_bias_strides[0]),
+            )
+        elif is_gpu[target]():
+            var gpu_ctx = ctx.get_device_context()
+            var total_batch_dim = batch * dim
+            comptime BLOCK_SIZE = 128
+            var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
+            
+            var compiled_kernel = gpu_ctx.compile_function_checked[
+                selective_scan_fwd_gpu[
+                    dtype,
+                    output_lt.layout,
+                    x_lt.layout,
+                    out_z_lt.layout,
+                    u_lt.layout,
+                    delta_lt.layout,
+                    A_lt.layout,
+                    B_lt.layout,
+                    C_lt.layout,
+                    D_lt.layout,
+                    z_lt.layout,
+                    delta_bias_lt.layout,
+                ],
+                selective_scan_fwd_gpu[
+                    dtype,
+                    output_lt.layout,
+                    x_lt.layout,
+                    out_z_lt.layout,
+                    u_lt.layout,
+                    delta_lt.layout,
+                    A_lt.layout,
+                    B_lt.layout,
+                    C_lt.layout,
+                    D_lt.layout,
+                    z_lt.layout,
+                    delta_bias_lt.layout,
+                ]
+            ]()
+            
+            gpu_ctx.enqueue_function_checked(
+                compiled_kernel,
+                total_batch_dim,
+                batch,
+                dim,
+                seqlen,
+                dstate,
+                group_size,
+                delta_softplus_int8,
+                output_lt,
+                x_lt,
+                out_z_lt,
+                u_lt,
+                delta_lt,
+                A_lt,
+                B_lt,
+                C_lt,
+                D_lt,
+                z_lt,
+                delta_bias_lt,
+                UInt32(output_strides[0]),
+                UInt32(output_strides[1]),
+                UInt32(output_strides[2]),
+                UInt32(x_strides[0]),
+                UInt32(x_strides[1]),
+                UInt32(x_strides[2]),
+                UInt32(x_strides[3]),
+                UInt32(out_z_strides[0]),
+                UInt32(out_z_strides[1]),
+                UInt32(out_z_strides[2]),
+                UInt32(u_strides[0]),
+                UInt32(u_strides[1]),
+                UInt32(u_strides[2]),
+                UInt32(delta_strides[0]),
+                UInt32(delta_strides[1]),
+                UInt32(delta_strides[2]),
+                UInt32(A_strides[0]),
+                UInt32(A_strides[1]),
+                UInt32(B_strides[0]),
+                UInt32(B_strides[1]),
+                UInt32(B_strides[2]),
+                UInt32(B_strides[3]),
+                UInt32(C_strides[0]),
+                UInt32(C_strides[1]),
+                UInt32(C_strides[2]),
+                UInt32(C_strides[3]),
+                UInt32(D_strides[0]),
+                UInt32(z_strides[0]),
+                UInt32(z_strides[1]),
+                UInt32(z_strides[2]),
+                UInt32(delta_bias_strides[0]),
+                grid_dim=(num_blocks,),
+                block_dim=(BLOCK_SIZE,),
+            )
+        else:
+            raise Error("Unsupported target: " + target)
+    
+    @staticmethod
+    fn shape[
+        dtype: DType,
+    ](
+        u: InputTensor[dtype=dtype, rank=3],
+        delta: InputTensor[dtype=dtype, rank=3],
+        A: InputTensor[dtype=dtype, rank=2],
+        B: InputTensor[dtype=dtype, rank=4],
+        C: InputTensor[dtype=dtype, rank=4],
+        D: InputTensor[dtype=dtype, rank=1],
+        z: InputTensor[dtype=dtype, rank=3],
+        delta_bias: InputTensor[dtype=dtype, rank=1],
+    ) -> IndexList[3]:
+        return u.shape()
+
+
+# ===----------------------------------------------------------------------=== #
+# Selective Scan Update Operation (Single Step / Autoregressive)
+# ===----------------------------------------------------------------------=== #
+
+@compiler.register("selective_scan_update")
+struct SelectiveScanUpdate[delta_softplus: Bool = False]:
+    """Selective scan update operation for autoregressive inference.
+    
+    Performs a single step of the SSM recurrence for incremental token generation.
+    
+    Parameters:
+        delta_softplus: If True, applies softplus activation to delta values.
+    
+    Tensor Shapes:
+        - state_out: (batch, dim, dstate) - Updated state output
+        - output: (batch, dim) - Output tensor
+        - state_in: (batch, dim, dstate) - Input state
+        - x: (batch, dim) - Input tensor
+        - dt: (batch, dim) - Time delta tensor
+        - A: (dim, dstate) - State transition matrix
+        - B: (batch, n_groups, dstate) - Input matrix
+        - C: (batch, n_groups, dstate) - Output matrix
+        - D: (dim,) - Skip connection (optional, can be empty)
+        - z: (batch, dim) - Gating tensor (optional, can be empty)
+        - dt_bias: (dim,) - Time delta bias (optional, can be empty)
+    """
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        target: StaticString,
+    ](
+        state_out: OutputTensor[dtype=dtype, rank=3],
+        output: OutputTensor[dtype=dtype, rank=2],
+        state_in: InputTensor[dtype=dtype, rank=3],
+        x: InputTensor[dtype=dtype, rank=2],
+        dt: InputTensor[dtype=dtype, rank=2],
+        A: InputTensor[dtype=dtype, rank=2],
+        B: InputTensor[dtype=dtype, rank=3],
+        C: InputTensor[dtype=dtype, rank=3],
+        D: InputTensor[dtype=dtype, rank=1],
+        z: InputTensor[dtype=dtype, rank=2],
+        dt_bias: InputTensor[dtype=dtype, rank=1],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        # Tensor ranks are enforced at compile time by InputTensor/OutputTensor type definitions
+        var batch = state_out.dim_size(0)
+        var dim = state_out.dim_size(1)
+        var dstate = state_out.dim_size(2)
+        var n_groups = B.dim_size(1)
+        var group_size = dim // n_groups
+        
+        var state_out_lt = state_out.to_layout_tensor()
+        var output_lt = output.to_layout_tensor()
+        var state_in_lt = state_in.to_layout_tensor()
+        var x_lt = x.to_layout_tensor()
+        var dt_lt = dt.to_layout_tensor()
+        var A_lt = A.to_layout_tensor()
+        var B_lt = B.to_layout_tensor()
+        var C_lt = C.to_layout_tensor()
+        var D_lt = D.to_layout_tensor()
+        var z_lt = z.to_layout_tensor()
+        var dt_bias_lt = dt_bias.to_layout_tensor()
+        
+        var state_out_strides = state_out.strides()
+        var output_strides = output.strides()
+        var state_in_strides = state_in.strides()
+        var x_strides = x.strides()
+        var dt_strides = dt.strides()
+        var A_strides = A.strides()
+        var B_strides = B.strides()
+        var C_strides = C.strides()
+        var D_strides = D.strides()
+        var z_strides = z.strides()
+        var dt_bias_strides = dt_bias.strides()
+        
+        comptime delta_softplus_int8: Int8 = Int8(1) if Self.delta_softplus else Int8(0)
+        
+        @parameter
+        if is_cpu[target]():
+            selective_scan_update_cpu[
+                dtype,
+                state_out_lt.layout,
+                output_lt.layout,
+                state_in_lt.layout,
+                x_lt.layout,
+                dt_lt.layout,
+                A_lt.layout,
+                B_lt.layout,
+                C_lt.layout,
+                D_lt.layout,
+                z_lt.layout,
+                dt_bias_lt.layout,
+            ](
+                batch,
+                dim,
+                dstate,
+                group_size,
+                delta_softplus_int8,
+                state_out_lt,
+                output_lt,
+                state_in_lt,
+                x_lt,
+                dt_lt,
+                A_lt,
+                B_lt,
+                C_lt,
+                D_lt,
+                z_lt,
+                dt_bias_lt,
+                UInt32(state_out_strides[0]),
+                UInt32(state_out_strides[1]),
+                UInt32(state_out_strides[2]),
+                UInt32(output_strides[0]),
+                UInt32(output_strides[1]),
+                UInt32(state_in_strides[0]),
+                UInt32(state_in_strides[1]),
+                UInt32(state_in_strides[2]),
+                UInt32(x_strides[0]),
+                UInt32(x_strides[1]),
+                UInt32(dt_strides[0]),
+                UInt32(dt_strides[1]),
+                UInt32(A_strides[0]),
+                UInt32(A_strides[1]),
+                UInt32(B_strides[0]),
+                UInt32(B_strides[1]),
+                UInt32(B_strides[2]),
+                UInt32(C_strides[0]),
+                UInt32(C_strides[1]),
+                UInt32(C_strides[2]),
+                UInt32(D_strides[0]),
+                UInt32(z_strides[0]),
+                UInt32(z_strides[1]),
+                UInt32(dt_bias_strides[0]),
+            )
+        elif is_gpu[target]():
+            var gpu_ctx = ctx.get_device_context()
+            var total_batch_dim = batch * dim
+            comptime BLOCK_SIZE = 128
+            var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
+            
+            var compiled_kernel = gpu_ctx.compile_function_checked[
+                selective_scan_update_gpu[
+                    dtype,
+                    state_out_lt.layout,
+                    output_lt.layout,
+                    state_in_lt.layout,
+                    x_lt.layout,
+                    dt_lt.layout,
+                    A_lt.layout,
+                    B_lt.layout,
+                    C_lt.layout,
+                    D_lt.layout,
+                    z_lt.layout,
+                    dt_bias_lt.layout,
+                ],
+                selective_scan_update_gpu[
+                    dtype,
+                    state_out_lt.layout,
+                    output_lt.layout,
+                    state_in_lt.layout,
+                    x_lt.layout,
+                    dt_lt.layout,
+                    A_lt.layout,
+                    B_lt.layout,
+                    C_lt.layout,
+                    D_lt.layout,
+                    z_lt.layout,
+                    dt_bias_lt.layout,
+                ]
+            ]()
+            
+            gpu_ctx.enqueue_function_checked(
+                compiled_kernel,
+                total_batch_dim,
+                batch,
+                dim,
+                dstate,
+                group_size,
+                delta_softplus_int8,
+                state_out_lt,
+                output_lt,
+                state_in_lt,
+                x_lt,
+                dt_lt,
+                A_lt,
+                B_lt,
+                C_lt,
+                D_lt,
+                z_lt,
+                dt_bias_lt,
+                UInt32(state_out_strides[0]),
+                UInt32(state_out_strides[1]),
+                UInt32(state_out_strides[2]),
+                UInt32(output_strides[0]),
+                UInt32(output_strides[1]),
+                UInt32(state_in_strides[0]),
+                UInt32(state_in_strides[1]),
+                UInt32(state_in_strides[2]),
+                UInt32(x_strides[0]),
+                UInt32(x_strides[1]),
+                UInt32(dt_strides[0]),
+                UInt32(dt_strides[1]),
+                UInt32(A_strides[0]),
+                UInt32(A_strides[1]),
+                UInt32(B_strides[0]),
+                UInt32(B_strides[1]),
+                UInt32(B_strides[2]),
+                UInt32(C_strides[0]),
+                UInt32(C_strides[1]),
+                UInt32(C_strides[2]),
+                UInt32(D_strides[0]),
+                UInt32(z_strides[0]),
+                UInt32(z_strides[1]),
+                UInt32(dt_bias_strides[0]),
+                grid_dim=(num_blocks,),
+                block_dim=(BLOCK_SIZE,),
+            )
+        else:
+            raise Error("Unsupported target: " + target)
+    
+    @staticmethod
+    fn shape[
+        dtype: DType,
+    ](
+        state_in: InputTensor[dtype=dtype, rank=3],
+        x: InputTensor[dtype=dtype, rank=2],
+        dt: InputTensor[dtype=dtype, rank=2],
+        A: InputTensor[dtype=dtype, rank=2],
+        B: InputTensor[dtype=dtype, rank=3],
+        C: InputTensor[dtype=dtype, rank=3],
+        D: InputTensor[dtype=dtype, rank=1],
+        z: InputTensor[dtype=dtype, rank=2],
+        dt_bias: InputTensor[dtype=dtype, rank=1],
+    ) -> Tuple[IndexList[3], IndexList[2]]:
+        return (state_in.shape(), x.shape())
+
+
+
+# ===----------------------------------------------------------------------=== #
+# Varlen Selective State Update Operation
+# ===----------------------------------------------------------------------=== #
+
+fn _varlen_selective_state_update_gpu(
+    # Outputs (state is both input and output - updated in place)
+    result: OutputTensor[rank=3],  # (batch, nheads, dim) or (batch, dim)
+    # Inputs
+    state: OutputTensor[dtype=result.dtype, rank=4],  # (batch, nheads, dim, dstate) - also output
+    x: InputTensor[dtype=result.dtype, rank=3],  # (batch, nheads, dim)
+    dt: InputTensor[dtype=result.dtype, rank=3],  # (batch, nheads, dim)
+    A: InputTensor[dtype=result.dtype, rank=3],  # (nheads, dim, dstate)
+    B: InputTensor[dtype=result.dtype, rank=3],  # (batch, ngroups, dstate)
+    C: InputTensor[dtype=result.dtype, rank=3],  # (batch, ngroups, dstate)
+    D: InputTensor[dtype=result.dtype, rank=2],  # (nheads, dim) or empty
+    z: InputTensor[dtype=result.dtype, rank=3],  # (batch, nheads, dim) or empty
+    dt_bias: InputTensor[dtype=result.dtype, rank=2],  # (nheads, dim) or empty
+    state_batch_indices: InputTensor[dtype=DType.int32, rank=1],  # (batch,) or empty
+    pad_slot_id: Int32,
+    dt_softplus: Int8,
+    ctx: DeviceContextPtr,
+) raises:
+    """GPU implementation of varlen selective state update."""
+    comptime dtype = result.dtype
+    var gpu_ctx = ctx.get_device_context()
+    
+    # Extract dimensions
+    var batch = state.dim_size(0)
+    var nheads = state.dim_size(1)
+    var dim = state.dim_size(2)
+    var dstate = state.dim_size(3)
+    var ngroups = B.dim_size(1)
+    var nheads_ngroups_ratio = nheads // ngroups
+    
+    # Convert to LayoutTensor
+    var state_lt = state.to_layout_tensor()
+    var x_lt = x.to_layout_tensor()
+    var dt_lt = dt.to_layout_tensor()
+    var A_lt = A.to_layout_tensor()
+    var B_lt = B.to_layout_tensor()
+    var C_lt = C.to_layout_tensor()
+    var D_lt = D.to_layout_tensor()
+    var z_lt = z.to_layout_tensor()
+    var out_lt = result.to_layout_tensor()
+    var dt_bias_lt = dt_bias.to_layout_tensor()
+    var state_batch_indices_lt = state_batch_indices.to_layout_tensor()
+    
+    # Extract strides
+    var state_strides = state.strides()
+    var x_strides = x.strides()
+    var dt_strides = dt.strides()
+    var A_strides = A.strides()
+    var B_strides = B.strides()
+    var C_strides = C.strides()
+    var D_strides = D.strides()
+    var z_strides = z.strides()
+    var out_strides = result.strides()
+    var dt_bias_strides = dt_bias.strides()
+    
+    # Determine if we have state batch indices
+    var has_state_batch_indices = Int8(1) if state_batch_indices.dim_size(0) > 0 else Int8(0)
+    
+    # Launch parameters
+    comptime BLOCK_SIZE_M = 4  # Match kernel
+    var dim_blocks = ceildiv(dim, BLOCK_SIZE_M)
+    
+    # Compile and launch kernel
+    var compiled_kernel = gpu_ctx.compile_function_checked[
+        varlen_selective_state_update_gpu[
+            dtype,
+            state_lt.layout,
+            x_lt.layout,
+            dt_lt.layout,
+            A_lt.layout,
+            B_lt.layout,
+            C_lt.layout,
+            D_lt.layout,
+            z_lt.layout,
+            out_lt.layout,
+            dt_bias_lt.layout,
+            state_batch_indices_lt.layout,
+        ],
+        varlen_selective_state_update_gpu[
+            dtype,
+            state_lt.layout,
+            x_lt.layout,
+            dt_lt.layout,
+            A_lt.layout,
+            B_lt.layout,
+            C_lt.layout,
+            D_lt.layout,
+            z_lt.layout,
+            out_lt.layout,
+            dt_bias_lt.layout,
+            state_batch_indices_lt.layout,
+        ]
+    ]()
+    
+    gpu_ctx.enqueue_function_checked(
+        compiled_kernel,
+        dim_blocks * batch * nheads,  # total_threads
+        batch,
+        nheads,
+        dim,
+        dstate,
+        nheads_ngroups_ratio,
+        pad_slot_id,
+        dt_softplus,
+        has_state_batch_indices,
+        # Tensors
+        state_lt,
+        x_lt,
+        dt_lt,
+        A_lt,
+        B_lt,
+        C_lt,
+        D_lt,
+        z_lt,
+        out_lt,
+        dt_bias_lt,
+        state_batch_indices_lt,
+        # State strides
+        UInt32(state_strides[0]),
+        UInt32(state_strides[1]),
+        UInt32(state_strides[2]),
+        UInt32(state_strides[3]),
+        # x strides
+        UInt32(x_strides[0]),
+        UInt32(x_strides[1]),
+        UInt32(x_strides[2]),
+        # dt strides
+        UInt32(dt_strides[0]),
+        UInt32(dt_strides[1]),
+        UInt32(dt_strides[2]),
+        # dt_bias strides
+        UInt32(dt_bias_strides[0]) if dt_bias.dim_size(0) > 0 else UInt32(0),
+        UInt32(dt_bias_strides[1]) if dt_bias.dim_size(0) > 0 else UInt32(0),
+        # A strides
+        UInt32(A_strides[0]),
+        UInt32(A_strides[1]),
+        UInt32(A_strides[2]),
+        # B strides
+        UInt32(B_strides[0]),
+        UInt32(B_strides[1]),
+        UInt32(B_strides[2]),
+        # C strides
+        UInt32(C_strides[0]),
+        UInt32(C_strides[1]),
+        UInt32(C_strides[2]),
+        # D strides
+        UInt32(D_strides[0]) if D.dim_size(0) > 0 else UInt32(0),
+        UInt32(D_strides[1]) if D.dim_size(0) > 0 else UInt32(0),
+        # z strides
+        UInt32(z_strides[0]) if z.dim_size(0) > 0 else UInt32(0),
+        UInt32(z_strides[1]) if z.dim_size(0) > 0 else UInt32(0),
+        UInt32(z_strides[2]) if z.dim_size(0) > 0 else UInt32(0),
+        # out strides
+        UInt32(out_strides[0]),
+        UInt32(out_strides[1]),
+        UInt32(out_strides[2]),
+        grid_dim=(dim_blocks, batch, nheads),
+        block_dim=(1,),  # Each block processes BLOCK_SIZE_M dims
+    )
+
+
+fn _varlen_selective_state_update_cpu(
+    result: OutputTensor[rank=3],
+    state: OutputTensor[dtype=result.dtype, rank=4],
+    x: InputTensor[dtype=result.dtype, rank=3],
+    dt: InputTensor[dtype=result.dtype, rank=3],
+    A: InputTensor[dtype=result.dtype, rank=3],
+    B: InputTensor[dtype=result.dtype, rank=3],
+    C: InputTensor[dtype=result.dtype, rank=3],
+    D: InputTensor[dtype=result.dtype, rank=2],
+    z: InputTensor[dtype=result.dtype, rank=3],
+    dt_bias: InputTensor[dtype=result.dtype, rank=2],
+    state_batch_indices: InputTensor[dtype=DType.int32, rank=1],
+    pad_slot_id: Int32,
+    dt_softplus: Int8,
+    ctx: DeviceContextPtr,
+) raises:
+    """CPU implementation of varlen selective state update."""
+    comptime dtype = result.dtype
+    
+    # Extract dimensions
+    var batch = state.dim_size(0)
+    var nheads = state.dim_size(1)
+    var dim = state.dim_size(2)
+    var dstate = state.dim_size(3)
+    var ngroups = B.dim_size(1)
+    var nheads_ngroups_ratio = nheads // ngroups
+    
+    # Convert to LayoutTensor
+    var state_lt = state.to_layout_tensor()
+    var x_lt = x.to_layout_tensor()
+    var dt_lt = dt.to_layout_tensor()
+    var A_lt = A.to_layout_tensor()
+    var B_lt = B.to_layout_tensor()
+    var C_lt = C.to_layout_tensor()
+    var D_lt = D.to_layout_tensor()
+    var z_lt = z.to_layout_tensor()
+    var out_lt = result.to_layout_tensor()
+    var dt_bias_lt = dt_bias.to_layout_tensor()
+    var state_batch_indices_lt = state_batch_indices.to_layout_tensor()
+    
+    # Extract strides
+    var state_strides = state.strides()
+    var x_strides = x.strides()
+    var dt_strides = dt.strides()
+    var A_strides = A.strides()
+    var B_strides = B.strides()
+    var C_strides = C.strides()
+    var D_strides = D.strides()
+    var z_strides = z.strides()
+    var out_strides = result.strides()
+    var dt_bias_strides = dt_bias.strides()
+    
+    var has_state_batch_indices = Int8(1) if state_batch_indices.dim_size(0) > 0 else Int8(0)
+    
+    varlen_selective_state_update_cpu[
+        dtype,
+        state_lt.layout,
+        x_lt.layout,
+        dt_lt.layout,
+        A_lt.layout,
+        B_lt.layout,
+        C_lt.layout,
+        D_lt.layout,
+        z_lt.layout,
+        out_lt.layout,
+        dt_bias_lt.layout,
+        state_batch_indices_lt.layout,
+    ](
+        batch,
+        nheads,
+        dim,
+        dstate,
+        nheads_ngroups_ratio,
+        pad_slot_id,
+        dt_softplus,
+        has_state_batch_indices,
+        state_lt,
+        x_lt,
+        dt_lt,
+        A_lt,
+        B_lt,
+        C_lt,
+        D_lt,
+        z_lt,
+        out_lt,
+        dt_bias_lt,
+        state_batch_indices_lt,
+        # Strides
+        UInt32(state_strides[0]),
+        UInt32(state_strides[1]),
+        UInt32(state_strides[2]),
+        UInt32(state_strides[3]),
+        UInt32(x_strides[0]),
+        UInt32(x_strides[1]),
+        UInt32(x_strides[2]),
+        UInt32(dt_strides[0]),
+        UInt32(dt_strides[1]),
+        UInt32(dt_strides[2]),
+        UInt32(dt_bias_strides[0]) if dt_bias.dim_size(0) > 0 else UInt32(0),
+        UInt32(dt_bias_strides[1]) if dt_bias.dim_size(0) > 0 else UInt32(0),
+        UInt32(A_strides[0]),
+        UInt32(A_strides[1]),
+        UInt32(A_strides[2]),
+        UInt32(B_strides[0]),
+        UInt32(B_strides[1]),
+        UInt32(B_strides[2]),
+        UInt32(C_strides[0]),
+        UInt32(C_strides[1]),
+        UInt32(C_strides[2]),
+        UInt32(D_strides[0]) if D.dim_size(0) > 0 else UInt32(0),
+        UInt32(D_strides[1]) if D.dim_size(0) > 0 else UInt32(0),
+        UInt32(z_strides[0]) if z.dim_size(0) > 0 else UInt32(0),
+        UInt32(z_strides[1]) if z.dim_size(0) > 0 else UInt32(0),
+        UInt32(z_strides[2]) if z.dim_size(0) > 0 else UInt32(0),
+        UInt32(out_strides[0]),
+        UInt32(out_strides[1]),
+        UInt32(out_strides[2]),
+    )
+
+
+@compiler.register("varlen_selective_state_update")
+struct VarlenSelectiveStateUpdate:
+    """Varlen selective state update custom operation for MAX framework.
+    
+    Compatible with vLLM's selective_state_update function.
+    Supports multi-head SSM with grouped heads.
+    """
+    
+    @staticmethod
+    fn execute[
+        target: StaticString,
+        dt_softplus: Bool,
+    ](
+        result: OutputTensor[rank=3],
+        state: OutputTensor[dtype=result.dtype, rank=4],
+        x: InputTensor[dtype=result.dtype, rank=3],
+        dt: InputTensor[dtype=result.dtype, rank=3],
+        A: InputTensor[dtype=result.dtype, rank=3],
+        B: InputTensor[dtype=result.dtype, rank=3],
+        C: InputTensor[dtype=result.dtype, rank=3],
+        D: InputTensor[dtype=result.dtype, rank=2],
+        z: InputTensor[dtype=result.dtype, rank=3],
+        dt_bias: InputTensor[dtype=result.dtype, rank=2],
+        state_batch_indices: InputTensor[dtype=DType.int32, rank=1],
+        pad_slot_id: InputTensor[dtype=DType.int32, rank=0],  # Scalar
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime dt_softplus_int8: Int8 = Int8(1) if dt_softplus else Int8(0)
+        
+        # Load pad_slot_id scalar
+        var pad_slot_id_val = Int32(-1)  # Default PAD_SLOT_ID
+        
+        @parameter
+        if target == "gpu":
+            _varlen_selective_state_update_gpu(
+                result, state, x, dt, A, B, C, D, z, dt_bias, state_batch_indices,
+                pad_slot_id_val, dt_softplus_int8, ctx
+            )
+        elif target == "cpu":
+            _varlen_selective_state_update_cpu(
+                result, state, x, dt, A, B, C, D, z, dt_bias, state_batch_indices,
+                pad_slot_id_val, dt_softplus_int8, ctx
+            )
+        else:
+            raise Error("Unsupported target: " + target)
+    
+    @staticmethod
+    fn shape(
+        x: InputTensor,
+        dt: InputTensor,
+        A: InputTensor,
+        B: InputTensor,
+        C: InputTensor,
+        D: InputTensor,
+        z: InputTensor,
+        dt_bias: InputTensor,
+        state_batch_indices: InputTensor,
+        pad_slot_id: InputTensor,
+    ) raises -> IndexList[3]:
+        # Output shape is (batch, nheads, dim)
+        return IndexList[3](x.dim_size(0), x.dim_size(1), x.dim_size(2))
+
+
+# ===----------------------------------------------------------------------=== #
+# Varlen Selective Scan Forward Operation
+# ===----------------------------------------------------------------------=== #
+
+fn _varlen_selective_scan_fwd_gpu(
+    # SSM states (input/output)
+    ssm_states: OutputTensor[rank=3],  # (batch, dim, dstate) - updated in place
+    # Inputs
+    u: InputTensor[dtype=ssm_states.dtype, rank=2],  # (dim, total_length)
+    delta: OutputTensor[dtype=ssm_states.dtype, rank=2],  # (dim, total_length) - output written here if no z
+    A: InputTensor[dtype=ssm_states.dtype, rank=2],  # (dim, dstate)
+    B: InputTensor[dtype=ssm_states.dtype, rank=3],  # (ngroups, dstate, total_length)
+    C: InputTensor[dtype=ssm_states.dtype, rank=3],  # (ngroups, dstate, total_length)
+    D: InputTensor[dtype=ssm_states.dtype, rank=1],  # (dim,) or empty
+    z: OutputTensor[dtype=ssm_states.dtype, rank=2],  # (dim, total_length) or empty - output written here if present
+    delta_bias: InputTensor[dtype=ssm_states.dtype, rank=1],  # (dim,) or empty
+    query_start_loc: InputTensor[dtype=DType.int32, rank=1],  # (batch + 1,)
+    cache_indices: InputTensor[dtype=DType.int32, rank=1],  # (batch,) or empty
+    has_initial_state: InputTensor[dtype=DType.bool, rank=1],  # (batch,) or empty
+    pad_slot_id: Int32,
+    delta_softplus: Int8,
+    ctx: DeviceContextPtr,
+) raises:
+    """GPU implementation of varlen selective scan forward."""
+    comptime dtype = ssm_states.dtype
+    var gpu_ctx = ctx.get_device_context()
+    
+    # Extract dimensions
+    var batch = ssm_states.dim_size(0)
+    var dim = ssm_states.dim_size(1)
+    var dstate = ssm_states.dim_size(2)
+    var ngroups = B.dim_size(0)
+    var total_length = u.dim_size(1)
+    
+    # Convert to LayoutTensor
+    var u_lt = u.to_layout_tensor()
+    var delta_lt = delta.to_layout_tensor()
+    var A_lt = A.to_layout_tensor()
+    var B_lt = B.to_layout_tensor()
+    var C_lt = C.to_layout_tensor()
+    var D_lt = D.to_layout_tensor()
+    var z_lt = z.to_layout_tensor()
+    var delta_bias_lt = delta_bias.to_layout_tensor()
+    var ssm_states_lt = ssm_states.to_layout_tensor()
+    var out_lt = delta_lt  # Output goes to delta or z
+    var query_start_loc_lt = query_start_loc.to_layout_tensor()
+    var cache_indices_lt = cache_indices.to_layout_tensor()
+    var has_initial_state_lt = has_initial_state.to_layout_tensor()
+    
+    # Extract strides
+    var u_strides = u.strides()
+    var delta_strides = delta.strides()
+    var A_strides = A.strides()
+    var B_strides = B.strides()
+    var C_strides = C.strides()
+    var D_strides = D.strides()
+    var z_strides = z.strides()
+    var delta_bias_strides = delta_bias.strides()
+    var ssm_states_strides = ssm_states.strides()
+    
+    # Launch parameters - 2D grid (dim_blocks, batch) for parallel processing
+    comptime BLOCK_SIZE = 128
+    var num_dim_blocks = ceildiv(dim, BLOCK_SIZE)
+    
+    # Compile and launch kernel
+    var compiled_kernel = gpu_ctx.compile_function_checked[
+        varlen_selective_scan_fwd_gpu[
+            dtype,
+            u_lt.layout,
+            delta_lt.layout,
+            A_lt.layout,
+            B_lt.layout,
+            C_lt.layout,
+            D_lt.layout,
+            z_lt.layout,
+            delta_bias_lt.layout,
+            ssm_states_lt.layout,
+            out_lt.layout,
+            query_start_loc_lt.layout,
+            cache_indices_lt.layout,
+            has_initial_state_lt.layout,
+        ],
+        varlen_selective_scan_fwd_gpu[
+            dtype,
+            u_lt.layout,
+            delta_lt.layout,
+            A_lt.layout,
+            B_lt.layout,
+            C_lt.layout,
+            D_lt.layout,
+            z_lt.layout,
+            delta_bias_lt.layout,
+            ssm_states_lt.layout,
+            out_lt.layout,
+            query_start_loc_lt.layout,
+            cache_indices_lt.layout,
+            has_initial_state_lt.layout,
+        ]
+    ]()
+    
+    # 2D grid: (num_dim_blocks, batch) with block size (BLOCK_SIZE, 1)
+    gpu_ctx.enqueue_function_checked(
+        compiled_kernel,
+        # Kernel parameters (matching new signature)
+        dim,
+        dstate,
+        ngroups,
+        batch,
+        pad_slot_id,
+        delta_softplus,
+        # Tensors
+        u_lt,
+        delta_lt,
+        A_lt,
+        B_lt,
+        C_lt,
+        D_lt,
+        z_lt,
+        delta_bias_lt,
+        ssm_states_lt,
+        out_lt,
+        query_start_loc_lt,
+        cache_indices_lt,
+        has_initial_state_lt,
+        # Strides
+        UInt32(u_strides[0]),
+        UInt32(u_strides[1]),
+        UInt32(delta_strides[0]),
+        UInt32(delta_strides[1]),
+        UInt32(A_strides[0]),
+        UInt32(A_strides[1]),
+        UInt32(B_strides[0]),
+        UInt32(B_strides[1]),
+        UInt32(B_strides[2]),
+        UInt32(C_strides[0]),
+        UInt32(C_strides[1]),
+        UInt32(C_strides[2]),
+        UInt32(D_strides[0]) if D.dim_size(0) > 0 else UInt32(0),
+        UInt32(z_strides[0]) if z.dim_size(0) > 0 else UInt32(0),
+        UInt32(z_strides[1]) if z.dim_size(0) > 0 else UInt32(0),
+        UInt32(delta_bias_strides[0]) if delta_bias.dim_size(0) > 0 else UInt32(0),
+        UInt32(ssm_states_strides[0]),
+        UInt32(ssm_states_strides[1]),
+        UInt32(ssm_states_strides[2]),
+        UInt32(delta_strides[0]),  # out strides = delta strides
+        UInt32(delta_strides[1]),
+        grid_dim=(num_dim_blocks, batch, 1),
+        block_dim=(BLOCK_SIZE, 1, 1),
+    )
+
+
+fn _varlen_selective_scan_fwd_cpu(
+    ssm_states: OutputTensor[rank=3],
+    u: InputTensor[dtype=ssm_states.dtype, rank=2],
+    delta: OutputTensor[dtype=ssm_states.dtype, rank=2],
+    A: InputTensor[dtype=ssm_states.dtype, rank=2],
+    B: InputTensor[dtype=ssm_states.dtype, rank=3],
+    C: InputTensor[dtype=ssm_states.dtype, rank=3],
+    D: InputTensor[dtype=ssm_states.dtype, rank=1],
+    z: OutputTensor[dtype=ssm_states.dtype, rank=2],
+    delta_bias: InputTensor[dtype=ssm_states.dtype, rank=1],
+    query_start_loc: InputTensor[dtype=DType.int32, rank=1],
+    cache_indices: InputTensor[dtype=DType.int32, rank=1],
+    has_initial_state: InputTensor[dtype=DType.bool, rank=1],
+    pad_slot_id: Int32,
+    delta_softplus: Int8,
+    ctx: DeviceContextPtr,
+) raises:
+    """CPU implementation of varlen selective scan forward."""
+    comptime dtype = ssm_states.dtype
+    
+    # Extract dimensions
+    var batch = ssm_states.dim_size(0)
+    var dim = ssm_states.dim_size(1)
+    var dstate = ssm_states.dim_size(2)
+    var ngroups = B.dim_size(0)
+    
+    # Convert to LayoutTensor
+    var u_lt = u.to_layout_tensor()
+    var delta_lt = delta.to_layout_tensor()
+    var A_lt = A.to_layout_tensor()
+    var B_lt = B.to_layout_tensor()
+    var C_lt = C.to_layout_tensor()
+    var D_lt = D.to_layout_tensor()
+    var z_lt = z.to_layout_tensor()
+    var delta_bias_lt = delta_bias.to_layout_tensor()
+    var ssm_states_lt = ssm_states.to_layout_tensor()
+    var out_lt = delta_lt
+    var query_start_loc_lt = query_start_loc.to_layout_tensor()
+    var cache_indices_lt = cache_indices.to_layout_tensor()
+    var has_initial_state_lt = has_initial_state.to_layout_tensor()
+    
+    # Extract strides
+    var u_strides = u.strides()
+    var delta_strides = delta.strides()
+    var A_strides = A.strides()
+    var B_strides = B.strides()
+    var C_strides = C.strides()
+    var D_strides = D.strides()
+    var z_strides = z.strides()
+    var delta_bias_strides = delta_bias.strides()
+    var ssm_states_strides = ssm_states.strides()
+    
+    varlen_selective_scan_fwd_cpu[
+        dtype,
+        u_lt.layout,
+        delta_lt.layout,
+        A_lt.layout,
+        B_lt.layout,
+        C_lt.layout,
+        D_lt.layout,
+        z_lt.layout,
+        delta_bias_lt.layout,
+        ssm_states_lt.layout,
+        out_lt.layout,
+        query_start_loc_lt.layout,
+        cache_indices_lt.layout,
+        has_initial_state_lt.layout,
+    ](
+        dim,
+        dstate,
+        ngroups,
+        batch,
+        pad_slot_id,
+        delta_softplus,
+        u_lt,
+        delta_lt,
+        A_lt,
+        B_lt,
+        C_lt,
+        D_lt,
+        z_lt,
+        delta_bias_lt,
+        ssm_states_lt,
+        out_lt,
+        query_start_loc_lt,
+        cache_indices_lt,
+        has_initial_state_lt,
+        UInt32(u_strides[0]),
+        UInt32(u_strides[1]),
+        UInt32(delta_strides[0]),
+        UInt32(delta_strides[1]),
+        UInt32(A_strides[0]),
+        UInt32(A_strides[1]),
+        UInt32(B_strides[0]),
+        UInt32(B_strides[1]),
+        UInt32(B_strides[2]),
+        UInt32(C_strides[0]),
+        UInt32(C_strides[1]),
+        UInt32(C_strides[2]),
+        UInt32(D_strides[0]) if D.dim_size(0) > 0 else UInt32(0),
+        UInt32(z_strides[0]) if z.dim_size(0) > 0 else UInt32(0),
+        UInt32(z_strides[1]) if z.dim_size(0) > 0 else UInt32(0),
+        UInt32(delta_bias_strides[0]) if delta_bias.dim_size(0) > 0 else UInt32(0),
+        UInt32(ssm_states_strides[0]),
+        UInt32(ssm_states_strides[1]),
+        UInt32(ssm_states_strides[2]),
+        UInt32(delta_strides[0]),
+        UInt32(delta_strides[1]),
+    )
+
+
+@compiler.register("varlen_selective_scan_fwd")
+struct VarlenSelectiveScanFwd:
+    """Varlen selective scan forward custom operation for MAX framework.
+    
+    Compatible with vLLM's selective_scan_fn function.
+    Supports variable-length sequences packed together.
+    """
+    
+    @staticmethod
+    fn execute[
+        target: StaticString,
+        delta_softplus: Bool,
+    ](
+        ssm_states: OutputTensor[rank=3],
+        delta: OutputTensor[dtype=ssm_states.dtype, rank=2],
+        z: OutputTensor[dtype=ssm_states.dtype, rank=2],
+        u: InputTensor[dtype=ssm_states.dtype, rank=2],
+        A: InputTensor[dtype=ssm_states.dtype, rank=2],
+        B: InputTensor[dtype=ssm_states.dtype, rank=3],
+        C: InputTensor[dtype=ssm_states.dtype, rank=3],
+        D: InputTensor[dtype=ssm_states.dtype, rank=1],
+        delta_bias: InputTensor[dtype=ssm_states.dtype, rank=1],
+        query_start_loc: InputTensor[dtype=DType.int32, rank=1],
+        cache_indices: InputTensor[dtype=DType.int32, rank=1],
+        has_initial_state: InputTensor[dtype=DType.bool, rank=1],
+        pad_slot_id: InputTensor[dtype=DType.int32, rank=0],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime delta_softplus_int8: Int8 = Int8(1) if delta_softplus else Int8(0)
+        var pad_slot_id_val = Int32(-1)  # Default PAD_SLOT_ID
+        
+        @parameter
+        if target == "gpu":
+            _varlen_selective_scan_fwd_gpu(
+                ssm_states, u, delta, A, B, C, D, z, delta_bias,
+                query_start_loc, cache_indices, has_initial_state,
+                pad_slot_id_val, delta_softplus_int8, ctx
+            )
+        elif target == "cpu":
+            _varlen_selective_scan_fwd_cpu(
+                ssm_states, u, delta, A, B, C, D, z, delta_bias,
+                query_start_loc, cache_indices, has_initial_state,
+                pad_slot_id_val, delta_softplus_int8, ctx
+            )
+        else:
+            raise Error("Unsupported target: " + target)
+    
+    @staticmethod
+    fn shape(
+        u: InputTensor,
+        A: InputTensor,
+        B: InputTensor,
+        C: InputTensor,
+        D: InputTensor,
+        delta_bias: InputTensor,
+        query_start_loc: InputTensor,
+        cache_indices: InputTensor,
+        has_initial_state: InputTensor,
+        pad_slot_id: InputTensor,
+    ) raises -> IndexList[3]:
+        # Output shape for ssm_states: (batch, dim, dstate)
+        # batch = query_start_loc.dim_size(0) - 1 (since query_start_loc is (batch + 1,))
+        # dim = u.dim_size(0) (since u is (dim, total_length))
+        # dstate = A.dim_size(1) (since A is (dim, dstate))
+        var batch = query_start_loc.dim_size(0) - 1
+        var dim = u.dim_size(0)
+        var dstate = A.dim_size(1)
+        return IndexList[3](batch, dim, dstate)
