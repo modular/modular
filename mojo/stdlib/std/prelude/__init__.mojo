@@ -123,6 +123,7 @@ from builtin.string_literal import StringLiteral
 from builtin.swap import swap
 from builtin.tuple import Tuple
 from builtin.type_aliases import (
+    MutOrigin,
     AnyTrivialRegType,
     ImmutAnyOrigin,
     ImmutOrigin,
@@ -132,6 +133,9 @@ from builtin.type_aliases import (
     Origin,
     OriginSet,
     StaticConstantOrigin,
+    ExternalOrigin,
+    ImmutExternalOrigin,
+    MutExternalOrigin,
 )
 from builtin.uint import UInt
 from builtin.value import (
