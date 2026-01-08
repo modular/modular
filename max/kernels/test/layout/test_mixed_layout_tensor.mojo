@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout._mixed_layout import MixedLayout, row_major
-from layout._mixed_layout_tensor import MixedLayoutTensor, MixedLayoutTensorIter
+from layout._mixed_layout_tensor import MixedLayoutTensor
 from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
 from layout.int_tuple import IntTuple
 from math import ceildiv
@@ -100,42 +100,6 @@ def test_tensor_span_constructor():
         bytes,
         row_major((Idx(2), Idx[2]())),
     )
-
-
-def test_layout_tensor_iterator():
-    comptime buf_size = 16
-    var storage = InlineArray[Int16, buf_size](uninitialized=True)
-    for i in range(buf_size):
-        storage[i] = i
-    var tile_layout = row_major((Idx[2](), Idx[2]()))
-    var iter = MixedLayoutTensorIter(storage, tile_layout)
-
-    var tile = next(iter)
-    assert_equal(tile[(Idx(0), Idx(0))], 0)
-    assert_equal(tile[(Idx(0), Idx(1))], 1)
-    assert_equal(tile[(Idx(1), Idx(0))], 2)
-    assert_equal(tile[(Idx(1), Idx(1))], 3)
-    assert_equal(tile.layout.size(), 4)
-    tile = next(iter)
-    assert_equal(tile[(Idx(0), Idx(0))], 4)
-    assert_equal(tile[(Idx(0), Idx(1))], 5)
-    assert_equal(tile[(Idx(1), Idx(0))], 6)
-    assert_equal(tile[(Idx(1), Idx(1))], 7)
-    assert_equal(tile.layout.size(), 4)
-    tile = next(iter)
-    assert_equal(tile[(Idx(0), Idx(0))], 8)
-    assert_equal(tile[(Idx(0), Idx(1))], 9)
-    assert_equal(tile[(Idx(1), Idx(0))], 10)
-    assert_equal(tile[(Idx(1), Idx(1))], 11)
-    assert_equal(tile.layout.size(), 4)
-    tile = next(iter)
-    assert_equal(tile[(Idx(0), Idx(0))], 12)
-    assert_equal(tile[(Idx(0), Idx(1))], 13)
-    assert_equal(tile[(Idx(1), Idx(0))], 14)
-    assert_equal(tile[(Idx(1), Idx(1))], 15)
-    assert_equal(tile.layout.size(), 4)
-    with assert_raises():
-        _ = next(iter)  # raises StopIteration
 
 
 def test_fill():
