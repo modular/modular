@@ -119,7 +119,7 @@ fn quantize_dynamic_scaled_fp4[
         num_max_threads=num_max_threads,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         output,
         scales,
         input,
@@ -311,7 +311,7 @@ fn block_scales_interleave_fp4[
         num_max_threads=num_max_threads,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         input_scales,
         output_scales,
         block_dim=block_dim,
@@ -471,7 +471,7 @@ fn naive_block_scaled_nvfp4_matmul[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c,
         a,
         b,

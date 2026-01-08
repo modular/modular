@@ -601,7 +601,7 @@ fn reduce_launch[
                     dtype,
                     simd_packing_factor,
                 ]
-                ctx.enqueue_function_checked[kernel, kernel](
+                ctx.enqueue_function[kernel, kernel](
                     shape,
                     init,
                     grid_dim=num_blocks,
@@ -629,7 +629,7 @@ fn reduce_launch[
                         dtype,
                         packing_factor,
                     ]
-                    ctx.enqueue_function_checked[kernel, kernel](
+                    ctx.enqueue_function[kernel, kernel](
                         shape,
                         init,
                         grid_dim=num_blocks,
@@ -652,7 +652,7 @@ fn reduce_launch[
                         dtype,
                         packing_factor,
                     ]
-                    ctx.enqueue_function_checked[kernel, kernel](
+                    ctx.enqueue_function[kernel, kernel](
                         shape,
                         init,
                         grid_dim=num_blocks,

@@ -398,7 +398,7 @@ fn test_combine[
     @parameter
     fn run_dispatch(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function_checked[dispatch, dispatch](
+        ctx.enqueue_function[dispatch, dispatch](
             get_input_tokens_tensor(dev_idx, slot_idx),
             get_topk_ids_tensor(dev_idx, slot_idx),
             get_dispatch_send_buf_ptr(dev_idx, slot_idx),
@@ -414,7 +414,7 @@ fn test_combine[
     @parameter
     fn run_dispatch_cb(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function_checked[dispatch_cb, dispatch_cb](
+        ctx.enqueue_function[dispatch_cb, dispatch_cb](
             type_of(format_handler)(get_output_tensor(dev_idx, slot_idx)),
             get_row_offsets_tensor(dev_idx, slot_idx),
             get_expert_ids_tensor(dev_idx, slot_idx),
@@ -440,7 +440,7 @@ fn test_combine[
     @parameter
     fn run_combine(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function_checked[combine, combine](
+        ctx.enqueue_function[combine, combine](
             get_output_tensor(dev_idx, slot_idx),
             get_src_token_info_tensor(dev_idx, slot_idx),
             get_combine_send_buf_ptr(dev_idx, slot_idx),
@@ -459,7 +459,7 @@ fn test_combine[
     @parameter
     fn run_combine_cb(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function_checked[combine_cb, combine_cb](
+        ctx.enqueue_function[combine_cb, combine_cb](
             get_output_2_tensor(dev_idx, slot_idx),
             get_combine_recv_buf_ptr(dev_idx, slot_idx),
             get_combine_recv_count_ptr(dev_idx, slot_idx),

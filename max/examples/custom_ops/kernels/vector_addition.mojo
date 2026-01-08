@@ -66,7 +66,7 @@ fn _vector_addition_gpu(
 
     # The GPU function is compiled and enqueued to run on the GPU across the
     # 1-D vector, split into blocks of `BLOCK_SIZE` width.
-    gpu_ctx.enqueue_function_checked[
+    gpu_ctx.enqueue_function[
         vector_addition_gpu_kernel, vector_addition_gpu_kernel
     ](vector_length, grid_dim=num_blocks, block_dim=BLOCK_SIZE)
 

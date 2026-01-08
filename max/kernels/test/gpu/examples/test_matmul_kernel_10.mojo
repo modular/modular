@@ -463,7 +463,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         @parameter
         @always_inline
         fn run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function_checked[sgemm_type, sgemm_type](
+            ctx.enqueue_function[sgemm_type, sgemm_type](
                 c_buffer,
                 a_buffer,
                 b_buffer,
@@ -497,7 +497,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         @parameter
         @always_inline
         fn run_func_naive(ctx: DeviceContext) raises:
-            ctx.enqueue_function_checked[matmul_naive, matmul_naive](
+            ctx.enqueue_function[matmul_naive, matmul_naive](
                 a_device,
                 b_device,
                 c_device,

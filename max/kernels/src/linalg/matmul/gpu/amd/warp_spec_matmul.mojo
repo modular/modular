@@ -637,7 +637,7 @@ fn warp_specialized_matmul[
         AddressSpace.GLOBAL
     ]()
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         global_a_device_tensor,
         global_b_device_tensor,
         global_c_device_tensor,

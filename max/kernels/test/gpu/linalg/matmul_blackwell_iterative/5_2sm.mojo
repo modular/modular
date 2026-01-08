@@ -537,7 +537,7 @@ fn blackwell_kernel_5[
         cta_group=cta_group,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

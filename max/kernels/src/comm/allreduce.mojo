@@ -291,7 +291,7 @@ fn _allreduce_naive_single[
     var grid_size = min(max_num_blocks, ceildiv(num_elements, BLOCK_SIZE))
 
     # Reduce local buffer first.
-    ctx.enqueue_function_checked[
+    ctx.enqueue_function[
         _naive_reduce_kernel[dtype], _naive_reduce_kernel[dtype]
     ](
         accum,
@@ -308,7 +308,7 @@ fn _allreduce_naive_single[
 
         # Copy remote input into device-local scratch, then accumulate.
         ctx.enqueue_copy(scratch, dev_inputs[i])
-        ctx.enqueue_function_checked[
+        ctx.enqueue_function[
             _naive_reduce_kernel[dtype], _naive_reduce_kernel[dtype]
         ](
             accum,
@@ -326,7 +326,7 @@ fn _allreduce_naive_single[
         alignment = align_of[SIMD[dtype, simd_width]](),
         output_lambda=output_lambda,
     ]
-    ctx.enqueue_function_checked[
+    ctx.enqueue_function[
         naive_reduce_with_lambda_kernel, naive_reduce_with_lambda_kernel
     ](
         out_buf,
@@ -651,9 +651,7 @@ fn _allreduce_p2p[
             output_lambda=output_lambda,
             use_multimem=use_multimem,
         ]
-        ctx.enqueue_function_checked[
-            allreduce_1stage_kernel, allreduce_1stage_kernel
-        ](
+        ctx.enqueue_function[allreduce_1stage_kernel, allreduce_1stage_kernel](
             out_buf,
             list_of_in_ptrs,
             rank_sigs,
@@ -684,7 +682,7 @@ fn _allreduce_p2p[
                 atom_size=atom_size,
             ]
 
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 out_buf,
                 DeviceBuffer[dtype](
                     ctx, list_of_in_ptrs[ctx.id()], num_elements, owning=False
@@ -715,7 +713,7 @@ fn _allreduce_p2p[
                 pdl_level=pdl_level,
                 use_multimem=use_multimem,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 out_buf,
                 list_of_in_ptrs,
                 rank_sigs,

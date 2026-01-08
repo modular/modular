@@ -351,7 +351,7 @@ fn _reducescatter_p2p[
     ]
 
     # Launch the kernel
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         out_buf,
         list_of_in_ptrs,
         rank_sigs,

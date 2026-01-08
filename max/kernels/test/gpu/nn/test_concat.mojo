@@ -142,7 +142,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     )
     @parameter
     fn run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             output_device_ref.as_any_origin(),
             StaticTuple[LayoutTensor[dtype, layout, MutAnyOrigin], 4](
                 input_0_device_ref.as_any_origin(),

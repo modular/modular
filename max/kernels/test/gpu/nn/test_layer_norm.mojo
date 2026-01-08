@@ -134,7 +134,7 @@ fn run_layer_norm_block[
             gamma_fn,
             output_fn,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             IndexList[2](rows, cols),
             beta,
             epsilon,
@@ -390,7 +390,7 @@ fn run_layer_norm_warp_tiling[
             gamma_fn,
             output_fn,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             IndexList[2](rows, cols),
             beta,
             epsilon,

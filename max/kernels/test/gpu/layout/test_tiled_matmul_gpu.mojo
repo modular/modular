@@ -75,7 +75,7 @@ fn test_naive_matmul_kernel(ctx: DeviceContext) raises:
         layout_c, layout_a, layout_b, BM, BN
     ]
 
-    ctx.enqueue_function_checked[naive_matmul_kernel, naive_matmul_kernel](
+    ctx.enqueue_function[naive_matmul_kernel, naive_matmul_kernel](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),
@@ -212,7 +212,7 @@ fn test_sram_blocked_matmul(ctx: DeviceContext) raises:
         layout_c, layout_a, layout_b, thread_layout, BM, BN, BK
     ]
 
-    ctx.enqueue_function_checked[
+    ctx.enqueue_function[
         sram_blocked_matmul_kernel, sram_blocked_matmul_kernel
     ](
         mat_c.device_tensor(),
@@ -314,7 +314,7 @@ fn test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
         layout_c, layout_a, layout_b, layout_c_mma, layout_a_mma, layout_b_mma
     ]
 
-    ctx.enqueue_function_checked[
+    ctx.enqueue_function[
         single_warp_mma_sync_m16n8k8_kernel_kernel,
         single_warp_mma_sync_m16n8k8_kernel_kernel,
     ](
@@ -478,7 +478,7 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
         thread_layout, mat_c.shape, mat_a.shape, mat_b.shape, BM, BN, BK
     ]
 
-    ctx.enqueue_function_checked[
+    ctx.enqueue_function[
         sram_blocked_matmul_dynamic_nd_buffer_kernel,
         sram_blocked_matmul_dynamic_nd_buffer_kernel,
     ](

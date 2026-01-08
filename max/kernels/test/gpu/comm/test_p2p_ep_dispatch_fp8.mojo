@@ -334,7 +334,7 @@ fn test_dispatch[
     @parameter
     fn run_dispatch(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function_checked[dispatch, dispatch](
+        ctx.enqueue_function[dispatch, dispatch](
             get_input_tokens_tensor(dev_idx, slot_idx),
             get_topk_ids_tensor(dev_idx, slot_idx),
             get_send_buf_ptr(dev_idx, slot_idx),
@@ -350,7 +350,7 @@ fn test_dispatch[
     @parameter
     fn run_dispatch_cb(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function_checked[dispatch_cb, dispatch_cb](
+        ctx.enqueue_function[dispatch_cb, dispatch_cb](
             BlockwiseFP8TokenFormat[hidden_size, top_k, gpu_alignment](
                 get_output_tensor(dev_idx, slot_idx),
                 get_output_scales_tensor(dev_idx, slot_idx),

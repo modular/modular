@@ -367,7 +367,7 @@ struct Struct_ep_dispatch:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var func = gpu_ctx.compile_function_checked[dispatch, dispatch]()
+            var func = gpu_ctx.compile_function[dispatch, dispatch]()
             var cached_module_key = String("EP_DISPATCH_INITED_DEV_", gpu_id)
 
             # Don't initialize the module repeatedly
@@ -405,7 +405,7 @@ struct Struct_ep_dispatch:
                     UInt64, MutOrigin.external
                 ](unsafe_from_address=Int(recv_count_ptrs[i]))
 
-            gpu_ctx.enqueue_function_checked(
+            gpu_ctx.enqueue_function(
                 func,
                 input_tokens_tensor,
                 topk_ids_tensor,
@@ -551,7 +551,7 @@ struct Struct_ep_dispatch_cb:
                 atomic_counters_0._ptr
             )
 
-            gpu_ctx.enqueue_function_checked[dispatch_cb, dispatch_cb](
+            gpu_ctx.enqueue_function[dispatch_cb, dispatch_cb](
                 format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
@@ -730,7 +730,7 @@ struct Struct_ep_dispatch_cb_fused_shared_expert:
                 atomic_counters_0._ptr
             )
 
-            gpu_ctx.enqueue_function_checked[dispatch_cb, dispatch_cb](
+            gpu_ctx.enqueue_function[dispatch_cb, dispatch_cb](
                 format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
@@ -889,7 +889,7 @@ struct Struct_ep_dispatch_fp8:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var func = gpu_ctx.compile_function_checked[dispatch, dispatch]()
+            var func = gpu_ctx.compile_function[dispatch, dispatch]()
             var cached_module_key = String("EP_DISPATCH_INITED_DEV_", gpu_id)
 
             # Don't initialize the module repeatedly
@@ -927,7 +927,7 @@ struct Struct_ep_dispatch_fp8:
                     UInt64, MutOrigin.external
                 ](unsafe_from_address=Int(recv_count_ptrs[i]))
 
-            gpu_ctx.enqueue_function_checked(
+            gpu_ctx.enqueue_function(
                 func,
                 input_tokens_tensor,
                 topk_ids_tensor,
@@ -1089,7 +1089,7 @@ struct Struct_ep_dispatch_cb_fp8:
                 atomic_counters_0._ptr
             )
 
-            gpu_ctx.enqueue_function_checked[dispatch_cb, dispatch_cb](
+            gpu_ctx.enqueue_function[dispatch_cb, dispatch_cb](
                 format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
@@ -1285,7 +1285,7 @@ struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
                 atomic_counters_0._ptr
             )
 
-            gpu_ctx.enqueue_function_checked[dispatch_cb, dispatch_cb](
+            gpu_ctx.enqueue_function[dispatch_cb, dispatch_cb](
                 format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
@@ -1417,7 +1417,7 @@ struct Struct_ep_combine:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var func = gpu_ctx.compile_function_checked[combine, combine]()
+            var func = gpu_ctx.compile_function[combine, combine]()
             var cached_module_key = String("EP_COMBINE_INITED_DEV_", gpu_id)
 
             # Don't initialize the module repeatedly
@@ -1455,7 +1455,7 @@ struct Struct_ep_combine:
                     UInt64, MutOrigin.external
                 ](unsafe_from_address=Int(recv_count_ptrs[i]))
 
-            gpu_ctx.enqueue_function_checked(
+            gpu_ctx.enqueue_function(
                 func,
                 input_tokens_tensor,
                 src_info_tensor,
@@ -1597,7 +1597,7 @@ struct Struct_ep_combine_fused_shared_expert:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var func = gpu_ctx.compile_function_checked[combine, combine]()
+            var func = gpu_ctx.compile_function[combine, combine]()
             var cached_module_key = String("EP_COMBINE_INITED_DEV_", gpu_id)
 
             # Don't initialize the module repeatedly
@@ -1635,7 +1635,7 @@ struct Struct_ep_combine_fused_shared_expert:
                     UInt64, MutOrigin.external
                 ](unsafe_from_address=Int(recv_count_ptrs[i]))
 
-            gpu_ctx.enqueue_function_checked(
+            gpu_ctx.enqueue_function(
                 func,
                 input_tokens_tensor,
                 src_info_tensor,
@@ -1757,7 +1757,7 @@ struct Struct_ep_combine_cb:
                 Int32, MutOrigin.external
             ](atomic_counters_1._ptr)
 
-            gpu_ctx.enqueue_function_checked[combine_cb, combine_cb](
+            gpu_ctx.enqueue_function[combine_cb, combine_cb](
                 output_tokens_tensor,
                 recv_buf_ptr,
                 recv_count_ptr,
@@ -1834,7 +1834,7 @@ struct Struct_ep_fused_silu:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            gpu_ctx.enqueue_function_checked[fused_silu, fused_silu](
+            gpu_ctx.enqueue_function[fused_silu, fused_silu](
                 output_tensor,
                 input_tensor,
                 row_offsets_tensor,
@@ -1915,7 +1915,7 @@ struct Struct_ep_fused_silu_fp8:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            gpu_ctx.enqueue_function_checked[fused_silu_fp8, fused_silu_fp8](
+            gpu_ctx.enqueue_function[fused_silu_fp8, fused_silu_fp8](
                 output_tensor,
                 scales_tensor,
                 input_tensor,

@@ -1520,7 +1520,7 @@ fn sm100_warp_specialized_blockwise_fp8[
 
     var problem_shape = StaticTuple[Int32, 3](M, N, K)
 
-    ctx.enqueue_function_checked[kernel, kernel, dump_asm=False](
+    ctx.enqueue_function[kernel, kernel, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,

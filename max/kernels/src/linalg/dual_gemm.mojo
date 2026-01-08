@@ -835,7 +835,7 @@ fn multistage_dual_gemm[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
+    ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
         c,
         a,
         b0,
@@ -1366,7 +1366,7 @@ fn dual_gemv[
         elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[kernel_type, kernel_type](
+    ctx.enqueue_function[kernel_type, kernel_type](
         c,
         a,
         b0,

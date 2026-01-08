@@ -81,9 +81,7 @@ def main():
         ctx.enqueue_copy(src_buf=host_buffer, dst_buf=device_buffer)
 
         # Compile the scalar_add kernel function for execution on the GPU.
-        scalar_add_kernel = ctx.compile_function_checked[
-            scalar_add, scalar_add
-        ]()
+        scalar_add_kernel = ctx.compile_function[scalar_add, scalar_add]()
 
         # Launch the GPU kernel with the following arguments:
         #
@@ -93,7 +91,7 @@ def main():
         # - grid_dim=1: use 1 thread block
         # - block_dim=num_elements: use 'num_elements' threads per block (one
         #   thread per vector element)
-        ctx.enqueue_function_checked(
+        ctx.enqueue_function(
             scalar_add_kernel,
             device_buffer,
             num_elements,

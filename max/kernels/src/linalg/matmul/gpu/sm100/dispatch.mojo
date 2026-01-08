@@ -2412,7 +2412,7 @@ fn _vendor_blas_matmul_sm100[
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ]
 
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 c_layout_tensor,
                 a_layout_tensor,
                 b_layout_tensor,

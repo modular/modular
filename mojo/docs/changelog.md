@@ -565,7 +565,7 @@ what we publish.
 - Remove the `Int.__init__(self, value: StringSlice, base: UInt)` constructor.
   Users should call `atol` directly.
 
-- `DeviceContext.enqueue_function_checked()` and
+- `DeviceContext.enqueue_function()` and
   `DeviceContext.enqueue_function_experimental()` now automatically infer
   `func_attribute` to `FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(shared_mem_bytes)`
   when `shared_mem_bytes` is specified but `func_attribute` is not, for NVIDIA GPUs
@@ -625,6 +625,11 @@ what we publish.
       UTF-8 without any checks.
   - `append_byte` has been deprecated and has been replaced with
     `append(Codepoint)`.
+
+- `DeviceContext.enqueue_function_checked()` and
+  `DeviceStream.enqueue_function_checked()` have been renamed to
+  `enqueue_function()`. Similarly, `DeviceContext.compile_function_checked()`
+  has been renamed to `compile_function()`.
 
 ### Tooling changes
 
@@ -724,9 +729,9 @@ or removed in future releases.
 
 ### ❌ Removed
 
-- The DeviceContext `enqueue_function` and `compile_function` have been removed.
-  Please migrate the code to use `enqueue_function_checked` and
-  `compile_function_checked`.
+- The DeviceContext `enqueue_function_unchecked` and `compile_function_unchecked`
+  have been removed. Please migrate the code to use `enqueue_function` and
+  `compile_function`.
 
 - The `UnsafePointer.offset()` method is now deprecated. Use pointer arithmetic
   instead:

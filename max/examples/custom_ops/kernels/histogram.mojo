@@ -94,7 +94,7 @@ fn _histogram_gpu(
     # Zero initialize the output buffer
     ctx.enqueue_memset(output_device, 0)
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         output_device,
         input_device,
         n,

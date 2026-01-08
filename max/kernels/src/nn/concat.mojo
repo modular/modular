@@ -878,7 +878,7 @@ fn _concat_gpu[
                 epilogue_fn,
             ]
 
-            return ctx.enqueue_function_checked[kernel, kernel](
+            return ctx.enqueue_function[kernel, kernel](
                 output,
                 inputs,
                 grid_dim=(inputs[0].size() // block_size),
@@ -1062,7 +1062,7 @@ fn _fused_concat_gpu[
                 size,
             ]
 
-            return ctx.enqueue_function_checked[kernel, kernel](
+            return ctx.enqueue_function[kernel, kernel](
                 input_shapes,
                 output,
                 grid_dim=(

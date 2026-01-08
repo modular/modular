@@ -246,7 +246,7 @@ fn bench_dispatch[
             TokenFmtType,
         ]
 
-        var func = ctx.compile_function_checked[dispatch, dispatch]()
+        var func = ctx.compile_function[dispatch, dispatch]()
         shmem_module_init(func)
 
         comptime dispatch_cb = dispatch_cb_kernel[
@@ -263,7 +263,7 @@ fn bench_dispatch[
             FormatHandlerType,
         ]
 
-        var func_cb = ctx.compile_function_checked[dispatch_cb, dispatch_cb]()
+        var func_cb = ctx.compile_function[dispatch_cb, dispatch_cb]()
 
         @always_inline
         @parameter
@@ -278,7 +278,7 @@ fn bench_dispatch[
             recv_buf_ptrs[0] = recv_buf
             recv_count_ptrs[0] = recv_count
 
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 func,
                 input_tokens_tensor,
                 topk_ids_tensor,
@@ -294,7 +294,7 @@ fn bench_dispatch[
         @always_inline
         @parameter
         fn run_dispatch_cb(ctx: DeviceContext) raises:
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 func_cb,
                 format_handler,
                 row_offsets_tensor,

@@ -296,7 +296,7 @@ fn topk_mask_logits[
             logits.layout,
             masked_logits.layout,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             logits,
             masked_logits,
             top_k_arr.value().to_device_buffer(ctx),
@@ -826,7 +826,7 @@ fn topk_sampling_from_prob[
             output.layout,
             deterministic,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             probs,
             output,
             indices.value().to_device_buffer(ctx),
@@ -1144,7 +1144,7 @@ fn topk_softmax_sample[
             logits.layout,
             sampled_indices.layout,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             logits,
             sampled_indices,
             top_k_arr.value().to_device_buffer(ctx),

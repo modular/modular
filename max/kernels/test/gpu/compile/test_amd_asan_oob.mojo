@@ -46,9 +46,7 @@ fn test(ctx: DeviceContext, i: Int) raises:
     var buf = ctx.enqueue_create_buffer[DType.int32](n)
 
     comptime kernel = bad_func
-    ctx.enqueue_function_checked[kernel, kernel](
-        buf, i, grid_dim=(1), block_dim=(1)
-    )
+    ctx.enqueue_function[kernel, kernel](buf, i, grid_dim=(1), block_dim=(1))
     ctx.synchronize()
 
 

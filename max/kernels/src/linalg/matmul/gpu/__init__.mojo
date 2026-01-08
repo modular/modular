@@ -777,7 +777,7 @@ fn _matmul_gpu[
         elementwise_lambda_fn=elementwise_lambda_wrapper,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c_layout_tensor,
         a_layout_tensor,
         b_layout_tensor,
@@ -884,7 +884,7 @@ fn multistage_gemm[
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
 
-        ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
+        ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
             tensor_c,
             tensor_a,
             tensor_b,
@@ -911,7 +911,7 @@ fn multistage_gemm[
             config,
             elementwise_lambda_fn,
         ]
-        ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
+        ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
             tensor_c,
             tensor_a,
             tensor_b,
@@ -992,7 +992,7 @@ fn multistage_gemm[
 
         @parameter
         if has_amd_gpu_accelerator():
-            ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
+            ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
                 tensor_c,
                 tensor_a,
                 tensor_b,
@@ -1002,7 +1002,7 @@ fn multistage_gemm[
                 block_dim=runtime_config.block_dim(),
             )
         else:
-            ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
+            ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
                 tensor_c,
                 tensor_a,
                 tensor_b,
@@ -1044,7 +1044,7 @@ fn multistage_gemm[
             config=config,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
-        ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
+        ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
             tensor_c,
             tensor_a,
             tensor_b,
@@ -1072,7 +1072,7 @@ fn multistage_gemm[
             elementwise_lambda_fn,
         ]
 
-        ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
+        ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
             tensor_c,
             tensor_a,
             tensor_b,

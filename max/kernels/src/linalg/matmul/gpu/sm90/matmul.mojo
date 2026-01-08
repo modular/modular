@@ -396,7 +396,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 schedule=schedule,
             ]
 
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 a_tma_op,
                 b_tma_op,
                 c_tma_op,
@@ -422,7 +422,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 c_tma_op.desc_layout,
             ]
 
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 a_tma_op,
                 b_tma_op,
                 c_tma_op,
@@ -446,7 +446,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
             c_tma_op.layout,
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             c_tma_op,
             a,
             b,
@@ -728,7 +728,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         raster_order=raster_order,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

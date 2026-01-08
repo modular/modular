@@ -218,19 +218,19 @@ def test_load_and_mma_and_multiply_operands[
         dst_dtype, dtype, c_dev.layout, shape
     ]
 
-    ctx.enqueue_function_checked[kernel_load_a, kernel_load_a](
+    ctx.enqueue_function[kernel_load_a, kernel_load_a](
         a_dev, a_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
-    ctx.enqueue_function_checked[kernel_load_b, kernel_load_b](
+    ctx.enqueue_function[kernel_load_b, kernel_load_b](
         b_dev, b_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
-    ctx.enqueue_function_checked[kernel_load_c, kernel_load_c](
+    ctx.enqueue_function[kernel_load_c, kernel_load_c](
         c_dev, c_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
-    ctx.enqueue_function_checked[kernel_store_d, kernel_store_d](
+    ctx.enqueue_function[kernel_store_d, kernel_store_d](
         d_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
@@ -244,7 +244,7 @@ def test_load_and_mma_and_multiply_operands[
         transpose_b,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_dev,
         b_dev,
         c_dev,

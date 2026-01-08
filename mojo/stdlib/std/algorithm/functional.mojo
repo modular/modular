@@ -1874,7 +1874,7 @@ fn _elementwise_impl_gpu[
         comptime kernel = _elementwise_gpu_kernel[
             block_size = UInt(block_size), handle_uneven_simd=False
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
             block_dim=Int(block_size),
             attributes=pdl_launch_attributes(),
@@ -1883,7 +1883,7 @@ fn _elementwise_impl_gpu[
         comptime kernel = _elementwise_gpu_kernel[
             block_size = UInt(block_size), handle_uneven_simd=True
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
             block_dim=Int(block_size),
             attributes=pdl_launch_attributes(),
@@ -2245,6 +2245,6 @@ fn _stencil_impl_gpu[
     )
 
     # Compile and launch kernel
-    ctx.enqueue_function_checked[stencil_kernel, stencil_kernel](
+    ctx.enqueue_function[stencil_kernel, stencil_kernel](
         grid_dim=grid_dim, block_dim=block_dim
     )
