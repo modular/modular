@@ -13,7 +13,7 @@
 
 
 struct HeapArray(Writable):
-    var data: UnsafePointer[Int, MutOrigin.external]
+    var data: UnsafePointer[Int, MutExternalOrigin]
     var size: Int
 
     fn __init__(out self, *values: Int):

@@ -667,14 +667,14 @@ fn stack_allocation[
     shape_types=shape_types,
     stride_types=stride_types,
     dtype,
-    MutOrigin.external,
+    MutExternalOrigin,
     address_space=address_space,
 ] where layout.ALL_DIMS_KNOWN:
     return MixedLayoutTensor[
         shape_types=shape_types,
         stride_types=stride_types,
         dtype,
-        MutOrigin.external,
+        MutExternalOrigin,
         address_space=address_space,
     ](
         std.memory.stack_allocation[

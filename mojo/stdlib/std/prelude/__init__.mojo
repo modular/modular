@@ -136,6 +136,7 @@ from builtin.type_aliases import (
     ExternalOrigin,
     ImmutExternalOrigin,
     MutExternalOrigin,
+    unsafe_origin_mutcast,
 )
 from builtin.uint import UInt
 from builtin.value import (

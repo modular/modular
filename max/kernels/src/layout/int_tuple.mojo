@@ -133,7 +133,7 @@ struct IntArray(ImplicitlyCopyable):
     data structures, optimized for high-performance tensor operations.
     """
 
-    var _data: UnsafePointer[Int, MutOrigin.external]
+    var _data: UnsafePointer[Int, MutExternalOrigin]
     var _size: Int
 
     @always_inline("nodebug")

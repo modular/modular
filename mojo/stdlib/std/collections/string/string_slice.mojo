@@ -533,7 +533,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     """
 
     # Aliases
-    comptime Mutable = StringSlice[MutOrigin(unsafe_cast=Self.origin)]
+    comptime Mutable = StringSlice[unsafe_origin_mutcast[Self.origin]]
     """The mutable version of the `StringSlice`."""
     comptime Immutable = StringSlice[ImmutOrigin(Self.origin)]
     """The immutable version of the `StringSlice`."""

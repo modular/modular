@@ -87,7 +87,7 @@ fn bench_reduce[
     # Create device buffers for all GPUs
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutOrigin.external]](
+    var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
         capacity=ngpus
     )
 

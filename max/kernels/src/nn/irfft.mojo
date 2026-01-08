@@ -140,7 +140,7 @@ fn _get_fft_plan[
         cached_plan_key,
         # we are bitcasting the integer plan to a void * to cache it,
         # because that's what KGEN_CompilerRT_InsertGlobal expects.
-        UnsafePointerV2[NoneType, MutOrigin.external](
+        UnsafePointerV2[NoneType, MutExternalOrigin](
             unsafe_from_address=Int(plan)
         ),
     )

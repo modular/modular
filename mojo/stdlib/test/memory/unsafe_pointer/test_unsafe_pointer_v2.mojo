@@ -217,7 +217,7 @@ def test_bitcast():
 
 
 def test_unsafepointer_string():
-    var nullptr = UnsafePointer[Int, MutOrigin.external]()
+    var nullptr = UnsafePointer[Int, MutExternalOrigin]()
     assert_equal(String(nullptr), "0x0")
 
     var ptr = alloc[Int](1)
@@ -375,7 +375,7 @@ def test_indexing_simd():
 
 
 def test_bool():
-    var nullptr = UnsafePointer[Int, MutOrigin.external]()
+    var nullptr = UnsafePointer[Int, MutExternalOrigin]()
     var ptr = alloc[Int](1)
 
     assert_true(ptr.__bool__())
@@ -555,7 +555,7 @@ def test_unsafe_origin_cast():
     _ref_to[origin_of(y)](ptr.unsafe_origin_cast[origin_of(y)]()[])
 
 
-fn _ptr_to_int(ptr: UnsafePointer[Int, MutOrigin.external]) -> Int:
+fn _ptr_to_int(ptr: UnsafePointer[Int, MutExternalOrigin]) -> Int:
     return Int(ptr)
 
 
@@ -568,7 +568,7 @@ def test_ptr_to_int_llvm_lowering():
     assert_false("ptrtoaddr" in info.asm)
 
 
-fn _from_address(x: Int, out result: UnsafePointer[Int, MutOrigin.external]):
+fn _from_address(x: Int, out result: UnsafePointer[Int, MutExternalOrigin]):
     result = type_of(result)(unsafe_from_address=x)
 
 
@@ -583,7 +583,7 @@ def test_unsafe_from_address():
     var ptr2 = type_of(ptr)(unsafe_from_address=Int(ptr))
     assert_equal(ptr2[], 42)
 
-    var ptr3 = UnsafePointer[Int, MutOrigin.external](unsafe_from_address=42)
+    var ptr3 = UnsafePointer[Int, MutExternalOrigin](unsafe_from_address=42)
     assert_true(ptr3)
 
 

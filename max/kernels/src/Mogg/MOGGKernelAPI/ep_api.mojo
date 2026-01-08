@@ -77,7 +77,7 @@ fn unsafe_aliasing_address_to_device_buffer[
 ](var addr: Int, size: Int, ctx: DeviceContext) -> DeviceBuffer[dtype]:
     return DeviceBuffer[dtype](
         ctx,
-        UnsafePointer[Scalar[dtype], MutOrigin.external](
+        UnsafePointer[Scalar[dtype], MutExternalOrigin](
             unsafe_from_address=addr
         ),
         size,
@@ -375,34 +375,34 @@ struct Struct_ep_dispatch:
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutOrigin.external](
+                    UnsafePointer[NoneType, MutExternalOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-            var send_ptr = UnsafePointer[UInt8, MutOrigin.external](
+            var send_ptr = UnsafePointer[UInt8, MutExternalOrigin](
                 unsafe_from_address=Int(send_ptrs[gpu_id])
             )
 
             # Create inline arrays to store all the p2p accessible pointers
             var recv_ptrs_arr = InlineArray[
-                UnsafePointer[UInt8, MutOrigin.external], n_gpus_per_node
+                UnsafePointer[UInt8, MutExternalOrigin], n_gpus_per_node
             ](fill={})
             var recv_count_ptrs_arr = InlineArray[
-                UnsafePointer[UInt64, MutOrigin.external], n_gpus_per_node
+                UnsafePointer[UInt64, MutExternalOrigin], n_gpus_per_node
             ](fill={})
 
-            var atomic_counters_ptr = UnsafePointer[Int32, MutOrigin.external](
+            var atomic_counters_ptr = UnsafePointer[Int32, MutExternalOrigin](
                 atomic_counters_0._ptr
             )
 
             @parameter
             for i in range(n_gpus_per_node):
-                recv_ptrs_arr[i] = UnsafePointer[UInt8, MutOrigin.external](
+                recv_ptrs_arr[i] = UnsafePointer[UInt8, MutExternalOrigin](
                     unsafe_from_address=Int(recv_ptrs[i])
                 )
                 recv_count_ptrs_arr[i] = UnsafePointer[
-                    UInt64, MutOrigin.external
+                    UInt64, MutExternalOrigin
                 ](unsafe_from_address=Int(recv_count_ptrs[i]))
 
             gpu_ctx.enqueue_function(
@@ -541,13 +541,13 @@ struct Struct_ep_dispatch_cb:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_ptr = UnsafePointer[UInt8, MutOrigin.external](
+            var recv_buf_ptr = UnsafePointer[UInt8, MutExternalOrigin](
                 unsafe_from_address=Int(recv_ptrs[gpu_id])
             )
-            var recv_count_ptr = UnsafePointer[UInt64, MutOrigin.external](
+            var recv_count_ptr = UnsafePointer[UInt64, MutExternalOrigin](
                 unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
-            var atomic_counters_ptr = UnsafePointer[Int32, MutOrigin.external](
+            var atomic_counters_ptr = UnsafePointer[Int32, MutExternalOrigin](
                 atomic_counters_0._ptr
             )
 
@@ -720,13 +720,13 @@ struct Struct_ep_dispatch_cb_fused_shared_expert:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_ptr = UnsafePointer[UInt8, MutOrigin.external](
+            var recv_buf_ptr = UnsafePointer[UInt8, MutExternalOrigin](
                 unsafe_from_address=Int(recv_ptrs[gpu_id])
             )
-            var recv_count_ptr = UnsafePointer[UInt64, MutOrigin.external](
+            var recv_count_ptr = UnsafePointer[UInt64, MutExternalOrigin](
                 unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
-            var atomic_counters_ptr = UnsafePointer[Int32, MutOrigin.external](
+            var atomic_counters_ptr = UnsafePointer[Int32, MutExternalOrigin](
                 atomic_counters_0._ptr
             )
 
@@ -897,7 +897,7 @@ struct Struct_ep_dispatch_fp8:
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutOrigin.external](
+                    UnsafePointer[NoneType, MutExternalOrigin](
                         unsafe_from_address=1
                     ),
                 )
@@ -908,23 +908,23 @@ struct Struct_ep_dispatch_fp8:
 
             # Create inline arrays to store all the p2p accessible pointers
             var recv_ptrs_arr = InlineArray[
-                UnsafePointer[UInt8, MutOrigin.external], n_gpus_per_node
+                UnsafePointer[UInt8, MutExternalOrigin], n_gpus_per_node
             ](fill={})
             var recv_count_ptrs_arr = InlineArray[
-                UnsafePointer[UInt64, MutOrigin.external], n_gpus_per_node
+                UnsafePointer[UInt64, MutExternalOrigin], n_gpus_per_node
             ](fill={})
 
-            var atomic_counters_ptr = UnsafePointer[Int32, MutOrigin.external](
+            var atomic_counters_ptr = UnsafePointer[Int32, MutExternalOrigin](
                 atomic_counters_0._ptr
             )
 
             @parameter
             for i in range(n_gpus_per_node):
-                recv_ptrs_arr[i] = UnsafePointer[UInt8, MutOrigin.external](
+                recv_ptrs_arr[i] = UnsafePointer[UInt8, MutExternalOrigin](
                     unsafe_from_address=Int(recv_ptrs[i])
                 )
                 recv_count_ptrs_arr[i] = UnsafePointer[
-                    UInt64, MutOrigin.external
+                    UInt64, MutExternalOrigin
                 ](unsafe_from_address=Int(recv_count_ptrs[i]))
 
             gpu_ctx.enqueue_function(
@@ -1079,13 +1079,13 @@ struct Struct_ep_dispatch_cb_fp8:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_ptr = UnsafePointer[UInt8, MutOrigin.external](
+            var recv_buf_ptr = UnsafePointer[UInt8, MutExternalOrigin](
                 unsafe_from_address=Int(recv_ptrs[gpu_id])
             )
-            var recv_count_ptr = UnsafePointer[UInt64, MutOrigin.external](
+            var recv_count_ptr = UnsafePointer[UInt64, MutExternalOrigin](
                 unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
-            var atomic_counters_ptr = UnsafePointer[Int32, MutOrigin.external](
+            var atomic_counters_ptr = UnsafePointer[Int32, MutExternalOrigin](
                 atomic_counters_0._ptr
             )
 
@@ -1275,13 +1275,13 @@ struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_ptr = UnsafePointer[UInt8, MutOrigin.external](
+            var recv_buf_ptr = UnsafePointer[UInt8, MutExternalOrigin](
                 unsafe_from_address=Int(recv_ptrs[gpu_id])
             )
-            var recv_count_ptr = UnsafePointer[UInt64, MutOrigin.external](
+            var recv_count_ptr = UnsafePointer[UInt64, MutExternalOrigin](
                 unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
-            var atomic_counters_ptr = UnsafePointer[Int32, MutOrigin.external](
+            var atomic_counters_ptr = UnsafePointer[Int32, MutExternalOrigin](
                 atomic_counters_0._ptr
             )
 
@@ -1425,34 +1425,34 @@ struct Struct_ep_combine:
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutOrigin.external](
+                    UnsafePointer[NoneType, MutExternalOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-            var send_ptr = UnsafePointer[UInt8, MutOrigin.external](
+            var send_ptr = UnsafePointer[UInt8, MutExternalOrigin](
                 unsafe_from_address=Int(send_ptrs[gpu_id])
             )
 
             # Create inline arrays to store all the p2p accessible pointers
             var recv_ptrs_arr = InlineArray[
-                UnsafePointer[UInt8, MutOrigin.external], n_gpus_per_node
+                UnsafePointer[UInt8, MutExternalOrigin], n_gpus_per_node
             ](fill={})
             var recv_count_ptrs_arr = InlineArray[
-                UnsafePointer[UInt64, MutOrigin.external], n_gpus_per_node
+                UnsafePointer[UInt64, MutExternalOrigin], n_gpus_per_node
             ](fill={})
 
-            var atomic_counters_1_ptr = UnsafePointer[
-                Int32, MutOrigin.external
-            ](atomic_counters_1._ptr)
+            var atomic_counters_1_ptr = UnsafePointer[Int32, MutExternalOrigin](
+                atomic_counters_1._ptr
+            )
 
             @parameter
             for i in range(n_gpus_per_node):
-                recv_ptrs_arr[i] = UnsafePointer[UInt8, MutOrigin.external](
+                recv_ptrs_arr[i] = UnsafePointer[UInt8, MutExternalOrigin](
                     unsafe_from_address=Int(recv_ptrs[i])
                 )
                 recv_count_ptrs_arr[i] = UnsafePointer[
-                    UInt64, MutOrigin.external
+                    UInt64, MutExternalOrigin
                 ](unsafe_from_address=Int(recv_count_ptrs[i]))
 
             gpu_ctx.enqueue_function(
@@ -1605,34 +1605,34 @@ struct Struct_ep_combine_fused_shared_expert:
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutOrigin.external](
+                    UnsafePointer[NoneType, MutExternalOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-            var send_ptr = UnsafePointer[UInt8, MutOrigin.external](
+            var send_ptr = UnsafePointer[UInt8, MutExternalOrigin](
                 unsafe_from_address=Int(send_ptrs[gpu_id])
             )
 
             # Create inline arrays to store all the p2p accessible pointers
             var recv_ptrs_arr = InlineArray[
-                UnsafePointer[UInt8, MutOrigin.external], n_gpus_per_node
+                UnsafePointer[UInt8, MutExternalOrigin], n_gpus_per_node
             ](fill={})
             var recv_count_ptrs_arr = InlineArray[
-                UnsafePointer[UInt64, MutOrigin.external], n_gpus_per_node
+                UnsafePointer[UInt64, MutExternalOrigin], n_gpus_per_node
             ](fill={})
 
-            var atomic_counters_1_ptr = UnsafePointer[
-                Int32, MutOrigin.external
-            ](atomic_counters_1._ptr)
+            var atomic_counters_1_ptr = UnsafePointer[Int32, MutExternalOrigin](
+                atomic_counters_1._ptr
+            )
 
             @parameter
             for i in range(n_gpus_per_node):
-                recv_ptrs_arr[i] = UnsafePointer[UInt8, MutOrigin.external](
+                recv_ptrs_arr[i] = UnsafePointer[UInt8, MutExternalOrigin](
                     unsafe_from_address=Int(recv_ptrs[i])
                 )
                 recv_count_ptrs_arr[i] = UnsafePointer[
-                    UInt64, MutOrigin.external
+                    UInt64, MutExternalOrigin
                 ](unsafe_from_address=Int(recv_count_ptrs[i]))
 
             gpu_ctx.enqueue_function(
@@ -1747,15 +1747,15 @@ struct Struct_ep_combine_cb:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_ptr = UnsafePointer[UInt8, MutOrigin.external](
+            var recv_buf_ptr = UnsafePointer[UInt8, MutExternalOrigin](
                 unsafe_from_address=Int(recv_ptrs[gpu_id])
             )
-            var recv_count_ptr = UnsafePointer[UInt64, MutOrigin.external](
+            var recv_count_ptr = UnsafePointer[UInt64, MutExternalOrigin](
                 unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
-            var atomic_counters_1_ptr = UnsafePointer[
-                Int32, MutOrigin.external
-            ](atomic_counters_1._ptr)
+            var atomic_counters_1_ptr = UnsafePointer[Int32, MutExternalOrigin](
+                atomic_counters_1._ptr
+            )
 
             gpu_ctx.enqueue_function[combine_cb, combine_cb](
                 output_tokens_tensor,

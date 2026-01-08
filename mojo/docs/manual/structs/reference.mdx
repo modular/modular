@@ -39,7 +39,7 @@ to the next node:
 
 ```mojo
 struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
-    comptime NodePointer = UnsafePointer[Self, MutOrigin.external]
+    comptime NodePointer = UnsafePointer[Self, MutExternalOrigin]
 
 
     var value: Optional[Self.ElementType] # The `Node`'s value
@@ -56,7 +56,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
 The code defines a type-specific `NodePointer` type alias built on
 [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer/).
 Add the comptime within the struct definition, as shown here.
-Including [`MutOrigin.external`](/mojo/manual/values/lifetimes/)
+Including [`MutExternalOrigin`](/mojo/manual/values/lifetimes/)
 lets the pointer represent dynamically-allocated memory that
 won't be tracked by the lifetime checker. You'll need to both allocate
 and deallocate memory as needed.
@@ -205,7 +205,7 @@ comptime Element = String # Adapt for your type
 comptime ListNode = Node[Element] # Constructing a LinkedList
 
 struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
-    comptime NodePointer = UnsafePointer[Self, MutOrigin.external]
+    comptime NodePointer = UnsafePointer[Self, MutExternalOrigin]
 
     var value: Optional[Self.ElementType] # The `Node`'s value
     var next: Self.NodePointer # Pointer to the next `Node`

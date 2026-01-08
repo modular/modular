@@ -125,7 +125,7 @@ struct _fdopen[mode: StaticString = "a"]:
         ```
         """
         # getdelim will allocate the buffer using malloc().
-        var buffer = UnsafePointer[UInt8, MutOrigin.external]()
+        var buffer = UnsafePointer[UInt8, MutExternalOrigin]()
         var n = UInt64(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);

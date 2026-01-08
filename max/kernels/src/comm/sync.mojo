@@ -37,13 +37,13 @@ fn group_end():
 
 
 fn _p2p_cache_destroy_wrapper(
-    ptr: MutOpaquePointer[MutOrigin.external],
+    ptr: MutOpaquePointer[MutExternalOrigin],
 ) -> None:
     # No resources to free for tagged-pointer encoding.
     pass
 
 
-fn _p2p_cache_init_wrapper() -> MutOpaquePointer[MutOrigin.external]:
+fn _p2p_cache_init_wrapper() -> MutOpaquePointer[MutExternalOrigin]:
     """Initializer for the indexed global caching P2P availability.
 
     Returns an OpaquePointer encoding a small integer tag:
@@ -55,11 +55,11 @@ fn _p2p_cache_init_wrapper() -> MutOpaquePointer[MutOrigin.external]:
 
     try:
         DeviceContext.enable_all_peer_access()
-        return UnsafePointer[NoneType, MutOrigin.external](
+        return UnsafePointer[NoneType, MutExternalOrigin](
             unsafe_from_address=p2p_available
         )
     except:
-        return UnsafePointer[NoneType, MutOrigin.external](
+        return UnsafePointer[NoneType, MutExternalOrigin](
             unsafe_from_address=p2p_not_available
         )
 
@@ -77,7 +77,7 @@ fn can_enable_p2p() raises -> Bool:
     # Initialize once per process via indexed global, then reuse the tag.
     var cached = external_call[
         "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
-        MutOpaquePointer[MutOrigin.external],
+        MutOpaquePointer[MutExternalOrigin],
     ](
         _Global._gpu_comm_p2p_idx,
         _p2p_cache_init_wrapper,

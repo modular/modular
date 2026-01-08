@@ -73,14 +73,14 @@ fn overlap_matmul_allreduce_test[
     var B_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var C_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var C_reduced_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var A_host_list = List[UnsafePointer[Scalar[dtype], MutOrigin.external]](
+    var A_host_list = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
         capacity=ngpus
     )
-    var B_host_list = List[UnsafePointer[Scalar[dtype], MutOrigin.external]](
+    var B_host_list = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
         capacity=ngpus
     )
     var C_reduced_host_list = List[
-        UnsafePointer[Scalar[dtype], MutOrigin.external]
+        UnsafePointer[Scalar[dtype], MutExternalOrigin]
     ](capacity=ngpus)
 
     # Create signal buffers for synchronization

@@ -333,13 +333,13 @@ struct _IntervalNode[
     var max_end: Self.T
     """The maximum end value of this node."""
 
-    var left: UnsafePointer[Self, MutOrigin.external]
+    var left: UnsafePointer[Self, MutExternalOrigin]
     """The left child of this node."""
 
-    var right: UnsafePointer[Self, MutOrigin.external]
+    var right: UnsafePointer[Self, MutExternalOrigin]
     """The right child of this node."""
 
-    var parent: UnsafePointer[Self, MutOrigin.external]
+    var parent: UnsafePointer[Self, MutExternalOrigin]
     """The parent of this node."""
 
     var _is_red: Bool
@@ -351,9 +351,9 @@ struct _IntervalNode[
         end: Self.T,
         data: Self.U,
         *,
-        left: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
-        right: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
-        parent: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
+        left: Optional[UnsafePointer[Self, MutExternalOrigin]] = None,
+        right: Optional[UnsafePointer[Self, MutExternalOrigin]] = None,
+        parent: Optional[UnsafePointer[Self, MutExternalOrigin]] = None,
         is_red: Bool = True,
     ):
         """Creates a new interval node.
@@ -381,9 +381,9 @@ struct _IntervalNode[
         interval: Interval[Self.T],
         data: Self.U,
         *,
-        left: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
-        right: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
-        parent: Optional[UnsafePointer[Self, MutOrigin.external]] = None,
+        left: Optional[UnsafePointer[Self, MutExternalOrigin]] = None,
+        right: Optional[UnsafePointer[Self, MutExternalOrigin]] = None,
+        parent: Optional[UnsafePointer[Self, MutExternalOrigin]] = None,
         is_red: Bool = True,
     ):
         """Creates a new interval node.
@@ -499,7 +499,7 @@ struct IntervalTree[
     """
 
     comptime _IntervalNodePointer = UnsafePointer[
-        _IntervalNode[Self.T, Self.U], MutOrigin.external
+        _IntervalNode[Self.T, Self.U], MutExternalOrigin
     ]
 
     var _root: Self._IntervalNodePointer

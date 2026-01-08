@@ -259,7 +259,7 @@ fn _init_random_state() -> _RandomState:
 
 
 fn _get_global_random_state(
-    out result: UnsafePointer[_RandomState, MutOrigin.external]
+    out result: UnsafePointer[_RandomState, MutExternalOrigin]
 ):
     """Gets the global random state.
 

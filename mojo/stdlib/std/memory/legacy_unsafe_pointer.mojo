@@ -47,7 +47,7 @@ struct LegacyUnsafePointer[
     type: AnyType,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    origin: Origin[mut=mut] = Origin[mut=mut](unsafe_cast=MutAnyOrigin),
+    origin: Origin[mut=mut] = unsafe_origin_mutcast[MutAnyOrigin, mut],
 ](
     Boolable,
     Comparable,
@@ -219,7 +219,7 @@ struct LegacyUnsafePointer[
     ) -> LegacyUnsafePointer[
         Self.type,
         address_space = AddressSpace.GENERIC,
-        origin = MutOrigin.external,
+        origin=MutExternalOrigin,
     ]:
         """Allocates contiguous storage for `count` elements of `type`
         with compile-time alignment `alignment`.
@@ -514,19 +514,19 @@ struct LegacyUnsafePointer[
                     T=AnyType,
                     Self,
                     Self._OriginCastType[True, MutAnyOrigin],
-                    Self._OriginCastType[True, MutOrigin.external],
+                    Self._OriginCastType[True, MutExternalOrigin],
                     Self._OriginCastType[False, ImmutAnyOrigin],
-                    Self._OriginCastType[False, ImmutOrigin.external],
+                    Self._OriginCastType[False, ImmutExternalOrigin],
                     Self._UnsafePointerType,
                     Self._UnsafePointerType._OriginCastType[True, MutAnyOrigin],
                     Self._UnsafePointerType._OriginCastType[
-                        True, MutOrigin.external
+                        True, MutExternalOrigin
                     ],
                     Self._UnsafePointerType._OriginCastType[
                         False, ImmutAnyOrigin
                     ],
                     Self._UnsafePointerType._OriginCastType[
-                        False, ImmutOrigin.external
+                        False, ImmutExternalOrigin
                     ],
                 ],
             ]
@@ -537,13 +537,13 @@ struct LegacyUnsafePointer[
                     T=AnyType,
                     Self,
                     Self._OriginCastType[False, ImmutAnyOrigin],
-                    Self._OriginCastType[False, ImmutOrigin.external],
+                    Self._OriginCastType[False, ImmutExternalOrigin],
                     Self._UnsafePointerType,
                     Self._UnsafePointerType._OriginCastType[
                         False, ImmutAnyOrigin
                     ],
                     Self._UnsafePointerType._OriginCastType[
-                        False, ImmutOrigin.external
+                        False, ImmutExternalOrigin
                     ],
                 ],
             ]
@@ -1154,7 +1154,7 @@ struct LegacyUnsafePointer[
     fn mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
+        target_mut, unsafe_origin_mutcast[Self.origin, target_mut]
     ]:
         """Changes the mutability of a pointer.
 
@@ -1178,7 +1178,7 @@ struct LegacyUnsafePointer[
     fn unsafe_mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
+        target_mut, unsafe_origin_mutcast[Self.origin, target_mut]
     ]:
         """Changes the mutability of a pointer.
 
@@ -1203,7 +1203,7 @@ struct LegacyUnsafePointer[
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = Self._OriginCastType[
-                target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
+                target_mut, unsafe_origin_mutcast[Self.origin, target_mut]
             ]._mlir_type,
         ](self.address)
 

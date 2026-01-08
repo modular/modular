@@ -107,7 +107,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
     """
 
     comptime _inner_type = _ArcPointerInner[Self.T]
-    var _inner: UnsafePointer[Self._inner_type, MutOrigin.external]
+    var _inner: UnsafePointer[Self._inner_type, MutExternalOrigin]
 
     fn __init__(out self, var value: Self.T):
         """Construct a new thread-safe, reference-counted smart pointer,
@@ -125,7 +125,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
     fn __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutOrigin.external],
+        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutExternalOrigin],
     ):
         """Constructs an `ArcPointer` from a raw pointer.
 
@@ -186,7 +186,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
     # correctly.
     fn __getitem__[
         self_life: ImmutOrigin
-    ](ref [self_life]self) -> ref [MutOrigin(unsafe_cast=self_life)] Self.T:
+    ](ref [self_life]self) -> ref [unsafe_origin_mutcast[self_life]] Self.T:
         """Returns a mutable reference to the managed value.
 
         Parameters:
@@ -230,7 +230,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         # this ArcPointer is destroyed.
         return self._inner[].refcount.load[ordering = Consistency.MONOTONIC]()
 
-    fn steal_data(deinit self) -> UnsafePointer[Self.T, MutOrigin.external]:
+    fn steal_data(deinit self) -> UnsafePointer[Self.T, MutExternalOrigin]:
         """Consume this `ArcPointer`, returning a raw pointer to the underlying data.
 
         Returns:

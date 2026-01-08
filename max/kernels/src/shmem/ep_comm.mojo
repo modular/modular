@@ -98,7 +98,7 @@ fn ep_signal_completion[
     my_rank: Int32,
     dst_rank: Int32,
     recv_count_ptrs: InlineArray[
-        UnsafePointer[UInt64, MutOrigin.external], p2p_world_size
+        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
     ],
     signal_offset: Int32,
     signal: UInt64,
@@ -511,14 +511,14 @@ fn dispatch_kernel[
 ](
     input_tokens: LayoutTensor[input_type, input_tokens_layout, ImmutAnyOrigin],
     topk_ids: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin],
-    send_buf_p: UnsafePointer[UInt8, MutOrigin.external],
+    send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
     recv_buf_ptrs: InlineArray[
-        UnsafePointer[UInt8, MutOrigin.external], p2p_world_size
+        UnsafePointer[UInt8, MutExternalOrigin], p2p_world_size
     ],
     recv_count_ptrs: InlineArray[
-        UnsafePointer[UInt64, MutOrigin.external], p2p_world_size
+        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
     ],
-    atomic_counter: UnsafePointer[Int32, MutOrigin.external],
+    atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
     my_rank: Int32,
 ):
     """
@@ -810,9 +810,9 @@ fn dispatch_cb_kernel[
     row_offsets: LayoutTensor[DType.uint32, row_offsets_layout, MutAnyOrigin],
     expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
     src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
-    recv_buf_p: UnsafePointer[UInt8, MutOrigin.external],
-    recv_count_p: UnsafePointer[UInt64, MutOrigin.external],
-    atomic_counter: UnsafePointer[Int32, MutOrigin.external],
+    recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+    recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
+    atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
     my_rank: Int32,
     maybe_input_tokens: OptionalReg[
         LayoutTensor[
@@ -1148,14 +1148,14 @@ fn combine_kernel[
 ](
     input_tokens: LayoutTensor[input_type, input_tokens_layout, MutAnyOrigin],
     src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
-    send_buf_p: UnsafePointer[UInt8, MutOrigin.external],
+    send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
     recv_buf_ptrs: InlineArray[
-        UnsafePointer[UInt8, MutOrigin.external], p2p_world_size
+        UnsafePointer[UInt8, MutExternalOrigin], p2p_world_size
     ],
     recv_count_ptrs: InlineArray[
-        UnsafePointer[UInt64, MutOrigin.external], p2p_world_size
+        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
     ],
-    atomic_counter: UnsafePointer[Int32, MutOrigin.external],
+    atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
     my_rank: Int32,
     maybe_output_tokens: OptionalReg[
         LayoutTensor[input_type, Layout.row_major[2](), MutAnyOrigin]
@@ -1414,9 +1414,9 @@ fn combine_cb_kernel[
     output_tokens: LayoutTensor[
         output_type, output_tokens_layout, MutAnyOrigin
     ],
-    recv_buf_p: UnsafePointer[UInt8, MutOrigin.external],
-    recv_count_p: UnsafePointer[UInt64, MutOrigin.external],
-    atomic_counter: UnsafePointer[Int32, MutOrigin.external],
+    recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+    recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
+    atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
     my_rank: Int32,
 ):
     """

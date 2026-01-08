@@ -244,7 +244,7 @@ what we publish.
 
 - The `Origin.cast_from[x]` syntax has been replaced with a safe implicit
   conversion from any origin to an immutable origin (`ImmutOrigin(x)`) and an
-  explicit unsafe conversion (`SomeOrigin(unsafe_cast=x)`).
+  explicit unsafe conversion (`unsafe_origin_mutcast[origin, mut=m]`).
 
 - Mojo no longer supports overloading functions on parameters alone: it will not
   try to disambiguate between `fn foo[a: Int8]():` and `fn foo[a: Int32]():` for
@@ -630,6 +630,10 @@ what we publish.
   `DeviceStream.enqueue_function_checked()` have been renamed to
   `enqueue_function()`. Similarly, `DeviceContext.compile_function_checked()`
   has been renamed to `compile_function()`.
+
+- External origins are now expressed using type level
+  `{Mut,Immut,}ExternalOrigin` aliases instead of being spelled like
+  `Origin[True].external`, improving consistency with other origin types.
 
 ### Tooling changes
 

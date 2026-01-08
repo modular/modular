@@ -103,8 +103,8 @@ fn matmul[
         )
 
         # Construct a new buffer with external origin pointing to the temporary storage.
-        var c_tmp = NDBuffer[c.type, 2, MutOrigin.external](
-            rebind[UnsafePointer[Scalar[c.type], MutOrigin.external]](
+        var c_tmp = NDBuffer[c.type, 2, MutExternalOrigin](
+            rebind[UnsafePointer[Scalar[c.type], MutExternalOrigin]](
                 tmp_device_buffer.unsafe_ptr()
             ),
             IndexList[2](c.dim[0](), c.dim[1]()),

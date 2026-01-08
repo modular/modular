@@ -107,16 +107,6 @@ struct Origin[*, mut: Bool]:
         `>`,
     ]
 
-    comptime external = Self(unsafe_cast=origin_of())
-    """An external origin of the given mutability. The external origin is
-    guaranteed not to alias any existing origins.
-
-    An external origin implies there is no previously existing value that this
-    origin aliases. Therefore, the compiler cannot track the origin or the
-    value's lifecycle. The external origin is useful when interfacing with
-    memory that comes from outside the current Mojo program.
-    """
-
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -148,12 +138,23 @@ struct Origin[*, mut: Bool]:
         """
         self._mlir_origin = other._mlir_origin
 
-    @always_inline("builtin")
-    fn __init__(out self, *, unsafe_cast: Origin):
-        """Allow converting an mutable origin to an immutable one.
 
-        Args:
-            unsafe_cast: The mutable origin to convert.
-        """
-        # TODO: Should use lit.origin.mutcast in the param domain.
-        self._mlir_origin = rebind[Self._mlir_type](unsafe_cast._mlir_origin)
+comptime unsafe_origin_mutcast[o: Origin, mut: Bool = True] = Origin(
+    __mlir_attr[
+        `#lit.origin.mutcast<`,
+        o._mlir_origin,
+        `> : !lit.origin<`,
+        mut._mlir_value,
+        `>`,
+    ]
+)
+"""Cast an origin to a different mutability, potentially introducing more
+mutability, which is an unsafe operation.
+
+Parameters:
+    o: The origin to cast.
+    mut: The mutability of the resulting origin.
+
+Returns:
+    A new origin with the specified mutability.
+"""

@@ -65,7 +65,7 @@ struct _POpenHandle:
             * The data written by the subprocess is not valid UTF-8.
         """
         var len: Int = 0
-        var line = UnsafePointer[c_char, MutOrigin.external]()
+        var line = UnsafePointer[c_char, MutExternalOrigin]()
         var res = String()
 
         while True:

@@ -347,7 +347,7 @@ fn unpack_device_ctx(
         OpaquePointer,
     ](async_ptr)
 
-    return DeviceContextPtr(ptr.unsafe_origin_cast[MutOrigin.external]())
+    return DeviceContextPtr(ptr.unsafe_origin_cast[MutExternalOrigin]())
 
 
 @register_internal("builtin.unpack_buffer_ref")

@@ -48,7 +48,7 @@ from .legacy_unsafe_pointer import _default_invariant
 fn alloc[
     type: AnyType, /
 ](count: Int, *, alignment: Int = align_of[type]()) -> UnsafePointer[
-    type, MutOrigin.external
+    type, MutExternalOrigin
 ]:
     """Allocates contiguous storage for `count` elements of `type` with
     alignment `alignment`.
@@ -1449,7 +1449,7 @@ struct UnsafePointer[
     fn mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
+        target_mut, unsafe_origin_mutcast[Self.origin, target_mut]
     ]:
         """Changes the mutability of a pointer.
 
@@ -1470,7 +1470,7 @@ struct UnsafePointer[
     fn unsafe_mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
+        target_mut, unsafe_origin_mutcast[Self.origin, target_mut]
     ]:
         """Changes the mutability of a pointer.
 

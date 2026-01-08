@@ -28,7 +28,7 @@ comptime STACK_BUFFER_BYTES = UInt(env_get_int["STACK_BUFFER_BYTES", 4096]())
 
 
 struct _WriteBufferHeap(Writable, Writer):
-    var _data: UnsafePointer[Byte, MutOrigin.external]
+    var _data: UnsafePointer[Byte, MutExternalOrigin]
     var _pos: Int
 
     fn __init__(out self):

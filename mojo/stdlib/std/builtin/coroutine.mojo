@@ -97,7 +97,7 @@ struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet]:
     @always_inline
     fn _get_ctx[
         ctx_type: AnyType
-    ](self) -> UnsafePointer[ctx_type, MutOrigin.external]:
+    ](self) -> UnsafePointer[ctx_type, MutExternalOrigin]:
         """Returns the pointer to the coroutine context.
 
         Parameters:
@@ -182,7 +182,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
     @always_inline
     fn _get_ctx[
         ctx_type: AnyType
-    ](self) -> UnsafePointer[ctx_type, MutOrigin.external]:
+    ](self) -> UnsafePointer[ctx_type, MutExternalOrigin]:
         """Returns the pointer to the coroutine context.
 
         Parameters:

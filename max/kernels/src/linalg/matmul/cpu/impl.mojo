@@ -595,7 +595,7 @@ fn _matmul_cpu_impl[
         comptime alignment = align_of[SIMD[c.type, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
-        var a_packed_ptr = UnsafePointer[Scalar[a.type], MutOrigin.external]()
+        var a_packed_ptr = UnsafePointer[Scalar[a.type], MutExternalOrigin]()
         if use_i8mm:
             a_packed_ptr = alloc[Scalar[a.type]](mh * kh, alignment=alignment)
         var a_packed = NDBuffer[a.type, 2, _, a.shape](

@@ -70,7 +70,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _data: UnsafePointer[Self.ElementType, MutOrigin.external]
+    var _data: UnsafePointer[Self.ElementType, MutExternalOrigin]
     """The underlying storage for the deque."""
 
     var _head: Int

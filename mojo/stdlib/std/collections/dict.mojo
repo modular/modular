@@ -383,7 +383,7 @@ struct _DictIndex(Movable):
     this in the current type system.
     """
 
-    var data: OpaquePointer[MutOrigin.external]
+    var data: OpaquePointer[MutExternalOrigin]
 
     @always_inline
     fn __init__(out self, reserved: Int):

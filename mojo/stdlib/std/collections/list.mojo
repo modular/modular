@@ -254,7 +254,7 @@ struct List[T: Copyable](
     """
 
     # Fields
-    var _data: UnsafePointer[Self.T, MutOrigin.external]
+    var _data: UnsafePointer[Self.T, MutExternalOrigin]
     """The underlying storage for the list."""
     var _len: Int
     """The number of elements in the list."""
@@ -1199,7 +1199,7 @@ struct List[T: Copyable](
         self._len = 0
         self._annotate_shrink(old_size)
 
-    fn steal_data(mut self) -> UnsafePointer[Self.T, MutOrigin.external]:
+    fn steal_data(mut self) -> UnsafePointer[Self.T, MutExternalOrigin]:
         """Take ownership of the underlying pointer from the list.
 
         Returns:
