@@ -613,41 +613,39 @@ class Tensor(DLPackArray, HasTensorValue):
         )
 
     @classmethod
-    def full_like(cls, type: TensorType, value: Number) -> Tensor:
-        """Creates a tensor filled with a value, matching a given type's properties.
+    def full_like(cls, input: Tensor | TensorType, value: Number) -> Tensor:
+        """Creates a tensor filled with a value, matching a given tensor's properties.
 
         Returns a new tensor filled with the specified value that matches the
-        shape, data type, and device of the given tensor type. This is useful
-        when you need to create a tensor with uniform values that's compatible
-        with an existing tensor's properties.
+        shape, data type, and device of the input tensor. This behaves like
+        NumPy's ``full_like`` and PyTorch's ``full_like``.
 
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.graph import TensorType
-            from max.driver import CPU
             from max.dtype import DType
 
-            # Create a reference tensor type
-            ref_type = TensorType(DType.float32, (2, 3), device=CPU())
+            # Create a reference tensor
+            ref = tensor.Tensor.ones([2, 3], dtype=DType.float32)
 
-            # Create tensor filled with 5.0 matching the reference type
-            x = tensor.Tensor.full_like(ref_type, value=5.0)
+            # Create tensor filled with 5.0 matching the reference tensor
+            x = tensor.Tensor.full_like(ref, value=5.0)
 
         Args:
-            type: The tensor type to match. The returned tensor will have the
-                same shape, dtype, and device as this type.
+            input: The tensor or tensor type to match. The returned tensor will
+                have the same shape, dtype, and device as this input.
             value: The scalar value to fill the tensor with.
 
         Returns:
             Tensor: A new tensor filled with the specified value, matching the
-                properties of the input type.
+                properties of the input.
         """
+        tensor_type = input.type if isinstance(input, Tensor) else input
         return cls.full(
-            type.shape,
+            tensor_type.shape,
             value=value,
-            dtype=type.dtype,
-            device=type.device.to_device(),
+            dtype=tensor_type.dtype,
+            device=tensor_type.device.to_device(),
         )
 
     @classmethod
@@ -693,37 +691,38 @@ class Tensor(DLPackArray, HasTensorValue):
         return cls.full(shape, value=0, dtype=dtype, device=device)
 
     @classmethod
-    def zeros_like(cls, type: TensorType) -> Tensor:
-        """Creates a tensor of zeros matching a given type's properties.
+    def zeros_like(cls, input: Tensor | TensorType) -> Tensor:
+        """Creates a tensor of zeros matching a given tensor's properties.
 
         Returns a new tensor filled with zeros that matches the shape, data type,
-        and device of the specified tensor type. This is useful when you need to
-        create a zero tensor that's compatible with an existing tensor's properties.
+        and device of the input tensor. This behaves like NumPy's ``zeros_like``
+        and PyTorch's ``zeros_like``.
 
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.graph import TensorType
-            from max.driver import CPU
             from max.dtype import DType
 
-            # Create a reference tensor type
-            ref_type = TensorType(DType.float32, (3, 4), device=CPU())
+            # Create a reference tensor
+            ref = tensor.Tensor.ones([3, 4], dtype=DType.float32)
 
-            # Create zeros tensor matching the reference type
-            x = tensor.Tensor.zeros_like(ref_type)
-            # Result: 3x4 tensor of zeros with dtype float32 on CPU
+            # Create zeros tensor matching the reference tensor
+            x = tensor.Tensor.zeros_like(ref)
+            # Result: 3x4 tensor of zeros with dtype float32
 
         Args:
-            type: The tensor type to match. The returned tensor will have the
-                same shape, dtype, and device as this type.
+            input: The tensor or tensor type to match. The returned tensor will
+                have the same shape, dtype, and device as this input.
 
         Returns:
             Tensor: A new tensor filled with zeros matching the properties of the
-                input type.
+                input.
         """
+        tensor_type = input.type if isinstance(input, Tensor) else input
         return cls.zeros(
-            type.shape, dtype=type.dtype, device=type.device.to_device()
+            tensor_type.shape,
+            dtype=tensor_type.dtype,
+            device=tensor_type.device.to_device(),
         )
 
     @classmethod
@@ -769,37 +768,38 @@ class Tensor(DLPackArray, HasTensorValue):
         return cls.full(shape, value=1, dtype=dtype, device=device)
 
     @classmethod
-    def ones_like(cls, type: TensorType) -> Tensor:
-        """Creates a tensor of ones matching a given type's properties.
+    def ones_like(cls, input: Tensor | TensorType) -> Tensor:
+        """Creates a tensor of ones matching a given tensor's properties.
 
         Returns a new tensor filled with ones that matches the shape, data type,
-        and device of the specified tensor type. This is useful when you need to
-        create a ones tensor that's compatible with an existing tensor's properties.
+        and device of the input tensor. This behaves like NumPy's ``ones_like``
+        and PyTorch's ``ones_like``.
 
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.graph import TensorType
-            from max.driver import CPU
             from max.dtype import DType
 
-            # Create a reference tensor type
-            ref_type = TensorType(DType.float32, (3, 4), device=CPU())
+            # Create a reference tensor
+            ref = tensor.Tensor.zeros([3, 4], dtype=DType.float32)
 
-            # Create ones tensor matching the reference type
-            x = tensor.Tensor.ones_like(ref_type)
-            # Result: 3x4 tensor of ones with dtype float32 on CPU
+            # Create ones tensor matching the reference tensor
+            x = tensor.Tensor.ones_like(ref)
+            # Result: 3x4 tensor of ones with dtype float32
 
         Args:
-            type: The tensor type to match. The returned tensor will have the
-                same shape, dtype, and device as this type.
+            input: The tensor or tensor type to match. The returned tensor will
+                have the same shape, dtype, and device as this input.
 
         Returns:
             Tensor: A new tensor filled with ones matching the properties of the
-                input type.
+                input.
         """
+        tensor_type = input.type if isinstance(input, Tensor) else input
         return cls.ones(
-            type.shape, dtype=type.dtype, device=type.device.to_device()
+            tensor_type.shape,
+            dtype=tensor_type.dtype,
+            device=tensor_type.device.to_device(),
         )
 
     @classmethod
