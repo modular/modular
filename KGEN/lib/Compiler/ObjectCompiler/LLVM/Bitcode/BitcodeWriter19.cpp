@@ -98,16 +98,16 @@ using namespace M::KGEN::LLVM;
 #pragma GCC diagnostic ignored "-Wglobal-constructors"
 
 static cl::opt<unsigned>
-    IndexThreshold("bitcode-mdindex-threshold", cl::Hidden, cl::init(25),
+    IndexThreshold("bitcode19-mdindex-threshold", cl::Hidden, cl::init(25),
                    cl::desc("Number of metadatas above which we emit an index "
                             "to enable lazy-loading"));
 
 static cl::opt<uint32_t> FlushThreshold(
-    "bitcode-flush-threshold", cl::Hidden, cl::init(512),
+    "bitcode19-flush-threshold", cl::Hidden, cl::init(512),
     cl::desc("The threshold (unit M) for flushing LLVM bitcode."));
 
 static cl::opt<bool> WriteRelBFToSummary(
-    "write-relbf-to-summary", cl::Hidden, cl::init(false),
+    "bitcode19-write-relbf-to-summary", cl::Hidden, cl::init(false),
     cl::desc("Write relative block frequency to function summary "));
 #pragma GCC diagnostic pop
 
@@ -118,9 +118,6 @@ static constexpr uint64_t UNSUPPORTED_ATTR_KIND_ENCODING = 0;
 namespace llvm {
 extern FunctionSummary::ForceSummaryHotnessType ForceSummaryEdgesCold;
 }
-
-extern bool WriteNewDbgInfoFormatToBitcode;
-extern llvm::cl::opt<bool> UseNewDbgInfoFormat;
 
 namespace {
 
@@ -777,9 +774,8 @@ static void writeStringRecord(BitstreamWriter &Stream, unsigned Code,
 
 static uint64_t getAttrKindEncoding(Attribute::AttrKind Kind) {
   switch (Kind) {
+  default:
   case Attribute::Captures:
-    // Return 0 for unknown attributes (newer LLVM attributes not supported
-    // in 5.0)
     return M::KGEN::LLVM::UNSUPPORTED_ATTR_KIND_ENCODING;
 
   case Attribute::Alignment:
@@ -973,8 +969,6 @@ static uint64_t getAttrKindEncoding(Attribute::AttrKind Kind) {
   case Attribute::EmptyKey:
   case Attribute::TombstoneKey:
     llvm_unreachable("Trying to encode EmptyKey/TombstoneKey");
-  default:
-    llvm_unreachable("Trying to encode unknown attribute");
   }
 }
 
@@ -1029,16 +1023,32 @@ void ModuleBitcodeWriter::writeAttributeGroupTable() {
 
     for (Attribute Attr : AS) {
       if (Attr.isEnumAttribute()) {
-        Record.push_back(0);
-        Record.push_back(getAttrKindEncoding(Attr.getKindAsEnum()));
+        uint64_t AttrKindEncoding = getAttrKindEncoding(Attr.getKindAsEnum());
+        if (AttrKindEncoding != M::KGEN::LLVM::UNSUPPORTED_ATTR_KIND_ENCODING) {
+          Record.push_back(0);
+          Record.push_back(getAttrKindEncoding(Attr.getKindAsEnum()));
+        }
       } else if (Attr.isIntAttribute()) {
-        Record.push_back(1);
-        Record.push_back(getAttrKindEncoding(Attr.getKindAsEnum()));
-        Record.push_back(Attr.getValueAsInt());
+        if (Attr.getKindAsEnum() == Attribute::Captures) {
+          // Transform new Attribute back to old format representation.
+          auto captureInfo =
+              CaptureInfo::createFromIntValue(Attr.getValueAsInt());
+          if (captureInfo == CaptureInfo::none()) {
+            Record.push_back(0);
+            Record.push_back(bitc::ATTR_KIND_NO_CAPTURE);
+          }
+        } else {
+          uint64_t AttrKindEncoding = getAttrKindEncoding(Attr.getKindAsEnum());
+          if (AttrKindEncoding !=
+              M::KGEN::LLVM::UNSUPPORTED_ATTR_KIND_ENCODING) {
+            Record.push_back(1);
+            Record.push_back(getAttrKindEncoding(Attr.getKindAsEnum()));
+            Record.push_back(Attr.getValueAsInt());
+          }
+        }
       } else if (Attr.isStringAttribute()) {
         StringRef Kind = Attr.getKindAsString();
         StringRef Val = Attr.getValueAsString();
-
         Record.push_back(Val.empty() ? 3 : 4);
         Record.append(Kind.begin(), Kind.end());
         Record.push_back(0);
@@ -3773,6 +3783,10 @@ void ModuleBitcodeWriter::writeFunction(
       // they come after the instruction so that it's easy to attach them again
       // when reading the bitcode, even though conceptually the debug locations
       // start "before" the instruction.
+
+      // This is an extern vaiable in llvmorg-19.1.7. Set this to be false as
+      // a placeholder value here for now.
+      bool WriteNewDbgInfoFormatToBitcode = false;
       if (I.hasDbgRecords() && WriteNewDbgInfoFormatToBitcode) {
         /// Try to push the value only (unwrapped), otherwise push the
         /// metadata wrapped value. Returns true if the value was pushed
