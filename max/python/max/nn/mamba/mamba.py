@@ -287,6 +287,10 @@ class MambaSSM(Module):
 
         # If using step method, call it directly with original hidden_states
         if use_step:
+            if inference_params is None:
+                raise ValueError(
+                    "inference_params must be provided when use_step=True"
+                )
             conv_state, ssm_state = self._get_states_from_cache(
                 inference_params, batch_size
             )
@@ -837,6 +841,8 @@ class Block(Module):
         self.fused_add_norm = fused_add_norm
         self.norm = norm
         self.mixer = mixer
+        self.mlp: Layer | None = None
+        self.norm2: LayerNorm | RMSNorm | None = None
         if mlp is not None:
             self.norm2 = norm2
             self.mlp = mlp
@@ -943,7 +949,7 @@ class Block(Module):
                     if hidden_states.device:
                         norm_bias = norm_bias.to(hidden_states.device)
 
-                hidden_states, residual = layer_norm_fn(
+                result = layer_norm_fn(
                     hidden_states,
                     norm_weight,
                     bias=norm_bias,
@@ -953,6 +959,9 @@ class Block(Module):
                     eps=self.norm.eps,
                     is_rms_norm=is_rms_norm,
                 )
+                # When prenorm=True, layer_norm_fn returns a tuple
+                assert isinstance(result, tuple)
+                hidden_states, residual = result
             else:
                 # No norm, just use hidden_states as residual
                 residual = (
@@ -995,9 +1004,9 @@ class Block(Module):
                         if hasattr(self.norm2, "weight")
                         else residual.dtype
                     )
-                    hidden_states = self.norm2(residual.to(dtype=norm2_dtype))
+                    hidden_states = self.norm2(residual.cast(norm2_dtype))
                     if self.residual_in_fp32:
-                        residual = residual.to(dtype=DType.float32)
+                        residual = residual.cast(DType.float32)
                 else:
                     # No norm2, just add residual
                     # Use rebind to assert shapes are equivalent at runtime
@@ -1031,7 +1040,7 @@ class Block(Module):
                         if hidden_states.device:
                             norm2_bias = norm2_bias.to(hidden_states.device)
 
-                    hidden_states, residual = layer_norm_fn(
+                    result = layer_norm_fn(
                         hidden_states,
                         norm2_weight,
                         bias=norm2_bias,
@@ -1041,6 +1050,9 @@ class Block(Module):
                         eps=self.norm2.eps,
                         is_rms_norm=is_rms_norm2,
                     )
+                    # When prenorm=True, layer_norm_fn returns a tuple
+                    assert isinstance(result, tuple)
+                    hidden_states, residual = result
                 else:
                     # No norm2, just add residual
                     # Use rebind to assert shapes are equivalent at runtime
