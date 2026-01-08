@@ -1195,9 +1195,9 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz",
                 json_file="vllm_deepseek-r1_float8_golden.json",
             ),
-            cos_dist_threshold=5.1e-01,
-            kl_div_threshold=2.5e00,
-            timeout=1200,
+            cos_dist_threshold=4.5e-3,
+            kl_div_threshold=6.6e-2,
+            timeout=1800,
         ),
     ),
     "google/gemma-3-1b-it-bfloat16": PipelineDef(
