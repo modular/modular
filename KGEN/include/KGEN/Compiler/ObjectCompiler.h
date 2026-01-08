@@ -209,6 +209,13 @@ void WriteBitcode17ToFile(const llvm::Module &M, llvm::raw_ostream &Out,
                           const llvm::ModuleSummaryIndex *Index = nullptr,
                           bool GenerateHash = false,
                           llvm::ModuleHash *ModHash = nullptr);
+
+void WriteBitcode19ToFile(const llvm::Module &M, llvm::raw_ostream &Out,
+                          bool ShouldPreserveUseListOrder = false,
+                          const llvm::ModuleSummaryIndex *Index = nullptr,
+                          bool GenerateHash = false,
+                          llvm::ModuleHash *ModHash = nullptr);
+
 } // namespace LLVM
 
 } // namespace M::KGEN

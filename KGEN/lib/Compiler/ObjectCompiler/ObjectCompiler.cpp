@@ -29,6 +29,7 @@
 #include "Support/Context.h"
 #include "Support/FileSystemExtras.h"
 #include "LLVM/Bitcode/BitcodeWriter17.h"
+#include "LLVM/Bitcode/BitcodeWriter19.h"
 
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
