@@ -636,17 +636,19 @@ void M::addToDiagnostic(InflightDiag &&otherDiag, InflightDiag &diag) {
 
 M::ConditionallyDisableMLIRWarnings::ConditionallyDisableMLIRWarnings(
     MLIRContext *ctx, bool disableWarnings, bool warningsAsErrors)
-    : handler(ctx, [=](mlir::Diagnostic &diag) {
-        if (diag.getSeverity() == mlir::DiagnosticSeverity::Warning) {
-          // Promote warning to error if -Werror is set
-          if (warningsAsErrors) {
-            mlir::emitError(diag.getLocation()) << diag.str();
-            return mlir::success(); // Suppress original warning
-          }
+    : handler(ctx,
+              [=, errorEmittedPtr = &errorEmitted](mlir::Diagnostic &diag) {
+                if (diag.getSeverity() == mlir::DiagnosticSeverity::Warning) {
+                  // Promote warning to error if -Werror is set
+                  if (warningsAsErrors) {
+                    mlir::emitError(diag.getLocation()) << diag.str();
+                    *errorEmittedPtr = true;
+                    return mlir::success(); // Suppress original warning
+                  }
 
-          // Suppress warnings if --disable-warnings is set
-          if (disableWarnings)
-            return mlir::success();
-        }
-        return mlir::failure(); // Pass through
-      }) {}
+                  // Suppress warnings if --disable-warnings is set
+                  if (disableWarnings)
+                    return mlir::success();
+                }
+                return mlir::failure(); // Pass through
+              }) {}

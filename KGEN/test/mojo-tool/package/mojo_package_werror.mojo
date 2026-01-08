@@ -4,9 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Test that -Werror converts warnings to errors for `mojo package`
+# Test that -Werror converts warnings to errors for `mojo package`.
 
-# RUN: not mojo package --diagnose-missing-doc-strings -Werror %S/test_package_werror 2>&1 | FileCheck %s
+# RUN: not mojo package -Werror %S/test_package_werror 2>&1 | FileCheck %s
 
-# CHECK: error: unknown argument 'y' in doc string
-# CHECK-NOT: warning: unknown argument 'y' in doc string
+# CHECK: error: assignment to 'foo' was never used
+# CHECK-NOT: warning: assignment to 'foo' was never used

@@ -388,7 +388,13 @@ public:
   ConditionallyDisableMLIRWarnings(MLIRContext *ctx, bool disableWarnings,
                                    bool warningsAsErrors);
 
+  /// Returns true if a warning was promoted to an error.
+  bool wasErrorEmitted() const { return errorEmitted; }
+
 private:
+  // errorEmitted must be declared before handler so it's initialized before
+  // handler's constructor captures its address.
+  bool errorEmitted = false;
   mlir::ScopedDiagnosticHandler handler;
 };
 } // namespace M

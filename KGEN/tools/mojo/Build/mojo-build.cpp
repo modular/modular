@@ -688,6 +688,10 @@ static int build(const State &subcommandState) {
           archive, outputType, args))
     return *exitCode;
 
+  // Check if any warnings were promoted to errors via -Werror.
+  if (dwHandler.wasErrorEmitted())
+    return EXIT_FAILURE;
+
   return linkOutput(outputType, state, args, options, archive);
 }
 
