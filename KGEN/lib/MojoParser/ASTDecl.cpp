@@ -44,6 +44,27 @@ std::optional<DocString> ASTDecl::getParsedDocString() const {
   return {};
 }
 
+/// Given a reference to a parameter, look at this declaration and enclosing
+/// scopes to find the ASTDecl that defines it (e.g. the enclosing function,
+/// struct or trait).  This can return null if not found.
+std::tuple<const ASTDecl *, ArrayRef<ParamDeclAttr>, size_t>
+ASTDecl::lookupParamReference(ParamDeclRefAttr paramRef) const {
+  auto paramDecl = ParamDeclAttr::get(paramRef);
+
+  const ASTDecl *current = this;
+  for (; current; current = current->getParentDecl()) {
+    if (auto op = current->getIfOperation()) {
+      if (auto declIntf = dyn_cast<DeclInterface>(op)) {
+        for (auto [idx, param] : llvm::enumerate(declIntf.getInputParams())) {
+          if (param == paramDecl)
+            return {current, declIntf.getInputParams(), idx};
+        }
+      }
+    }
+  }
+  return {nullptr, {}, ~size_t(0)}; // Not found.
+}
+
 ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringRef name) const {
   return lookupInCurrentScope(StringAttr::get(getContext(), name));
 }

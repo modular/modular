@@ -1058,35 +1058,22 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     return emitter.emitCResult(result, expr, dest);
   }
 
+  // Error if this is a direct reference to a parameter declared on an enclosing
+  // struct.  It should use Self.param.
   if (auto pvalue = decl->getIfIRValue().getIfPValue()) {
     if (auto declRef = dyn_cast<ParamDeclRefAttr>(pvalue.get())) {
-      ASTDecl *parentDecl = decl->getParentDecl();
-      if (auto fnOp = dyn_cast_or_null<FnOp>(parentDecl->getIfOperation()))
-        parentDecl = parentDecl->tryGetMethodParentDecl();
-
+      auto [parentDecl, paramDecls, paramIdx] =
+          decl->lookupParamReference(declRef);
       if (parentDecl) {
-        if (auto structOp =
-                dyn_cast_or_null<StructDeclOp>(parentDecl->getIfOperation())) {
-          auto paramDecl = ParamDeclAttr::get(declRef);
-          for (auto param : structOp.getParams()) {
-            if (param.getName() == paramDecl.getName()) {
-              auto diag =
-                  emitter.emitError(loc,
-                                    "unqualified access to struct parameter '")
-                  << spelling << "'; use 'Self." << spelling << "' instead";
-              diag << FixIt::replaceToken(loc, "Self." + spelling);
-              for (auto [name, paramDecls] : parentDecl->getDeclsInScope()) {
-                if (name == spelling) {
-                  assert(paramDecls.size() == 1);
-                  auto paramDecl = *paramDecls.begin();
+        if (isa<StructDeclOp>(parentDecl->getIfOperation())) {
+          auto diag =
+              emitter.emitError(loc, "unqualified access to struct parameter '")
+              << spelling << "'; use 'Self." << spelling << "' instead";
+          diag << FixIt::replaceToken(loc, "Self." + spelling);
 
-                  diag.attachNote(paramDecl->getLoc())
-                      << "parameter '" << spelling << "' declared here";
-                  break;
-                }
-              }
-              break;
-            }
+          for (auto paramDecl : parentDecl->lookupInCurrentScope(spelling)) {
+            diag.attachNote(paramDecl->getLoc())
+                << "parameter '" << spelling << "' declared here";
           }
         }
       }
