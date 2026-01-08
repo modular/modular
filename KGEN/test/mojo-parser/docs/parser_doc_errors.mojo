@@ -309,7 +309,7 @@ comptime AliasWithParams_MissingDocString[T: AnyType] = T
 comptime _AliasWithParams_Private[T: AnyType] = T
 
 
-# expected-warning @below {{alias takes parameters, but has no 'Parameters' in doc string}}
+# expected-warning @below {{comptime value has parameters, but has no 'Parameters' in doc string}}
 comptime AliasWithParams_MissingParamsSection[T: AnyType] = T
 """This alias doc string is missing a Parameters section."""
 

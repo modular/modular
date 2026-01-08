@@ -798,8 +798,8 @@ private:
     if (validation == ValidationKind::Strict && diagnoseMissingDocStrings &&
         !isOpInPrivateModule(aliasOp) &&
         !sections[DocString::kSectionParameters] && !seenParameters.empty())
-      emitDiag(aliasOp.getLoc(),
-               "alias takes parameters, but has no 'Parameters' in doc string");
+      emitDiag(aliasOp.getLoc(), "comptime value has parameters, but has no "
+                                 "'Parameters' in doc string");
   }
 
   //===--------------------------------------------------------------------===//
