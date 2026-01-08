@@ -24,7 +24,7 @@ comptime ImmutOrigin = Origin[mut=False]
 comptime MutOrigin = Origin[mut=True]
 """Mutable origin reference type."""
 
-comptime AnyOrigin[mut: Bool] = Origin(
+comptime AnyOrigin[*, mut: Bool] = Origin(
     __mlir_attr[`#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`]
 )
 """An origin that might access any memory value.
@@ -33,13 +33,13 @@ Parameters:
     mut: Whether the origin is mutable.
 """
 
-comptime ImmutAnyOrigin = AnyOrigin[False]
+comptime ImmutAnyOrigin = AnyOrigin[mut=False]
 """The immutable origin that might access any memory value."""
 
-comptime MutAnyOrigin = AnyOrigin[True]
+comptime MutAnyOrigin = AnyOrigin[mut=True]
 """The mutable origin that might access any memory value."""
 
-comptime ExternalOrigin[mut: Bool] = Origin[mut=mut](
+comptime ExternalOrigin[*, mut: Bool] = Origin[mut=mut](
     __mlir_attr[
         `#lit.origin.union<> : !lit.origin<`,
         +mut._mlir_value,
@@ -56,7 +56,7 @@ origin aliases. The compiler cannot track the origin or the value's lifecycle.
 Useful when interfacing with memory from outside the current Mojo program.
 """
 
-comptime ImmutExternalOrigin = ExternalOrigin[False]
+comptime ImmutExternalOrigin = ExternalOrigin[mut=False]
 """An immutable external origin guaranteed not to alias any existing origins.
 
 An external origin implies there is no previously existing value that this
@@ -64,7 +64,7 @@ origin aliases. The compiler cannot track the origin or the value's lifecycle.
 Useful when interfacing with memory from outside the current Mojo program.
 """
 
-comptime MutExternalOrigin = ExternalOrigin[True]
+comptime MutExternalOrigin = ExternalOrigin[mut=True]
 """A mutable external origin guaranteed not to alias any existing origins.
 
 An external origin implies there is no previously existing value that this
