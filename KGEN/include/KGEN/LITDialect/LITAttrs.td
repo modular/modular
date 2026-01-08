@@ -547,7 +547,9 @@ def OriginUnionAttr : LITTypedAttr<"OriginUnion", "origin.union", [
 
   let parameters = (ins ArrayRefParameter<"TypedAttr">:$operands,
                         AttributeSelfTypeParameter<"", "OriginType">:$type);
-  let assemblyFormat = "`<` $operands `>`";
+  let assemblyFormat = [{
+    custom<ParameterValues>($operands)
+  }];
 
   let skipDefaultBuilders = 1;
   let builders = [

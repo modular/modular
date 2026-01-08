@@ -13,11 +13,11 @@ from utils import Index
 comptime x1 = Index(16, 16, 16)
 
 # CHECK-LABEL: "name": "x2"
-# CHECK: "value": "Tuple[IndexList[3]](VariadicPack[True, origin_of(), True, Movable, IndexList[3]](Index(64, 8, 8)))"
+# CHECK: "value": "Tuple[IndexList[3]](VariadicPack[True, MutExternalOrigin, True, Movable, IndexList[3]](Index(64, 8, 8)))"
 comptime x2 = (Index(64, 8, 8),)
 
 # CHECK-LABEL: "name": "x3"
-# CHECK: "value": "Tuple[Int, Int](VariadicPack[True, origin_of(), True, Movable, Int, Int](1, 1))"
+# CHECK: "value": "Tuple[Int, Int](VariadicPack[True, MutExternalOrigin, True, Movable, Int, Int](1, 1))"
 comptime x3: Tuple[Int, Int] = (1, 1)
 
 # Do not truncate non-functions.
