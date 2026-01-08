@@ -22,6 +22,7 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 from max.driver import CPU
+from max.interfaces import TokenBuffer
 from max.pipelines.core import TextContext
 from max.pipelines.lib.sampling.sampling_logits_processor import (
     FrequencyData,
@@ -51,7 +52,7 @@ def create_text_context(
     # will set _prompt_len, _active_idx, _end_idx based on initial tokens
     context = TextContext(
         max_length=total_length + 100,  # Allow some headroom
-        tokens=prompt_tokens.copy(),
+        tokens=TokenBuffer(prompt_tokens.copy()),
     )
 
     # Use update() to add each generated token, which properly manages indices

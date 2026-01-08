@@ -13,13 +13,26 @@
 """Context utility functions for use in testing infrastructure."""
 
 import numpy as np
-from max.interfaces import RequestID
+from max.interfaces import RequestID, TokenBuffer
 from max.pipelines.core import TextContext
 
 
 def create_text_context(
     tokens: np.ndarray, max_length: int = 1000
 ) -> TextContext:
+    # TokenBuffer requires non-empty arrays
+    if len(tokens) == 0:
+        raise ValueError(
+            "create_text_context requires non-empty token array. "
+            "TokenBuffer does not support empty arrays."
+        )
+
+    # Ensure tokens are int64 as required by TokenBuffer
+    if tokens.dtype != np.int64:
+        tokens = tokens.astype(np.int64)
+
     return TextContext(
-        request_id=RequestID(), max_length=max_length, tokens=tokens
+        request_id=RequestID(),
+        max_length=max_length,
+        tokens=TokenBuffer(tokens),
     )

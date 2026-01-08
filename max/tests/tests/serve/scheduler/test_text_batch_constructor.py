@@ -21,6 +21,7 @@ from max.interfaces import (
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
+    TokenBuffer,
 )
 from max.kv_cache.paged_cache.block_utils import InsufficientBlocksError
 from max.pipelines.core import TextContext
@@ -125,7 +126,7 @@ def create_lora_context(
     context = TextContext(
         request_id=RequestID(),
         max_length=100,
-        tokens=tokens,
+        tokens=TokenBuffer(tokens),
     )
     if model_name:
         context.model_name = model_name
@@ -166,7 +167,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
     for _ in range(6):
         context = TextContext(
             request_id=RequestID(),
-            tokens=np.ones(9, dtype=np.int64),
+            tokens=TokenBuffer(np.ones(9, dtype=np.int64)),
             max_length=100,
         )
         contexts[context.request_id] = context
@@ -312,7 +313,7 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
     for _ in range(2):
         context = TextContext(
             request_id=RequestID(),
-            tokens=np.ones(9, dtype=np.int64),
+            tokens=TokenBuffer(np.ones(9, dtype=np.int64)),
             max_length=100,
         )
         contexts[context.request_id] = context
@@ -352,7 +353,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     for _ in range(8):
         context = TextContext(
             request_id=RequestID(),
-            tokens=np.ones(9, dtype=np.int64),
+            tokens=TokenBuffer(np.ones(9, dtype=np.int64)),
             max_length=100,
         )
         contexts[context.request_id] = context
@@ -499,7 +500,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
     for _ in range(8):
         context = TextContext(
             request_id=RequestID(),
-            tokens=np.ones(9, dtype=np.int64),
+            tokens=TokenBuffer(np.ones(9, dtype=np.int64)),
             max_length=100,
         )
         batch_constructor.enqueue_new_request(context)
@@ -579,7 +580,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     for _ in range(8):
         context = TextContext(
             request_id=RequestID(),
-            tokens=np.ones(9, dtype=np.int64),
+            tokens=TokenBuffer(np.ones(9, dtype=np.int64)),
             max_length=100,
         )
         batch_constructor.enqueue_new_request(context)

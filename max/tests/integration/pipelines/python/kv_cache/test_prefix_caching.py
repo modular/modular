@@ -22,7 +22,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.interfaces import ImageMetadata, RequestID
+from max.interfaces import ImageMetadata, RequestID, TokenBuffer
 from max.kv_cache import InsufficientBlocksError, PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, RaggedKVCacheInputs
 from max.pipelines.core import TextAndVisionContext, TextContext
@@ -81,7 +81,7 @@ async def test_prefix_caching_basic() -> None:
 
     # Reserve a slot in the KV cache manager.
     initial_prompt_1 = [10, 11, 12, 13, 14]
-    context_1 = create_text_context(np.array(initial_prompt_1))
+    context_1 = create_text_context(np.array(initial_prompt_1, dtype=np.int64))
     kv_manager.claim(context_1.request_id)
     kv_manager.alloc(context_1, num_steps=6)
 
@@ -110,7 +110,7 @@ async def test_prefix_caching_basic() -> None:
 
     # Seq 2: Claim
     initial_prompt_2 = [10, 11, 12, 13]
-    context_2 = create_text_context(np.array(initial_prompt_2))
+    context_2 = create_text_context(np.array(initial_prompt_2, dtype=np.int64))
     batch = [context_2]
     kv_manager.claim(context_2.request_id)
     kv_manager.alloc(context_2, num_steps=5)
@@ -153,7 +153,7 @@ async def test_prefix_caching_reset_prefix_cache() -> None:
     # This is a noop
     kv_manager.reset_prefix_cache()
 
-    prompt = np.array([10, 11, 12, 13, 14])
+    prompt = np.array([10, 11, 12, 13, 14], dtype=np.int64)
     context_1 = create_text_context(prompt)
     context_2 = create_text_context(prompt)
     context_3 = create_text_context(prompt)
@@ -190,7 +190,7 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
     # Try to assign and release more than 128 blocks.
     for i in range(1000):
         # We reuse the same prompt each time, allowing for prefix sharing.
-        prompt = np.array([100, 101, 102, 103, 104])
+        prompt = np.array([100, 101, 102, 103, 104], dtype=np.int64)
         batch = [create_text_context(prompt)]
         context = batch[0]
         kv_manager.claim(context.request_id)
@@ -664,8 +664,6 @@ def run_forward(
     for tok in prompt:
         ctx.update(tok)
     ctx.rewind_processing(ctx.processed_length - orig_start_idx)
-    if orig_start_idx == 0:
-        ctx._prompt_len = len(prompt) + num_unprocessed
 
     # Include any unprocessed tokens from context in the prompt for the model
     if num_unprocessed > 0:
@@ -706,22 +704,33 @@ async def test_prefix_caching_chunked_prefill() -> None:
     kv_manager = create_paged_manager(num_blocks=128, page_size=3)
     model = FakeModel(kv_manager)
 
-    # Create contexts with initial token to avoid empty arrays
-    # The run_forward function will handle including this in the first chunk
-    ctx_1 = create_text_context(np.array([10]))
-    ctx_2 = create_text_context(np.array([10]))
+    # Define prompts for chunked prefill - use non-empty arrays
+    # Start with initial token, then process rest in chunks
+    initial_token = np.array([10], dtype=np.int64)
+    prompt_1_part_1_rest = np.array(
+        [11, 12, 13, 14, 15, 16, 17], dtype=np.int64
+    )
+    prompt_1_part_2 = np.array([18, 19, 20, 21, 22], dtype=np.int64)
+
+    prompt_2_part_1_rest = np.array(
+        [11, 12, 13, 14, 15, 16, 17], dtype=np.int64
+    )
+    prompt_2_part_2 = np.array([16, 17, 18, 998, 999], dtype=np.int64)
+
+    # === Create contexts with initial token (non-empty) ===
+    ctx_1 = create_text_context(initial_token)
     kv_manager.claim(ctx_1.request_id)
+
+    ctx_2 = create_text_context(initial_token)
     kv_manager.claim(ctx_2.request_id)
 
-    # Process tokens in chunks - run_forward will include the initial [10]
-    prompt_1_part_1 = np.array([11, 12, 13, 14, 15, 16, 17])
-    prompt_1_part_2 = np.array([18, 19, 20, 21, 22])
-
-    prompt_2_part_1 = np.array([11, 12, 13, 14, 15, 16, 17])
-    prompt_2_part_2 = np.array([16, 17, 18, 998, 999])
-
-    run_forward(model, kv_manager, ctx_1, prompt_1_part_1, prompt_1_part_2[0])
-    run_forward(model, kv_manager, ctx_2, prompt_2_part_1, prompt_2_part_2[0])
+    # Process the remaining tokens in chunks - run_forward will include initial unprocessed token
+    run_forward(
+        model, kv_manager, ctx_1, prompt_1_part_1_rest, prompt_1_part_2[0]
+    )
+    run_forward(
+        model, kv_manager, ctx_2, prompt_2_part_1_rest, prompt_2_part_2[0]
+    )
     run_forward(model, kv_manager, ctx_1, prompt_1_part_2, 42)
 
     # Make sure that we don't return block 2 for seq_id_2 since its last KV
@@ -772,7 +781,7 @@ async def test_prefix_caching_with_images() -> None:
     # ctx1 and ctx2 are exactly the same
     ctx1 = TextAndVisionContext(
         max_length=100,
-        tokens=tokens1,
+        tokens=TokenBuffer(tokens1),
         images=[
             ImageMetadata(
                 start_idx=3,
@@ -785,7 +794,7 @@ async def test_prefix_caching_with_images() -> None:
     )
     ctx2 = TextAndVisionContext(
         max_length=100,
-        tokens=tokens1,
+        tokens=TokenBuffer(tokens1),
         images=[
             ImageMetadata(
                 start_idx=3,
@@ -806,7 +815,7 @@ async def test_prefix_caching_with_images() -> None:
     # ctx3 has different image pixels from ctx1 and ctx2
     ctx3 = TextAndVisionContext(
         max_length=100,
-        tokens=tokens1,
+        tokens=TokenBuffer(tokens1),
         images=[
             ImageMetadata(
                 start_idx=3,
@@ -824,7 +833,7 @@ async def test_prefix_caching_with_images() -> None:
     # ctx4 also has img1 but it is in a different position
     ctx4 = TextAndVisionContext(
         max_length=100,
-        tokens=tokens4,
+        tokens=TokenBuffer(tokens4),
         images=[
             ImageMetadata(
                 start_idx=1,
@@ -856,7 +865,7 @@ async def test_prefix_caching_with_images_and_page_size_gt_1() -> None:
 
     ctx0 = TextAndVisionContext(
         max_length=100,
-        tokens=tokens,
+        tokens=TokenBuffer(tokens),
         images=[
             ImageMetadata(
                 start_idx=3,
@@ -877,7 +886,7 @@ async def test_prefix_caching_with_images_and_page_size_gt_1() -> None:
     # Duplicate of above
     ctx1 = TextAndVisionContext(
         max_length=100,
-        tokens=tokens,
+        tokens=TokenBuffer(tokens),
         images=[
             ImageMetadata(
                 start_idx=3,

@@ -25,6 +25,7 @@ from max.interfaces import (
     PipelineTokenizer,
     RequestID,
     SamplingParams,
+    TokenBuffer,
 )
 from max.nn.kv_cache import KVCacheStrategy, RaggedKVCacheInputs
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
@@ -87,7 +88,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
 
     context1 = TextContext(
         request_id=req_id1,
-        tokens=tokens1,
+        tokens=TokenBuffer(tokens1),
         max_length=1024,
         sampling_params=SamplingParams(top_k=1),
     )
@@ -112,7 +113,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     )
     context2 = TextContext(
         request_id=req_id2,
-        tokens=tokens2,
+        tokens=TokenBuffer(tokens2),
         max_length=1024,
         sampling_params=SamplingParams(top_k=1),
     )
@@ -416,7 +417,7 @@ def test_kv_cache_claiming_protocol() -> None:
     tokens = np.array([1, 450, 6593], dtype=np.int64)
     context = TextContext(
         request_id=RequestID(),
-        tokens=tokens,
+        tokens=TokenBuffer(tokens),
         max_length=1024,
         sampling_params=SamplingParams(top_k=1),
     )
