@@ -25,6 +25,25 @@ import numpy.typing as npt
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 
+GiB = 1024 * 1024 * 1024
+
+
+def _prime_cache(accelerator: Device, bytes: int = GiB) -> None:
+    """Prime the pinned memory manager cache for the given accelerator.
+
+    Populate the host memory manager by allocating and immediately freeing a
+    large pinned tensor. If the host memory manager is activated, future allocations
+    and free will likely hit the cache and be much faster.
+
+    Args:
+        accelerator: The accelerator to prime the cache for.
+        bytes: The number of bytes to allocate.
+    """
+    pinned = Tensor(
+        shape=(bytes,), dtype=DType.int8, device=accelerator, pinned=True
+    )
+    del pinned
+
 
 class ParallelArrayOps:
     """Parallelized numpy array operations for performance-critical data processing.
@@ -41,14 +60,30 @@ class ParallelArrayOps:
         >>> result = ops.concatenate([arr1, arr2, arr3], axis=0)
     """
 
-    def __init__(self, max_workers: int = 24) -> None:
+    def __init__(
+        self, accelerator: Device | None = None, max_workers: int = 24
+    ) -> None:
         """Initialize parallel array operations with a thread pool.
 
         Args:
+            accelerator: The accelerator to allocate pinned memory on. If provided,
+                the results of the concatenate operation will be allocated on a
+                pinned buffer on the specified accelerator.
             max_workers: Maximum number of worker threads. Default is 24, which works
                 well for typical server CPUs. Consider setting to match your expected
                 number of arrays (e.g., 20 for up to 20 concurrent copies).
         """
+        if accelerator is not None:
+            if accelerator.is_host:
+                raise ValueError(
+                    "Unable to allocate pinned memory on CPU. A provided device must be a GPU."
+                )
+
+            # By priming the cache here, we can move some overhead from runtime
+            # to __init__.
+            _prime_cache(accelerator)
+        self._accelerator = accelerator
+
         self._pool = ThreadPoolExecutor(max_workers=max_workers)
         self._max_workers = max_workers
 
@@ -107,7 +142,6 @@ class ParallelArrayOps:
         arrays: Sequence[npt.NDArray[Any]],
         axis: int = 0,
         min_chunk_size_mb: float = 50.0,
-        accelerator: Device | None = None,
     ) -> Tensor:
         """Concatenate arrays in parallel along the specified axis.
 
@@ -128,8 +162,6 @@ class ParallelArrayOps:
                 50 MB. Prevents creating too many small work items that would have excessive
                 overhead. Arrays are only split if the resulting chunks would be at least
                 this size.
-            accelerator: If provided, the result will be allocated on a pinned buffer on
-                the specified accelerator.
 
         Returns:
             Concatenated array with the same dtype as the input arrays.
@@ -141,11 +173,6 @@ class ParallelArrayOps:
         n = len(arrays)
         if n == 0:
             raise ValueError("Cannot concatenate empty list of arrays.")
-
-        if accelerator is not None and accelerator.is_host:
-            raise ValueError(
-                "Unable to allocate pinned memory on CPU. A provided device must be a GPU."
-            )
 
         # Validate shapes and compute output shape
         first = arrays[0]
@@ -163,13 +190,13 @@ class ParallelArrayOps:
 
         if n == 1:
             # This copy is likely not needed, but it mocks the exact behaviour of numpy.concatenate.
-            if accelerator is None:
+            if self._accelerator is None:
                 return Tensor.from_numpy(first.copy())
             else:
                 out_max = Tensor(
                     shape=first.shape,
                     dtype=DType.from_numpy(first.dtype),
-                    device=accelerator,
+                    device=self._accelerator,
                     pinned=True,
                 )
                 np.copyto(out_max.to_numpy(), first)
@@ -223,8 +250,8 @@ class ParallelArrayOps:
 
         # Allocate output tensor. It will be pinned on an accelerator if one is provided.
         max_dtype = DType.from_numpy(first_dtype)
-        if accelerator is not None:
-            device = accelerator
+        if self._accelerator is not None:
+            device = self._accelerator
             pinned = True
         else:
             device = CPU()
