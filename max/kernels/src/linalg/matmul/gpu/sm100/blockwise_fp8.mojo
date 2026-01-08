@@ -30,10 +30,7 @@ from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
 from logger import Logger
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
+from memory import UnsafePointer
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
@@ -153,7 +150,12 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime a_scales_smem_layout_3D = smem_layout_3D[a_scales_smem_layout]
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
+        UnsafePointer[
+            mut=True,
+            Scalar[a_type],
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ]
     ](
         external_memory[
             Scalar[a_type],
