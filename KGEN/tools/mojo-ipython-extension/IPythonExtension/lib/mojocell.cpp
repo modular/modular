@@ -395,9 +395,7 @@ static int build(llvm::StringRef code, llvm::StringRef inputName) {
 
 #if 0
   auto docDiagnoseMissingId = options::OPT_diagnose_missing_doc_strings;
-  auto docErrorOnInvalidDocId = options::OPT_validate_doc_strings;
   parseConfig.diagnoseMissingDocStrings = args.hasArg(docDiagnoseMissingId);
-  parseConfig.errorOnInvalidDocStrings = args.hasArg(docErrorOnInvalidDocId);
 
   int maxNotes = 0;
   if (!args.getLastArgValue(maxNotesId).getAsInteger(10, maxNotes))

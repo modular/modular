@@ -138,7 +138,6 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .mcmodel = options::OPT_mcmodel,
       .largeDataThreshold = options::OPT_large_data_threshold,
       .diagnoseMissingDocStrings = options::OPT_diagnose_missing_doc_strings,
-      .validateDocStrings = options::OPT_validate_doc_strings,
       .maxNotes = options::OPT_max_notes,
       .defines = options::OPT_D,
       .stripFilePrefix = options::OPT_strip_file_prefix,
@@ -666,10 +665,10 @@ static int build(const State &subcommandState) {
 
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
       state, args, options, &mlirCtx, runtime,
-      options::OPT_diagnose_missing_doc_strings,
-      options::OPT_validate_doc_strings, options::OPT_max_notes, options::OPT_D,
-      options::OPT_strip_file_prefix, options::OPT_disable_builtins,
-      options::OPT_mojo_search_paths, options::OPT_fixit,
+      options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
+      options::OPT_D, options::OPT_strip_file_prefix,
+      options::OPT_disable_builtins, options::OPT_mojo_search_paths,
+      options::OPT_fixit,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         return LIT::importMojoFile(runtime, sourceMgr, parserConfig, ts,
                                    nullptr);

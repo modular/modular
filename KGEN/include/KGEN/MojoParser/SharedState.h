@@ -127,9 +127,6 @@ public:
   /// Returns if we should diagnose missing doc strings.
   bool shouldDiagnoseMissingDocStrings() const;
 
-  /// Returns if we should emit errors for invalid doc strings.
-  bool shouldErrorOnInvalidDocStrings() const;
-
   /// Get the library base path for documentation generation.
   StringRef getDocsBasePath() const { return docsBasePath; }
 
