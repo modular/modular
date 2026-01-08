@@ -16,7 +16,7 @@ from math import align_up, ceildiv
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import align_of, simd_width_of, size_of
+from sys import align_of, env_get_bool, simd_width_of, size_of
 
 from bit import next_power_of_two, prev_power_of_two
 from buffer.buffer import NDBuffer
@@ -124,6 +124,9 @@ from .matmul import (
     register_epilogue,
     accum_arrive,
 )
+
+# Feature flag: set MODULAR_USE_STRUCTURED_SM100=True to use sm100_structured
+comptime _USE_STRUCTURED = env_get_bool["MODULAR_USE_STRUCTURED_SM100", False]()
 
 
 struct B200BlockScaledMatmulSmem[
@@ -1139,6 +1142,30 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
+    # Feature flag: use sm100_structured implementation when enabled
+    @parameter
+    if _USE_STRUCTURED:
+        from ..sm100_structured.block_scaled_matmul import (
+            blackwell_block_scaled_matmul_tma_umma_warp_specialized as structured_impl,
+        )
+
+        structured_impl[
+            transpose_b=transpose_b,
+            config=config,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            register_based_epilogue=register_based_epilogue,
+            pdl_level=pdl_level,
+            max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+        ](
+            c_tensor,
+            a_tensor,
+            b_tensor,
+            a_scales_tensor,
+            b_scales_tensor,
+            ctx,
+        )
+        return
+
     __comptime_assert transpose_b, "Only support transposed B"
 
     __comptime_assert (
