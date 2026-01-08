@@ -17,7 +17,6 @@ import asyncio
 import functools
 import json
 import logging
-from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -390,259 +389,198 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             self.executor, self.new_context_blocking, request
         )
 
-    def new_context_blocking(
-        self, request: TextGenerationRequest
-    ) -> Qwen2_5VLTextAndVisionContext:
-        # Determine prompt
-        prompt: str | Sequence[int]
-        add_special_tokens = True
+    def _retrieve_prompt(self, request: TextGenerationRequest) -> str:
+        # If a text prompt is provided, immediately pass through.
         if request.prompt is not None:
-            prompt = request.prompt
-            if request.images:
-                content = [
-                    {"type": "text", "text": request.prompt},
-                ] + [{"type": "image"} for _ in request.images]
-                messages = [
-                    TextGenerationRequestMessage(
-                        role="user",
-                        content=content,
-                    )
-                ]
-                new_request = TextGenerationRequest(
-                    request_id=request.request_id,
-                    model_name=request.model_name,
-                    messages=messages,
+            if not isinstance(request.prompt, str):
+                raise ValueError(
+                    "Qwen2.5VL tokenizer only supports string prompts, not token sequences"
                 )
-                assert new_request.messages is not None
-                prompt = self.apply_chat_template(new_request.messages)
-        elif request.messages is not None:
-            prompt = self.apply_chat_template(request.messages)
-            add_special_tokens = False
-        else:
-            raise ValueError(f"{request} does not provide messages or prompt.")
+            return request.prompt
 
-        # Load and process images
-        image_inputs = None
+        if request.messages is not None:
+            return self.apply_chat_template(request.messages)
+
+        raise ValueError(f"{request} does not provide messages or prompt.")
+
+    def _process_images(
+        self, request: TextGenerationRequest
+    ) -> tuple[
+        npt.NDArray[Any], npt.NDArray[Any], list[npt.NDArray[np.uint16]]
+    ]:
         if request.messages:
-            # process_vision_info returns (image_inputs, video_inputs, placeholder_text)
-            # Convert messages to the format expected by qwen_vl_utils
-            # TextGenerationRequestMessage is a TypedDict, so it's already dict-like
-            messages_data = [dict(msg) for msg in request.messages]
             image_inputs, _, _ = process_vision_info(
-                messages_data
-            )  # We ignore video_inputs for image-only use case
+                [dict(msg) for msg in request.messages]
+            )
         else:
-            # Fall back to using the loaded images
-            if request.images:
-                logger.info(
-                    "Loading images from request.images rather than messages, not using process_vision_info"
-                )
-                image_inputs = [
+            image_inputs = (
+                [
                     fetch_image({"image": image_data})
                     for image_data in request.images
                 ]
-
-        # Step 1: Build chat text with tokenizer (not image processor)
-        if isinstance(prompt, str):
-            text = prompt
-        else:
-            # prompt is already processed tokens, convert back to text for processing
-            text = self.delegate.decode(prompt, skip_special_tokens=True)
-
-        # Step 2: Process images with custom image processor (if any)
-        processed_images: dict[str, npt.NDArray[Any]] = {}
-        pixel_values_list: list[npt.NDArray[np.uint16]] = []
-
-        image_grid_thw = None
-        if image_inputs:
-            processed_images, pixel_values_list = self.img_processor(
-                images=image_inputs, return_tensors="pt"
+                if request.images
+                else None
             )
 
-            # Step 3: Expand <|image_pad|> placeholders using image_grid_thw and merge_size**2
-            if "image_grid_thw" in processed_images:
-                grid = processed_images[
-                    "image_grid_thw"
-                ]  # List of (t, h, w) tuples
-                merge_len = self.img_processor.merge_size**2
+        if image_inputs is None:
+            raise ValueError("No images provided in the request")
 
-                # Expand placeholders for each image individually
-                if "<|image_pad|>" in text:
-                    for t, h, w in grid:
-                        num_img_tokens = (t * h * w) // merge_len
-                        # Replace first occurrence of <|image_pad|> with multiple <|image_pad|> tokens
-                        # Use placeholder approach from example to avoid recursive replacement
-                        placeholder_tokens = "<|placeholder|>" * num_img_tokens
-                        text = text.replace(
-                            "<|image_pad|>", placeholder_tokens, 1
-                        )
-
-                    # Convert all placeholders back to <|image_pad|> tokens
-                    text = text.replace("<|placeholder|>", "<|image_pad|>")
-
-        # Step 4: Tokenize the expanded text
-        tokenizer_inputs = self.delegate(
-            [text], padding=True, return_tensors=None
+        # Process PIL images through the image processor
+        processed_dict, pixel_values_list = self.img_processor(
+            images=image_inputs,
+            return_tensors="np",
         )
 
-        # Combine tokenizer and image processor outputs
-        processed_inputs = {
-            "input_ids": tokenizer_inputs["input_ids"],
-            "attention_mask": tokenizer_inputs["attention_mask"],
-        }
-
-        # Add image processing results
-        if processed_images:
-            if "concatenated_pixel_values" in processed_images:
-                processed_inputs["concatenated_pixel_values"] = (
-                    processed_images["concatenated_pixel_values"]
-                )
-            if "image_grid_thw" in processed_images:
-                processed_inputs["image_grid_thw"] = processed_images[
-                    "image_grid_thw"
-                ]
-
-        if "input_ids" not in processed_inputs:
-            raise ValueError("input_ids not generated by tokenizer")
-
-        # Extract input_ids
-        if isinstance(processed_inputs["input_ids"][0], int):
-            encoded_prompt = np.array(processed_inputs["input_ids"])
-        else:
-            encoded_prompt = np.array(processed_inputs["input_ids"][0])
-
-        if input_ids := processed_inputs.get("input_ids"):
-            if isinstance(input_ids[0], int):
-                seq = np.array(input_ids)
-            else:
-                seq = np.asarray(input_ids[0])
-
-            image_token_indices = (
-                (seq == self.image_token_id).nonzero()[0].astype(np.int32)
+        if "concatenated_pixel_values" not in processed_dict:
+            raise ValueError(
+                "concatenated_pixel_values is not provided in image inputs"
             )
-        else:
-            image_token_indices = np.array([], dtype=np.int32)
 
-        # Calculate max generation tokens
+        if "image_grid_thw" not in processed_dict:
+            raise ValueError("image_grid_thw is not provided in image inputs")
+
+        return (
+            processed_dict["concatenated_pixel_values"],
+            processed_dict["image_grid_thw"],
+            pixel_values_list,
+        )
+
+    def _tokenize_inputs(
+        self,
+        request: TextGenerationRequest,
+        image_grid_thw: npt.NDArray[np.int32] | None,
+    ) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]]:
+        tokenized_inputs = self.delegate(
+            self._retrieve_prompt(request), padding=True, return_tensors="np"
+        )
+
+        input_ids = tokenized_inputs["input_ids"].squeeze(0)
+        attention_mask = tokenized_inputs["attention_mask"].squeeze(0)
+
+        # Expand input_ids/attention_mask for image token ids
+        if image_grid_thw is None:
+            if self.max_length and input_ids.shape[0] > self.max_length:
+                raise ValueError(
+                    "input_ids is greater than the max_length of the tokenizer"
+                )
+
+            return input_ids, attention_mask
+
+        merge_len = self.img_processor.merge_size**2
+        image_token_indices = np.where(input_ids == self.image_token_id)[0]
+
+        # Only expand as many image tokens as we have grids for
+        num_images = len(image_grid_thw)
+        if len(image_token_indices) < num_images:
+            raise ValueError(
+                f"Found {len(image_token_indices)} image tokens but have {num_images} images"
+            )
+
+        # Process only the image tokens that correspond to actual images
+        # (there might be extra placeholder tokens we should ignore)
+        for i in range(num_images):
+            idx = image_token_indices[-(i + 1)]  # Process in reverse order
+            t, h, w = image_grid_thw[-(i + 1)]
+            num_img_tokens = (t * h * w) // merge_len
+            # Insert num_img_tokens - 1 additional tokens to expand the single token to num_img_tokens total
+            input_ids = np.insert(
+                input_ids, idx, [self.image_token_id] * (num_img_tokens - 1)
+            )
+            # Also expand attention_mask to match the new input_ids length
+            attention_mask = np.insert(
+                attention_mask, idx, [1] * (num_img_tokens - 1)
+            )
+
+        if self.max_length and input_ids.shape[0] > self.max_length:
+            raise ValueError(
+                "input_ids is greater than the max_length of the tokenizer"
+            )
+
+        return input_ids, attention_mask
+
+    def _max_length_of_request(
+        self, input_ids_length: int, request: TextGenerationRequest
+    ) -> int:
         max_new_tokens = None
         if request.sampling_params.max_new_tokens is not None:
             max_new_tokens = request.sampling_params.max_new_tokens
         elif self.max_new_tokens != -1:
             max_new_tokens = self.max_new_tokens
 
-        max_gen_tokens = max_tokens_to_generate(
-            encoded_prompt.shape[0], self.max_length, max_new_tokens
+        tokens_to_generate = max_tokens_to_generate(
+            input_ids_length, self.max_length, max_new_tokens
         )
+        if tokens_to_generate is None:
+            # If max_tokens_to_generate returns None, use max_length as fallback
+            return self.max_length
+        return input_ids_length + tokens_to_generate
 
-        # Process vision inputs for Qwen2.5VL (image-only)
-        attention_mask = None
-        vision_data: VisionEncodingData | None = None
+    def _has_images(self, request: TextGenerationRequest) -> bool:
+        """Check if the request contains any images."""
+        if request.images:
+            return True
+        if request.messages:
+            for msg in request.messages:
+                content = msg.get("content", [])
+                if isinstance(content, list):
+                    for item in content:
+                        if (
+                            isinstance(item, dict)
+                            and item.get("type") == "image_url"
+                        ):
+                            return True
+        return False
 
-        # Extract attention_mask for use in get_rope_index
-        # This should be extracted regardless of whether images are present
-        # since the tokenizer always provides attention_mask
-        if "attention_mask" in processed_inputs:
-            attention_mask_raw = processed_inputs["attention_mask"]
-            # Handle various formats from tokenizer
-            if hasattr(attention_mask_raw, "numpy"):
-                attention_mask = attention_mask_raw.numpy()
-            elif isinstance(attention_mask_raw, list):
-                attention_mask = np.array(attention_mask_raw)
-            elif isinstance(attention_mask_raw, np.ndarray):
-                attention_mask = attention_mask_raw
-            else:
-                attention_mask = np.array(attention_mask_raw)
+    def _calculate_rope_params(
+        self,
+        input_ids: npt.NDArray[np.int64],
+        attention_mask: npt.NDArray[np.int64],
+        image_grid_thw: npt.NDArray[np.int32] | None,
+    ) -> tuple[npt.NDArray[np.int64], int]:
+        """Calculate rope delta and decoder position ids."""
+        # Ensure attention_mask is 2D for get_rope_index
+        if attention_mask.ndim == 1:
+            attention_mask = attention_mask.reshape(1, -1)
 
-        if image_inputs is not None:
-            concatenated_pixel_values: npt.NDArray[Any] | None = None
-            if "concatenated_pixel_values" in processed_inputs:
-                concatenated_pixel_values = processed_inputs[
-                    "concatenated_pixel_values"
-                ]
-                if not isinstance(concatenated_pixel_values, np.ndarray):
-                    raise ValueError(
-                        f"Expected concatenated_pixel_values to be a numpy array but got {type(concatenated_pixel_values)}"
-                    )
+        # Convert attention_mask to float as required by get_rope_index
+        attention_mask_float = attention_mask.astype(np.float32)
 
-            # Extract image_grid_thw if present (Qwen2.5VL specific)
-            # Note: image_grid_thw is only used locally for computing other values, not passed to model
-            if "image_grid_thw" in processed_inputs:
-                image_grid_thw = processed_inputs["image_grid_thw"]
-                # Handle numpy array from custom image processor
-                if not isinstance(image_grid_thw, np.ndarray):
-                    image_grid_thw = np.array(image_grid_thw)
-
-                # Precompute vision_position_ids for this context
-                vision_position_ids = mrope_pos_ids_3d(
-                    grid_thw=image_grid_thw,
-                    spatial_merge_size=self.spatial_merge_size,
-                )
-
-                # Precompute window index and cu_window_seqlens
-                window_index, cu_window_seqlens = get_window_index(
-                    grid_thw=image_grid_thw,
-                    window_size=self.window_size,
-                    spatial_merge_size=self.spatial_merge_size,
-                    patch_size=self.patch_size,
-                    spatial_merge_unit=self.spatial_merge_size**2,
-                )
-                # Note: cu_window_seqlens is only used locally, not passed to model
-
-                # Precompute seqlens values
-                (
-                    cu_seqlens,
-                    cu_window_seqlens_unique,
-                    max_seqlen,
-                    window_max_seqlen,
-                ) = get_seqlens(
-                    grid_thw=image_grid_thw,
-                    cu_win_seqlens=cu_window_seqlens,
-                )
-                max_seqlen_arr = np.array(max_seqlen, dtype=np.uint32)
-                window_max_seqlen_arr = np.array(
-                    window_max_seqlen, dtype=np.uint32
-                )
-
-                # Precompute max_grid_size (max of height and width dimensions)
-                max_grid_size = np.array(
-                    int(np.max(image_grid_thw[:, 1:])), dtype=np.int32
-                )
-
-                # Create VisionEncodingData with all vision-specific fields
-                if concatenated_pixel_values is not None:
-                    vision_data = VisionEncodingData(
-                        image_grid_thw=image_grid_thw,
-                        video_grid_thw=None,
-                        second_per_grid_ts=None,
-                        vision_position_ids=vision_position_ids,
-                        window_index=window_index,
-                        max_grid_size=max_grid_size,
-                        cu_seqlens=cu_seqlens,
-                        cu_window_seqlens_unique=cu_window_seqlens_unique,
-                        max_seqlen=max_seqlen_arr,
-                        window_max_seqlen=window_max_seqlen_arr,
-                        concatenated_pixel_values=concatenated_pixel_values,
-                    )
-
-        # Calculate Rope Delta and position ids
         decoder_position_ids, rope_delta_array = get_rope_index(
             spatial_merge_size=self.spatial_merge_size,
             image_token_id=self.image_token_id,
             video_token_id=self.video_token_id,
             vision_start_token_id=self.vision_start_token_id,
             tokens_per_second=self.tokens_per_second,
-            input_ids=encoded_prompt.reshape(1, -1),
-            image_grid_thw=vision_data.image_grid_thw
-            if vision_data is not None
-            else None,
-            # This is never calculated prior to this.
+            input_ids=input_ids.reshape(1, -1),
+            image_grid_thw=image_grid_thw,
             video_grid_thw=None,
-            # This is never calculated prior to this.
             second_per_grid_ts=None,
-            attention_mask=attention_mask,
+            attention_mask=attention_mask_float,
         )
         decoder_position_ids = decoder_position_ids.squeeze(1)
         rope_delta = int(rope_delta_array.item())
+
+        return decoder_position_ids, rope_delta
+
+    def _create_context(
+        self,
+        request: TextGenerationRequest,
+        input_ids: npt.NDArray[np.int64],
+        attention_mask: npt.NDArray[np.int64],
+        image_grid_thw: npt.NDArray[np.int32] | None,
+        images: list[ImageMetadata],
+        vision_data: VisionEncodingData | None,
+    ) -> Qwen2_5VLTextAndVisionContext:
+        """Create a Qwen2_5VLTextAndVisionContext with common fields."""
+        # Calculate image token indices from input_ids
+        image_token_indices = (
+            (input_ids == self.image_token_id).nonzero()[0].astype(np.int32)
+        )
+
+        # Calculate rope parameters
+        decoder_position_ids, rope_delta = self._calculate_rope_params(
+            input_ids, attention_mask, image_grid_thw
+        )
 
         # Handle JSON schema if provided
         json_schema = (
@@ -651,20 +589,114 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             else None
         )
 
+        # Calculate max_length using common logic
+        max_length = self._max_length_of_request(input_ids.shape[0], request)
+
         # Determine EOS token IDs
         if request.sampling_params.ignore_eos:
             eos_token_ids = set()
         else:
             eos_token_ids = self._default_eos_token_ids
 
-        if self.max_length and encoded_prompt.shape[0] > self.max_length:
-            raise ValueError(
-                "encoded_prompt is greater than the max_length of the tokenizer"
+        return Qwen2_5VLTextAndVisionContext(
+            request_id=request.request_id,
+            eos_token_ids=eos_token_ids,
+            tokens=input_ids,
+            max_length=max_length,
+            json_schema=json_schema,
+            sampling_params=request.sampling_params,
+            images=images,
+            vision_token_ids=[self.image_token_id],
+            spatial_merge_size=self.spatial_merge_size,
+            rope_delta=rope_delta,
+            image_token_id=self.image_token_id,
+            video_token_id=self.video_token_id,
+            vision_start_token_id=self.vision_start_token_id,
+            tokens_per_second=self.tokens_per_second,
+            image_token_indices=image_token_indices,
+            decoder_position_ids=decoder_position_ids,
+            vision_data=vision_data,
+        )
+
+    def new_context_blocking(
+        self, request: TextGenerationRequest
+    ) -> Qwen2_5VLTextAndVisionContext:
+        # Exit early, if no images are provided.
+        if not self._has_images(request):
+            input_ids, attention_mask = self._tokenize_inputs(request, None)
+
+            return self._create_context(
+                request=request,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                image_grid_thw=None,
+                images=[],
+                vision_data=None,
             )
 
+        # Get Image Inputs (already processed by img_processor inside _process_images)
+        concatenated_pixel_values, image_grid_thw, pixel_values_list = (
+            self._process_images(request)
+        )
+
+        # Tokenize (and expand the input ids)
+        input_ids, attention_mask = self._tokenize_inputs(
+            request, image_grid_thw
+        )
+
+        # Precompute vision_position_ids for this context
+        vision_position_ids = mrope_pos_ids_3d(
+            grid_thw=image_grid_thw,
+            spatial_merge_size=self.spatial_merge_size,
+        )
+
+        # Precompute window index and cu_window_seqlens
+        window_index, cu_window_seqlens = get_window_index(
+            grid_thw=image_grid_thw,
+            window_size=self.window_size,
+            spatial_merge_size=self.spatial_merge_size,
+            patch_size=self.patch_size,
+            spatial_merge_unit=self.spatial_merge_size**2,
+        )
+        # Note: cu_window_seqlens is only used locally, not passed to model
+
+        # Precompute seqlens values
+        (
+            cu_seqlens,
+            cu_window_seqlens_unique,
+            max_seqlen,
+            window_max_seqlen,
+        ) = get_seqlens(
+            grid_thw=image_grid_thw,
+            cu_win_seqlens=cu_window_seqlens,
+        )
+        max_seqlen_arr = np.array(max_seqlen, dtype=np.uint32)
+        window_max_seqlen_arr = np.array(window_max_seqlen, dtype=np.uint32)
+
+        # Precompute max_grid_size (max of height and width dimensions)
+        max_grid_size = np.array(
+            int(np.max(image_grid_thw[:, 1:])), dtype=np.int32
+        )
+
+        # Create VisionEncodingData with all vision-specific fields
+        vision_data = VisionEncodingData(
+            image_grid_thw=image_grid_thw,
+            video_grid_thw=None,
+            second_per_grid_ts=None,
+            vision_position_ids=vision_position_ids,
+            window_index=window_index,
+            max_grid_size=max_grid_size,
+            cu_seqlens=cu_seqlens,
+            cu_window_seqlens_unique=cu_window_seqlens_unique,
+            max_seqlen=max_seqlen_arr,
+            window_max_seqlen=window_max_seqlen_arr,
+            concatenated_pixel_values=concatenated_pixel_values,
+        )
+
+        # Build images list from pixel values
         if pixel_values_list:
             start_and_end_idxs = find_contiguous_ranges(
-                encoded_prompt, [self.image_token_id]
+                input_ids, [self.image_token_id]
             )
             images = [
                 ImageMetadata(
@@ -682,27 +714,12 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         else:
             images = []
 
-        # Create and return context
-        context = Qwen2_5VLTextAndVisionContext(
-            request_id=request.request_id,
-            eos_token_ids=eos_token_ids,
-            tokens=encoded_prompt,
-            max_length=encoded_prompt.shape[0] + max_gen_tokens
-            if max_gen_tokens is not None
-            else self.max_length,
-            json_schema=json_schema,
-            sampling_params=request.sampling_params,
+        # Create and return context using shared method
+        return self._create_context(
+            request=request,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            image_grid_thw=image_grid_thw,
             images=images,
-            vision_token_ids=[self.image_token_id],
-            # Qwen2.5VL-specific fields
-            spatial_merge_size=self.spatial_merge_size,
-            rope_delta=rope_delta,
-            image_token_id=self.image_token_id,
-            video_token_id=self.video_token_id,
-            vision_start_token_id=self.vision_start_token_id,
-            tokens_per_second=self.tokens_per_second,
-            image_token_indices=image_token_indices,
-            decoder_position_ids=decoder_position_ids,
             vision_data=vision_data,
         )
-        return context
