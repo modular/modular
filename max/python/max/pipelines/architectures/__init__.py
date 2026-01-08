@@ -70,6 +70,8 @@ def register_all_models() -> None:
     from .qwen3 import qwen3_arch, qwen3_moe_arch
     from .qwen3_embedding import qwen3_embedding_arch
     from .qwen3vl_moe import qwen3vl_arch, qwen3vl_moe_arch
+    from .qwen3vl_moe import qwen3vl_moe_arch
+    from .ltx2_module_v3 import ltx2_module_v3_arch
 
     architectures = [
         exaone_arch,
@@ -112,6 +114,7 @@ def register_all_models() -> None:
         qwen3_embedding_arch,
         qwen3vl_arch,
         qwen3vl_moe_arch,
+        ltx2_module_v3_arch,
     ]
 
     for arch in architectures:
