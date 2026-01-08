@@ -1312,6 +1312,39 @@ class Tensor(DLPackArray, HasTensorValue):
             x = F.min(x, max)
         return x
 
+    def squeeze(self, axis: int) -> Tensor:
+        """Removes a size-1 dimension from the tensor.
+
+        Returns a tensor with the specified size-1 dimension removed. This is
+        useful for removing singleton dimensions from tensors after operations
+        that may have added them.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.dtype import DType
+
+            # Create a tensor with a size-1 dimension
+            x = tensor.Tensor.ones([4, 1, 6], dtype=DType.float32)
+            print(x.shape)  # (4, 1, 6)
+
+            # Squeeze out the size-1 dimension
+            y = x.squeeze(axis=1)
+            print(y.shape)  # (4, 6)
+
+        Args:
+            axis: The dimension to remove from the tensor's shape. If negative,
+                this indexes from the end of the tensor. The dimension at this
+                axis must have size 1.
+
+        Returns:
+            Tensor: A tensor with the specified dimension removed.
+
+        Raises:
+            ValueError: If the dimension at the specified axis is not size 1.
+        """
+        return F.squeeze(self, axis)
+
     def reshape(self, shape: ShapeLike) -> Tensor:
         """Reshapes the tensor to a new shape.
 
