@@ -379,10 +379,15 @@ static int run(const State &subcommandState) {
   state.assertNoUnusedArguments(args);
 
   // Execute the Mojo program.
-  return executeModule(
+  int result = executeModule(
       state, runtime, mlirCtx, options, moduleOp.takeValue(), target,
       state.arguments.slice(args.getLastArg(options::OPT_INPUT)->getIndex()),
       *ctx);
+  if (result != EXIT_SUCCESS)
+    return result;
+
+  // Check if any warnings were promoted to errors via -Werror.
+  return dwHandler.wasErrorEmitted() ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 void M::registerRunSubcommand(SubcommandRegistry &registry) {

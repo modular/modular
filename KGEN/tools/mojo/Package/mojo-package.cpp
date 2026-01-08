@@ -535,7 +535,8 @@ static int package(const State &subcommandState) {
     // Assert that we've parsed all command line arguments.
     state.assertNoUnusedArguments(args);
 
-    return EXIT_SUCCESS;
+    // Check if any warnings were promoted to errors via -Werror.
+    return dwHandler.wasErrorEmitted() ? EXIT_FAILURE : EXIT_SUCCESS;
   }
 
   // Build a new package op based off of the parsed package op. This new op is
@@ -554,7 +555,8 @@ static int package(const State &subcommandState) {
   // Assert that we've parsed all command line arguments.
   state.assertNoUnusedArguments(args);
 
-  return EXIT_SUCCESS;
+  // Check if any warnings were promoted to errors via -Werror.
+  return dwHandler.wasErrorEmitted() ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 void M::registerPackageSubcommand(SubcommandRegistry &registry) {
