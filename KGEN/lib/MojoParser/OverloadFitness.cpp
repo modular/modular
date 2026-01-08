@@ -792,24 +792,18 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       signature.getInputParamTypes(), signature.getParamListAttrs(),
       inferenceDiags, allowImplicitConversions);
 
-  bool inferFailed = failed(inference.inferForCall(
-      signature, operands, variadicKwOperands, returnsSelf, hasCTADParams));
-
-  auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
-    if (inferFailed)
-      return PValue();
-
-    TypedAttr inferred = inference.getInferredValue(bindingsSoFar.size());
-
-    if (inferred)
-      return PValue(inferred);
-
-    // If we succeeded inference but didn't get a value for this parameter, then
-    // the parameter must not be present: complain.
-    inferenceDiags.addFailure(
-        InferenceFailure::NotFoundFailure{bindingsSoFar.size()});
-    return PValue();
-  };
+  if (failed(inference.inferForCall(signature, operands, variadicKwOperands,
+                                    returnsSelf, hasCTADParams))) {
+    // FIXME: Unfortunately, `inferFailed` does not imply that there is an
+    // failure reported in the `inferenceDiags` (understand why!). Besides, we
+    // still have to call `verifyBindings` because mojo diagnostic will be
+    // filled in `ParamBinding`. This is WRONG and need to be fixed after fully
+    // migration. For now, simply erase every inferred value if inference failed
+    // to make it behave the same as before (we probably need to move error
+    // diagnose into ParamInfState or as a separate util?).
+    for (size_t i = 0, e = signature.getInputParamTypes().size(); i < e; i++)
+      inference.evaluator.overwriteIndexBinding(i, nullptr);
+  }
 
   std::optional<MojoInflightDiag> diag;
   auto getDiag = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
@@ -818,7 +812,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   };
 
   auto [newBindings, bindingFitness] = callable.paramBindings.verifyBindings(
-      signature, getDiag, parameterInferenceHook, inferenceDiags, funcIfDirect);
+      signature, getDiag, inference, inferenceDiags, funcIfDirect);
 
   // If there is an error, we just forward the diagnostics.
   if (diag)

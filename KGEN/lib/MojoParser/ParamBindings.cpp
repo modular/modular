@@ -256,11 +256,11 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindingsImpl(
     const CallOperands &origOperands, ArrayRef<Type> expectedParamTypes,
-    PogListAttr paramListAttr, ParamInfHookTy parameterInferenceHook,
+    PogListAttr paramListAttr, ParamInfState &inference,
     ParamInfDiags &inferenceDiags,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     bool partial, ASTDecl *declIfDirect) const {
-  assert(parameterInferenceHook && "expected a parameter inference hook");
+
   Fitness fitness{{}};
 
   // Check to see if we have ... and remove it from the parameter list.
@@ -362,10 +362,19 @@ ParamBindings::verifyBindingsImpl(
   size_t numBindings = operands.size();
 
   auto inferParameter = [&](Type requestedType) {
-    PValue value = parameterInferenceHook(newBindings);
-    assert(!value || value.getType().isEqualCanon(requestedType) &&
-                         "inferred a parameter value of wrong type");
-    return value;
+    size_t paramIdx = newBindings.size();
+
+    TypedAttr inferred = inference.getInferredValue(paramIdx);
+    if (inferred) {
+      assert(ASTType(inferred.getType()).isEqualCanon(requestedType) &&
+             "inferred a parameter value of wrong type");
+      return PValue(inferred);
+    }
+
+    // If we succeeded inference but didn't get a value for this parameter,
+    // then the parameter must not be present: complain.
+    inferenceDiags.addFailure(InferenceFailure::NotFoundFailure{paramIdx});
+    return PValue();
   };
 
   DefaultValueHandler defaultHandler(paramListAttr);
@@ -766,11 +775,11 @@ std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(
     LITGeneratorType sig,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
-    ParamInfHookTy parameterInferenceHook, ParamInfDiags &inferenceDiags,
+    ParamInfState &inference, ParamInfDiags &inferenceDiags,
     ASTDecl *declIfKnown) const {
   return verifyBindingsImpl(parameters, sig.getInputParamTypes(),
-                            sig.getMetadata(), parameterInferenceHook,
-                            inferenceDiags, getDiag,
+                            sig.getMetadata(), inference, inferenceDiags,
+                            getDiag,
                             /*partial=*/false, declIfKnown);
 }
 
@@ -785,12 +794,9 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
 
   inference.inferFromParamList(/*hasArguments*/ partial);
 
-  auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
-    return PValue(inference.getInferredValue(bindingsSoFar.size()));
-  };
   std::optional<MojoInflightDiag> diag;
   auto [bindings, _] = verifyBindingsImpl(
-      parameters, paramTypes, paramList, parameterInferenceHook, inferenceDiags,
+      parameters, paramTypes, paramList, inference, inferenceDiags,
       [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
         // Ignore any errors.
         diag = shared.emitError(loc ? *loc : getExprLoc());
@@ -857,26 +863,14 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
   // Infer information from the current parameter list.
   inference.inferFromParamList(partial);
 
-  auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar) {
-    // See if we inferred information about the next value.
-    if (auto result = inference.getInferredValue(bindingsSoFar.size()))
-      return PValue(result);
-
-    // If we succeeded inference but didn't get a value for this parameter, then
-    // the parameter must not be present: complain.
-    inferenceDiags.addFailure(
-        InferenceFailure::NotFoundFailure{bindingsSoFar.size()});
-    return PValue();
-  };
-
   std::optional<MojoInflightDiag> diag;
   auto getDiags = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
     diag = shared.emitError(loc ? *loc : getExprLoc());
     return *diag;
   };
   auto [bindings, fitness] = verifyBindingsImpl(
-      parameters, expectedParamTypes, paramListAttr, parameterInferenceHook,
-      inferenceDiags, getDiags, partial, declIfKnown);
+      parameters, expectedParamTypes, paramListAttr, inference, inferenceDiags,
+      getDiags, partial, declIfKnown);
   return {bindings, fitness, std::move(diag)};
 }
 
