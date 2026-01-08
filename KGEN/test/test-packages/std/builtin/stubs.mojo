@@ -13,19 +13,19 @@ comptime float = __mlir_type.`!pop.scalar<f64>`
 comptime AnyTrivialRegType = __mlir_type.`!kgen.type`
 comptime ImmutOrigin = Origin[mut=False]
 comptime MutOrigin = Origin[mut=True]
-comptime AnyOrigin[mut: Bool] = Origin(
+comptime AnyOrigin[*, mut: Bool] = Origin(
     __mlir_attr[`#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`]
 )
-comptime ImmutAnyOrigin = AnyOrigin[False]
-comptime MutAnyOrigin = AnyOrigin[True]
-comptime ExternalOrigin[mut: Bool] = Origin[mut=mut](
+comptime ImmutAnyOrigin = AnyOrigin[mut=False]
+comptime MutAnyOrigin = AnyOrigin[mut=True]
+comptime ExternalOrigin[*, mut: Bool] = Origin[mut=mut](
     __mlir_attr[
         `#lit.origin.union<> : !lit.origin<`,
         mut._mlir_value,
         `>`,
     ]
 )
-comptime ImmutExternalOrigin = ExternalOrigin[False]
+comptime ImmutExternalOrigin = ExternalOrigin[mut=False]
 comptime MutExternalOrigin = ExternalOrigin[True]
 comptime StaticConstantOrigin = Origin(
     __mlir_attr[
