@@ -355,8 +355,8 @@ static int run(const State &subcommandState) {
   // Lower the input file to an MLIR module.
   AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &mlirCtx);
-  ConditionallyDisableMLIRWarnings dwHandler(&mlirCtx, options.disableWarnings,
-                                             options.warningsAsErrors);
+  ScopedMLIRWarningHandler warningHandler(&mlirCtx, options.disableWarnings,
+                                          options.warningsAsErrors);
 
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
       state, args, options, &mlirCtx, runtime,
@@ -387,7 +387,7 @@ static int run(const State &subcommandState) {
     return result;
 
   // Check if any warnings were promoted to errors via -Werror.
-  return dwHandler.wasErrorEmitted() ? EXIT_FAILURE : EXIT_SUCCESS;
+  return warningHandler.wasErrorEmitted() ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 void M::registerRunSubcommand(SubcommandRegistry &registry) {
