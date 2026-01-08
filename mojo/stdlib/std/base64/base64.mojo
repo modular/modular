@@ -165,13 +165,13 @@ fn b64decode[
         var c = _ascii_to_value[validate](data[i + 2])
         var d = _ascii_to_value[validate](data[i + 3])
 
-        result.append_byte((a << 2) | (b >> 4))
+        result._unsafe_append_byte((a << 2) | (b >> 4))
         if data[i + 2] == `=`:
             break
-        result.append_byte(((b & 0x0F) << 4) | (c >> 2))
+        result._unsafe_append_byte(((b & 0x0F) << 4) | (c >> 2))
         if data[i + 3] == `=`:
             break
-        result.append_byte(((c & 0x03) << 6) | d)
+        result._unsafe_append_byte(((c & 0x03) << 6) | d)
 
     return result^
 
@@ -201,8 +201,8 @@ fn b16encode(str: StringSlice[mut=False]) -> String:
         var str_byte = data[i]
         var hi = str_byte >> 4
         var lo = str_byte & 0b1111
-        result.append_byte(b16chars[hi])
-        result.append_byte(b16chars[lo])
+        result._unsafe_append_byte(b16chars[hi])
+        result._unsafe_append_byte(b16chars[lo])
 
     return result^
 
@@ -251,6 +251,6 @@ fn b16decode(str: StringSlice[mut=False]) -> String:
     for i in range(0, n, 2):
         var hi = data[i]
         var lo = data[i + 1]
-        result.append_byte(decode(hi) << 4 | decode(lo))
+        result._unsafe_append_byte(decode(hi) << 4 | decode(lo))
 
     return result^

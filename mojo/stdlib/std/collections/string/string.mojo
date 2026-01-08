@@ -1019,6 +1019,24 @@ struct String(
         """
         return Self._add(self.as_bytes(), other.as_bytes())
 
+    fn _unsafe_append_byte(mut self, byte: Byte):
+        """Appends a byte to the string assuming the capacity is sufficient.
+
+        This helper is inherently unsafe as it does not check if the capacity is
+        sufficient and does not check UTF-8 validity.
+        """
+        debug_assert(
+            self.capacity() > self.byte_length(),
+            "String: capacity is not sufficient",
+        )
+        var length = self.byte_length()
+        (self.unsafe_ptr_mut() + length).init_pointee_move(byte)
+        self.set_byte_length(length + 1)
+
+    @deprecated(
+        "Appending arbitrary bytes can create invalid UTF-8, breaking String's"
+        " safety guarantees. Use `append(Codepoint)` instead."
+    )
     fn append_byte(mut self, byte: Byte):
         """Append a byte to the string.
 
@@ -1030,6 +1048,19 @@ struct String(
         self.reserve(len + 1)
         self.unsafe_ptr_mut()[len] = byte
         self.set_byte_length(len + 1)
+
+    fn append(mut self, codepoint: Codepoint):
+        """Append a codepoint to the string.
+
+        Args:
+            codepoint: The codepoint to append.
+        """
+        self._clear_nul_terminator()
+        var length = self.byte_length()
+        var new_length = length + codepoint.utf8_byte_length()
+        self.reserve(new_length)
+        _ = codepoint.unsafe_write_utf8(self.unsafe_ptr_mut() + length)
+        self.set_byte_length(new_length)
 
     fn __radd__(self, other: StringSlice[mut=False]) -> String:
         """Creates a string by prepending another string slice to the start.
@@ -2132,6 +2163,8 @@ fn ord(s: StringSlice) -> Int:
 # chr
 # ===----------------------------------------------------------------------=== #
 
+comptime _LARGEST_UNICODE_ASCII_BYTE = 127
+
 
 fn chr(c: Int) -> String:
     """Returns a String based on the given Unicode code point. This is the
@@ -2150,11 +2183,8 @@ fn chr(c: Int) -> String:
     print(chr(97), chr(8364)) # "a €"
     ```
     """
-
-    if c < 0b1000_0000:  # 1 byte ASCII char
-        var str = String(capacity=1)
-        str.append_byte(c)
-        return str^
+    if c <= _LARGEST_UNICODE_ASCII_BYTE:
+        return _unsafe_chr_ascii(c)
 
     var char_opt = Codepoint.from_u32(c)
     if not char_opt:
@@ -2170,7 +2200,7 @@ fn chr(c: Int) -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-fn _chr_ascii(c: UInt8) -> String:
+fn _unsafe_chr_ascii(c: UInt8) -> String:
     """Returns a string based on the given ASCII code point.
 
     Args:
@@ -2178,10 +2208,15 @@ fn _chr_ascii(c: UInt8) -> String:
 
     Returns:
         A string containing a single character based on the given code point.
+
+    Safety:
+        The byte must be a valid single byte ASCII character (0-127).
     """
-    var result = String(capacity=1)
-    result.append_byte(c)
-    return result
+    debug_assert(
+        c <= _LARGEST_UNICODE_ASCII_BYTE, "Character is not single byte unicode"
+    )
+
+    return String(unsafe_from_utf8=Span(ptr=UnsafePointer(to=c), length=1))
 
 
 fn _repr_ascii(c: UInt8) -> String:
@@ -2201,7 +2236,7 @@ fn _repr_ascii(c: UInt8) -> String:
     if c == ord_back_slash:
         return r"\\"
     elif Codepoint(c).is_ascii_printable():
-        return _chr_ascii(c)
+        return _unsafe_chr_ascii(c)
     elif c == ord_tab:
         return r"\t"
     elif c == ord_new_line:

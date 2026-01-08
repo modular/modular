@@ -1146,7 +1146,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         # TODO(#933): implement this for unicode when we support llvm intrinsic
         # evaluation at compile time
         var result = String(capacity=1)
-        result.append_byte(self._slice[idx])
+        result._iadd(Span(ptr=UnsafePointer(to=self._slice[idx]), length=1))
         return result^
 
     fn __contains__(self, substr: StringSlice) -> Bool:
@@ -1299,48 +1299,43 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         if occurrences == -1:
             return String(self)
 
-        var self_start = self.unsafe_ptr()
-        var self_ptr = self.unsafe_ptr()
-        var new_ptr = new.unsafe_ptr()
-
         var self_len = self.byte_length()
         var old_len = old.byte_length()
         var new_len = new.byte_length()
 
         var res = String(capacity=self_len + (new_len - old_len) * occurrences)
 
-        for _ in range(occurrences):
-            var curr_offset = Int(self_ptr) - Int(self_start)
+        var current_pos = 0
 
-            var idx = self.find(old, curr_offset)
+        for _ in range(occurrences):
+            var idx = self.find(old, current_pos)
 
             debug_assert(idx >= 0, "expected to find occurrence during find")
 
             # Copy preceding unchanged chars
-            for _ in range(curr_offset, idx):
-                res.append_byte(self_ptr[])
-                self_ptr += 1
+            res += StringSlice(
+                unsafe_from_utf8=self.as_bytes()[current_pos:idx]
+            )
 
             # Insert a copy of the new replacement string
-            for i in range(new_len):
-                res.append_byte(new_ptr[i])
+            res += new
 
-            self_ptr += old_len
+            current_pos = idx + old_len
 
-        while self_ptr < self.unsafe_ptr() + self_len:
-            res.append_byte(self_ptr[])
-            self_ptr += 1
+        # Copy remaining chars
+        if current_pos < self_len:
+            res += StringSlice(unsafe_from_utf8=self.as_bytes()[current_pos:])
 
         return res^
 
     fn _interleave(self, val: StringSlice) -> String:
-        var val_ptr = val.unsafe_ptr()
-        var self_ptr = self.unsafe_ptr()
-        var res = String(capacity=val.byte_length() * self.byte_length())
-        for i in range(self.byte_length()):
-            for j in range(val.byte_length()):
-                res.append_byte(val_ptr[j])
-            res.append_byte(self_ptr[i])
+        # TODO: this may be better as:
+        # (val.byte_length() * self.codepoint_length()) + self.codepoint_length()
+        var estimated_capacity = val.byte_length() * self.byte_length()
+        var res = String(capacity=estimated_capacity)
+        for codepoint in self.codepoint_slices():
+            res += val
+            res += codepoint
         return res^
 
     @always_inline
