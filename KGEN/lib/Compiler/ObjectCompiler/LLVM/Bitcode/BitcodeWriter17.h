@@ -28,8 +28,8 @@ class raw_ostream;
 
 namespace M::KGEN::LLVM {
 
-/// BitcodeWriter17 - Legacy bitcode writer for LLVM bitcode version 5.0
-/// This class writes LLVM modules to bitcode format version 5.0, which is
+/// BitcodeWriter17 - Legacy bitcode writer for LLVM bitcode version 17
+/// This class writes LLVM modules to bitcode format version 17, which is
 /// required for Metal compatibility.
 class BitcodeWriter17 {
 
@@ -100,7 +100,7 @@ public:
 };
 
 /// Write the specified module summary index to the given raw output stream
-/// using bitcode format version 5.0.
+/// using bitcode format version 17.
 void WriteIndexToFile17(const llvm::ModuleSummaryIndex &Index,
                         llvm::raw_ostream &Out,
                         const void *ModuleToSummariesForIndex = nullptr);
