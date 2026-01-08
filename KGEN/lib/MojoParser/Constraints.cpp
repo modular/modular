@@ -87,6 +87,7 @@ ConstraintResult LIT::checkConstraints(
     prop = getCanonicalAttr(prop);
     if (evaluator)
       prop = evaluator->getReboundAttribute(prop);
+    prop = getCanonicalAttr(prop);
 
     // If the constraint evaluated to a constant, check its value directly.
     if (auto intValue = dyn_cast<IntegerAttr>(prop)) {

@@ -1566,3 +1566,16 @@ fn use_constraint_struct_in_constraint[
         where ConstraintStruct[x].b > 1
 ]():
     pass
+
+
+fn bin_pred(x: Int, y: Int) -> Bool:
+    return x > y
+
+@fieldwise_init
+struct BinStruct[x: Int, y: Int where bin_pred(x, y)]:
+    # Accessing the same parameter through an alias should work.
+    comptime xx = Self.x
+    # CHECK-LABEL: lit.fn @"get_with_z
+    # CHECK-SAME: %__result__: !lit.ref<!lit.struct<#BinStruct
+    fn get_with_z[z: Int where bin_pred(Self.x, z)](self) -> BinStruct[Self.xx, z]:
+        return {}
