@@ -137,12 +137,6 @@ static void configureInternalLogging(StringRef internalLogConfig) {
   }
 }
 
-#ifdef AF_PACKET
-#define __AF_TYPE AF_PACKET
-#else
-#define __AF_TYPE AF_LINK
-#endif
-
 /// creates local identifiers; see Telemetry.h.
 std::pair<std::string, std::string> M::Telemetry::createLocalIDs() {
   // Collect all interfaces.
