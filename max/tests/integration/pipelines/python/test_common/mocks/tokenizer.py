@@ -21,7 +21,6 @@ import numpy as np
 from max.interfaces import (
     PipelineTokenizer,
     TextGenerationRequest,
-    TokenBuffer,
 )
 from max.pipelines.core import TextContext
 
@@ -107,7 +106,7 @@ class MockTextTokenizer(
         ctx = TextContext(
             request_id=request.request_id,
             max_length=max_length,
-            tokens=TokenBuffer(encoded),
+            tokens=encoded,
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             json_schema=json_schema,

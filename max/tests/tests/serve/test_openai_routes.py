@@ -96,8 +96,7 @@ def test_openai_chat_completion_concurrent(app) -> None:  # noqa: ANN001
     responses: dict[int, CreateChatCompletionResponse] = {}
 
     def execute_request(client: SyncTestClient, idx: int) -> None:
-        # Ensure we always have at least one token in the request
-        request_content = ",".join(f"_{i}_" for i in range(idx + 1))
+        request_content = ",".join(f"_{i}_" for i in range(idx))
         request_contents[idx] = request_content
         response_json = client.post(
             "/v1/chat/completions",

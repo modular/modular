@@ -28,12 +28,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.interfaces import (
-    BatchProcessorInputs,
-    ProcessorInputs,
-    SamplingParams,
-    TokenBuffer,
-)
+from max.interfaces import BatchProcessorInputs, ProcessorInputs, SamplingParams
 from max.pipelines import TextContext
 from max.pipelines.lib.sampling.logits_processor import apply_logits_processors
 
@@ -91,14 +86,14 @@ class TestApplyLogitsProcessorsGPU:
         context_batch = [
             TextContext(
                 max_length=100,
-                tokens=TokenBuffer(np.array([42], dtype=np.int64)),
+                tokens=np.empty(1, dtype=np.int32),
                 sampling_params=SamplingParams(
                     logits_processors=[add_one, add_two]
                 ),
             ),
             TextContext(
                 max_length=100,
-                tokens=TokenBuffer(np.array([42], dtype=np.int64)),
+                tokens=np.empty(1, dtype=np.int32),
                 sampling_params=SamplingParams(logits_processors=[sub_one]),
             ),
         ]
@@ -161,14 +156,8 @@ class TestApplyLogitsProcessorsGPU:
             np.array([0, 3, 5]).astype(np.uint32)
         ).to(device)
         context_batch = [
-            TextContext(
-                max_length=100,
-                tokens=TokenBuffer(np.array([42], dtype=np.int64)),
-            ),
-            TextContext(
-                max_length=100,
-                tokens=TokenBuffer(np.array([42], dtype=np.int64)),
-            ),
+            TextContext(max_length=100, tokens=np.empty(1, dtype=np.int32)),
+            TextContext(max_length=100, tokens=np.empty(1, dtype=np.int32)),
         ]
 
         def add_one(inputs: BatchProcessorInputs) -> None:

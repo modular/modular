@@ -24,12 +24,7 @@ import pytest
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.interfaces import (
-    RequestID,
-    TextGenerationInputs,
-    TextGenerationOutput,
-    TokenBuffer,
-)
+from max.interfaces import RequestID, TextGenerationInputs, TextGenerationOutput
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -245,13 +240,13 @@ def create_context(
         context: TextContext | TTSContext = TextContext(
             request_id=RequestID(request_id),
             max_length=max_length,
-            tokens=TokenBuffer(np.array(tokens, dtype=np.int64)),
+            tokens=np.array(tokens, dtype=np.int64),
         )
     else:
         context = TTSContext(
             request_id=RequestID(request_id),
             max_length=max_length,
-            tokens=TokenBuffer(np.array(tokens, dtype=np.int64)),
+            tokens=np.array(tokens, dtype=np.int32),
             streaming=False,
         )
 

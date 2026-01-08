@@ -468,8 +468,7 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
     g = construct()
 
     batch = [
-        create_text_context(np.empty(prompt_lens[i], dtype=np.int64))
-        for i in range(batch_size)
+        create_text_context(np.empty(prompt_lens[i])) for i in range(batch_size)
     ]
 
     for context in batch:

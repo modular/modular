@@ -25,7 +25,6 @@ from max.interfaces import (
     SamplingParamsGenerationConfigDefaults,
     SamplingParamsInput,
     TextGenerationContext,
-    TokenBuffer,
     VLMTextGenerationContext,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
@@ -83,7 +82,7 @@ def test_context__get_min_token_logit_mask() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=10,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3]),
         eos_token_ids={4},
         sampling_params=SamplingParams(min_new_tokens=3),
     )
@@ -110,7 +109,7 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids() -> (
     context = TextContext(
         request_id=RequestID(),
         max_length=10,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3]),
         sampling_params=SamplingParams(min_new_tokens=3),
         eos_token_ids={4, 5},
     )
@@ -137,7 +136,7 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids_multistep
     context = TextContext(
         request_id=RequestID(),
         max_length=10,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3]),
         sampling_params=SamplingParams(min_new_tokens=3),
         eos_token_ids={4, 5},
     )
@@ -161,7 +160,7 @@ def test_context__get_min_token_logit_mask_with_no_eos_token_ids() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=10,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3]),
         sampling_params=SamplingParams(min_new_tokens=3),
     )
     vocab_mask = context.get_min_token_logit_mask(1)
@@ -185,7 +184,7 @@ def test_context__get_min_token_logit_mask_with_no_min_new_tokens() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=10,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3]),
         eos_token_ids={4, 5},
     )
     vocab_mask = context.get_min_token_logit_mask(1)
@@ -209,7 +208,7 @@ def test_context__eos() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=10,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3]),
         eos_token_ids={4},
     )
     assert context.eos_token_ids == {4}
@@ -224,7 +223,7 @@ def test_context__max_length() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=6,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3]),
     )
     for i in range(2):
         assert context.status == GenerationStatus.ACTIVE
@@ -236,7 +235,7 @@ def test_context__current_length() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=10,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3]),
     )
 
     assert context.current_length == 4
@@ -260,7 +259,7 @@ def test_context__seq_len() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=10,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3]),
     )
 
     assert context.active_length == 4
@@ -275,7 +274,7 @@ def test_context__needs_ce() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=10,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3]),
     )
 
     # There are 4 unencoded prompt tokens
@@ -311,7 +310,7 @@ def test_context__skip_processing() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=10,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3]),
     )
 
     # Can't trim more tokens than the context has.
@@ -344,7 +343,7 @@ def test_context__update_beyond_chunk_size() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=10,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3]),
     )
 
     # 128, is the CHUNK_SIZE defined in context
@@ -356,7 +355,7 @@ def test_context__reset() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=10,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3]),
     )
     assert context.active_length == 4
     assert context.next_tokens.tolist() == [0, 1, 2, 3]
@@ -384,7 +383,7 @@ def test_context_sampling_params_integration() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=50,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3, 4]),
         sampling_params=custom_params,
     )
 
@@ -406,7 +405,7 @@ def test_context_sampling_params_stop() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=50,
-        tokens=TokenBuffer(np.array([0], dtype=np.int64)),
+        tokens=np.array([0]),
         eos_sequences=[[1, 2]],
         sampling_params=custom_params,
     )
@@ -420,7 +419,7 @@ def test_context_sampling_params_stop() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=50,
-        tokens=TokenBuffer(np.array([0], dtype=np.int64)),
+        tokens=np.array([0]),
         eos_sequences=[[2], [3, 1]],
         sampling_params=custom_params,
     )
@@ -438,7 +437,7 @@ def test_context_sampling_params_eos_token_ids() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=50,
-        tokens=TokenBuffer(np.array([0], dtype=np.int64)),
+        tokens=np.array([0]),
         eos_token_ids=set([5, 4, 2]),
         sampling_params=custom_params,
     )
@@ -451,7 +450,7 @@ def test_context_sampling_params_eos_token_ids() -> None:
     context = TextContext(
         request_id=RequestID(),
         max_length=50,
-        tokens=TokenBuffer(np.array([0], dtype=np.int64)),
+        tokens=np.array([0]),
         eos_token_ids=set([5, 4, 2]),
         sampling_params=custom_params,
     )
@@ -546,7 +545,7 @@ def test_context_serializable() -> None:
     original_context = TextContext(
         request_id=RequestID(),
         max_length=50,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3, 4]),
     )
 
     pickle_encoded = pickle.dumps(original_context)
@@ -569,7 +568,7 @@ def test_context_tuple_serializable() -> None:
     original_context = TextContext(
         request_id=RequestID(),
         max_length=50,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3, 4]),
     )
     original_tuple = ("test_key", original_context)
 
@@ -595,7 +594,7 @@ def test_text_and_vision_context_serializable() -> None:
     # Test that we can encode a sample TextAndVisionContext with Pickle
     original_context = TextAndVisionContext(
         max_length=50,
-        tokens=TokenBuffer(np.array([0, 0, 2, 3, 4], dtype=np.int64)),
+        tokens=np.array([0, 0, 2, 3, 4]),
         images=[
             ImageMetadata(
                 start_idx=0,
@@ -625,7 +624,7 @@ def test_text_and_vision_context_serializable_empty_pixel_values() -> None:
     # Test that we can encode a sample TextAndVisionContext with Pickle
     original_context = TextAndVisionContext(
         max_length=50,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3, 4]),
         images=[],
         vision_token_ids=[98],
     )
@@ -649,7 +648,7 @@ def test_text_and_vision_context_tuple_serializable() -> None:
     # Test that we can encode a tuple of (str, TextAndVisionContext) with Pickle
     original_context = TextAndVisionContext(
         max_length=50,
-        tokens=TokenBuffer(np.array([0, 0, 2, 3, 4], dtype=np.int64)),
+        tokens=np.array([0, 0, 2, 3, 4]),
         images=[
             ImageMetadata(
                 start_idx=0,
@@ -683,7 +682,7 @@ def test_tts_context_msgpack_serialization_and_speech_tokens() -> None:
     audio_prompt_tokens = np.array([100, 101, 102, 103], dtype=np.int32)
     original_context = TTSContext(
         max_length=50,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3, 4]),
         audio_prompt_tokens=audio_prompt_tokens,
         sampling_params=SamplingParams(temperature=0.8),
     )
@@ -739,7 +738,7 @@ def test_tts_context_msgpack_serialization_and_speech_tokens() -> None:
 def test_vision_context_reset() -> None:
     context = TextAndVisionContext(
         max_length=50,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3, 4]),
         images=[
             ImageMetadata(
                 start_idx=0,
@@ -790,14 +789,16 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
 
     context = TextContext(
         max_length=200,  # Large enough to accommodate all tokens
-        tokens=TokenBuffer(initial_prompt),
+        tokens=initial_prompt,
     )
 
     # Verify initial state
     assert context.active_length == n
     assert context.needs_ce is True
-    assert context.tokens.prompt_length == n
-    assert context.tokens.generated_length == 0
+    assert context._prompt_len == n
+    assert (
+        context._completion_start_idx == context._completion_end_idx
+    )  # No completions yet
 
     # b. Generate n + m tokens, where m > (n + chunk_size)
     for i in range(m):
@@ -808,7 +809,9 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
     assert (
         context.needs_ce is False
     )  # All original prompt processed, completion generated
-    assert context.tokens.generated_length == m
+    assert (
+        context._completion_start_idx != context._completion_end_idx
+    )  # Has completions
 
     # c. Reset the context object
     context.reset()
@@ -816,12 +819,12 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
     # After reset, all tokens become the new prompt
     new_prompt_len = n + m
     assert context.active_length == new_prompt_len
-    assert context.tokens.prompt_length == new_prompt_len
+    assert context._prompt_len == new_prompt_len
     assert context.needs_ce is True
     assert context.status == GenerationStatus.ACTIVE
     # Critical: completion indices are reset to equal values (the edge case setup)
     _ = context.to_generation_output()
-    assert context.tokens.generated_length == 0
+    assert context._completion_start_idx == context._completion_end_idx
 
     # d. Simulate chunked prefill processing chunk by chunk
     processed_tokens = 0
@@ -849,22 +852,24 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
         # Key test: verify needs_ce behavior after chunk processing
         if processed_tokens < new_prompt_len:
             # Still have prompt tokens to process
-            assert context.tokens.current_position == new_prompt_len
+            assert context._active_idx == new_prompt_len
             assert context.needs_ce is True, (
                 f"needs_ce should be True after processing {processed_tokens}/{new_prompt_len} tokens"
             )
-            assert context.tokens.generated_length == 0
+            assert (
+                context._completion_start_idx == context._completion_end_idx
+            ), "Should have no completion tokens yet"
 
         else:
             # We've reached the critical edge case:
             # - All prompt tokens processed (_start_idx == _prompt_len)
             # - One completion tokens generated (_completion_start_idx == _completion_end_idx)
             # - Status is still ACTIVE
-            assert context.tokens.current_position == new_prompt_len + 1
+            assert context._active_idx == new_prompt_len + 1
 
-            assert (
-                context.tokens.processed_length == context.tokens.prompt_length
-            ), "Should have processed all prompt tokens"
+            assert context.processed_length == context._prompt_len, (
+                "Should have processed all prompt tokens"
+            )
             assert context.status == GenerationStatus.ACTIVE, (
                 "Status should still be ACTIVE"
             )
@@ -872,15 +877,17 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
             assert context.needs_ce is False, (
                 "Processed all prompt tokens but no completion tokens generated",
             )
-            assert context.tokens.generated_length == 1
+            assert (
+                context._completion_start_idx + 1 == context._completion_end_idx
+            ), "Should have no completion tokens yet"
 
-    # Verify final state - the single generated token from chunked prefill was consumed
+    # Verify final state before first completion token
     _ = context.to_generation_output()
     assert context.processed_length == new_prompt_len
     assert context.active_length == 1
-    # After consuming, no outstanding tokens remain, but generated_length is still 1
-    assert not context.tokens.has_outstanding_generated_tokens
-    assert context.tokens.generated_length == 1
+    assert (
+        context._completion_start_idx == context._completion_end_idx
+    )  # No completions yet
 
     # Now simulate generating the first completion token
     # This should transition the context out of the edge case
@@ -889,7 +896,9 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
     # Verify proper transition to completion generation
     assert context.active_length == 1
     assert context.needs_ce is False  # Now we genuinely don't need CE
-    assert context.tokens.generated_length == 2
+    assert (
+        context._completion_start_idx != context._completion_end_idx
+    )  # Now we have completions
     assert (
         context.status == GenerationStatus.ACTIVE
     )  # Still active, but generating completions
@@ -922,7 +931,7 @@ def test_text_and_vision_context_post_init() -> None:
     # ok (no images)
     _ = TextAndVisionContext(
         max_length=50,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3, 4]),
         images=[],
         vision_token_ids=[98],
     )
@@ -936,7 +945,7 @@ def test_text_and_vision_context_happy_case() -> None:
     # fmt: on
     ctx = TextAndVisionContext(
         max_length=50,
-        tokens=TokenBuffer(tokens),
+        tokens=tokens,
         images=[
             ImageMetadata(
                 start_idx=5,
@@ -995,7 +1004,7 @@ def test_text_and_vision_context_sad_case() -> None:
     with pytest.raises(ValueError, match="Images must be non-overlapping"):
         _ = TextAndVisionContext(
             max_length=50,
-            tokens=TokenBuffer(tokens),
+            tokens=tokens,
             images=[
                 ImageMetadata(
                     start_idx=5,
@@ -1015,7 +1024,7 @@ def test_text_and_vision_context_sad_case() -> None:
     with pytest.raises(ValueError, match="Images must be sorted"):
         _ = TextAndVisionContext(
             max_length=50,
-            tokens=TokenBuffer(tokens),
+            tokens=tokens,
             images=[
                 ImageMetadata(
                     start_idx=15,
@@ -1036,7 +1045,7 @@ def test_text_and_vision_context_sad_case() -> None:
     ):
         _ = TextAndVisionContext(
             max_length=50,
-            tokens=TokenBuffer(tokens),
+            tokens=tokens,
             images=[
                 ImageMetadata(
                     start_idx=20,
@@ -1047,32 +1056,28 @@ def test_text_and_vision_context_sad_case() -> None:
             vision_token_ids=[98],
         )
 
-    # Test that current_position cannot bisect an image
-    # Create a TokenBuffer and chunk it to position 7 (which bisects the image at 5-9)
-    token_buffer = TokenBuffer(tokens)
-    token_buffer.chunk(7)
-
+    ctx = TextAndVisionContext(
+        max_length=50,
+        tokens=tokens,
+        images=[
+            ImageMetadata(
+                start_idx=5,
+                end_idx=9,
+                pixel_values=np.array([99]),
+            ),
+            ImageMetadata(
+                start_idx=15,
+                end_idx=19,
+                pixel_values=np.array([99]),
+            ),
+        ],
+        vision_token_ids=[98],
+    )
     with pytest.raises(
         ValueError,
-        match=r"It is invalid for the current_position \(7\) to bisect an image \(ImageMetadata\(start_idx=5, end_idx=9",
+        match="It is invalid for the current_position \(7\) to bisect an image \(ImageMetadata\(start_idx=5, end_idx=9",
     ):
-        _ = TextAndVisionContext(
-            max_length=50,
-            tokens=token_buffer,
-            images=[
-                ImageMetadata(
-                    start_idx=5,
-                    end_idx=9,
-                    pixel_values=np.array([99]),
-                ),
-                ImageMetadata(
-                    start_idx=15,
-                    end_idx=19,
-                    pixel_values=np.array([99]),
-                ),
-            ],
-            vision_token_ids=[98],
-        )
+        ctx.chunk(7)
 
     with pytest.raises(
         ValueError,
@@ -1080,7 +1085,7 @@ def test_text_and_vision_context_sad_case() -> None:
     ):
         _ = TextAndVisionContext(
             max_length=50,
-            tokens=TokenBuffer(tokens),
+            tokens=tokens,
             images=[
                 ImageMetadata(
                     start_idx=5, end_idx=9, pixel_values=np.array([99])
@@ -1099,7 +1104,7 @@ def does_not_raise_due_to_check_in_property_method() -> None:
 
     ctx = TTSContext(
         max_length=10,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+        tokens=np.array([0, 1, 2, 3]),
     )
 
     # Verify that calling get_last_generated_token() raises an exception

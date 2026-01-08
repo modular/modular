@@ -27,7 +27,6 @@ from max.interfaces import (
     ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
-    TokenBuffer,
 )
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import TextAndVisionTokenizer
@@ -277,16 +276,11 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             raise ValueError(
                 f"Number of image token indices ({len(start_and_end_idxs)}) does not match number of pixel values ({len(pixel_values)})"
             )
-
-        token_buffer = TokenBuffer(
-            array=encoded_prompt.astype(np.int64, copy=False),
-        )
-
         context = TextAndVisionContext(
             request_id=request.request_id,
             eos_token_ids=eos_token_ids,
             extra_model_args=extra_model_args,
-            tokens=token_buffer,
+            tokens=encoded_prompt,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,

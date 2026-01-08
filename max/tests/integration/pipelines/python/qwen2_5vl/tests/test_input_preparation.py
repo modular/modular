@@ -39,7 +39,6 @@ from max.interfaces import (
     SamplingParams,
     TextGenerationRequest,
     TextGenerationRequestMessage,
-    TokenBuffer,
 )
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.parallel import ParallelArrayOps
@@ -765,7 +764,7 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
     image_token_id = 151652
     ctx = Qwen2_5VLTextAndVisionContext(
         request_id=RequestID("test-posid-increment"),
-        tokens=TokenBuffer(tokens),
+        tokens=tokens,
         max_length=L + 8,
         eos_token_ids=set([2]),
         sampling_params=SamplingParams(max_new_tokens=2),
@@ -808,7 +807,9 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
 
     # Simulate first decode step (single-token generation).
     # Mimic the pipeline's next iteration: move to decode phase with single active token.
-    ctx.tokens.advance_with_token(0)
+    ctx.rewind_processing(ctx.processed_length - L)
+    ctx.current_position = L + 1  # type: ignore
+    ctx._end_idx = L + 1
 
     step1_inputs = model.prepare_initial_token_inputs(
         replica_batches=[[ctx]],

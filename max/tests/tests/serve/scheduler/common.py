@@ -30,7 +30,6 @@ from max.interfaces import (
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
-    TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
@@ -60,7 +59,7 @@ def create_text_context(
     return TextContext(
         request_id=RequestID(),
         max_length=max_seq_len,
-        tokens=TokenBuffer(tokens),
+        tokens=tokens,
     )
 
 
@@ -392,7 +391,7 @@ def enqueue_request_with_prompt(
     context = TextContext(
         request_id=RequestID(),
         max_length=max_seq_len,
-        tokens=TokenBuffer(tokens),
+        tokens=tokens,
     )
 
     queue.put_nowait(context)
