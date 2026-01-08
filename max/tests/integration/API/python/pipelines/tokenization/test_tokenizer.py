@@ -63,7 +63,6 @@ def test_text_and_vision_tokenizer() -> None:
     VALID_REPOS = {
         # This is not currently working for pixtral.
         "mistral-community/pixtral-12b": "[IMG]",
-        "meta-llama/Llama-3.2-11B-Vision-Instruct": "<|image|>",
     }
     img_url = "https://picsum.photos/id/237/200/300"
     img = convert_image_url_to_base64(img_url)

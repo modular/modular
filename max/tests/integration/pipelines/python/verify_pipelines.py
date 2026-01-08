@@ -894,21 +894,6 @@ PIPELINES = {
             kl_div_threshold=5.2e-3,
         ),
     ),
-    "meta-llama/Llama-3.2-11B-Vision-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big"],
-        run=_make_pipeline_runner(
-            pipeline="meta-llama/Llama-3.2-11B-Vision-Instruct",
-            encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama3-vision_golden/1/80e47cd8ba86f3c0f2c9768eb966136fc3e5974f5dd01177a7464338b85221d2/torch_llama3-vision_golden.tar.gz",
-                json_file="torch_llama3_2_bfloat16_golden.json",
-            ),
-            # Note: llama-vision is not yet using llama3 rope.
-            cos_dist_threshold=5e-3,
-            kl_div_threshold=5.4e-3,
-        ),
-    ),
     "OpenGVLab/InternVL3-1B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         # TODO(KERN-1861): MI300x: Memory access fault by GPU node-2.

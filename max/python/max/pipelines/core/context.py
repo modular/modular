@@ -582,9 +582,6 @@ class TextAndVisionContext(TextContext):
     Currently we restrict start_idx and current_position from being in the middle of an image!
     This is verified in `_validate_state` methods that are called before and after
     mutating methods like `_bump_token_indices`.
-
-    Note that for Llama Vision, the number of token ids for the image is 1 due to
-    that models specific implementation.
     """
 
     vision_token_ids: list[int]

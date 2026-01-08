@@ -650,10 +650,8 @@ class TextAndVisionTokenizer(
             context_validators if context_validators else []
         )
 
-        # Llama-3.2-11B-Vision uses image_token_index
         # Qwen2.5VL uses image_token_id
         # Pixtral uses image_token_index
-        # ...
         vision_token_ids: list[int] = []
         for vision_token_id_name in [
             "image_token_id",
@@ -750,7 +748,7 @@ class TextAndVisionTokenizer(
             else None
         )
 
-        # LlamaVision & InternVL returns a python list
+        # InternVL returns a python list
         processed_inputs = self.processor(
             text=prompt,
             images=images,
@@ -763,7 +761,7 @@ class TextAndVisionTokenizer(
                 "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
             )
 
-        # TODO: This is a hack to support both LlamaVision, Pixtral and InternVL.
+        # TODO: This is a hack to support both Pixtral and InternVL.
         if isinstance(processed_inputs["input_ids"][0], int):
             encoded_prompt = np.array(processed_inputs["input_ids"])
         else:

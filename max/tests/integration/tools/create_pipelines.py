@@ -572,75 +572,6 @@ class Qwen3VLPipelineOracle(PipelineOracle):
         )
 
 
-class LlamaVisionPipelineOracle(PipelineOracle):
-    @property
-    def inputs(self) -> list[MockTextGenerationRequest]:
-        """Input requests for multimodal model."""
-        return test_data.DEFAULT_MULTIMODAL
-
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
-
-    def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
-    ) -> MaxPipelineAndTokenizer:
-        hf_repo_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
-        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
-
-        # Compute the max sequence length, which determines up-front memory
-        # allocated for the KV cache.
-        hf_config = transformers.AutoConfig.from_pretrained(
-            hf_repo_id, revision=revision, trust_remote_code=True
-        )
-        vision_cfg = hf_config.vision_config
-        img_size = vision_cfg.image_size
-        patch_size = vision_cfg.patch_size
-        max_num_tiles = vision_cfg.max_num_tiles
-        num_vision_embeddings = (
-            (img_size // patch_size) ** 2 + 1
-        ) * max_num_tiles
-
-        config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            cache_strategy=KVCacheStrategy.PAGED,
-            model_path=hf_repo_id,
-            huggingface_model_revision=revision,
-            max_length=num_vision_embeddings,
-            max_num_steps=1,
-            trust_remote_code=True,
-            # TODO(MODELS-725): Fix LlamaVision memory estimation, instead of
-            # lowering batch size to 1 to avoid OOM.
-            max_batch_size=1,
-        )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
-        return MaxPipelineAndTokenizer(pipeline, tokenizer)
-
-    def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
-    ) -> TorchModelAndDataProcessor:
-        hf_repo_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
-        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
-        processor = transformers.AutoProcessor.from_pretrained(
-            hf_repo_id, revision=revision
-        )
-        config = transformers.AutoConfig.from_pretrained(
-            hf_repo_id, revision=revision
-        )
-        model = transformers.MllamaForConditionalGeneration.from_pretrained(
-            hf_repo_id,
-            revision=revision,
-            config=config,
-            device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=processor)
-
-
 class PixtralPipelineOracle(PipelineOracle):
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
@@ -1212,7 +1143,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "HuggingFaceM4/Idefics3-8B-Llama3": Idefics3PipelineOracle(
         "HuggingFaceM4/Idefics3-8B-Llama3"
     ),
-    "meta-llama/Llama-3.2-11B-Vision-Instruct": LlamaVisionPipelineOracle(),
     "mistral-community/pixtral-12b": PixtralPipelineOracle(),
     "Qwen/Qwen2.5-7B-Instruct": GenericOracle(
         model_path="Qwen/Qwen2.5-7B-Instruct",
