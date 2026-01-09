@@ -33,6 +33,11 @@ modular_py_test(
         # this gives ~7.4 GiB available to the memory manager)
         "test.resources:gpu-memory": "8",
     },
+    ignore_extra_deps = [
+        # transformers is needed at runtime by pipelines.main() for loading
+        # HuggingFace models, but not directly imported in the test file
+        requirement("transformers"),
+    ],
     imports = [
         "../",  # For hf_repo_lock
     ],
