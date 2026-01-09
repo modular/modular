@@ -9,6 +9,7 @@ package(default_visibility = [
 
 modular_py_test(
     name = "tests",
+    timeout = "long",
     srcs = glob(["*.py"]),
     exec_properties = {
         "test.resources:gpu-memory": "1",
