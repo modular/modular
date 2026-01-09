@@ -465,7 +465,7 @@ struct TileTensor[
         Self.origin,
         address_space = Self.address_space,
         linear_idx_type = Self.linear_idx_type,
-    ] where (Variadic.size(slices) == Self.rank) & Self.ALL_DIMS_KNOWN:
+    ] where (Variadic.size(slices) == Self.rank and Self.ALL_DIMS_KNOWN):
         """Extract a slice from the tensor using slice objects.
 
         This method creates a view into a subset of the tensor defined by the
