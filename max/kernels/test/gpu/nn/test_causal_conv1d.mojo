@@ -178,7 +178,7 @@ fn run_causal_conv1d_gpu[
 
     if width == 1:
         comptime kWidth = 1
-        var compiled_func = ctx.compile_function_checked[
+        var compiled_func = ctx.compile_function[
             causal_conv1d_channel_first_fwd_gpu[
                 input_device_tensor.dtype,
                 input_device_tensor.layout,
@@ -208,7 +208,7 @@ fn run_causal_conv1d_gpu[
         ]()
         var silu_activation_int8 = Int8(silu_activation)
         with ctx.push_context():
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 compiled_func,
                 batch,
                 dim,
@@ -233,7 +233,7 @@ fn run_causal_conv1d_gpu[
             )
     elif width == 2:
         comptime kWidth = 2
-        var compiled_func = ctx.compile_function_checked[
+        var compiled_func = ctx.compile_function[
             causal_conv1d_channel_first_fwd_gpu[
                 input_device_tensor.dtype,
                 input_device_tensor.layout,
@@ -263,7 +263,7 @@ fn run_causal_conv1d_gpu[
         ]()
         var silu_activation_int8 = Int8(silu_activation)
         with ctx.push_context():
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 compiled_func,
                 batch,
                 dim,
@@ -288,7 +288,7 @@ fn run_causal_conv1d_gpu[
             )
     elif width == 3:
         comptime kWidth = 3
-        var compiled_func = ctx.compile_function_checked[
+        var compiled_func = ctx.compile_function[
             causal_conv1d_channel_first_fwd_gpu[
                 input_device_tensor.dtype,
                 input_device_tensor.layout,
@@ -318,7 +318,7 @@ fn run_causal_conv1d_gpu[
         ]()
         var silu_activation_int8 = Int8(silu_activation)
         with ctx.push_context():
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 compiled_func,
                 batch,
                 dim,
@@ -343,7 +343,7 @@ fn run_causal_conv1d_gpu[
             )
     elif width == 4:
         comptime kWidth = 4
-        var compiled_func = ctx.compile_function_checked[
+        var compiled_func = ctx.compile_function[
             causal_conv1d_channel_first_fwd_gpu[
                 input_device_tensor.dtype,
                 input_device_tensor.layout,
@@ -373,7 +373,7 @@ fn run_causal_conv1d_gpu[
         ]()
         var silu_activation_int8 = Int8(silu_activation)
         with ctx.push_context():
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 compiled_func,
                 batch,
                 dim,

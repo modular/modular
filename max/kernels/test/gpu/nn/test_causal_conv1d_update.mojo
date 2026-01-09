@@ -200,7 +200,7 @@ fn run_causal_conv1d_update_gpu[
     comptime kNThreads = 128
     with ctx.push_context():
         if has_bias:
-            var compiled_func = ctx.compile_function_checked[
+            var compiled_func = ctx.compile_function[
                 causal_conv1d_update_gpu[
                     input_device_tensor.dtype,
                     input_device_tensor.layout,
@@ -228,7 +228,7 @@ fn run_causal_conv1d_update_gpu[
                     kNThreads,
                 ],
             ]()
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 compiled_func,
                 batch,
                 dim,
@@ -256,7 +256,7 @@ fn run_causal_conv1d_update_gpu[
                 block_dim=(kNThreads),
             )
         else:
-            var compiled_func = ctx.compile_function_checked[
+            var compiled_func = ctx.compile_function[
                 causal_conv1d_update_gpu_no_bias[
                     input_device_tensor.dtype,
                     input_device_tensor.layout,
@@ -280,7 +280,7 @@ fn run_causal_conv1d_update_gpu[
                     kNThreads,
                 ],
             ]()
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 compiled_func,
                 batch,
                 dim,

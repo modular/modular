@@ -398,7 +398,7 @@ fn run_ssd_combined_gpu[
 
     var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
 
-    var compiled_kernel = ctx.compile_function_checked[
+    var compiled_kernel = ctx.compile_function[
         ssd_combined_gpu[
             dtype,
             output_gpu_lt.layout,
@@ -433,7 +433,7 @@ fn run_ssd_combined_gpu[
         ],
     ]()
 
-    ctx.enqueue_function_checked(
+    ctx.enqueue_function(
         compiled_kernel,
         total_batch_dim,
         batch,

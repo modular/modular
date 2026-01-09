@@ -398,7 +398,7 @@ fn run_varlen_selective_scan_fwd_gpu[
     comptime BLOCK_SIZE = 128
     var num_dim_blocks = (dim + BLOCK_SIZE - 1) // BLOCK_SIZE
 
-    var compiled_kernel = ctx.compile_function_checked[
+    var compiled_kernel = ctx.compile_function[
         varlen_selective_scan_fwd_gpu[
             dtype,
             u_gpu_lt.layout,
@@ -433,7 +433,7 @@ fn run_varlen_selective_scan_fwd_gpu[
         ],
     ]()
 
-    ctx.enqueue_function_checked(
+    ctx.enqueue_function(
         compiled_kernel,
         dim,
         dstate,

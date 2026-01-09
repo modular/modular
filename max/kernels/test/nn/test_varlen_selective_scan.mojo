@@ -81,11 +81,12 @@ fn run_varlen_selective_scan_fwd[
     """Test varlen selective scan forward kernel.
 
     Args:
-        batch: Number of sequences
-        dim: Hidden dimension
-        dstate: State dimension
-        ngroups: Number of groups
-        seq_lengths: List of sequence lengths for each batch item
+        batch: Number of sequences.
+        dim: Hidden dimension.
+        dstate: State dimension.
+        ngroups: Number of groups.
+        seq_lengths: List of sequence lengths for each batch item.
+        rtol: Relative tolerance for numerical comparisons.
     """
     if dstate > MAX_DSTATE:
         return  # Skip if dstate exceeds kernel limit

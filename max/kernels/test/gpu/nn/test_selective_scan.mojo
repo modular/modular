@@ -414,7 +414,7 @@ fn run_selective_scan_gpu[
 
     var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
 
-    var compiled_kernel = ctx.compile_function_checked[
+    var compiled_kernel = ctx.compile_function[
         selective_scan_fwd_gpu[
             dtype,
             output_gpu_buf.layout,
@@ -445,7 +445,7 @@ fn run_selective_scan_gpu[
         ],
     ]()
 
-    ctx.enqueue_function_checked(
+    ctx.enqueue_function(
         compiled_kernel,
         total_batch_dim,
         batch,
@@ -757,7 +757,7 @@ fn run_selective_scan_update_gpu[
     # Run GPU kernel
     var total_batch_dim = batch * dim
     with ctx.push_context():
-        var compiled_func = ctx.compile_function_checked[
+        var compiled_func = ctx.compile_function[
             selective_scan_update_gpu[
                 dtype,
                 state_out_device_tensor.layout,
@@ -787,7 +787,7 @@ fn run_selective_scan_update_gpu[
                 dt_bias_device_tensor.layout,
             ],
         ]()
-        ctx.enqueue_function_checked(
+        ctx.enqueue_function(
             compiled_func,
             total_batch_dim,
             batch,

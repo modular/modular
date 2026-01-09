@@ -494,7 +494,7 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
     comptime BLOCK_SIZE = 128
     var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
 
-    var compiled_kernel = ctx.compile_function_checked[
+    var compiled_kernel = ctx.compile_function[
         mamba_split_conv1d_scan_combined_gpu[
             dtype,
             zxbcdt_gpu_lt.layout,
@@ -535,7 +535,7 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
         ],
     ]()
 
-    ctx.enqueue_function_checked(
+    ctx.enqueue_function(
         compiled_kernel,
         total_batch_dim,
         batch,
