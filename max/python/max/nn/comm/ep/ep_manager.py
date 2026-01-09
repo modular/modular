@@ -408,17 +408,15 @@ class EPBatchManager:
             self.recv_count_ptrs[COMBINE_GROUP],
             self.config,
             dispatch_dim,
+            router_weight,
         )
-
-        weighted_expert_out = ops.unsqueeze(router_weight, axis=1) @ results
-        weighted_expert_out = ops.squeeze(weighted_expert_out, axis=1)
 
         if self.config.fused_shared_expert:
             shared_expert_outputs = self._shared_expert_outputs[device_id]
             assert shared_expert_outputs is not None
-            weighted_expert_out += shared_expert_outputs
+            results += shared_expert_outputs
 
-        return weighted_expert_out
+        return results
 
 
 class EPCommInitializer:
