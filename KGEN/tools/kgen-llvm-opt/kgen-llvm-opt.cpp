@@ -55,6 +55,7 @@ enum class BCVersionNo : uint16_t {
   DEFAULT = 0,
   LLVM17 = 17,
   LLVM19 = 19,
+  LLVM21 = 21,
 };
 struct CLOptions : public M::CLOptionsBase {
   CLOptions(int argc, char **argv, bool skipInitLLVM = true)
@@ -139,7 +140,8 @@ private:
           clEnumValN(BCVersionNo::DEFAULT, "default",
                      "Default bitcode version, no downgrading."),
           clEnumValN(BCVersionNo::LLVM17, "llvm17", "Bitcode version 17."),
-          clEnumValN(BCVersionNo::LLVM19, "llvm19", "Bitcode version 19.")),
+          clEnumValN(BCVersionNo::LLVM19, "llvm19", "Bitcode version 19."),
+          clEnumValN(BCVersionNo::LLVM21, "llvm21", "Bitcode version 21.")),
       cl::location(outputBCVersion),
       cl::init(BCVersionNo::DEFAULT),
       cl::cat(cat)};
@@ -435,7 +437,15 @@ int main(int argc, char **argv) {
           /*GenerateHash = */ false,
           /*ModuleHash = */ nullptr);
       break;
-    default:
+    case BCVersionNo::LLVM21:
+      M::KGEN::LLVM::WriteBitcode21ToFile(
+          *module, out->os(),
+          /*ShouldPreserveUseListOrder = */ false,
+          /*ModuleSummaryIndex =*/nullptr,
+          /*GenerateHash = */ false,
+          /*ModuleHash = */ nullptr);
+      break;
+    case BCVersionNo::DEFAULT:
       break;
     }
   }
