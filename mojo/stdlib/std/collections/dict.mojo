@@ -38,6 +38,7 @@ See the `Dict` docs for more details.
 """
 
 from builtin.constrained import _constrained_conforms_to
+from compile import get_type_name
 from hashlib import Hasher, default_comp_time_hasher, default_hasher
 from sys.intrinsics import likely
 
@@ -49,30 +50,16 @@ dictionary keys. Dict keys must minimally be `Copyable`, `Hashable`,
 and `Equatable`."""
 
 
-struct DictKeyError[mut: Bool, //, K: KeyElement, origin: Origin[mut=mut]](
-    ImplicitlyCopyable, Movable, Writable
-):
+struct DictKeyError[K: KeyElement](ImplicitlyCopyable, Writable):
     """A custom error type for Dict lookups that fail.
 
     Parameters:
-        mut: The mutability of the key.
         K: The key type of the elements in the dictionary.
-        origin: The origin of the key.
     """
 
-    var _key: Pointer[Self.K, Self.origin]
-
     @doc_private
-    fn __init__(out self, ref [Self.origin]key: Self.K):
-        self._key = Pointer(to=key)
-
-    fn key(self) -> ref [Self.origin] Self.K:
-        """Return the key that caused the error.
-
-        Returns:
-            A reference to the key that caused the error.
-        """
-        return self._key[]
+    fn __init__(out self):
+        pass
 
     fn write_to(self, mut writer: Some[Writer]):
         """Write the error and the key to the writer.
@@ -80,13 +67,7 @@ struct DictKeyError[mut: Bool, //, K: KeyElement, origin: Origin[mut=mut]](
         Args:
             writer: The writer to write to.
         """
-
-        @parameter
-        if conforms_to(Self.K, Writable):
-            ref writable = trait_downcast[Writable](self._key[])
-            writer.write("DictKeyError(key=", writable, ")")
-        else:
-            "DictKeyError(<unprintable key>)".write_to(writer)
+        writer.write("DictKeyError[", get_type_name[Self.K](), "]")
 
 
 @fieldwise_init
@@ -568,7 +549,7 @@ struct Dict[
 
       ```mojo
       var phonebook = {"Alice": "555-0101", "Bob": "555-0102"}
-      print(phonebook["Charlie"])  # => DictKeyError: "Charlie"
+      print(phonebook["Charlie"])  # => DictKeyError
       ```
 
       For safe access, you should instead use `get()`:
@@ -861,7 +842,7 @@ struct Dict[
 
     fn __getitem__(
         ref self, ref key: Self.K
-    ) raises DictKeyError[Self.K, origin_of(key)] -> ref [
+    ) raises DictKeyError[Self.K] -> ref [
         self._entries[0].value().value
     ] Self.V:
         """Retrieve a value out of the dictionary.
@@ -1061,7 +1042,7 @@ struct Dict[
 
     fn _find_ref(
         ref self, ref key: Self.K
-    ) raises DictKeyError[Self.K, origin_of(key)] -> ref [
+    ) raises DictKeyError[Self.K] -> ref [
         self._entries[0].value().value
     ] Self.V:
         """Find a value in the dictionary by key.
@@ -1082,7 +1063,7 @@ struct Dict[
             # SAFETY: We just checked that `entry` is present.
             return entry.unsafe_value().value
 
-        raise DictKeyError(key)
+        raise DictKeyError[Self.K]()
 
     fn get(self, key: Self.K) -> Optional[Self.V]:
         """Get a value from the dictionary by key.
@@ -1125,9 +1106,7 @@ struct Dict[
         except:
             return default^
 
-    fn pop(
-        mut self, ref key: Self.K
-    ) raises DictKeyError[Self.K, origin_of(key)] -> Self.V:
+    fn pop(mut self, ref key: Self.K) raises DictKeyError[Self.K] -> Self.V:
         """Remove a value from the dictionary by key.
 
         Args:
@@ -1145,7 +1124,7 @@ struct Dict[
         if found:
             var entry_value = self._unsafe_take_entry(slot, index)
             return entry_value^.reap_value()
-        raise DictKeyError(key)
+        raise DictKeyError[Self.K]()
 
     fn popitem(
         mut self,
@@ -1453,9 +1432,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
     @always_inline
     fn __getitem__(
         ref self, ref key: Self.key_type
-    ) raises DictKeyError[Self.key_type, origin_of(key)] -> ref [
-        self._dict[key]
-    ] Self.V:
+    ) raises DictKeyError[Self.key_type] -> ref [self._dict[key]] Self.V:
         """Retrieve a value out of the keyword dictionary.
 
         Args:
@@ -1540,7 +1517,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
     @always_inline
     fn pop(
         mut self, ref key: self.key_type
-    ) raises DictKeyError[Self.key_type, origin_of(key)] -> Self.V:
+    ) raises DictKeyError[Self.key_type] -> Self.V:
         """Remove a value from the dictionary by key.
 
         Args:
