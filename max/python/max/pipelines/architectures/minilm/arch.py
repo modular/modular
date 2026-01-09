@@ -13,7 +13,7 @@
 """Architecture registration for sentence-transformers/all-MiniLM-L6-v2"""
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
+from max.interfaces import EmbeddingsContext, PipelineTask
 from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
@@ -37,6 +37,7 @@ minilm_arch = SupportedArchitecture(
     },
     pipeline_model=MiniLMPipelineModel,
     tokenizer=MiniLMTokenizer,
+    context_type=EmbeddingsContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,

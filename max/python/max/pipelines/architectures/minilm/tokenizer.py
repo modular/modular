@@ -58,7 +58,6 @@ class MiniLMTokenizer(TextTokenizer):
         if self.delegate.sep_token_id is not None:
             return self.delegate.sep_token_id
 
-        # Last resort: use PAD token or 0
         if self.delegate.pad_token_id is not None:
             return self.delegate.pad_token_id
 
