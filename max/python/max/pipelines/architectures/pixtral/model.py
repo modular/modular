@@ -375,7 +375,6 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     ) -> Graph:
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
-
         model_config = PixtralConfig(
             image_token_index=self.huggingface_config.image_token_index,
             vocab_size=self.huggingface_config.text_config.vocab_size,

@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from max.dtype import DType
@@ -23,18 +22,14 @@ from max.nn import ReturnLogits
 from max.nn.comm.ep import EPConfig
 from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
-from max.pipelines.lib import (
-    KVCacheConfig,
-    MAXModelConfig,
-    MAXModelConfigBase,
-    PipelineConfig,
-)
+from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
+from pydantic import model_validator
 from transformers import AutoConfig
+from typing_extensions import Self
 
 
-@dataclass
-class DeepseekV3ConfigBase(MAXModelConfigBase):
-    """Base configuration for DeepseekV3 models."""
+class DeepseekV3Config(MAXModelConfigBase):
+    """Configuration for DeepseekV3 models."""
 
     # MAX specific fields
     dtype: DType
@@ -84,7 +79,8 @@ class DeepseekV3ConfigBase(MAXModelConfigBase):
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     """Whether to return the last token, all logits, or a variable number of logits."""
 
-    def __post_init__(self):
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
         if self.hidden_act != "silu":
             raise ValueError(
                 "'silu' is the only hidden_act currently supported"
@@ -98,13 +94,8 @@ class DeepseekV3ConfigBase(MAXModelConfigBase):
         if self.tie_word_embeddings:
             raise ValueError("tie_word_embeddings is not supported yet")
 
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {}
+        return self
 
-
-@dataclass
-class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
     @staticmethod
     def help() -> dict[str, str]:
         return {}
@@ -118,7 +109,7 @@ class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
         cache_dtype: DType,
         page_size: int = 128,
     ) -> KVCacheParams:
-        data_parallel_degree = pipeline_config.model_config.data_parallel_degree
+        data_parallel_degree = pipeline_config.model.data_parallel_degree
         if data_parallel_degree not in (1, len(devices)):
             raise ValueError(
                 "data_parallel_degree must be 1 or match the number of devices"

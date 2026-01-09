@@ -25,12 +25,11 @@ from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.gemma3.model_config import Gemma3Config
 from max.pipelines.lib import (
     KVCacheConfig,
-    MAXModelConfig,
     MAXModelConfigBase,
     PipelineConfig,
     RopeType,
+    parse_float8_config,
 )
-from max.pipelines.lib.float8 import parse_float8_config
 from transformers import AutoConfig
 
 
@@ -102,8 +101,7 @@ class Gemma3VisionConfig:
         )
 
 
-@dataclass
-class Gemma3MultiModalConfigBase(MAXModelConfigBase):
+class Gemma3ForConditionalGenerationConfig(MAXModelConfigBase):
     """Base configuration for Gemma 3 models.
 
     Contains parameters specific to the Gemma 3 architecture, typically
@@ -168,11 +166,6 @@ class Gemma3MultiModalConfigBase(MAXModelConfigBase):
     converting a multi-head checkpoint to a GQA checkpoint, each group key and value head should be constructed"
     """
 
-
-@dataclass
-class Gemma3ForConditionalGenerationConfig(
-    MAXModelConfig, Gemma3MultiModalConfigBase
-):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
@@ -194,7 +187,7 @@ class Gemma3ForConditionalGenerationConfig(
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             devices=devices,
-            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
     @staticmethod
@@ -224,16 +217,14 @@ class Gemma3ForConditionalGenerationConfig(
         attention_bias: bool = False,
     ) -> Gemma3ForConditionalGenerationConfig:
         """Generate a combined language and vision config class"""
-        _weights_format = weights_format(
-            pipeline_config.model_config.weight_path
-        )
+        _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model_config.rope_type == RopeType.normal
+            and pipeline_config.model.rope_type == RopeType.normal
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model_config.device_specs
+            for spec in pipeline_config.model.device_specs
         ]
 
         # When tie_word_embeddings=True, the embedding weights are shared with

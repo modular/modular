@@ -98,8 +98,8 @@ def test_config__update_weight_paths(
             max_length=512,
         )
 
-        assert len(config.model_config.weight_path) == 1
-        assert config.model_config.weight_path == [
+        assert len(config.model.weight_path) == 1
+        assert config.model.weight_path == [
             Path("llama-3.1-8b-instruct-f32.gguf")
         ]
 
@@ -111,8 +111,8 @@ def test_config__update_weight_paths(
             max_length=512,
         )
 
-        assert len(config.model_config.weight_path) == 1
-        assert config.model_config.weight_path == [Path("model.safetensors")]
+        assert len(config.model.weight_path) == 1
+        assert config.model.weight_path == [Path("model.safetensors")]
 
         # This should raise, as this repository, does not have q6_k weights.
         with pytest.raises(
@@ -136,8 +136,8 @@ def test_config__update_weight_paths(
             max_length=512,
         )
 
-        assert len(config.model_config.weight_path) == 1
-        assert config.model_config.weight_path == [Path("model.safetensors")]
+        assert len(config.model.weight_path) == 1
+        assert config.model.weight_path == [Path("model.safetensors")]
 
         with pytest.raises(ValueError):
             # This example, should raise as we dont have q4_k listed as supported.
@@ -166,8 +166,5 @@ def test_config__update_weight_paths(
             max_batch_size=1,
             max_length=1,
         )
-        assert (
-            config.model_config.quantization_encoding
-            == SupportedEncoding.float32
-        )
-        assert config.model_config.weight_path == [Path("model.safetensors")]
+        assert config.model.quantization_encoding == SupportedEncoding.float32
+        assert config.model.weight_path == [Path("model.safetensors")]

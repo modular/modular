@@ -297,7 +297,8 @@ class Qwen3VLModel(
         )
         self.model_config = qwen3vl_config
 
-        self.model: Module = Qwen3VL(self.model_config)
+        # Use the local non-optional variable to satisfy typing.
+        self.model: Module = Qwen3VL(qwen3vl_config)
         self.model.load_state_dict(
             model_state_dict, weight_alignment=1, strict=True
         )

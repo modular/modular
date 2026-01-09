@@ -14,33 +14,32 @@
 
 import enum
 from collections.abc import Mapping
-from dataclasses import dataclass
 
-from max.config import MAXConfig
+from max.config import ConfigFileModel
 from max.nn.kv_cache import KVCacheStrategy
+from pydantic import Field, PrivateAttr
 
 
-# frozen is False (for now) because of _available_cache_memory being set by
-# internal code.
-@dataclass(frozen=False)
-class KVCacheConfig(MAXConfig):
-    cache_strategy: KVCacheStrategy = KVCacheStrategy.MODEL_DEFAULT
+class KVCacheConfig(ConfigFileModel):
+    cache_strategy: KVCacheStrategy = Field(
+        default=KVCacheStrategy.MODEL_DEFAULT
+    )
     """The cache strategy to use. This defaults to :obj:`model_default`, which will set the cache
     strategy based on the default strategy for the architecture requested.
 
     You can also force the engine to use a specific caching strategy: :obj:`continuous` | :obj:`paged`.
     """
 
-    kv_cache_page_size: int = 128
+    kv_cache_page_size: int = Field(default=128)
     """The number of tokens in a single page in the paged KVCache."""
 
-    enable_prefix_caching: bool = True
+    enable_prefix_caching: bool = Field(default=True)
     """Whether to enable prefix caching for the paged attention KVCache."""
 
-    enable_kvcache_swapping_to_host: bool = False
+    enable_kvcache_swapping_to_host: bool = Field(default=False)
     """Whether to enable swapping the paged attention KVCache blocks to host memory when device blocks are evicted."""
 
-    device_memory_utilization: float = 0.9
+    device_memory_utilization: float = Field(default=0.9)
     """The fraction of available device memory that the process should consume.
 
     This is used to inform the size of the KVCache workspace. The calculation is:
@@ -50,17 +49,17 @@ class KVCacheConfig(MAXConfig):
         kv\\_cache\\_workspace = (total\\_free\\_memory \\times device\\_memory\\_utilization) - model\\_weights\\_size
     """
 
-    host_kvcache_swap_space_gb: float = 50.0
+    host_kvcache_swap_space_gb: float = Field(default=50.0)
     """The amount of host memory to use for the host KVCache in GiB.
 
     This space is only allocated when kvcache_swapping_to_host is enabled.
     """
 
     # Need to use `Optional` here to support `click` with 3.9.
-    _available_cache_memory: int | None = None
+    _available_cache_memory: int | None = PrivateAttr(default=None)
     """The amount of available cache memory in bytes. This should only be set by internal code."""
 
-    _config_file_section_name: str = "kv_cache_config"
+    _config_file_section_name: str = PrivateAttr(default="kv_cache_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""

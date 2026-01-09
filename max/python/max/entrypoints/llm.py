@@ -189,7 +189,7 @@ async def _async_worker(
     tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config
     )
-    model_name = pipeline_config.model_config.model_path
+    model_name = pipeline_config.model.model_path
 
     # Start the model worker process.
     # Create dynamic and continuous batching workers and associated queues
@@ -239,7 +239,7 @@ async def _async_worker(
                     SamplingParamsInput(
                         max_new_tokens=request.max_new_tokens  # noqa: B023
                     ),
-                    sampling_params_defaults=pipeline_config.model_config.sampling_params_defaults,
+                    sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
                 )
                 gen_request = TextGenerationRequest(
                     request_id=RequestID(),

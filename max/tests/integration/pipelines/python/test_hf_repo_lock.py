@@ -98,9 +98,9 @@ def test_apply_to_config() -> None:
         device_specs=[],
         quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
     )
-    assert config.model_config.huggingface_model_revision == "main"
+    assert config.model.huggingface_model_revision == "main"
     hf_repo_lock.apply_to_config(config)
-    assert config.model_config.huggingface_model_revision == EXAMPLE_VALUE
+    assert config.model.huggingface_model_revision == EXAMPLE_VALUE
 
 
 def test_apply_to_config_raises_on_missing_revision() -> None:

@@ -192,7 +192,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
         assert isinstance(model_inputs, Llama3Inputs)
 
-        if self.pipeline_config.model_config.data_parallel_degree > 1:
+        if self.pipeline_config.model.data_parallel_degree > 1:
             assert model_inputs.data_parallel_splits is not None
             # Convert data_parallel_splits to Tensor if needed
             if isinstance(model_inputs.data_parallel_splits, Tensor):
@@ -289,7 +289,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         return_n_logits: int = 1,
     ) -> Llama3Inputs:
         """Prepare the inputs for the first pass in multistep execution."""
-        dp = self.pipeline_config.model_config.data_parallel_degree
+        dp = self.pipeline_config.model.data_parallel_degree
         if len(replica_batches) != dp:
             raise ValueError(
                 "Number of replica batches must match data parallel degree"

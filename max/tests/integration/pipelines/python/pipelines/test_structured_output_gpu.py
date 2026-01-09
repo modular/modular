@@ -66,7 +66,7 @@ def test_smollm_with_structured_output_gpu(
     request_id = RequestID("request_0")
     sampling_params = SamplingParams(max_new_tokens=50, top_k=1)
     request = TextGenerationRequest(
-        model_name=pipeline_config.model_config.model_path,
+        model_name=pipeline_config.model.model_path,
         request_id=request_id,
         messages=[
             TextGenerationRequestMessage(

@@ -17,25 +17,24 @@ from __future__ import annotations
 import enum
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass, field
 
-from max.config import MAXConfig
+from max.config import ConfigFileModel
+from pydantic import Field
 
 logger = logging.getLogger("max.pipelines")
 
 
-@dataclass
-class LoRAConfig(MAXConfig):
-    enable_lora: bool = False
+class LoRAConfig(ConfigFileModel):
+    enable_lora: bool = Field(default=False)
     """Enables LoRA on the server"""
 
-    lora_paths: list[str] = field(default_factory=list)
+    lora_paths: list[str] = Field(default_factory=list)
     """List of statically defined LoRA paths"""
 
-    max_lora_rank: int = 16
+    max_lora_rank: int = Field(default=16)
     """Maximum rank of all possible LoRAs"""
 
-    max_num_loras: int = 1
+    max_num_loras: int = Field(default=1)
     """The maximum number of active LoRAs in a batch.
 
     This controls how many LoRA adapters can be active simultaneously during

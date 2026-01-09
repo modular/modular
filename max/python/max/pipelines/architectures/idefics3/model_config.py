@@ -23,7 +23,7 @@ from max.graph.weights import WeightData
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 
 
@@ -115,9 +115,8 @@ class Idefics3VisionConfig:
         )
 
 
-@dataclass
-class Idefics3ConfigBase:
-    """Base configuration for Idefics3 models with required fields."""
+class Idefics3Config(MAXModelConfigBase):
+    """Configuration for Idefics3 models."""
 
     devices: list[DeviceRef]
     """Devices that the Idefics3 model is parallelized over."""
@@ -145,11 +144,6 @@ class Idefics3ConfigBase:
         )
         total_patches = patches_per_side * patches_per_side
         return total_patches // (self.scale_factor * self.scale_factor)
-
-
-@dataclass
-class Idefics3Config(MAXModelConfig, Idefics3ConfigBase):
-    """Implementation of MAXModelConfig for Idefics3 models."""
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -260,7 +254,7 @@ class Idefics3Config(MAXModelConfig, Idefics3ConfigBase):
         return Idefics3Config(
             devices=[
                 DeviceRef(spec.device_type, spec.id)
-                for spec in pipeline_config.model_config.device_specs
+                for spec in pipeline_config.model.device_specs
             ],
             # Multimodal parameters specific to Idefics3
             scale_factor=getattr(huggingface_config, "scale_factor", 2),

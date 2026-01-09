@@ -102,7 +102,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
     ) -> None:
-        if pipeline_config.model_config.device_specs[0] == DeviceSpec.cpu():
+        if pipeline_config.model.device_specs[0] == DeviceSpec.cpu():
             raise ValueError("DeepseekV2 currently only supported on gpu.")
 
         super().__init__(
@@ -344,7 +344,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         kv_params = self.kv_params
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model_config.device_specs
+            for spec in pipeline_config.model.device_specs
         ]
 
         model_config = DeepseekV2Config(

@@ -103,7 +103,7 @@ def convert_safetensor_state_dict(
     **unused_kwargs,
 ) -> dict[str, WeightData]:
     return _convert_safetensor_with_model_config(
-        state_dict, huggingface_config, pipeline_config.model_config
+        state_dict, huggingface_config, pipeline_config.model
     )
 
 

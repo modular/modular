@@ -314,7 +314,7 @@ class InternVLModel(
 
         image_config = InternVLImageConfig(
             huggingface_config,
-            pipeline_config.model_config.vision_config_overrides,
+            pipeline_config.model.vision_config_overrides,
         )
 
         # Maximum number of images that can be processed is limited by
@@ -350,10 +350,7 @@ class InternVLModel(
 
         # Multiply by the number of devices since the above analysis is per
         # device, but memory estimation uses total memory across all devices.
-        return (
-            len(pipeline_config.model_config.device_specs)
-            * total_activation_memory
-        )
+        return len(pipeline_config.model.device_specs) * total_activation_memory
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled InternVL models into the MAX Engine session.

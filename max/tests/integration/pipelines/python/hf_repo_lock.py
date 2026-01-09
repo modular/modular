@@ -101,18 +101,18 @@ def revision_for_hf_repo(hf_repo_id: str) -> str | None:
 
 
 def apply_to_config(config: pipelines.PipelineConfig) -> None:
-    model_revision = revision_for_hf_repo(config.model_config.model_path)
+    model_revision = revision_for_hf_repo(config.model.model_path)
     if model_revision is None:
         raise ValueError(
-            f"No locked revision found for model repository: {config.model_config.model_path!r}. "
+            f"No locked revision found for model repository: {config.model.model_path!r}. "
         )
-    config.model_config.huggingface_model_revision = model_revision
+    config.model.huggingface_model_revision = model_revision
 
     weight_revision = revision_for_hf_repo(
-        config.model_config.huggingface_weight_repo_id
+        config.model.huggingface_weight_repo_id
     )
     if weight_revision is None:
         raise ValueError(
-            f"No locked revision found for weight repository: {config.model_config.huggingface_weight_repo_id!r}. "
+            f"No locked revision found for weight repository: {config.model.huggingface_weight_repo_id!r}. "
         )
-    config.model_config.huggingface_weight_revision = weight_revision
+    config.model.huggingface_weight_revision = weight_revision

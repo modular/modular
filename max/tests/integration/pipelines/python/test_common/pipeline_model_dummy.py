@@ -178,7 +178,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             page_size=kv_cache_config.kv_cache_page_size,
             devices=devices,
-            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
     def load_model(

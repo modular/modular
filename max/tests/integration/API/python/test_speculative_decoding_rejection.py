@@ -28,10 +28,7 @@ from max.interfaces import (
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
-from max.pipelines.lib.speculative_config import (
-    SpeculativeConfig,
-    SpeculativeMethod,
-)
+from max.pipelines.lib.speculative_config import SpeculativeMethod
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -55,25 +52,20 @@ class SpeculativeDecodingSetup:
 def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     """Fixture to set up a speculative decoding pipeline with common configuration."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
-    speculative_config = SpeculativeConfig(
-        speculative_method=SpeculativeMethod.STANDALONE,
-        num_speculative_tokens=10,
-    )
     pipeline_config = PipelineConfig(
         model_path=model_name,
+        speculative_method=SpeculativeMethod.STANDALONE,
+        num_speculative_tokens=10,
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
         draft_model_path=model_name,
         max_batch_size=4,
         max_num_steps=num_steps,
         max_length=1024,
-        _speculative_config=speculative_config,
+        cache_strategy=KVCacheStrategy.PAGED,
+        kv_cache_page_size=128,
+        device_memory_utilization=0.3,
     )
-    pipeline_config.model_config.kv_cache_config.cache_strategy = (
-        KVCacheStrategy.PAGED
-    )
-    pipeline_config.model_config.kv_cache_config.kv_cache_page_size = 128
-    pipeline_config.model_config.kv_cache_config.device_memory_utilization = 0.3
 
     tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
     assert isinstance(pipeline, StandaloneSpeculativeDecodingPipeline)
