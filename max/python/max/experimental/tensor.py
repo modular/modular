@@ -1112,10 +1112,20 @@ class Tensor(DLPackArray, HasTensorValue):
         yield "dtype", self.dtype
         yield "device", self.device
 
-    def __repr__(self):
-        # Janky repr for bootstrapping, we can do much better.
+    def __repr__(self) -> str:
+        """Returns a formatted string representation of the tensor.
+
+        For realized tensors, displays the data using a matrix-of-matrices
+        algorithm that preserves the multi-dimensional structure.
+        For unrealized tensors, shows shape, dtype, and device information.
+
+        Returns:
+            A string representation of the tensor.
+        """
         if self.real:
-            return f"{self.type}: [{', '.join(str(v) for v in self._values())}]"
+            from max.experimental import _tensor_repr
+
+            return _tensor_repr.render(self)
         return pretty_repr(self)
 
     def __deepcopy__(self, memo: object) -> Tensor:
