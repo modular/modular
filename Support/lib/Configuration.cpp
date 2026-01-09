@@ -38,7 +38,8 @@ enum class FolderType { Config, Data, Cache };
 
 static ErrorOrSuccess createPath(const std::filesystem::path &path) {
   std::error_code ec;
-  if (!create_directories(path, ec)) {
+  std::filesystem::create_directories(path, ec);
+  if (ec) {
     // The directory did not exist, and we failed to create it.
     return Error(Twine(path.string()) +
                  " could not be created: " + ec.message());
