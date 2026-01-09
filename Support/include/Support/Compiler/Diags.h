@@ -14,12 +14,14 @@
 #ifndef SUPPORT_COMPILER_DIAGS_H
 #define SUPPORT_COMPILER_DIAGS_H
 
+#include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/ADT/DenseMapInfo.h"
-#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/SMLoc.h"
 #include "llvm/Support/SourceMgr.h"
@@ -78,24 +80,48 @@ class FixIt;
 //===----------------------------------------------------------------------===//
 
 /// This class is used to collect and apply fix-its automatically.
+/// It supports two output modes:
+/// - Apply mode (default): Directly modifies source files with fix-its
+/// - Export mode: Exports fix-its to a YAML file in clang-tidy format
+///   The exported YAML is compatible with 'clang-apply-replacements'.
 class AutoFixItHandler {
 public:
+  /// Create a handler that applies fix-its directly to files.
   AutoFixItHandler() = default;
+
+  /// Create a handler that exports fix-its to a YAML file instead of applying.
+  explicit AutoFixItHandler(StringRef exportPath);
+
+  ~AutoFixItHandler() = default;
 
   /// Register a fix-it to be applied later.
   void registerFixIt(const llvm::MemoryBuffer *buffer, llvm::SMFixIt fixIt);
 
-  /// Apply all registered fix-its.
+  /// Apply all registered fix-its directly to files.
+  /// Only valid when not in export mode.
   void applyFixIts();
+
+  /// Export fix-its to a YAML file in clang-tidy format.
+  /// Returns success() if the file was written successfully, or an error
+  /// if writing failed. Only valid when in export mode.
+  ErrorOrSuccess exportFixIts();
 
   /// Return true if there are any fix-its to apply.
   bool hasFixIts() const { return !fixits.empty(); }
 
+  /// Return true if this handler is in apply mode.
+  bool isApplyMode() const { return !exportPath.has_value(); }
+
 private:
-  /// A map of buffers (i.e. source files) to a set of fix-its to apply to that
-  /// buffer.
-  DenseMap<const llvm::MemoryBuffer *, llvm::SmallDenseSet<llvm::SMFixIt>>
+  /// A map of buffers (i.e. source files) to a vector of fix-its to apply to
+  /// that buffer. Uses MapVector for deterministic file ordering (by insertion
+  /// order). Fix-its within each file are deduplicated on insert and sorted by
+  /// offset before export for deterministic output.
+  llvm::MapVector<const llvm::MemoryBuffer *, llvm::SmallVector<llvm::SMFixIt>>
       fixits;
+
+  /// Optional path to output YAML file. If set, handler is in export mode.
+  std::optional<std::string> exportPath;
 };
 
 //===----------------------------------------------------------------------===//

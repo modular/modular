@@ -63,4 +63,11 @@ def werror : Flag<["--", "-"], "Werror">,
   Group<DiagnosticOptionGroup>, Index<7>,
   HelpText<"Treat warnings as errors.">;
 
+defm export_fixit : CommandOption<["--", "-"], "experimental-export-fixit",
+  DiagnosticOptionGroup, Index<9>, MetaVarName<"YAML_FILE">,
+  HelpText<"Export fix-its to a YAML file in clang-tidy format instead of "
+           "applying them directly. The file can be applied using "
+           "'clang-apply-replacements'. WARNING: this feature is highly "
+           "experimental.">>;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_DIAGNOSTICOPTIONS_TD

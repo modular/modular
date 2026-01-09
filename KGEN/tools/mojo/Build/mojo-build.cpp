@@ -143,6 +143,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .stripFilePrefix = options::OPT_strip_file_prefix,
       .disableBuiltins = options::OPT_disable_builtins,
       .fixit = options::OPT_fixit,
+      .exportFixit = options::OPT_export_fixit,
   };
 
   // Configure parsing for `mojo build` - parse all arguments normally.
@@ -668,7 +669,7 @@ static int build(const State &subcommandState) {
       options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
       options::OPT_D, options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
-      options::OPT_fixit,
+      options::OPT_fixit, options::OPT_export_fixit,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         return LIT::importMojoFile(runtime, sourceMgr, parserConfig, ts,
                                    nullptr);
@@ -677,6 +678,9 @@ static int build(const State &subcommandState) {
     return state.reportError(moduleOp.getError());
 
   if (!moduleOp.get()->getOperation()) {
+    // Only --experimental-fixit returns a null module (after applying fixes).
+    // --experimental-export-fixit continues normal execution after writing
+    // YAML.
     assert(args.hasArg(options::OPT_fixit));
     return EXIT_SUCCESS;
   }

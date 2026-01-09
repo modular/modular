@@ -18,6 +18,7 @@
 #include "mlir/Support/Timing.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetMachine.h"
@@ -513,9 +514,15 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier stripFilePrefixId,
     llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdLibPath,
-    llvm::opt::OptSpecifier autoFixIt,
+    llvm::opt::OptSpecifier autoFixIt, llvm::opt::OptSpecifier exportFixit,
     function_ref<OwningOpRef<ModuleOp>(ParserConfig &, mlir::TimingScope &)>
         parseFn) {
+  // Mutual exclusion check for fixit flags.
+  if (args.hasArg(autoFixIt) && args.hasArg(exportFixit)) {
+    return Error("cannot use both --experimental-fixit and "
+                 "--experimental-export-fixit simultaneously");
+  }
+
   // We don't allow users to configure the time profiler.
   mlir::DefaultTimingManager timingManager;
   mlir::TimingScope timing = timingManager.getRootScope();
@@ -536,23 +543,41 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   parseConfig.stripFilePrefix = args.getLastArgValue(stripFilePrefixId);
   parseConfig.useBuiltinModule = !args.hasArg(disableBuiltins);
 
-  std::unique_ptr<AutoFixItHandler> autoFixItHandler;
-  if (args.hasArg(autoFixIt))
-    autoFixItHandler = std::make_unique<AutoFixItHandler>();
-  parseConfig.autoFixItHandler = autoFixItHandler.get();
+  std::unique_ptr<AutoFixItHandler> fixItHandler;
+  if (args.hasArg(autoFixIt)) {
+    fixItHandler = std::make_unique<AutoFixItHandler>();
+    parseConfig.autoFixItHandler = fixItHandler.get();
+  } else if (args.hasArg(exportFixit)) {
+    StringRef exportPath = args.getLastArgValue(exportFixit);
+    fixItHandler = std::make_unique<AutoFixItHandler>(exportPath);
+    parseConfig.autoFixItHandler = fixItHandler.get();
+  }
 
   mlir::TimingScope mojoScope = timing.nest("Import Mojo");
   OwningOpRef<ModuleOp> module = parseFn(parseConfig, mojoScope);
 
-  // If we have any fixits, apply them, and return a null module.
-  if (autoFixItHandler) {
-    if (autoFixItHandler->hasFixIts()) {
-      autoFixItHandler->applyFixIts();
-      llvm::outs() << "Fixits applied.\n";
-    } else {
-      llvm::outs() << "No fixits to apply.\n";
+  // Handle fix-it output based on mode.
+  if (fixItHandler) {
+    if (fixItHandler->isApplyMode()) {
+      // Apply mode: apply fix-its and return a null module
+      // (re-run is expected after applying fixes).
+      if (fixItHandler->hasFixIts()) {
+        fixItHandler->applyFixIts();
+        llvm::outs() << "Fixits applied.\n";
+      } else {
+        llvm::outs() << "No fixits to apply.\n";
+      }
+      return OwningOpRef<ModuleOp>();
     }
-    return OwningOpRef<ModuleOp>();
+
+    // Export mode: write the YAML file but continue with normal execution.
+    // Unliek clang-tidy, we create the file even if there are no fix-its.
+    if (auto err = fixItHandler->exportFixIts())
+      return err.takeError();
+    StringRef yamlPath = args.getLastArgValue(exportFixit);
+    llvm::outs() << "Fix-its exported to: " << yamlPath << "\n";
+    llvm::outs() << "Apply with: 'clang-apply-replacements "
+                 << llvm::sys::path::parent_path(yamlPath) << "'\n";
   }
 
   if (!module)
