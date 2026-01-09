@@ -954,11 +954,11 @@ struct List[T: Copyable](
         value = numbers.pop(-2); print(value) # 2, negative index
         ```
         """
-        debug_assert(-self._len <= i < self._len, "pop index out of range")
+        var normalized_idx = normalize_index["List", assert_always=False](
+            i, UInt(len(self))
+        )
 
-        var normalized_idx = i
-        if i < 0:
-            normalized_idx += self._len
+        debug_assert(Int(normalized_idx) < self._len, "pop index out of range")
 
         var ret_val = (self._data + normalized_idx).take_pointee()
         for j in range(normalized_idx + 1, self._len):
