@@ -269,7 +269,7 @@ struct Q4sym[
             Self.float_dtype, address_space = AddressSpace.GENERIC, ...
         ],
         output_tensor: LayoutTensor[
-            DType.uint8, address_space = AddressSpace.GENERIC, ...
+            mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
         ],
         input_shape: IndexList[input_tensor.rank],
     ):
@@ -334,10 +334,9 @@ struct Q4sym[
                 var src_ptr = UnsafePointer(to=encoded_data).address_space_cast[
                     output_ptr.address_space
                 ]()
-                # Use unsafe_mut_cast for memcpy compatibility
                 memcpy(
-                    dest=output_ptr.unsafe_mut_cast[True](),
-                    src=src_ptr.unsafe_mut_cast[False](),
+                    dest=output_ptr,
+                    src=src_ptr,
                     count=1,
                 )
                 _ = encoded_data^

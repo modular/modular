@@ -13,7 +13,6 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from memory import UnsafePointer
 
 from sys import align_of, is_nvidia_gpu, simd_width_of, size_of
 
