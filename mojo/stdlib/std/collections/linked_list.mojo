@@ -800,14 +800,6 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Notes:
             Time Complexity: O(n) in len(self).
         """
-        _constrained_conforms_to[
-            conforms_to(Self.ElementType, Representable),
-            Parent=Self,
-            Element = Self.ElementType,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
-
         self._write(writer)
 
     @no_inline
