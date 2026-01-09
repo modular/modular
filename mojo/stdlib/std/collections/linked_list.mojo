@@ -22,6 +22,8 @@ traversal.
 from collections._index_normalization import normalize_index
 from os import abort
 
+from builtin.constrained import _constrained_conforms_to
+
 
 struct Node[
     ElementType: Copyable & ImplicitlyDestructible,
@@ -139,7 +141,7 @@ struct _LinkedListIter[
 
 struct LinkedList[
     ElementType: Copyable & ImplicitlyDestructible,
-](Boolable, Copyable, Defaultable, Iterable, Sized):
+](Boolable, Copyable, Defaultable, Iterable, Representable, Sized, Stringable, Writable):
     """A doubly-linked list implementation.
 
     Parameters:
@@ -753,14 +755,8 @@ struct LinkedList[
         """
         return len(self) != 0
 
-    fn __str__[
-        _ElementType: Copyable & ImplicitlyDestructible & Writable
-    ](self: LinkedList[_ElementType]) -> String:
+    fn __str__(self) -> String:
         """Convert the list to its string representation.
-
-        Parameters:
-            _ElementType: Used to conditionally enable this function when
-                `_ElementType` is `Writable`.
 
         Returns:
             String representation of the list.
@@ -772,14 +768,8 @@ struct LinkedList[
         self._write(writer)
         return writer
 
-    fn __repr__[
-        _ElementType: Copyable & ImplicitlyDestructible & Writable
-    ](self: LinkedList[_ElementType]) -> String:
+    fn __repr__(self) -> String:
         """Convert the list to its string representation.
-
-        Parameters:
-            _ElementType: Used to conditionally enable this function when
-                `_ElementType` is `Writable`.
 
         Returns:
             String representation of the list.
@@ -791,14 +781,11 @@ struct LinkedList[
         self._write(writer, prefix="LinkedList(", suffix=")")
         return writer
 
-    fn write_to[
-        _ElementType: Copyable & ImplicitlyDestructible & Writable
-    ](self: LinkedList[_ElementType], mut writer: Some[Writer]):
+    fn write_to(self, mut writer: Some[Writer]):
         """Write the list to the given writer.
 
-        Parameters:
-            _ElementType: Used to conditionally enable this function when
-                `_ElementType` is `Writable`.
+        Constraints:
+            ElementType must conform to `Representable`.
 
         Args:
             writer: The writer to write the list to.
@@ -806,18 +793,34 @@ struct LinkedList[
         Notes:
             Time Complexity: O(n) in len(self).
         """
+        _constrained_conforms_to[
+            conforms_to(Self.ElementType, Representable),
+            Parent=Self,
+            Element=Self.ElementType,
+            ParentConformsTo="Stringable",
+            ElementConformsTo="Representable",
+        ]()
+
         self._write(writer)
 
     @no_inline
     fn _write[
-        W: Writer, _ElementType: Copyable & ImplicitlyDestructible & Writable
+        W: Writer
     ](
-        self: LinkedList[_ElementType],
+        self: Self,
         mut writer: W,
         *,
         prefix: String = "[",
         suffix: String = "]",
     ):
+        _constrained_conforms_to[
+            conforms_to(Self.ElementType, Representable),
+            Parent=Self,
+            Element=Self.ElementType,
+            ParentConformsTo="Stringable",
+            ElementConformsTo="Representable",
+        ]()
+
         if not self:
             return writer.write(prefix, suffix)
 
@@ -826,6 +829,7 @@ struct LinkedList[
         for i in range(len(self)):
             if i:
                 writer.write(", ")
-            writer.write(curr[].value)
+            ref representable_element = trait_downcast[Representable](curr[].value)
+            writer.write(repr(representable_element))
             curr = curr[].next
         writer.write(suffix)
