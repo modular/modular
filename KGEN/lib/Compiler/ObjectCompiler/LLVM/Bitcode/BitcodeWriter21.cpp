@@ -120,7 +120,8 @@ static cl::opt<bool> WriteRelBFToSummary(
 // records as well.
 // FIXME: Convert to a const once this has undergone more sigificant testing.
 static cl::opt<bool>
-    CombinedIndexMemProfContext("combined-index-memprof-context", cl::Hidden,
+    CombinedIndexMemProfContext("bitcode21-combined-index-memprof-context",
+                                cl::Hidden,
 #pragma GCC diagnostic pop
 
 #ifdef NDEBUG
@@ -131,6 +132,9 @@ static cl::opt<bool>
                                 cl::desc(""));
 } // namespace
 
+namespace M::KGEN::LLVM {
+static constexpr uint64_t UNSUPPORTED_ATTR_KIND_ENCODING = 0;
+} // namespace M::KGEN::LLVM
 namespace llvm {
 extern FunctionSummary::ForceSummaryHotnessType ForceSummaryEdgesCold;
 }
@@ -1019,7 +1023,7 @@ static uint64_t getAttrKindEncoding(Attribute::AttrKind Kind) {
   case Attribute::TombstoneKey:
     llvm_unreachable("Trying to encode EmptyKey/TombstoneKey");
   default:
-    llvm_unreachable("Trying to encode unknown attribute");
+    return M::KGEN::LLVM::UNSUPPORTED_ATTR_KIND_ENCODING;
   }
 }
 
@@ -1074,18 +1078,24 @@ void ModuleBitcodeWriter::writeAttributeGroupTable() {
 
     for (Attribute Attr : AS) {
       if (Attr.isEnumAttribute()) {
-        Record.push_back(0);
-        Record.push_back(getAttrKindEncoding(Attr.getKindAsEnum()));
+        uint64_t AttrKindEncoding = getAttrKindEncoding(Attr.getKindAsEnum());
+        if (AttrKindEncoding != M::KGEN::LLVM::UNSUPPORTED_ATTR_KIND_ENCODING) {
+          Record.push_back(0);
+          Record.push_back(AttrKindEncoding);
+        }
       } else if (Attr.isIntAttribute()) {
         Record.push_back(1);
         Attribute::AttrKind Kind = Attr.getKindAsEnum();
-        Record.push_back(getAttrKindEncoding(Kind));
-        if (Kind == Attribute::Memory) {
-          // Version field for upgrading old memory effects.
-          const uint64_t Version = 1;
-          Record.push_back((Version << 56) | Attr.getValueAsInt());
-        } else {
-          Record.push_back(Attr.getValueAsInt());
+        uint64_t AttrKindEncoding = getAttrKindEncoding(Kind);
+        if (AttrKindEncoding != M::KGEN::LLVM::UNSUPPORTED_ATTR_KIND_ENCODING) {
+          Record.push_back(AttrKindEncoding);
+          if (Kind == Attribute::Memory) {
+            // Version field for upgrading old memory effects.
+            const uint64_t Version = 1;
+            Record.push_back((Version << 56) | Attr.getValueAsInt());
+          } else {
+            Record.push_back(Attr.getValueAsInt());
+          }
         }
       } else if (Attr.isStringAttribute()) {
         StringRef Kind = Attr.getKindAsString();
