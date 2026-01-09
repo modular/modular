@@ -174,6 +174,43 @@ def test_unsqueeze() -> None:
     assert list(result2.driver_tensor.shape) == [1, 4, 6]
 
 
+def test_split_with_int() -> None:
+    """Test split with int split_size (PyTorch-style)."""
+    t = Tensor.ones(
+        [10, 4],
+        dtype=DType.float32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    # Split into chunks of size 3 (last chunk will be size 1)
+    chunks = t.split(3, axis=0)
+    assert len(chunks) == 4
+    for chunk in chunks:
+        chunk._sync_realize()
+        assert chunk.real
+    assert list(chunks[0].driver_tensor.shape) == [3, 4]
+    assert list(chunks[1].driver_tensor.shape) == [3, 4]
+    assert list(chunks[2].driver_tensor.shape) == [3, 4]
+    assert list(chunks[3].driver_tensor.shape) == [1, 4]
+
+
+def test_split_with_list() -> None:
+    """Test split with list of sizes."""
+    t = Tensor.ones(
+        [10, 4],
+        dtype=DType.float32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    # Split into exact sizes
+    chunks = t.split([2, 3, 5], axis=0)
+    assert len(chunks) == 3
+    for chunk in chunks:
+        chunk._sync_realize()
+        assert chunk.real
+    assert list(chunks[0].driver_tensor.shape) == [2, 4]
+    assert list(chunks[1].driver_tensor.shape) == [3, 4]
+    assert list(chunks[2].driver_tensor.shape) == [5, 4]
+
+
 def test_reshape() -> None:
     tensor = Tensor.ones(
         [4, 6],

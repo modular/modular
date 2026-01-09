@@ -16,6 +16,8 @@ These tests exercise each expected op at least once with real data and kernels.
 They don't otherwise make any attempt at coverage, edge cases, or correctness.
 """
 
+from typing import cast
+
 import pytest
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
@@ -333,7 +335,9 @@ def test_slice_tensor() -> None:
 
 def test_split() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
-    splits = F.split(tensor_2d, [2, 2], axis=0)  # split_sizes as sequence
+    splits = cast(
+        list[Tensor], F.split(tensor_2d, [2, 2], axis=0)
+    )  # split_sizes as sequence
     for split_tensor in splits:
         split_tensor._sync_realize()
         assert split_tensor.real

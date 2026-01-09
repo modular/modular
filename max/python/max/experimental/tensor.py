@@ -106,7 +106,7 @@ import contextlib
 from collections.abc import Generator
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, Protocol, TypeAlias
+from typing import Any, Protocol, TypeAlias, cast
 
 from max.graph.value import HasTensorValue
 from rich.pretty import pretty_repr
@@ -1420,6 +1420,44 @@ class Tensor(DLPackArray, HasTensorValue):
             Tensor: A tensor with an additional size-1 dimension.
         """
         return F.unsqueeze(self, axis)
+
+    def split(
+        self, split_size_or_sections: int | list[int], axis: int = 0
+    ) -> list[Tensor]:
+        """Splits the tensor into multiple tensors along a given dimension.
+
+        This method supports two modes, matching PyTorch's behavior:
+
+        - If ``split_size_or_sections`` is an **int**, splits into chunks of
+          that size (the last chunk may be smaller if not evenly divisible).
+        - If ``split_size_or_sections`` is a **list of ints**, splits into
+          chunks with exactly those sizes (must sum to the dimension size).
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.dtype import DType
+
+            # Create a 10x4 tensor
+            x = tensor.Tensor.ones([10, 4], dtype=DType.float32)
+
+            # Split into chunks of size 3 (last chunk is size 1)
+            chunks = x.split(3, axis=0)
+            # Result: 4 tensors with shapes [3,4], [3,4], [3,4], [1,4]
+
+            # Split into exact sizes
+            chunks = x.split([2, 3, 5], axis=0)
+            # Result: 3 tensors with shapes [2,4], [3,4], [5,4]
+
+        Args:
+            split_size_or_sections: Either an int (chunk size) or a list of
+                ints (exact sizes for each output tensor).
+            axis: The dimension along which to split. Defaults to 0.
+
+        Returns:
+            list[Tensor]: A list of tensors resulting from the split.
+        """
+        return cast(list[Tensor], F.split(self, split_size_or_sections, axis))
 
     def reshape(self, shape: ShapeLike) -> Tensor:
         """Reshapes the tensor to a new shape.
