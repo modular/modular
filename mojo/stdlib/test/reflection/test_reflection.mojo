@@ -206,29 +206,33 @@ struct StructWithMemoryOnlyCtorParam:
 
 
 def test_get_type_name_ctor_param_from_field_types():
-    """Ensure get_type_name doesn't crash with constructor calls in type params.
+    """Ensure get_type_name works with constructor calls in type params.
 
     Issue #5732: using get_type_name on types with constructor calls (like
     A[B(True)]) extracted via struct_field_types would crash the compiler.
     """
     comptime types = struct_field_types[StructWithCtorParam]()
     var name = get_type_name[types[0]]()
-    # Register-passable type: type is <unprintable> but Bool value can be evaluated
-    assert_equal(name, "test_reflection.WrapperWithValue[<unprintable>, True]")
+    assert_equal(
+        name,
+        "test_reflection.WrapperWithValue[test_reflection.SimpleParam, True]",
+    )
 
 
 def test_get_type_name_memory_only_ctor_param_from_field_types():
-    """Ensure memory-only types with constructor calls don't crash.
+    """Ensure memory-only types with constructor calls work.
 
     Memory-only types use `apply_result_slot` instead of `apply`, which was also
-    affected by issue #5732. Both the type and value print as "<unprintable>"
-    since memory-only constructors can't be fully evaluated in this context.
+    affected by issue #5732.
     """
     comptime types = struct_field_types[StructWithMemoryOnlyCtorParam]()
     var name = get_type_name[types[0]]()
-    # Memory-only type: both type and value are <unprintable>
     assert_equal(
-        name, "test_reflection.WrapperWithValue[<unprintable>, <unprintable>]"
+        name,
+        (
+            "test_reflection.WrapperWithValue[test_reflection.MemoryOnlyParam,"
+            " {True}]"
+        ),
     )
 
 
@@ -269,41 +273,36 @@ struct DeeplyNestedStruct:
 
 
 def test_get_type_name_nested_parametric_from_field_types():
-    """Test that get_type_name doesn't crash with nested parametric types from struct_field_types.
-
-    This is a regression test for issue #5723 where using get_type_name on
-    nested parametric types (like GenericWrapper[List[String]]) extracted via
-    struct_field_types would cause a compiler crash.
-
-    The fix makes these print "<unprintable>" for the type parameter
-    instead of crashing. Note that type parameters from struct_field_types
-    may not fully resolve, so we expect <unprintable> for the inner type.
+    """Test that get_type_name works with nested parametric types from struct_field_types.
     """
-    # Both fields should not crash - they print <unprintable> for the type parameter
+    # Both fields should work
     comptime types = struct_field_types[NestedParametricStruct]()
     var name0 = get_type_name[types[0]]()
-    assert_equal(name0, "test_reflection.GenericWrapper[<unprintable>]")
+    assert_equal(name0, "test_reflection.GenericWrapper[String]")
 
-    # Nested parametric type should not crash either
+    # Nested parametric type should work too
     var name1 = get_type_name[types[1]]()
-    assert_equal(name1, "test_reflection.GenericWrapper[<unprintable>]")
+    assert_equal(name1, "test_reflection.GenericWrapper[List[String]]")
 
 
 def test_get_type_name_deeply_nested_parametric_from_field_types():
-    """Test deeply nested parametric types from struct_field_types don't crash.
+    """Test deeply nested parametric types from struct_field_types works.
 
     This tests the case where we have GenericWrapper[GenericWrapper[T]] - both
-    single and double nested types should not crash when accessed via struct_field_types.
+    single and double nested types should work.
     """
     comptime types = struct_field_types[DeeplyNestedStruct]()
 
-    # Single level parametric from struct_field_types - should not crash
+    # Single level parametric from struct_field_types
     var name0 = get_type_name[types[0]]()
-    assert_equal(name0, "test_reflection.GenericWrapper[<unprintable>]")
+    assert_equal(name0, "test_reflection.GenericWrapper[Int]")
 
-    # Double nested should not crash either
+    # Double nested should work too
     var name1 = get_type_name[types[1]]()
-    assert_equal(name1, "test_reflection.GenericWrapper[<unprintable>]")
+    assert_equal(
+        name1,
+        "test_reflection.GenericWrapper[test_reflection.GenericWrapper[Int]]",
+    )
 
 
 def test_get_type_name_nested_parametric_direct():
@@ -356,8 +355,7 @@ def test_get_type_name_multiple_type_params_from_field_types():
     """
     comptime types = struct_field_types[StructWithPair]()
     var name = get_type_name[types[0]]()
-    # Should not crash - inner types show as <unprintable>
-    assert_equal(name, "test_reflection.Pair[<unprintable>, <unprintable>]")
+    assert_equal(name, "test_reflection.Pair[String, List[Int]]")
 
 
 def test_get_type_name_various_stdlib_parametric_from_field_types():
@@ -365,13 +363,11 @@ def test_get_type_name_various_stdlib_parametric_from_field_types():
     """
     comptime types = struct_field_types[StructWithMultipleParametricFields]()
 
-    # List[Int] - should not crash (type parameter shows as <unprintable>)
     var name0 = get_type_name[types[0]]()
-    assert_equal(name0, "List[<unprintable>]")
+    assert_equal(name0, "List[Int]")
 
-    # Optional[String] - should not crash (type parameter shows as <unprintable>)
     var name1 = get_type_name[types[1]]()
-    assert_equal(name1, "std.collections.optional.Optional[<unprintable>]")
+    assert_equal(name1, "std.collections.optional.Optional[String]")
 
     # SIMD[DType.float32, 4] - value parameters (not type parameters) print correctly
     var name2 = get_type_name[types[2]]()
@@ -382,8 +378,10 @@ def test_get_type_name_triple_nested_from_field_types():
     """Test three levels of nesting from struct_field_types."""
     comptime types = struct_field_types[TripleNested]()
     var name = get_type_name[types[0]]()
-    # Should not crash - deeply nested types show <unprintable>
-    assert_equal(name, "test_reflection.GenericWrapper[<unprintable>]")
+    assert_equal(
+        name,
+        "test_reflection.GenericWrapper[test_reflection.GenericWrapper[test_reflection.GenericWrapper[Int]]]",
+    )
 
 
 def test_iterate_parametric_field_types_no_crash():
