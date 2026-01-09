@@ -90,6 +90,9 @@ modular_py_library(
     name = "run_models",
     testonly = True,
     srcs = ["run_models.py"],
+    data = [
+        "@nvshmem_prebuilt//:host",
+    ],
     imports = ["."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [

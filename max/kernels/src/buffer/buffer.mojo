@@ -795,7 +795,7 @@ struct NDBuffer[
             The offset into the NDBuffer given the indices.
         """
         __comptime_assert Self.rank <= _MAX_RANK
-        return self.data.offset(_compute_ndbuffer_offset(self, idx))
+        return self.data + _compute_ndbuffer_offset(self, idx)
 
     @always_inline
     fn _offset(
@@ -806,7 +806,7 @@ struct NDBuffer[
         address_space = Self.address_space,
     ]:
         __comptime_assert Self.rank <= _MAX_RANK
-        return self.data.offset(_compute_ndbuffer_offset(self, idx.as_tuple()))
+        return self.data + _compute_ndbuffer_offset(self, idx.as_tuple())
 
     @always_inline
     fn _offset(
@@ -825,7 +825,7 @@ struct NDBuffer[
             The offset into the NDBuffer given the indices.
         """
         __comptime_assert Self.rank <= _MAX_RANK
-        return self.data.offset(_compute_ndbuffer_offset(self, idx))
+        return self.data + _compute_ndbuffer_offset(self, idx)
 
     @always_inline
     fn __getitem__(self, *idx: Int) -> Scalar[Self.dtype]:
@@ -909,7 +909,7 @@ struct NDBuffer[
             DimList(tile_sizes),
             address_space = Self.address_space,
         ](
-            self.data.offset(offset),
+            self.data + offset,
             dynamic_shape=dyn_shape,
             dynamic_stride=self.dynamic_stride,
         )
@@ -1324,9 +1324,9 @@ struct NDBuffer[
 
             var vec_end = align_down(len(self), simd_width)
             for i in range(0, vec_end, simd_width):
-                self.store[width=simd_width](i, val)
+                self.store[width=simd_width](IndexList[Self.rank](i), val)
             for i in range(vec_end, len(self)):
-                self.store(i, val)
+                self.store(IndexList[Self.rank](i), val)
 
     @always_inline
     fn tofile(self, path: Path) raises:

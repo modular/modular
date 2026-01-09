@@ -78,14 +78,14 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
-    RaggedTensorMap,
+    RaggedTMA3DTile,
 )
 from logger import Logger
 from memory import bitcast
 from nn.mha_fa3_utils import (
     get_seq_info,
-    kv_coord,
     KVTMATile,
+    kv_coord,
     MHAPosition,
     NonNullPointer,
     NullPointer,
@@ -120,6 +120,7 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
+from kv_cache.types import swizzle_granularity
 
 from sys import size_of, bit_width_of
 from sys._assembly import inlined_assembly
@@ -1311,31 +1312,18 @@ fn mha_sm100_dispatch[
     var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, BM)
     var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
-    comptime out_depth = fa4_config.depth
-    comptime out_num_heads = fa4_config.num_q_heads
-
-    comptime max_descriptor_length = BM // 2
-
-    comptime descriptor_shape = IndexList[3](
-        1, max_descriptor_length, swizzle_mode.bytes() // size_of[output_type]()
-    )
-
-    comptime RaggedStoreType = RaggedTensorMap[
+    comptime RaggedStoreType = RaggedTMA3DTile[
         output_type,
-        descriptor_shape,
-        1,
-        swizzle_mode=swizzle_mode,
+        swizzle_mode,
+        BM = BM // 2,
+        BN = fa4_config.depth,
     ]
 
-    var ragged_tma_store = RaggedStoreType(
+    var ragged_tma_store = RaggedStoreType.create(
         ctx,
         output.unsafe_ptr(),
-        max_descriptor_length,
-        out_depth * out_num_heads,
-        ceildiv(num_rows_q, max_descriptor_length),
-        out_depth,
-        IndexList[1](out_num_heads),
-        IndexList[1](out_depth),
+        rows=num_rows_q,
+        middle_dim=fa4_config.num_q_heads,
     )
 
     q_tma_op = q_tma[
@@ -1346,8 +1334,18 @@ fn mha_sm100_dispatch[
         group = fa4_config.group,
         decoding=False,
     ](ctx, q, num_rows_q)
-    k_tma_op = k.create_tma_tile[BN, fa4_config.depth, swizzle_mode](ctx)
-    v_tma_op = v.create_tma_tile[BN, fa4_config.depth, swizzle_mode](ctx)
+    k_tma_op = k.create_tma_tile[
+        fa4_config.swizzle_mode,
+        BN = fa4_config.BN,
+        depth = fa4_config.depth,
+        BK = fa4_config.BK0,
+    ](ctx)
+    v_tma_op = v.create_tma_tile[
+        fa4_config.swizzle_mode,
+        BN = fa4_config.BN,
+        depth = fa4_config.depth,
+        BK = fa4_config.BK0,
+    ](ctx)
     __comptime_assert BM == 256
     comptime SchedulerType = TransientScheduler[BM, fa4_config.num_q_heads]
     var scheduler: SchedulerType = SchedulerType()
@@ -1374,8 +1372,6 @@ fn mha_sm100_dispatch[
             SinkType=SinkType,
             _is_cache_length_accurate=_is_cache_length_accurate,
             swizzle_mode=swizzle_mode,
-            descriptor_shape=descriptor_shape,
-            remaining_global_dim_rank=1,
         ](
             scheduler,
             q_tma_op,
@@ -1414,8 +1410,6 @@ fn mha_sm100_dispatch[
             SinkType=SinkType,
             _is_cache_length_accurate=_is_cache_length_accurate,
             swizzle_mode=swizzle_mode,
-            descriptor_shape=descriptor_shape,
-            remaining_global_dim_rank=1,
         ](
             scheduler,
             q_tma_op,
@@ -1454,8 +1448,6 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
     swizzle_mode: TensorMapSwizzle,
-    descriptor_shape: IndexList[3],
-    remaining_global_dim_rank: Int,
 ](
     scheduler: SchedulerType,
     q_tma_op: QTMATile[
@@ -1470,13 +1462,13 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
         KVLUTType.dtype,
         swizzle_mode,
         BN = config.BN,
-        depth = config.depth,
+        BK = config.BK0,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
         BN = config.BN,
-        depth = config.depth,
+        BK = config.BK0,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1496,11 +1488,11 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
     score_mod: ScoreModType,
     ctx: DeviceContext,
     num_rows_q: Int,
-    ragged_tma_store: RaggedTensorMap[
+    ragged_tma_store: RaggedTMA3DTile[
         output_type,
-        descriptor_shape,
-        remaining_global_dim_rank,
-        swizzle_mode=swizzle_mode,
+        swizzle_mode,
+        BM = config.BM // 2,
+        BN = config.depth,
     ],
 ) raises:
     comptime KVRowOffsetsNonNull = NonNullPointer[DType.uint32]
@@ -1524,8 +1516,6 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
             KVRowOffsetsType=KVRowOffsetsNonNull,
             _is_cache_length_accurate=_is_cache_length_accurate,
             swizzle_mode=swizzle_mode,
-            descriptor_shape=descriptor_shape,
-            remaining_global_dim_rank=remaining_global_dim_rank,
         ](
             scheduler,
             q_tma_op,
@@ -1564,8 +1554,6 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
             KVRowOffsetsType=KVRowOffsetsNull,
             _is_cache_length_accurate=_is_cache_length_accurate,
             swizzle_mode=swizzle_mode,
-            descriptor_shape=descriptor_shape,
-            remaining_global_dim_rank=remaining_global_dim_rank,
         ](
             scheduler,
             q_tma_op,
@@ -1605,8 +1593,6 @@ fn _mha_sm100_valid_length_dispatch[
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
     swizzle_mode: TensorMapSwizzle,
-    descriptor_shape: IndexList[3],
-    remaining_global_dim_rank: Int,
 ](
     scheduler: SchedulerType,
     q_tma_op: QTMATile[
@@ -1621,13 +1607,13 @@ fn _mha_sm100_valid_length_dispatch[
         KVLUTType.dtype,
         swizzle_mode,
         BN = config.BN,
-        depth = config.depth,
+        BK = config.BK0,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
         BN = config.BN,
-        depth = config.depth,
+        BK = config.BK0,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1643,11 +1629,11 @@ fn _mha_sm100_valid_length_dispatch[
     score_mod: ScoreModType,
     ctx: DeviceContext,
     num_rows_q: Int,
-    ragged_tma_store: RaggedTensorMap[
+    ragged_tma_store: RaggedTMA3DTile[
         output_type,
-        descriptor_shape,
-        remaining_global_dim_rank,
-        swizzle_mode=swizzle_mode,
+        swizzle_mode,
+        BM = config.BM // 2,
+        BN = config.depth,
     ],
 ) raises:
     @parameter
@@ -1669,8 +1655,6 @@ fn _mha_sm100_valid_length_dispatch[
             KVRowOffsetsType=KVRowOffsetsType,
             _is_cache_length_accurate=_is_cache_length_accurate,
             swizzle_mode=swizzle_mode,
-            descriptor_shape=descriptor_shape,
-            remaining_global_dim_rank=remaining_global_dim_rank,
         ](
             scheduler,
             q_tma_op,
@@ -1710,8 +1694,6 @@ fn _mha_sm100_valid_length_dispatch[
             KVRowOffsetsType=KVRowOffsetsType,
             _is_cache_length_accurate=_is_cache_length_accurate,
             swizzle_mode=swizzle_mode,
-            descriptor_shape=descriptor_shape,
-            remaining_global_dim_rank=remaining_global_dim_rank,
         ](
             scheduler,
             q_tma_op,
@@ -1751,8 +1733,6 @@ fn _mha_sm100_enqueue[
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
     swizzle_mode: TensorMapSwizzle,
-    descriptor_shape: IndexList[3],
-    remaining_global_dim_rank: Int,
 ](
     scheduler: SchedulerType,
     q_tma_op: QTMATile[
@@ -1767,13 +1747,13 @@ fn _mha_sm100_enqueue[
         KVLUTType.dtype,
         swizzle_mode,
         BN = config.BN,
-        depth = config.depth,
+        BK = config.BK0,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
         BN = config.BN,
-        depth = config.depth,
+        BK = config.BK0,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1789,11 +1769,11 @@ fn _mha_sm100_enqueue[
     score_mod: ScoreModType,
     ctx: DeviceContext,
     num_rows_q: Int,
-    ragged_tma_store: RaggedTensorMap[
+    ragged_tma_store: RaggedTMA3DTile[
         output_type,
-        descriptor_shape,
-        remaining_global_dim_rank,
-        swizzle_mode=swizzle_mode,
+        swizzle_mode,
+        BM = config.BM // 2,
+        BN = config.depth,
     ],
 ) raises:
     # the pack contains all possibly 0-sized objects
@@ -1855,15 +1835,12 @@ fn _mha_sm100_enqueue[
         _is_cache_length_accurate,
         MaxSeqLenType,
         PartitionType,
-        descriptor_shape,
-        remaining_global_dim_rank,
     ].kernel
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         q_tma_op,
         k_tma_op,
         v_tma_op,
-        o_ptr_arg,
         ragged_tma_store,
         kv_lut,
         scale,
@@ -2593,8 +2570,6 @@ struct SM100MHA2Q[
     _is_cache_length_accurate: Bool,
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
-    descriptor_shape: IndexList[3],
-    remaining_global_dim_rank: Int,
 ]:
     comptime qkv_type = Self.KVLUTType.dtype
     comptime accum_type = get_accum_type[Self.qkv_type]()
@@ -2688,20 +2663,19 @@ struct SM100MHA2Q[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
             BN = Self.config.BN,
-            depth = Self.config.depth,
+            BK = Self.config.BK0,
         ],
         v_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
             BN = Self.config.BN,
-            depth = Self.config.depth,
+            BK = Self.config.BK0,
         ],
-        o_ptr_arg: UnsafePointer[Scalar[Self.output_type]],
-        ragged_tma_store: RaggedTensorMap[
+        ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
-            Self.descriptor_shape,
-            Self.remaining_global_dim_rank,
-            swizzle_mode = Self.config.swizzle_mode,
+            Self.config.swizzle_mode,
+            BM = Self.config.BM // 2,
+            BN = Self.config.depth,
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
@@ -2786,9 +2760,9 @@ struct SM100MHA2Q[
         ptr_tmem_addr = misc_mbars.end().bitcast[UInt32]()
 
         # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
-        comptime num_reg_softmax = 184
-        comptime num_reg_correction = 104
-        comptime num_reg_other = 40
+        comptime num_reg_softmax = 176
+        comptime num_reg_correction = 88
+        comptime num_reg_other = 72
 
         __comptime_assert not Self.PartitionType.do_partition, (
             "Neither partitioning nor decoding are supported by the 2-q"
@@ -2842,7 +2816,6 @@ struct SM100MHA2Q[
                 scale.cast[Self.accum_type](),
                 score_mod,
                 max_seq_len.as_uint32(),
-                o_ptr_arg,
                 ragged_tma_store,
                 q_smem.bitcast[Scalar[Self.output_type]](),
                 sink_weights,
@@ -2952,20 +2925,26 @@ struct SM100MHA2Q[
     @staticmethod
     fn scale_write_output(
         local_row: UInt32,
+        local_warp_idx: UInt32,
+        warp_group_idx: UInt32,
         inv_row_sum: Scalar[Self.accum_type],
-        o_smem: SharedMemPointer[Scalar[Self.output_type]],
+        o_smem_arg: SharedMemPointer[Scalar[Self.output_type]],
         o_tmem: TMemTile[Self.accum_type, Self.BM // 2, Self.padded_depth],
-        o_ptr: UnsafePointer[Scalar[Self.output_type]],
-        ragged_tma_store: RaggedTensorMap[
+        ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
-            Self.descriptor_shape,
-            swizzle_mode = Self.config.swizzle_mode,
+            Self.config.swizzle_mode,
+            BM = Self.config.BM // 2,
+            BN = Self.config.depth,
         ],
-        warp_idx: UInt32,
         consumer_mbar: MBarType,
-        current_seq: Int,
         num_output_rows: Int32,
+        out_head_idx: UInt32,
+        out_row_idx: UInt32,
     ):
+        e = elect()
+        if e != 0:
+            ragged_tma_store.prefetch_descriptor()
+
         o = o_tmem.load_async_with_st_matrix_layout[
             num_threads=WARPGROUP_SIZE
         ]()
@@ -3012,28 +2991,17 @@ struct SM100MHA2Q[
             Self.BM // 2, Self.padded_depth, num_threads=WARPGROUP_SIZE
         ]
 
-        var head = Int(block_idx.y)
-        comptime last_dim = Self.descriptor_shape[2]
+        comptime swizzle_granularity = Self.config.swizzle_mode.bytes() // size_of[
+            Self.output_type
+        ]()
+        comptime iters = Self.padded_depth // swizzle_granularity
 
-        __comptime_assert (
-            Self.padded_depth % last_dim == 0
-        ), "padded_depth must be a multiple of last descriptor dimension"
-        comptime iters = Self.padded_depth // last_dim
-
-        comptime smem_base_layout = Layout.row_major(Self.BM // 2, last_dim)
-        comptime tiler_layout = Layout.row_major(1, iters)
-        comptime smem_blocked_layout = blocked_product(
-            smem_base_layout, tiler_layout, coalesce_output=True
-        )
-
-        accum_smem_tile = LayoutTensor[
-            Self.output_type,
-            smem_blocked_layout,
-            address_space = AddressSpace.SHARED,
-        ](o_smem)
+        comptime swizzle_block_size: UInt32 = WARP_SIZE * swizzle_granularity
+        o_smem = o_smem_arg + local_warp_idx * swizzle_block_size
 
         @parameter
         for i in range(2):
+            comptime datapath_offset: UInt32 = 16 * i * swizzle_granularity
 
             @parameter
             for j in range(iters):
@@ -3045,63 +3013,42 @@ struct SM100MHA2Q[
                     o.ptr + ofs
                 )  # all the repeats across n and m
 
-                accum_smem_warp_tile = accum_smem_tile.tile[16, last_dim](
-                    Int(2 * (warp_idx & 3) + i), j
-                )
+                comptime warp_smem_offset: UInt32 = datapath_offset + j * (
+                    Self.BM // 2
+                ) * swizzle_granularity
+                accum_smem_warp_tile = LayoutTensor[
+                    Self.output_type,
+                    Layout.row_major(16, swizzle_granularity),
+                    MutAnyOrigin,
+                    address_space = AddressSpace.SHARED,
+                ](o_smem + warp_smem_offset)
 
                 output_reg_to_smem_st_matrix[
                     BM=16,
-                    padded_depth=last_dim,
                     swizzle=swizzle,
                     num_consumer=1,
                 ](
                     lane,
                     local_warp_group_idx=0,
                     output_reg_tile=rows_of_o_frags,
-                    accum_smem_tile=rebind[
-                        LayoutTensor[
-                            Self.output_type,
-                            Layout.row_major(16, last_dim),
-                            MutAnyOrigin,
-                            address_space = AddressSpace.SHARED,
-                        ]
-                    ](accum_smem_warp_tile),
+                    accum_smem_tile=accum_smem_warp_tile,
                 )
-        named_barrier[WARPGROUP_SIZE](Int32(warp_idx >> 2))
-
-        ragged_tma_store.prefetch_descriptor()
-        fence_async_view_proxy()
+        named_barrier[WARPGROUP_SIZE](Int32(warp_group_idx))
 
         # # first thread of each warp_group
-        if local_row == 0:
+        if local_warp_idx == 0:
+            if e != 0:
+                fence_async_view_proxy()
 
-            @parameter
-            for itr in range(iters):
-                var smem_tile = accum_smem_tile.tile[Self.BM // 2, last_dim](
-                    0, itr
+            if e != 0:
+                ragged_tma_store.async_copy_from(
+                    o_smem,
+                    ragged_idx=out_row_idx,
+                    dynamic_dim=UInt32(num_output_rows),
+                    middle_idx=out_head_idx,
                 )
-
-                comptime sequence_length = Self.descriptor_shape[1]
-                var tile_iter = smem_tile.tiled_iterator[
-                    sequence_length, last_dim, axis=0
-                ](0, 0)
-
-                var coordinates = IndexList[
-                    4
-                ]()  # rest will be filled in by store_ragged_tile
-                coordinates[0] = itr * last_dim
-                coordinates[2] = head
-
-                ragged_tma_store.store_ragged_tile[
-                    using_max_descriptor_size=True
-                ](
-                    coordinates,
-                    current_seq,
-                    Int(num_output_rows),
-                    tile_iter,
-                )
-
-            cp_async_bulk_commit_group()
+            if e != 0:
+                cp_async_bulk_commit_group()
         cp_async_bulk_wait_group[0]()
 
     @staticmethod
@@ -3118,11 +3065,11 @@ struct SM100MHA2Q[
         scale: Scalar[Self.accum_type],
         score_mod: Self.ScoreModType,
         max_seq_len: UInt32,
-        o_ptr_arg: UnsafePointer[Scalar[Self.output_type]],
-        ragged_tma_store: RaggedTensorMap[
+        ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
-            Self.descriptor_shape,
-            swizzle_mode = Self.config.swizzle_mode,
+            Self.config.swizzle_mode,
+            BM = Self.config.BM // 2,
+            BN = Self.config.depth,
         ],
         o_smem: SharedMemPointer[Scalar[Self.output_type]],
         sink_weights: Self.SinkType,
@@ -3194,6 +3141,10 @@ struct SM100MHA2Q[
             Int32(seq_info.seq_len)
             - Int32(seq_info.prompt_offset)
             - Int32(warp_group_idx) * splitBM,
+        )
+
+        gmem_row = Self.PositionType.get_q_gmem_row[ragged = Self.ragged](
+            seq_info, max_seq_len
         )
 
         pipeline_s.wait()
@@ -3565,26 +3516,20 @@ struct SM100MHA2Q[
             o_mbar[warp_group_idx].wait(o_phase)  # consumer wait
             tcgen05_fence_after()  # example 1
             # TODO: pass in a dedicated barrier that a q-writer can wait on in a persistent kernel?
-
-            var start_seq = Self.PositionType.get_q_gmem_row[
-                ragged = Self.ragged
-            ](seq_info, max_seq_len)
-
-            var wg_seq = Int(start_seq) + Int(warp_group_idx * (Self.BM // 2))
+            comptime HalfBM = Self.BM // 2
 
             Self.scale_write_output(
                 row,
+                warp_idx & 3,
+                warp_group_idx,
                 inv_row_sum,
-                o_smem
-                + warp_group_idx
-                * (Self.config.BM // 2 * Self.config.padded_depth),
+                o_smem + warp_group_idx * (HalfBM * Self.padded_depth),
                 o_tile,
-                o_ptr_arg,
                 ragged_tma_store,
-                warp_idx,
                 o_mbar + 2 + warp_group_idx,  # consumer arrive
-                wg_seq,
                 num_output_rows,
+                q_head_idx,
+                gmem_row + warp_group_idx * HalfBM,
             )
         named_barrier[2 * WARPGROUP_SIZE](2)
         if warp_idx == 0:
@@ -3772,13 +3717,13 @@ struct SM100MHA2Q[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
             BN = Self.config.BN,
-            depth = Self.config.depth,
+            BK = Self.config.BK0,
         ],
         v_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
             BN = Self.config.BN,
-            depth = Self.config.depth,
+            BK = Self.config.BK0,
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.KVLUTType.dtype]],
@@ -3811,9 +3756,9 @@ struct SM100MHA2Q[
             ragged = Self.ragged
         ](seq_info, max_seq_len)
         var q_head_idx: UInt32 = seq_info.head_idx
-        elect = elect() != 0
+        e = elect()
         # copy q0
-        if elect:
+        if e != 0:
             # Q0
             mbark0.mbar[].expect_bytes(pipeline_kv.kv_bytes + q_bytes)
             q_tma_op.async_copy(
@@ -3836,7 +3781,7 @@ struct SM100MHA2Q[
             - 1
         )
         # copy k0
-        if elect:
+        if e != 0:
             # K0
             k_tma_op.async_copy(
                 mbark0.smem,
@@ -3847,7 +3792,7 @@ struct SM100MHA2Q[
                 ](kv_gmem_row, kv_head_idx),
             )
         pipeline_kv.commit_kv_step()
-        if elect:
+        if e != 0:
             ref q1_mbar = mbars.q1_wait_mbar()
             q1_mbar.expect_bytes(q_bytes)
             # Q1
@@ -3861,7 +3806,7 @@ struct SM100MHA2Q[
                 ](q_gmem_row + Self.config.BM // 2, q_head_idx),
             )
         # copy v0
-        if elect:
+        if e != 0:
             mbarv0 = pipeline_kv.get_v[mma_stage=0]()
             v_tma_op.async_copy(
                 mbarv0.smem,
@@ -3890,7 +3835,7 @@ struct SM100MHA2Q[
             kv_gmem_row = kv_lut.row_idx(seq_info.prompt_idx, kv_row)
             # produce k
             pipeline_kv.acquire_kv()
-            if elect:
+            if e != 0:
                 mbarkn = pipeline_kv.get_k[mma_stage=0]()
                 k_tma_op.async_copy(
                     mbarkn.smem,
@@ -3902,7 +3847,7 @@ struct SM100MHA2Q[
                 )
             pipeline_kv.commit_kv_step()
             pipeline_kv.acquire_kv()
-            if elect:
+            if e != 0:
                 mbarvn = pipeline_kv.get_v[mma_stage=0]()
                 v_tma_op.async_copy(
                     mbarvn.smem,

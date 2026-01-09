@@ -432,7 +432,7 @@ struct KVBuffer[
                         tile_layout,
                         MutAnyOrigin,
                         address_space = smem_tile.address_space,
-                    ](smem_tile.ptr.offset(offset))
+                    ](smem_tile.ptr + offset)
                     frags[i, 0] = rebind[frags.element_type](
                         load_b_tr[Self.mma_shape](tile)
                     )
@@ -443,12 +443,14 @@ struct KVBuffer[
 __extension Attention:
     @always_inline
     fn get_num_rows(self) -> UInt32:
-        end = min(self.kv_start_row + Self.BN, self.num_keys)
-        num_rows = min(end - self.kv_start_row, UInt32(Self.BN))
-        return num_rows
+        var end = min(self.kv_start_row + Self.BN, self.num_keys)
+        var num_rows = max(
+            min(Int32(end - self.kv_start_row), Int32(Self.BN)), 0
+        )
+        return UInt32(num_rows)
 
     @always_inline
-    fn apply_mask[stage: Int](mut self, not_last_iter: Bool = True):
+    fn apply_mask[stage: Int](mut self, not_last_iter: Bool = False):
         self.scale_p_reg[stage]()
         var num_rows = self.get_num_rows()
         self.mask_apply[stage](self.kv_start_row, num_rows, not_last_iter)
@@ -720,7 +722,8 @@ __extension Attention:
         if is_causal_mask:
             # for causal mask we can exit early depending on the q_tile_idx
             var num_tiles_causal = ceildiv(
-                Int((self.q_tile_idx() + 1) * Self.BM), Int(Self.BN)
+                Int((self.q_tile_idx() + 1) * Self.BM) + self.start_pos,
+                Int(Self.BN),
             )
             var num_tiles = ceildiv(self.num_keys, Int(Self.BN))
             num_tiles_causal = min(Int(num_tiles_causal), Int(num_tiles))

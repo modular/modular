@@ -387,7 +387,7 @@ fn _load_from_lds[
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
         # Offset pointer by 16 bytes for second load
-        var shared_ptr_offset = shared_ptr.offset(16)
+        var shared_ptr_offset = shared_ptr + 16
         var shared_ptr3_hi = __mlir_op.`builtin.unrealized_conversion_cast`[
             _type = __mlir_type.`!llvm.ptr<3>`
         ](shared_ptr_offset)
@@ -553,7 +553,7 @@ fn load_lds_fragment[
                 comptime frag_idx = m_idx * k_splits + k_idx
                 frag_ptr[frag_idx] = rebind[FragElement](
                     _load_from_lds[width=frag_width](
-                        smem_tile.ptr.offset(full_offset)
+                        smem_tile.ptr + full_offset
                     )
                 )
     else:
@@ -568,9 +568,7 @@ fn load_lds_fragment[
                 full_offset = swizzle.value()(full_offset)
 
             frag_ptr[i] = rebind[FragElement](
-                _load_from_lds[width=frag_width](
-                    smem_tile.ptr.offset(full_offset)
-                )
+                _load_from_lds[width=frag_width](smem_tile.ptr + full_offset)
             )
 
 
@@ -1185,7 +1183,6 @@ struct TileBuffers[
     @always_inline
     fn _load_tile_4warp[
         half_data_rows: Int,
-        //,
         which: Int,
     ](
         self,
@@ -2204,7 +2201,7 @@ fn ping_pong_matmul[
             enable_swizzle,
         ].matmul_ping_pong
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             a_device_tensor,
             b_device_tensor,
             c_device_tensor,

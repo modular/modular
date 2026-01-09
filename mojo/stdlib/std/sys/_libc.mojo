@@ -18,7 +18,7 @@ functionality in the rest of the Mojo standard library.
 """
 
 from sys import CompilationTarget
-from sys.ffi import c_char, c_int, c_size_t, get_errno
+from sys.ffi import c_char, c_int, c_size_t, c_pid_t, get_errno
 
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations
@@ -46,7 +46,7 @@ fn exit(status: c_int):
 # stdio.h — input/output operations
 # ===-----------------------------------------------------------------------===#
 
-comptime FILE_ptr = OpaquePointer[MutOrigin.external]
+comptime FILE_ptr = OpaquePointer[MutExternalOrigin]
 
 
 @always_inline
@@ -101,6 +101,42 @@ struct BufferMode:
 
 
 # ===-----------------------------------------------------------------------===#
+# spawn.h - Spawn process
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn posix_spawnp[
+    origin: ImmutOrigin,
+    //,
+](
+    pid: UnsafePointer[mut=True, c_pid_t],
+    file: UnsafePointer[mut=False, c_char],
+    argv: UnsafePointer[UnsafePointer[mut=False, c_char, origin]],
+    envp: UnsafePointer[UnsafePointer[mut=False, c_char, origin]],
+) -> c_int:
+    """[`posix_spawn`](https://pubs.opengroup.org/onlinepubs/007904975/functions/posix_spawn.html)
+    — function creates a new process (child process) from the specified process image.
+
+    Args:
+        pid: UnsafePointer[c_pid_t], dest. for process id if spawned successfully.
+        file: NULL terminated UnsafePointer[c_char] (C string), containing path to executable.
+        argv: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
+        envp: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
+    """
+    # TODO: Implement `const posix_spawn_file_actions_t`, `*file_actions, const posix_spawnattr_t *restrict attrp,`
+    # to allow full control of how process is spawned
+    return external_call["posix_spawnp", c_int](
+        pid,
+        file,
+        OpaquePointer[mut=False, origin](),
+        OpaquePointer[mut=False, origin](),
+        argv,
+        envp,
+    )
+
+
+# ===-----------------------------------------------------------------------===#
 # unistd.h
 # ===-----------------------------------------------------------------------===#
 
@@ -116,7 +152,7 @@ fn execvp[
     //,
 ](
     file: UnsafePointer[mut=False, c_char],
-    argv: UnsafePointer[mut=False, UnsafePointer[c_char, origin]],
+    argv: UnsafePointer[mut=False, UnsafePointer[mut=False, c_char, origin]],
 ) -> c_int:
     """[`execvp`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
     — execute a file.
@@ -176,6 +212,30 @@ fn write(fd: c_int, buf: OpaquePointer[mut=False], nbyte: c_size_t) -> c_int:
 
 
 # ===-----------------------------------------------------------------------===#
+# sys/wait.h - Control over file descriptors
+# ===-----------------------------------------------------------------------===#
+
+
+struct WaitFlags:
+    """Flags for `waitpid`."""
+
+    comptime WNOHANG: c_int = 1
+
+
+# pid_t waitpid(pid_t pid, int *wstatus, int options);
+@always_inline
+fn waitpid(
+    pid: c_pid_t,
+    status: UnsafePointer[mut=True, c_int],
+    options: c_int,
+) -> c_pid_t:
+    """[`waitpid()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/waitpid.html)
+    — Wait on child process to finish executing.
+    """
+    return external_call["waitpid", c_pid_t](pid, status, options)
+
+
+# ===-----------------------------------------------------------------------===#
 # fcntl.h - Control over file descriptors
 # ===-----------------------------------------------------------------------===#
 
@@ -203,15 +263,15 @@ fn fcntl[*types: Intable](fd: c_int, cmd: c_int, *args: *types) -> c_int:
 
 
 @always_inline
-fn dlerror(out result: UnsafePointer[c_char, MutOrigin.external]):
+fn dlerror(out result: UnsafePointer[c_char, MutExternalOrigin]):
     result = external_call["dlerror", type_of(result)]()
 
 
 @always_inline
 fn dlopen(
     filename: UnsafePointer[mut=False, c_char], flags: c_int
-) -> OpaquePointer[MutOrigin.external]:
-    return external_call["dlopen", OpaquePointer[MutOrigin.external]](
+) -> OpaquePointer[MutExternalOrigin]:
+    return external_call["dlopen", OpaquePointer[MutExternalOrigin]](
         filename, flags
     )
 
@@ -228,7 +288,7 @@ fn dlsym[
 ](
     handle: OpaquePointer,
     name: UnsafePointer[mut=False, c_char],
-    out result: UnsafePointer[result_type, MutOrigin.external],
+    out result: UnsafePointer[result_type, MutExternalOrigin],
 ):
     result = external_call["dlsym", type_of(result)](handle, name)
 
@@ -236,7 +296,7 @@ fn dlsym[
 fn realpath(
     path: UnsafePointer[mut=False, c_char],
     resolved_path: UnsafePointer[mut=True, c_char] = {},
-    out result: UnsafePointer[c_char, MutOrigin.external],
+    out result: UnsafePointer[c_char, MutExternalOrigin],
 ):
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a

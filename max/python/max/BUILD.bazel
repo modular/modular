@@ -44,11 +44,12 @@ When you modify a .cpp file in the _core/src directory, you can run
     include_private = True,
     pattern_file = "//max/python/max/_core/internal:patterns.nb",
     pyi_srcs = glob(["**/*.pyi"]),
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/_core_types",
+        "//max/python/max/_mlir",
         "//max/python/max/mlir",
         requirement("numpy"),
+        requirement("typing-extensions"),
     ],
 )
 
@@ -75,6 +76,8 @@ modular_py_library(
         "//max/python/max/pipelines/architectures",
         "//max/python/max/profiler",
         "//max/python/max/serve",
+        "//max/python/max/serve:debug",
+        "//max/python/max/serve/mocks",
         "//max/python/max/support",
         "//max/python/max/torch",
     ],

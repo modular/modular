@@ -157,8 +157,12 @@ fn mha_operand_copy[
     comptime head_size = kv_params.head_size
 
     # Create TMA tiles
-    src_tma = src.create_tma_tile[tile_m, Int(head_size), swizzle_mode](ctx)
-    dst_tma = dst.create_tma_tile[tile_m, Int(head_size), swizzle_mode](ctx)
+    src_tma = src.create_tma_tile[
+        swizzle_mode, BN=tile_m, depth = Int(head_size)
+    ](ctx)
+    dst_tma = dst.create_tma_tile[
+        swizzle_mode, BN=tile_m, depth = Int(head_size)
+    ](ctx)
 
     # Calculate grid dimensions
     # NOTE: In context encoding, we would have grid_x = ceildiv(max_prompt_len, BM)
@@ -177,7 +181,7 @@ fn mha_operand_copy[
     ]
 
     # Launch kernel with block_dim=32
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         src_tma,
         dst_tma,
         src,

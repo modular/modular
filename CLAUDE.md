@@ -69,7 +69,7 @@ pixi task list
 
 ```bash
 # Install the MAX nightly within a Python virtual environment using pip
-pip install modular --index-url https://dl.modular.com/public/nightly/python/simple/
+pip install modular --extra-index-url https://whl.modular.com/nightly/simple/
 
 # Install MAX globally using Pixi, an alternative to the above
 pixi global install -c conda-forge -c https://conda.modular.com/max-nightly

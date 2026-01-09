@@ -122,7 +122,7 @@ Mojo comes with built-in functionality for defining Python extension modules.
 The special stuff happens in the `mojo.importer` module we imported.
 
 If we have a look at the filesystem after Python imports the Mojo code, we'll
-notice there's a new `__mojocache__` directory, with dynamic library (`.so`)
+notice there's a new `__mojocache__` directory, with a dynamic library (`.so`)
 file inside:
 
 ```text
@@ -136,14 +136,15 @@ project
 Loading `mojo.importer` loads our Python Mojo [import
 hook](https://docs.python.org/3/reference/import.html#import-hooks), which
 behind the scenes looks for a `.mojo` (or `.🔥`) file that matches the imported
-module name, and if found, compiles it using [`mojo build --emit shared-lib`](/mojo/cli/build#--emit-file_type) to generate a static library.
-The resulting file is stored in `__mojocache__`, and is rebuilt only when
-it becomes stale (typically, when the Mojo source file changes).
+module name, and if found, compiles it using
+[`mojo build --emit shared-lib`](/mojo/cli/build#--emit-file_type) to generate a
+dynamic library. The resulting file is stored in `__mojocache__`, and is rebuilt
+only when it becomes stale (typically, when the Mojo source file changes).
 
-:::note Clearing `__mojocache__`
-
-The `__mojocache__` directory should only contain derived artifacts. It is always safe to delete the contents of a `__mojocache__` directory. Needed artifacts will simply be rebuilt the next time the Mojo module is imported.
-
+:::note Clearing cached build artifacts
+The `__mojocache__` directory should contain only derived artifacts. It is
+always safe to delete the contents of a `__mojocache__` directory. Needed
+artifacts will simply be rebuilt the next time the Mojo module is imported.
 :::
 
 Now that we've looked at the basics of how Mojo can be used from Python, let's
@@ -201,13 +202,16 @@ in Python. Additional traits are required for specific binding features:
 
 :::
 
-However, merely binding a Mojo type to a Python `type` object isn’t very useful on its own. Next, we’ll tell Python how to interact with our Mojo type—starting with how to construct instances of our Mojo type from within Python.
+However, merely binding a Mojo type to a Python `type` object isn’t very useful
+on its own. Next, we’ll tell Python how to interact with our Mojo type—starting
+with how to construct instances of our Mojo type from within Python.
 
 ### Constructing Mojo objects in Python
 
-Mojo types can be constructed from Python by declaring a Mojo constructor function as a Python-compatible object initializer using
-[`def_py_init()`](/mojo/std/python/bindings/PythonTypeBuilder#def_py_init)
-when you add the type to your module. For example:
+Mojo types can be constructed from Python by declaring a Mojo constructor
+function as a Python-compatible object initializer using
+[`def_py_init()`](/mojo/std/python/bindings/PythonTypeBuilder#def_py_init) when
+you add the type to your module. For example:
 
 ```mojo
 @export
@@ -684,6 +688,6 @@ be lifted over time.
   However, many Mojo standard library types do not yet implement this trait,
   so may require manual conversion logic if needed.
 
-[ConvertibleFromPython]: /mojo/stdlib/python/python_object/ConvertibleFromPython
+[ConvertibleFromPython]: /mojo/std/python/conversions/ConvertibleFromPython/
 
-[downcast_value_ptr]: /mojo/stdlib/python/python_object/PythonObject#downcast_value_ptr
+[downcast_value_ptr]: /mojo/std/python/python_object/PythonObject#downcast_value_ptr

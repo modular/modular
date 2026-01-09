@@ -47,7 +47,7 @@ def test_partial_load_store():
 
     # Test partial load:
     var partial_load_data = partial_simd_load[4](
-        read_buffer.data.offset(1),
+        read_buffer.data + 1,
         1,
         3,
         99,  # idx  # lbound  # rbound  # pad value
@@ -57,7 +57,7 @@ def test_partial_load_store():
 
     # Test partial store:
     partial_simd_store[4](
-        write_buffer.data.offset(1),
+        write_buffer.data + 1,
         2,
         4,
         partial_load_data,  # idx  # lbound  # rbound

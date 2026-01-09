@@ -553,7 +553,7 @@ fn b2b_gemm[
                 var m = Int((thread_offset + dst_idx) // N)
                 var n = Int((thread_offset + dst_idx) % N)
                 if m < Int(M) and n < Int(N):
-                    var vec = d_reg_frag.ptr.offset(src_idx).load[
+                    var vec = (d_reg_frag.ptr + src_idx).load[
                         width=2, alignment = align_of[SIMD[d_type, 2]]()
                     ]()
                     epilogue((m, n), vec)
@@ -603,7 +603,7 @@ fn multistage_b2b_gemm[
             size(Layout(A.layout.shape[1]))
         )
         print("smem_use =", smem_use)
-        ctx.enqueue_function_checked[b2b_fn, b2b_fn](
+        ctx.enqueue_function[b2b_fn, b2b_fn](
             D,
             A,
             B,

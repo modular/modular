@@ -174,17 +174,16 @@ fn to_lowercase(s: StringSlice[mut=False]) -> String:
     Returns:
         A new string where cased letters have been converted to lowercase.
     """
-    var data = s.as_bytes()
-    var result = String(capacity=_estimate_needed_size(len(data)))
+    var result = String(capacity=_estimate_needed_size(len(s)))
     var input_offset = 0
-    while input_offset < len(data):
+    while input_offset < len(s):
         var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            data[input_offset:]
+            s.as_bytes()[input_offset:]
         )
         var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
         if lowercase_char_opt is None:
-            result.write_bytes(
-                data[input_offset : input_offset + rune_and_size[1]]
+            result.write_string(
+                s[input_offset : input_offset + rune_and_size[1]]
             )
         else:
             result += String(lowercase_char_opt.unsafe_value())
@@ -203,12 +202,11 @@ fn to_uppercase(s: StringSlice[mut=False]) -> String:
     Returns:
         A new string where cased letters have been converted to uppercase.
     """
-    var data = s.as_bytes()
-    var result = String(capacity=_estimate_needed_size(len(data)))
+    var result = String(capacity=_estimate_needed_size(len(s)))
     var input_offset = 0
-    while input_offset < len(data):
+    while input_offset < len(s):
         var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            data[input_offset:]
+            s.as_bytes()[input_offset:]
         )
         var uppercase_replacement_opt = _get_uppercase_mapping(rune_and_size[0])
 
@@ -223,8 +221,8 @@ fn to_uppercase(s: StringSlice[mut=False]) -> String:
             for char_idx in range(count):
                 result += String(uppercase_replacement_chars[char_idx])
         else:
-            result.write_bytes(
-                data[input_offset : input_offset + rune_and_size[1]]
+            result.write_string(
+                s[input_offset : input_offset + rune_and_size[1]]
             )
 
         input_offset += rune_and_size[1]

@@ -47,3 +47,4 @@ from .os import (
     link,
 )
 from .pathlike import PathLike
+from .process import Process, Pipe

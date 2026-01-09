@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
-from io.write import Writable, Writer
 from math import align_up, ceildiv
 from sys import (
     has_amd_gpu_accelerator,
@@ -267,7 +266,7 @@ fn gemv_kernel_vector[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn gemv_split_k[
     c_type: DType,
@@ -559,7 +558,7 @@ fn gemv_gpu_dispatch[
             check_bounds=check_bounds,
             pdl_level=pdl_level,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -594,7 +593,7 @@ fn gemv_gpu_dispatch[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     pdl_level=pdl_level,
                 ]
-                ctx.enqueue_function_checked[kernel, kernel](
+                ctx.enqueue_function[kernel, kernel](
                     c_tensor,
                     a_tensor,
                     b_tensor,
@@ -675,7 +674,7 @@ fn gemv_gpu_dispatch[
                         elementwise_lambda_fn=elementwise_lambda_fn,
                         pdl_level=pdl_level,
                     ]
-                    ctx.enqueue_function_checked[kernel, kernel](
+                    ctx.enqueue_function[kernel, kernel](
                         c_tensor,
                         a_tensor,
                         b_tensor_n_major,
@@ -699,7 +698,7 @@ fn gemv_gpu_dispatch[
                         elementwise_lambda_fn=elementwise_lambda_fn,
                         pdl_level=pdl_level,
                     ]
-                    ctx.enqueue_function_checked[kernel, kernel](
+                    ctx.enqueue_function[kernel, kernel](
                         c_tensor,
                         a_tensor,
                         b_tensor_n_major,
@@ -723,7 +722,7 @@ fn gemv_gpu_dispatch[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 pdl_level=pdl_level,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 c_tensor,
                 b_tensor,
                 a_tensor,
@@ -746,7 +745,7 @@ fn gemv_gpu_dispatch[
             pdl_level=pdl_level,
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             c_tensor.to_device_buffer(ctx),
             a_tensor.to_device_buffer(ctx),
             b_tensor.to_device_buffer(ctx),
@@ -769,7 +768,7 @@ fn gemv_gpu_dispatch[
             elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             c_tensor.to_device_buffer(ctx),
             b_tensor.to_device_buffer(ctx),
             a_tensor.to_device_buffer(ctx),
@@ -790,7 +789,7 @@ fn gemv_gpu_dispatch[
             elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             c_tensor.to_device_buffer(ctx),
             a_tensor.to_device_buffer(ctx),
             b_tensor.to_device_buffer(ctx),
@@ -817,7 +816,7 @@ fn gemv_gpu_dispatch[
             transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -967,7 +966,7 @@ fn gemv[
             for i in range(width):
                 func[out_type, 1]((idx[0] + i, 0), value[i])
         else:
-            c_buf.store[width=width](idx[0], value.cast[c_type]())
+            c_buf.store[width=width](IndexList[1](idx[0]), value.cast[c_type]())
 
     @always_inline
     @parameter

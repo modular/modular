@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import align_up, ceildiv
 from os.atomic import Atomic, Consistency
 from sys.info import align_of, simd_width_of, size_of
@@ -62,10 +63,14 @@ comptime EP_DATA_READY_FLAG = 1 << 10
 
 @always_inline
 fn block_memcpy[
-    num_bytes: Int, block_size: Int
+    dst_addr_space: AddressSpace,
+    src_addr_space: AddressSpace,
+    //,
+    num_bytes: Int,
+    block_size: Int,
 ](
-    dst_p: UnsafePointer[mut=True, UInt8],
-    src_p: UnsafePointer[mut=False, UInt8],
+    dst_p: UnsafePointer[mut=True, UInt8, address_space=dst_addr_space],
+    src_p: UnsafePointer[mut=False, UInt8, address_space=src_addr_space],
     thread_idx: UInt,
 ) -> None:
     """
@@ -93,7 +98,7 @@ fn ep_signal_completion[
     my_rank: Int32,
     dst_rank: Int32,
     recv_count_ptrs: InlineArray[
-        UnsafePointer[UInt64, MutOrigin.external], p2p_world_size
+        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
     ],
     signal_offset: Int32,
     signal: UInt64,
@@ -110,7 +115,7 @@ fn ep_signal_completion[
     # If the target device is on the same node, we can directly write to its
     # receive count buffer.
     if my_p2p_world == dst_p2p_world:
-        var dst_p2p_ptr = recv_count_ptrs[dst_p2p_rank].offset(signal_offset)
+        var dst_p2p_ptr = recv_count_ptrs[dst_p2p_rank] + signal_offset
         store_release[scope = Scope.SYSTEM](
             dst_p2p_ptr,
             signal,
@@ -124,7 +129,7 @@ fn ep_signal_completion[
             # in order, the remote device can confirm all the tokens for the
             # expert has been received once the signal operation is received.
             shmem_signal_op(
-                recv_count_ptrs[my_p2p_rank].offset(signal_offset),
+                recv_count_ptrs[my_p2p_rank] + signal_offset,
                 signal,
                 SHMEM_SIGNAL_SET,
                 dst_rank,
@@ -178,17 +183,20 @@ trait TokenFormat(DevicePassable):
     fn copy_token_to_send_buf[
         src_type: DType,
         block_size: UInt,
+        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
-        buf_p: UnsafePointer[mut=True, UInt8],
+        buf_p: UnsafePointer[mut=True, UInt8, address_space=buf_addr_space],
         src_p: UnsafePointer[mut=False, Scalar[src_type]],
     ) -> None:
         "Copy the token to the send buffer. This function needs to be called by all threads in the block."
         ...
 
     @always_inline
-    fn copy_msg_to_output_tensor(
+    fn copy_msg_to_output_tensor[
+        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+    ](
         self,
-        buf_p: UnsafePointer[mut=False, UInt8],
+        buf_p: UnsafePointer[mut=False, UInt8, address_space=buf_addr_space],
         token_index: Int,
     ) -> None:
         "Copy the message to the output tensor. This function needs to be called by all threads in a warp."
@@ -253,8 +261,9 @@ struct BF16TokenFormat[
     fn copy_token_to_send_buf[
         src_type: DType,
         block_size: UInt,
+        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
-        buf_p: UnsafePointer[mut=True, UInt8],
+        buf_p: UnsafePointer[mut=True, UInt8, address_space=buf_addr_space],
         src_p: UnsafePointer[mut=False, Scalar[src_type]],
     ) -> None:
         block_memcpy[Self.hid_dim * size_of[BFloat16](), Int(block_size)](
@@ -264,9 +273,11 @@ struct BF16TokenFormat[
         )
 
     @always_inline
-    fn copy_msg_to_output_tensor(
+    fn copy_msg_to_output_tensor[
+        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+    ](
         self,
-        buf_p: UnsafePointer[mut=False, UInt8],
+        buf_p: UnsafePointer[mut=False, UInt8, address_space=buf_addr_space],
         token_index: Int,
     ) -> None:
         comptime bf16_width = simd_width_of[DType.bfloat16]()
@@ -390,8 +401,9 @@ struct BlockwiseFP8TokenFormat[
     fn copy_token_to_send_buf[
         src_type: DType,
         block_size: UInt,
+        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
-        buf_p: UnsafePointer[mut=True, UInt8],
+        buf_p: UnsafePointer[mut=True, UInt8, address_space=buf_addr_space],
         src_p: UnsafePointer[mut=False, Scalar[src_type]],
     ) -> None:
         comptime src_width = simd_width_of[src_type]()
@@ -438,9 +450,11 @@ struct BlockwiseFP8TokenFormat[
                 )
 
     @always_inline
-    fn copy_msg_to_output_tensor(
+    fn copy_msg_to_output_tensor[
+        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+    ](
         self,
-        buf_p: UnsafePointer[mut=False, UInt8],
+        buf_p: UnsafePointer[mut=False, UInt8, address_space=buf_addr_space],
         token_index: Int,
     ) -> None:
         # First we copy the FP8 quants.
@@ -497,14 +511,14 @@ fn dispatch_kernel[
 ](
     input_tokens: LayoutTensor[input_type, input_tokens_layout, ImmutAnyOrigin],
     topk_ids: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin],
-    send_buf_p: UnsafePointer[UInt8, MutOrigin.external],
+    send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
     recv_buf_ptrs: InlineArray[
-        UnsafePointer[UInt8, MutOrigin.external], p2p_world_size
+        UnsafePointer[UInt8, MutExternalOrigin], p2p_world_size
     ],
     recv_count_ptrs: InlineArray[
-        UnsafePointer[UInt64, MutOrigin.external], p2p_world_size
+        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
     ],
-    atomic_counter: UnsafePointer[Int32, MutOrigin.external],
+    atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
     my_rank: Int32,
 ):
     """
@@ -641,11 +655,11 @@ fn dispatch_kernel[
             block_idx.x - UInt(n_aux_sms), num_tokens, n_comm_sms
         ):
             # First, all threads in the block copy the input token to the send buffer.
-            var curr_send_buf_ptr = send_buf_p.offset(
-                send_buf_layout(RtTuple_2(token_idx, 0))
+            var curr_send_buf_ptr = send_buf_p + send_buf_layout(
+                RtTuple_2(token_idx, 0)
             )
-            var input_tensor_ptr = input_tokens.ptr.offset(
-                input_tokens._offset(token_idx, 0)
+            var input_tensor_ptr = input_tokens.ptr + input_tokens._offset(
+                token_idx, 0
             )
             token_fmt_type.copy_token_to_send_buf[
                 input_type, UInt(num_threads)
@@ -699,14 +713,14 @@ fn dispatch_kernel[
                         )
                     slot_idx = warp.broadcast(slot_idx)
 
-                    var dst_recv_buf_ptr = recv_buf_ptrs[dst_p2p_rank].offset(
-                        recv_buf_layout(
-                            RtTuple_4(
-                                Int(dst_expert_local_idx),
-                                Int(my_rank),
-                                Int(slot_idx),
-                                0,
-                            )
+                    var dst_recv_buf_ptr = recv_buf_ptrs[
+                        dst_p2p_rank
+                    ] + recv_buf_layout(
+                        RtTuple_4(
+                            Int(dst_expert_local_idx),
+                            Int(my_rank),
+                            Int(slot_idx),
+                            0,
                         )
                     )
 
@@ -753,14 +767,12 @@ fn dispatch_kernel[
                         )
                         var dst_recv_buf_ptr = recv_buf_ptrs[
                             my_p2p_rank
-                        ].offset(
-                            recv_buf_layout(
-                                RtTuple_4(
-                                    Int(dst_expert_local_idx),
-                                    Int(my_rank),
-                                    Int(slot_idx),
-                                    0,
-                                )
+                        ] + recv_buf_layout(
+                            RtTuple_4(
+                                Int(dst_expert_local_idx),
+                                Int(my_rank),
+                                Int(slot_idx),
+                                0,
                             )
                         )
                         shmem_put_nbi[kind = SHMEMScope.default](
@@ -791,15 +803,22 @@ fn dispatch_cb_kernel[
     max_tokens_per_rank: Int,
     token_fmt_type: TokenFormat,
     expert_m_padding: Int = 0,
+    fused_shared_expert: Bool = False,
+    shared_expert_input_dtype: DType = DType.bfloat16,
 ](
     format_handler: token_fmt_type,
     row_offsets: LayoutTensor[DType.uint32, row_offsets_layout, MutAnyOrigin],
     expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
     src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
-    recv_buf_p: UnsafePointer[UInt8, MutOrigin.external],
-    recv_count_p: UnsafePointer[UInt64, MutOrigin.external],
-    atomic_counter: UnsafePointer[Int32, MutOrigin.external],
+    recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+    recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
+    atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
     my_rank: Int32,
+    maybe_input_tokens: OptionalReg[
+        LayoutTensor[
+            shared_expert_input_dtype, Layout.row_major[2](), ImmutAnyOrigin
+        ]
+    ],
 ):
     """
     This kernel is called after the `dispatch_kernel` to complete the communication.
@@ -824,6 +843,9 @@ fn dispatch_cb_kernel[
             token encoding scheme.
         expert_m_padding: If non-zero, the number of tokens for each local
             expert will be padded to the next multiple of `expert_m_padding`.
+        fused_shared_expert: Whether to pack the shared expert inputs with the
+            routed experts' inputs.
+        shared_expert_input_dtype: The data type of the shared expert inputs.
 
     Args:
         format_handler: Instance of token_fmt_type that performs token decoding
@@ -843,6 +865,9 @@ fn dispatch_cb_kernel[
             `(n_local_experts, n_ranks)`.
         atomic_counter: The pointer to the atomic counter.
         my_rank: The rank of the current device.
+        maybe_input_tokens: The optional input tokens for the shared experts.
+            If fused_shared_expert is True, this will be used to load the
+            input tokens for the shared experts.
     """
     comptime n_local_experts = n_experts // n_ranks
     comptime n_warps = num_threads // WARP_SIZE
@@ -883,7 +908,26 @@ fn dispatch_cb_kernel[
             1, DType.uint32, address_space = AddressSpace.SHARED
         ]()
         if thread_idx.x == 0:
-            shared_mem[] = 0
+
+            @parameter
+            if fused_shared_expert:
+                var input_tokens = maybe_input_tokens.value()
+                var shared_expert_token_count = input_tokens.dim(0)
+
+                @parameter
+                if expert_m_padding != 0:
+                    shared_expert_token_count = align_up(
+                        Int(shared_expert_token_count), expert_m_padding
+                    )
+
+                # Place the shared expert's inputs before all routed experts' inputs.
+                shared_mem[] = shared_expert_token_count | 0x01000000
+                expert_ids[0] = 0
+                row_offsets[0] = 0
+                row_offsets[1] = shared_expert_token_count
+
+            else:
+                shared_mem[] = 0
         barrier()
 
         var local_expert_id = warp_id()
@@ -907,7 +951,7 @@ fn dispatch_cb_kernel[
             )
 
             if target_rank < UInt(n_ranks):
-                var target_count_ptr = recv_count_p.offset(expert_rank_offset)
+                var target_count_ptr = recv_count_p + expert_rank_offset
                 var token_count = load_acquire[scope = Scope.SYSTEM](
                     target_count_ptr
                 )
@@ -970,7 +1014,12 @@ fn dispatch_cb_kernel[
                 )
 
         if lane_id() == 0:
-            expert_ids[Int(expert_idx)] = local_expert_id
+            # The shared expert's inputs are placed before the routed experts' inputs,
+            comptime expert_id_offset = 1 if fused_shared_expert else 0
+
+            expert_ids[Int(expert_idx)] = (
+                Int(local_expert_id) + expert_id_offset
+            )
             row_offsets[Int(expert_idx) + 1] = (
                 prev_expert_offset + local_expert_token_count
             )
@@ -983,14 +1032,39 @@ fn dispatch_cb_kernel[
     # each work group is responsible for copying tokens for a single expert from
     # a remote rank.
     else:
+        var sm_id = block_idx.x - UInt(n_aux_sms)
+
+        # If we need to pack the shared expert's inputs, we do that before
+        # waiting for the arrival of the routed experts' inputs.
+        @parameter
+        if fused_shared_expert:
+            var smem_buf_p = stack_allocation[
+                format_handler.token_size(),
+                DType.uint8,
+                alignment = simd_width_of[DType.uint8](),
+                address_space = AddressSpace.SHARED,
+            ]()
+            var input_tokens = maybe_input_tokens.value()
+            var shared_expert_token_count = input_tokens.dim(0)
+
+            for token_idx in range(
+                sm_id, shared_expert_token_count, n_comm_sms
+            ):
+                var input_tensor_p = input_tokens.ptr + token_idx * hid_dim
+                format_handler.copy_token_to_send_buf[
+                    shared_expert_input_dtype,
+                    UInt(num_threads),
+                    buf_addr_space = AddressSpace.SHARED,
+                ](smem_buf_p, input_tensor_p)
+                barrier()
+                format_handler.copy_msg_to_output_tensor(smem_buf_p, token_idx)
+
         comptime n_wg_per_sm = ceildiv(n_experts, n_comm_sms)
         comptime wg_size = n_warps // n_wg_per_sm
         comptime wg_threads = wg_size * WARP_SIZE
 
         var wg_idx = warp_id() // UInt(wg_size)
-        var global_wg_idx = (block_idx.x - UInt(n_aux_sms)) * UInt(
-            n_wg_per_sm
-        ) + wg_idx
+        var global_wg_idx = sm_id * UInt(n_wg_per_sm) + wg_idx
         var warp_id_in_wg = warp_id() % UInt(wg_size)
 
         if wg_idx >= UInt(n_wg_per_sm) or global_wg_idx >= UInt(n_experts):
@@ -1004,7 +1078,7 @@ fn dispatch_cb_kernel[
 
         # Wait until the auxiliary SM has signaled that the data is ready, and
         # provided the offset where the tokens end in the output tensor.
-        var offset_ptr = atomic_counter.offset(expert_rank_offset * 2)
+        var offset_ptr = atomic_counter + expert_rank_offset * 2
         var output_offset = load_acquire[scope = Scope.GPU](offset_ptr)
         while output_offset < EP_DATA_READY_FLAG:
             output_offset = load_acquire[scope = Scope.GPU](offset_ptr)
@@ -1015,14 +1089,12 @@ fn dispatch_cb_kernel[
 
         for token_idx in range(warp_id_in_wg, token_count, wg_size):
             var token_pos = Int(token_idx + output_offset)
-            var recv_buf_ptr = recv_buf_p.offset(
-                recv_buf_layout(
-                    RtTuple_4(
-                        Int(local_expert_id),
-                        Int(target_rank),
-                        Int(token_idx),
-                        0,
-                    )
+            var recv_buf_ptr = recv_buf_p + recv_buf_layout(
+                RtTuple_4(
+                    Int(local_expert_id),
+                    Int(target_rank),
+                    Int(token_idx),
+                    0,
                 )
             )
 
@@ -1072,18 +1144,22 @@ fn combine_kernel[
     max_tokens_per_rank: Int,
     p2p_world_size: Int,
     use_shmem: Bool = True,
+    fused_shared_expert: Bool = False,
 ](
     input_tokens: LayoutTensor[input_type, input_tokens_layout, MutAnyOrigin],
     src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
-    send_buf_p: UnsafePointer[UInt8, MutOrigin.external],
+    send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
     recv_buf_ptrs: InlineArray[
-        UnsafePointer[UInt8, MutOrigin.external], p2p_world_size
+        UnsafePointer[UInt8, MutExternalOrigin], p2p_world_size
     ],
     recv_count_ptrs: InlineArray[
-        UnsafePointer[UInt64, MutOrigin.external], p2p_world_size
+        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
     ],
-    atomic_counter: UnsafePointer[Int32, MutOrigin.external],
+    atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
     my_rank: Int32,
+    maybe_output_tokens: OptionalReg[
+        LayoutTensor[input_type, Layout.row_major[2](), MutAnyOrigin]
+    ],
 ):
     """
     Send tokens to the original rank based on the src_info tensor.
@@ -1104,6 +1180,7 @@ fn combine_kernel[
         max_tokens_per_rank: The maximum number of tokens per rank.
         p2p_world_size: Size of a High-speed GPU interconnect group.
         use_shmem: Whether to use the SHMEM API for the communication.
+        fused_shared_expert: Whether to filter out the shared expert's outputs.
 
     Args:
         input_tokens: The tokens to be sent back to the original rank.
@@ -1123,6 +1200,9 @@ fn combine_kernel[
             `(n_local_experts, n_ranks)`.
         atomic_counter: The pointer to the atomic counter.
         my_rank: The rank of the current device.
+        maybe_output_tokens: The optional output for the shared experts.
+            If fused_shared_expert is True, this will be used to store the
+            output tokens for the shared experts.
     """
     comptime n_local_experts = n_experts // n_ranks
     comptime n_warps = num_threads // WARP_SIZE
@@ -1193,22 +1273,22 @@ fn combine_kernel[
         # If the target device is on the same node, we can directly copy the tokens
         # to the receive buffer, skipping the send buffer.
         if Int32(dst_p2p_world) == my_p2p_world:
-            for token_idx in range(token_start + warp_id(), token_end, n_warps):
+            for token_idx in range(token_start, token_end):
                 var src_token_info = src_info.aligned_load[2](Int(token_idx), 0)
                 var src_idx = src_token_info[0]
                 var src_topk_idx = src_token_info[1]
 
-                var dst_recv_buf_ptr = recv_buf_ptrs[dst_p2p_rank].offset(
-                    recv_buf_layout(
-                        RtTuple_3(Int(src_idx), Int(src_topk_idx), 0)
-                    )
+                var dst_recv_buf_ptr = recv_buf_ptrs[
+                    dst_p2p_rank
+                ] + recv_buf_layout(
+                    RtTuple_3(Int(src_idx), Int(src_topk_idx), 0)
                 )
-                block_memcpy[hid_dim * size_of[input_type](), WARP_SIZE](
+                block_memcpy[hid_dim * size_of[input_type](), num_threads](
                     dst_recv_buf_ptr,
                     input_tokens.ptr_at_offset(
                         IndexList[2](Int(token_idx), 0)
                     ).bitcast[UInt8](),
-                    lane_id(),
+                    UInt(tid),
                 )
 
         # If the target device is on a different node, we need to send the tokens
@@ -1227,8 +1307,8 @@ fn combine_kernel[
                 for round_i in range(n_rounds):
                     var token_idx = token_start + round_i * n_warps + warp_id()
                     if token_idx < token_end:
-                        var curr_send_buf_ptr = send_buf_p.offset(
-                            send_buf_layout(RtTuple_2(Int(token_idx), 0))
+                        var curr_send_buf_ptr = send_buf_p + send_buf_layout(
+                            RtTuple_2(Int(token_idx), 0)
                         )
 
                         # To use SHMEM API, we need to copy the tokens to the
@@ -1259,17 +1339,14 @@ fn combine_kernel[
                             var src_idx = src_token_info[0]
                             var src_topk_idx = src_token_info[1]
 
-                            var curr_send_buf_ptr = send_buf_p.offset(
-                                send_buf_layout(RtTuple_2(Int(token_idx), 0))
+                            var curr_send_buf_ptr = (
+                                send_buf_p
+                                + send_buf_layout(RtTuple_2(Int(token_idx), 0))
                             )
                             var dst_recv_buf_ptr = recv_buf_ptrs[
                                 my_p2p_rank
-                            ].offset(
-                                recv_buf_layout(
-                                    RtTuple_3(
-                                        Int(src_idx), Int(src_topk_idx), 0
-                                    )
-                                )
+                            ] + recv_buf_layout(
+                                RtTuple_3(Int(src_idx), Int(src_topk_idx), 0)
                             )
 
                             shmem_put_nbi[kind = SHMEMScope.default](
@@ -1303,6 +1380,21 @@ fn combine_kernel[
                     width=2, alignment = align_of[SIMD[DType.int32, 2]]()
                 ](expert_rank_offset * 2, 0)
 
+    @parameter
+    if fused_shared_expert:
+        var output_tokens = maybe_output_tokens.value()
+        var shared_expert_token_count = output_tokens.dim(0)
+
+        for token_idx in range(sm_id, shared_expert_token_count, n_sms):
+            var output_tokens_p = output_tokens.ptr + token_idx * hid_dim
+            block_memcpy[hid_dim * size_of[input_type](), num_threads](
+                output_tokens_p.bitcast[UInt8](),
+                input_tokens.ptr_at_offset(
+                    IndexList[2](Int(token_idx), 0)
+                ).bitcast[UInt8](),
+                UInt(tid),
+            )
+
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
@@ -1322,9 +1414,9 @@ fn combine_cb_kernel[
     output_tokens: LayoutTensor[
         output_type, output_tokens_layout, MutAnyOrigin
     ],
-    recv_buf_p: UnsafePointer[UInt8, MutOrigin.external],
-    recv_count_p: UnsafePointer[UInt64, MutOrigin.external],
-    atomic_counter: UnsafePointer[Int32, MutOrigin.external],
+    recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+    recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
+    atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
     my_rank: Int32,
 ):
     """
@@ -1397,7 +1489,7 @@ fn combine_cb_kernel[
     # remote ranks.
     if sm_id < n_aux_sms:
         if tid < n_experts:
-            var target_count_ptr = recv_count_p.offset(tid)
+            var target_count_ptr = recv_count_p + tid
             while (
                 load_acquire[scope = Scope.SYSTEM](target_count_ptr)
                 == UInt64.MAX_FINITE
@@ -1416,7 +1508,7 @@ fn combine_cb_kernel[
     else:
         if tid == 0:
             while (
-                load_acquire[scope = Scope.GPU](atomic_counter.offset(sm_id))
+                load_acquire[scope = Scope.GPU](atomic_counter + sm_id)
                 != DATA_READY_FLAG
             ):
                 pass
@@ -1428,14 +1520,14 @@ fn combine_cb_kernel[
         for token_idx in range(sm_id - n_aux_sms, num_tokens, n_red_sms):
             # The output tensor is of shape `(num_tokens, top_k, hid_dim)`.
             var output_token_tensor = output_tokens.slice[:, :, (1, 2)](
-                token_idx
+                IndexList[1](token_idx)
             )
 
             # Copy the received tokens from all the experts.
             @parameter
             for topk_id in range(top_k):
-                var recv_buf_ptr = recv_buf_p.offset(
-                    recv_buf_layout(RtTuple_3(token_idx, topk_id, 0))
+                var recv_buf_ptr = recv_buf_p + recv_buf_layout(
+                    RtTuple_3(token_idx, topk_id, 0)
                 )
 
                 for i in range(tid, hid_dim // dst_simd_width, num_threads):

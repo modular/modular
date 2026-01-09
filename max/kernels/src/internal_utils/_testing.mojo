@@ -167,3 +167,19 @@ fn assert_with_measure[
         location=location.or_else(__call_location()),
         threshold=threshold,
     )
+
+
+@always_inline
+fn pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
+    # Returns (rtol, atol) modeled after PyTorch defaults.
+    @parameter
+    if dtype == DType.float16:
+        return (1e-3, 1e-5)
+    elif dtype == DType.bfloat16:
+        return (1.6e-2, 1e-5)
+    elif dtype == DType.float32:
+        return (1.3e-6, 1e-5)
+    elif dtype == DType.float64:
+        return (1e-7, 1e-7)
+    else:
+        return (0.0, 0.0)

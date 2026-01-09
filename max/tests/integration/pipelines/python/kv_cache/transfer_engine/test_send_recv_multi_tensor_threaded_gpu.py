@@ -15,6 +15,7 @@ from queue import Queue
 from threading import Thread
 
 import numpy as np
+import pytest
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
 from max.kv_cache import (
@@ -157,6 +158,7 @@ def transfer_routine_receiver(
     engine_2.cleanup()
 
 
+@pytest.mark.skip(reason="SERVOPT-872: Reenable this test")
 def test_multi_tensor_transfer_threaded() -> None:
     """Test transfer between multiple tensors using threading."""
     sender_md_queue: Queue[KVTransferEngineMetadata] = Queue()

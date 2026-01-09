@@ -133,7 +133,7 @@ struct IntArray(ImplicitlyCopyable):
     data structures, optimized for high-performance tensor operations.
     """
 
-    var _data: UnsafePointer[Int, MutOrigin.external]
+    var _data: UnsafePointer[Int, MutExternalOrigin]
     var _size: Int
 
     @always_inline("nodebug")
@@ -247,7 +247,7 @@ struct IntArray(ImplicitlyCopyable):
             source: Source array to copy from.
             size: Number of elements to copy.
         """
-        memcpy(dest=self._data.offset(offset), src=source._data, count=size)
+        memcpy(dest=self._data + offset, src=source._data, count=size)
 
     @always_inline("nodebug")
     fn copy_from(
@@ -262,8 +262,8 @@ struct IntArray(ImplicitlyCopyable):
             size: Number of elements to copy.
         """
         memcpy(
-            dest=self._data.offset(dst_offset),
-            src=source._data.offset(src_offset),
+            dest=self._data + dst_offset,
+            src=source._data + src_offset,
             count=size,
         )
 

@@ -201,11 +201,9 @@ fn _memcpy_impl(
             dest_data.bitcast[UInt64]().store[alignment=1](
                 0, src_data.bitcast[UInt64]().load[alignment=1](0)
             )
-            dest_data.offset(n - ui64_size).bitcast[UInt64]().store[
-                alignment=1
-            ](
+            (dest_data + n - ui64_size).bitcast[UInt64]().store[alignment=1](
                 0,
-                src_data.offset(n - ui64_size)
+                (src_data + n - ui64_size)
                 .bitcast[UInt64]()
                 .load[alignment=1](0),
             )
@@ -215,11 +213,9 @@ fn _memcpy_impl(
         dest_data.bitcast[UInt32]().store[alignment=1](
             0, src_data.bitcast[UInt32]().load[alignment=1](0)
         )
-        dest_data.offset(n - ui32_size).bitcast[UInt32]().store[alignment=1](
+        (dest_data + n - ui32_size).bitcast[UInt32]().store[alignment=1](
             0,
-            src_data.offset(n - ui32_size)
-            .bitcast[UInt32]()
-            .load[alignment=1](0),
+            (src_data + n - ui32_size).bitcast[UInt32]().load[alignment=1](0),
         )
         return
 
@@ -370,7 +366,7 @@ fn stack_allocation[
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]() -> UnsafePointer[
     Scalar[dtype],
-    MutOrigin.external,
+    MutExternalOrigin,
     address_space=address_space,
 ]:
     """Allocates data buffer space on the stack given a data type and number of
@@ -400,7 +396,7 @@ fn stack_allocation[
     name: Optional[StaticString] = None,
     alignment: Int = align_of[type](),
     address_space: AddressSpace = AddressSpace.GENERIC,
-]() -> UnsafePointer[type, MutOrigin.external, address_space=address_space]:
+]() -> UnsafePointer[type, MutExternalOrigin, address_space=address_space]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
 
@@ -428,7 +424,7 @@ fn stack_allocation[
                 count = count._mlir_value,
                 memoryType = __mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
                 _type = UnsafePointer[
-                    type, MutOrigin.external, address_space=address_space
+                    type, MutExternalOrigin, address_space=address_space
                 ]._mlir_type,
                 alignment = alignment._mlir_value,
             ]()
@@ -440,7 +436,7 @@ fn stack_allocation[
                 name = _get_kgen_string[global_name](),
                 count = count._mlir_value,
                 _type = UnsafePointer[
-                    type, MutOrigin.external, address_space=address_space
+                    type, MutExternalOrigin, address_space=address_space
                 ]._mlir_type,
                 alignment = alignment._mlir_value,
             ]()
@@ -451,12 +447,12 @@ fn stack_allocation[
         elif address_space == AddressSpace.LOCAL:
             var generic_ptr = __mlir_op.`pop.stack_allocation`[
                 count = count._mlir_value,
-                _type = UnsafePointer[type, MutOrigin.external]._mlir_type,
+                _type = UnsafePointer[type, MutExternalOrigin]._mlir_type,
                 alignment = alignment._mlir_value,
             ]()
             return __mlir_op.`pop.pointer.bitcast`[
                 _type = UnsafePointer[
-                    type, MutOrigin.external, address_space=address_space
+                    type, MutExternalOrigin, address_space=address_space
                 ]._mlir_type
             ](generic_ptr)
 
@@ -464,7 +460,7 @@ fn stack_allocation[
     return __mlir_op.`pop.stack_allocation`[
         count = count._mlir_value,
         _type = UnsafePointer[
-            type, MutOrigin.external, address_space=address_space
+            type, MutExternalOrigin, address_space=address_space
         ]._mlir_type,
         alignment = alignment._mlir_value,
     ]()
@@ -486,7 +482,7 @@ fn _malloc[
     alignment: Int = align_of[type](),
     out res: UnsafePointer[
         type,
-        MutOrigin.external,
+        MutExternalOrigin,
         address_space = AddressSpace.GENERIC,
     ],
 ):
@@ -503,7 +499,7 @@ fn _malloc[
 
         comptime U = UnsafePointer[
             NoneType,
-            MutOrigin.external,
+            MutExternalOrigin,
             address_space = AddressSpace.GENERIC,
         ]
         var ptr = external_call["malloc", U](size)

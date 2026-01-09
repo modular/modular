@@ -18,6 +18,7 @@ dependencies = [
   "docutils",
   "einops",
   "einx",
+  "exceptiongroup",
   "expandvars",
   "fastapi[standard]>=0.115.3", # >=0.115.3 is required for resolving CVE-2024-47874
   "fire ", # For mistral-evals.
@@ -98,7 +99,6 @@ dependencies = [
   "google-auth==2.29.0",
   "google-cloud-bigquery==3.22.0",
   "pandas>=1.4.2",
-  "pyasn1",
   "requests>=2.28.0",
   "rich>=12.4.4",
   "scipy>=1.10.1",

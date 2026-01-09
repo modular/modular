@@ -2573,7 +2573,7 @@ struct SIMD[dtype: DType, size: Int](
     # TODO: move to the utils directory - see https://github.com/modular/modular/issues/3477
     @always_inline
     fn _dynamic_shuffle[
-        mask_size: Int, //
+        mask_size: Int
     ](self, mask: SIMD[DType.uint8, mask_size]) -> SIMD[Self.dtype, mask_size]:
         """Shuffles (also called blend) the values of the current vector.
 
@@ -3838,17 +3838,56 @@ fn _convert_float8_ue8m0_to_f32[
         dtype == DType.float8_e8m0fnu and target == DType.float32
     ), "this conversion is only supported for float8_e8m0fnu -> float32."
 
-    var exp = val.to_bits[DType.uint8]()
-    var f32_bits = exp.cast[DType.uint32]() << 23
+    @parameter
+    if is_nvidia_gpu() and _is_sm_100x_or_newer():
+        comptime asm_prefix = "cvt.rn.bf16x2.ue8m0x2"
 
-    # 0x00 represents 2**-127, which is a float32 subnormal.
-    f32_bits = exp.eq(0).select(SIMD[DType.uint32, size](0x00400000), f32_bits)
-    # 0xFF is NaN for this format; avoid creating +inf in float32.
-    f32_bits = exp.eq(0xFF).select(
-        SIMD[DType.uint32, size](0x7FFFFFFF), f32_bits
-    )
+        @parameter
+        if size > 1:
+            var res = SIMD[target, size]()
 
-    return SIMD[target, size](from_bits=f32_bits)
+            @parameter
+            for i in range(0, size, 2):
+                var ue8m0x2 = SIMD[DType.uint8, 2](
+                    bitcast[DType.uint8, 1](val[i]),
+                    bitcast[DType.uint8, 1](val[i + 1]),
+                )
+                var bf16x2 = inlined_assembly[
+                    asm_prefix + " $0, $1;",
+                    UInt32,
+                    constraints="=r,h",
+                    has_side_effect=False,
+                ](bitcast[DType.uint16, 1](ue8m0x2))
+                var f32x2 = bitcast[DType.bfloat16, 2](bf16x2).cast[target]()
+                res = res.insert[offset=i](f32x2)
+            return res
+        else:
+            var ue8m0x2 = SIMD[DType.uint8, 2](
+                bitcast[DType.uint8, 1](val[0]), UInt8(0)
+            )
+            var bf16x2 = inlined_assembly[
+                asm_prefix + " $0, $1;",
+                UInt32,
+                constraints="=r,h",
+                has_side_effect=False,
+            ](bitcast[DType.uint16, 1](ue8m0x2))
+            var f32x2 = bitcast[DType.bfloat16, 2](bf16x2).cast[target]()
+            return f32x2[0]
+
+    else:
+        var exp = val.to_bits[DType.uint8]()
+        var f32_bits = exp.cast[DType.uint32]() << 23
+
+        # 0x00 represents 2**-127, which is a float32 subnormal.
+        f32_bits = exp.eq(0).select(
+            SIMD[DType.uint32, size](0x00400000), f32_bits
+        )
+        # 0xFF is NaN for this format; avoid creating +inf in float32.
+        f32_bits = exp.eq(0xFF).select(
+            SIMD[DType.uint32, size](0x7FFFFFFF), f32_bits
+        )
+
+        return SIMD[target, size](from_bits=f32_bits)
 
 
 # ===----------------------------------------------------------------------=== #

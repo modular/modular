@@ -108,6 +108,7 @@ modular_py_binary(
     srcs = ["verify_pipelines.py"],
     data = [
         "//max/tests/integration/pipelines/python/test_common",
+        "@nvshmem_prebuilt//:host",
     ],
     env = {
         # PIPELINES_TESTDATA is required by the Llama3 scripts.
@@ -123,6 +124,25 @@ modular_py_binary(
         "//max/tests/integration/tools:generate_llm_logits",
         requirement("click"),
         "@rules_python//python/runfiles",
+    ],
+)
+
+modular_py_binary(
+    name = "check_logit_flakes",
+    testonly = True,
+    srcs = ["check_logit_flakes.py"],
+    imports = ["."],
+    deps = [
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_check_logit_flakes",
+    size = "small",
+    srcs = ["test_check_logit_flakes.py"],
+    deps = [
+        ":check_logit_flakes",
     ],
 )
 

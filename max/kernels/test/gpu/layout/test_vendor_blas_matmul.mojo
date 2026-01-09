@@ -101,7 +101,7 @@ fn test_matmul[
         BLOCK_DIM,
         transpose_b=True,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c_tensor_ref,
         a_tensor,
         b_tensor,

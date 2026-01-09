@@ -127,7 +127,7 @@ fn matmul_ukern[
         # to remain in the l1 cache, but freely evict `B`.
         # Repeatedly re-touching the cachelines of `A` helps us achieve this.
         var Atmp: UnsafePointer[Scalar[elt]] = Ao
-        Ao = Ao.offset(1)
+        Ao = Ao + 1
         for _ in range(kf):
 
             @parameter
@@ -151,8 +151,8 @@ fn matmul_ukern[
                         acc[n + m * nr] = fma(
                             Abroadcast, Bloads[n], acc[n + m * nr]
                         )
-                Atmp = Atmp.offset(mr * Astride)
-                Bo = Bo.offset(nr * width)
+                Atmp = Atmp + mr * Astride
+                Bo = Bo + nr * width
     if inc:
         # Note, `C` would have spilled from the L1 cache by the time
         # we load it again had we loaded before the reduction loop.
@@ -306,9 +306,9 @@ fn matmul[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pck, pak, pbk, kc != 0
                         )
-                        pbk = pbk.offset(WNr * Kc)
-                        pck = pck.offset(Mr * WNr)
-                    pak = pak.offset(Mr * Kc)
+                        pbk = pbk + WNr * Kc
+                        pck = pck + Mr * WNr
+                    pak = pak + Mr * Kc
                 pb = pbk
             pc = pck
         pa = pak
@@ -718,9 +718,9 @@ fn matmulb2b[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pabk, pak, pbk, kc != 0
                         )
-                        pbk = pbk.offset(WNr * Kc)
-                        pabk = pabk.offset(Mr * WNr)
-                    pak = pak.offset(Mr * Kc)
+                        pbk = pbk + WNr * Kc
+                        pabk = pabk + Mr * WNr
+                    pak = pak + Mr * Kc
                 pb = pbk
             pdk = pd
             for _ in range(
@@ -775,9 +775,9 @@ fn matmulb2b[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pdk, pabk, pck, lc != 0
                         )
-                        pck = pck.offset(WNr * Kc)
-                        pdk = pdk.offset(Mr * WNr)
-                    pabk = pabk.offset(Mr * Kc)
+                        pck = pck + WNr * Kc
+                        pdk = pdk + Mr * WNr
+                    pabk = pabk + Mr * Kc
                 pc = pck
         pa = pak
         pd = pdk

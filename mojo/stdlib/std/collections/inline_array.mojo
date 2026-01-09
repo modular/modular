@@ -38,6 +38,7 @@ from collections._index_normalization import normalize_index
 from builtin.device_passable import DevicePassable
 from builtin.rebind import downcast
 from builtin.constrained import _constrained_conforms_to
+from builtin.repr import repr
 from compile import get_type_name
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 
@@ -59,10 +60,15 @@ fn _inline_array_construction_checks[size: Int]():
     ), "number of elements in `InlineArray` must be >= 0"
 
 
-struct InlineArray[
-    ElementType: Copyable,
-    size: Int,
-](Defaultable, DevicePassable, ImplicitlyCopyable, Sized):
+struct InlineArray[ElementType: Copyable, size: Int,](
+    Defaultable,
+    DevicePassable,
+    ImplicitlyCopyable,
+    Representable,
+    Sized,
+    Stringable,
+    Writable,
+):
     """A fixed-size sequence of homogeneous elements where size is a constant
     expression.
 
@@ -268,7 +274,7 @@ struct InlineArray[
             ptr.init_pointee_copy(fill)
             ptr += 1
         debug_assert(
-            ptr == self.unsafe_ptr().offset(Self.size),
+            ptr == self.unsafe_ptr() + Self.size,
             "error during `InlineArray` initialization , please file a bug",
             " report.",
         )
@@ -630,3 +636,60 @@ struct InlineArray[
             if self[i] == value:
                 return True
         return False
+
+    # ===-------------------------------------------------------------------===#
+    # String representation
+    # ===-------------------------------------------------------------------===#
+
+    @always_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the InlineArray representation to a Writer.
+
+        Constraints:
+            ElementType must conform to `Representable`.
+
+        Args:
+            writer: The object to write to.
+        """
+        _constrained_conforms_to[
+            conforms_to(Self.ElementType, Representable),
+            Parent=Self,
+            Element = Self.ElementType,
+            ParentConformsTo="Stringable",
+            ElementConformsTo="Representable",
+        ]()
+
+        writer.write("InlineArray[")
+        writer.write(get_type_name[Self.ElementType]())
+        writer.write(", ")
+        writer.write(String(Self.size))
+        writer.write("](")
+
+        for i in range(Self.size):
+            ref element = self.unsafe_get(i)
+            ref representable_element = trait_downcast[Representable](element)
+            writer.write(repr(representable_element))
+            if i < Self.size - 1:
+                writer.write(", ")
+
+        writer.write(")")
+
+    @always_inline
+    fn __str__(self) -> String:
+        """Returns a string representation of the InlineArray.
+
+        Returns:
+            A string representation of the array.
+        """
+        output = String()
+        self.write_to(output)
+        return output^
+
+    @always_inline
+    fn __repr__(self) -> String:
+        """Returns a string representation of the InlineArray.
+
+        Returns:
+            A string representation of the array.
+        """
+        return self.__str__()

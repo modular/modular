@@ -28,7 +28,6 @@ from gpu import (
     block_idx,
     grid_dim,
     thread_idx,
-    warp_id as get_warp_id,
 )
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host.info import is_gpu
@@ -723,7 +722,7 @@ fn moe_create_indices[
             expected_count=expected_count,
         ]
 
-        cuda_ctx.enqueue_function_checked[kernel, kernel](
+        cuda_ctx.enqueue_function[kernel, kernel](
             token_expert_order,
             lock,
             expert_start_indices,
@@ -804,7 +803,7 @@ fn group_limited_router_kernel[
     var grid_size = grid_dim.x
     var bid = block_idx.x
     var tid = Int(thread_idx.x)
-    var warp_id = get_warp_id()
+    var warp_id = tid // WARP_SIZE
 
     var num_tokens = expert_scores.dim(0)
 
@@ -1026,7 +1025,7 @@ fn router_group_limited[
             num_threads,
         ]
 
-        gpu_ctx.enqueue_function_checked[kernel, kernel](
+        gpu_ctx.enqueue_function[kernel, kernel](
             expert_indices,
             expert_weights,
             expert_scores,

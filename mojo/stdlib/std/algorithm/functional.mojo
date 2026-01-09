@@ -1627,7 +1627,7 @@ fn _elementwise_impl_cpu_1d[
 
         @always_inline
         fn blocking_task_fun[simd_width: Int](idx: Int) unified {read}:
-            func[simd_width, rank](idx)
+            func[simd_width, rank](IndexList[rank](idx))
 
         vectorize[simd_width, unroll_factor=unroll_factor](
             problem_size, blocking_task_fun
@@ -1647,7 +1647,7 @@ fn _elementwise_impl_cpu_1d[
         @always_inline
         fn func_wrapper[simd_width: Int](idx: Int) unified {read start_offset}:
             var offset = start_offset + idx
-            func[simd_width, rank](offset)
+            func[simd_width, rank](IndexList[rank](offset))
 
         vectorize[simd_width, unroll_factor=unroll_factor](len, func_wrapper)
 
@@ -1815,7 +1815,7 @@ fn _elementwise_impl_gpu[
     )
     @parameter
     @__llvm_metadata(
-        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](block_size)
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
     )
     fn _elementwise_gpu_kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
         # process the packed region
@@ -1874,7 +1874,7 @@ fn _elementwise_impl_gpu[
         comptime kernel = _elementwise_gpu_kernel[
             block_size = UInt(block_size), handle_uneven_simd=False
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
             block_dim=Int(block_size),
             attributes=pdl_launch_attributes(),
@@ -1883,7 +1883,7 @@ fn _elementwise_impl_gpu[
         comptime kernel = _elementwise_gpu_kernel[
             block_size = UInt(block_size), handle_uneven_simd=True
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
             block_dim=Int(block_size),
             attributes=pdl_launch_attributes(),
@@ -2245,6 +2245,6 @@ fn _stencil_impl_gpu[
     )
 
     # Compile and launch kernel
-    ctx.enqueue_function_checked[stencil_kernel, stencil_kernel](
+    ctx.enqueue_function[stencil_kernel, stencil_kernel](
         grid_dim=grid_dim, block_dim=block_dim
     )

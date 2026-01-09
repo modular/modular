@@ -18,7 +18,7 @@ import torch
 from max.driver import Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
+from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
 from max.nn.kernels import grouped_matmul_ragged
 from test_common.graph_utils import is_b100_b200, is_h100_h200
@@ -34,6 +34,8 @@ def test_ep_comm(n_devices: int) -> None:
         "Devices are not enough to run EP test"
     )
 
+    top_k = 8
+
     # Initialize the device-contexts
     devices = [Accelerator(id) for id in range(n_devices)]
     session = InferenceSession(devices=devices)
@@ -42,7 +44,7 @@ def test_ep_comm(n_devices: int) -> None:
         dispatch_dtype=DType.bfloat16,
         combine_dtype=DType.bfloat16,
         hidden_size=7168,
-        top_k=8,
+        top_k=top_k,
         n_experts=min(256, n_devices * 32),
         max_tokens_per_rank=128,
         n_gpus_per_node=n_devices,
@@ -160,7 +162,13 @@ def test_ep_comm(n_devices: int) -> None:
                 )
 
                 ep_manager.ep_combine(expert_outputs, dev_idx)
-                outputs.append(ep_manager.ep_combine_cb(dev_idx))
+                one = ops.constant(
+                    1.0, dtype=DType.float32, device=DeviceRef.GPU(dev_idx)
+                )
+                router_weight = ops.broadcast_to(
+                    one, (xs[dev_idx].shape[0], top_k)
+                )
+                outputs.append(ep_manager.ep_combine_cb(router_weight, dev_idx))
 
             graph.output(*outputs)
 
@@ -180,8 +188,12 @@ def test_ep_comm(n_devices: int) -> None:
             all_topk_ids_torch[dev_i]
         ]
         ref_output = (
-            top_k_expert_fingerprints[:, :, None]
-            * per_device_inputs_torch[dev_i][:, None, :]
+            (
+                top_k_expert_fingerprints[:, :, None]
+                * per_device_inputs_torch[dev_i][:, None, :]
+            )
+            .to(torch.float32)
+            .sum(dim=1)
         )
         max_output = results[dev_i]
         torch.testing.assert_close(

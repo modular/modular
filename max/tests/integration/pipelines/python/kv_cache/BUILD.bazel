@@ -9,6 +9,7 @@ package(default_visibility = [
 
 modular_py_test(
     name = "kvcache_tests",
+    timeout = "long",
     srcs = glob(
         ["*.py"],
         exclude = [

@@ -99,6 +99,34 @@ fn test_impl_init_shrink() raises:
     assert_equal(q._capacity, q.default_capacity)
 
 
+fn test_impl_shrink_realloc_empty_deque() raises:
+    # Regression test for issue #5635:
+    # When capacity > min_capacity and deque is empty (head == tail),
+    # _realloc must recognize this as empty (not full) and shrink correctly.
+    q = Deque[Int](capacity=8, min_capacity=4)
+
+    # Fill to trigger growth: capacity 8 -> 16
+    for i in range(8):
+        q.append(i)
+    assert_equal(q._capacity, 16)
+
+    # Empty the deque
+    for _ in range(8):
+        _ = q.pop()
+    assert_equal(len(q), 0)
+
+    # Now capacity=16 > min_capacity=4, and deque is empty.
+    # Shrink should work correctly, not copy garbage.
+    assert_equal(q._capacity, 4)
+    assert_equal(q._head, 0)
+    assert_equal(q._tail, 0)
+
+    # Verify deque still works after shrink
+    q.append(42)
+    assert_equal(len(q), 1)
+    assert_equal(q[0], 42)
+
+
 fn test_impl_init_list() raises:
     q = Deque(elements=Optional([Int(0), 1, 2]))
     assert_equal(q._head, 0)
@@ -1114,6 +1142,29 @@ def test_deque_literal():
 def test_repr_wrap():
     var s = Deque[StaticString]("a", "b", "c")
     assert_equal(repr(s), "Deque('a', 'b', 'c')")
+
+
+def test_write_to():
+    """Test Writable trait implementation."""
+    var deque = Deque[Int](10, 20, 30)
+    var output = String()
+    deque.write_to(output)
+
+    assert_equal(output, "Deque(10, 20, 30)")
+
+    # Test with different types
+    var string_deque = Deque[String]("hello", "world")
+    var string_output = String()
+    string_deque.write_to(string_output)
+
+    assert_equal(string_output, "Deque('hello', 'world')")
+
+    # Test empty deque
+    var empty_deque = Deque[Int]()
+    var empty_output = String()
+    empty_deque.write_to(empty_output)
+
+    assert_equal(empty_output, "Deque()")
 
 
 # ===-------------------------------------------------------------------===#

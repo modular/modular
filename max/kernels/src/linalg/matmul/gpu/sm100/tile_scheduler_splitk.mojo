@@ -166,7 +166,7 @@ struct TileScheduler[
 
     @always_inline
     fn output_tile_index(self, work_info: WorkInfo) -> UInt32:
-        return work_info.m * grid_dim.y + work_info.n
+        return work_info.m * UInt32(grid_dim.y) + work_info.n
 
     @always_inline
     fn _get_workspace_tile[
@@ -472,7 +472,7 @@ struct TileScheduler[
         val: UInt32,
     ):
         var sema = NamedBarrierSemaphore[Int32(WARPGROUP_SIZE), 4, 1](
-            lock_ptr.offset(lock_idx), barrier_group_thread_idx
+            lock_ptr + lock_idx, barrier_group_thread_idx
         )
         sema.wait_eq(barrier_id, Int32(val))
 
@@ -497,7 +497,7 @@ struct TileScheduler[
         val: UInt32,
     ):
         var sema = NamedBarrierSemaphore[Int32(WARPGROUP_SIZE), 4, 1](
-            lock_ptr.offset(lock_idx), barrier_group_thread_idx
+            lock_ptr + lock_idx, barrier_group_thread_idx
         )
         sema.arrive_set(barrier_id, Int32(val))
 

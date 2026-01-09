@@ -104,7 +104,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
     """
 
     # Aliases
-    comptime Mutable = Span[Self.T, MutOrigin(unsafe_cast=Self.origin)]
+    comptime Mutable = Span[Self.T, unsafe_origin_mutcast[Self.origin]]
     """The mutable version of the `Span`."""
     comptime Immutable = Span[Self.T, ImmutOrigin(Self.origin)]
     """The immutable version of the `Span`."""
@@ -590,7 +590,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
         var ptr = self.unsafe_ptr()
 
         # `a` and `b` may be equal, so we cannot use `swap` directly.
-        ptr.offset(a).swap_pointees(ptr.offset(b))
+        (ptr + a).swap_pointees(ptr + b)
 
     fn swap_elements(self: Span[mut=True, Self.T], a: Int, b: Int) raises:
         """

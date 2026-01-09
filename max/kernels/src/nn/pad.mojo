@@ -448,15 +448,15 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
         constant: Scalar[Self.dtype],
         axis_dim: Int,
     ):
-        var pre_pad_start_ptr = output.offset(self.output_offset)
+        var pre_pad_start_ptr = output + self.output_offset
 
         # setting values
         if self.pad_with_constant:
             _fill(pre_pad_start_ptr, constant, axis_dim)
         else:
-            var non_pad_start_ptr = pre_pad_start_ptr.offset(self.pre_pad)
-            var post_pad_start_ptr = non_pad_start_ptr.offset(self.non_pad)
-            var input_start_ptr = input.offset(self.input_offset)
+            var non_pad_start_ptr = pre_pad_start_ptr + self.pre_pad
+            var post_pad_start_ptr = non_pad_start_ptr + self.non_pad
+            var input_start_ptr = input + self.input_offset
             _fill(pre_pad_start_ptr, constant, self.pre_pad)
             memcpy(
                 dest=non_pad_start_ptr, src=input_start_ptr, count=self.non_pad
@@ -679,8 +679,8 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         ],
     ):
         # no more dimensions to recurse, copy from input to unpadded region
-        var non_pad_start_ptr = output.offset(output_offset + self.pre_pad)
-        var input_start_ptr = input.offset(input_offset)
+        var non_pad_start_ptr = output + (output_offset + self.pre_pad)
+        var input_start_ptr = input + input_offset
         memcpy(dest=non_pad_start_ptr, src=input_start_ptr, count=self.non_pad)
 
     @always_inline
@@ -690,7 +690,7 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         output_offset: Int,
         output: UnsafePointer[Scalar[Self.dtype]],
     ):
-        var pre_pad_start_ptr = output.offset(output_offset)
+        var pre_pad_start_ptr = output + output_offset
 
         _memcpy_regions_fast(
             self.pre_pad,
@@ -859,7 +859,7 @@ fn pad_repeat[
         post_pads[axis] = Int(paddings[2 * axis + 1])
 
     var loop_bounds = _NestedLoopIter[output_layout.rank()].LoopBoundSpec(
-        fill=output_layout.rank()
+        fill=IndexList[2](0)
     )
 
     for i in range(output_layout.rank()):

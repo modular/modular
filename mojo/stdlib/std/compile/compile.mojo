@@ -64,7 +64,7 @@ struct _Info:
     var asm: __mlir_type.`!kgen.string`
     var module_name: __mlir_type.`!kgen.string`
     var num_captures: __mlir_type.index
-    var capture_sizes: UnsafePointer[UInt64, ImmutOrigin.external]
+    var capture_sizes: UnsafePointer[UInt64, ImmutExternalOrigin]
 
 
 @register_passable("trivial")
@@ -114,7 +114,7 @@ struct CompiledFunctionInfo[
     var num_captures: Int
     """Number of variables captured by the function closure."""
 
-    var capture_sizes: UnsafePointer[UInt64, ImmutOrigin.external]
+    var capture_sizes: UnsafePointer[UInt64, ImmutExternalOrigin]
     """Pointer to the sizes of the variables captured by the function closure."""
 
     var emission_kind: StaticString

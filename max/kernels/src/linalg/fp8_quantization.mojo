@@ -161,7 +161,7 @@ fn quantize_dynamic_scaled_fp8[
             group_size,
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             scaled_output,
             scales,
             scale_ub.cast[scales_dtype](),
@@ -289,7 +289,7 @@ fn batched_quantize_dynamic_scaled_fp8[
         group_size,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         scaled_output,
         scales,
         scale_ub.cast[scales_dtype](),
@@ -668,7 +668,7 @@ fn naive_blockwise_scaled_fp8_matmul[
         scales_granularity_mnk=scales_granularity_mnk,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c,
         a,
         b,
@@ -785,7 +785,7 @@ fn naive_blockwise_scaled_fp8_matmul[
         scales_granularity_mnk=scales_granularity_mnk,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c,
         a,
         b,
@@ -1001,7 +1001,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
         elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c,
         a,
         b,

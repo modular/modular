@@ -516,7 +516,7 @@ fn layer_norm_gpu[
                 gamma_fn,
                 output_fn_2d,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 flattened_shape,
                 beta,
                 epsilon,
@@ -534,7 +534,7 @@ fn layer_norm_gpu[
                 gamma_fn,
                 output_fn_2d,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 flattened_shape,
                 beta,
                 epsilon,
@@ -552,7 +552,7 @@ fn layer_norm_gpu[
             gamma_fn,
             output_fn_2d,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             flattened_shape,
             beta,
             epsilon,
@@ -648,7 +648,7 @@ fn layer_norm_cpu[
 
         fn _normalize[simd_width: Int](col: Int) unified {mut}:
             var out_val = input_fn[simd_width](row, col)
-            var gamma_val = gamma_fn[simd_width, 1](col)
+            var gamma_val = gamma_fn[simd_width, 1](Index(col))
             var beta_col = beta.runtime_layout(
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](col)
             )
@@ -1190,7 +1190,7 @@ fn rms_norm_gpu[
                 output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 gamma,
                 epsilon,
                 weight_offset,
@@ -1211,7 +1211,7 @@ fn rms_norm_gpu[
                 output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 gamma,
                 epsilon,
                 weight_offset,
@@ -1231,7 +1231,7 @@ fn rms_norm_gpu[
                 output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 gamma,
                 epsilon,
                 weight_offset,
@@ -1251,7 +1251,7 @@ fn rms_norm_gpu[
             output_fn_2d,
             multiply_before_cast=multiply_before_cast,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             gamma,
             epsilon,
             weight_offset,
@@ -1738,7 +1738,7 @@ fn rms_norm_fused_residual_add_gpu[
                 output_residual_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 gamma1,
                 epsilon1,
                 weight_offset1,
@@ -1770,7 +1770,7 @@ fn rms_norm_fused_residual_add_gpu[
                 output_residual_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 gamma1,
                 epsilon1,
                 weight_offset1,
@@ -1805,7 +1805,7 @@ fn rms_norm_fused_residual_add_gpu[
             output_residual_fn_2d,
             multiply_before_cast=multiply_before_cast,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             gamma1,
             epsilon1,
             weight_offset1,
@@ -2450,7 +2450,7 @@ fn group_norm_gpu[
                 gamma_fn=gamma_fn,
                 beta_fn=beta_fn,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 output_rs,
                 epsilon,
                 num_groups,
@@ -2471,7 +2471,7 @@ fn group_norm_gpu[
                 gamma_fn=gamma_fn,
                 beta_fn=beta_fn,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 output_rs,
                 epsilon,
                 num_groups,
@@ -2492,7 +2492,7 @@ fn group_norm_gpu[
             gamma_fn=gamma_fn,
             beta_fn=beta_fn,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             output_rs,
             epsilon,
             num_groups,

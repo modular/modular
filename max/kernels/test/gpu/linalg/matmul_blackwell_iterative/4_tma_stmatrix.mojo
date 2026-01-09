@@ -355,8 +355,9 @@ fn kernel_4[
                         ),
                     )
                 ](Int(thread_idx.x), i, m_mma, 0)
-                var offset = c_smem_tile.ptr.offset(
-                    st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
+                var offset = (
+                    c_smem_tile.ptr
+                    + st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
                     + BM * TMA_BN * tma_n
                 )
 
@@ -372,9 +373,7 @@ fn kernel_4[
     if elect_one_warp and thread_idx.x < UInt(BN // TMA_BN):
         fence_async_view_proxy()
 
-        var smem_offset = c_smem_tile.ptr.offset(
-            BM * TMA_BN * Int(thread_idx.x)
-        )
+        var smem_offset = c_smem_tile.ptr + BM * TMA_BN * Int(thread_idx.x)
 
         c_tma_tile = LayoutTensor[
             c_type,
@@ -465,7 +464,7 @@ fn blackwell_kernel_4[
         num_threads=block_dim,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

@@ -1,5 +1,5 @@
 This directory contains code examples for the
-[Structs](../../../../docs/manual/structs.mdx)
+[Structs](../../../../docs/manual/structs/index.mdx)
 section of the Mojo Manual.
 
 Contents:

@@ -419,15 +419,13 @@ fn kernel_5[
             var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
 
             st_matrix[simd_width=4](
-                upper.ptr.offset(
-                    st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
-                ),
+                upper.ptr
+                + st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args)),
                 d_reg_upper_packed,
             )
             st_matrix[simd_width=4](
-                lower.ptr.offset(
-                    st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
-                ),
+                lower.ptr
+                + st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args)),
                 d_reg_lower_packed,
             )
 
@@ -442,9 +440,7 @@ fn kernel_5[
         var col_start = block_idx.y * UInt(MMA_N) + thread_idx.x * UInt(TMA_BN)
 
         fence_async_view_proxy()
-        var c_smem_offset = c_smem_tile.ptr.offset(
-            BM * TMA_BN * Int(thread_idx.x)
-        )
+        var c_smem_offset = c_smem_tile.ptr + BM * TMA_BN * Int(thread_idx.x)
 
         var c_tma_tile = LayoutTensor[
             c_type,
@@ -541,7 +537,7 @@ fn blackwell_kernel_5[
         cta_group=cta_group,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

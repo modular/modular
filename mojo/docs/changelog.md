@@ -244,7 +244,7 @@ what we publish.
 
 - The `Origin.cast_from[x]` syntax has been replaced with a safe implicit
   conversion from any origin to an immutable origin (`ImmutOrigin(x)`) and an
-  explicit unsafe conversion (`SomeOrigin(unsafe_cast=x)`).
+  explicit unsafe conversion (`unsafe_origin_mutcast[origin, mut=m]`).
 
 - Mojo no longer supports overloading functions on parameters alone: it will not
   try to disambiguate between `fn foo[a: Int8]():` and `fn foo[a: Int32]():` for
@@ -253,6 +253,39 @@ what we publish.
   function arguments of course.
 
 ### Library changes
+
+- `PythonObject` now supports implicit conversion from `None`, allowing more
+  natural Python-like code:
+
+  ```mojo
+  var obj: PythonObject = None  # Now works without explicit PythonObject(None)
+
+  fn returns_none() -> PythonObject:
+      return None  # Implicit conversion
+  ```
+
+- `IndexList` is no longer implicitly constructible from `Int`. Previously, the
+  fill constructor (which broadcasts a single `Int` to all elements) was marked
+  `@implicit`, allowing code like `var x: IndexList[3] = 5` which would create
+  `(5, 5, 5)`. This implicit conversion has been removed to improve type safety.
+  Use explicit construction instead: `IndexList[3](5)`.
+
+- The `inlined_assembly` function is now publicly exported from the `sys` module,
+  allowing users to embed raw assembly instructions directly into Mojo code.
+  This provides fine-grained control over hardware operations using LLVM-style
+  inline assembly syntax. Example:
+
+  ```mojo
+  from sys import inlined_assembly
+
+  # Convert bfloat16 to float32 on NVIDIA GPU using PTX assembly.
+  var result = inlined_assembly[
+      "cvt.f32.bf16 $0, $1;",
+      Float32,
+      constraints="=f,h",
+      has_side_effect=False,
+  ](my_bf16_as_int16)
+  ```
 
 - We have removed `Identifiable` from enum-like types
   (such as `DType` and `AddressSpace`). This change is
@@ -508,6 +541,9 @@ what we publish.
   - `List` now conforms to `Equatable`, `Writable`, `Stringable`,
     and `Representable`.
   - `Dict` now conforms to `Writable`, `Stringable`, and `Representable`.
+  - `Set` now conforms to `Writable`, `Stringable`, and `Representable`.
+  - `Deque` now conforms to `Writable`, `Stringable`, and `Representable`.
+  - `InlineArray` now conforms to `Writable`, `Stringable`, and `Representable`.
   - `Iterator` no longer requires its type to be `Copyable`.
 
   - The following types no longer require their elements to be `Copyable`.
@@ -529,7 +565,7 @@ what we publish.
 - Remove the `Int.__init__(self, value: StringSlice, base: UInt)` constructor.
   Users should call `atol` directly.
 
-- `DeviceContext.enqueue_function_checked()` and
+- `DeviceContext.enqueue_function()` and
   `DeviceContext.enqueue_function_experimental()` now automatically infer
   `func_attribute` to `FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(shared_mem_bytes)`
   when `shared_mem_bytes` is specified but `func_attribute` is not, for NVIDIA GPUs
@@ -561,8 +597,55 @@ what we publish.
   comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
   ```
 
+- the `os.process` submodule has been added with utilities to spawn and
+  wait on processes. These use `posix_spawn` and do not go through the
+  system shell.
+
+- `Writer` and `Writable` have been moved into a new `fmt` module and out of
+  `io`. These traits are not directly related to binary i/o, but are rather
+  closely tied to type/value string formatting.
+
+- `Writer` has been reworked to only support UTF-8 data instead of arbitrary
+  `Byte` sequences. The `write_bytes` method has been replaced with
+  `write_string`.
+
+  - In line with these changes, `String`'s `write_bytes` method has also been
+    deprecated, and its initializer `__init__(out self, *, bytes: Span[Byte])`
+    has had its keyword argument renamed to `unsafe_from_utf8`. This bring it
+    more in line with the existing `StringSlice` constructors and explicitly
+    states that construction from arbitrary bytes is inherently unsafe.
+
+- `String` has had its UTF-8 guarantees strengthened.
+  - It now has three separate constructors when converting raw bytes
+  (`Span[Byte]`) to a `String`
+    - `String(from_utf8=...)`: Raises an error if the bytes are invalid UTF-8
+    - `String(from_utf8_lossy=...)`: Converts invalid UTF-8 byte sequences
+      into the `(U+FFFD, �)` replacement character and does not raise an error.
+    - `String(unsafe_from_utf8=...)`: Unsafely assumes the input bytes are valid
+      UTF-8 without any checks.
+  - `append_byte` has been deprecated and has been replaced with
+    `append(Codepoint)`.
+
+- `DeviceContext.enqueue_function_checked()` and
+  `DeviceStream.enqueue_function_checked()` have been renamed to
+  `enqueue_function()`. Similarly, `DeviceContext.compile_function_checked()`
+  has been renamed to `compile_function()`.
+
+- External origins are now expressed using type level
+  `{Mut,Immut,}ExternalOrigin` aliases instead of being spelled like
+  `Origin[True].external`, improving consistency with other origin types.
+
 ### Tooling changes
 
+- The Mojo compiler now supports the `-Werror` flag, which treats all warnings
+  as compilation errors. This is useful for enforcing stricter code quality
+  standards, particularly in CI/CD pipelines. The flag works with the Mojo
+  compiler tools (`mojo run`, `mojo build`, `mojo package`, `mojo doc`).
+  When used with `--disable-warnings`, warnings are promoted to errors first,
+  so the errors are not suppressed.
+- The `--validate-doc-strings` flag has been deprecated for `mojo doc` and
+  removed from other tools (`mojo build`, `mojo run`, `mojo package`). Use
+  `-Werror` instead to treat warnings as errors.
 - The Mojo compiler now "diffs" very long types in error messages to explain
   what is going on in a more easy to understand way.
 - Specifying CUDA architectures with `--target-accelerator` now expects a sm
@@ -589,10 +672,17 @@ what we publish.
 - The Mojo Debugger `mojo break-on-raise` feature now works correctly with
   multiple targets in a debugger instance. The setting is per-target.
 - Docstring validation now includes `comptime` aliases. The
-  `--validate-doc-strings` and `--diagnose-missing-doc-strings` flags now check
-  that public aliases have properly formatted docstrings (summary ends with
-  period, starts with capital letter). Parametric aliases are also checked for
-  proper `Parameters:` sections.
+  `--diagnose-missing-doc-strings` flag now checks that public aliases have
+  properly formatted docstrings (summary ends with period, starts with capital
+  letter). Parametric aliases are also checked for proper `Parameters:` sections.
+- Docstring validation with `--validate-doc-strings` now emits an
+  error when an `fn` function is declared to raise an error (`raises`) but it's
+  missing a [`Raises`
+  docstring](https://github.com/modular/modular/blob/main/mojo/stdlib/docs/docstring-style-guide.md#errors)
+  (previously it emitted only a warning). Because Mojo automatically
+  treats all `def` functions as [raising
+  functions](/mojo/manual/functions#raising-and-non-raising-functions), we don't
+  enforce `Raises` docs for `def` functions (to avoid noisy false positives).
 - The Mojo LSP server now debounces document updates to reduce CPU usage during
   rapid typing. Previously, every keystroke triggered a full document parse;
   now updates are coalesced with a 150ms delay, reducing parse frequency by
@@ -643,11 +733,27 @@ or removed in future releases.
 
 ### ❌ Removed
 
-- The DeviceContext `enqueue_function` and `compile_function` have been removed.
-  Please migrate the code to use `enqueue_function_checked` and
-  `compile_function_checked`.
+- The DeviceContext `enqueue_function_unchecked` and `compile_function_unchecked`
+  have been removed. Please migrate the code to use `enqueue_function` and
+  `compile_function`.
+
+- The `UnsafePointer.offset()` method is now deprecated. Use pointer arithmetic
+  instead:
+
+  ```mojo
+  # Before
+  new_ptr = ptr.offset(n)
+
+  # After
+  new_ptr = ptr + n
+  ```
 
 ### 🛠️ Fixed
+
+- `Codepoint.unsafe_decode_utf8_codepoint()` no longer returns `Codepoint(0)`
+  (NUL) when passed an empty span. Instead, a `debug_assert` now enforces the
+  requirement that the input span be non-empty, consistent with the function's
+  existing safety contract.
 
 - [Issue #5732](https://github.com/modular/modular/issues/5732): Compiler
   crash when using `get_type_name` with types containing constructor calls in
@@ -668,8 +774,9 @@ or removed in future releases.
   crashes on alias of parametrized function with origin.
 - [Issue #5618](https://github.com/modular/modular/issues/5618): Compiler crash
   when should be implicit conversion error.
+- [Issue #5635](https://github.com/modular/modular/issues/5635): `Deque` shrink
+  reallocation incorrectly handled empty deque with `capacity > min_capacity`.
 - [Issue #5723](https://github.com/modular/modular/issues/5723): Compiler crash
   when using `get_type_name` with nested parametric types from `struct_field_types`.
 - [Issue #5731](https://github.com/modular/modular/issues/5731): Compiler crash
   when using reflection functions on builtin types like `Int`, `NoneType`, or
-  `Origin` passed through generic type parameters.

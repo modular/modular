@@ -149,7 +149,7 @@ struct List[T: Copyable](
 
       ```mojo
       var list1 = [1, 2, 3]
-      var list2 = list1        # Deep copy
+      var list2 = list1.copy()        # Deep copy
       list2.append(4)
       print(list1.__str__())   # => [1, 2, 3]
       print(list2.__str__())   # => [1, 2, 3, 4]
@@ -254,7 +254,7 @@ struct List[T: Copyable](
     """
 
     # Fields
-    var _data: UnsafePointer[Self.T, MutOrigin.external]
+    var _data: UnsafePointer[Self.T, MutExternalOrigin]
     """The underlying storage for the list."""
     var _len: Int
     """The number of elements in the list."""
@@ -1199,7 +1199,7 @@ struct List[T: Copyable](
         self._len = 0
         self._annotate_shrink(old_size)
 
-    fn steal_data(mut self) -> UnsafePointer[Self.T, MutOrigin.external]:
+    fn steal_data(mut self) -> UnsafePointer[Self.T, MutExternalOrigin]:
         """Take ownership of the underlying pointer from the list.
 
         Returns:
@@ -1399,7 +1399,7 @@ struct List[T: Copyable](
             ),
         )
         var ptr = self._data
-        ptr.offset(elt_idx_1).swap_pointees(ptr.offset(elt_idx_2))
+        (ptr + elt_idx_1).swap_pointees(ptr + elt_idx_2)
 
     fn unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //

@@ -5,18 +5,20 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "kv_cache",
     srcs = glob(["**/*.py"]),
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         requirement("numpy"),
         requirement("msgspec"),
-        requirement("transformers"),
+        "//max/python/max:_core",
         "//max/python/max/_core_mojo",
+        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
+        "//max/python/max/interfaces",
         "//max/python/max/nn",
+        "//max/python/max/profiler",
         "//max/python/max/serve/kvcache_agent",
+        "//max/python/max/serve/kvcache_agent:kvcache_agent_proto_srcs",
         "//max/python/max/support",
     ],
 )

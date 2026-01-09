@@ -25,13 +25,6 @@ from gpu.intrinsics import (
     load_acquire,
     store_release,
 )
-from memory import UnsafePointer as UnsafePointerV2
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
 
 
 # No-op (currently) group operation functions (enables vendor_ccl drop in replacement)
@@ -43,12 +36,14 @@ fn group_end():
     return
 
 
-fn _p2p_cache_destroy_wrapper(ptr: OpaquePointer) -> None:
+fn _p2p_cache_destroy_wrapper(
+    ptr: MutOpaquePointer[MutExternalOrigin],
+) -> None:
     # No resources to free for tagged-pointer encoding.
     pass
 
 
-fn _p2p_cache_init_wrapper() -> OpaquePointer:
+fn _p2p_cache_init_wrapper() -> MutOpaquePointer[MutExternalOrigin]:
     """Initializer for the indexed global caching P2P availability.
 
     Returns an OpaquePointer encoding a small integer tag:
@@ -60,11 +55,11 @@ fn _p2p_cache_init_wrapper() -> OpaquePointer:
 
     try:
         DeviceContext.enable_all_peer_access()
-        return UnsafePointerV2[NoneType, MutOrigin.external](
+        return UnsafePointer[NoneType, MutExternalOrigin](
             unsafe_from_address=p2p_available
         )
     except:
-        return UnsafePointerV2[NoneType, MutOrigin.external](
+        return UnsafePointer[NoneType, MutExternalOrigin](
             unsafe_from_address=p2p_not_available
         )
 
@@ -81,7 +76,8 @@ fn can_enable_p2p() raises -> Bool:
 
     # Initialize once per process via indexed global, then reuse the tag.
     var cached = external_call[
-        "KGEN_CompilerRT_GetOrCreateGlobalIndexed", OpaquePointer
+        "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
+        MutOpaquePointer[MutExternalOrigin],
     ](
         _Global._gpu_comm_p2p_idx,
         _p2p_cache_init_wrapper,
@@ -162,8 +158,8 @@ fn _multi_gpu_barrier[
     is_start: Bool,
     need_fence: Bool = False,
 ](
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
-    self_sg: UnsafePointer[Signal],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    self_sg: UnsafePointer[Signal, MutAnyOrigin],
     my_rank: Int,
 ):
     """Implements a barrier synchronization across multiple GPUs to ensure all

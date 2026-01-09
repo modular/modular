@@ -57,7 +57,7 @@ struct amd_signal_t(Copyable):
 fn update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, ...]):
     var mb = UnsafePointer(to=sig[].event_mailbox_ptr).bitcast[
         UnsafePointer[
-            UInt64, MutOrigin.external, address_space = AddressSpace.GLOBAL
+            UInt64, MutExternalOrigin, address_space = AddressSpace.GLOBAL
         ]
     ]()[]
     if mb:
@@ -71,7 +71,7 @@ fn hsa_signal_add(sig: UInt64, value: UInt64):
     var s = UnsafePointer(to=sig).bitcast[
         UnsafePointer[
             amd_signal_t,
-            MutOrigin.external,
+            MutExternalOrigin,
             address_space = AddressSpace.GLOBAL,
         ]
     ]()[]
@@ -523,7 +523,7 @@ fn printf_append_string_n(
 @register_passable("trivial")
 struct Header(ImplicitlyCopyable):
     var _handle: UnsafePointer[
-        header_t, MutOrigin.external, address_space = AddressSpace.GLOBAL
+        header_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
     ]
 
     fn fill_packet(
@@ -620,7 +620,7 @@ struct header_t(ImplicitlyCopyable):
 @fieldwise_init
 @register_passable("trivial")
 struct Payload(ImplicitlyCopyable):
-    var _handle: UnsafePointer[payload_t, MutOrigin.external]
+    var _handle: UnsafePointer[payload_t, MutExternalOrigin]
 
     @always_inline
     fn __setitem__(mut self, idx0: Int, idx1: Int, value: UInt64):
@@ -640,19 +640,19 @@ struct payload_t(Copyable):
 @register_passable("trivial")
 struct Buffer(ImplicitlyCopyable):
     var _handle: UnsafePointer[
-        buffer_t, MutOrigin.external, address_space = AddressSpace.GLOBAL
+        buffer_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
     ]
 
     @always_inline
     fn get_header(self, ptr: UInt64) -> Header:
         return Header(
-            self._handle[].headers.offset(ptr & self._handle[].index_mask)
+            self._handle[].headers + (ptr & self._handle[].index_mask)
         )
 
     @always_inline
     fn get_payload(self, ptr: UInt64) -> Payload:
         return Payload(
-            self._handle[].payloads.offset(ptr & self._handle[].index_mask)
+            self._handle[].payloads + (ptr & self._handle[].index_mask)
         )
 
     fn pop(mut self, top: UnsafePointer[mut=True, UInt64, ...]) -> UInt64:
@@ -733,9 +733,9 @@ struct Buffer(ImplicitlyCopyable):
 @register_passable("trivial")
 struct buffer_t(Copyable):
     var headers: UnsafePointer[
-        header_t, MutOrigin.external, address_space = AddressSpace.GLOBAL
+        header_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
     ]
-    var payloads: UnsafePointer[payload_t, MutOrigin.external]
+    var payloads: UnsafePointer[payload_t, MutExternalOrigin]
     var doorbell: UInt64
     var free_stack: UInt64
     var ready_stack: UInt64
@@ -873,15 +873,13 @@ fn hostcall(
     compiled for, otherwise behaviour is undefined.
     """
     var buffer = Buffer(
-        implicitarg_ptr()
-        .bitcast[
+        implicitarg_ptr().bitcast[
             UnsafePointer[
                 buffer_t,
-                MutOrigin.external,
+                MutExternalOrigin,
                 address_space = AddressSpace.GLOBAL,
             ]
-        ]()
-        .offset(10)[]
+        ]()[10]
     )
 
     var me = UInt32(lane_id())

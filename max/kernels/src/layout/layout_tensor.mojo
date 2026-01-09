@@ -330,9 +330,9 @@ struct LayoutTensor[
                     T=AnyType,
                     Self,
                     Self.OriginCastType[True, MutAnyOrigin],
-                    Self.OriginCastType[True, MutOrigin.external],
+                    Self.OriginCastType[True, MutExternalOrigin],
                     Self.OriginCastType[False, ImmutAnyOrigin],
-                    Self.OriginCastType[False, ImmutOrigin.external],
+                    Self.OriginCastType[False, ImmutExternalOrigin],
                 ],
             ]
         else:
@@ -342,7 +342,7 @@ struct LayoutTensor[
                     T=AnyType,
                     Self,
                     Self.OriginCastType[False, ImmutAnyOrigin],
-                    Self.OriginCastType[False, ImmutOrigin.external],
+                    Self.OriginCastType[False, ImmutExternalOrigin],
                 ],
             ]
 
@@ -1915,7 +1915,7 @@ struct LayoutTensor[
 
         return (
             Element[index_type = Self.linear_idx_type]
-            .load(self.ptr.offset(offset), self.runtime_element_layout)
+            .load(self.ptr + offset, self.runtime_element_layout)
             .element_data
         )
 
@@ -2105,7 +2105,7 @@ struct LayoutTensor[
 
         Element[index_type = Self.linear_idx_type](
             val, self.runtime_element_layout
-        ).store(self.ptr.mut_cast[True]().offset(offset))
+        ).store(self.ptr.mut_cast[True]() + offset)
 
     @always_inline("nodebug")
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[Self.dtype, width]:
@@ -2219,7 +2219,7 @@ struct LayoutTensor[
         - No operation is performed on the prefetched data.
         """
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
-            self.ptr.offset(self._offset(m, n))
+            self.ptr + self._offset(m, n)
         )
 
     @always_inline
@@ -2251,7 +2251,7 @@ struct LayoutTensor[
         - No operation is performed on the prefetched data.
         """
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
-            self.ptr.offset(self._offset(coords))
+            self.ptr + self._offset(coords)
         )
 
     @always_inline("nodebug")
@@ -2565,7 +2565,7 @@ struct LayoutTensor[
             UnsafePointer[
                 Scalar[Self.dtype],
                 address_space = Self.address_space,
-                origin = MutOrigin.external,
+                origin=MutExternalOrigin,
             ]()
         )
 
@@ -3228,7 +3228,7 @@ struct LayoutTensor[
                     shape_i = max(0, min(tile_sizes[i], cur_dim))
                     runtime_layout.shape.value[i] = shape_i
 
-            return tile_type(self.ptr.offset(offset), runtime_layout)
+            return tile_type(self.ptr + offset, runtime_layout)
 
         else:
             # Dynamic layout, use strides
@@ -3250,7 +3250,7 @@ struct LayoutTensor[
                 shape_i = max(0, min(tile_sizes[i], cur_dim))
                 runtime_layout.shape.value[i] = shape_i
 
-            return tile_type(self.ptr.offset(offset), runtime_layout)
+            return tile_type(self.ptr + offset, runtime_layout)
 
     comptime SIMDTileType[tile_size: Int] = Self.TileType[
         tile_size, simd_width_of[Self.dtype]()
@@ -3356,7 +3356,7 @@ struct LayoutTensor[
                     runtime_layout.shape.value[i] = shape_i
 
             return (
-                tile_type(self.ptr.offset(offset), runtime_layout),
+                tile_type(self.ptr + offset, runtime_layout),
                 corner_coords,
                 offset,
             )
@@ -3382,7 +3382,7 @@ struct LayoutTensor[
                 runtime_layout.shape.value[i] = shape_i
 
             return (
-                tile_type(self.ptr.offset(offset), runtime_layout),
+                tile_type(self.ptr + offset, runtime_layout),
                 corner_coords,
                 offset,
             )
@@ -3660,7 +3660,7 @@ struct LayoutTensor[
                 address_space = Self.address_space,
                 element_layout = Self.element_layout,
                 alignment = Self.alignment,
-            ](self.ptr.offset(i * tile_size * stride))
+            ](self.ptr + i * tile_size * stride)
 
         return tiles
 
@@ -3975,7 +3975,9 @@ struct LayoutTensor[
                 var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
                     shape_i
                 )
-                offset += thread_coord_i * UInt(fragments_stride_i)
+                offset += Scalar[Self.linear_idx_type](
+                    thread_coord_i * UInt(fragments_stride_i)
+                )
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -3991,12 +3993,12 @@ struct LayoutTensor[
             @parameter
             if distribute_type.masked:
                 return distribute_type(
-                    self.ptr.offset(Int(swizzled_offset)),
+                    self.ptr + Int(swizzled_offset),
                     runtime_layout_type(runtime_shape, runtime_stride),
                 )
             else:
                 return distribute_type(
-                    self.ptr.offset(Int(swizzled_offset)),
+                    self.ptr + Int(swizzled_offset),
                 )
 
         else:
@@ -4040,7 +4042,9 @@ struct LayoutTensor[
                 var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
                     shape_i
                 )
-                offset += thread_coord_i * UInt(fragments_stride_i)
+                offset += Scalar[Self.linear_idx_type](
+                    thread_coord_i * UInt(fragments_stride_i)
+                )
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -4056,12 +4060,12 @@ struct LayoutTensor[
             @parameter
             if self.element_layout.all_dims_known():
                 return distribute_type(
-                    self.ptr.offset(Int(swizzled_offset)),
+                    self.ptr + Int(swizzled_offset),
                     runtime_layout_type(runtime_shape, runtime_stride),
                 )
             else:
                 return distribute_type(
-                    self.ptr.offset(Int(swizzled_offset)),
+                    self.ptr + Int(swizzled_offset),
                     runtime_layout_type(runtime_shape, runtime_stride),
                     self.runtime_element_layout,
                 )
@@ -4150,7 +4154,9 @@ struct LayoutTensor[
                     shape_i
                 )
                 offset_coords[i] = Int(thread_coord_i)
-                offset += thread_coord_i * UInt(fragments_stride_i)
+                offset += Scalar[Self.linear_idx_type](
+                    thread_coord_i * UInt(fragments_stride_i)
+                )
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -4167,7 +4173,7 @@ struct LayoutTensor[
             if ret_tensor_type.masked:
                 return (
                     ret_tensor_type(
-                        self.ptr.offset(Int(swizzled_offset)),
+                        self.ptr + Int(swizzled_offset),
                         ret_tensor_type.RuntimeLayoutType(
                             runtime_shape, runtime_stride
                         ),
@@ -4178,7 +4184,7 @@ struct LayoutTensor[
             else:
                 return (
                     ret_tensor_type(
-                        self.ptr.offset(Int(swizzled_offset)),
+                        self.ptr + Int(swizzled_offset),
                     ),
                     offset_coords,
                     swizzled_offset,
@@ -4222,7 +4228,9 @@ struct LayoutTensor[
                     shape_i
                 )
                 offset_coords[i] = Int(thread_coord_i)
-                offset += thread_coord_i * UInt(fragments_stride_i)
+                offset += Scalar[Self.linear_idx_type](
+                    thread_coord_i * UInt(fragments_stride_i)
+                )
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -4239,7 +4247,7 @@ struct LayoutTensor[
             if self.element_layout.all_dims_known():
                 return (
                     ret_tensor_type(
-                        self.ptr.offset(Int(swizzled_offset)),
+                        self.ptr + Int(swizzled_offset),
                         ret_tensor_type.RuntimeLayoutType(
                             runtime_shape, runtime_stride
                         ),
@@ -4250,7 +4258,7 @@ struct LayoutTensor[
             else:
                 return (
                     ret_tensor_type(
-                        self.ptr.offset(Int(swizzled_offset)),
+                        self.ptr + Int(swizzled_offset),
                         ret_tensor_type.RuntimeLayoutType(
                             runtime_shape, runtime_stride
                         ),
@@ -4653,7 +4661,7 @@ struct LayoutTensor[
 
         var offset = d0_slice_start * stride_m + d1_slice_start * stride_n
 
-        return Self.SliceType[d0_slice, d1_slice](self.ptr.offset(offset))
+        return Self.SliceType[d0_slice, d1_slice](self.ptr + offset)
 
     comptime SliceType2D[
         d0_slice: Slice,
@@ -4779,7 +4787,7 @@ struct LayoutTensor[
 
         return Self.SliceType2D[
             d0_slice, d1_slice, slice_indices, __offset_dims
-        ](self.ptr.offset(slice_offset))
+        ](self.ptr + slice_offset)
 
     comptime SliceType1D[
         d0_slice: Slice,
@@ -4893,7 +4901,7 @@ struct LayoutTensor[
                 idx += 1
 
         return Self.SliceType1D[d0_slice, slice_indices, __offset_dims](
-            self.ptr.offset(slice_offset)
+            self.ptr + slice_offset
         )
 
     comptime TransposeType = LayoutTensor[
@@ -5387,11 +5395,11 @@ struct LayoutTensor[
             dst_idx = self._get_element_idx[i]()
 
             src_element = MemoryElement[index_type = other.linear_idx_type](
-                other.ptr.offset(src_idx), other.runtime_element_layout
+                other.ptr + src_idx, other.runtime_element_layout
             )
 
             dst_element = MemoryElement[index_type = Self.linear_idx_type](
-                self.ptr.offset(dst_idx), self.runtime_element_layout
+                self.ptr + dst_idx, self.runtime_element_layout
             )
 
             dst_element.transfer(src_element)
@@ -7222,7 +7230,7 @@ fn copy_local_to_dram[
                 var src_element = Element[
                     index_type = src.linear_idx_type
                 ].load(
-                    src.ptr.offset(src_idx),
+                    src.ptr + src_idx,
                     src.runtime_element_layout,
                 )
                 comptime dst_element_type = Element[
@@ -7232,7 +7240,7 @@ fn copy_local_to_dram[
                     rebind[dst_element_type.element_data_type](
                         src_element.element_data.cast[dst.dtype]()
                     )
-                ).store(dst_fragments.ptr.offset(dst_idx))
+                ).store(dst_fragments.ptr + dst_idx)
 
 
 @always_inline("nodebug")
@@ -7257,7 +7265,7 @@ fn _copy_local_to_dram_static_row_major[
             comptime dst_frag_idx = Int32(dst_fragments.layout(idx))
 
             var src_element = Element[index_type = src.linear_idx_type].load(
-                src.ptr.offset(src_frag_idx),
+                src.ptr + src_frag_idx,
                 src.runtime_element_layout,
             )
 
@@ -7324,7 +7332,7 @@ fn _copy_local_to_dram[
                 dst_idx += dst_fragments.runtime_layout(i)
 
             var src_element = Element[index_type = src.linear_idx_type].load(
-                src.ptr.offset(src_idx),
+                src.ptr + src_idx,
                 src.runtime_element_layout,
             )
 
@@ -7449,7 +7457,8 @@ fn _copy_dram_to_local[
     @parameter
     fn offset_helper(offset_val: UInt):
         var src_frag_offset = Int32(
-            src_fragments.distance(src.ptr) + offset_val
+            src_fragments.distance(src.ptr)
+            + Scalar[src.linear_idx_type](offset_val)
         )
 
         # These loads need to be row-major for L1 cache performance
@@ -7721,7 +7730,7 @@ fn copy_dram_to_local[
                 var src_element = Element[
                     index_type = src.linear_idx_type
                 ].load(
-                    src_fragments.ptr.offset(src_idx),
+                    src_fragments.ptr + src_idx,
                     src_fragments.runtime_element_layout,
                 )
                 comptime dst_element_type = Element[
@@ -7731,7 +7740,7 @@ fn copy_dram_to_local[
                     rebind[dst_element_type.element_data_type](
                         src_element.element_data.cast[dst.dtype]()
                     )
-                ).store(dst.ptr.offset(dst_idx))
+                ).store(dst.ptr + dst_idx)
 
 
 @always_inline("nodebug")
@@ -7880,11 +7889,11 @@ fn copy_local_to_shared[
                 var dst_idx = dst_frag._get_element_idx[idx]()
 
                 var src_element = MemoryElement(
-                    src.ptr.offset(src_idx), src.runtime_element_layout
+                    src.ptr + src_idx, src.runtime_element_layout
                 )
 
                 var dst_element = MemoryElement(
-                    dst_frag.ptr.offset(dst_idx),
+                    dst_frag.ptr + dst_idx,
                     dst_frag.runtime_element_layout,
                 )
                 dst_element.transfer(src_element)

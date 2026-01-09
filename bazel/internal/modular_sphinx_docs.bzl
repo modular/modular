@@ -149,8 +149,5 @@ def modular_sphinx_docs(name, **kwargs):
     _modular_sphinx_docs(
         name = name,
         exec_test_environment = env_name,
-        toolchains = [
-            "@//bazel/internal:lib_toolchain",
-        ],
         **kwargs
     )

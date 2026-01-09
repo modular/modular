@@ -116,7 +116,7 @@ fn naive_grouped_matmul[
         b_shape,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c,
         a,
         b,
@@ -190,7 +190,7 @@ fn naive_grouped_matmul_kernel[
     if elementwise_lambda_fn:
         comptime elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](
-            Index(a_start_row + m, n), accum.cast[c_type]()
+            Index(a_start_row + UInt32(m), n), accum.cast[c_type]()
         )
     else:
         c_by_expert = c.data + a_start_row * N
@@ -212,7 +212,7 @@ fn naive_epilogue[
     var N = c.dim[1]()
     comptime simd_size = simd_width_of[c_type]()
     var block_dim = (128 // simd_size, simd_size, 1)
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c,
         grid_dim=(ceildiv(N, block_dim[0]), ceildiv(M, block_dim[1]), 1),
         block_dim=block_dim,
@@ -664,7 +664,7 @@ fn grouped_matmul_sm100[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         a_offsets,
@@ -1002,7 +1002,7 @@ fn grouped_matmul_amd[
             config,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,

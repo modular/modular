@@ -41,7 +41,10 @@ modular_py_test(
     timeout = "long",
     srcs = glob(
         ["*_gpu.py"],
-        exclude = ["test_attention_fp8_amd_gpu.py"],
+        exclude = [
+            "test_attention_fp8_amd_gpu.py",
+            "test_ragged_attention_gpu.py",
+        ],
     ) + ["conftest.py"],
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
@@ -69,6 +72,47 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("gguf"),
         requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "ragged_attention_gpu_tests",
+    timeout = "long",
+    srcs = [
+        "conftest.py",
+        "test_ragged_attention_gpu.py",
+    ],
+    args = [
+        "-n",
+        "auto",
+    ],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "18",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/serve",
+        "//max/tests/integration/API/python/graph:modular_graph_test",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("hypothesis"),
+        requirement("gguf"),
+        requirement("pytest-asyncio"),
+        requirement("pytest-xdist"),
     ],
 )
 

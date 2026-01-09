@@ -364,7 +364,7 @@ struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
         Returns:
             Pointer to element.
         """
-        return self.ptr.offset(Int(index))
+        return self.ptr + Int(index)
 
     @always_inline
     @staticmethod
@@ -457,7 +457,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
             Allocated tile.
         """
         var result = T(
-            self.base_ptr.offset(self.offset).bitcast[Scalar[dtype]](),
+            (self.base_ptr + self.offset).bitcast[Scalar[dtype]](),
         )
         self.offset += T.storage_size
         return result
@@ -476,7 +476,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
             Allocated tile array.
         """
         var result = T(
-            self.base_ptr.offset(self.offset).bitcast[Scalar[dtype]](),
+            (self.base_ptr + self.offset).bitcast[Scalar[dtype]](),
         )
         self.offset += T.storage_size
         return result
@@ -493,7 +493,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
         Returns:
             Allocated array.
         """
-        var result = self.base_ptr.offset(self.offset).bitcast[type]()
+        var result = (self.base_ptr + self.offset).bitcast[type]()
         self.offset += T.storage_size
         return T(result)
 

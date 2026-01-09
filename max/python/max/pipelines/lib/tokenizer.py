@@ -31,6 +31,7 @@ from max.interfaces import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
+    TokenBuffer,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.support.image import find_contiguous_ranges, hash_image
@@ -517,6 +518,10 @@ class TextTokenizer(
             len(token_ids), self.max_length, max_new_tokens
         )
 
+        token_buffer = TokenBuffer(
+            array=token_ids.astype(np.int64, copy=False),
+        )
+
         context = TextContext(
             request_id=request.request_id,
             eos_token_ids=eos_token_ids,
@@ -524,7 +529,7 @@ class TextTokenizer(
             max_length=len(token_ids) + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
-            tokens=np.array(token_ids),
+            tokens=token_buffer,
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
@@ -650,10 +655,8 @@ class TextAndVisionTokenizer(
             context_validators if context_validators else []
         )
 
-        # Llama-3.2-11B-Vision uses image_token_index
         # Qwen2.5VL uses image_token_id
         # Pixtral uses image_token_index
-        # ...
         vision_token_ids: list[int] = []
         for vision_token_id_name in [
             "image_token_id",
@@ -750,7 +753,7 @@ class TextAndVisionTokenizer(
             else None
         )
 
-        # LlamaVision & InternVL returns a python list
+        # InternVL returns a python list
         processed_inputs = self.processor(
             text=prompt,
             images=images,
@@ -763,11 +766,15 @@ class TextAndVisionTokenizer(
                 "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
             )
 
-        # TODO: This is a hack to support both LlamaVision, Pixtral and InternVL.
+        # TODO: This is a hack to support both Pixtral and InternVL.
         if isinstance(processed_inputs["input_ids"][0], int):
-            encoded_prompt = np.array(processed_inputs["input_ids"])
+            encoded_prompt = np.array(
+                processed_inputs["input_ids"], dtype=np.int64
+            )
         else:
-            encoded_prompt = np.array(processed_inputs["input_ids"][0])
+            encoded_prompt = np.array(
+                processed_inputs["input_ids"][0], dtype=np.int64
+            )
 
         # TODO(zheng): We should probably just make max_new_tokens an optional
         # instead of -1.
@@ -833,11 +840,15 @@ class TextAndVisionTokenizer(
             encoded_prompt, self.vision_token_ids
         )
 
+        token_buffer = TokenBuffer(
+            array=encoded_prompt.astype(np.int64, copy=False),
+        )
+
         context = TextAndVisionContext(
             request_id=request.request_id,
             eos_token_ids=eos_token_ids,
             extra_model_args=extra_model_args,
-            tokens=encoded_prompt,
+            tokens=token_buffer,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,

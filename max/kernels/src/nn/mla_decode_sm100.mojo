@@ -593,7 +593,6 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         dtype = KVLUTType.dtype,
         swizzle_mode = config.kv_swizzle_mode,
         BN = config.BM,
-        depth = config.q_depth,
         BK = config.BN,
     ],
     o_tma: QOTMATile[
@@ -702,7 +701,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         _use_valid_length=_use_valid_length,
         ragged=ragged,
     ].kernel
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         q_tma,
         k_tma,
         o_tma,
@@ -1911,7 +1910,6 @@ struct MLA_SM100_Decode[
             dtype = Self.qkv_type,
             swizzle_mode = Self.config.kv_swizzle_mode,
             BN = Self.config.BM,
-            depth = Self.config.q_depth,
             BK = Self.config.BN,
         ],
         o_tma: QOTMATile[
@@ -2162,7 +2160,6 @@ struct MLA_SM100_Decode[
             dtype = Self.qkv_type,
             swizzle_mode = Self.config.kv_swizzle_mode,
             BN = Self.config.BM,
-            depth = Self.config.q_depth,
             BK = Self.config.BN,
         ],
         smem: SharedMemPointer[Scalar[Self.qkv_type]],
@@ -2230,7 +2227,6 @@ struct MLA_SM100_Decode[
             dtype = Self.qkv_type,
             swizzle_mode = Self.config.kv_swizzle_mode,
             BN = Self.config.BM,
-            depth = Self.config.q_depth,
             BK = Self.config.BN,
         ],
         kv_lut: Self.KVLUTType,
@@ -2373,7 +2369,6 @@ struct MLA_SM100_Decode[
             dtype = Self.qkv_type,
             swizzle_mode = Self.config.kv_swizzle_mode,
             BN = Self.config.BM,
-            depth = Self.config.q_depth,
             BK = Self.config.BN,
         ],
         kv_lut: Self.KVLUTType,
@@ -2460,7 +2455,6 @@ struct MLA_SM100_Decode[
             dtype = Self.qkv_type,
             swizzle_mode = Self.config.kv_swizzle_mode,
             BN = Self.config.BM,
-            depth = Self.config.q_depth,
             BK = Self.config.BN,
         ],
         kv_lut: Self.KVLUTType,

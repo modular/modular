@@ -33,10 +33,9 @@ from max.experimental.tensor import (
 )
 from max.graph import BufferValue, DeviceRef, Graph
 
-DEVICE = Accelerator() if accelerator_count() else CPU()
-
 
 def test_tensor_basic() -> None:
+    DEVICE = Accelerator() if accelerator_count() else CPU()
     expected_type = TensorType(
         DType.float32, [5, 5], DeviceRef.from_device(DEVICE)
     )
@@ -51,6 +50,7 @@ def test_tensor_basic() -> None:
 
 
 def test_tensor_basic_lazy() -> None:
+    DEVICE = Accelerator() if accelerator_count() else CPU()
     expected_type = TensorType(
         DType.float32, [5, 5], DeviceRef.from_device(DEVICE)
     )
@@ -70,6 +70,7 @@ def test_tensor_basic_lazy() -> None:
 
 
 def test_tensor_with_intermediate() -> None:
+    DEVICE = Accelerator() if accelerator_count() else CPU()
     expected_type = TensorType(
         DType.float32, [5, 5], DeviceRef.from_device(DEVICE)
     )
@@ -84,6 +85,7 @@ def test_tensor_with_intermediate() -> None:
 
 
 def test_tensor_with_intermediate_lazy() -> None:
+    DEVICE = Accelerator() if accelerator_count() else CPU()
     expected_type = TensorType(
         DType.float32, [5, 5], DeviceRef.from_device(DEVICE)
     )
@@ -192,6 +194,7 @@ def test_constant_default_device_context() -> None:
 
 
 def test_realized_tensor_as_buffer() -> None:
+    DEVICE = Accelerator() if accelerator_count() else CPU()
     a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
     a = Tensor(storage=a_data)
     b = Tensor.ones_like(a.type)
@@ -200,6 +203,7 @@ def test_realized_tensor_as_buffer() -> None:
 
 
 def test_realized_tensor_as_buffer_lazy() -> None:
+    DEVICE = Accelerator() if accelerator_count() else CPU()
     a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
     a = Tensor(storage=a_data)
     assert a.real
@@ -224,6 +228,7 @@ def test_unrealized_value_as_buffer() -> None:
 
 
 def test_buffervalue_on_realized_tensor() -> None:
+    DEVICE = Accelerator() if accelerator_count() else CPU()
     a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
     a = Tensor(storage=a_data)
     assert a.real

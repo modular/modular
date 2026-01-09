@@ -61,7 +61,7 @@ fn memcpy_or_fuse[
 ) raises:
     @parameter
     if not epilogue_fn:
-        memcpy(dest=dest_data.offset(out_byte_offset), src=src_data, count=n)
+        memcpy(dest=dest_data + out_byte_offset, src=src_data, count=n)
     else:
         comptime func = epilogue_fn.value()
         comptime simd_width = simd_width_of[dtype]()
@@ -245,7 +245,7 @@ fn _concat_parallel[
                         output_wc_offset
                         + overlap_rel_start // input_wc * output_wc
                         + overlap_rel_start % input_wc,
-                        input_data.offset(overlap_rel_start),
+                        input_data + overlap_rel_start,
                         overlap_rel_end - overlap_rel_start,
                         rebind[
                             IndexList[
@@ -264,7 +264,7 @@ fn _concat_parallel[
                         output_wc_offset
                         + overlap_rel_start // input_wc * output_wc
                         + overlap_rel_start % input_wc,
-                        input_data.offset(overlap_rel_start),
+                        input_data + overlap_rel_start,
                         overlap_full_rel_start - overlap_rel_start,
                         rebind[
                             IndexList[
@@ -274,8 +274,8 @@ fn _concat_parallel[
                         ](output.runtime_layout.shape.value),
                     )
                     # Now, fully-aligned sections:
-                    var in_ptr = input_data.offset(overlap_full_rel_start)
-                    var end_in_ptr = input_data.offset(overlap_full_rel_end)
+                    var in_ptr = input_data + overlap_full_rel_start
+                    var end_in_ptr = input_data + overlap_full_rel_end
                     var out_ptr_offset = (
                         output_wc_offset
                         + overlap_full_rel_start // input_wc * output_wc
@@ -702,12 +702,12 @@ fn _concat_inner_most_single_dim[
     ],
 ):
     var idx = block_idx.x * UInt(block_size) + thread_idx.x
+    if idx >= UInt(output.size()):
+        return
+
     var index = _get_start_indices_of_nth_subvolume_uint[1](
         UInt(idx), output.runtime_layout.shape.value
     )
-
-    if index > output.size():
-        return
 
     @parameter
     for i in range(num_inputs):
@@ -836,7 +836,7 @@ fn _concat_gpu[
                 # TODO: Owning = True or False?
                 var outp = DeviceBuffer(
                     ctx,
-                    output.ptr.offset(input_size),
+                    output.ptr + input_size,
                     inputs[i].size(),
                     owning=False,
                 )
@@ -878,7 +878,7 @@ fn _concat_gpu[
                 epilogue_fn,
             ]
 
-            return ctx.enqueue_function_checked[kernel, kernel](
+            return ctx.enqueue_function[kernel, kernel](
                 output,
                 inputs,
                 grid_dim=(inputs[0].size() // block_size),
@@ -1062,7 +1062,7 @@ fn _fused_concat_gpu[
                 size,
             ]
 
-            return ctx.enqueue_function_checked[kernel, kernel](
+            return ctx.enqueue_function[kernel, kernel](
                 input_shapes,
                 output,
                 grid_dim=(

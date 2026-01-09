@@ -23,6 +23,7 @@ from collections import Deque
 
 
 from bit import next_power_of_two
+from builtin.constrained import _constrained_conforms_to
 
 # ===-----------------------------------------------------------------------===#
 # Deque
@@ -30,7 +31,13 @@ from bit import next_power_of_two
 
 
 struct Deque[ElementType: Copyable & ImplicitlyDestructible](
-    Boolable, Copyable, Iterable, Sized
+    Boolable,
+    Copyable,
+    Iterable,
+    Representable,
+    Sized,
+    Stringable,
+    Writable,
 ):
     """Implements a double-ended queue.
 
@@ -63,7 +70,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _data: UnsafePointer[Self.ElementType, MutOrigin.external]
+    var _data: UnsafePointer[Self.ElementType, MutExternalOrigin]
     """The underlying storage for the deque."""
 
     var _head: Int
@@ -398,44 +405,36 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         return (self._data + offset)[]
 
     @no_inline
-    fn write_to[
-        T: Representable & Copyable,
-    ](self: Deque[T], mut writer: Some[Writer]):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes `my_deque.__str__()` to a `Writer`.
 
-        Parameters:
-            T: The type of the Deque elements.
-                Must implement the trait `Representable`.
+        Constraints:
+            ElementType must conform to `Representable`.
 
         Args:
             writer: The object to write to.
         """
+        _constrained_conforms_to[
+            conforms_to(Self.ElementType, Representable),
+            Parent=Self,
+            Element = Self.ElementType,
+            ParentConformsTo="Stringable",
+            ElementConformsTo="Representable",
+        ]()
+
         writer.write("Deque(")
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            writer.write(repr((self._data + offset)[]))
+            ref element = (self._data + offset)[]
+            ref representable_element = trait_downcast[Representable](element)
+            writer.write(repr(representable_element))
             if i < len(self) - 1:
                 writer.write(", ")
         writer.write(")")
 
     @no_inline
-    fn __str__[T: Representable & Copyable, //](self: Deque[T]) -> String:
+    fn __str__(self) -> String:
         """Returns a string representation of a `Deque`.
-
-        Note that since we can't condition methods on a trait yet,
-        the way to call this method is a bit special. Here is an example below:
-
-        ```mojo
-        my_deque = Deque[Int](1, 2, 3)
-        print(my_deque.__str__())
-        ```
-
-        When the compiler supports conditional methods, then a simple `String(my_deque)` will
-        be enough.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Representable`.
 
         Returns:
             A string representation of the deque.
@@ -445,23 +444,8 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         return output^
 
     @no_inline
-    fn __repr__[T: Representable & Copyable, //](self: Deque[T]) -> String:
+    fn __repr__(self) -> String:
         """Returns a string representation of a `Deque`.
-
-        Note that since we can't condition methods on a trait yet,
-        the way to call this method is a bit special. Here is an example below:
-
-        ```mojo
-        my_deque = Deque[Int](1, 2, 3)
-        print(my_deque.__repr__())
-        ```
-
-        When the compiler supports conditional methods, then a simple `repr(my_deque)` will
-        be enough.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Representable`.
 
         Returns:
             A string representation of the deque.
@@ -947,7 +931,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Args:
             new_capacity: The new capacity of the buffer.
         """
-        deque_len = len(self) if self else self._capacity
+        # When head == tail, deque is either empty or full (capacity elements).
+        # Use new_capacity > _capacity to distinguish: growing means full, shrinking means empty.
+        var is_full = not self and new_capacity > self._capacity
+        var deque_len = self._capacity if is_full else len(self)
 
         tail_len = self._tail
         head_len = self._capacity - self._head

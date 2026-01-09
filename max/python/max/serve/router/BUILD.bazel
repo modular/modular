@@ -5,18 +5,21 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "router",
     srcs = glob(["*.py"]),
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/profiler",
+        "//max/python/max/serve:config",
         "//max/python/max/serve/parser",
         "//max/python/max/serve/pipelines",
-        "//max/python/max/serve/scheduler",
         "//max/python/max/serve/schemas",
-        "//max/python/max/support",
+        "//max/python/max/serve/telemetry",
         requirement("aiofiles"),
         requirement("fastapi"),
         requirement("httpx"),
-        requirement("regex"),
+        requirement("pydantic"),
         requirement("sse-starlette"),
-        requirement("numpy"),
+        requirement("starlette"),
     ],
 )

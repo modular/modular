@@ -120,11 +120,7 @@ from gpu.intrinsics import (
     Scope,
     AMDBufferResource,
 )
-from gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
 from gpu.memory import CacheOperation
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
@@ -133,6 +129,12 @@ from gpu.host.info import GPUInfo
 
 from collections.optional import OptionalReg
 
+from .reducescatter import (
+    ReduceScatterConfig,
+    _reduce_scatter_impl,
+    _load_reduce,
+    _target_address_space,
+)
 from .sync import (
     MAX_GPUS,
     MAX_NUM_BLOCKS_UPPER_BOUND,
@@ -145,16 +147,12 @@ comptime elementwise_epilogue_type = fn[
     dtype: DType, rank: Int, width: Int, *, alignment: Int
 ] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
-# On AMD Systems, the loads from GLOBAL addressspace gives an improvement
-# to the performance.
-comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
-
 
 fn _naive_reduce_kernel[
     dtype: DType
 ](
-    dst_buf: UnsafePointer[Scalar[dtype]],
-    src_buf: UnsafePointer[Scalar[dtype]],
+    dst_buf: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_buf: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     num_elements: Int,
 ):
     """
@@ -187,7 +185,7 @@ fn _naive_reduce_kernel_with_lambda[
     output_lambda: elementwise_epilogue_type,
 ](
     dst_buf: NDBuffer[dtype, rank, MutAnyOrigin],
-    src_buf: UnsafePointer[Scalar[dtype]],
+    src_buf: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     num_elements: Int,
 ):
     """Naive reduction kernel with elementwise lambda support."""
@@ -293,7 +291,7 @@ fn _allreduce_naive_single[
     var grid_size = min(max_num_blocks, ceildiv(num_elements, BLOCK_SIZE))
 
     # Reduce local buffer first.
-    ctx.enqueue_function_checked[
+    ctx.enqueue_function[
         _naive_reduce_kernel[dtype], _naive_reduce_kernel[dtype]
     ](
         accum,
@@ -310,7 +308,7 @@ fn _allreduce_naive_single[
 
         # Copy remote input into device-local scratch, then accumulate.
         ctx.enqueue_copy(scratch, dev_inputs[i])
-        ctx.enqueue_function_checked[
+        ctx.enqueue_function[
             _naive_reduce_kernel[dtype], _naive_reduce_kernel[dtype]
         ](
             accum,
@@ -328,7 +326,7 @@ fn _allreduce_naive_single[
         alignment = align_of[SIMD[dtype, simd_width]](),
         output_lambda=output_lambda,
     ]
-    ctx.enqueue_function_checked[
+    ctx.enqueue_function[
         naive_reduce_with_lambda_kernel, naive_reduce_with_lambda_kernel
     ](
         out_buf,
@@ -337,54 +335,6 @@ fn _allreduce_naive_single[
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
     )
-
-
-@always_inline
-fn _load_reduce[
-    dtype: DType,
-    num_buffers: Int,
-    simd_width: Int,
-    alignment: Int,
-    accum_type: DType,
-](
-    elem_idx: Int,
-    ptrs: InlineArray[UnsafePointer[Scalar[dtype]], num_buffers],
-) -> SIMD[dtype, simd_width]:
-    @parameter
-    if num_buffers == 1:
-        # Multimem mode: use optimized reduction
-        return multimem_ld_reduce[
-            dtype,
-            simd_width=simd_width,
-            reduction = ReduceOp.ADD,
-            scope = Scope.GPU,
-            consistency = Consistency.RELAXED,
-            accum_type=accum_type,
-        ]((ptrs[0] + elem_idx).address_space_cast[AddressSpace.GLOBAL]())
-    else:
-        # Regular mode: manual accumulation
-        var accum: SIMD[accum_type, simd_width]
-        accum = (
-            ptrs[0]
-            .address_space_cast[_target_address_space]()
-            .load[width=simd_width, alignment=alignment, invariant=True](
-                elem_idx
-            )
-            .cast[accum_type]()
-        )
-
-        @parameter
-        for gpu_idx in range(1, num_buffers):
-            accum += (
-                ptrs[gpu_idx]
-                .address_space_cast[_target_address_space]()
-                .load[width=simd_width, alignment=alignment, invariant=True](
-                    elem_idx
-                )
-                .cast[accum_type]()
-            )
-
-        return accum.cast[dtype]()
 
 
 @__llvm_metadata(
@@ -398,11 +348,14 @@ fn _allreduce_2stage_kernel[
     BLOCK_SIZE: Int,
     output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
-    num_buffers: Int = ngpus,
+    use_multimem: Bool = False,
 ](
     result: NDBuffer[dtype, rank, MutAnyOrigin],
-    src_ptrs: InlineArray[UnsafePointer[Scalar[dtype]], num_buffers],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    src_ptrs: InlineArray[
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+        1 if use_multimem else ngpus,
+    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
 ):
@@ -420,7 +373,7 @@ fn _allreduce_2stage_kernel[
         BLOCK_SIZE: Number of threads per block.
         output_lambda: An elementwise output lambda function.
         pdl_level: Control PDL behavior for the kernel.
-        num_buffers: Number of buffers to process (defaults to ngpus).
+        use_multimem: If True, use multi-memory space buffers for input.
 
     Args:
         result: Output buffer for reduced values.
@@ -432,27 +385,16 @@ fn _allreduce_2stage_kernel[
         num_elements: Number of elements to reduce.
         my_rank: Current GPU rank.
     """
-    comptime accum_type = get_accum_type[dtype]()
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
-    comptime alignment = align_of[SIMD[dtype, simd_width]]()
+    var my_sig = rank_sigs[my_rank]
 
-    # --- Thread Indexing and Vector Setup ---
-    var global_tid = global_idx.x
-
+    # --- Thread Indexing ---
+    var global_tid = Int(global_idx.x)
     # Stride equals total threads in grid dimension for grid-strided loops.
-    var stride = grid_dim.x * UInt(BLOCK_SIZE)
-    var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
+    var stride = Int(grid_dim.x) * BLOCK_SIZE
 
-    # --- Data Partitioning ---
-    # Block cyclic distribution using 128-bit packed vectors.
-    # Divide workload into `ngpus` partitions with last rank handling
-    # remainder.
-    # NOTE: `part`, `start`, and `end` are in units of SIMD widths.
-    var num_simd_vectors = num_elements // simd_width
-    var part = num_simd_vectors // ngpus
-    var start = my_rank * part
-    var end = num_simd_vectors if my_rank == ngpus - 1 else start + part
-    var largest_part = part + (num_simd_vectors % ngpus)
+    var rs_config = ReduceScatterConfig[dtype, ngpus](
+        num_elements, global_tid, stride, my_rank
+    )
 
     @parameter
     if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
@@ -462,33 +404,33 @@ fn _allreduce_2stage_kernel[
     if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
-    # --- Memory Pointer Configuration ---
-    # Round-robin access pattern to balance NVLink traffic across GPUs.
-    var ptrs = InlineArray[UnsafePointer[Scalar[dtype]], num_buffers](
-        uninitialized=True
-    )
-    var tmps = InlineArray[UnsafePointer[Scalar[dtype]], ngpus](
+    # --- Define tmp buffers by offseting for Signal struct ---
+    var tmps = InlineArray[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
     @parameter
     for i in range(ngpus):
-        # Round-robin pattern, for 8 GPUs for example:
-        # Rank 0 accesses: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7.
-        # Rank 1 accesses: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 0.
+        # Round-robin access pattern to balance NVLink traffic across GPUs.
         var target = (my_rank + i) % ngpus
         # Skip Signal header.
         tmps[i] = (
             rank_sigs[target].address_space_cast[AddressSpace.GENERIC]() + 1
         ).bitcast[Scalar[dtype]]()
 
-    @parameter
-    for i in range(num_buffers):
-        var target = 0 if num_buffers == 1 else (my_rank + i) % ngpus
-        ptrs[i] = src_ptrs[target]
-
     # Current rank's output buffer.
     var tmp_out = tmps[0]
+
+    # Round-robin access pattern to balance NVLink traffic across GPUs.
+    comptime num_buffers = 1 if use_multimem else ngpus
+    var ptrs = InlineArray[
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
+    ](uninitialized=True)
+
+    @parameter
+    for i in range(num_buffers):
+        var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
+        ptrs[i] = src_ptrs[target]
 
     # --- Stage 1: Reduce-Scatter Phase ---
     # Uses two-phase synchronization protocol with release-acquire semantics:
@@ -496,26 +438,9 @@ fn _allreduce_2stage_kernel[
     # 2. Memory fence ensures visibility of partial reductions.
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
-    # Grid-strided loop with vectorized reduction:
-    # - Each thread processes partition elements using 128-bit accesses.
-    # - Accumulates in higher precision (float32) for numerical stability.
-    for idx in range(start + Int(global_tid), end, stride):
-        # float32 accumulator for numerical stability.
-        var elem_idx = idx * simd_width
-
-        var reduced_result = _load_reduce[
-            dtype=dtype,
-            num_buffers=num_buffers,
-            simd_width=simd_width,
-            alignment=alignment,
-            accum_type=accum_type,
-        ](elem_idx, ptrs)
-
-        # Convert back to the element index before storing.
-        var elem_start = start * simd_width
-        tmp_out.address_space_cast[_target_address_space]().store[
-            alignment=alignment
-        ](elem_idx - elem_start, reduced_result)
+    _reduce_scatter_impl[ngpus, use_multimem=use_multimem](
+        ptrs, tmp_out, my_rank, rs_config
+    )
 
     # Second barrier with memory ordering guarantees.
     _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
@@ -527,8 +452,14 @@ fn _allreduce_2stage_kernel[
     # The same tid guarantees visibility of prior writes.
     # So if thread `idx` computes the sum of `start + idx` in the first stage,
     # then thread `idx` also gathers `start + idx` from all ranks.
-    for idx in range(global_tid, largest_part, stride):
-        var elem_idx = idx * simd_width
+    comptime simd_width = rs_config.simd_width
+    comptime alignment = rs_config.alignment
+
+    for idx in range(
+        rs_config.thr_local_start,
+        rs_config.largest_part,
+        rs_config.stride,
+    ):
 
         @parameter
         for gpu_idx in range(ngpus):
@@ -536,15 +467,13 @@ fn _allreduce_2stage_kernel[
 
             # Handle edge cases for non-uniform partitions, where
             # the final rank may have larger partition size.
-            if (gather_from_rank == (ngpus - 1)) or idx < part:
-                var dst_idx = (gather_from_rank * part) + idx
-                var elem_dst_idx = dst_idx * simd_width
-
+            if (gather_from_rank == (ngpus - 1)) or idx < rs_config.part:
+                var dst_idx = (gather_from_rank * rs_config.part) + idx
                 output_lambda[width=simd_width, alignment=alignment](
-                    result.get_nd_index(elem_dst_idx),
+                    result.get_nd_index(dst_idx),
                     tmps[gpu_idx]
                     .address_space_cast[_target_address_space]()
-                    .load[width=simd_width, alignment=alignment](elem_idx),
+                    .load[width=simd_width, alignment=alignment](idx),
                 )
 
 
@@ -558,11 +487,14 @@ fn _allreduce_1stage_kernel[
     *,
     BLOCK_SIZE: Int,
     output_lambda: elementwise_epilogue_type,
-    num_buffers: Int = ngpus,
+    use_multimem: Bool = False,
 ](
     result: NDBuffer[dtype, rank, MutAnyOrigin],
-    src_ptrs: InlineArray[UnsafePointer[Scalar[dtype]], num_buffers],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    src_ptrs: InlineArray[
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+        1 if use_multimem else ngpus,
+    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
 ):
@@ -575,7 +507,7 @@ fn _allreduce_1stage_kernel[
         ngpus: Number of GPUs participating.
         BLOCK_SIZE: Number of threads per block.
         output_lambda: An elementwise output lambda function.
-        num_buffers: Number of buffers to process (defaults to ngpus).
+        use_multimem: If True, use multi-memory space buffers for input.
 
     Args:
         result: Output buffer for reduced values
@@ -593,20 +525,19 @@ fn _allreduce_1stage_kernel[
 
     var global_tid = global_idx.x
     var stride = grid_dim.x * UInt(BLOCK_SIZE)
-    var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
+    var my_sig = rank_sigs[my_rank]
     var num_simd_vectors = num_elements // simd_width
 
-    # Round-robin access pattern to balance NVLink traffic across GPUs.
-    var ptrs = InlineArray[UnsafePointer[Scalar[dtype]], num_buffers](
-        uninitialized=True
-    )
+    # Route input pointers according to round-robin pattern.
+    # For 8 GPUs: Rank 0 accesses 0→1→2→...→7, Rank 1 accesses 1→2→...→7→0, etc.
+    comptime num_buffers = 1 if use_multimem else ngpus
+    var ptrs = InlineArray[
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
+    ](uninitialized=True)
 
     @parameter
     for i in range(num_buffers):
-        # Round-robin pattern, for 8 GPUs for example:
-        # Rank 0 accesses: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7.
-        # Rank 1 accesses: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 0.
-        var target = 0 if num_buffers == 1 else (my_rank + i) % ngpus
+        var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
         ptrs[i] = src_ptrs[target]
 
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
@@ -616,11 +547,11 @@ fn _allreduce_1stage_kernel[
         var elem_idx = idx * simd_width
 
         var reduced_result = _load_reduce[
-            dtype=dtype,
-            num_buffers=num_buffers,
+            ngpus,
             simd_width=simd_width,
             alignment=alignment,
             accum_type=accum_type,
+            use_multimem=use_multimem,
         ](elem_idx, ptrs)
 
         output_lambda[width=simd_width, alignment=alignment](
@@ -638,13 +569,13 @@ fn _allreduce_p2p[
     output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
     use_quickreduce: Bool = False,
-    num_buffers: Int = ngpus,
+    use_multimem: Bool = False,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], num_buffers
+        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
     ],
     out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
     ctx: DeviceContext,
     iteration: Int,
@@ -659,7 +590,7 @@ fn _allreduce_p2p[
         output_lambda: An output elementwise lambda.
         pdl_level: Control PDL behavior for the kernel.
         use_quickreduce: If True, prefer the quickreduce 2-stage path when eligible.
-        num_buffers: Number of buffers to process (defaults to ngpus).
+        use_multimem: If True, use multi-memory space buffers for input.
 
     Args:
         list_of_in_bufs: Input buffers from ALL GPUs (peer access required)
@@ -673,6 +604,7 @@ fn _allreduce_p2p[
 
     Launches P2P reduction kernel on the current GPU to perform direct reduction.
     """
+    comptime num_buffers = 1 if use_multimem else ngpus
     comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     var num_elements = list_of_in_bufs[0].num_elements()
 
@@ -689,7 +621,7 @@ fn _allreduce_p2p[
     # Pass a stack-allocated array of pointers to the device kernel, which
     # doesn't need dynamic tensor spec info from NDBuffer.
     var list_of_in_ptrs = InlineArray[
-        UnsafePointer[Scalar[dtype]], num_buffers
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
     @parameter
@@ -717,11 +649,9 @@ fn _allreduce_p2p[
             ngpus,
             BLOCK_SIZE=BLOCK_SIZE,
             output_lambda=output_lambda,
-            num_buffers=num_buffers,
+            use_multimem=use_multimem,
         ]
-        ctx.enqueue_function_checked[
-            allreduce_1stage_kernel, allreduce_1stage_kernel
-        ](
+        ctx.enqueue_function[allreduce_1stage_kernel, allreduce_1stage_kernel](
             out_buf,
             list_of_in_ptrs,
             rank_sigs,
@@ -752,7 +682,7 @@ fn _allreduce_p2p[
                 atom_size=atom_size,
             ]
 
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 out_buf,
                 DeviceBuffer[dtype](
                     ctx, list_of_in_ptrs[ctx.id()], num_elements, owning=False
@@ -781,9 +711,9 @@ fn _allreduce_p2p[
                 BLOCK_SIZE=BLOCK_SIZE,
                 output_lambda=output_lambda,
                 pdl_level=pdl_level,
-                num_buffers=num_buffers,
+                use_multimem=use_multimem,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 out_buf,
                 list_of_in_ptrs,
                 rank_sigs,
@@ -961,7 +891,7 @@ fn allreduce[
         NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
     ],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
     iteration: Int = 0,
@@ -1020,6 +950,10 @@ fn allreduce[
       - The `use_multimem` parameter requires P2P access between GPUs to be enabled.
     """
 
+    constrained[
+        not (use_multimem and use_quickreduce),
+        "Quickreduce is incompatible with multimem.",
+    ]()
     # Return early, if the input buffer is empty
     var num_elements = input_buffers[0].num_elements()
     if num_elements == 0:
@@ -1082,7 +1016,7 @@ fn allreduce[
         output_lambda=actual_output_lambda,
         pdl_level=pdl_level,
         use_quickreduce=use_quickreduce,
-        num_buffers= 1 if use_multimem else ngpus,
+        use_multimem=use_multimem,
     ](input_buffers, output_buffer, rank_sigs, max_num_blocks, ctx, iteration)
 
 
@@ -1098,9 +1032,11 @@ fn allreduce_2stage_quickreduce_tile[
 ](
     result: NDBuffer[dtype, rank, MutAnyOrigin],
     local_src: UnsafePointer[
-        Scalar[dtype], address_space=_target_address_space
+        Scalar[dtype],
+        ImmutAnyOrigin,
+        address_space=_target_address_space,
     ],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
     tile: Int,
@@ -1138,12 +1074,20 @@ fn allreduce_2stage_quickreduce_tile[
 
     # Build typed views from rank_sigs once
     var flag_buf = InlineArray[
-        UnsafePointer[Scalar[flag_t], address_space=_target_address_space],
+        UnsafePointer[
+            Scalar[flag_t],
+            MutAnyOrigin,
+            address_space=_target_address_space,
+        ],
         ngpus,
     ](uninitialized=True)
 
     var data_buf = InlineArray[
-        UnsafePointer[Scalar[dtype], address_space=_target_address_space],
+        UnsafePointer[
+            Scalar[dtype],
+            MutAnyOrigin,
+            address_space=_target_address_space,
+        ],
         ngpus,
     ](uninitialized=True)
 
@@ -1159,7 +1103,11 @@ fn allreduce_2stage_quickreduce_tile[
 
     @parameter
     fn wait_for_flag(
-        ptr: UnsafePointer[Scalar[flag_t], address_space=_target_address_space],
+        ptr: UnsafePointer[
+            Scalar[flag_t],
+            MutAnyOrigin,
+            address_space=_target_address_space,
+        ],
         expected: Scalar[flag_t],
     ):
         # Spin using relaxed atomic loads for minimal latency. Using relaxed atomics
@@ -1356,8 +1304,8 @@ fn allreduce_2stage_quickreduce[
     atom_size: Int,
 ](
     result: NDBuffer[dtype, rank, MutAnyOrigin],
-    local_src: UnsafePointer[Scalar[dtype]],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    local_src: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
     iteration: Int,

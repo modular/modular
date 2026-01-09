@@ -229,7 +229,7 @@ fn test_tile_scheduler(ctx: DeviceContext) raises:
     # CHECK-DAG: work_info: (0, 13, 0, True)
     # CHECK-DAG: work_info: (0, 11, 0, True)
     # CHECK-DAG: work_info: (0, 12, 0, True)
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         cluster_dim,
         grid_dim=grid_dim,
         block_dim=(256),

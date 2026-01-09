@@ -47,7 +47,7 @@ struct LegacyUnsafePointer[
     type: AnyType,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    origin: Origin[mut=mut] = Origin[mut=mut](unsafe_cast=MutAnyOrigin),
+    origin: Origin[mut=mut] = unsafe_origin_mutcast[MutAnyOrigin, mut],
 ](
     Boolable,
     Comparable,
@@ -219,7 +219,7 @@ struct LegacyUnsafePointer[
     ) -> LegacyUnsafePointer[
         Self.type,
         address_space = AddressSpace.GENERIC,
-        origin = MutOrigin.external,
+        origin=MutExternalOrigin,
     ]:
         """Allocates contiguous storage for `count` elements of `type`
         with compile-time alignment `alignment`.
@@ -273,21 +273,6 @@ struct LegacyUnsafePointer[
         )
 
     @always_inline("nodebug")
-    fn offset[I: Indexer, //](self, idx: I) -> Self:
-        """Returns a new pointer shifted by the specified offset.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            idx: The offset of the new pointer.
-
-        Returns:
-            The new constructed LegacyUnsafePointer.
-        """
-        return __mlir_op.`pop.offset`(self.address, index(idx)._mlir_value)
-
-    @always_inline("nodebug")
     fn __getitem__[
         I: Indexer, //
     ](self, offset: I) -> ref [Self.origin, Self.address_space] Self.type:
@@ -317,7 +302,7 @@ struct LegacyUnsafePointer[
         Returns:
             An offset pointer.
         """
-        return self.offset(offset)
+        return __mlir_op.`pop.offset`(self.address, index(offset)._mlir_value)
 
     @always_inline
     fn __sub__[I: Indexer, //](self, offset: I) -> Self:
@@ -529,19 +514,19 @@ struct LegacyUnsafePointer[
                     T=AnyType,
                     Self,
                     Self._OriginCastType[True, MutAnyOrigin],
-                    Self._OriginCastType[True, MutOrigin.external],
+                    Self._OriginCastType[True, MutExternalOrigin],
                     Self._OriginCastType[False, ImmutAnyOrigin],
-                    Self._OriginCastType[False, ImmutOrigin.external],
+                    Self._OriginCastType[False, ImmutExternalOrigin],
                     Self._UnsafePointerType,
                     Self._UnsafePointerType._OriginCastType[True, MutAnyOrigin],
                     Self._UnsafePointerType._OriginCastType[
-                        True, MutOrigin.external
+                        True, MutExternalOrigin
                     ],
                     Self._UnsafePointerType._OriginCastType[
                         False, ImmutAnyOrigin
                     ],
                     Self._UnsafePointerType._OriginCastType[
-                        False, ImmutOrigin.external
+                        False, ImmutExternalOrigin
                     ],
                 ],
             ]
@@ -552,13 +537,13 @@ struct LegacyUnsafePointer[
                     T=AnyType,
                     Self,
                     Self._OriginCastType[False, ImmutAnyOrigin],
-                    Self._OriginCastType[False, ImmutOrigin.external],
+                    Self._OriginCastType[False, ImmutExternalOrigin],
                     Self._UnsafePointerType,
                     Self._UnsafePointerType._OriginCastType[
                         False, ImmutAnyOrigin
                     ],
                     Self._UnsafePointerType._OriginCastType[
-                        False, ImmutOrigin.external
+                        False, ImmutExternalOrigin
                     ],
                 ],
             ]
@@ -792,7 +777,7 @@ struct LegacyUnsafePointer[
             The loaded value.
         """
         __comptime_assert offset.dtype.is_integral(), "offset must be integer"
-        return self.offset(Int(offset)).load[
+        return (self + Int(offset)).load[
             width=width,
             alignment=alignment,
             volatile=volatile,
@@ -831,7 +816,7 @@ struct LegacyUnsafePointer[
         Returns:
             The loaded value.
         """
-        return self.offset(offset).load[
+        return (self + offset).load[
             width=width,
             alignment=alignment,
             volatile=volatile,
@@ -869,7 +854,7 @@ struct LegacyUnsafePointer[
             offset: The offset to store to.
             val: The value to store.
         """
-        self.offset(offset).store[alignment=alignment, volatile=volatile](val)
+        (self + offset).store[alignment=alignment, volatile=volatile](val)
 
     @always_inline("nodebug")
     fn store[
@@ -902,9 +887,7 @@ struct LegacyUnsafePointer[
             val: The value to store.
         """
         __comptime_assert offset_type.is_integral(), "offset must be integer"
-        self.offset(Int(offset))._store[alignment=alignment, volatile=volatile](
-            val
-        )
+        (self + Int(offset))._store[alignment=alignment, volatile=volatile](val)
 
     @always_inline("nodebug")
     fn store[
@@ -1171,7 +1154,7 @@ struct LegacyUnsafePointer[
     fn mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
+        target_mut, unsafe_origin_mutcast[Self.origin, target_mut]
     ]:
         """Changes the mutability of a pointer.
 
@@ -1195,7 +1178,7 @@ struct LegacyUnsafePointer[
     fn unsafe_mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
+        target_mut, unsafe_origin_mutcast[Self.origin, target_mut]
     ]:
         """Changes the mutability of a pointer.
 
@@ -1220,7 +1203,7 @@ struct LegacyUnsafePointer[
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = Self._OriginCastType[
-                target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
+                target_mut, unsafe_origin_mutcast[Self.origin, target_mut]
             ]._mlir_type,
         ](self.address)
 

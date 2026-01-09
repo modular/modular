@@ -233,7 +233,7 @@ itself:
   kernel function, you can't directly modify its values on the CPU, since the
   memory is on the GPU.
 * On the GPU: When a `DeviceBuffer` is passed in to
-  `enqueue_function_checked()`, the kernel receives a corresponding
+  `enqueue_function()`, the kernel receives a corresponding
   `UnsafePointer` in place of the `DeviceBuffer.` The kernel can then create a
   `LayoutTensor` using the `pointer`.
 
@@ -280,7 +280,7 @@ def initialize_tensor_from_cpu_example():
         ctx.enqueue_copy(dev_buf, host_buf)
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             tensor,
             grid_dim=(col_blocks, row_blocks),
             block_dim=(block_size, block_size),
@@ -660,7 +660,7 @@ fn copy_from_async_example():
             host_buf[i] = i
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
         ctx.enqueue_copy(dev_buf, host_buf)
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             tensor,
             grid_dim=(num_row_blocks, num_col_blocks),
             block_dim=(block_size, block_size),

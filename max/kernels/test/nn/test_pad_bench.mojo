@@ -160,10 +160,10 @@ fn _pad_constant_impl_rec[
 
     if axis + 1 == rank:
         # pointers
-        var pre_pad_start_ptr = output.offset(output_offset)
-        var non_pad_start_ptr = pre_pad_start_ptr.offset(pre_pad)
-        var post_pad_start_ptr = non_pad_start_ptr.offset(non_pad)
-        var input_start_ptr = input.offset(input_offset)
+        var pre_pad_start_ptr = output + output_offset
+        var non_pad_start_ptr = pre_pad_start_ptr + pre_pad
+        var post_pad_start_ptr = non_pad_start_ptr + non_pad
+        var input_start_ptr = input + input_offset
 
         # setting values
         if pad_with_constant:
@@ -304,9 +304,7 @@ fn _memcpy_regions[
     while curr_pre_pad < pre_pad or curr_post_pad < post_pad:
         if curr_pre_pad < pre_pad:
             var copy_to = pre_pad - curr_pre_pad - 1
-            var copy_to_ptr = pre_pad_start_ptr.offset(
-                (copy_to * output_axis_stride)
-            )
+            var copy_to_ptr = pre_pad_start_ptr + copy_to * output_axis_stride
 
             var copy_from: Int
             if non_pad == 1:
@@ -315,8 +313,8 @@ fn _memcpy_regions[
             else:
                 copy_from = copy_to + ((curr_pre_pad % (non_pad - 1)) + 1) * 2
 
-            var copy_from_ptr = pre_pad_start_ptr.offset(
-                (copy_from * output_axis_stride)
+            var copy_from_ptr = (
+                pre_pad_start_ptr + copy_from * output_axis_stride
             )
             memcpy(
                 dest=copy_to_ptr, src=copy_from_ptr, count=output_axis_stride
@@ -325,9 +323,7 @@ fn _memcpy_regions[
 
         if curr_post_pad < post_pad:
             var copy_to = pre_pad + non_pad + curr_post_pad
-            var copy_to_ptr = pre_pad_start_ptr.offset(
-                copy_to * output_axis_stride
-            )
+            var copy_to_ptr = pre_pad_start_ptr + copy_to * output_axis_stride
 
             var copy_from: Int
             if non_pad == 1:
@@ -336,8 +332,8 @@ fn _memcpy_regions[
             else:
                 copy_from = copy_to - ((curr_post_pad % (non_pad - 1)) + 1) * 2
 
-            var copy_from_ptr = pre_pad_start_ptr.offset(
-                copy_from * output_axis_stride
+            var copy_from_ptr = (
+                pre_pad_start_ptr + copy_from * output_axis_stride
             )
 
             memcpy(
@@ -381,8 +377,8 @@ fn _pad_reflect_impl_rec[
     var pre_pad = Int(paddings[2 * axis])
     var post_pad = Int(paddings[2 * axis + 1])
     var non_pad = axis_dim - pre_pad - post_pad
-    var pre_pad_start_ptr = output.offset(output_offset)
-    var input_start_ptr = input.offset(input_offset)
+    var pre_pad_start_ptr = output + output_offset
+    var input_start_ptr = input + input_offset
 
     var input_axis_stride = Int(input_strides[axis])
     var output_axis_stride = Int(output_strides[axis])
@@ -412,7 +408,7 @@ fn _pad_reflect_impl_rec[
             next_output_offset += output_axis_stride
     else:
         # no more dimensions to recurse, copy from input to unpadded region
-        var non_pad_start_ptr = pre_pad_start_ptr.offset(pre_pad)
+        var non_pad_start_ptr = pre_pad_start_ptr + pre_pad
         memcpy(dest=non_pad_start_ptr, src=input_start_ptr, count=non_pad)
 
     _memcpy_regions[dtype](

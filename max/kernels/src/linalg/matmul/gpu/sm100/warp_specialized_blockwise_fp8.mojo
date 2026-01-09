@@ -345,7 +345,7 @@ fn multi_stage_reg_epilogue[
             )
 
         # Guard the write to shared memory is done.
-        named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+        named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
 
         var lane = lane_id()
 
@@ -406,7 +406,7 @@ fn multi_stage_reg_epilogue[
         @parameter
         if stage > 0 and stage < num_stages - 1:
             # Guard the tma read from shared memory is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
 
 
 @always_inline
@@ -521,8 +521,8 @@ fn promote_accumulators[
         ]()
 
         var global_bn_start = bn * UInt(MMA_N)
-        var begin_n = min(MMA_N, BK - Int(global_bn_start % UInt(BK)))
-        var end_n = min(MMA_N, N - global_bn_start)
+        var begin_n = min(MMA_N, BK - Int32(global_bn_start % UInt(BK)))
+        var end_n = min(MMA_N, N - Int32(global_bn_start))
 
         # find the first b_scale index just by dividing by block size (128)
         # we use `b_scale_next_n` to find the second b_scale index later
@@ -535,7 +535,7 @@ fn promote_accumulators[
         #                                                           next_n(128)
 
         # this condition determines the border between the two scale_b and whether we have two scale_b in this block or one
-        b_scale_next_n = begin_n if begin_n < Int(end_n) else MMA_N
+        b_scale_next_n = Int(begin_n) if begin_n < end_n else MMA_N
         # Example 1: N = 896, MMA_N = 192, num_of_b_scales: ceildiv(896, BK) = 7
         # This will be the last block on the horizontal axis i.e., work_tile_block[1] == 4
         # <------------------------------------ MMA_N (192) ------------------------------------>
@@ -596,7 +596,8 @@ fn promote_accumulators[
         stageN // repeats // load_width
     )  # 4 threads per row
     var top_frag_upper_coord = StaticTuple[UInt32, 2](
-        lane_id() // threads_per_row, lane_id() % threads_per_row * load_width
+        UInt32(lane_id() // threads_per_row),
+        UInt32(lane_id() % threads_per_row * load_width),
     )
 
     # getting the other 3 coordinates is straightforward. Each fragment is spaced out by 16 rows
@@ -614,16 +615,16 @@ fn promote_accumulators[
     )
 
     var mma_output_stage = mma_output_pipeline.consumer_stage()
-    var tmem_offset = mma_output_stage * stage_stride_cols + tmem_addr
+    var tmem_offset = mma_output_stage * UInt32(stage_stride_cols) + tmem_addr
     mma_output_pipeline.wait_producer()
 
     var a_scales_smem = a_scales_smem_iter.next(tma_load_stage_index)[]
     # load a_scales from SMEM
     var upper_sfa0_smem = a_scales_smem[
-        0, staged_c_row + top_frag_upper_coord[0]
+        0, UInt32(staged_c_row) + top_frag_upper_coord[0]
     ].cast[accum_type]()
     var upper_sfa1_smem = a_scales_smem[
-        0, staged_c_row + bottom_frag_upper_coord[0]
+        0, UInt32(staged_c_row) + bottom_frag_upper_coord[0]
     ].cast[accum_type]()
 
     var lower_sfa0_smem = Scalar[accum_type]()
@@ -632,14 +633,14 @@ fn promote_accumulators[
     @parameter
     if is_lower_frag_required:
         lower_sfa0_smem = rebind[Scalar[accum_type]](
-            a_scales_smem[0, staged_c_row + top_frag_lower_coord[0]].cast[
-                accum_type
-            ]()
+            a_scales_smem[
+                0, UInt32(staged_c_row) + top_frag_lower_coord[0]
+            ].cast[accum_type]()
         )
         lower_sfa1_smem = rebind[Scalar[accum_type]](
-            a_scales_smem[0, staged_c_row + bottom_frag_lower_coord[0]].cast[
-                accum_type
-            ]()
+            a_scales_smem[
+                0, UInt32(staged_c_row) + bottom_frag_lower_coord[0]
+            ].cast[accum_type]()
         )
 
     syncwarp()
@@ -1053,9 +1054,9 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     for i in range(CLUSTER_M // config.cta_group):
         b_multicast_mask |= 1 << (i * config.cta_group)
 
-    a_multicast_mask <<= rank_m
-    b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
+    a_multicast_mask <<= UInt16(rank_m)
+    b_multicast_mask <<= UInt16(peer_cta_coord[0])
+    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
@@ -1519,7 +1520,7 @@ fn sm100_warp_specialized_blockwise_fp8[
 
     var problem_shape = StaticTuple[Int32, 3](M, N, K)
 
-    ctx.enqueue_function_checked[kernel, kernel, dump_asm=False](
+    ctx.enqueue_function[kernel, kernel, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,

@@ -140,7 +140,7 @@ fn gather[
 
     @parameter
     if size == 1:
-        return UnsafePointer[Scalar[dtype], MutOrigin.external](
+        return UnsafePointer[Scalar[dtype], MutExternalOrigin](
             unsafe_from_address=Int(base[0])
         ).load[invariant=invariant]() if mask else passthrough[0]
 
@@ -150,7 +150,7 @@ fn gather[
 
         @parameter
         for i in range(size):
-            result[i] = UnsafePointer[Scalar[dtype], MutOrigin.external](
+            result[i] = UnsafePointer[Scalar[dtype], MutExternalOrigin](
                 unsafe_from_address=Int(base[i])
             ).load[invariant=invariant]() if mask[i] else passthrough[i]
         return result
@@ -236,7 +236,7 @@ fn scatter[
     @parameter
     if size == 1:
         if mask:
-            var ptr = UnsafePointer[Scalar[dtype], MutOrigin.external](
+            var ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
                 unsafe_from_address=Int(base[0])
             )
             ptr.store(value[0])
@@ -932,7 +932,7 @@ fn assume(val: Bool):
 @always_inline
 fn implicitarg_ptr(
     out result: UnsafePointer[
-        UInt8, MutOrigin.external, address_space = AddressSpace.CONSTANT
+        UInt8, MutExternalOrigin, address_space = AddressSpace.CONSTANT
     ]
 ):
     """

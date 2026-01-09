@@ -164,7 +164,7 @@ fn copy_local_to_dram_32_32_8[
                 dst_idx += dst_fragments.runtime_layout(i)
 
             var src_element = Element[index_type = src.linear_idx_type].load(
-                src.ptr.offset(src_idx),
+                src.ptr + src_idx,
                 src.runtime_element_layout,
             )
 
@@ -576,7 +576,7 @@ fn compare_equal[
 
     # Compute the relative error between the reference and computed tensors
     comptime rel_error_kernel = compute_relative_error_kernel[dtype, layout]
-    gpu_ctx.enqueue_function_checked[rel_error_kernel, rel_error_kernel](
+    gpu_ctx.enqueue_function[rel_error_kernel, rel_error_kernel](
         reference,
         computed,
         max_relative_error,
@@ -594,7 +594,7 @@ fn compare_equal[
         var num_elements = i if i < 1024 else 1024
 
         comptime reduce_kernel = max_reduce_kernel[dtype, layout]
-        gpu_ctx.enqueue_function_checked[reduce_kernel, reduce_kernel](
+        gpu_ctx.enqueue_function[reduce_kernel, reduce_kernel](
             max_relative_error,
             num_elements,
             offset,

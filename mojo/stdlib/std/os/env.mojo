@@ -78,7 +78,7 @@ fn getenv(var name: String, default: String = "") -> String:
       The value of the environment variable.
     """
     var ptr = external_call[
-        "getenv", UnsafePointer[UInt8, ImmutOrigin.external]
+        "getenv", UnsafePointer[UInt8, ImmutExternalOrigin]
     ](name.as_c_string_slice().unsafe_ptr())
     if not ptr:
         return default

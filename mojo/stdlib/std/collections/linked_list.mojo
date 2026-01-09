@@ -32,7 +32,7 @@ struct Node[
         ElementType: The type of element stored in the node.
     """
 
-    comptime _NodePointer = UnsafePointer[Self, MutOrigin.external]
+    comptime _NodePointer = UnsafePointer[Self, MutExternalOrigin]
 
     var value: Self.ElementType
     """The value stored in this node."""
@@ -101,7 +101,7 @@ struct _LinkedListIter[
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     var src: Pointer[LinkedList[Self.ElementType], Self.origin]
-    var curr: UnsafePointer[Node[Self.ElementType], MutOrigin.external]
+    var curr: UnsafePointer[Node[Self.ElementType], MutExternalOrigin]
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -152,7 +152,7 @@ struct LinkedList[
     """
 
     comptime _NodePointer = UnsafePointer[
-        Node[Self.ElementType], MutOrigin.external
+        Node[Self.ElementType], MutExternalOrigin
     ]
 
     comptime IteratorType[
@@ -649,7 +649,7 @@ struct LinkedList[
     fn _get_node_ptr[
         I: Indexer, //
     ](ref self, idx: I) -> UnsafePointer[
-        Node[Self.ElementType], MutOrigin.external
+        Node[Self.ElementType], MutExternalOrigin
     ]:
         """Get a pointer to the node at the specified index.
 

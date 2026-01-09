@@ -235,6 +235,9 @@ def dump_results(
         elif verdict.discrepancy_report.model_modality == Modality.EMBEDDING:
             any_embedding = True
 
+    if node := os.environ.get("NODE_NAME"):
+        to.write(f"\n\nRan on node: {node}")
+
     if any_failed:
         to.write("\n\n## Failed/Crashed Models\n")
         to.write("| Status | Model |\n")
@@ -891,21 +894,6 @@ PIPELINES = {
             kl_div_threshold=5.2e-3,
         ),
     ),
-    "meta-llama/Llama-3.2-11B-Vision-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big"],
-        run=_make_pipeline_runner(
-            pipeline="meta-llama/Llama-3.2-11B-Vision-Instruct",
-            encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama3-vision_golden/1/80e47cd8ba86f3c0f2c9768eb966136fc3e5974f5dd01177a7464338b85221d2/torch_llama3-vision_golden.tar.gz",
-                json_file="torch_llama3_2_bfloat16_golden.json",
-            ),
-            # Note: llama-vision is not yet using llama3 rope.
-            cos_dist_threshold=5e-3,
-            kl_div_threshold=5.4e-3,
-        ),
-    ),
     "OpenGVLab/InternVL3-1B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         # TODO(KERN-1861): MI300x: Memory access fault by GPU node-2.
@@ -1193,6 +1181,23 @@ PIPELINES = {
             cos_dist_threshold=6e-02,
             kl_div_threshold=1.5e-1,
             timeout=1200,
+        ),
+    ),
+    "deepseek-ai/DeepSeek-R1-TP8-DP1-EP1": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-multi", "8xb200"],  # Requires 8 B200s to run
+        run=_make_pipeline_runner(
+            pipeline="deepseek-ai/DeepSeek-R1-TP8-DP1-EP1",
+            encoding="float8_e4m3fn",
+            # Goldens generated using VLLM.
+            # Script: https://gist.github.com/k-w-w/1dc387dc41f11789e464d4a9267a8d20
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz",
+                json_file="vllm_deepseek-r1_float8_golden.json",
+            ),
+            cos_dist_threshold=4.5e-3,
+            kl_div_threshold=6.6e-2,
+            timeout=1800,
         ),
     ),
     "google/gemma-3-1b-it-bfloat16": PipelineDef(

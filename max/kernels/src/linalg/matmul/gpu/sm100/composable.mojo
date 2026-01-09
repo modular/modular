@@ -639,8 +639,8 @@ struct Pipeline[
         ]()
 
         var num_iters = args.num_iters
-        var m: UInt32 = block_idx.y * UInt(BM)
-        var n: UInt32 = block_idx.x * UInt(BN)
+        var m = UInt32(block_idx.y * UInt(BM))
+        var n = UInt32(block_idx.x * UInt(BN))
 
         for i in range(num_iters):
             if elect_one_thread:
@@ -751,7 +751,7 @@ fn matmul_sm100[
     )
 
     comptime kernel = matmul_kernel[pipeline_t]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         args,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),

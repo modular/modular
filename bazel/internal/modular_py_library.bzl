@@ -13,7 +13,7 @@ def modular_py_library(
         visibility = None,
         ignore_extra_deps = [],
         ignore_unresolved_imports = [],
-        imports = None,
+        imports = [],
         tags = [],
         **kwargs):
     """Creates a py_library target
@@ -30,7 +30,7 @@ def modular_py_library(
     """
     package_name = native.package_name()
     if (package_name + "/").startswith(_MAX_PYTHON_ROOT) and package_name not in _IGNORED_PACKAGES:
-        if imports != None:
+        if len(imports) > 0:
             fail(
                 "Do not pass 'imports' to modular_py_library for packages " +
                 "under {}. The imports path is automatically computed.".format(_MAX_PYTHON_ROOT),
@@ -43,6 +43,9 @@ def modular_py_library(
 
     if "manual" in tags:
         fail("modular_py_library targets cannot be manual. Remove 'manual' from the tags list.")
+
+    if len(imports) > 1:
+        fail("modular_py_library only supports a single import path.")
 
     py_library(
         name = name,
@@ -60,6 +63,6 @@ def modular_py_library(
             ignore_extra_deps = ignore_extra_deps,
             ignore_unresolved_imports = ignore_unresolved_imports,
             imports = imports if imports != None else [],
-            srcs = kwargs.get("srcs", []),
+            srcs = kwargs.get("srcs", []) + kwargs.get("pyi_srcs", []),
             tags = ["pydeps"],
         )

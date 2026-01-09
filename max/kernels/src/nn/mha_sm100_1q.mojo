@@ -74,6 +74,7 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
+    RaggedTMA3DTile,
 )
 from logger import Logger
 from memory import bitcast, stack_allocation
@@ -559,10 +560,6 @@ struct TMemAccumulator[
         # each repetition thus loads 8 columns
         # and loads 4 values per thread.
         comptime repeat = frag_size_b32 // 4
-        __comptime_assert (
-            Self.vec_output_layout.size() * Self.element_layout.size()
-            == type_of(dst).layout.size() * type_of(dst).element_layout.size()
-        )
         __comptime_assert (
             Self.num_m_mmas * Self.num_n_mmas == type_of(frags).layout.size()
         )
@@ -1381,12 +1378,18 @@ fn mha_sm100_dispatch[
             decoding=decoding,
         ](ctx, q, num_rows_q)
     )
-    k_tma_op = k.create_tma_tile[Int(BN), Int(new_config.depth), swizzle_mode](
-        ctx
-    )
-    v_tma_op = v.create_tma_tile[Int(BN), Int(new_config.depth), swizzle_mode](
-        ctx
-    )
+    k_tma_op = k.create_tma_tile[
+        swizzle_mode,
+        BN = Int(new_config.block_n()),
+        depth = Int(new_config.depth),
+        BK = Int(new_config.padded_depth),
+    ](ctx)
+    v_tma_op = v.create_tma_tile[
+        swizzle_mode,
+        BN = Int(new_config.block_n()),
+        depth = Int(new_config.depth),
+        BK = Int(new_config.padded_depth),
+    ](ctx)
 
     comptime SchedulerType = TransientScheduler[
         scheduler_tile_shape, num_scheduler_heads
@@ -1504,13 +1507,13 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1641,13 +1644,13 @@ fn _mha_sm100_valid_length_dispatch[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1773,13 +1776,13 @@ fn _mha_sm100_enqueue[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1867,7 +1870,7 @@ fn _mha_sm100_enqueue[
         "Num Partitions:" if decoding else "Max Num Prompt Tiles:",
         partition.num_partitions() if decoding else max_num_prompt_tiles,
     )
-    ctx.enqueue_function_checked[kernel_sm100, kernel_sm100](
+    ctx.enqueue_function[kernel_sm100, kernel_sm100](
         q_tma_op,
         k_tma_op,
         v_tma_op,
@@ -1921,13 +1924,13 @@ fn _mha_sm100[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
         BN = Int(config.block_n()),
-        depth = Int(config.depth),
+        BK = Int(config.padded_depth),
     ],
     o_ptr_arg: UnsafePointer[Scalar[output_type]],
     kv_lut: KVLUTType,
@@ -1971,17 +1974,17 @@ fn _mha_sm100[
     comptime BK: Int = Int(config.padded_depth)
     comptime depth: Int = Int(config.depth)
     comptime padded_depth: Int = Int(config.padded_depth)
-    # alias mma_shape = Index(64, depth, 16)
-    # alias mma_shape = Index(128 if (BM % 128) == 0 else 64, depth, 16)
+    # comptime mma_shape = Index(64, depth, 16)
+    # comptime mma_shape = Index(128 if (BM % 128) == 0 else 64, depth, 16)
     # MMA_M here is defined as per-warp
-    # alias MMA_M = 64
+    # comptime MMA_M = 64
     comptime MMA_M: Int = 128 if (BM % 128) == 0 else 64
     comptime MMA_N0: Int = BN
     comptime MMA_N1: Int = Int(config.padded_depth)
     comptime MMA_K: Int = 16
-    # alias WM = BM // num_softmax_warps
-    # alias WN = BN
-    # alias num_m_mmas = BM // MMA_M  # WM // MMA_M
+    # comptime WM = BM // num_softmax_warps
+    # comptime WN = BN
+    # comptime num_m_mmas = BM // MMA_M  # WM // MMA_M
     # mmas are now handled separately from in-register processing
     # in-register processing is divided up by warps, mmas are not
     comptime num_row_fragments = num_softmax_threads // 128
@@ -2020,8 +2023,8 @@ fn _mha_sm100[
     comptime num_m_mmas = 1
     comptime num_n_mmas = 1
     comptime num_k_mmas = BK // MMA_K
-    # alias num_warps_m = BM // WM  # 4 * num_softmax
-    # alias num_warps_n = BN // WN  # 1
+    # comptime num_warps_m = BM // WM  # 4 * num_softmax
+    # comptime num_warps_n = BN // WN  # 1
     comptime num_heads: Int = Int(config.num_heads)
     # num_softmax_threads ignores the producers
     # actual number of threads is num_softmax_threads + 128
@@ -2133,7 +2136,7 @@ fn _mha_sm100[
     #
     # Note the ordering of strides:
     # ((1, 3), (0, 2, 4))
-    # alias output_layout = Layout(
+    # comptime output_layout = Layout(
     #     IntTuple(
     #         IntTuple(num_row_blocks_per_mma, num_m_blocks_per_warp),
     #         IntTuple(
@@ -2216,14 +2219,14 @@ fn _mha_sm100[
 
     comptime USE_TMA = True
     # https://github.com/Dao-AILab/flash-attention/blob/3b5047d2ce742848f45d44b143d511f211eba2d2/hopper/flash_fwd_kernel_sm90.h#L81-L82
-    comptime num_producer_regs = 56 if num_softmax_warps == 4 else (
-        (24 if USE_TMA else 56) if num_softmax_warps == 8 else 32
-    )
-    comptime num_softmax_regs = 256 if num_softmax_warps == 4 else (
-        (240 if USE_TMA else 224) if num_softmax_warps == 8 else 160
-    )
-    # alias num_producer_regs = 56
-    # alias num_softmax_regs = 224
+    # comptime num_producer_regs = 56 if num_softmax_warps == 4 else (
+    #     (24 if USE_TMA else 56) if num_softmax_warps == 8 else 32
+    # )
+    # comptime num_softmax_regs = 256 if num_softmax_warps == 4 else (
+    #     (240 if USE_TMA else 224) if num_softmax_warps == 8 else 160
+    # )
+    comptime num_producer_regs = 56
+    comptime num_softmax_regs = 224
 
     # constructing calls barrier() if static
     var tile_summary = MHATileSummary[ValidLengthType](
@@ -2437,14 +2440,16 @@ fn _mha_sm100[
                 @parameter
                 @always_inline("nodebug")
                 fn p_mul_v(
-                    read_idx: UInt32, read_phase: UInt32, scale_c: UInt32
+                    read_idx: UInt32,
+                    read_phase: UInt32,
+                    scale_c: UInt32,
+                    kv_row: UInt32,
                 ):
-                    v = v_desc + Int(
-                        BN
-                        * Int(config.padded_depth)
-                        * size_of[kv_type]()
-                        * read_idx
-                    )
+                    comptime offset_elems_per = BN * Int(config.padded_depth)
+                    comptime offset_bytes_per = offset_elems_per * size_of[
+                        kv_type
+                    ]()
+                    v = v_desc + Int(offset_bytes_per * read_idx)
                     produced_mbar_kv[read_idx].wait(read_phase)
                     umma_1.wait_for_tmem()
                     umma_1.mma(
@@ -2484,7 +2489,7 @@ fn _mha_sm100[
                     kv_pipeline_states.step()
                     var read_idx_v: UInt32 = kv_pipeline_states.index()
                     p_mul_v(
-                        read_idx_v, kv_pipeline_states.phase(), output_scale
+                        read_idx_v, kv_pipeline_states.phase(), output_scale, 0
                     )  # can't rw output or pfrag
                     output_scale = 1
                     kv_pipeline_states.step()
@@ -2493,6 +2498,7 @@ fn _mha_sm100[
                     kv_pipeline_states.index(),
                     kv_pipeline_states.phase(),
                     output_scale,
+                    kv_tile_start_row,
                 )
             tcgen05_release_allocation_lock[cta_group]()
             tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
@@ -2652,7 +2658,7 @@ fn _mha_sm100[
 
             @parameter
             if decoding and PartitionType.do_partition:
-                output_ptr = output_ptr.offset(
+                output_ptr = output_ptr + (
                     depth * num_heads * batch_size * position.prompt_offset
                 )
             output_gmem_tile = position.q_out_gmem_tensor(output_ptr)

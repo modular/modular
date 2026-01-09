@@ -635,7 +635,7 @@ fn flash_attention_dispatch[
                     Int(batch_size),
                 )
 
-                ctx.enqueue_function_checked[kernel, kernel](
+                ctx.enqueue_function[kernel, kernel](
                     q_device,
                     k,
                     v,
@@ -827,7 +827,7 @@ fn flash_attention_dispatch[
                         var nullptr_device = DeviceBuffer[accum_type](
                             ctx, nullptr, 0, owning=False
                         )
-                        ctx.enqueue_function_checked[kernel, kernel](
+                        ctx.enqueue_function[kernel, kernel](
                             q_device,
                             k,
                             v,
@@ -913,7 +913,7 @@ fn flash_attention_dispatch[
                     var qk_max = LayoutTensor[
                         accum_type, Layout.row_major[3]()
                     ](
-                        exp_sum_qk_max_data.unsafe_ptr().offset(data_len),
+                        exp_sum_qk_max_data.unsafe_ptr() + data_len,
                         RuntimeLayout[Layout.row_major[3]()].row_major(
                             data_dim
                         ),
@@ -990,7 +990,7 @@ fn flash_attention_dispatch[
                                 sink_weights,
                             )
                     else:
-                        ctx.enqueue_function_checked[kernel, kernel](
+                        ctx.enqueue_function[kernel, kernel](
                             q_device,
                             k,
                             v,
@@ -1027,7 +1027,7 @@ fn flash_attention_dispatch[
                         use_exp2=use_fa3_kernel,
                     ]
 
-                    ctx.enqueue_function_checked[kernel_reduce, kernel_reduce](
+                    ctx.enqueue_function[kernel_reduce, kernel_reduce](
                         output_intermediate_data,
                         output_device,
                         exp_sum_device,
@@ -1455,10 +1455,10 @@ fn mha[
                 use_score_mod=use_score_mod,
                 sink=sink,
             ](
-                q_ptr.offset(q_batch_offset),
+                q_ptr + q_batch_offset,
                 k,
                 v,
-                output_ptr.offset(q_batch_offset),
+                output_ptr + q_batch_offset,
                 scale,
                 seq_len,
                 max_seq_len,
@@ -1477,10 +1477,10 @@ fn mha[
                 use_score_mod=use_score_mod,
                 sink=sink,
             ](
-                q_ptr.offset(q_batch_offset),
+                q_ptr + q_batch_offset,
                 k,
                 v,
-                output_ptr.offset(q_batch_offset),
+                output_ptr + q_batch_offset,
                 scale,
                 seq_len,
                 max_seq_len,
@@ -1500,8 +1500,8 @@ fn mha[
         comptime attention_config = MHAAttentionConfig[False, config, group]()
         var attention = Attention[config, group, False, sink](
             attention_config,
-            output_ptr.offset(q_batch_offset),
-            q_ptr.offset(q_batch_offset),
+            output_ptr + q_batch_offset,
+            q_ptr + q_batch_offset,
             k,
             v,
             mask,
@@ -3022,11 +3022,11 @@ fn mha_decoding[
     # split-k intermediate buffers
     var qk_max_batch_ptr = type_of(qk_max_ptr)()
     if qk_max_ptr:
-        qk_max_batch_ptr = qk_max_ptr.offset(qk_max_offset)
+        qk_max_batch_ptr = qk_max_ptr + qk_max_offset
 
     var exp_sum_batch_ptr = type_of(exp_sum_ptr)()
     if exp_sum_ptr:
-        exp_sum_batch_ptr = exp_sum_ptr.offset(exp_sum_offset)
+        exp_sum_batch_ptr = exp_sum_ptr + exp_sum_offset
 
     var seq_len: Int
     var q_batch_offset: Int
@@ -3073,10 +3073,10 @@ fn mha_decoding[
                 decoding_warp_split_k=decoding_warp_split_k,
                 sink=sink,
             ](
-                q_ptr.offset(q_batch_offset),
+                q_ptr + q_batch_offset,
                 k,
                 v,
-                output_ptr.offset(output_batch_offset),
+                output_ptr + output_batch_offset,
                 exp_sum_batch_ptr,
                 qk_max_batch_ptr,
                 scale,
@@ -3104,10 +3104,10 @@ fn mha_decoding[
                 decoding_warp_split_k=decoding_warp_split_k,
                 sink=sink,
             ](
-                q_ptr.offset(q_batch_offset),
+                q_ptr + q_batch_offset,
                 k,
                 v,
-                output_ptr.offset(output_batch_offset),
+                output_ptr + output_batch_offset,
                 exp_sum_batch_ptr,
                 qk_max_batch_ptr,
                 scale,
@@ -3158,8 +3158,8 @@ fn mha_decoding[
         ]()
         var attention = Attention[config, Int(group), True, sink](
             attention_config,
-            output_ptr.offset(output_batch_offset),
-            q_ptr.offset(q_batch_offset),
+            output_ptr + output_batch_offset,
+            q_ptr + q_batch_offset,
             k,
             v,
             mask,
@@ -4668,7 +4668,7 @@ fn mha_gpu_naive[
         _is_cache_length_accurate=_is_cache_length_accurate,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         p_device,
         q_device,
         k,
@@ -4712,7 +4712,7 @@ fn mha_gpu_naive[
         _use_valid_length=_use_valid_length,
         _is_cache_length_accurate=_is_cache_length_accurate,
     ]
-    ctx.enqueue_function_checked[kernel_1, kernel_1](
+    ctx.enqueue_function[kernel_1, kernel_1](
         output_device,
         p_device,
         v,

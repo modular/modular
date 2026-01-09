@@ -48,7 +48,7 @@ from .legacy_unsafe_pointer import _default_invariant
 fn alloc[
     type: AnyType, /
 ](count: Int, *, alignment: Int = align_of[type]()) -> UnsafePointer[
-    type, MutOrigin.external
+    type, MutExternalOrigin
 ]:
     """Allocates contiguous storage for `count` elements of `type` with
     alignment `alignment`.
@@ -219,8 +219,8 @@ struct UnsafePointer[
 
     - `free()`: Frees memory previously allocated by `alloc()`. Do not call on
       pointers that were not allocated by `alloc()`.
-    - `offset(i)` / `+ i` / `- i`: Pointer arithmetic. Returns a new pointer
-      shifted by `i` elements. No bounds checking.
+    - `+ i` / `- i`: Pointer arithmetic. Returns a new pointer shifted by `i`
+      elements. No bounds checking.
     - `[]` or `[i]`: Dereference to a reference of the pointee (or at
       offset `i`). Only valid if the memory at that location is initialized.
     - `load()`: Loads `width` elements starting at `offset` (default 0) as
@@ -573,21 +573,6 @@ struct UnsafePointer[
         return self._as_legacy()[]
 
     @always_inline("nodebug")
-    fn offset[I: Indexer, //](self, idx: I) -> Self:
-        """Returns a new pointer shifted by the specified offset.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            idx: The offset of the new pointer.
-
-        Returns:
-            The offset pointer.
-        """
-        return self._as_legacy().offset(idx)
-
-    @always_inline("nodebug")
     fn __getitem__[
         I: Indexer, //
     ](self, offset: I) -> ref [Self.origin, Self.address_space] Self.type:
@@ -604,6 +589,22 @@ struct UnsafePointer[
         """
         return self._as_legacy()[offset]
 
+    @deprecated("use `ptr + offset` instead of `ptr.offset(offset)`")
+    @always_inline("nodebug")
+    fn offset[I: Indexer, //](self, idx: I) -> Self:
+        """Returns a new pointer shifted by the specified offset.
+
+        Parameters:
+            I: A type that can be used as an index.
+
+        Args:
+            idx: The offset of the new pointer.
+
+        Returns:
+            The offset pointer.
+        """
+        return self + idx
+
     @always_inline("nodebug")
     fn __add__[I: Indexer, //](self, offset: I) -> Self:
         """Return a pointer at an offset from the current one.
@@ -617,7 +618,7 @@ struct UnsafePointer[
         Returns:
             An offset pointer.
         """
-        return self.offset(offset)
+        return __mlir_op.`pop.offset`(self.address, index(offset)._mlir_value)
 
     @always_inline
     fn __sub__[I: Indexer, //](self, offset: I) -> Self:
@@ -1448,7 +1449,7 @@ struct UnsafePointer[
     fn mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
+        target_mut, unsafe_origin_mutcast[Self.origin, target_mut]
     ]:
         """Changes the mutability of a pointer.
 
@@ -1469,7 +1470,7 @@ struct UnsafePointer[
     fn unsafe_mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
+        target_mut, unsafe_origin_mutcast[Self.origin, target_mut]
     ]:
         """Changes the mutability of a pointer.
 

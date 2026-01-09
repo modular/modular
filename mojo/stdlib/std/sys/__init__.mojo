@@ -23,6 +23,7 @@ interfacing with C libraries, or when you need direct access to platform
 capabilities and compiler features.
 """
 
+from ._assembly import inlined_assembly
 from ._io import stderr, stdin, stdout
 from .arg import argv
 from .compile import codegen_unreachable, is_compile_time

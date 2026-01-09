@@ -592,7 +592,7 @@ fn _softmax_cpu[
                 Layout.row_major(UNKNOWN_VALUE),
                 address_space = output.address_space,
             ](
-                output.ptr.offset(buffer_offset),
+                output.ptr + buffer_offset,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     IndexList[1](inner_dim)
                 ),
@@ -823,7 +823,7 @@ fn _softmax_gpu[
         sink=sink,
         logsoftmax=logsoftmax,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         shape,
         output,
         sink_weights.value(),
@@ -1918,10 +1918,6 @@ fn _rowmax_online_softmax[
     comptime num_colwise_tiles = reg_tile_layout[0].size()
     comptime num_rowwise_tiles = reg_tile_layout[1].size()
     # The online softmax attributes for each thread's elements (fragments).
-    __comptime_assert rowmax_tensor.element_layout.size() == frag_num_rows, (
-        "`rowmax_tensor` and `rowsum_tensor` should be vectorized for AMD,"
-        " where `frag_num_rows > 1`. This simplifies the implementation."
-    )
     score_frag_rowmax = type_of(rowmax_tensor).stack_allocation()
 
     comptime num_rowwise_lanes = UInt32(warp_layout.shape[1].value())

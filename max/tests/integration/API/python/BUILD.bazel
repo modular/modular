@@ -181,6 +181,38 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test-speculative-decoding-rejection",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_speculative_decoding_rejection.py",
+    ],
+    data = [
+        # TODO(MAXPLAT-86): Find a shared place for these tools
+        "//max/tests/integration/API:inputs",
+        "//max/tests/integration/API:pytest_inputs",
+    ],
+    env = {"MODULAR_PATH": "."},
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//:b200_gpu": ["@platforms//:incompatible"],  # FIXME: MODELS-862
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max",
+        "//max/python/max/entrypoints",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration/pipelines/python/test_common",
+    ],
+)
+
+modular_py_test(
     name = "test-sampling",
     size = "large",
     srcs = [

@@ -613,41 +613,39 @@ class Tensor(DLPackArray, HasTensorValue):
         )
 
     @classmethod
-    def full_like(cls, type: TensorType, value: Number) -> Tensor:
-        """Creates a tensor filled with a value, matching a given type's properties.
+    def full_like(cls, input: Tensor | TensorType, value: Number) -> Tensor:
+        """Creates a tensor filled with a value, matching a given tensor's properties.
 
         Returns a new tensor filled with the specified value that matches the
-        shape, data type, and device of the given tensor type. This is useful
-        when you need to create a tensor with uniform values that's compatible
-        with an existing tensor's properties.
+        shape, data type, and device of the input tensor. This behaves like
+        NumPy's ``full_like`` and PyTorch's ``full_like``.
 
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.graph import TensorType
-            from max.driver import CPU
             from max.dtype import DType
 
-            # Create a reference tensor type
-            ref_type = TensorType(DType.float32, (2, 3), device=CPU())
+            # Create a reference tensor
+            ref = tensor.Tensor.ones([2, 3], dtype=DType.float32)
 
-            # Create tensor filled with 5.0 matching the reference type
-            x = tensor.Tensor.full_like(ref_type, value=5.0)
+            # Create tensor filled with 5.0 matching the reference tensor
+            x = tensor.Tensor.full_like(ref, value=5.0)
 
         Args:
-            type: The tensor type to match. The returned tensor will have the
-                same shape, dtype, and device as this type.
+            input: The tensor or tensor type to match. The returned tensor will
+                have the same shape, dtype, and device as this input.
             value: The scalar value to fill the tensor with.
 
         Returns:
             Tensor: A new tensor filled with the specified value, matching the
-                properties of the input type.
+                properties of the input.
         """
+        tensor_type = input.type if isinstance(input, Tensor) else input
         return cls.full(
-            type.shape,
+            tensor_type.shape,
             value=value,
-            dtype=type.dtype,
-            device=type.device.to_device(),
+            dtype=tensor_type.dtype,
+            device=tensor_type.device.to_device(),
         )
 
     @classmethod
@@ -693,37 +691,38 @@ class Tensor(DLPackArray, HasTensorValue):
         return cls.full(shape, value=0, dtype=dtype, device=device)
 
     @classmethod
-    def zeros_like(cls, type: TensorType) -> Tensor:
-        """Creates a tensor of zeros matching a given type's properties.
+    def zeros_like(cls, input: Tensor | TensorType) -> Tensor:
+        """Creates a tensor of zeros matching a given tensor's properties.
 
         Returns a new tensor filled with zeros that matches the shape, data type,
-        and device of the specified tensor type. This is useful when you need to
-        create a zero tensor that's compatible with an existing tensor's properties.
+        and device of the input tensor. This behaves like NumPy's ``zeros_like``
+        and PyTorch's ``zeros_like``.
 
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.graph import TensorType
-            from max.driver import CPU
             from max.dtype import DType
 
-            # Create a reference tensor type
-            ref_type = TensorType(DType.float32, (3, 4), device=CPU())
+            # Create a reference tensor
+            ref = tensor.Tensor.ones([3, 4], dtype=DType.float32)
 
-            # Create zeros tensor matching the reference type
-            x = tensor.Tensor.zeros_like(ref_type)
-            # Result: 3x4 tensor of zeros with dtype float32 on CPU
+            # Create zeros tensor matching the reference tensor
+            x = tensor.Tensor.zeros_like(ref)
+            # Result: 3x4 tensor of zeros with dtype float32
 
         Args:
-            type: The tensor type to match. The returned tensor will have the
-                same shape, dtype, and device as this type.
+            input: The tensor or tensor type to match. The returned tensor will
+                have the same shape, dtype, and device as this input.
 
         Returns:
             Tensor: A new tensor filled with zeros matching the properties of the
-                input type.
+                input.
         """
+        tensor_type = input.type if isinstance(input, Tensor) else input
         return cls.zeros(
-            type.shape, dtype=type.dtype, device=type.device.to_device()
+            tensor_type.shape,
+            dtype=tensor_type.dtype,
+            device=tensor_type.device.to_device(),
         )
 
     @classmethod
@@ -769,45 +768,46 @@ class Tensor(DLPackArray, HasTensorValue):
         return cls.full(shape, value=1, dtype=dtype, device=device)
 
     @classmethod
-    def ones_like(cls, type: TensorType) -> Tensor:
-        """Creates a tensor of ones matching a given type's properties.
+    def ones_like(cls, input: Tensor | TensorType) -> Tensor:
+        """Creates a tensor of ones matching a given tensor's properties.
 
         Returns a new tensor filled with ones that matches the shape, data type,
-        and device of the specified tensor type. This is useful when you need to
-        create a ones tensor that's compatible with an existing tensor's properties.
+        and device of the input tensor. This behaves like NumPy's ``ones_like``
+        and PyTorch's ``ones_like``.
 
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.graph import TensorType
-            from max.driver import CPU
             from max.dtype import DType
 
-            # Create a reference tensor type
-            ref_type = TensorType(DType.float32, (3, 4), device=CPU())
+            # Create a reference tensor
+            ref = tensor.Tensor.zeros([3, 4], dtype=DType.float32)
 
-            # Create ones tensor matching the reference type
-            x = tensor.Tensor.ones_like(ref_type)
-            # Result: 3x4 tensor of ones with dtype float32 on CPU
+            # Create ones tensor matching the reference tensor
+            x = tensor.Tensor.ones_like(ref)
+            # Result: 3x4 tensor of ones with dtype float32
 
         Args:
-            type: The tensor type to match. The returned tensor will have the
-                same shape, dtype, and device as this type.
+            input: The tensor or tensor type to match. The returned tensor will
+                have the same shape, dtype, and device as this input.
 
         Returns:
             Tensor: A new tensor filled with ones matching the properties of the
-                input type.
+                input.
         """
+        tensor_type = input.type if isinstance(input, Tensor) else input
         return cls.ones(
-            type.shape, dtype=type.dtype, device=type.device.to_device()
+            tensor_type.shape,
+            dtype=tensor_type.dtype,
+            device=tensor_type.device.to_device(),
         )
 
     @classmethod
     def arange(
         cls,
-        start: int = 0,
-        stop: int | None = None,
-        step: int = 1,
+        start: TensorValueLike = 0,
+        stop: TensorValueLike | None = None,
+        step: TensorValueLike = 1,
         *,
         dtype: DType | None = None,
         device: Device | None = None,
@@ -816,8 +816,8 @@ class Tensor(DLPackArray, HasTensorValue):
 
         Returns a new 1D tensor containing a sequence of values starting from
         ``start`` (inclusive) and ending before ``stop`` (exclusive), with values
-        spaced by `step`. This is similar to Python's built-in ``range()`` function
-        and NumPy's ``arange()``.
+        spaced by ``step``. This is similar to Python's built-in ``range()``
+        function and NumPy's ``arange()``.
 
         .. code-block:: python
 
@@ -836,12 +836,20 @@ class Tensor(DLPackArray, HasTensorValue):
             z = tensor.Tensor.arange(0, 5, dtype=DType.float32)
             # Result: [0.0, 1.0, 2.0, 3.0, 4.0]
 
+            # Create a range with float step (like numpy/pytorch)
+            w = tensor.Tensor.arange(0.0, 1.0, 0.2, dtype=DType.float32)
+            # Result: [0.0, 0.2, 0.4, 0.6, 0.8]
+
+            # Create a descending range with negative step
+            v = tensor.Tensor.arange(5, 0, -1, dtype=DType.float32)
+            # Result: [5.0, 4.0, 3.0, 2.0, 1.0]
+
         Args:
             start: The starting value of the sequence. If ``stop`` is not provided,
                 this becomes the ``stop`` value and ``start`` defaults to 0.
             stop: The end value of the sequence (exclusive). If not specified,
                 the sequence ends at ``start`` and begins at 0.
-            step: The spacing between values in the sequence.
+            step: The spacing between values in the sequence. Must be non-zero.
             dtype: The data type for the tensor elements. If not specified,
                 defaults to :obj:`DType.float32` for CPU devices and
                 :obj:`DType.bfloat16` for accelerator devices.
@@ -1311,6 +1319,39 @@ class Tensor(DLPackArray, HasTensorValue):
         if max is not None:
             x = F.min(x, max)
         return x
+
+    def squeeze(self, axis: int) -> Tensor:
+        """Removes a size-1 dimension from the tensor.
+
+        Returns a tensor with the specified size-1 dimension removed. This is
+        useful for removing singleton dimensions from tensors after operations
+        that may have added them.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.dtype import DType
+
+            # Create a tensor with a size-1 dimension
+            x = tensor.Tensor.ones([4, 1, 6], dtype=DType.float32)
+            print(x.shape)  # (4, 1, 6)
+
+            # Squeeze out the size-1 dimension
+            y = x.squeeze(axis=1)
+            print(y.shape)  # (4, 6)
+
+        Args:
+            axis: The dimension to remove from the tensor's shape. If negative,
+                this indexes from the end of the tensor. The dimension at this
+                axis must have size 1.
+
+        Returns:
+            Tensor: A tensor with the specified dimension removed.
+
+        Raises:
+            ValueError: If the dimension at the specified axis is not size 1.
+        """
+        return F.squeeze(self, axis)
 
     def reshape(self, shape: ShapeLike) -> Tensor:
         """Reshapes the tensor to a new shape.

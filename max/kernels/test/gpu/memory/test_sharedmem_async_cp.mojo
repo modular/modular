@@ -33,8 +33,8 @@ fn copy_via_shared(
     ] = src.address_space_cast[AddressSpace.GLOBAL]()
 
     memory.async_copy[4](
-        src_global.offset(thread_id),
-        mem_buff.offset(thread_id),
+        src_global + thread_id,
+        mem_buff + thread_id,
     )
 
     var m_barrier = stack_allocation[
@@ -68,7 +68,7 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     ctx.enqueue_copy(out_device, out_data)
 
     comptime kernel = copy_via_shared
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         in_device,
         out_device,
         grid_dim=(1,),
