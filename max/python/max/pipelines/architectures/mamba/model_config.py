@@ -143,9 +143,11 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
 
         Checks both num_hidden_layers and n_layer for compatibility.
         """
-        return getattr(
+        num_layers = getattr(
             huggingface_config, "num_hidden_layers", None
         ) or getattr(huggingface_config, "n_layer", 64)
+        assert num_layers is not None
+        return int(num_layers)
 
     @staticmethod
     def calculate_max_seq_len(
@@ -171,7 +173,7 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
     def generate(
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        state_dict: dict,
+        state_dict: dict[str, Any],
         dtype: DType,
         n_devices: int,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
@@ -200,6 +202,7 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
 
         # expand factor for intermediate size calculation
         expand = getattr(huggingface_config, "expand", 2)
+        assert expand is not None
 
         # intermediate_size can come from d_inner, d_intermediate, or intermediate_size
         # If not provided or 0, calculate as expand * hidden_size (matches reference: d_inner = int(expand * d_model))
@@ -209,6 +212,7 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
             or getattr(huggingface_config, "d_intermediate", None)
         )
         if intermediate_size is None or intermediate_size == 0:
+            assert hidden_size is not None
             intermediate_size = int(expand * hidden_size)
 
         # num_hidden_layers can come from num_hidden_layers or n_layer
@@ -267,9 +271,9 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
                 pipeline_config, huggingface_config=huggingface_config
             ),
             # Model architecture fields
-            hidden_size=hidden_size,
+            hidden_size=int(hidden_size) if hidden_size is not None else 2560,
             intermediate_size=intermediate_size,
-            num_hidden_layers=num_hidden_layers,
+            num_hidden_layers=int(num_hidden_layers) if num_hidden_layers is not None else 64,
             # SSM-specific fields
             d_state=d_state,
             dt_rank=dt_rank,
@@ -292,9 +296,9 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
             hidden_act=hidden_act,
             rescale_prenorm_residual=rescale_prenorm_residual,
             # Legacy/compatibility fields
-            d_model=d_model,
+            d_model=int(d_model) if d_model is not None else 2560,
             d_intermediate=d_intermediate,
-            n_layer=n_layer,
+            n_layer=int(n_layer) if n_layer is not None else 64,
             ssm_cfg=ssm_cfg,
             attn_layer_idx=attn_layer_idx,
             attn_cfg=attn_cfg,

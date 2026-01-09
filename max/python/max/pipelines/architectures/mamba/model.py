@@ -28,6 +28,7 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -346,6 +347,7 @@ class MambaModelBase(PipelineModel[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
+        kv_cache_inputs: KVCacheInputs | None = None,  # Mamba doesn't use KV cache
         return_n_logits: int = 1,
     ) -> MambaInputs:
         """Prepare the inputs for the first pass in multistep execution."""

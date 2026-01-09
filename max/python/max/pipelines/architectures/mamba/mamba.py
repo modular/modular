@@ -97,7 +97,7 @@ class Mamba(Module):
                     dim=config.hidden_size,
                     mixer=ssm,
                     mlp=None,  # TODO: Add MLP support if needed
-                    norm=create_norm(),
+                    norm=create_norm(),  # type: ignore[arg-type]
                     norm2=None,
                     fused_add_norm=True,  # Enable fused path
                     residual_in_fp32=config.residual_in_fp32,
@@ -159,13 +159,14 @@ class Mamba(Module):
         # Our Block returns (mixer_output, residual) where residual accumulates sums
         # but hidden_states is just the mixer output. The residual add happens
         # at the start of the next layer.
-        residual = None
+        residual: TensorValue | None = None
         for layer in self.layers:
-            h, residual = layer(
+            layer_output: tuple[TensorValue, TensorValue] = layer(
                 hidden_states=h,
                 residual=residual,
                 input_row_offsets=input_row_offsets,
             )
+            h, residual = layer_output
 
         # After all layers, h is the last mixer output and residual contains the
         # accumulated sum. We need to add them before the final norm.
@@ -174,7 +175,7 @@ class Mamba(Module):
             h = h + residual
 
         # Apply final normalization
-        h = self.norm(h)
+        h = self.norm(h)  # type: ignore[assignment]
 
         # Get last token logits
         last_token_indices = input_row_offsets[1:] - 1
