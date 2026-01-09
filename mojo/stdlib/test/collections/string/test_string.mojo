@@ -1760,5 +1760,20 @@ def test_from_utf8():
             _ = String(from_utf8=Span(sequence))
 
 
+def test_append_codepoint():
+    var s = String()
+    s.append(Codepoint.ord("a"))
+    assert_equal(s, "a")
+    assert_equal(s.byte_length(), 1)
+
+    s.append(Codepoint.ord("€"))
+    assert_equal(s, "a€")
+    assert_equal(s.byte_length(), 4)
+
+    s.append(Codepoint.ord("🔥"))
+    assert_equal(s, "a€🔥")
+    assert_equal(s.byte_length(), 8)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

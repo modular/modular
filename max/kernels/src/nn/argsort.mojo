@@ -176,7 +176,7 @@ fn _argsort_gpu_impl[
             comptime kernel = bitonic_sort_step[
                 indices.dtype, input.dtype, indices.layout, input.layout
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 indices,
                 input,
                 n,

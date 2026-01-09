@@ -193,7 +193,7 @@ struct LogProbabilitiesRagged:
                     )
 
             comptime block_size = 64
-            ctx.get_device_context().enqueue_function_checked[
+            ctx.get_device_context().enqueue_function[
                 raw_lp_kernel, raw_lp_kernel
             ](
                 grid_dim=ceildiv(num_output_tokens, block_size),

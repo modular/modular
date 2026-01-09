@@ -67,8 +67,8 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
 
     comptime kernel = vec_func[add_with_captured]
     # TODO(MAXPLAT-335): Make compile_function_experimental support this case.
-    var kernel_func = ctx.compile_function_checked[kernel, kernel]()
-    ctx.enqueue_function_checked(
+    var kernel_func = ctx.compile_function[kernel, kernel]()
+    ctx.enqueue_function(
         kernel_func,
         in0,
         in1,

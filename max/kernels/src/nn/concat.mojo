@@ -702,12 +702,12 @@ fn _concat_inner_most_single_dim[
     ],
 ):
     var idx = block_idx.x * UInt(block_size) + thread_idx.x
+    if idx >= UInt(output.size()):
+        return
+
     var index = _get_start_indices_of_nth_subvolume_uint[1](
         UInt(idx), output.runtime_layout.shape.value
     )
-
-    if index > output.size():
-        return
 
     @parameter
     for i in range(num_inputs):
@@ -878,7 +878,7 @@ fn _concat_gpu[
                 epilogue_fn,
             ]
 
-            return ctx.enqueue_function_checked[kernel, kernel](
+            return ctx.enqueue_function[kernel, kernel](
                 output,
                 inputs,
                 grid_dim=(inputs[0].size() // block_size),
@@ -1062,7 +1062,7 @@ fn _fused_concat_gpu[
                 size,
             ]
 
-            return ctx.enqueue_function_checked[kernel, kernel](
+            return ctx.enqueue_function[kernel, kernel](
                 input_shapes,
                 output,
                 grid_dim=(

@@ -294,7 +294,6 @@ EOF
         ],
         "toolchains": mojo_test_deps + [
             "//bazel/internal:current_gpu_toolchain",
-            "//bazel/internal:lib_toolchain",
         ],
         "data": data + tools + extra_data + mojo_test_deps + [
             litcfg,

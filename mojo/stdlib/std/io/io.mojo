@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections.string.string_slice import get_static_string
-from io.write import _WriteBufferHeap, _WriteBufferStack
+from fmt._utils import _WriteBufferHeap, _WriteBufferStack
 from sys import _libc as libc
 from sys import (
     external_call,
@@ -125,7 +125,7 @@ struct _fdopen[mode: StaticString = "a"]:
         ```
         """
         # getdelim will allocate the buffer using malloc().
-        var buffer = UnsafePointer[UInt8, MutOrigin.external]()
+        var buffer = UnsafePointer[UInt8, MutExternalOrigin]()
         var n = UInt64(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);

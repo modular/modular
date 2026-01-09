@@ -55,7 +55,6 @@ def modular_py_test(
     validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
     toolchains = [
         "//bazel/internal:current_gpu_toolchain",
-        "//bazel/internal:lib_toolchain",
     ]
 
     has_test = False

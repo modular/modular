@@ -313,7 +313,7 @@ fn sleep(sec: Float64):
         Int((sec - total_secs) * NANOSECONDS_IN_SECOND),
     )
     var req = UnsafePointer(to=tv_spec)
-    var rem = UnsafePointer[_CTimeSpec, MutOrigin.external]()
+    var rem = UnsafePointer[_CTimeSpec, MutExternalOrigin]()
     _ = external_call["nanosleep", Int32](req, rem)
 
 

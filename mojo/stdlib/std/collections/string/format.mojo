@@ -70,7 +70,6 @@ methods.
 """
 
 
-from collections.string.string import _chr_ascii
 from builtin.variadics import Variadic
 from utils import Variant
 

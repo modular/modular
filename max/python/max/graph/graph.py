@@ -752,7 +752,7 @@ class Graph:
         handle = self._context.attach_diagnostic_handler(handler)
         try:
             yield None
-        except (mlir.MLIRError, ValueError) as e:  # type: ignore
+        except (mlir.MLIRError, ValueError) as e:
             # MLIRError is raised from the MLIR Python bindings on MLIR
             # errors, however so is ValueError when operation create fails.
             # So catch both exception types and report diagnostics here.
@@ -844,7 +844,7 @@ class Graph:
                     staged_op = staged_op.opview
                     self._verify_op(staged_op)
 
-            except (mlir.MLIRError, ValueError) as e:  # type: ignore
+            except (mlir.MLIRError, ValueError) as e:
                 # MLIRError is raised from the MLIR Python bindings on MLIR
                 # errors, however so is ValueError when operation creation fails.
                 # So catch both exception types here.

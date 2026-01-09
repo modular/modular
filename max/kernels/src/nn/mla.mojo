@@ -494,7 +494,7 @@ fn flare_mla_decoding_dispatch[
             ctx, nullptr, 0, owning=False
         )
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             q_device,
             k,
             output_device,
@@ -1725,7 +1725,7 @@ fn flare_mla_prefill_dispatch[
             Int(ceildiv(max_prompt_len, Int(BM))),
             Int(batch_size),
         )
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             q_device,
             k,
             v,
@@ -2714,7 +2714,7 @@ fn mla_prefill_plan[
     if batch_size == 0:
         # Fill buffer lengths with 0
         comptime kernel = set_buffer_lengths_to_zero[buffer_lengths.layout]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             buffer_lengths, grid_dim=1, block_dim=1
         )
     else:
@@ -2726,7 +2726,7 @@ fn mla_prefill_plan[
             cache_t,
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             buffer_row_offsets,
             cache_offsets,
             buffer_lengths,

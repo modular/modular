@@ -144,22 +144,22 @@ fn _run_test_function_compilation(ctx: DeviceContext) raises:
     # the signature.
 
     print("Compiling _vec_func[NotZeroSized]")
-    var compiled_vec_func_0 = ctx.compile_function_checked[
+    var compiled_vec_func_0 = ctx.compile_function[
         _vec_func[NotZeroSized], _vec_func[NotZeroSized]
     ]()
 
     print("Compiling _vec_func[ZeroSizet]")
-    var compiled_vec_func_1 = ctx.compile_function_checked[
+    var compiled_vec_func_1 = ctx.compile_function[
         _vec_func[ZeroSized], _vec_func[ZeroSized]
     ]()
 
     print("Compiling _vec_func_not_zero")
-    var compiled_vec_func_2 = ctx.compile_function_checked[
+    var compiled_vec_func_2 = ctx.compile_function[
         _vec_func_not_zero, _vec_func_not_zero
     ]()
 
     print("Compiling _vec_func_zero")
-    var compiled_vec_func_3 = ctx.compile_function_checked[
+    var compiled_vec_func_3 = ctx.compile_function[
         _vec_func_zero, _vec_func_zero
     ]()
 
@@ -200,9 +200,9 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
 
     print("compiling vec_func")
     # TODO(MAXPLAT-333): Make compile_function_experimental support this case.
-    var compiled_vec_func = ctx.compile_function_checked[vec_func, vec_func]()
+    var compiled_vec_func = ctx.compile_function[vec_func, vec_func]()
     print("calling vec_func")
-    ctx.enqueue_function_checked(
+    ctx.enqueue_function(
         compiled_vec_func,
         zs,
         in0,

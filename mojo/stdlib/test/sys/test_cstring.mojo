@@ -22,7 +22,7 @@ from sys.ffi import CStringSlice
 
 
 def test_default_slice():
-    var cslice = CStringSlice[MutOrigin.external]()
+    var cslice = CStringSlice[MutExternalOrigin]()
     assert_equal(len(cslice), 0)
     assert_equal(String(cslice), "")
     assert_false(cslice.unsafe_ptr())
@@ -41,7 +41,7 @@ def test_init_from_invalid_string():
 
 def test_init_from_invalid_byte_span():
     with assert_raises(contains="not nul-terminated"):
-        _ = CStringSlice(Span[Byte, MutOrigin.external]())
+        _ = CStringSlice(Span[Byte, MutExternalOrigin]())
 
     with assert_raises(contains="not nul-terminated"):
         _ = CStringSlice(Span[Byte]([Byte(1), Byte(2)]))
@@ -60,7 +60,7 @@ def test_c_string_slice_from_ptr():
 
 
 def test_c_string_slice_from_nul_ptr():
-    var cslice = CStringSlice[ImmutOrigin.external](unsafe_from_ptr={})
+    var cslice = CStringSlice[ImmutExternalOrigin](unsafe_from_ptr={})
     assert_equal(len(cslice), 0)
     assert_equal(String(cslice), "")
     assert_false(cslice.unsafe_ptr())
@@ -120,7 +120,7 @@ def test_c_string_eq():
     var first = CStringSlice(String("mojo!\0"))
     var second = CStringSlice(String("mojo!\0"))
     var third = CStringSlice(String("not mojo\0"))
-    var fourth = CStringSlice[ImmutOrigin.external]()
+    var fourth = CStringSlice[ImmutExternalOrigin]()
 
     assert_true(first == second)
     assert_true(first != third)

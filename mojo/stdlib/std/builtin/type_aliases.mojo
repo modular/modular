@@ -24,11 +24,53 @@ comptime ImmutOrigin = Origin[mut=False]
 comptime MutOrigin = Origin[mut=True]
 """Mutable origin reference type."""
 
-comptime ImmutAnyOrigin = Origin(__mlir_attr.`#lit.any.origin : !lit.origin<0>`)
+comptime AnyOrigin[*, mut: Bool] = Origin(
+    __mlir_attr[`#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`]
+)
+"""An origin that might access any memory value.
+
+Parameters:
+    mut: Whether the origin is mutable.
+"""
+
+comptime ImmutAnyOrigin = AnyOrigin[mut=False]
 """The immutable origin that might access any memory value."""
 
-comptime MutAnyOrigin = Origin(__mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`)
+comptime MutAnyOrigin = AnyOrigin[mut=True]
 """The mutable origin that might access any memory value."""
+
+comptime ExternalOrigin[*, mut: Bool] = Origin[mut=mut](
+    __mlir_attr[
+        `#lit.origin.union<> : !lit.origin<`,
+        +mut._mlir_value,
+        `>`,
+    ]
+)
+"""A parameterized external origin guaranteed not to alias any existing origins.
+
+Parameters:
+    mut: Whether the origin is mutable.
+
+An external origin implies there is no previously existing value that this
+origin aliases. The compiler cannot track the origin or the value's lifecycle.
+Useful when interfacing with memory from outside the current Mojo program.
+"""
+
+comptime ImmutExternalOrigin = ExternalOrigin[mut=False]
+"""An immutable external origin guaranteed not to alias any existing origins.
+
+An external origin implies there is no previously existing value that this
+origin aliases. The compiler cannot track the origin or the value's lifecycle.
+Useful when interfacing with memory from outside the current Mojo program.
+"""
+
+comptime MutExternalOrigin = ExternalOrigin[mut=True]
+"""A mutable external origin guaranteed not to alias any existing origins.
+
+An external origin implies there is no previously existing value that this
+origin aliases. The compiler cannot track the origin or the value's lifecycle.
+Useful when interfacing with memory from outside the current Mojo program.
+"""
 
 # Static constants are a named subset of the global origin.
 comptime StaticConstantOrigin = Origin(
@@ -65,16 +107,6 @@ struct Origin[*, mut: Bool]:
         `>`,
     ]
 
-    comptime external = Self(unsafe_cast=origin_of())
-    """An external origin of the given mutability. The external origin is
-    guaranteed not to alias any existing origins.
-
-    An external origin implies there is no previously existing value that this
-    origin aliases. Therefore, the compiler cannot track the origin or the
-    value's lifecycle. The external origin is useful when interfacing with
-    memory that comes from outside the current Mojo program.
-    """
-
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -106,12 +138,23 @@ struct Origin[*, mut: Bool]:
         """
         self._mlir_origin = other._mlir_origin
 
-    @always_inline("builtin")
-    fn __init__(out self, *, unsafe_cast: Origin):
-        """Allow converting an mutable origin to an immutable one.
 
-        Args:
-            unsafe_cast: The mutable origin to convert.
-        """
-        # TODO: Should use lit.origin.mutcast in the param domain.
-        self._mlir_origin = rebind[Self._mlir_type](unsafe_cast._mlir_origin)
+comptime unsafe_origin_mutcast[o: Origin, mut: Bool = True] = Origin(
+    __mlir_attr[
+        `#lit.origin.mutcast<`,
+        o._mlir_origin,
+        `> : !lit.origin<`,
+        mut._mlir_value,
+        `>`,
+    ]
+)
+"""Cast an origin to a different mutability, potentially introducing more
+mutability, which is an unsafe operation.
+
+Parameters:
+    o: The origin to cast.
+    mut: The mutability of the resulting origin.
+
+Returns:
+    A new origin with the specified mutability.
+"""

@@ -1870,7 +1870,7 @@ fn _mha_sm100_enqueue[
         "Num Partitions:" if decoding else "Max Num Prompt Tiles:",
         partition.num_partitions() if decoding else max_num_prompt_tiles,
     )
-    ctx.enqueue_function_checked[kernel_sm100, kernel_sm100](
+    ctx.enqueue_function[kernel_sm100, kernel_sm100](
         q_tma_op,
         k_tma_op,
         v_tma_op,

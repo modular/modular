@@ -173,9 +173,10 @@ class TokenGeneratorPipeline(
             total_sw.elapsed_ms,
         )
 
-        # Skip special tokens if tool use is enabled
-        tool_use = request.tools is not None
-        skip_special_tokens = tool_use
+        # Always skip special tokens in decoded output
+        # (EOS tokens like <|im_end|> should not appear in the text response)
+        # This applies to both regular generation and tool use
+        skip_special_tokens = True
 
         # Track whether we've yielded the first token (for TTFT metric)
         first_token_yielded = False
@@ -207,41 +208,38 @@ class TokenGeneratorPipeline(
                         # nesting in code.
                         # Additionally, using a parent span and pushing/popping causes
                         # the nsys trace to be overly noisy since this is an async loop.
-                        tracer = Tracer("tokenizer.decode")
-                        decoded_token = await self.tokenizer.decode(
-                            token, skip_special_tokens=skip_special_tokens
-                        )
-                        del tracer  # tokenizer.decode
+                        with Tracer("tokenizer.decode") as tracer:
+                            decoded_token = await self.tokenizer.decode(
+                                token, skip_special_tokens=skip_special_tokens
+                            )
 
                         # Detect custom stop phrases
                         stop_sequence_match = None
                         if len(stop_detector.stop) > 0:
-                            tracer = Tracer("stop_detector.step")
-                            if stop_sequence_match := stop_detector.step(
-                                decoded_token
-                            ):
-                                # Tell the scheduler to stop generating this request
-                                self.engine_queue.cancel_queue.put_nowait(
-                                    [request.request_id]
-                                )
+                            with Tracer("stop_detector.step") as tracer:
+                                if stop_sequence_match := stop_detector.step(
+                                    decoded_token
+                                ):
+                                    # Tell the scheduler to stop generating this request
+                                    self.engine_queue.cancel_queue.put_nowait(
+                                        [request.request_id]
+                                    )
 
-                                logger.debug(
-                                    f"Cancelling {request.request_id} because stop sequence ({stop_sequence_match}) detected in {stop_detector.continuation_tail}"
-                                )
-                            del tracer  # stop_detector.step
+                                    logger.debug(
+                                        f"Cancelling {request.request_id} because stop sequence ({stop_sequence_match}) detected in {stop_detector.continuation_tail}"
+                                    )
 
                         token_log_probabilities = None
                         top_log_probabilities = None
                         if response.log_probabilities:
                             log_prob = response.log_probabilities[i]
-                            tracer = Tracer("collect_log_probs")
-                            (
-                                token_log_probabilities,
-                                top_log_probabilities,
-                            ) = await self._collect_log_probs(
-                                log_prob, skip_special_tokens
-                            )
-                            del tracer  # collect_log_probs
+                            with Tracer("collect_log_probs") as tracer:
+                                (
+                                    token_log_probabilities,
+                                    top_log_probabilities,
+                                ) = await self._collect_log_probs(
+                                    log_prob, skip_special_tokens
+                                )
 
                         # Take the final status if last token.
                         # For all intermediate tokens assume Active.

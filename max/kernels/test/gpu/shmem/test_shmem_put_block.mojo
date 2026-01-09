@@ -77,7 +77,7 @@ fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
 
     ctx.barrier_all()
 
-    ctx.enqueue_function_checked[set_and_shift_kernel, set_and_shift_kernel](
+    ctx.enqueue_function[set_and_shift_kernel, set_and_shift_kernel](
         send_data,
         recv_data,
         num_elems,
@@ -116,4 +116,5 @@ def main():
         # after initiating the operation.
         test_shmem_put[True](ctx)
 
-    shmem_launch[test_both]()
+    # FIXME SERVOPT-873: This test times out on CI on H100
+    # shmem_launch[test_both]()

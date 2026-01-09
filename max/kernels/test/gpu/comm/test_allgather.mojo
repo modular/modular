@@ -20,9 +20,6 @@ from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal, assert_true
 
 
@@ -38,11 +35,15 @@ def all_gather_test[
     # Create device buffers for all GPUs.
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_bufs_list = List[List[DeviceBuffer[dtype]]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
+    var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
+        capacity=ngpus
+    )
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        fill={}
+    )
 
     # Calculate temp buffer size for signals.
     var max_length = 0
@@ -58,7 +59,7 @@ def all_gather_test[
         in_bufs_list.append(list_of_ctx[i].create_buffer_sync[dtype](length))
 
         # Create host buffer with test data.
-        var host_buffer = UnsafePointer[Scalar[dtype]].alloc(length)
+        var host_buffer = alloc[Scalar[dtype]](length)
         host_buffers.append(host_buffer)
 
         # Initialize with unique values per device.
@@ -200,7 +201,7 @@ fn _verify_results[
     for device_idx in range(ngpus):
         for input_idx in range(ngpus):
             var length = lengths[input_idx]
-            var host_output = UnsafePointer[Scalar[dtype]].alloc(length)
+            var host_output = alloc[Scalar[dtype]](length)
 
             # Copy output back to host.
             list_of_ctx[device_idx].enqueue_copy(

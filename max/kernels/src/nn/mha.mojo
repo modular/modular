@@ -635,7 +635,7 @@ fn flash_attention_dispatch[
                     Int(batch_size),
                 )
 
-                ctx.enqueue_function_checked[kernel, kernel](
+                ctx.enqueue_function[kernel, kernel](
                     q_device,
                     k,
                     v,
@@ -827,7 +827,7 @@ fn flash_attention_dispatch[
                         var nullptr_device = DeviceBuffer[accum_type](
                             ctx, nullptr, 0, owning=False
                         )
-                        ctx.enqueue_function_checked[kernel, kernel](
+                        ctx.enqueue_function[kernel, kernel](
                             q_device,
                             k,
                             v,
@@ -990,7 +990,7 @@ fn flash_attention_dispatch[
                                 sink_weights,
                             )
                     else:
-                        ctx.enqueue_function_checked[kernel, kernel](
+                        ctx.enqueue_function[kernel, kernel](
                             q_device,
                             k,
                             v,
@@ -1027,7 +1027,7 @@ fn flash_attention_dispatch[
                         use_exp2=use_fa3_kernel,
                     ]
 
-                    ctx.enqueue_function_checked[kernel_reduce, kernel_reduce](
+                    ctx.enqueue_function[kernel_reduce, kernel_reduce](
                         output_intermediate_data,
                         output_device,
                         exp_sum_device,
@@ -4668,7 +4668,7 @@ fn mha_gpu_naive[
         _is_cache_length_accurate=_is_cache_length_accurate,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         p_device,
         q_device,
         k,
@@ -4712,7 +4712,7 @@ fn mha_gpu_naive[
         _use_valid_length=_use_valid_length,
         _is_cache_length_accurate=_is_cache_length_accurate,
     ]
-    ctx.enqueue_function_checked[kernel_1, kernel_1](
+    ctx.enqueue_function[kernel_1, kernel_1](
         output_device,
         p_device,
         v,

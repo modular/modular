@@ -330,9 +330,9 @@ struct LayoutTensor[
                     T=AnyType,
                     Self,
                     Self.OriginCastType[True, MutAnyOrigin],
-                    Self.OriginCastType[True, MutOrigin.external],
+                    Self.OriginCastType[True, MutExternalOrigin],
                     Self.OriginCastType[False, ImmutAnyOrigin],
-                    Self.OriginCastType[False, ImmutOrigin.external],
+                    Self.OriginCastType[False, ImmutExternalOrigin],
                 ],
             ]
         else:
@@ -342,7 +342,7 @@ struct LayoutTensor[
                     T=AnyType,
                     Self,
                     Self.OriginCastType[False, ImmutAnyOrigin],
-                    Self.OriginCastType[False, ImmutOrigin.external],
+                    Self.OriginCastType[False, ImmutExternalOrigin],
                 ],
             ]
 
@@ -2565,7 +2565,7 @@ struct LayoutTensor[
             UnsafePointer[
                 Scalar[Self.dtype],
                 address_space = Self.address_space,
-                origin = MutOrigin.external,
+                origin=MutExternalOrigin,
             ]()
         )
 

@@ -15,9 +15,8 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-
+from fmt._utils import _WriteBufferHeap
 from io.io import _printf
-from io.write import _WriteBufferHeap
 from os import abort
 from sys import is_amd_gpu, is_apple_gpu, is_compile_time, is_gpu, is_nvidia_gpu
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin

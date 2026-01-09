@@ -47,6 +47,7 @@ from .ep_config import NUM_GROUPS, EPConfig
 from .ep_kernels import (
     call_ep_combine,
     call_ep_combine_cb,
+    call_ep_combine_fused_shared_expert,
     call_ep_dispatch,
     call_ep_dispatch_cb,
     call_ep_dispatch_cb_fp8,
@@ -94,6 +95,17 @@ class EPBatchManager:
     """Dictionary of device ID to dimension for the dispatch input tensor.
     Used to determine the shape of the combined output tensor.
     """
+
+    _input_x: dict[int, TensorValue | None] = {}
+    """Input tokens for the current device. If shared experts fusion is
+    enabled, this will be used to temporarily store the inputs of the MoE
+    module, and passed to the ep_dispatch_cb kernel.
+    """
+
+    _shared_expert_outputs: dict[int, TensorValue | None] = {}
+    """Shared expert outputs for the current device. If shared experts fusion is
+    enabled, this will be used to store the outputs of the shared experts from
+    the ep_combine kernel."""
 
     def __init__(self, config: EPConfig):
         """Initialize the EP batch manager.
@@ -248,6 +260,11 @@ class EPBatchManager:
             self.config,
         )
 
+        if self.config.fused_shared_expert:
+            self._input_x[device_id] = input_tokens
+        else:
+            self._input_x[device_id] = None
+
     def ep_dispatch_cb(self, device_id: int) -> tuple[TensorValue, ...]:
         """Complete Expert Parallelism token dispatch phase.
 
@@ -280,6 +297,7 @@ class EPBatchManager:
                 self.recv_buf_ptrs[DISPATCH_GROUP],
                 self.recv_count_ptrs[DISPATCH_GROUP],
                 self.config,
+                self._input_x[device_id],
             )
 
             # The first five elements are the input for the grouped matmul
@@ -296,6 +314,7 @@ class EPBatchManager:
                 self.recv_buf_ptrs[DISPATCH_GROUP],
                 self.recv_count_ptrs[DISPATCH_GROUP],
                 self.config,
+                self._input_x[device_id],
             )
 
             # The first four elements are the input for the grouped matmul
@@ -326,20 +345,40 @@ class EPBatchManager:
             "Source info is not set, you should call ep_dispatch_cb() first."
         )
 
-        call_ep_combine(
-            input_tokens,
-            src_info,
-            self.atomic_counters[0][device_id],
-            self.send_buf_ptrs[COMBINE_GROUP],
-            self.recv_buf_ptrs[COMBINE_GROUP],
-            self.recv_count_ptrs[COMBINE_GROUP],
-            self.config,
-        )
+        if self.config.fused_shared_expert:
+            dispatch_dim = self._dispatch_dim[device_id]
+            assert dispatch_dim is not None, (
+                "Dispatch dimension is not set, you should call ep_dispatch() first."
+            )
+            self._shared_expert_outputs[device_id] = (
+                call_ep_combine_fused_shared_expert(
+                    input_tokens,
+                    src_info,
+                    self.atomic_counters[0][device_id],
+                    self.send_buf_ptrs[COMBINE_GROUP],
+                    self.recv_buf_ptrs[COMBINE_GROUP],
+                    self.recv_count_ptrs[COMBINE_GROUP],
+                    self.config,
+                    dispatch_dim,
+                )
+            )
+        else:
+            call_ep_combine(
+                input_tokens,
+                src_info,
+                self.atomic_counters[0][device_id],
+                self.send_buf_ptrs[COMBINE_GROUP],
+                self.recv_buf_ptrs[COMBINE_GROUP],
+                self.recv_count_ptrs[COMBINE_GROUP],
+                self.config,
+            )
 
         # reset src_info to None to avoid reusing it for the next batch
         self._src_info[device_id] = None
 
-    def ep_combine_cb(self, device_id: int) -> TensorValue:
+    def ep_combine_cb(
+        self, router_weight: TensorValue, device_id: int
+    ) -> TensorValue:
         """Complete Expert Parallelism combine phase.
 
         This method waits for all expert output transfers to complete, then
@@ -347,10 +386,12 @@ class EPBatchManager:
         positions for the current device.
 
         Args:
+            expert_weights: Router weights for the current device.
+                A TensorValue with shape (num_local_tokens, top_k).
             device_id: Device ID for the current device.
 
         Returns:
-            Final output tensor with shape (num_local_tokens, top_k, hidden_size).
+            Final output tensor with shape (num_local_tokens, hidden_size).
         """
         COMBINE_GROUP = 1
 
@@ -369,7 +410,15 @@ class EPBatchManager:
             dispatch_dim,
         )
 
-        return results
+        weighted_expert_out = ops.unsqueeze(router_weight, axis=1) @ results
+        weighted_expert_out = ops.squeeze(weighted_expert_out, axis=1)
+
+        if self.config.fused_shared_expert:
+            shared_expert_outputs = self._shared_expert_outputs[device_id]
+            assert shared_expert_outputs is not None
+            weighted_expert_out += shared_expert_outputs
+
+        return weighted_expert_out
 
 
 class EPCommInitializer:

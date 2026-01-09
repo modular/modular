@@ -19,8 +19,9 @@ from gpu import (
     block_dim,
     global_idx,
     MAX_THREADS_PER_BLOCK_METADATA,
+    lane_id,
 )
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, FuncAttribute
 from layout import Layout, LayoutTensor
 from logger import Logger
 from gpu.warp import shuffle_xor
@@ -33,7 +34,9 @@ from .fp4_utils import (
     SF_ATOM_K,
     SF_MN_GROUP_SIZE,
     NVFP4_SF_VECTOR_SIZE,
+    MXFP8_SF_VECTOR_SIZE,
     NVFP4_SF_DTYPE,
+    MXFP8_SF_DTYPE,
     set_scale_factor,
     get_scale_factor,
 )
@@ -49,11 +52,23 @@ from linalg.matmul.vendor.blas import matmul
 from buffer import Dim, NDBuffer
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from memory import bitcast
+from gpu.sync import named_barrier
+from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.layout_tensor import LayoutTensorIter
+from gpu.memory import external_memory, fence_async_view_proxy
+from gpu import barrier
+from sys import size_of, align_of
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from memory import LegacyUnsafePointer
+from layout.swizzle import make_swizzle
 
 ########################################################
 # Dynamic scaled NVFP4 quantization
 ########################################################
 
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
 comptime logger = Logger()
 
 
@@ -84,14 +99,31 @@ fn quantize_dynamic_scaled_fp4[
     __comptime_assert in_dtype in (
         DType.bfloat16,
     ), "input dtype should be bfloat16"
-    __comptime_assert out_dtype in (
-        DType.uint8,
-    ), "output dtype should be uint8 (fp4-e2m1fnX2)"
-    __comptime_assert scales_dtype in (
-        NVFP4_SF_DTYPE,
-    ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)"
 
-    comptime ELEMENTS_PER_THREAD = SF_VECTOR_SIZE // 2
+    __comptime_assert (
+        out_dtype == DType.uint8
+        and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+        and scales_dtype == DType.float8_e4m3fn
+    ) or (
+        out_dtype == DType.float8_e4m3fn
+        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        and scales_dtype == DType.float8_e8m0fnu
+    ), (
+        "output dtype should be uint8 (fp4-e2m1fnX2) for NVFP4 or"
+        " float8_e4m3fnuz for MXFP8"
+    )
+
+    comptime N = input_layout.shape[1].value()
+
+    @parameter
+    if SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE:
+        __comptime_assert N % SF_VECTOR_SIZE == 0, "N must be a multiple of 32"
+    else:
+        __comptime_assert (
+            N % (SF_VECTOR_SIZE // 2) == 0
+        ), "N must be a multiple of 8"
+
+    comptime ELEMENTS_PER_THREAD = 8
     comptime num_SMs = B200.sm_count
 
     var num_rows = input.dim(0)
@@ -119,7 +151,7 @@ fn quantize_dynamic_scaled_fp4[
         num_max_threads=num_max_threads,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         output,
         scales,
         input,
@@ -153,18 +185,21 @@ fn quantize_dynamic_scaled_fp4_kernel[
     num_cols_padded: Int,
     tensor_sf: Float32,
 ):
-    __comptime_assert (
-        SF_VECTOR_SIZE == 16 and ELEMENTS_PER_THREAD == SF_VECTOR_SIZE // 2
-    ), (
-        "Currently only supports NVFP4 (SF_VECTOR_SIZE = 16) with 8"
-        " elements per thread"
+    __comptime_assert SF_VECTOR_SIZE in (16, 32) and ELEMENTS_PER_THREAD == 8, (
+        "Currently only supports NVFP4 (SF_VECTOR_SIZE = 16) and MXFP8"
+        " (SF_VECTOR_SIZE = 32) with 8 elements per thread"
     )
 
     comptime NUM_THREADS_PER_SF = SF_VECTOR_SIZE // ELEMENTS_PER_THREAD
+    __comptime_assert NUM_THREADS_PER_SF in (
+        2,
+        4,
+    ), "NUM_THREADS_PER_SF must be 2 or 4"
+    comptime OUTPUT_WIDTH = 4 if out_dtype == DType.uint8 else 8
 
     __comptime_assert (
         input.shape[1]() % ELEMENTS_PER_THREAD == 0
-    ), "num_cols must be a multiple of ELEMENTS_PER_THREAD (8 for NVFP4)"
+    ), "num_cols must be a multiple of ELEMENTS_PER_THREAD (8 for NVFP4/MXFP8)"
 
     var num_rows = input.dim(0)
     var num_rows_padded = align_up(num_rows, SF_MN_GROUP_SIZE)
@@ -199,10 +234,10 @@ fn quantize_dynamic_scaled_fp4_kernel[
                     col_idx >= num_col_threads
                     and col_idx < num_padded_col_threads
                 ):
-                    output.store[width=4](
+                    output.store[width=OUTPUT_WIDTH](
                         global_row_idx,
-                        col_idx * (ELEMENTS_PER_THREAD // 2),
-                        SIMD[out_dtype, 4](0),
+                        col_idx * OUTPUT_WIDTH,
+                        SIMD[out_dtype, OUTPUT_WIDTH](0),
                     )
 
                 if col_idx >= num_col_threads:
@@ -223,16 +258,23 @@ fn quantize_dynamic_scaled_fp4_kernel[
                     # each thread finds maximum value in its local 8 elements
                     var thread_max = abs(input_vector).reduce_max()
                     # find the maximum value among all 16 elements (two threads for 16)
-                    var group_max = max(
-                        shuffle_xor(thread_max, 1), thread_max
-                    ).cast[DType.float32]()
+                    thread_max = max(shuffle_xor(thread_max, 1), thread_max)
 
-                    # get the scale factor for these 16 elements by dividing it by the maximum value of e2m1
-                    var scale_factor = tensor_sf * (
+                    @parameter
+                    if NUM_THREADS_PER_SF == 4:
+                        thread_max = max(shuffle_xor(thread_max, 2), thread_max)
+
+                    var group_max = thread_max.cast[DType.float32]()
+
+                    # get the scale factor for these 16/32 elements by dividing it by the maximum value of fp4-e2m1/fp8-e4m3
+                    var scale_factor: Float32
+                    scale_factor = tensor_sf * (
                         group_max * recip(Float32(6.0))
+                    ) if out_dtype == DType.uint8 else (
+                        group_max * recip(Float32(448.0))
                     )
 
-                    # NVFP4 uses FP8-UE4M3 format for the scale factor but we know that scale_factor is always positive, so we can use E4M3 instead of UE4M3.
+                    # NOTE: NVFP4 uses FP8-UE4M3 format for the scale factor but we know that scale_factor is always positive, so we can use E4M3 instead of UE4M3.
                     var fp8_scale_factor = scale_factor.cast[scales_dtype]()
 
                     # find the quantization scale factor for these 16 elements (scale_factor = scale_factor / tensor_sf)
@@ -242,6 +284,8 @@ fn quantize_dynamic_scaled_fp4_kernel[
                         output_scale = recip(
                             fp8_scale_factor.cast[DType.float32]()
                             * recip(tensor_sf)
+                        ) if out_dtype == DType.uint8 else (
+                            recip(fp8_scale_factor.cast[DType.float32]())
                         )
 
                     # write back the scale factor
@@ -256,13 +300,23 @@ fn quantize_dynamic_scaled_fp4_kernel[
                     var input_f32 = (
                         input_vector.cast[DType.float32]() * output_scale
                     )
-                    var e2m1_vector = cast_fp32_to_fp4e2m1(input_f32)
-                    var e2m1_vector_uint8 = bitcast[out_dtype, 4](e2m1_vector)
 
-                    output.store[width=4](
+                    var output_vector: SIMD[out_dtype, OUTPUT_WIDTH]
+
+                    @parameter
+                    if out_dtype == DType.uint8:
+                        output_vector = bitcast[out_dtype, OUTPUT_WIDTH](
+                            cast_fp32_to_fp4e2m1(input_f32)
+                        )
+                    else:
+                        output_vector = rebind[SIMD[out_dtype, OUTPUT_WIDTH]](
+                            input_f32.cast[out_dtype]()
+                        )
+
+                    output.store[width=OUTPUT_WIDTH](
                         global_row_idx,
-                        col_idx * (ELEMENTS_PER_THREAD // 2),
-                        e2m1_vector_uint8,
+                        col_idx * OUTPUT_WIDTH,
+                        output_vector,
                     )
 
 
@@ -311,7 +365,7 @@ fn block_scales_interleave_fp4[
         num_max_threads=num_max_threads,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         input_scales,
         output_scales,
         block_dim=block_dim,
@@ -471,7 +525,7 @@ fn naive_block_scaled_nvfp4_matmul[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c,
         a,
         b,
@@ -717,4 +771,406 @@ fn block_scaled_matmul[
         alpha=tensor_sf,
         transpose_b=True,
         c_row_major=True,
+    )
+
+
+@__llvm_arg_metadata(input_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(output_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(scales_tma_op, `nvvm.grid_constant`)
+fn quantize_dynamic_scaled_async_kernel[
+    input_dtype: DType,
+    input_cta_tile_layout: Layout,
+    input_desc_layout: Layout,
+    output_dtype: DType,
+    output_cta_tile_layout: Layout,
+    output_desc_layout: Layout,
+    scales_dtype: DType,
+    scales_tma_tile_layout: Layout,
+    scales_desc_layout: Layout,
+    input_swizzle_mode: TensorMapSwizzle,
+    output_swizzle_mode: TensorMapSwizzle,
+    scales_swizzle_mode: TensorMapSwizzle,
+    SF_VECTOR_SIZE: UInt,
+    NUM_PIPELINES_STAGES: UInt,
+](
+    input_tma_op: TMATensorTile[
+        input_dtype, input_cta_tile_layout, input_desc_layout
+    ],
+    output_tma_op: TMATensorTile[
+        output_dtype, output_cta_tile_layout, output_desc_layout
+    ],
+    scales_tma_op: TMATensorTile[
+        scales_dtype, scales_tma_tile_layout, scales_desc_layout
+    ],
+    tensor_sf: Float32,  # tensor-wise scale factor
+):
+    var smem_storage = rebind[
+        UnsafePointer[Scalar[input_dtype], address_space = AddressSpace.SHARED]
+    ](
+        external_memory[
+            Scalar[input_dtype],
+            address_space = AddressSpace.SHARED,
+            alignment=128,
+        ]()
+    )
+
+    comptime input_smem_tile_size = input_cta_tile_layout.size() * Int(
+        NUM_PIPELINES_STAGES
+    )
+    comptime output_smem_tile_size = output_cta_tile_layout.size()
+    comptime scales_smem_tile_size = scales_tma_tile_layout.size()
+
+    comptime SF_K_GROUP_SIZE = SF_VECTOR_SIZE * SF_ATOM_K
+    comptime STAGE_GROUP_SIZE = SF_K_GROUP_SIZE // NUM_PIPELINES_STAGES
+
+    __comptime_assert (
+        STAGE_GROUP_SIZE == 64
+        and NUM_PIPELINES_STAGES == 1
+        and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+    ), (
+        "STAGE_GROUP_SIZE must be 64 and NUM_PIPELINES_STAGES must be 1 and"
+        " SF_VECTOR_SIZE must be 16"
+    )
+    __comptime_assert (
+        scales_dtype == NVFP4_SF_DTYPE
+    ), "scales_dtype must be float8_e4m3fn"
+
+    var input_smem_ptr = smem_storage
+    var output_smem_ptr = (smem_storage + input_smem_tile_size).bitcast[
+        Scalar[output_dtype]
+    ]()
+    var scales_smem_ptr = (output_smem_ptr + output_smem_tile_size).bitcast[
+        Scalar[scales_dtype]
+    ]()
+    var mbar_ptr = scales_smem_ptr + scales_smem_tile_size
+
+    var input_smem = LayoutTensorIter[
+        input_dtype,
+        input_cta_tile_layout,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ](
+        input_smem_ptr,
+        input_smem_tile_size,
+    )
+
+    var output_smem = LayoutTensor[
+        output_dtype,
+        output_cta_tile_layout,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ](
+        output_smem_ptr,
+    )
+
+    var scales_smem = LayoutTensor[
+        scales_dtype,
+        scales_tma_tile_layout,
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ](
+        scales_smem_ptr,
+    )
+
+    var tma_mbar = mbar_ptr.bitcast[SharedMemBarrier]()
+
+    var local_row_idx = Int(thread_idx.x)
+
+    if thread_idx.x == 0:
+
+        @parameter
+        for idx in range(NUM_PIPELINES_STAGES):
+            tma_mbar[idx].init()
+
+    var tma_phase = SIMD[DType.uint32, Int(NUM_PIPELINES_STAGES)](0)
+
+    barrier()
+
+    comptime expected_bytes = input_cta_tile_layout.size() * size_of[
+        input_dtype
+    ]()
+
+    if thread_idx.x >= 128:
+        warpgroup_reg_dealloc[24]()
+
+        @parameter
+        for iter_idx in range(NUM_PIPELINES_STAGES):
+            var smem_tile = input_smem.next(iter_idx)[]
+
+            if lane_id() == 0:
+                tma_mbar[iter_idx].expect_bytes(expected_bytes)
+                input_tma_op.async_copy(
+                    smem_tile,
+                    tma_mbar[iter_idx],
+                    (
+                        UInt(block_idx.y * SF_K_GROUP_SIZE)
+                        + UInt(iter_idx * STAGE_GROUP_SIZE),
+                        UInt(block_idx.x * UInt(SF_MN_GROUP_SIZE)),
+                    ),
+                )
+
+    else:
+        var scale_factors = SIMD[scales_dtype, SF_ATOM_K]()
+
+        @parameter
+        for iter_idx in range(NUM_PIPELINES_STAGES):
+            var smem_tile = input_smem.next(iter_idx)[]
+
+            tma_mbar[iter_idx].wait(tma_phase[Int(iter_idx)])
+            var quantized_elements = SIMD[DType.uint32, 8]()
+
+            @parameter
+            for group_idx in range(STAGE_GROUP_SIZE // SF_VECTOR_SIZE):
+                var group_elements = SIMD[input_dtype, Int(SF_VECTOR_SIZE)]()
+
+                @parameter
+                for col_idx in range(SF_VECTOR_SIZE // 8):
+                    var swizzle_offset = (
+                        local_row_idx * Int(STAGE_GROUP_SIZE)
+                        + Int(group_idx * SF_VECTOR_SIZE)
+                        + Int(col_idx * 8)
+                    )
+
+                    comptime input_swizzle = make_swizzle[
+                        input_dtype, input_swizzle_mode
+                    ]()
+                    var swizzle_idx = input_swizzle(swizzle_offset)
+                    var temp = smem_tile.ptr.load[
+                        width=8, alignment = align_of[SIMD[input_dtype, 8]]()
+                    ](swizzle_idx)
+
+                    group_elements = group_elements.insert[
+                        offset = Int(col_idx * 8)
+                    ](temp)
+
+                var group_max = (
+                    abs(group_elements).reduce_max().cast[DType.float32]()
+                )
+
+                var scale_factor = tensor_sf * group_max * recip(Float32(6.0))
+                var fp8_scale_factor = scale_factor.cast[scales_dtype]()
+
+                scale_factors[
+                    Int(iter_idx) * Int(NUM_PIPELINES_STAGES) + Int(group_idx)
+                ] = fp8_scale_factor
+
+                var output_scale = Float32(0.0)
+                if fp8_scale_factor.cast[DType.float32]() != 0:
+                    output_scale = recip(
+                        fp8_scale_factor.cast[DType.float32]()
+                        * recip(tensor_sf)
+                    )
+
+                @parameter
+                for slice_idx in range(2):
+                    var slice_elements = group_elements.slice[
+                        8, offset = slice_idx * 8
+                    ]()
+                    quantized_elements[
+                        Int(group_idx) * 2 + slice_idx
+                    ] = cast_fp32_to_fp4e2m1(
+                        slice_elements.cast[DType.float32]() * output_scale
+                    )
+
+            @parameter
+            for idx in range(2):
+                var slice_elements = quantized_elements.slice[
+                    4, offset = idx * 4
+                ]()
+                comptime output_swizzle = make_swizzle[
+                    output_dtype, output_swizzle_mode
+                ]()
+                var swizzle_offset = local_row_idx * Int(
+                    STAGE_GROUP_SIZE // 2
+                ) + Int(idx) * Int(SF_VECTOR_SIZE)
+                var output_swizzle_idx = output_swizzle(swizzle_offset)
+                output_smem.ptr.store[
+                    alignment = align_of[
+                        SIMD[output_dtype, Int(SF_VECTOR_SIZE)]
+                    ]()
+                ](
+                    output_swizzle_idx,
+                    bitcast[output_dtype, Int(SF_VECTOR_SIZE)](slice_elements),
+                )
+
+            scales_smem.ptr.store[
+                alignment = align_of[SIMD[scales_dtype, SF_ATOM_K]]()
+            ](
+                (local_row_idx % 32) * 16 + (local_row_idx // 32) * SF_ATOM_K,
+                scale_factors,
+            )
+
+        named_barrier[128](1)
+
+        if thread_idx.x == 0:
+            fence_async_view_proxy()
+
+            scales_tma_op.async_store(
+                scales_smem,
+                StaticTuple[UInt32, 4](
+                    0,
+                    0,
+                    UInt(block_idx.y),
+                    UInt(block_idx.x),
+                ),
+            )
+
+            output_tma_op.async_store(
+                output_smem,
+                StaticTuple[UInt32, 2](
+                    UInt(block_idx.y * (SF_K_GROUP_SIZE) // 2),
+                    UInt(block_idx.x * UInt(SF_MN_GROUP_SIZE)),
+                ),
+            )
+            output_tma_op.commit_group()
+
+        output_tma_op.wait_group[0]()
+
+
+fn quantize_dynamic_scaled_fp4_async[
+    input_dtype: DType,
+    output_dtype: DType,
+    scales_dtype: DType,
+    input_layout: Layout,
+    output_layout: Layout,
+    scales_layout: Layout,
+    //,
+    SF_VECTOR_SIZE: Int,
+](
+    ctx: DeviceContext,
+    output_tensor: LayoutTensor[output_dtype, output_layout, MutAnyOrigin],
+    scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    input_tensor: LayoutTensor[input_dtype, input_layout, MutAnyOrigin],
+    tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
+) raises:
+    __comptime_assert (
+        input_dtype == DType.bfloat16
+    ), "input_dtype must be bfloat16"
+
+    __comptime_assert (
+        output_dtype == DType.uint8
+        and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+        and scales_dtype == NVFP4_SF_DTYPE
+    ), (
+        "output dtype should be uint8 (fp4-e2m1fnX2) for NVFP4 and scales_dtype"
+        " must be float8_e4m3fn"
+    )
+
+    comptime input_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
+    comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_32B  # 64 elements / 2 elements per uint8 = 32 elements per 32B
+    comptime scales_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE  # 16 elements / 1 elements per float8_e4m3fn = 16 elements per 16B
+
+    var M = input_tensor.dim(0)
+    var N = input_tensor.dim(1)
+
+    comptime output_N = output_layout.shape[1].value()
+    __comptime_assert (
+        output_N % 32 == 0
+    ), "output_tensor N must be a multiple of 32"
+    comptime input_N = input_layout.shape[1].value()
+    __comptime_assert (
+        input_N // output_N == 2
+    ), "input_tensor N must be a multiple of 2 * output_tensor N"
+
+    comptime SF_K_GROUP_SIZE = SF_VECTOR_SIZE * SF_ATOM_K
+    comptime NUM_PIPELINES_STAGES = 1
+
+    comptime input_tma_tile_shape = Index(128, SF_K_GROUP_SIZE)
+    var input_tma_op = create_tma_tile[
+        input_tma_tile_shape,
+        swizzle_mode=input_swizzle_mode,
+        __tile_layout = Layout.row_major(input_tma_tile_shape),
+    ](ctx, input_tensor)
+
+    comptime output_tma_tile_shape = Index(128, 32)
+    var output_tma_op = create_tma_tile[
+        output_tma_tile_shape,
+        swizzle_mode=output_swizzle_mode,
+        __tile_layout = Layout.row_major(output_tma_tile_shape),
+    ](ctx, output_tensor)
+
+    __comptime_assert scales_tensor.rank == 5, "scales must be 5D tensors"
+
+    __comptime_assert scales_layout.shape[2].value() == SF_ATOM_M[0], ""
+    __comptime_assert scales_layout.shape[3].value() == SF_ATOM_M[1], ""
+    __comptime_assert scales_layout.shape[4].value() == SF_ATOM_K, ""
+
+    comptime scales_4d_layout[layout: Layout] = Layout.row_major(
+        layout.shape[0].value(),
+        layout.shape[1].value(),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1] * SF_ATOM_K,
+    )
+
+    var scales_4d_tensor = LayoutTensor[
+        scales_dtype, scales_4d_layout[scales_layout], MutAnyOrigin
+    ](
+        scales_tensor.ptr,
+        RuntimeLayout[scales_4d_layout[scales_layout]].row_major(
+            IndexList[4](
+                scales_tensor.dim(0),
+                scales_tensor.dim(1),
+                scales_tensor.dim(2),
+                scales_tensor.dim(3) * scales_tensor.dim(4),
+            ),
+        ),
+    )
+
+    comptime scales_tma_tile_shape = Index(
+        1, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
+    )
+    var scales_tma_op = create_tma_tile[
+        scales_tma_tile_shape,
+        swizzle_mode=scales_swizzle_mode,
+        __tile_layout = Layout.row_major(scales_tma_tile_shape),
+    ](ctx, scales_4d_tensor)
+
+    comptime smem_use = (
+        input_tma_tile_shape[0]
+        * input_tma_tile_shape[1]
+        * size_of[input_dtype]()
+        * NUM_PIPELINES_STAGES
+    ) + (
+        output_tma_tile_shape[0]
+        * output_tma_tile_shape[1]
+        * size_of[output_dtype]()
+    ) + (
+        size_of[SharedMemBarrier]() * NUM_PIPELINES_STAGES
+    ) + (
+        SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K * size_of[scales_dtype]()
+    )
+
+    comptime kernel = quantize_dynamic_scaled_async_kernel[
+        type_of(input_tma_op).dtype,
+        type_of(input_tma_op).layout,
+        type_of(input_tma_op).desc_layout,
+        type_of(output_tma_op).dtype,
+        type_of(output_tma_op).layout,
+        type_of(output_tma_op).desc_layout,
+        type_of(scales_tma_op).dtype,
+        type_of(scales_tma_op).layout,
+        type_of(scales_tma_op).desc_layout,
+        input_swizzle_mode,
+        output_swizzle_mode,
+        scales_swizzle_mode,
+        UInt(SF_VECTOR_SIZE),
+        NUM_PIPELINES_STAGES = UInt(NUM_PIPELINES_STAGES),
+    ]
+
+    ctx.enqueue_function[kernel, kernel, dump_asm=False](
+        input_tma_op,
+        output_tma_op,
+        scales_tma_op,
+        tensor_sf,
+        grid_dim=(
+            ceildiv(M, SF_MN_GROUP_SIZE),
+            ceildiv(N, SF_K_GROUP_SIZE),
+            1,
+        ),
+        block_dim=(SF_MN_GROUP_SIZE + 32),
+        shared_mem_bytes=Int(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )

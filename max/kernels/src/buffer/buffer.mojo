@@ -1324,9 +1324,9 @@ struct NDBuffer[
 
             var vec_end = align_down(len(self), simd_width)
             for i in range(0, vec_end, simd_width):
-                self.store[width=simd_width](i, val)
+                self.store[width=simd_width](IndexList[Self.rank](i), val)
             for i in range(vec_end, len(self)):
-                self.store(i, val)
+                self.store(IndexList[Self.rank](i), val)
 
     @always_inline
     fn tofile(self, path: Path) raises:

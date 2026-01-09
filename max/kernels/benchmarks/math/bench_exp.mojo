@@ -41,7 +41,7 @@ fn apply[
     dtype: DType,
 ](input: NDBuffer[dtype, 1], output: NDBuffer[mut=True, dtype, 1]):
     fn _func[width: Int](idx: Int) unified {mut}:
-        output.store(idx, func(input.load[width=width](idx)))
+        output.store((idx,), func(input.load[width=width](idx)))
 
     vectorize[simd_width_of[dtype]()](len(input), _func)
 

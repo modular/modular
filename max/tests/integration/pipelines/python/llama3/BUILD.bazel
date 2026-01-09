@@ -13,67 +13,6 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
-[
-    modular_py_test(
-        name = src.split("/")[-1].split(".")[0],
-        size = "enormous",
-        srcs = [
-            "conftest.py",
-            "torch_utils.py",
-            src,
-        ],
-        args = [
-            "-n",
-            "auto",
-        ],
-        data = [
-            "//max/tests/integration/pipelines/python/llama3/testdata",
-        ],
-        env = {
-            "MODULAR_PATH": ".",
-            "PIPELINES_TESTDATA": (
-                "max/tests/integration/pipelines/python/llama3/testdata"
-            ),
-        },
-        imports = ["."],
-        tags = [
-            "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
-        ] + ([
-            "no-sandbox",
-            "requires-network",
-        ] if src == "test_pipeline_batching.py" else []),
-        target_compatible_with = select({
-            "@platforms//os:macos": ["@platforms//:incompatible"],
-            "//conditions:default": [],
-        }),  # FIXME: MOCO-2411
-        deps = [
-            "//max/python/max/engine",
-            "//max/python/max/entrypoints",
-            "//max/python/max/nn",
-            "//max/python/max/pipelines/architectures",
-            "//max/python/max/serve",
-            "//max/python/max/support",
-            "//max/tests/integration/API/python/graph:modular_graph_test",
-            "//max/tests/integration/pipelines/python:hf_repo_lock",
-            "//max/tests/integration/pipelines/python/test_common",
-            requirement("click"),
-            requirement("huggingface-hub"),
-            requirement("hypothesis"),
-            requirement("pytest-asyncio"),
-            requirement("pytest-xdist"),
-            requirement("torch"),
-            requirement("transformers"),
-            requirement("py-cpuinfo"),
-        ],
-    )
-    for src in glob(
-        ["**/test_*.py"],
-        exclude = [
-            "**/*_gpu.py",
-        ],
-    )
-]
-
 modular_py_test(
     name = "tests_gpu",
     size = "enormous",

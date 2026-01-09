@@ -301,7 +301,7 @@ struct SHMEMContext(ImplicitlyCopyable):
 
     @always_inline
     @parameter
-    fn enqueue_function_checked[
+    fn enqueue_function[
         func_type: AnyTrivialRegType,
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
@@ -364,7 +364,7 @@ struct SHMEMContext(ImplicitlyCopyable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -374,13 +374,13 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         ```mojo
         with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function_checked[kernel, kernel]()
-            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
+            var compile_func = ctx.compile_function[kernel, kernel]()
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
-        var gpu_kernel = self._ctx.compile_function_checked[
+        var gpu_kernel = self._ctx.compile_function[
             func,
             signature_func,
             dump_asm=dump_asm,
@@ -391,7 +391,7 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         shmem_module_init(gpu_kernel)
 
-        self._ctx._enqueue_function_checked(
+        self._ctx._enqueue_function(
             gpu_kernel,
             args,
             grid_dim=grid_dim,
@@ -479,12 +479,12 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         ```mojo
         with DeviceContext() as ctx:
-            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
-            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
-        var gpu_kernel = self._ctx.compile_function_checked[
+        var gpu_kernel = self._ctx.compile_function[
             func,
             signature_func,
             dump_asm=dump_asm,
@@ -548,7 +548,7 @@ struct SHMEMContext(ImplicitlyCopyable):
                 "Warning: cooperative launch not supported on at least one PE;"
                 " GPU-side synchronization may cause hang"
             )
-        self._priority_stream._enqueue_function_checked(
+        self._priority_stream._enqueue_function(
             gpu_kernel,
             args,
             grid_dim=Dim(grid_x, grid_y, grid_z),

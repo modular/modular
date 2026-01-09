@@ -188,7 +188,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     @always_inline
     fn __init__(out self):
         """Constructs a static int tuple of the given size."""
-        self = 0
+        self.data = StaticTuple[_, Self.size](fill=Self._int_type(0))
 
     @always_inline
     @implicit
@@ -246,7 +246,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = Self(values=elems)
 
     @always_inline
-    @implicit
     fn __init__(out self, fill: Int):
         """Constructs a static int tuple given a set of arguments.
 

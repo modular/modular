@@ -1,0 +1,66 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_matmul_fp8
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_matmul.mojo
+
+params:
+# Shapes extracted from tuning_table_sm100_fp8.yaml for performance comparison
+# N=2304, K=16384
+- dtype: mxfp8_sf
+  $M: [150, 256, 512, 1024, 2048, 4096, 8192]
+  N: 2304
+  K: 16384
+
+# N=4608, K=16384
+- dtype: mxfp8_sf
+  $M: [150, 300, 512, 1024, 2048, 4096, 8192]
+  N: 4608
+  K: 16384
+
+# N=13312, K=16384
+- dtype: mxfp8_sf
+  $M: [150, 256, 512, 1024, 2048, 4096, 8192]
+  N: 13312
+  K: 16384
+
+# N=16384, K=2048
+- dtype: mxfp8_sf
+  $M: [150, 256, 512, 1024, 2048, 4096, 8192]
+  N: 16384
+  K: 2048
+
+# N=16384, K=4096
+- dtype: mxfp8_sf
+  $M: [150, 256, 512, 1024, 2048, 4096, 8192]
+  N: 16384
+  K: 4096
+
+# N=16384, K=6656
+- dtype: mxfp8_sf
+  $M: [150, 256, 512, 1024, 2048, 4096, 8192]
+  N: 16384
+  K: 6656
+
+# N=16384, K=13312
+- dtype: mxfp8_sf
+  $M: [150, 256, 512, 1024, 2048, 4096, 8192]
+  N: 16384
+  K: 13312
+
+# N=26624, K=16384
+- dtype: mxfp8_sf
+  $M: [150, 256, 512, 1024, 2048, 4096, 8192]
+  N: 26624
+  K: 16384
+

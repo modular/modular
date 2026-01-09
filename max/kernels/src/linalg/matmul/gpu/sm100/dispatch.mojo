@@ -2412,7 +2412,7 @@ fn _vendor_blas_matmul_sm100[
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ]
 
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 c_layout_tensor,
                 a_layout_tensor,
                 b_layout_tensor,
@@ -2520,8 +2520,8 @@ fn _matmul_dispatch_sm100[
         )
 
         # Construct a new buffer with external origin pointing to the temporary storage.
-        var c_tmp = NDBuffer[c.type, 2, MutOrigin.external](
-            rebind[UnsafePointer[Scalar[c.type], MutOrigin.external]](
+        var c_tmp = NDBuffer[c.type, 2, MutExternalOrigin](
+            rebind[UnsafePointer[Scalar[c.type], MutExternalOrigin]](
                 tmp_device_buffer.unsafe_ptr()
             ),
             IndexList[2](c.dim[0](), c.dim[1]()),

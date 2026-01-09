@@ -1448,7 +1448,7 @@ fn _grouped_matmul_sm100_persistent[
 
     var mnk = StaticTuple[UInt32, 3](M, N, K)
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         num_active_experts,
         a_tma_op,
         expert_ids,

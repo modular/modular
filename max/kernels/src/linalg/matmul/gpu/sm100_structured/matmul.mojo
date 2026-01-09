@@ -14,7 +14,7 @@
 
 This module contains the CPU-side code for SM100 matrix multiplication:
 - TMA descriptor creation
-- Kernel instantiation and launch via ctx.enqueue_function_checked
+- Kernel instantiation and launch via ctx.enqueue_function
 
 All GPU code (kernel structs, runtime functions) is in matmul_kernels.mojo.
 """
@@ -233,7 +233,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
             ptr=UnsafePointer[UInt64, origin=MutAnyOrigin](), length=0
         )
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -561,7 +561,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     else:
         workspace = Span[UInt64, MutAnyOrigin]()
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -658,7 +658,7 @@ fn matmul_sm100_fallback[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c,

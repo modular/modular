@@ -1820,7 +1820,7 @@ fn mla_sm100_prefill[
     comptime num_threads = fa4_config.num_threads
     comptime smem_use = fa4_config.smem_used
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         q_tma_op,
         k_tma_op,
         k_rope_tma_op,
