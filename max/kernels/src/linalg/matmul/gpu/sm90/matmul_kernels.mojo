@@ -404,14 +404,6 @@ struct HopperMatmulSM90Kernel[
         var rank_m = block_id_in_cluster.y
         var rank_n = block_id_in_cluster.x
 
-        # Check and wait for PDL grids if needed
-        @parameter
-        if (
-            Self.pdl_level > PDLLevel.OFF
-            and Self.pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
-        ):
-            wait_on_dependent_grids()
-
         var warp_id = get_warp_id()
         var lane_predicate = elect_one_sync()
 
@@ -813,6 +805,15 @@ struct HopperMatmulSM90Kernel[
         # Split thread blocks into producer and consumer warp groups
         if warp_group_idx == 0:
             # Producer warp group
+
+            # Check and wait for PDL grids if needed
+            @parameter
+            if (
+                Self.pdl_level > PDLLevel.OFF
+                and Self.pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+            ):
+                wait_on_dependent_grids()
+
             _ = Self.setup_producer()
 
             if warp_id == 0 and lane_predicate:
