@@ -119,6 +119,23 @@ def test_mean() -> None:
     assert result.real
 
 
+def test_sum() -> None:
+    tensor = Tensor.constant(
+        [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+        dtype=DType.float32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    # Sum along last axis (rows)
+    row_sum = tensor.sum(axis=-1)
+    row_sum._sync_realize()
+    assert row_sum.real
+    assert list(row_sum.shape) == [2, 1]
+    # Values should be [6.0, 15.0]
+    values = list(row_sum._values())
+    assert abs(values[0] - 6.0) < 1e-5
+    assert abs(values[1] - 15.0) < 1e-5
+
+
 def test_clip() -> None:
     x = random.normal([20])
     assert all((x.clip(max=0.0) <= 0.0)._values())

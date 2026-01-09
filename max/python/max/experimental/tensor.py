@@ -1280,6 +1280,40 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         return F.mean(self, axis=axis)
 
+    def sum(self, axis: int = -1) -> Tensor:
+        """Computes the sum of values along an axis.
+
+        Returns a tensor containing the sum of values along the specified axis.
+        This is a fundamental reduction operation used for aggregating data,
+        computing totals, and implementing other operations like mean.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.dtype import DType
+
+            # Create a 2x3 tensor
+            x = tensor.Tensor.constant(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=DType.float32
+            )
+
+            # Sum along last axis (within each row)
+            row_sum = x.sum(axis=-1)
+            # Result: [6.0, 15.0] (sum of each row)
+
+            # Sum along first axis (within each column)
+            col_sum = x.sum(axis=0)
+            # Result: [5.0, 7.0, 9.0] (sum of each column)
+
+        Args:
+            axis: The axis along which to compute the sum. Defaults to -1
+                (the last axis).
+
+        Returns:
+            Tensor: A tensor containing the sum along the specified axis.
+        """
+        return F.sum(self, axis=axis)
+
     def clip(
         self,
         *,
