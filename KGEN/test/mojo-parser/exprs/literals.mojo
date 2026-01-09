@@ -59,9 +59,9 @@ fn var_let_decls():
     # CHECK: lit.alias.decl {{.*}}flDivNegZero{{.*}}#FloatLiteral <:!pop.float_literal #pop.float_literal<nan>>> = <*?>
     comptime flDivNegZero = 5.0 / -0.0
 
-    # CHECK: %str = lit.var.decl {{.*}} : !lit.ref<{{.*}}#StringLiteral <:string "hello">>
+    # CHECK: %str = lit.var.decl {{.*}} : !lit.ref<!String,
     # CHECK: [[CONST:%.*]] = kgen.param.constant: {{.*}}#StringLiteral <:string "hello">> = <*?>
-    # CHECK: lit.ref.store [[CONST]], %str
+    # CHECK: lit.call {{.*}}@String::@"__init__{{.*}}([[CONST]], %str)
     var str = "hello"
 
 
