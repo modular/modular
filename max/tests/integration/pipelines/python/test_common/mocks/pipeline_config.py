@@ -120,7 +120,7 @@ class DummyPipelineConfig(PipelineConfig):
             device_specs=device_specs,
             quantization_encoding=quantization_encoding,
         )
-        model_config._kv_cache_config = KVCacheConfig(
+        model_config._kv_cache = KVCacheConfig(
             cache_strategy=kv_cache_strategy,
         )
         model_config._huggingface_config = MagicMock()

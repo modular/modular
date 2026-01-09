@@ -69,7 +69,7 @@ def mock_pipeline_config(enable_prefix_caching: bool) -> PipelineConfig:
         served_model_name="echo",
     )
 
-    model_config._kv_cache_config = kv_cache_config
+    model_config._kv_cache = kv_cache_config
     pipeline_config._model = model_config
 
     return pipeline_config

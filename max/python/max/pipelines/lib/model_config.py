@@ -159,10 +159,10 @@ class MAXModelConfig(MAXModelConfigBase):
 
     # TODO(zheng): Refactor QuantizationConfig to be a MAXConfig subclass that
     # also autopopulates default values.
-    _quant_config: QuantizationConfig | None = PrivateAttr(default=None)
+    _quant: QuantizationConfig | None = PrivateAttr(default=None)
     """Optional config for specifying quantization parameters. This should only be set by internal code."""
 
-    _kv_cache_config: KVCacheConfig = PrivateAttr(default_factory=KVCacheConfig)
+    _kv_cache: KVCacheConfig = PrivateAttr(default_factory=KVCacheConfig)
     """The KVCache config."""
 
     _config_file_section_name: str = PrivateAttr(default="model_config")
@@ -246,10 +246,10 @@ class MAXModelConfig(MAXModelConfigBase):
         private_state = dict(private_state)
         private_state.setdefault("_huggingface_config", None)
         private_state.setdefault("_weights_repo_id", None)
-        private_state.setdefault("_kv_cache_config", KVCacheConfig())
+        private_state.setdefault("_kv_cache", KVCacheConfig())
         private_state.setdefault("_applied_dtype_cast_from", None)
         private_state.setdefault("_applied_dtype_cast_to", None)
-        private_state.setdefault("_quant_config", None)
+        private_state.setdefault("_quant", None)
         private_state.setdefault("_config_file_section_name", "model_config")
         object.__setattr__(self, "__pydantic_private__", private_state)
 
@@ -314,11 +314,11 @@ class MAXModelConfig(MAXModelConfigBase):
 
     @property
     def kv_cache_config(self) -> KVCacheConfig:
-        # `_kv_cache_config` is a PrivateAttr. Some construction paths (notably
+        # `_kv_cache` is a PrivateAttr. Some construction paths (notably
         # unpickling) can bypass __init__, so the PrivateAttr may be absent.
-        if not hasattr(self, "_kv_cache_config"):
-            self._kv_cache_config = KVCacheConfig()
-        return self._kv_cache_config
+        if not hasattr(self, "_kv_cache"):
+            self._kv_cache = KVCacheConfig()
+        return self._kv_cache
 
     @property
     def model_name(self) -> str:
@@ -542,7 +542,7 @@ class MAXModelConfig(MAXModelConfigBase):
         Raises:
             ValueError: If LoRA is enabled but incompatible with current model configuration.
         """
-        if self._kv_cache_config.enable_prefix_caching:
+        if self._kv_cache.enable_prefix_caching:
             raise ValueError(
                 "LoRA is not compatible with prefix caching. "
                 "Please disable prefix caching by using the --no-enable-prefix-caching flag."
@@ -923,7 +923,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 desc_act=hf_quant_config["desc_act"],
                 sym=hf_quant_config["sym"],
             )
-            self._quant_config = default_quantization_config
+            self._quant = default_quantization_config
 
     def _local_weight_path(self, relative_path: Path) -> str | None:
         """Checks common local locations for a weight file and returns its

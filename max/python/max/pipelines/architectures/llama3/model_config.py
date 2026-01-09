@@ -377,7 +377,7 @@ class Llama3Config(MAXModelConfigBase):
             # iteration of MAXModelConfig, it will automatically instantiate based
             # on the underlying model repo id.
             model_quantization_encoding=pipeline_config.model.graph_quantization_encoding,
-            quantization_config=pipeline_config.model._quant_config,
+            quantization_config=pipeline_config.model._quant,
             return_logits=return_logits,
             return_hidden_states=return_hidden_states,
             max_seq_len=Llama3Config.calculate_max_seq_len(

@@ -427,14 +427,12 @@ class PipelineConfig(ConfigFileModel):
 
                 kv_cache_kwargs["device_memory_utilization"] = main_model_util
 
-            model_config._kv_cache_config = KVCacheConfig(**kv_cache_kwargs)
+            model_config._kv_cache = KVCacheConfig(**kv_cache_kwargs)
             setattr(self, config_name, model_config)
 
             if self._draft_model:
                 kv_cache_kwargs["device_memory_utilization"] = draft_model_util
-                self._draft_model._kv_cache_config = KVCacheConfig(
-                    **kv_cache_kwargs
-                )
+                self._draft_model._kv_cache = KVCacheConfig(**kv_cache_kwargs)
 
         elif config_name == "_sampling":
             if hasattr(self, "_model") and self._model:
@@ -650,7 +648,7 @@ class PipelineConfig(ConfigFileModel):
             ("PipelineConfig", self),
             ("MAXModelConfig", self._model),
             ("SamplingConfig", self._sampling),
-            ("KVCacheConfig", self._model._kv_cache_config),
+            ("KVCacheConfig", self._model._kv_cache),
         ]
 
         # Add draft model configurations if present
@@ -660,7 +658,7 @@ class PipelineConfig(ConfigFileModel):
                     ("Draft_MAXModelConfig", self._draft_model),
                     (
                         "Draft_KVCacheConfig",
-                        self._draft_model._kv_cache_config,
+                        self._draft_model._kv_cache,
                     ),
                 ]
             )
@@ -879,8 +877,8 @@ class PipelineConfig(ConfigFileModel):
         # Gemma has a MHA head size of 256.
         # This requires a kv cache page size of at least 256.
         if "Gemma3" in arch.name:
-            model_config._kv_cache_config.kv_cache_page_size = max(
-                model_config._kv_cache_config.kv_cache_page_size, 256
+            model_config._kv_cache.kv_cache_page_size = max(
+                model_config._kv_cache.kv_cache_page_size, 256
             )
 
         model_config.validate_multi_gpu_supported(
@@ -1095,7 +1093,7 @@ class PipelineConfig(ConfigFileModel):
         logger.info("=" * 60)
 
         # Primary model kvcache config
-        kv_config = self.model._kv_cache_config
+        kv_config = self.model._kv_cache
         _log_kvcache_details(kv_config)
 
         # Draft model kvcache config (if using speculative decoding)
@@ -1104,7 +1102,7 @@ class PipelineConfig(ConfigFileModel):
             logger.info("Draft Model KVCache Configuration:")
             logger.info("-" * 40)
             assert self._draft_model is not None
-            draft_kv_config = self._draft_model._kv_cache_config
+            draft_kv_config = self._draft_model._kv_cache
             _log_kvcache_details(draft_kv_config)
 
         logger.info("")
@@ -1142,7 +1140,7 @@ class PipelineConfig(ConfigFileModel):
         pipeline_class = get_pipeline_for_task(task, self)
 
         # Get reserved memory info from KVCache config
-        kv_config = self.model._kv_cache_config
+        kv_config = self.model._kv_cache
         if kv_config._available_cache_memory is None:
             raise ValueError(
                 "KVCache config is not available after config resolution."

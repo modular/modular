@@ -280,7 +280,7 @@ class TestPipelineConfigUtilityMethods:
         # Should create model config with KV cache config
         assert config.model is not None
         assert config.model.model_path == "/test/path"
-        assert config.model._kv_cache_config.kv_cache_page_size == 256
+        assert config.model._kv_cache.kv_cache_page_size == 256
 
     @mock_pipeline_config_resolve
     def test_create_and_set_config_sampling_with_echo_enabled(self) -> None:
@@ -327,7 +327,7 @@ class TestPipelineConfigUtilityMethods:
         assert config.sampling_config.enable_structured_output is True
         assert config.sampling_config.enable_penalties is True
         assert config.model.model_path == "/override/path"
-        assert config.model._kv_cache_config.kv_cache_page_size == 128
+        assert config.model._kv_cache.kv_cache_page_size == 128
 
     @mock_pipeline_config_resolve
     def test_process_remaining_config_classes_no_matches(self) -> None:
