@@ -16,6 +16,8 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/bit.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/LockFileManager.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/xxhash.h"
@@ -518,27 +520,32 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
   // Keeping dirs that match the suffix and not prefix allows us to
   // keep cached parallel debug and release versions.
   if (!readOnly) {
-    // Extract version suffix (everything after the first '-')
-    std::string_view suffix;
-    size_t idx = version.find('-');
-    if (idx != std::string_view::npos)
-      suffix = version.substr(idx + 1, std::string_view::npos);
+    // File lock the directory to avoid mulitple processes remove the
+    // content in the directory at the same time.
+    llvm::LockFileManager locker(base.string());
+    if (locker.tryLock()) {
+      // Extract version suffix (everything after the first '-')
+      std::string_view suffix;
+      size_t idx = version.find('-');
+      if (idx != std::string_view::npos)
+        suffix = version.substr(idx + 1, std::string_view::npos);
 
-    for (const auto &dirEntry : std::filesystem::directory_iterator{base}) {
-      // The directory entry must exist, be a directory, the parent must be
-      // `base` and the directory 'filename' suffix must match the current
-      // version suffix in order for it to be deleted.
+      for (const auto &dirEntry : std::filesystem::directory_iterator{base}) {
+        // The directory entry must exist, be a directory, the parent must be
+        // `base` and the directory 'filename' suffix must match the current
+        // version suffix in order for it to be deleted.
 
-      [[maybe_unused]] std::error_code ec0, ec1;
-      if (std::filesystem::is_directory(dirEntry.path(), ec) &&
-          (std::filesystem::canonical(dirEntry.path().parent_path(), ec0) ==
-           std::filesystem::canonical(base, ec1))) {
-        // Extract suffix from directory name
-        std::string dirName = dirEntry.path().filename().string();
-        // Remove if dirName is not the same as current version (outdated
-        // cache) and has the same build type as the current one.
-        if (dirName != version && dirName.ends_with(suffix))
-          std::filesystem::remove_all(dirEntry, ec);
+        [[maybe_unused]] std::error_code ec0, ec1;
+        if (std::filesystem::is_directory(dirEntry.path(), ec) &&
+            (std::filesystem::canonical(dirEntry.path().parent_path(), ec0) ==
+             std::filesystem::canonical(base, ec1))) {
+          // Extract suffix from directory name
+          std::string dirName = dirEntry.path().filename().string();
+          // Remove if dirName is not the same as current version (outdated
+          // cache) and has the same build type as the current one.
+          if (dirName != version && dirName.ends_with(suffix))
+            std::filesystem::remove_all(dirEntry, ec);
+        }
       }
     }
   }
