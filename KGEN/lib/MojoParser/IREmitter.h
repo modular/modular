@@ -643,6 +643,9 @@ public:
   /// context that can raise. Otherwise, return null.
   MLValue findNearestErrorSlot();
 
+  /// Verify inferred error types for escaping origins.
+  void checkInferredErrorType(ASTType rvalueType, SMLoc loc);
+
   /// Emit a normal return (not a 'raise' return) out of the function, along
   /// with any special logic that goes with it.  `funcDecl` indicates the
   /// function we are returning out of.

@@ -1147,7 +1147,8 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   ValueDest dest(errSlot, EC_RaiseValue);
   // If the contextual caught type is unresolved, then we're the first raise
   // in a try block.  Resolve the error type to whatever type we are raising.
-  if (isa<UnresolvedType>(errSlot.getRValueType())) {
+  bool inferringErrorType = isa<UnresolvedType>(errSlot.getRValueType());
+  if (inferringErrorType) {
     auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
     dest = ValueDest(errorVar, EC_RaiseValue);
   }
@@ -1183,6 +1184,9 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
                                            loc.Start, errorExpr)))
       return failure();
   }
+
+  if (inferringErrorType)
+    emitter.checkInferredErrorType(errSlot.getRValueType(), loc.Start);
 
   LIT::RaiseOp::create(builder, translateLocation(loc.Start));
   return success();
@@ -1743,6 +1747,7 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
   MLValue errSlot = getEmitter().findNearestErrorSlot();
   if (!errSlot)
     return populateFinallyBody();
+  bool inferringErrorType = isa<UnresolvedType>(errSlot.getRValueType());
 
   VarDeclOp errDecl = getEmitter().emitVarDecl(
       "__finally_error__", UnresolvedType::get(getContext()), tryOp.getLoc(),
@@ -1775,6 +1780,8 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
       moveDest = ValueDest(errorVar, EC_RaiseValue);
     }
     getEmitter().emitResult(MRValue(errDecl), SyntheticNode(loc), moveDest);
+    if (inferringErrorType)
+      getEmitter().checkInferredErrorType(errSlot.getRValueType(), loc);
     RaiseOp::create(builder, tryOp.getLoc());
     TryYieldOp::create(builder, tryOp.getLoc());
   }
@@ -1894,7 +1901,8 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
 
     hasFinally = consumeIf(Token::kw_finally);
   } else {
-    hasFinally = consumeIf(Token::kw_finally);
+    SMLoc finallyLoc;
+    hasFinally = consumeIf(Token::kw_finally, &finallyLoc);
     if (!hasFinally)
       return emitTokenError("expected 'except' or 'finally' block");
     // In a raising context, the default 'except' block just forwards the error.
@@ -1908,6 +1916,8 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
       if (isa<UnresolvedType>(errSlot.getRValueType())) {
         auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
         dest = ValueDest(errorVar, EC_RaiseValue);
+        getEmitter().checkInferredErrorType(errDecl.getType().getElementType(),
+                                            finallyLoc);
       }
       getEmitter().emitResult(MRValue(errDecl), SyntheticNode(smLoc), dest);
       LIT::RaiseOp::create(builder, loc);
@@ -2295,6 +2305,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
         if (isa<UnresolvedType>(errSlot.getRValueType())) {
           auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
           dest = ValueDest(errorVar, EC_RaiseValue);
+          getEmitter().checkInferredErrorType(
+              errDecl.getType().getElementType(), smLoc);
         }
 
         getEmitter().emitResult(MRValue(errDecl), contextExp, dest);

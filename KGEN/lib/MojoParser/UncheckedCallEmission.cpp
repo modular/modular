@@ -910,6 +910,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       // in a try block.  Resolve the error type to whatever type we raise.
       auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
       errorVar.changeElementType(errorType);
+      emitter.checkInferredErrorType(errorType, callExpr->getLoc());
     } else if (!errorType.isEqualCanon(errSlot.getRValueType())) {
       emitter.emitError(callExpr->getLoc())
           << "cannot call function that may raise " << errorType
@@ -1756,6 +1757,9 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
             auto loc = translateLocation(callExpr->getLoc());
             RaiseOp::create(*builder, loc);
             TryYieldOp::create(*builder, loc);
+            // Check for invalid origin references.
+            checkInferredErrorType(errDecl.getType().getElementType(),
+                                   callExpr->getLoc());
           });
     }
   }

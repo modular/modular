@@ -144,7 +144,7 @@ namespace {
 /// simplification.  Consider a situation like:
 ///
 ///    struct S[a: Int, b: Int]:
-///    fn take[v: Int](s: A[v, v+1]):
+///    fn take[v: Int](s: S[v, v+1]):
 ///
 /// In this case, we *must* stop after inferring the value of `v`, backtrack
 /// up call call stack, and then substitute the value of `v` into the expected
