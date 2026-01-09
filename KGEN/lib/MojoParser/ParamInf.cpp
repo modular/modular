@@ -1563,7 +1563,11 @@ void ParamInfState::inferFromParamList(bool hasArguments) {
 
     // Skip over any provided keyword parameters when matching things up, we
     // handle them separately below.
-    while (posIdx < numParams && givenBindings[posIdx].keyword)
+    // Also skips EllipsisAttr, from which we can infer nothing.
+    while (
+        posIdx < numParams &&
+        (givenBindings[posIdx].keyword ||
+         sugarIsa<EllipsisAttr>(givenBindings[posIdx].ir.getIfPValue().get())))
       ++posIdx;
 
     // If we have a varargs parameters, then it will eat the rest of the
