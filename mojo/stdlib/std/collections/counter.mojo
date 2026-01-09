@@ -245,6 +245,8 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Examples:
 
         ```mojo
+        from collections import Counter
+
         var c = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
         counter_as_string = String(c)
         print(counter_as_string)
