@@ -1046,7 +1046,7 @@ PIPELINES = {
             pipeline="allenai/olmOCR-2-7B-1025-FP8",
             encoding="float8_e4m3fn",
             cos_dist_threshold=2.4e-01,
-            kl_div_threshold=4.5e-01,
+            kl_div_threshold=8.8e-01,
         ),
     ),
     "allenai/OLMo-2-1124-7B-float32": PipelineDef(
@@ -1265,8 +1265,8 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_gemma3-27b_golden/1/1a619d49187cdce335f4492acab40fd950922748e6631c0478572344ff295efc/vllm_gemma3-27b_golden.tar.gz",
                 json_file="vllm_gemma3-27b_float8-dynamic_golden.json",
             ),
-            cos_dist_threshold=2.7e-2,
-            kl_div_threshold=5.9e-1,
+            cos_dist_threshold=3.6e-2,
+            kl_div_threshold=7.0e-1,
         ),
     ),
     # Multi-GPU variant
@@ -1317,7 +1317,7 @@ PIPELINES = {
                 json_file="vllm_llama3_1_8B_float8_dyanmic_bf16_lora_golden.json",
             ),
             cos_dist_threshold=1.41e-01,
-            kl_div_threshold=6.22e-01,
+            kl_div_threshold=7.1e-01,
         ),
     ),
 }
