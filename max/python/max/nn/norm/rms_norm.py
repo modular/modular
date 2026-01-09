@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import (
@@ -24,41 +23,11 @@ from max.graph import (
     ShardingStrategy,
     TensorType,
     TensorValue,
-    TensorValueLike,
     Weight,
     ops,
 )
 
-from ..layer import Layer, Module, Shardable
-
-
-@dataclass
-class RMSNormV1(Layer):
-    """Computes the Root Mean Square normalization on inputs.
-
-    Deprecated: Use `RMSNorm` instead.
-    """
-
-    weight: TensorValueLike
-    eps: float = 1e-6
-    weight_offset: float = 0.0
-    multiply_before_cast: bool = True
-
-    def __call__(self, x: TensorValue) -> TensorValue:
-        return ops.custom(
-            "rms_norm",
-            x.device,
-            [
-                x,
-                TensorValue(self.weight).cast(x.dtype),
-                ops.constant(self.eps, dtype=x.dtype, device=DeviceRef.CPU()),
-                ops.constant(
-                    self.weight_offset, dtype=x.dtype, device=DeviceRef.CPU()
-                ),
-            ],
-            [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
-            parameters={"multiply_before_cast": self.multiply_before_cast},
-        )[0].tensor
+from ..layer import Module, Shardable
 
 
 class RMSNorm(Module, Shardable):

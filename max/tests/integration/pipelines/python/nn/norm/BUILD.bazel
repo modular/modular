@@ -40,7 +40,6 @@ modular_py_test(
         ["*_gpu.py"],
     ) + [
         "conftest.py",
-        "rms_helpers.py",
     ],
     exec_properties = {
         "test.resources:gpu-memory": "1.5",

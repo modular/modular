@@ -55,7 +55,7 @@ class MLP(Module):
 
 
 class TransformerBlock(Module):
-    """Stack of Attention, FeedForward, and RMSNormV1 layers."""
+    """Stack of Attention, FeedForward, and RMSNorm layers."""
 
     attention: Attention
     feed_forward: MLP

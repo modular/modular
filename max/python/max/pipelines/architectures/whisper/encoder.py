@@ -180,7 +180,7 @@ class WhisperEncoder(Module):
                 for i in range(huggingface_config.encoder_layers)
             ]
         )
-        # Hugging Face model uses default eps for nn.LayerNormV1 which is = 1e-5
+        # Hugging Face model uses default eps for nn.LayerNorm which is = 1e-5
         # TODO: Is LayerNorm here not the same as nn.LayerNorm
         self.norm = LayerNorm(
             huggingface_config.d_model, devices=[device], dtype=dtype, eps=1e-5

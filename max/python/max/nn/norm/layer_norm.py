@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -24,46 +23,7 @@ import numpy.typing as npt
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 
-from ..layer import Layer, Module, Shardable
-
-
-@dataclass
-class LayerNormV1(Layer):
-    """Layer normalization block.
-
-    Deprecated: Use `LayerNorm` instead.
-    """
-
-    weight: TensorValue
-    bias: TensorValue | None = None
-    eps: float = 1e-6
-
-    def __call__(self, input: TensorValue):
-        # TODO: AIPIPE-95 Replace with a broadcasting rmo.layer_norm
-        bias: Any = (
-            ops.cast(self.bias, input.dtype)
-            if self.bias
-            # If bias wasn't passed then use bias-less layer norm (beta = 0).
-            else ops.broadcast_to(
-                ops.constant(0.0, input.dtype, device=DeviceRef.CPU()),
-                shape=(input.shape[-1],),
-            )
-        )
-
-        weight: Any = self.weight
-        if weight.type.device != input.type.device:
-            weight = weight.to(input.type.device or DeviceRef.CPU())
-
-        if bias and bias.type.device != input.type.device:
-            bias = bias.to(input.type.device or DeviceRef.CPU())
-
-        res = ops.layer_norm(
-            input,
-            gamma=ops.cast(weight, input.dtype),
-            beta=bias,
-            epsilon=self.eps,
-        )
-        return res
+from ..layer import Module, Shardable
 
 
 class LayerNorm(Module, Shardable):
