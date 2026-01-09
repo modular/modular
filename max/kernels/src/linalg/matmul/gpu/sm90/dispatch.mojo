@@ -2853,6 +2853,34 @@ fn matmul_dispatch_sm90_bf16_fp32[
     if a_type == DType.bfloat16 and BN != -1:
 
         @parameter
+        if static_N != 4096 or static_K != 1536:
+            if m <= 128:
+                comptime default_bf16_config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    block_tile_shape=Index(64, BN, BK),
+                    mma_shape=Index(64, BN, mma_k),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=4,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                    pdl_level=pdl_level,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=default_bf16_config,
+                    schedule = MatmulSchedule.NONE,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+                return DISPATCH_HIT
+
+        @parameter
         fn get_k_groups[N: Int]() -> OptionalReg[UInt]:
             @parameter
             if N == 1536:
