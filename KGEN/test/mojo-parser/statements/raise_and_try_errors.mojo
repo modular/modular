@@ -38,3 +38,29 @@ fn cannotRaise(err: Error):
 # Issue #12358
 fn raise_bad_type() raises:
     raise 42  # expected-error {{cannot implicitly convert 'IntLiteral[42]' value to 'Error'}}
+
+fn raises_arg(x: String) raises Pointer[String, origin_of(x)]:
+    pass
+
+# MOCO-3000
+fn origin_scope_example():
+    try:
+        var key = 42 # expected-note {{origin declared here}}
+        # expected-error @+1 {{inferred error type 'Pointer[Int, key]' captures origin 'key' from within try body; it is not in scope in except body}}
+        raise Pointer(to=key)
+    except e:
+        _ = e[]  # isn't valid.
+
+    try:
+        var str = String() # expected-note {{origin declared here}}
+        # expected-error @+1 {{inferred error type 'Pointer[String, origin_of((muttoimm str))]' captures origin 'str' from within try body; it is not in scope in except body}}
+        raises_arg(str)
+    except e2:
+        _ = e2[]  # isn't valid.
+
+    try:
+        # expected-error @below {{inferred error type 'Pointer[String, origin_of((muttoimm __call_result_tmp__))]' captures origin of temporary from within try body; it is not in scope in except body}}
+        # expected-note @below {{origin declared here}}
+        raises_arg(String())
+    except e3:
+        _ = e3[]  # isn't valid.

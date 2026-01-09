@@ -1831,7 +1831,7 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
 }
 
 //===----------------------------------------------------------------------===//
-// Return emission helpers.
+// Error handling helpers.
 
 MLValue IREmitter::findNearestErrorSlot() {
   assert(builder && "cannot raise in a context without a builder");
@@ -1847,6 +1847,57 @@ MLValue IREmitter::findNearestErrorSlot() {
   // Otherwise, the error slot is carried by the surrounding try op.
   return cast<LIT::TryOp>(opForRaise).getErr();
 }
+
+/// When a try block gets its error type inferred, this function makes sure the
+/// inferred type doesn't capture an origin from within a try body.  Such a
+/// thing would be an out of scope reference, e.g.:
+///
+///    try:
+///      var x = 42
+///      raise Pointer(to=x)
+///    except e: # x is not in scope here.
+void IREmitter::checkInferredErrorType(ASTType rvalueType, SMLoc loc) {
+  SmallVector<TypedAttr> origins =
+      shared.cachedOriginFinder.findOriginsIn({rvalueType});
+  // Typically we have something like Error or TypeCheckError which will have no
+  // origins, so we can avoid doing work.
+  if (origins.empty())
+    return;
+
+  // Ok, find the try block that we're inferring for.  We must be in a 'try'
+  // because that is the only thing that can infer an error type.
+  assert(builder && "cannot raise in a context without a builder");
+  auto tryOp =
+      dyn_cast<LIT::TryOp>(findOpProcessingRaise(builder->getInsertionBlock()));
+  if (!tryOp)
+    return; // Functions don't infer their error type.
+
+  // Unfortunately, we don't have a good way to do a lookup given an origin
+  // attribute, so we scan the body of the try block for any vardecls. Is this
+  // the only thing that can declare an origin?
+  SmallPtrSet<Attribute, 8> originSet;
+  for (auto o : origins)
+    originSet.insert(OriginType::stripMutCastAndFieldExtract(o));
+  tryOp.getTryRegion().walk([&](VarDeclOp varDecl) {
+    if (originSet.contains(varDecl.getType().getOrigin())) {
+      auto diag = emitError(loc);
+      diag << "inferred error type " << rvalueType << " captures origin ";
+      if (varDecl.isSynthetic()) {
+        diag << "of temporary";
+      } else {
+        diag << "'"
+             << ASTType::getOriginAsString(varDecl.getType().getOrigin(),
+                                           &shared)
+             << "'";
+      }
+      diag << " from within try body; it is not in scope in except body";
+      diag.attachNote(varDecl.getLoc()) << "origin declared here";
+    }
+  });
+}
+
+//===----------------------------------------------------------------------===//
+// Return emission helpers.
 
 void IREmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
                                  bool emitEndFunc) {
