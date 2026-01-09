@@ -172,9 +172,12 @@ class Qwen2_5VLModel(
         self.model_config = None
         self._session = session  # reuse for on-device casts
 
-        self.vision_model, self.language_model = self.load_model(session)
+        gpu0 = devices[0]
+        if gpu0.is_host:
+            raise ValueError("Qwen2.5VL currently only supports GPU devices")
+        self._parallel_ops = ParallelArrayOps(accelerator=gpu0, max_workers=24)
 
-        self._parallel_ops = ParallelArrayOps(max_workers=24)
+        self.vision_model, self.language_model = self.load_model(session)
 
     @staticmethod
     def calculate_max_seq_len(
