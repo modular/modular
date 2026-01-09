@@ -436,7 +436,7 @@ permute = functional(ops.permute)
 pow = functional(ops.pow)
 #: Creates a tensor with evenly spaced values.
 #: See :func:`max.graph.ops.range` for details.
-range = functional(ops.range)
+arange = functional(ops.range)
 #: Applies the ReLU activation function.
 #: See :func:`max.graph.ops.relu` for details.
 relu = functional(ops.relu)

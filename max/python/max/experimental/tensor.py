@@ -862,7 +862,7 @@ class Tensor(DLPackArray, HasTensorValue):
         dtype, device = defaults(dtype, device)
         if stop is None:
             start, stop = 0, start
-        return F.range(
+        return F.arange(
             start,
             stop,
             step,
@@ -905,7 +905,7 @@ class Tensor(DLPackArray, HasTensorValue):
                 the input type's shape.
         """
         dim = type.shape[-1]
-        range = F.range(
+        range = F.arange(
             start=0,
             stop=dim,
             out_dim=dim,
