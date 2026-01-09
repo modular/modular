@@ -1022,6 +1022,9 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
         continue;
       }
 
+      // Convert `x and y` to `x & y` so we get better canonicalization.
+      propVal = PValue(deShortCircuitCond(propVal.get()));
+
       // Store the constraint in the parameter list as is. These will be
       // remapped to using index refs later when constructing the final
       // GeneratorType.
@@ -2182,6 +2185,9 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
       constraintEmitter.emitErrorForDynamicValueInParameter(constraint.loc);
       continue;
     }
+
+    // Convert `x and y` to `x & y` so we get better canonicalization.
+    propVal = deShortCircuitCond(propVal);
 
     // Translate location without any DebugInfo scope since this metadata is
     // purely frontend use and never ends up in DWARF.

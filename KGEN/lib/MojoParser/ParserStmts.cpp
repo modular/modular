@@ -12,6 +12,7 @@
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/Constraints.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/Lexer.h"
 #include "MojoUtils.h"
@@ -858,7 +859,7 @@ ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
 
   // Quality-of-life: if the condition is a constant True or False, report
   // immediately to the user rather than waiting until elaboration.
-  if (auto boolAttr = dyn_cast<BoolAttr>(propVal.get())) {
+  if (auto boolAttr = sugarDynCast<BoolAttr>(propVal.get())) {
     if (!boolAttr.getValue()) {
       emitError(smLoc, "failed __comptime_assert: condition is always False");
       return success();
@@ -878,8 +879,10 @@ ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
   curDeclScope = &getDeclResolver().addFullyResolvedDecl(assertOp, StringAttr(),
                                                          smLoc, curDeclScope);
   // Inject this assumption into the newly created context.
+  // Convert `x and y` to `x & y` so we get better canonicalization.
+  TypedAttr deShortCircuitCond = LIT::deShortCircuitCond(propVal.get());
   curDeclScope->insertKnownAssumptions(
-      {ConstraintAttr::get(propVal.get(), loc)});
+      {ConstraintAttr::get(deShortCircuitCond, loc)});
   return success();
 }
 
@@ -2438,8 +2441,10 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
     llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
     pushChildScope(scopeGuard, keepDecl);
 
+    // Convert `x and y` to `x & y` so we get better canonicalization.
+    TypedAttr deShortCircuitCond = LIT::deShortCircuitCond(paramIfOp.getCond());
     curDeclScope->insertKnownAssumptions(
-        {ConstraintAttr::get(paramIfOp.getCond(), loc)});
+        {ConstraintAttr::get(deShortCircuitCond, loc)});
     return parseSuite(curIndent);
   };
 
