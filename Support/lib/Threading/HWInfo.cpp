@@ -503,15 +503,15 @@ std::vector<std::string> M::localMACs() {
   }
 #else
 #ifdef AF_PACKET
-#define __AF_TYPE AF_PACKET
+#define M_AF_TYPE AF_PACKET
 #else
-#define __AF_TYPE AF_LINK
+#define M_AF_TYPE AF_LINK
 #endif
   struct ifaddrs *ifap, *ifaptr;
   if (getifaddrs(&ifap) == 0) {
     for (ifaptr = ifap; ifaptr != nullptr; ifaptr = (ifaptr)->ifa_next) {
       if (ifaptr->ifa_addr != nullptr &&
-          ifaptr->ifa_addr->sa_family == __AF_TYPE) {
+          ifaptr->ifa_addr->sa_family == M_AF_TYPE) {
         uint8_t *data = reinterpret_cast<uint8_t *>(
             (struct sockaddr_dl *)(ifaptr)->ifa_addr);
         macs.emplace_back(bytesToHexStr(data, 6));
@@ -519,7 +519,7 @@ std::vector<std::string> M::localMACs() {
     }
     freeifaddrs(ifap);
   }
-#undef __AF_TYPE
+#undef M_AF_TYPE
 #endif
   return macs;
 }

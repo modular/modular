@@ -30,7 +30,7 @@ LLVM_DUMP_METHOD std::string mlirToString(mlir::Type type);
 // unless this header is included at some point AND the functions have uses,
 // such as the below.
 #ifndef NDEBUG
-LLVM_DUMP_METHOD static void __keepMlirToStringFunctions() {
+LLVM_DUMP_METHOD static void _keepMlirToStringFunctions() {
   llvm::nulls() << (void *)static_cast<std::string (*)(mlir::Operation *)>(
       M::mlirToString);
   llvm::nulls() << (void *)static_cast<std::string (*)(mlir::Attribute)>(
