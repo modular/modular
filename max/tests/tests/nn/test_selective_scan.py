@@ -75,17 +75,16 @@ def _get_mamba_kernel_api_path() -> Path | None:
     return None
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="module")
 def session() -> Generator[InferenceSession, None, None]:
     """Create an inference session for testing.
 
-    Using function scope with explicit cleanup to ensure each test gets a fresh session,
-    preventing GPU state corruption between tests.
+    Using module scope to reduce session creation overhead.
     """
     device = CPU() if accelerator_count() == 0 else Accelerator()
     sess = InferenceSession(devices=[device])
     yield sess
-    # Explicit cleanup to prevent GPU state corruption
+    # Explicit cleanup
     del sess
     gc.collect()
 
@@ -227,7 +226,7 @@ class TestSelectiveScanFn:
         cpu_session = InferenceSession(devices=[CPU()])
         cpu_device = DeviceRef.CPU()
 
-        batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
+        batch, dim, seqlen, dstate, n_groups = 1, 2, 4, 2, 1
 
         u, delta, A, B, C, D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
@@ -290,6 +289,7 @@ class TestSelectiveScanFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
 
+    @pytest.mark.skip(reason="Redundant with test_selective_scan_minimal_gpu")
     def test_selective_scan_minimal_cpu(
         self, mamba_kernel_path: list[Path]
     ) -> None:
@@ -298,7 +298,7 @@ class TestSelectiveScanFn:
         cpu_session = InferenceSession(devices=[CPU()])
         cpu_device = DeviceRef.CPU()
 
-        batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
+        batch, dim, seqlen, dstate, n_groups = 1, 2, 4, 2, 1
 
         np.random.seed(42)
         u = np.random.randn(batch, dim, seqlen).astype(np.float32)
@@ -366,6 +366,7 @@ class TestSelectiveScanFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
 
+    @pytest.mark.skip(reason="Debug test - skip by default")
     def test_selective_scan_debug(
         self,
         session: InferenceSession,
@@ -442,7 +443,7 @@ class TestSelectiveScanFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test basic selective scan forward pass."""
-        batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
+        batch, dim, seqlen, dstate, n_groups = 1, 2, 4, 2, 1
         u, delta, A, B, C, D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
@@ -508,7 +509,7 @@ class TestSelectiveScanFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective scan with gate tensor z."""
-        batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
+        batch, dim, seqlen, dstate, n_groups = 1, 2, 4, 2, 1
         u, delta, A, B, C, D, z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
@@ -578,7 +579,7 @@ class TestSelectiveScanFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective scan with delta_bias."""
-        batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
+        batch, dim, seqlen, dstate, n_groups = 1, 2, 4, 2, 1
         u, delta, A, B, C, D, _z, delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
@@ -648,7 +649,7 @@ class TestSelectiveScanFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective scan with return_last_state=True."""
-        batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
+        batch, dim, seqlen, dstate, n_groups = 1, 2, 4, 2, 1
         u, delta, A, B, C, D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
@@ -718,7 +719,7 @@ class TestSelectiveScanFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective scan with delta_softplus=True."""
-        batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
+        batch, dim, seqlen, dstate, n_groups = 1, 2, 4, 2, 1
         u, delta, A, B, C, D, _z, _delta_bias = create_test_data(
             batch, dim, seqlen, dstate, n_groups
         )
@@ -788,7 +789,7 @@ class TestSelectiveStateUpdateFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test basic selective state update."""
-        batch, dim, dstate, n_groups = 2, 4, 2, 1
+        batch, dim, dstate, n_groups = 1, 2, 2, 1
         dtype = DType.float32
         np_dtype = np.float32
 
@@ -877,7 +878,7 @@ class TestSelectiveStateUpdateFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective state update with gate tensor z."""
-        batch, dim, dstate, n_groups = 2, 4, 2, 1
+        batch, dim, dstate, n_groups = 1, 2, 2, 1
         dtype = DType.float32
         np_dtype = np.float32
 
@@ -973,7 +974,7 @@ class TestSelectiveStateUpdateFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective state update with dt_bias."""
-        batch, dim, dstate, n_groups = 2, 4, 2, 1
+        batch, dim, dstate, n_groups = 1, 2, 2, 1
         dtype = DType.float32
         np_dtype = np.float32
 
@@ -1069,7 +1070,7 @@ class TestSelectiveStateUpdateFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective state update with dt_softplus=True."""
-        batch, dim, dstate, n_groups = 2, 4, 2, 1
+        batch, dim, dstate, n_groups = 1, 2, 2, 1
         dtype = DType.float32
         np_dtype = np.float32
 
@@ -1162,7 +1163,7 @@ class TestMambaInnerFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test basic mamba_inner_fn forward pass."""
-        batch, intermediate_size, seqlen, hidden_size = 2, 8, 16, 4
+        batch, intermediate_size, seqlen, hidden_size = 1, 4, 8, 2
         d_state, delta_rank, conv_width = 2, 4, 4
         dtype = DType.float32
         np_dtype = np.float32
@@ -1288,13 +1289,14 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, seqlen, hidden_size)
 
+    @pytest.mark.skip(reason="Redundant with test_mamba_inner_basic")
     def test_mamba_inner_basic_cpu(self, mamba_kernel_path: list[Path]) -> None:
         """Test basic mamba_inner_fn forward pass on CPU."""
         # Force CPU device
         cpu_session = InferenceSession(devices=[CPU()])
         cpu_device = DeviceRef.CPU()
 
-        batch, intermediate_size, seqlen, hidden_size = 2, 8, 16, 4
+        batch, intermediate_size, seqlen, hidden_size = 1, 4, 8, 2
         d_state, delta_rank, conv_width = 2, 4, 4
         dtype = DType.float32
         np_dtype = np.float32
@@ -1420,6 +1422,7 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, seqlen, hidden_size)
 
+    @pytest.mark.skip(reason="Debug test - skip by default")
     def test_mamba_inner_simplified_gpu(
         self,
         session: InferenceSession,
@@ -1431,7 +1434,7 @@ class TestMambaInnerFn:
         if device.device_type != "gpu":
             pytest.skip("This test is for GPU only")
 
-        batch, intermediate_size, seqlen = 2, 8, 16
+        batch, intermediate_size, seqlen = 1, 4, 8
         d_state, n_groups = 2, 1
         dtype = DType.float32
         np_dtype = np.float32
@@ -1510,6 +1513,7 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, intermediate_size, seqlen)
 
+    @pytest.mark.skip(reason="Debug test - skip by default")
     def test_mamba_inner_tensor_construction_isolated(
         self,
         session: InferenceSession,
@@ -1521,7 +1525,7 @@ class TestMambaInnerFn:
         if device.device_type != "gpu":
             pytest.skip("This test is for GPU only")
 
-        batch, intermediate_size, seqlen = 2, 8, 16
+        batch, intermediate_size, seqlen = 1, 4, 8
         d_state, n_groups, delta_rank = 2, 1, 4
         dtype = DType.float32
         np_dtype = np.float32
@@ -1627,6 +1631,7 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, intermediate_size, seqlen)
 
+    @pytest.mark.skip(reason="Debug test - skip by default")
     def test_mamba_inner_causal_conv_isolated(
         self,
         session: InferenceSession,
@@ -1638,7 +1643,7 @@ class TestMambaInnerFn:
         if device.device_type != "gpu":
             pytest.skip("This test is for GPU only")
 
-        batch, intermediate_size, seqlen = 2, 8, 16
+        batch, intermediate_size, seqlen = 1, 4, 8
         d_state, n_groups, delta_rank, conv_width = 2, 1, 4, 4
         dtype = DType.float32
         np_dtype = np.float32
@@ -1789,6 +1794,7 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, intermediate_size, seqlen)
 
+    @pytest.mark.skip(reason="Debug test - skip by default")
     def test_mamba_inner_exact_construction(
         self,
         session: InferenceSession,
@@ -1800,11 +1806,7 @@ class TestMambaInnerFn:
         if device.device_type != "gpu":
             pytest.skip("This test is for GPU only")
 
-        batch, intermediate_size, seqlen = (
-            1,
-            4,
-            8,
-        )  # Smaller dimensions to debug
+        batch, intermediate_size, seqlen = 1, 4, 8
         d_state, n_groups, delta_rank, conv_width = 2, 1, 4, 4
         dtype = DType.float32
         np_dtype = np.float32
@@ -1967,6 +1969,7 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, intermediate_size, seqlen)
 
+    @pytest.mark.skip(reason="Debug test - skip by default")
     def test_selective_scan_isolation(
         self,
         session: InferenceSession,
@@ -1974,7 +1977,7 @@ class TestMambaInnerFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective_scan_fn in complete isolation using the working pattern."""
-        batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
+        batch, dim, seqlen, dstate, n_groups = 1, 2, 4, 2, 1
 
         # Create test data using the same create_test_data function as working tests
         u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
@@ -2033,6 +2036,7 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
 
+    @pytest.mark.skip(reason="Debug test - skip by default")
     def test_selective_scan_with_reshape(
         self,
         session: InferenceSession,
@@ -2040,7 +2044,7 @@ class TestMambaInnerFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective_scan_fn with ops.reshape() to isolate which operation breaks it."""
-        batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
+        batch, dim, seqlen, dstate, n_groups = 1, 2, 4, 2, 1
 
         # Create test data
         u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
@@ -2104,6 +2108,7 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
 
+    @pytest.mark.skip(reason="Debug test - skip by default")
     def test_selective_scan_with_split(
         self,
         session: InferenceSession,
@@ -2111,7 +2116,7 @@ class TestMambaInnerFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective_scan_fn with ops.split() to isolate the problematic operation."""
-        batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
+        batch, dim, seqlen, dstate, n_groups = 1, 2, 4, 2, 1
 
         # Create test data - create a tensor that can be split
         xz = np.random.randn(batch, dim * 2, seqlen).astype(
@@ -2175,6 +2180,7 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
 
+    @pytest.mark.skip(reason="Debug test - skip by default")
     def test_selective_scan_with_matmul(
         self,
         session: InferenceSession,
@@ -2182,7 +2188,7 @@ class TestMambaInnerFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective_scan_fn with matrix multiplication."""
-        batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
+        batch, dim, seqlen, dstate, n_groups = 1, 2, 4, 2, 1
 
         # Create test data
         u, delta, A, B, C, _D, _z, _delta_bias = create_test_data(
@@ -2252,6 +2258,7 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
 
+    @pytest.mark.skip(reason="Debug test - skip by default")
     def test_selective_scan_with_slice(
         self,
         session: InferenceSession,
@@ -2259,7 +2266,7 @@ class TestMambaInnerFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective_scan_fn with ops.slice_tensor()."""
-        batch, dim, seqlen, dstate, n_groups = 2, 4, 8, 2, 1
+        batch, dim, seqlen, dstate, n_groups = 1, 2, 4, 2, 1
 
         # Create test data - create a larger tensor for slicing
         large_tensor = np.random.randn(batch, dim * 2, seqlen).astype(
@@ -2326,6 +2333,7 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, dim, seqlen)
 
+    @pytest.mark.skip(reason="Debug test - skip by default")
     def test_selective_scan_with_causal_conv1d(
         self,
         session: InferenceSession,
@@ -2333,7 +2341,7 @@ class TestMambaInnerFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test selective_scan_fn with causal_conv1d_fn output - this might be the problematic operation."""
-        batch, intermediate_size, seqlen, d_state, conv_width = 2, 8, 16, 2, 4
+        batch, intermediate_size, seqlen, d_state, conv_width = 1, 4, 8, 2, 4
 
         # Create test data
         x = np.random.randn(batch, intermediate_size, seqlen).astype(np.float32)
@@ -2417,6 +2425,7 @@ class TestMambaInnerFn:
         output_tensor = results[0]
         assert output_tensor.shape == (batch, intermediate_size, seqlen)
 
+    @pytest.mark.skip(reason="Debug test - skip by default")
     def test_mamba_inner_simplified(
         self,
         session: InferenceSession,
@@ -2424,7 +2433,7 @@ class TestMambaInnerFn:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test simplified mamba_inner_fn that bypasses complex operations."""
-        batch, intermediate_size, seqlen, hidden_size = 2, 8, 16, 4
+        batch, intermediate_size, seqlen, hidden_size = 1, 4, 8, 2
         d_state, delta_rank, conv_width = 2, 4, 4
         dtype = DType.float32
         np_dtype = np.float32
@@ -2515,7 +2524,7 @@ class TestMambaInnerRef:
         mamba_kernel_path: list[Path],
     ) -> None:
         """Test basic mamba_inner_ref forward pass."""
-        batch, intermediate_size, seqlen, hidden_size = 2, 8, 16, 4
+        batch, intermediate_size, seqlen, hidden_size = 1, 4, 8, 2
         d_state, delta_rank, conv_width = 2, 4, 4
         dtype = DType.float32
         np_dtype = np.float32

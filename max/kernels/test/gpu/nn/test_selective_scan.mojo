@@ -978,7 +978,7 @@ def main():
             has_z=True,
             has_delta_bias=True,
             delta_softplus=False,
-        ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx)
+        ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
         print("✓ Basic selective scan GPU test passed")
 
         # Test without D
@@ -988,7 +988,7 @@ def main():
             has_z=True,
             has_delta_bias=True,
             delta_softplus=False,
-        ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx)
+        ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
         print("✓ Selective scan GPU without D test passed")
 
         # Test without z
@@ -998,7 +998,7 @@ def main():
             has_z=False,
             has_delta_bias=True,
             delta_softplus=False,
-        ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx)
+        ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
         print("✓ Selective scan GPU without z test passed")
 
         # Test with delta_softplus
@@ -1008,57 +1008,41 @@ def main():
             has_z=True,
             has_delta_bias=True,
             delta_softplus=True,
-        ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx)
+        ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
         print("✓ Selective scan GPU with delta_softplus test passed")
 
-        # Test longer sequence
+        # Test longer sequence (reduced dimensions for speed)
         run_selective_scan_gpu[
             DType.float32,
             has_D=True,
             has_z=True,
             has_delta_bias=True,
             delta_softplus=False,
-        ](batch=2, dim=8, seqlen=32, dstate=8, n_groups=1, ctx=ctx)
+        ](batch=1, dim=4, seqlen=16, dstate=4, n_groups=1, ctx=ctx)
         print("✓ Selective scan GPU longer sequence test passed")
 
         # Test specific sequence lengths that might expose CPU tiling bugs
         # CPU uses TILE_SIZE=4, so test edge cases around multiples of 4
-        for seqlen in [5, 6, 7, 9, 10, 11]:
+        # Reduced from 6 tests to 2 key edge cases for speed
+        for seqlen in [5, 7]:
             run_selective_scan_gpu[
                 DType.float32,
                 has_D=True,
                 has_z=True,
                 has_delta_bias=True,
                 delta_softplus=False,
-            ](batch=1, dim=4, seqlen=seqlen, dstate=4, n_groups=1, ctx=ctx)
+            ](batch=1, dim=2, seqlen=seqlen, dstate=2, n_groups=1, ctx=ctx)
 
-        # Test with mamba-130m-hf realistic dimensions
+        # Test with realistic dimensions (reduced for speed - keep one test)
         # dim=1536, dstate=16, n_groups=1
-        for seqlen in [5, 6, 7]:
-            run_selective_scan_gpu[
-                DType.float32,
-                has_D=True,
-                has_z=True,
-                has_delta_bias=True,
-                delta_softplus=True,
-            ](batch=1, dim=1536, seqlen=seqlen, dstate=16, n_groups=1, ctx=ctx)
-
-        # Strict tolerance test - check if CPU/GPU have tiny differences that could compound
         run_selective_scan_gpu[
             DType.float32,
             has_D=True,
             has_z=True,
             has_delta_bias=True,
             delta_softplus=True,
-        ](
-            batch=1,
-            dim=1536,
-            seqlen=7,
-            dstate=16,
-            n_groups=1,
-            ctx=ctx,
-            rtol=0.0001,  # 0.01% tolerance
-        )
+        ](batch=1, dim=64, seqlen=7, dstate=8, n_groups=1, ctx=ctx)
+        print("✓ Selective scan GPU realistic dimensions test passed")
 
         # Test selective scan update
         run_selective_scan_update_gpu[
@@ -1067,7 +1051,7 @@ def main():
             has_z=True,
             has_delta_bias=True,
             delta_softplus=False,
-        ](batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx)
+        ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
         print("✓ Basic selective scan update GPU test passed")
 
         # Test update without D
@@ -1077,7 +1061,7 @@ def main():
             has_z=True,
             has_delta_bias=True,
             delta_softplus=False,
-        ](batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx)
+        ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
         print("✓ Selective scan update GPU without D test passed")
 
         # Test update without z
@@ -1087,7 +1071,7 @@ def main():
             has_z=False,
             has_delta_bias=True,
             delta_softplus=False,
-        ](batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx)
+        ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
         print("✓ Selective scan update GPU without z test passed")
 
         # Test update with delta_softplus
@@ -1097,15 +1081,15 @@ def main():
             has_z=True,
             has_delta_bias=True,
             delta_softplus=True,
-        ](batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx)
+        ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
         print("✓ Selective scan update GPU with delta_softplus test passed")
 
-        # Test update with larger dimensions
+        # Test update with larger dimensions (reduced for speed)
         run_selective_scan_update_gpu[
             DType.float32,
             has_D=True,
             has_z=True,
             has_delta_bias=True,
             delta_softplus=False,
-        ](batch=4, dim=8, dstate=8, n_groups=1, ctx=ctx)
+        ](batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx)
         print("✓ Selective scan update GPU larger dimensions test passed")

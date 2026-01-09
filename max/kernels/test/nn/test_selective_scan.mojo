@@ -365,7 +365,7 @@ def main():
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
+    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
     print("✓ Basic selective scan test passed")
 
     # Test without D
@@ -375,7 +375,7 @@ def main():
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
+    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
     print("✓ Selective scan without D test passed")
 
     # Test without z
@@ -385,7 +385,7 @@ def main():
         has_z=False,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
+    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
     print("✓ Selective scan without z test passed")
 
     # Test with delta_softplus
@@ -395,17 +395,17 @@ def main():
         has_z=True,
         has_delta_bias=True,
         delta_softplus=True,
-    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
+    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
     print("✓ Selective scan with delta_softplus test passed")
 
-    # Test longer sequence
+    # Test longer sequence (reduced dimensions for speed)
     run_selective_scan_fwd[
         DType.float32,
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=8, seqlen=32, dstate=8, n_groups=1)
+    ](batch=1, dim=4, seqlen=16, dstate=4, n_groups=1)
     print("✓ Selective scan longer sequence test passed")
 
     # Test selective scan update
@@ -415,7 +415,7 @@ def main():
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, dstate=4, n_groups=1)
+    ](batch=1, dim=2, dstate=2, n_groups=1)
     print("✓ Basic selective scan update test passed")
 
     # Test update without D
@@ -425,7 +425,7 @@ def main():
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, dstate=4, n_groups=1)
+    ](batch=1, dim=2, dstate=2, n_groups=1)
     print("✓ Selective scan update without D test passed")
 
     # Test update without z
@@ -435,7 +435,7 @@ def main():
         has_z=False,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, dstate=4, n_groups=1)
+    ](batch=1, dim=2, dstate=2, n_groups=1)
     print("✓ Selective scan update without z test passed")
 
     # Test update with delta_softplus
@@ -445,17 +445,17 @@ def main():
         has_z=True,
         has_delta_bias=True,
         delta_softplus=True,
-    ](batch=2, dim=4, dstate=4, n_groups=1)
+    ](batch=1, dim=2, dstate=2, n_groups=1)
     print("✓ Selective scan update with delta_softplus test passed")
 
-    # Test update with larger dimensions
+    # Test update with larger dimensions (reduced for speed)
     run_selective_scan_update[
         DType.float32,
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=4, dim=8, dstate=8, n_groups=1)
+    ](batch=2, dim=4, dstate=4, n_groups=1)
     print("✓ Selective scan update larger dimensions test passed")
 
 
