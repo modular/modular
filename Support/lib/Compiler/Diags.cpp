@@ -11,12 +11,12 @@
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/LLVM.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/RewriteBuffer.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/SMLoc.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/YAMLTraits.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <cstddef>
@@ -26,6 +26,48 @@
 
 using llvm::SMRange;
 using namespace M;
+
+//===----------------------------------------------------------------------===//
+// YAML Traits for clang-tidy compatible fix-it export
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// A single replacement in clang-tidy YAML format.
+struct YAMLReplacement {
+  std::string filePath;
+  unsigned offset;
+  unsigned length;
+  std::string replacementText;
+};
+
+/// The top-level structure for clang-tidy YAML format.
+struct YAMLTranslationUnitReplacements {
+  std::string mainSourceFile;
+  std::vector<YAMLReplacement> replacements;
+};
+} // namespace
+
+namespace llvm::yaml {
+template <>
+struct MappingTraits<YAMLReplacement> {
+  static void mapping(IO &io, YAMLReplacement &r) {
+    io.mapRequired("FilePath", r.filePath);
+    io.mapRequired("Offset", r.offset);
+    io.mapRequired("Length", r.length);
+    io.mapRequired("ReplacementText", r.replacementText);
+  }
+};
+
+template <>
+struct MappingTraits<YAMLTranslationUnitReplacements> {
+  static void mapping(IO &io, YAMLTranslationUnitReplacements &doc) {
+    io.mapRequired("MainSourceFile", doc.mainSourceFile);
+    io.mapRequired("Replacements", doc.replacements);
+  }
+};
+} // namespace llvm::yaml
+
+LLVM_YAML_IS_SEQUENCE_VECTOR(YAMLReplacement)
 
 //===----------------------------------------------------------------------===//
 // SourceRange implementation
@@ -202,21 +244,35 @@ std::string Diags::SourceMgrLocationMapper::getCanonicalFilename(
 // AutoFixItHandler
 //===----------------------------------------------------------------------===//
 
+AutoFixItHandler::AutoFixItHandler(StringRef exportPath)
+    : exportPath(exportPath.str()) {}
+
+/// Check if two SMFixIt objects are equal (same range and text).
+static bool fixItEquals(const llvm::SMFixIt &a, const llvm::SMFixIt &b) {
+  SMRange aRange = a.getRange();
+  SMRange bRange = b.getRange();
+  return aRange.Start == bRange.Start && aRange.End == bRange.End &&
+         a.getText() == b.getText();
+}
+
 void AutoFixItHandler::registerFixIt(const llvm::MemoryBuffer *buffer,
                                      llvm::SMFixIt fixIt) {
-  auto [it, inserted] =
-      fixits.try_emplace(buffer, llvm::SmallDenseSet<llvm::SMFixIt>{fixIt});
-  if (!inserted)
-    it->second.insert(fixIt);
+  auto &bufferFixIts = fixits[buffer];
+  // Deduplicate: only add if not already present.
+  if (!llvm::any_of(bufferFixIts,
+                    [&](const auto &f) { return fixItEquals(f, fixIt); }))
+    bufferFixIts.push_back(fixIt);
 }
 
 void AutoFixItHandler::applyFixIts() {
-  for (auto &[buffer, fixIts] : fixits) {
-    // For each file, we collect all the fixits and apply them to copy.
+  assert(isApplyMode() && "applyFixIts() called in export mode");
+
+  for (auto &[buffer, bufferFixIts] : fixits) {
     llvm::RewriteBuffer rewriteBuffer;
     const char *bufferStart = buffer->getBufferStart();
     rewriteBuffer.Initialize(bufferStart, buffer->getBufferEnd());
-    for (auto &fixIt : fixIts) {
+
+    for (auto &fixIt : bufferFixIts) {
       SMRange fixItRange = fixIt.getRange();
       assert(fixItRange.isValid());
       const char *startLoc = fixItRange.Start.getPointer();
@@ -225,15 +281,64 @@ void AutoFixItHandler::applyFixIts() {
                                 fixIt.getText());
     }
 
-    // Then we write the buffer back to the file.
+    std::string modified;
+    llvm::raw_string_ostream resultStream(modified);
+    rewriteBuffer.write(resultStream);
+
+    // Write the modified buffer back to the file.
     llvm::Error err = llvm::writeToOutput(buffer->getBufferIdentifier(),
                                           [&](raw_ostream &os) {
-                                            rewriteBuffer.write(os);
+                                            os << modified;
                                             return llvm::Error::success();
                                           });
     if (err)
       llvm::errs() << "Error writing buffer to file: " << err << "\n";
   }
+}
+
+ErrorOrSuccess AutoFixItHandler::exportFixIts() {
+  assert(!isApplyMode() && "exportFixIts() called in apply mode");
+
+  // Build the YAML document structure.
+  YAMLTranslationUnitReplacements doc;
+  doc.mainSourceFile = "";
+
+  // MapVector provides deterministic file ordering (by insertion order).
+  for (auto &[buffer, bufferFixIts] : fixits) {
+    std::string filePath = buffer->getBufferIdentifier().str();
+    const char *bufferStart = buffer->getBufferStart();
+
+    // Sort fix-its by offset for deterministic output within each file.
+    // This also makes the YAML easier to review manually.
+    llvm::SmallVector<llvm::SMFixIt> sortedFixIts(bufferFixIts);
+    llvm::sort(sortedFixIts, [](const llvm::SMFixIt &a,
+                                const llvm::SMFixIt &b) {
+      return a.getRange().Start.getPointer() < b.getRange().Start.getPointer();
+    });
+
+    for (auto &fixIt : sortedFixIts) {
+      SMRange range = fixIt.getRange();
+      unsigned offset = range.Start.getPointer() - bufferStart;
+      unsigned length = range.End.getPointer() - range.Start.getPointer();
+
+      doc.replacements.push_back(
+          {filePath, offset, length, fixIt.getText().str()});
+    }
+  }
+
+  // Write using LLVM's YAML output for proper escaping and formatting.
+  llvm::Error err = llvm::writeToOutput(*exportPath, [&](raw_ostream &out) {
+    llvm::yaml::Output yamlOut(out);
+    yamlOut << doc;
+    return llvm::Error::success();
+  });
+  if (err) {
+    std::string errMsg;
+    llvm::raw_string_ostream errOs(errMsg);
+    errOs << err;
+    return Error("Error writing YAML file '" + *exportPath + "': " + errMsg);
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -458,7 +563,7 @@ void InflightDiag::emitMLIRDiagnostic() {
 void InflightDiag::emitAutoFixItDiagnostic() {
   auto &sourceMgr = diags->sourceMgr;
 
-  // We register all fixits with he handler. We will resolve conflicts later.
+  // Register all fixits with the handler. We will resolve conflicts later.
   for (auto &message : messages) {
     for (SMFixIt &fixIt : message.fixIts) {
       unsigned bufferId =
@@ -467,6 +572,11 @@ void InflightDiag::emitAutoFixItDiagnostic() {
       diags->autoFixItHandler->registerFixIt(buffer, fixIt);
     }
   }
+
+  // Following clang-tidy semantics: also print the diagnostic to the user.
+  // The fix-it handler collects fixes for export/apply, but users should still
+  // see the diagnostic messages.
+  emitSourceMgrDiagnostic();
 }
 
 /// Print the diagnostic + each note through SourceMgr.

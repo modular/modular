@@ -85,6 +85,7 @@ struct CommonOptionIDs {
   llvm::opt::OptSpecifier stripFilePrefix;
   llvm::opt::OptSpecifier disableBuiltins;
   llvm::opt::OptSpecifier fixit;
+  llvm::opt::OptSpecifier exportFixit;
 };
 
 /// Configuration flags for common argument parsing behavior.
@@ -181,6 +182,7 @@ ErrorOrSuccess parseTargetOptions(
 /// and attaching post parse metadata. On success, returns the parsed module
 /// operation. If the `autoFixIt` flag is set and the parser collects any
 /// fix-its, they will be applied, and the returned module will be null.
+/// If `exportFixit` is set, fix-its will be exported to a YAML file instead.
 ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
@@ -188,7 +190,7 @@ ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier stripFilePrefixId,
     llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdlibPath,
-    llvm::opt::OptSpecifier autoFixIt,
+    llvm::opt::OptSpecifier autoFixIt, llvm::opt::OptSpecifier exportFixit,
     function_ref<OwningOpRef<ModuleOp>(KGEN::LIT::ParserConfig &,
                                        mlir::TimingScope &)>
         parseFn);

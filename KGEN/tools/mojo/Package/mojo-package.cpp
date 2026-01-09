@@ -492,7 +492,7 @@ static int package(const State &subcommandState) {
       options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
       /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
-      options::OPT_fixit,
+      options::OPT_fixit, options::OPT_export_fixit,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         parserConfig.exportKgenModule = isKgenModule;
         OwningOpRef<ModuleOp> moduleOp;
@@ -505,6 +505,9 @@ static int package(const State &subcommandState) {
     return state.reportError(module.getError());
 
   if (!module.get()->getOperation()) {
+    // Only --experimental-fixit returns a null module (after applying fixes).
+    // --experimental-export-fixit continues normal execution after writing
+    // YAML.
     assert(args.hasArg(options::OPT_fixit));
     return EXIT_SUCCESS;
   }
