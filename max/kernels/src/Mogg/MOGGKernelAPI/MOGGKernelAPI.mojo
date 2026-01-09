@@ -10113,7 +10113,7 @@ struct CausalConv1D[activation: StaticString]:
             comptime kNElts = 4
             if width == 1:
                 comptime kWidth = 1
-                var compiled_func = gpu_ctx.compile_function_checked[
+                var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_channel_first_fwd_gpu[
                         X.dtype,
                         X.layout,
@@ -10142,7 +10142,7 @@ struct CausalConv1D[activation: StaticString]:
                     ],
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
-                gpu_ctx.enqueue_function_checked(
+                gpu_ctx.enqueue_function(
                     compiled_func,
                     batch_size,
                     dim,
@@ -10171,7 +10171,7 @@ struct CausalConv1D[activation: StaticString]:
                 )
             elif width == 2:
                 comptime kWidth = 2
-                var compiled_func = gpu_ctx.compile_function_checked[
+                var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_channel_first_fwd_gpu[
                         X.dtype,
                         X.layout,
@@ -10200,7 +10200,7 @@ struct CausalConv1D[activation: StaticString]:
                     ],
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
-                gpu_ctx.enqueue_function_checked(
+                gpu_ctx.enqueue_function(
                     compiled_func,
                     batch_size,
                     dim,
@@ -10229,7 +10229,7 @@ struct CausalConv1D[activation: StaticString]:
                 )
             elif width == 3:
                 comptime kWidth = 3
-                var compiled_func = gpu_ctx.compile_function_checked[
+                var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_channel_first_fwd_gpu[
                         X.dtype,
                         X.layout,
@@ -10258,7 +10258,7 @@ struct CausalConv1D[activation: StaticString]:
                     ],
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
-                gpu_ctx.enqueue_function_checked(
+                gpu_ctx.enqueue_function(
                     compiled_func,
                     batch_size,
                     dim,
@@ -10287,7 +10287,7 @@ struct CausalConv1D[activation: StaticString]:
                 )
             elif width == 4:
                 comptime kWidth = 4
-                var compiled_func = gpu_ctx.compile_function_checked[
+                var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_channel_first_fwd_gpu[
                         X.dtype,
                         X.layout,
@@ -10316,7 +10316,7 @@ struct CausalConv1D[activation: StaticString]:
                     ],
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
-                gpu_ctx.enqueue_function_checked(
+                gpu_ctx.enqueue_function(
                     compiled_func,
                     batch_size,
                     dim,
@@ -10460,7 +10460,7 @@ fn _execute_causal_conv1d_update_with_bias[
         var gpu_ctx: DeviceContext = ctx.get_device_context()
         comptime kNThreads = 128
         var silu_activation_int8 = Int8(silu_activation)
-        var compiled_func = gpu_ctx.compile_function_checked[
+        var compiled_func = gpu_ctx.compile_function[
             causal_conv1d_update_gpu[
                 X.dtype,
                 X.layout,
@@ -10488,7 +10488,7 @@ fn _execute_causal_conv1d_update_with_bias[
                 kNThreads,
             ],
         ]()
-        gpu_ctx.enqueue_function_checked(
+        gpu_ctx.enqueue_function(
             compiled_func,
             batch_size,
             dim,
@@ -10608,7 +10608,7 @@ fn _execute_causal_conv1d_update_no_bias[
         var gpu_ctx: DeviceContext = ctx.get_device_context()
         comptime kNThreads = 128
         var silu_activation_int8 = Int8(silu_activation)
-        var compiled_func = gpu_ctx.compile_function_checked[
+        var compiled_func = gpu_ctx.compile_function[
             causal_conv1d_update_gpu_no_bias[
                 X.dtype,
                 X.layout,
@@ -10632,7 +10632,7 @@ fn _execute_causal_conv1d_update_no_bias[
                 kNThreads,
             ],
         ]()
-        gpu_ctx.enqueue_function_checked(
+        gpu_ctx.enqueue_function(
             compiled_func,
             batch_size,
             dim,
@@ -10789,7 +10789,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
         elif is_gpu[target]():
             var gpu_ctx: DeviceContext = ctx.get_device_context()
             comptime kNThreads = 128
-            var compiled_func = gpu_ctx.compile_function_checked[
+            var compiled_func = gpu_ctx.compile_function[
                 causal_conv1d_update_gpu[
                     X.dtype,
                     X.layout,
@@ -10818,7 +10818,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
                 ],
             ]()
             var silu_activation_int8 = Int8(silu_activation)
-            gpu_ctx.enqueue_function_checked(
+            gpu_ctx.enqueue_function(
                 compiled_func,
                 batch_size,
                 dim,
@@ -11070,7 +11070,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
             comptime BLOCK_SIZE = 128
             var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
 
-            var compiled_kernel = gpu_ctx.compile_function_checked[
+            var compiled_kernel = gpu_ctx.compile_function[
                 selective_scan_fwd_gpu[
                     dtype,
                     output_lt.layout,
@@ -11101,7 +11101,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                 ],
             ]()
 
-            gpu_ctx.enqueue_function_checked(
+            gpu_ctx.enqueue_function(
                 compiled_kernel,
                 total_batch_dim,
                 batch,
@@ -11318,7 +11318,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
             comptime BLOCK_SIZE = 128
             var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
 
-            var compiled_kernel = gpu_ctx.compile_function_checked[
+            var compiled_kernel = gpu_ctx.compile_function[
                 selective_scan_update_gpu[
                     dtype,
                     state_out_lt.layout,
@@ -11349,7 +11349,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                 ],
             ]()
 
-            gpu_ctx.enqueue_function_checked(
+            gpu_ctx.enqueue_function(
                 compiled_kernel,
                 total_batch_dim,
                 batch,
@@ -11493,7 +11493,7 @@ fn _varlen_selective_state_update_gpu(
     var dim_blocks = ceildiv(dim, BLOCK_SIZE_M)
 
     # Compile and launch kernel
-    var compiled_kernel = gpu_ctx.compile_function_checked[
+    var compiled_kernel = gpu_ctx.compile_function[
         varlen_selective_state_update_gpu[
             dtype,
             state_lt.layout,
@@ -11524,7 +11524,7 @@ fn _varlen_selective_state_update_gpu(
         ],
     ]()
 
-    gpu_ctx.enqueue_function_checked(
+    gpu_ctx.enqueue_function(
         compiled_kernel,
         dim_blocks * batch * nheads,  # total_threads
         batch,
@@ -11880,7 +11880,7 @@ fn _varlen_selective_scan_fwd_gpu(
     var num_dim_blocks = ceildiv(dim, BLOCK_SIZE)
 
     # Compile and launch kernel
-    var compiled_kernel = gpu_ctx.compile_function_checked[
+    var compiled_kernel = gpu_ctx.compile_function[
         varlen_selective_scan_fwd_gpu[
             dtype,
             u_lt.layout,
@@ -11916,7 +11916,7 @@ fn _varlen_selective_scan_fwd_gpu(
     ]()
 
     # 2D grid: (num_dim_blocks, batch) with block size (BLOCK_SIZE, 1)
-    gpu_ctx.enqueue_function_checked(
+    gpu_ctx.enqueue_function(
         compiled_kernel,
         # Kernel parameters (matching new signature)
         dim,

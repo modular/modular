@@ -2573,7 +2573,7 @@ fn rms_norm_fused_residual_gpu[
         output_residual_fn_2d,
         multiply_before_cast=multiply_before_cast,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         gamma,
         epsilon,
         weight_offset,
@@ -3891,7 +3891,7 @@ fn layer_norm_gated_gpu[
                 is_rms_norm=is_rms_norm,
                 norm_before_gate=norm_before_gate,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 flattened_shape,
                 beta,
                 epsilon,
@@ -3916,7 +3916,7 @@ fn layer_norm_gated_gpu[
                 is_rms_norm=is_rms_norm,
                 norm_before_gate=norm_before_gate,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 flattened_shape,
                 beta,
                 epsilon,
@@ -3941,7 +3941,7 @@ fn layer_norm_gated_gpu[
             is_rms_norm=is_rms_norm,
             norm_before_gate=norm_before_gate,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             flattened_shape,
             beta,
             epsilon,
