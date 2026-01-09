@@ -160,9 +160,9 @@ fn run_layer_norm_gated[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = result_fused_h.runtime_layout(
-            RuntimeTuple[
-                fill_like(result_fused_h.layout.shape, UNKNOWN_VALUE)
-            ](coords)
+            RuntimeTuple[fill_like(result_fused_h.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
         )
         result_fused_h.ptr.store[width=width, alignment=alignment](idx, val)
 

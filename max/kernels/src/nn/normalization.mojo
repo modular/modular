@@ -2148,9 +2148,7 @@ fn _rms_norm_fused_residual_cpu_2d[
     output_residual_fn: fn[width: Int, alignment: Int] (
         Int, Int, SIMD[dtype, width]
     ) capturing -> None,
-    residual_read_fn: fn[width: Int] (Int, Int) capturing -> SIMD[
-        dtype, width
-    ],
+    residual_read_fn: fn[width: Int] (Int, Int) capturing -> SIMD[dtype, width],
     multiply_before_cast: Bool = True,
 ](
     gamma: LayoutTensor[dtype, **_],
@@ -2346,9 +2344,7 @@ fn rms_norm_fused_residual_cpu[
 
     @parameter
     @always_inline
-    fn residual_read_fn_2d[
-        sw: Int
-    ](row: Int, col: Int) -> SIMD[dtype, sw]:
+    fn residual_read_fn_2d[sw: Int](row: Int, col: Int) -> SIMD[dtype, sw]:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return residual_read_fn[sw, rank](indices)
@@ -2661,7 +2657,7 @@ fn _rms_norm_fused_residual_impl[
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
             var input_vals = input_0_fn[width, _rank](coords)
             var residual_vals = input_1_fn[width, _rank](coords)
-            
+
             # Apply dropout if enabled (matching first pass exactly)
             var zero_scalar = Scalar[dtype](0.0)
             if dropout_p > zero_scalar:
@@ -2669,7 +2665,7 @@ fn _rms_norm_fused_residual_impl[
                 var dropout_scale = one_scalar / (one_scalar - dropout_p)
                 var last_dim = shape[_rank - 1]
                 var row = coords.flattened_length() // last_dim
-                
+
                 @parameter
                 for i in range(width):
                     var col_idx = coords[_rank - 1] + i
@@ -2683,9 +2679,9 @@ fn _rms_norm_fused_residual_impl[
                         input_vals[i] = input_vals[i] * dropout_scale
                     else:
                         input_vals[i] = zero_scalar
-            
+
             return input_vals + residual_vals
-        
+
         rms_norm_fused_residual_cpu[
             input_0_fn,
             input_1_fn,
@@ -3431,9 +3427,9 @@ fn layer_norm_gated_cpu[
             var output_val = x_normalized * gamma
 
             if has_bias:
-                var beta = beta_fn[1, rank](
-                    indices.canonicalize()
-                ).cast[intermediate_type]()
+                var beta = beta_fn[1, rank](indices.canonicalize()).cast[
+                    intermediate_type
+                ]()
                 output_val = output_val + beta
 
             # Apply gating if z is provided and norm_before_gate is True

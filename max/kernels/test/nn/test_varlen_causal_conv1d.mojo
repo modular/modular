@@ -460,9 +460,7 @@ fn run_varlen_causal_conv1d_update[
                         # Read from state
                         var state_pos: Int
                         # has_cache_seqlens is True in our test, so use circular buffer
-                        var cache_seqlen = Int(
-                            cache_seqlens_buf.ptr.load(b)
-                        )
+                        var cache_seqlen = Int(cache_seqlens_buf.ptr.load(b))
                         state_pos = (
                             cache_seqlen + rel_pos + l + state_len
                         ) % state_len
@@ -473,7 +471,9 @@ fn run_varlen_causal_conv1d_update[
                                 + d * conv_state_dim_stride
                                 + state_pos * conv_state_seqlen_stride
                             )
-                            input_val = conv_state_ref_buf.ptr.load(state_offset)
+                            input_val = conv_state_ref_buf.ptr.load(
+                                state_offset
+                            )
                     else:
                         # Read from x
                         var x_l = rel_pos + l

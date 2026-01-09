@@ -250,7 +250,9 @@ fn run_causal_conv1d_update[
                             + c * conv_state_c_stride
                             + src_pos * conv_state_l_stride
                         )
-                        input_val = conv_state_ref_buf.ptr.load(conv_state_offset)
+                        input_val = conv_state_ref_buf.ptr.load(
+                            conv_state_offset
+                        )
                     # else: src_pos < 0, treat as 0 (zero padding)
 
                     var weight_offset = (
