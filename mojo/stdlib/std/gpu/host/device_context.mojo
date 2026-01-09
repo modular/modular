@@ -1991,7 +1991,9 @@ struct DeviceFunction[
         )
         self._handle = result
 
-    fn _copy_to_constant_memory(self, mapping: ConstantMemoryMapping) raises:
+    fn _copy_to_constant_memory(
+        read self, mapping: ConstantMemoryMapping
+    ) raises:
         # const char *AsyncRT_DeviceFunction_copyToConstantMemory(
         #     const DeviceFunction *func,
         #     const void *name, size_t nameSize,
@@ -2064,14 +2066,14 @@ struct DeviceFunction[
             .replace("\t;;#ASMEND\n", "")
         )
 
-    fn _expand_path(self, path: Path) -> Path:
+    fn _expand_path(read self, path: Path) -> Path:
         """If the path contains a `%` character, it is replaced with the module
         name. This allows one to dump multiple kernels which are disambiguated
         by the module name.
         """
         return String(path).replace("%", self._func_impl.module_name)
 
-    fn _expand_path(self, path: StaticString) -> Path:
+    fn _expand_path(read self, path: StaticString) -> Path:
         """If the path contains a `%` character, it is replaced with the module
         name. This allows one to dump multiple kernels which are disambiguated
         by the module name.
@@ -2083,7 +2085,7 @@ struct DeviceFunction[
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
-    ](self) raises:
+    ](read self) raises:
         """Dumps various representations of the compiled device function.
 
         This method dumps the assembly, LLVM IR, and/or SASS code for the compiled
@@ -2107,6 +2109,8 @@ struct DeviceFunction[
         help disambiguate multiple kernel dumps.
         """
 
+        # Get ASM - either from the pre-compiled func_impl or by compiling now
+        @parameter
         fn get_asm() -> StaticString:
             @parameter
             if Self._emission_kind == "asm":
@@ -2208,7 +2212,7 @@ struct DeviceFunction[
     fn _call_with_pack[
         *Ts: AnyType
     ](
-        self,
+        read self,
         ctx: DeviceContext,
         args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
@@ -2380,7 +2384,7 @@ struct DeviceFunction[
     fn _call_with_pack[
         *Ts: AnyType
     ](
-        self,
+        read self,
         stream: DeviceStream,
         args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
@@ -2581,7 +2585,7 @@ struct DeviceFunction[
     fn _call_with_pack_checked[
         *Ts: DevicePassable
     ](
-        self,
+        read self,
         stream: DeviceStream,
         args: VariadicPack[_, DevicePassable, *Ts],
         grid_dim: Dim,
@@ -2703,7 +2707,7 @@ struct DeviceFunction[
     fn _call_with_pack_checked[
         *Ts: DevicePassable
     ](
-        self,
+        read self,
         ctx: DeviceContext,
         args: VariadicPack[_, DevicePassable, *Ts],
         grid_dim: Dim,
@@ -3102,7 +3106,9 @@ struct DeviceExternalFunction:
         self._handle = result
 
     @always_inline
-    fn _copy_to_constant_memory(self, mapping: ConstantMemoryMapping) raises:
+    fn _copy_to_constant_memory(
+        read self, mapping: ConstantMemoryMapping
+    ) raises:
         """Copies data to constant memory for use by the device function.
 
         Args:
@@ -3138,7 +3144,7 @@ struct DeviceExternalFunction:
     fn _call_with_pack[
         *Ts: AnyType
     ](
-        self,
+        read self,
         ctx: DeviceContext,
         args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
