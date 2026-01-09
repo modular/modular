@@ -257,7 +257,7 @@ class MambaModelBase(PipelineModel[TextContext]):
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, MambaInputs)
 
-        if self.pipeline_config.model_config.data_parallel_degree > 1:
+        if self.pipeline_config.model.data_parallel_degree > 1:
             assert model_inputs.data_parallel_splits is not None
             # Convert data_parallel_splits to Tensor if needed
             if isinstance(model_inputs.data_parallel_splits, Tensor):
@@ -352,7 +352,7 @@ class MambaModelBase(PipelineModel[TextContext]):
         return_n_logits: int = 1,
     ) -> MambaInputs:
         """Prepare the inputs for the first pass in multistep execution."""
-        dp = self.pipeline_config.model_config.data_parallel_degree
+        dp = self.pipeline_config.model.data_parallel_degree
         if len(replica_batches) != dp:
             raise ValueError(
                 "Number of replica batches must match data parallel degree"
@@ -363,13 +363,13 @@ class MambaModelBase(PipelineModel[TextContext]):
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
-            [0] + [ctx.active_length for ctx in context_batch],
+            [0] + [ctx.tokens.active_length for ctx in context_batch],
             dtype=np.uint32,
         )
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = Tensor.from_numpy(
-            np.concatenate([ctx.next_tokens for ctx in context_batch])
+            np.concatenate([ctx.tokens.active for ctx in context_batch])
         ).to(self.devices[0])
 
         # Constructs splits for the data parallel execution.

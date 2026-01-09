@@ -93,7 +93,7 @@ def convert_safetensor_state_dict(
 
         new_state_dict[max_name] = weight_data
 
-    model_config = pipeline_config.model_config
+    model_config = pipeline_config.model
 
     if model_config._applied_dtype_cast_from:
         cast_from = model_config._applied_dtype_cast_from

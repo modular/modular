@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Any, Literal
 
 logger = logging.getLogger("max.pipelines")
@@ -37,7 +36,6 @@ from max.pipelines.lib import (
 from transformers import AutoConfig
 
 
-@dataclass
 class MambaConfigBase(MAXModelConfigBase):
     """Base configuration for Mamba models."""
 
@@ -133,7 +131,6 @@ class MambaConfigBase(MAXModelConfigBase):
         return {}
 
 
-@dataclass
 class MambaConfig(MAXModelConfig, MambaConfigBase):
     """Implementation of MAXModelConfig for Mamba models."""
 
@@ -184,7 +181,7 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
     ) -> MambaConfig:
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model_config.device_specs[:n_devices]
+            for spec in pipeline_config.model.device_specs[:n_devices]
         ]
 
         # Parse the float8 config from compressed-tensors or FBGEMM.
@@ -264,7 +261,7 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
         tie_embeddings = getattr(huggingface_config, "tie_embeddings", True)
         tie_word_embeddings = tie_embeddings
 
-        return MambaConfig(
+        config = MambaConfig(
             vocab_size=huggingface_config.vocab_size,
             dtype=dtype,
             max_seq_len=MambaConfig.calculate_max_seq_len(
@@ -312,8 +309,11 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
             tie_word_embeddings=tie_word_embeddings,
             devices=device_refs,
             float8_config=float8_config,
-            use_subgraphs=pipeline_config.model_config.use_subgraphs,
-            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
             return_logits=return_logits,
             return_hidden_states=return_hidden_states,
         )
+        # Set fields from MAXModelConfigBase after construction
+        # These are Pydantic fields inherited through MAXModelConfig
+        config.use_subgraphs = pipeline_config.model.use_subgraphs
+        config.data_parallel_degree = pipeline_config.model.data_parallel_degree
+        return config
