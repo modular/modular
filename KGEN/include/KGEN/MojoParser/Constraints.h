@@ -58,6 +58,11 @@ ConstraintResult checkConstraints(
     SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
     ParameterEvaluator *evaluator);
 
+/// Rewrite cond(a, b, a) patterns to and(a, b) for constraint propositions.
+/// This breaks the "short-circuit" pattern of `and`/`or` operators, so is only
+/// legal during constraint checking.
+TypedAttr deShortCircuitCond(TypedAttr value);
+
 } // namespace LIT
 } // namespace M::KGEN
 

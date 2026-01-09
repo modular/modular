@@ -140,3 +140,60 @@ ConstraintResult LIT::checkConstraints(
 
   return ConstraintResult::Satisfied;
 }
+
+/// Rewrite cond(a, b, a) patterns to and(a, b) for constraint propositions.
+/// This handles patterns from "and"/"or" operators to make constraints
+/// decomposable:
+///   cond(a, b, a) -> and(a, b)  // from "a and b"
+///   cond(a, a, b) -> or(a, b)   // from "a or b"
+/// Also distributes struct field extraction through cond operations:
+///   struct.extract(cond(a, b, c), field) ->
+///     and/or(struct.extract(b, field), struct.extract(c, field))
+/// Recursively processes nested cond operations to handle "a and b and c".
+TypedAttr LIT::deShortCircuitCond(TypedAttr value) {
+  // Check if this is a struct.extract on top of a cond.
+  LIT::StructExtractAttr extractAttr;
+  TypedAttr innerValue = getCanonicalAttr(value);
+  if (auto extract = dyn_cast<LIT::StructExtractAttr>(value)) {
+    extractAttr = extract;
+    innerValue = extract.getStructValue();
+  }
+
+  // Check if the inner value is a cond operation.
+  auto paramOp = dyn_cast<ParamOperatorAttr>(innerValue);
+  if (!paramOp || paramOp.getOpcode() != POC::Cond)
+    return value; // Not a cond, return unchanged.
+
+  ArrayRef<TypedAttr> operands = paramOp.getOperands();
+  assert(operands.size() == 3 && "cond should have 3 operands");
+
+  TypedAttr condOrig = operands[0];
+  TypedAttr trueVal = operands[1];
+  TypedAttr falseVal = operands[2];
+
+  // If we had a field extraction, apply it to each operand.
+  if (extractAttr) {
+    trueVal = LIT::StructExtractAttr::get(trueVal, extractAttr.getField(),
+                                          extractAttr.getType());
+    falseVal = LIT::StructExtractAttr::get(falseVal, extractAttr.getField(),
+                                           extractAttr.getType());
+  }
+
+  POC opcode;
+  if (condOrig == falseVal) {
+    opcode = POC::And;
+  } else if (condOrig == trueVal) {
+    opcode = POC::Or;
+  } else {
+    // Not a pattern we recognize. Return unchanged.
+    return value;
+  }
+
+  // Recursively rewrite nested conds in all operands.
+  trueVal = deShortCircuitCond(trueVal);
+  falseVal = deShortCircuitCond(falseVal);
+
+  TypedAttr logicalOp = ParamOperatorAttr::get(opcode, {trueVal, falseVal});
+  TypedAttr sugarOp = SugarAttr::getAlias(value, logicalOp);
+  return sugarOp;
+}
