@@ -273,7 +273,9 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
             # Model architecture fields
             hidden_size=int(hidden_size) if hidden_size is not None else 2560,
             intermediate_size=intermediate_size,
-            num_hidden_layers=int(num_hidden_layers) if num_hidden_layers is not None else 64,
+            num_hidden_layers=int(num_hidden_layers)
+            if num_hidden_layers is not None
+            else 64,
             # SSM-specific fields
             d_state=d_state,
             dt_rank=dt_rank,
