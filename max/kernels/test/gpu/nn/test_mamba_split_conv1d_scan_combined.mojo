@@ -93,10 +93,10 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
     var output_gpu_h = alloc[Scalar[dtype]](output_size)
 
     # Create LayoutTensors for initialization
-    comptime layout_3d = Layout.row_major(UNKNOWN_VALUE)
-    comptime layout_4d = Layout.row_major(UNKNOWN_VALUE)
-    comptime layout_2d = Layout.row_major(UNKNOWN_VALUE)
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
+    comptime layout_3d = Layout.row_major[3]()
+    comptime layout_4d = Layout.row_major[4]()
+    comptime layout_2d = Layout.row_major[2]()
+    comptime layout_1d = Layout.row_major[1]()
 
     var zxbcdt_init = LayoutTensor[dtype, layout_3d](
         zxbcdt_h,
@@ -432,22 +432,22 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
         Int8(1) if norm_before_gate else Int8(0),
         Int8(1) if has_rmsnorm else Int8(0),
         Int8(1) if has_outproj else Int8(0),
-        zxbcdt_cpu_lt,
-        conv_weight_cpu_lt,
-        conv_bias_cpu_lt,
-        dt_bias_cpu_lt,
-        A_cpu_lt,
-        D_cpu_lt,
-        x_cpu_lt,
-        out_z_cpu_lt,
-        dt_cpu_lt,
-        B_cpu_lt,
-        C_cpu_lt,
-        z_cpu_lt,
-        rmsnorm_weight_cpu_lt,
-        outproj_weight_cpu_lt,
-        outproj_bias_cpu_lt,
-        output_cpu_cpu_lt,
+        zxbcdt_cpu_lt.as_any_origin(),
+        conv_weight_cpu_lt.as_any_origin(),
+        conv_bias_cpu_lt.as_any_origin(),
+        dt_bias_cpu_lt.as_any_origin(),
+        A_cpu_lt.as_any_origin(),
+        D_cpu_lt.as_any_origin(),
+        x_cpu_lt.as_any_origin(),
+        out_z_cpu_lt.as_any_origin(),
+        dt_cpu_lt.as_any_origin(),
+        B_cpu_lt.as_any_origin(),
+        C_cpu_lt.as_any_origin(),
+        z_cpu_lt.as_any_origin(),
+        rmsnorm_weight_cpu_lt.as_any_origin(),
+        outproj_weight_cpu_lt.as_any_origin(),
+        outproj_bias_cpu_lt.as_any_origin(),
+        output_cpu_cpu_lt.as_any_origin(),
         epsilon,
         zxbcdt_b_stride,
         zxbcdt_s_stride,

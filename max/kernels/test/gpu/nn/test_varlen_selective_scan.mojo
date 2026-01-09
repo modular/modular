@@ -142,37 +142,37 @@ fn run_varlen_selective_scan_fwd_gpu[
 
     # Scale A to be negative for stability
     for i in range(dim * dstate):
-        var val = A_h.offset(i).load()
-        A_h.offset(i).store(Scalar[dtype](Float32(val) * -0.5))
+        var val = A_h.load(i)
+        A_h.store(i, Scalar[dtype](Float32(val) * -0.5))
 
     # Scale delta to be positive
     for i in range(dim * total_length):
-        var val = delta_h.offset(i).load()
-        delta_h.offset(i).store(Scalar[dtype](abs(Float32(val)) * 0.5))
+        var val = delta_h.load(i)
+        delta_h.store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
 
     # Initialize query_start_loc (cumulative lengths)
     var cumsum = 0
-    query_start_loc_h.offset(0).store(Scalar[DType.int32](0))
+    query_start_loc_h.store(0, Scalar[DType.int32](0))
     for i in range(batch):
         cumsum += seq_lengths[i]
-        query_start_loc_h.offset(i + 1).store(Scalar[DType.int32](cumsum))
+        query_start_loc_h.store(i + 1, Scalar[DType.int32](cumsum))
 
     # Initialize cache_indices (identity mapping)
     for i in range(batch):
-        cache_indices_h.offset(i).store(Scalar[DType.int32](i))
+        cache_indices_h.store(i, Scalar[DType.int32](i))
 
     # Initialize has_initial_state (all False)
     for i in range(batch):
-        has_initial_state_h.offset(i).store(Scalar[DType.bool](False))
+        has_initial_state_h.store(i, Scalar[DType.bool](False))
 
     # Copy z for GPU
     if has_z:
         for i in range(dim * total_length):
-            z_gpu_h.offset(i).store(z_cpu_h.offset(i).load())
+            z_gpu_h.store(i, z_cpu_h.load(i))
 
     # Copy ssm_states for GPU
     for i in range(batch * dim * dstate):
-        ssm_states_gpu_h.offset(i).store(ssm_states_cpu_h.offset(i).load())
+        ssm_states_gpu_h.store(i, ssm_states_cpu_h.load(i))
 
     # Create LayoutTensors for CPU kernel
     var ssm_states_cpu = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
@@ -489,8 +489,8 @@ fn run_varlen_selective_scan_fwd_gpu[
     var output_size = dim * total_length
 
     for i in range(output_size):
-        var cpu_val = Float32(output_to_check_cpu.offset(i).load())
-        var gpu_val = Float32(output_to_check_host.offset(i).load())
+        var cpu_val = Float32(output_to_check_cpu.load(i))
+        var gpu_val = Float32(output_to_check_host.load(i))
         assert_almost_equal(cpu_val, gpu_val, rtol=rtol)
 
     # Cleanup

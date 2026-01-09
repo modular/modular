@@ -99,10 +99,10 @@ fn run_varlen_causal_conv1d_fwd_gpu[
         RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
     )
     var cumsum = 0
-    query_start_loc_h.ptr.offset(0).store(Scalar[DType.int32](0))
+    query_start_loc_h.ptr.store(0, Scalar[DType.int32](0))
     for i in range(batch):
         cumsum += seq_lengths[i]
-        query_start_loc_h.ptr.offset(i + 1).store(Scalar[DType.int32](cumsum))
+        query_start_loc_h.ptr.store(i + 1, Scalar[DType.int32](cumsum))
 
     # cache_indices: (batch,) - identity mapping
     var cache_indices_heap = alloc[Scalar[DType.int32]](batch)
@@ -110,7 +110,7 @@ fn run_varlen_causal_conv1d_fwd_gpu[
         cache_indices_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
     for i in range(batch):
-        cache_indices_h.ptr.offset(i).store(Scalar[DType.int32](i))
+        cache_indices_h.ptr.store(i, Scalar[DType.int32](i))
 
     # has_initial_state: (batch,) - all False
     var has_initial_state_heap = alloc[Scalar[DType.bool]](batch)
@@ -118,7 +118,7 @@ fn run_varlen_causal_conv1d_fwd_gpu[
         has_initial_state_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
     for i in range(batch):
-        has_initial_state_h.ptr.offset(i).store(Scalar[DType.bool](False))
+        has_initial_state_h.ptr.store(i, Scalar[DType.bool](False))
 
     # conv_states: (batch, dim, width - 1)
     var state_len = width - 1
@@ -680,7 +680,7 @@ fn run_varlen_causal_conv1d_update_gpu[
         cache_seqlens_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
     for i in range(batch):
-        cache_seqlens_h.ptr.offset(i).store(Scalar[DType.int32](0))
+        cache_seqlens_h.ptr.store(i, Scalar[DType.int32](0))
 
     # conv_state_indices: (batch,) - identity mapping
     var conv_state_indices_heap = alloc[Scalar[DType.int32]](batch)
@@ -688,7 +688,7 @@ fn run_varlen_causal_conv1d_update_gpu[
         DType.int32, layout_1d, MutAnyOrigin
     ](conv_state_indices_heap, RuntimeLayout[layout_1d].row_major(Index(batch)))
     for i in range(batch):
-        conv_state_indices_h.ptr.offset(i).store(Scalar[DType.int32](i))
+        conv_state_indices_h.ptr.store(i, Scalar[DType.int32](i))
 
     # output: (batch, dim, seqlen)
     var output_gpu_heap = alloc[Scalar[dtype]](batch * dim * seqlen)

@@ -191,12 +191,26 @@ fn run_rms_norm_fused_residual_gpu[
         )
         residual_cpu_host.ptr.store[width=width, alignment=alignment](idx, val)
 
+    @always_inline
+    @__copy_capture(residual_cpu_host)
+    @parameter
+    fn cpu_residual_read_fn[
+        width: Int, _rank: Int
+    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        var idx = residual_cpu_host.runtime_layout(
+            RuntimeTuple[
+                fill_like(residual_cpu_host.layout.shape, UNKNOWN_VALUE)
+            ](coords)
+        )
+        return residual_cpu_host.ptr.load[width=width](idx)
+
     # Call CPU kernel
     rms_norm_fused_residual_cpu[
         cpu_input_fn,
         cpu_residual_fn,
         cpu_output_fn,
         cpu_residual_output_fn,
+        cpu_residual_read_fn,
         multiply_before_cast=True,
     ](
         shape,

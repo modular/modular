@@ -150,12 +150,26 @@ fn run_rms_norm_fused_residual[
             idx, val
         )
 
+    @always_inline
+    @__copy_capture(residual_fused_output_buf)
+    @parameter
+    fn fused_residual_read_fn[
+        width: Int, _rank: Int
+    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        var idx = residual_fused_output_buf.runtime_layout(
+            RuntimeTuple[
+                fill_like(residual_fused_output_buf.layout.shape, UNKNOWN_VALUE)
+            ](coords)
+        )
+        return residual_fused_output_buf.ptr.load[width=width](idx)
+
     # Call fused kernel
     rms_norm_fused_residual_cpu[
         input_fn,
         residual_input_fn,
         fused_output_fn,
         fused_residual_output_fn,
+        fused_residual_read_fn,
         multiply_before_cast=True,
     ](
         shape,
@@ -209,7 +223,8 @@ fn run_rms_norm_fused_residual[
                         indices.canonicalize()
                     )[0]
 
-            # Add residual and store in intermediate buffer
+            # Add residual (input + residual) and store in intermediate buffer
+            # This is the ONLY place we add the residual - fused kernel does this once
             var sum_vals = input_vals + residual_vals
 
             for i in range(simd_width):
@@ -229,36 +244,8 @@ fn run_rms_norm_fused_residual[
                         intermediate_idx, sum_vals[i]
                     )
 
-    # Step 2: Add residual
-    @parameter
-    @always_inline
-    @__copy_capture(unfused_intermediate_buf, residual_buf)
-    fn sum_fn[
-        width: Int, rank_: Int, alignment: Int = 1
-    ](coords: IndexList[rank_]):
-        var intermediate_idx = unfused_intermediate_buf.runtime_layout(
-            RuntimeTuple[
-                fill_like(unfused_intermediate_buf.layout.shape, UNKNOWN_VALUE)
-            ](coords)
-        )
-        var intermediate_val = unfused_intermediate_buf.ptr.load[width=width](
-            intermediate_idx
-        )
-        var residual_idx = residual_buf.runtime_layout(
-            RuntimeTuple[fill_like(residual_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
-        var residual_val = residual_buf.ptr.load[width=width](residual_idx)
-
-        var residual_add_val = intermediate_val + residual_val
-        unfused_intermediate_buf.ptr.store[width=width](
-            intermediate_idx, residual_add_val
-        )
-
-    elementwise[sum_fn, simd_width_of[dtype](), target="cpu"](
-        unfused_intermediate_buf.runtime_layout.shape.value.canonicalize(),
-    )
+    # Note: The residual has already been added above (input + residual)
+    # No need for a second step - the fused kernel only adds the residual once
 
     # Step 3: Apply RMSNorm
     @parameter
@@ -297,13 +284,13 @@ fn run_rms_norm_fused_residual[
     var flattened_size = rows * cols
     for i in range(flattened_size):
         assert_almost_equal(
-            result_fused_h.ptr[i],
-            result_unfused_h.ptr[i],
+            result_fused_h.ptr.load(i),
+            result_unfused_h.ptr.load(i),
             rtol=rtol,
         )
         assert_almost_equal(
-            residual_fused_output_h.ptr[i],
-            unfused_intermediate_h.ptr[i],
+            residual_fused_output_h.ptr.load(i),
+            unfused_intermediate_h.ptr.load(i),
             rtol=rtol,
         )
 
