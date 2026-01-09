@@ -787,7 +787,7 @@ fn test_vectorize_mask():
                 IndexList[2](11, 15), IndexList[2](tile_i, tile_j)
             )
 
-            var vec_mas = _vectorize_mask[sizes= (2, 2)](tile_mas)
+            var vec_mas = _vectorize_mask[sizes = IndexList[2](2, 2)](tile_mas)
             for i in range(2):
                 for j in range(2):
                     var mask = vec_mas.access_mask((i, j))
@@ -981,7 +981,9 @@ fn test_composed_tile_vectorize_distribute():
             )
             print_tile_mask[BM, BN](tile_mask)
             print("vectorized-access:")
-            var vectoize_mask = _vectorize_mask[sizes= (TM, TN)](tile_mask)
+            var vectoize_mask = _vectorize_mask[sizes = IndexList[2](TM, TN)](
+                tile_mask
+            )
             for i in range(BM // TM):
                 for j in range(BN // TN):
                     var mask = vectoize_mask.access_mask((i, j))
@@ -1147,7 +1149,9 @@ fn test_composed_tile_vectorize_distribute_small():
             )
             print_tile_mask[BM, BN](tile_mask)
             print("vectorized-access:")
-            var vectoize_mask = _vectorize_mask[sizes= (TM, TN)](tile_mask)
+            var vectoize_mask = _vectorize_mask[sizes = IndexList[2](TM, TN)](
+                tile_mask
+            )
             for i in range(BM // TM):
                 for j in range(BN // TN):
                     var mask = vectoize_mask.access_mask((i, j))

@@ -555,6 +555,7 @@ def test_flash_attention[dtype: DType]():
     )
     test_case[
         dtype,
+        1,
         output_static_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 128),
     ](
         TestCaseConfig(
@@ -568,6 +569,7 @@ def test_flash_attention[dtype: DType]():
     )
     test_case[
         dtype,
+        1,
         output_static_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 160),
     ](
         TestCaseConfig(
@@ -581,6 +583,7 @@ def test_flash_attention[dtype: DType]():
     )
     test_case[
         dtype,
+        1,
         output_static_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 300),
     ](
         TestCaseConfig(
