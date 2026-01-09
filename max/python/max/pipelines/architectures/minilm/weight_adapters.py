@@ -48,10 +48,8 @@ def convert_safetensor_state_dict(
     for weight_name, value in state_dict.items():
         max_name = weight_name
 
-        # Apply transformations
         for before, after in BERT_SAFETENSOR_MAP.items():
             if after is None:
-                # Skip this weight if it matches a skip pattern
                 if before in max_name:
                     value = None
                     break

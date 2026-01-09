@@ -60,7 +60,6 @@ class MiniLMInputs(ModelInputs):
     ) -> None:
         self.next_tokens_batch = next_tokens_batch
         self.attention_mask = attention_mask
-        # MiniLM does not use KV cache (encoder-only model).
         self.kv_cache_inputs = None
 
 
@@ -94,13 +93,15 @@ class MiniLMPipelineModel(PipelineModel[TextContext]):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        n_devices: int,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         return MiniLMConfig.get_kv_params(
             huggingface_config=huggingface_config,
-            n_devices=n_devices,
+            pipeline_config=pipeline_config,
+            devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
@@ -137,14 +138,17 @@ class MiniLMPipelineModel(PipelineModel[TextContext]):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextContext],
+        replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> MiniLMInputs:
+        if len(replica_batches) > 1:
+            raise ValueError("Model does not support DP>1")
+
+        context_batch = replica_batches[0]
 
         tokens = [ctx.next_tokens for ctx in context_batch]
 
-        # Pad tokens for the batch
         pad_value = getattr(self.huggingface_config, "pad_token_id", 0)
         next_tokens_batch, _ = collate_batch(
             tokens,
@@ -167,21 +171,18 @@ class MiniLMPipelineModel(PipelineModel[TextContext]):
         self, next_tokens: Tensor, prev_model_inputs: ModelInputs
     ) -> MiniLMInputs:
         raise NotImplementedError(
-            "MiniLM does not support preparing next tokens inputs. "
-            "It is an encoder-only model for generating embeddings."
+            "MiniLM does not support preparing next tokens inputs."
         )
 
     def load_model(self, session: InferenceSession) -> Model:
-        logger.info("Building and compiling MiniLM model...")
+        logger.info("Building and compiling model...")
         before = time.perf_counter()
-
         if self.adapter:
             state_dict = self.adapter(dict(self.weights.items()))
         else:
             state_dict = {
                 key: value.data() for key, value in self.weights.items()
             }
-
         graph = build_graph(
             self.pipeline_config,
             state_dict,
@@ -190,6 +191,7 @@ class MiniLMPipelineModel(PipelineModel[TextContext]):
             DeviceRef.from_device(self.devices[0]),
         )
         after_build = time.perf_counter()
+
         logger.info(f"Building graph took {after_build - before:.6f} seconds")
 
         before_compile = time.perf_counter()
@@ -199,6 +201,7 @@ class MiniLMPipelineModel(PipelineModel[TextContext]):
         logger.info(
             f"Compiling model took {after - before_compile:.6f} seconds"
         )
+
         logger.info(
             f"Building and compiling model took {after - before:.6f} seconds"
         )
