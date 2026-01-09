@@ -214,7 +214,7 @@ class AudioGenerationSchedulerOutput:
         self.batch_id = str(uuid.uuid4())
 
         self.input_tokens = sum(
-            context.active_length for context in reqs.values()
+            context.tokens.active_length for context in reqs.values()
         )
         if MAX_SERVE_TTS_BATCH_INFO_FILENAME is not None or logger.isEnabledFor(
             logging.DEBUG
@@ -224,8 +224,8 @@ class AudioGenerationSchedulerOutput:
                 {
                     "arrival_time": req_data._arrival_time,
                     "req_id": req_id,
-                    "start_idx": req_data.processed_length,
-                    "input_tokens": req_data.active_length,
+                    "start_idx": req_data.tokens.processed_length,
+                    "input_tokens": req_data.tokens.active_length,
                 }
                 for req_id, req_data in reqs.items()
             ]
@@ -393,7 +393,7 @@ class AudioGenerationScheduler(Scheduler):
                 active_loras.add(req_data.model_name)
 
             ce_batch[req_id] = req_data
-            input_len += req_data.active_length
+            input_len += req_data.tokens.active_length
 
         if self._lora_manager:
             # Return requests back to the queue

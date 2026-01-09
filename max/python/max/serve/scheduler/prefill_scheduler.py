@@ -124,7 +124,7 @@ class PrefillScheduler(Scheduler):
         """Handles a prefill request from the dispatcher."""
         logger.debug("received request from decode node.")
         context = message.context
-        assert context.needs_ce, (
+        assert context.tokens.generated_length == 0, (
             f"Expected needs_ce to be True. Invalid context: {context}"
         )
         # It is possible for the context to have a non-zero start_idx due to
@@ -202,16 +202,16 @@ class PrefillScheduler(Scheduler):
         )
         self.active_transfers[req_id] = (context, transfer_data)
 
-        assert not context.needs_ce, (
-            f"Invalid Context: Expected needs_ce to be False. Found: {context}"
+        assert context.tokens.generated_length != 0, (
+            f"Invalid Context: Expected generated tokens to be at least one. Found: {context}"
         )
-        assert context.processed_length > 0, (
+        assert context.tokens.processed_length > 0, (
             f"Invalid Context: Expected start_idx to be greater than 0. Found: {context}"
         )
         self.dispatcher.send_reply_nowait(
             PrefillResponse(
                 id=req_id,
-                generated_token_id=context.get_last_generated_token(),
+                generated_token_id=int(context.tokens[-1]),
                 transfer_metadata=transfer_data,
             ),
             identity,

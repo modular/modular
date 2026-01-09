@@ -31,7 +31,6 @@ from max.nn.kv_cache import KVCacheStrategy, RaggedKVCacheInputs
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
 from max.pipelines.lib.speculative_config import (
-    SpeculativeConfig,
     SpeculativeMethod,
 )
 from max.pipelines.lib.speculative_decoding import (
@@ -59,25 +58,20 @@ class SpeculativeDecodingSetup:
 def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     """Fixture to set up a speculative decoding pipeline with common configuration."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
-    speculative_config = SpeculativeConfig(
-        speculative_method=SpeculativeMethod.STANDALONE,
-        num_speculative_tokens=10,
-    )
     pipeline_config = PipelineConfig(
         model_path=model_name,
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
         draft_model_path=model_name,
+        speculative_method=SpeculativeMethod.STANDALONE,
+        num_speculative_tokens=10,
         max_batch_size=4,
         max_num_steps=num_steps,
         max_length=1024,
-        _speculative_config=speculative_config,
     )
-    pipeline_config.model_config.kv_cache_config.cache_strategy = (
-        KVCacheStrategy.PAGED
-    )
-    pipeline_config.model_config.kv_cache_config.kv_cache_page_size = 128
-    pipeline_config.model_config.kv_cache_config.device_memory_utilization = 0.3
+    pipeline_config.model.kv_cache_config.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config.model.kv_cache_config.kv_cache_page_size = 128
+    pipeline_config.model.kv_cache_config.device_memory_utilization = 0.3
 
     tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
     assert isinstance(pipeline, StandaloneSpeculativeDecodingPipeline)
@@ -252,12 +246,12 @@ def test_speculative_decoding_context_update(
 
     # length of prompt + length of non rejected draft tokens + 1 for the new token
     assert (
-        context1.current_length
-        == len(context1.prompt_tokens) + reject_token1_idx + 1
+        len(context1.tokens)
+        == len(context1.tokens.prompt) + reject_token1_idx + 1
     )
     assert (
-        context2.current_length
-        == len(context2.prompt_tokens) + reject_token2_idx + 1
+        len(context2.tokens)
+        == len(context2.tokens.prompt) + reject_token2_idx + 1
     )
 
     assert context1._draft_offset == 0
@@ -266,21 +260,21 @@ def test_speculative_decoding_context_update(
     # subtract 1 because the recovered token has not been processed by the draft
     # or dtarget model
     assert (
-        context1.processed_length
-        == len(context1.prompt_tokens) + reject_token1_idx - 1
+        context1.tokens.processed_length
+        == len(context1.tokens.prompt) + reject_token1_idx - 1
     )
 
     # subtract 1 because the bonus token has not been run through the draft model
     assert (
-        context2.processed_length
-        == len(context2.prompt_tokens) + reject_token2_idx - 1
+        context2.tokens.processed_length
+        == len(context2.tokens.prompt) + reject_token2_idx - 1
     )
 
     assert np.all(
-        context1.all_tokens
+        context1.tokens.all
         == np.concatenate(
             (
-                context1.prompt_tokens,
+                context1.tokens.prompt,
                 draft_tokens[0, :reject_token1_idx],
                 recovered_tokens[0, reject_token1_idx][np.newaxis],
             )
@@ -288,10 +282,10 @@ def test_speculative_decoding_context_update(
     )
 
     assert np.all(
-        context2.all_tokens
+        context2.tokens.all
         == np.concatenate(
             (
-                context2.prompt_tokens,
+                context2.tokens.prompt,
                 draft_tokens[1, :reject_token2_idx],
                 bonus_tokens[1],
             )
@@ -328,26 +322,21 @@ def test_speculative_decoding_context_update(
 def test_draft_model_encoding_selection() -> None:
     """Test that draft model encoding is correctly selected from config or fallback."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
-    speculative_config = SpeculativeConfig(
-        speculative_method=SpeculativeMethod.STANDALONE,
-        num_speculative_tokens=10,
-    )
     # Test 1: When draft_model_config.quantization_encoding is specified explicitly
     pipeline_config = PipelineConfig(
         model_path=model_name,
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
         draft_model_path=model_name,
+        speculative_method=SpeculativeMethod.STANDALONE,
+        num_speculative_tokens=10,
         max_batch_size=4,
         max_num_steps=5,
         max_length=1024,
-        _speculative_config=speculative_config,
     )
-    pipeline_config.model_config.kv_cache_config.cache_strategy = (
-        KVCacheStrategy.PAGED
-    )
-    pipeline_config.model_config.kv_cache_config.kv_cache_page_size = 128
-    pipeline_config.model_config.kv_cache_config.device_memory_utilization = 0.3
+    pipeline_config.model.kv_cache_config.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config.model.kv_cache_config.kv_cache_page_size = 128
+    pipeline_config.model.kv_cache_config.device_memory_utilization = 0.3
 
     # Set draft model quantization encoding explicitly
     assert pipeline_config.draft_model_config is not None
@@ -365,18 +354,17 @@ def test_draft_model_encoding_selection() -> None:
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
         draft_model_path=model_name,
+        speculative_method=SpeculativeMethod.STANDALONE,
+        num_speculative_tokens=10,
         max_batch_size=4,
         max_num_steps=5,
         max_length=1024,
-        _speculative_config=speculative_config,
     )
-    pipeline_config2.model_config.kv_cache_config.cache_strategy = (
+    pipeline_config2.model.kv_cache_config.cache_strategy = (
         KVCacheStrategy.PAGED
     )
-    pipeline_config2.model_config.kv_cache_config.kv_cache_page_size = 128
-    pipeline_config2.model_config.kv_cache_config.device_memory_utilization = (
-        0.3
-    )
+    pipeline_config2.model.kv_cache_config.kv_cache_page_size = 128
+    pipeline_config2.model.kv_cache_config.device_memory_utilization = 0.3
 
     # Ensure draft model quantization encoding is None to test fallback
     assert pipeline_config2.draft_model_config is not None
@@ -389,26 +377,21 @@ def test_draft_model_encoding_selection() -> None:
 
 def test_kv_cache_claiming_protocol() -> None:
     """Test that claim is called before fetch in prepare_batch."""
-    speculative_config = SpeculativeConfig(
-        speculative_method=SpeculativeMethod.STANDALONE,
-        num_speculative_tokens=10,
-    )
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     pipeline_config = PipelineConfig(
         model_path=model_name,
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
         draft_model_path=model_name,
+        speculative_method=SpeculativeMethod.STANDALONE,
+        num_speculative_tokens=10,
         max_batch_size=4,
         max_num_steps=5,
         max_length=1024,
-        _speculative_config=speculative_config,
     )
-    pipeline_config.model_config.kv_cache_config.cache_strategy = (
-        KVCacheStrategy.PAGED
-    )
-    pipeline_config.model_config.kv_cache_config.kv_cache_page_size = 128
-    pipeline_config.model_config.kv_cache_config.device_memory_utilization = 0.3
+    pipeline_config.model.kv_cache_config.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config.model.kv_cache_config.kv_cache_page_size = 128
+    pipeline_config.model.kv_cache_config.device_memory_utilization = 0.3
 
     _tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
     assert isinstance(pipeline, StandaloneSpeculativeDecodingPipeline)

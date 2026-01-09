@@ -1866,7 +1866,7 @@ struct DeviceFunction[
         pass
 
     var ctx = DeviceContext()
-    var kernel = ctx.compile_function[my_kernel, my_kernel]()
+    var kernel = ctx.compile_function_experimental[my_kernel]()
     ctx.enqueue_function(kernel, grid_dim=(1,1,1), block_dim=(32,1,1))
     ```
     """
@@ -3282,7 +3282,7 @@ struct DeviceContext(ImplicitlyCopyable):
         print("hello from thread:", thread_idx.x, thread_idx.y, thread_idx.z)
 
     with DeviceContext() as ctx:
-        ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=(2, 2, 2))
+        ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=(2, 2, 2))
         ctx.synchronize()
     ```
 
@@ -3297,7 +3297,7 @@ struct DeviceContext(ImplicitlyCopyable):
         @staticmethod
         fn execute(ctx_ptr: DeviceContextPtr) raises:
             var ctx = ctx_ptr.get_device_context()
-            ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=(2, 2, 2))
+            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=(2, 2, 2))
             ctx.synchronize()
     ```
     """
@@ -4336,7 +4336,7 @@ struct DeviceContext(ImplicitlyCopyable):
             print("Value:", x)
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel, kernel](compiled_func, 42, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_experimental[kernel](compiled_func, 42, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4533,7 +4533,7 @@ struct DeviceContext(ImplicitlyCopyable):
         with DeviceContext() as ctx:
             # Create tensors a, b, c...
             # Most parameters are inferred automatically:
-            ctx.enqueue_function[vector_add, vector_add](
+            ctx.enqueue_function_experimental[vector_add](
                 a, b, c,
                 grid_dim=4,
                 block_dim=256
@@ -4783,7 +4783,7 @@ struct DeviceContext(ImplicitlyCopyable):
 
                 # Create tensor 'data'...
                 # Most parameters are inferred:
-                ctx.enqueue_function[scale_kernel, scale_kernel](
+                ctx.enqueue_function_experimental[scale_kernel](
                     data,
                     grid_dim=1,
                     block_dim=256
@@ -5005,7 +5005,7 @@ struct DeviceContext(ImplicitlyCopyable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -5017,7 +5017,7 @@ struct DeviceContext(ImplicitlyCopyable):
         from gpu.host import DeviceContext
 
         with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function[kernel, kernel]()
+            var compiled_func = ctx.compile_function_experimental[kernel]()
             ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
             ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()

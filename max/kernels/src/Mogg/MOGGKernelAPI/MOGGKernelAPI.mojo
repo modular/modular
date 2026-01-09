@@ -8030,8 +8030,8 @@ struct Struct_kv_cache_store_paged:
             kv_lookup_table,
             max_lengths,
         )
-
-        var cache: paged_kv_collection.CacheType
+        comptime KVCacheT = paged_kv_collection.CacheType
+        var cache: KVCacheT
 
         @parameter
         if key_or_value == 0:
@@ -8055,7 +8055,9 @@ struct Struct_kv_cache_store_paged:
                 idx,
             )
 
-        kv_cache_store_ragged[input_fn=input_fn, target=target](
+        kv_cache_store_ragged[
+            cache_t=KVCacheT, input_fn=input_fn, target=target
+        ](
             cache,
             inputs.shape(),
             input_row_offsets.to_layout_tensor(),

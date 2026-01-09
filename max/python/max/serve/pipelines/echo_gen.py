@@ -174,7 +174,7 @@ class EchoTokenGenerator(
 
             for _ in range(inputs.num_steps):
                 echo_idx = self._echo_indices[request_id]
-                prompt_tokens = context.prompt_tokens
+                prompt_tokens = context.tokens.prompt
 
                 # Check if we have more tokens to echo and haven't reached max length
                 if echo_idx >= len(prompt_tokens):
@@ -184,7 +184,7 @@ class EchoTokenGenerator(
                     if request_id in self._echo_indices:
                         del self._echo_indices[request_id]
                     break
-                elif context.current_length >= context.max_length:
+                elif len(context.tokens) >= context.max_length:
                     responses[
                         request_id
                     ].final_status = GenerationStatus.MAXIMUM_LENGTH

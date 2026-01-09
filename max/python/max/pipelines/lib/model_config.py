@@ -16,20 +16,27 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from huggingface_hub import constants as hf_hub_constants
-from max.config import MAXConfig
+from max.config import ConfigFileModel
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
 from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.nn.kv_cache import KVCacheStrategy
+from pydantic import (
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    computed_field,
+    model_validator,
+)
 from transformers import AutoConfig
 from transformers.generation import GenerationConfig
+from typing_extensions import Self
 
 from .config_enums import RepoType, RopeType, SupportedEncoding
 from .hf_utils import (
@@ -52,8 +59,7 @@ _ALLOWED_CAST_ENCODINGS = {
 }
 
 
-@dataclass
-class MAXModelConfigBase(MAXConfig):
+class MAXModelConfigBase(ConfigFileModel):
     """Abstract base class for all (required) MAX model configs.
 
     This base class is used to configure a model to use for a pipeline, but also
@@ -61,56 +67,69 @@ class MAXModelConfigBase(MAXConfig):
     MAXModelConfig.
     """
 
+    # Allow arbitrary types (like DeviceRef, AutoConfig) to avoid schema generation errors.
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    # TODO(SERVSYS-1084): Restructure the inheritance hierarchy so that this
+    # class can be made largely empty for all model configs, and that the only
+    # ones that need fields below are subclassed separately.
+    use_subgraphs: bool = Field(default=True)
+    """Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true."""
+
+    data_parallel_degree: int = Field(default=1)
+    """Data-parallelism parameter. The degree to which the model is replicated
+    is dependent on the model type."""
+
     @staticmethod
     def help() -> dict[str, str]:
         return {}
 
 
-@dataclass
 class MAXModelConfig(MAXModelConfigBase):
-    """Abstract base class for all MAX model configs.
-
-    This class is used to configure a model to use for a pipeline.
-    """
-
     # NOTE: model_path is made a str of "" by default, to avoid having
     # it be Optional to check for None and then littering the codebase with
     # asserts just to keep mypy happy.
-    model_path: str = ""
+    model_path: str = Field(default="")
     """:obj:`repo_id` of a Hugging Face model repository to use. This is functionally equivalent to `model` flag."""
 
-    model: str = ""
+    model: str = Field(default="")
     """:obj:`repo_id` of a Hugging Face model repository to use.
     The only entrypoint for this model attribute is via --model max cli flag. Everything under the hood
     after this MAXModelConfig is initialized should be handled via model_path, for now.
     See post_init for more details on how this is done.
     """
 
-    served_model_name: str | None = None
+    served_model_name: str | None = Field(default=None)
     """Optional override for client-facing model name. Defaults to model_path."""
 
-    weight_path: list[Path] = field(default_factory=list)
+    weight_path: list[Path] = Field(default_factory=list)
     """Optional path or url of the model weights to use."""
 
     # TODO(zheng): Move this under QuantizationConfig.
-    quantization_encoding: SupportedEncoding | None = None
+    quantization_encoding: SupportedEncoding | None = Field(default=None)
     """Weight encoding type."""
 
-    allow_safetensors_weights_fp32_bf6_bidirectional_cast: bool = False
+    allow_safetensors_weights_fp32_bf6_bidirectional_cast: bool = Field(
+        default=False
+    )
     """Whether to allow automatic float32 to/from bfloat16 safetensors weight type casting, if needed. Currently only supported in Llama3 models."""
 
     # Tuck "huggingface_revision" and "trust_remote_code" under a separate
     # HuggingFaceConfig class.
-    huggingface_model_revision: str = hf_hub_constants.DEFAULT_REVISION
+    huggingface_model_revision: str = Field(
+        default=hf_hub_constants.DEFAULT_REVISION
+    )
     """Branch or Git revision of Hugging Face model repository to use."""
 
-    huggingface_weight_revision: str = hf_hub_constants.DEFAULT_REVISION
+    huggingface_weight_revision: str = Field(
+        default=hf_hub_constants.DEFAULT_REVISION
+    )
     """Branch or Git revision of Hugging Face model repository to use."""
 
-    trust_remote_code: bool = False
+    trust_remote_code: bool = Field(default=False)
     """Whether or not to allow for custom modelling files on Hugging Face."""
 
-    device_specs: list[DeviceSpec] = field(
+    device_specs: list[DeviceSpec] = Field(
         default_factory=scan_available_devices
     )
     """Devices to run inference upon. This option is not documented in :obj:`help()` as it shouldn't be used directly via the CLI entrypoint."""
@@ -118,45 +137,68 @@ class MAXModelConfig(MAXModelConfigBase):
     force_download: bool = False
     """Whether to force download a given file if it's already present in the local cache."""
 
-    vision_config_overrides: dict[str, Any] = field(default_factory=dict)
+    vision_config_overrides: dict[str, Any] = Field(default_factory=dict)
     """Model-specific vision configuration overrides. For example, for InternVL: {"max_dynamic_patch": 24}"""
 
-    rope_type: RopeType | None = None
+    rope_type: RopeType | None = Field(default=None)
     """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
 
-    use_subgraphs: bool = True
-    """Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true."""
-
-    data_parallel_degree: int = 1
-    """Data-parallelism parameter. The degree to which the model is replicated
-    is dependent on the model type."""
-
-    _applied_dtype_cast_from: SupportedEncoding | None = None
+    _applied_dtype_cast_from: SupportedEncoding | None = PrivateAttr(
+        default=None
+    )
     """Property to track the dtype that safetensor weights were casted from. None means no casting was applied. This should only be set by internal code."""
 
-    _applied_dtype_cast_to: SupportedEncoding | None = None
+    _applied_dtype_cast_to: SupportedEncoding | None = PrivateAttr(default=None)
     """Property to track the dtype that safetensor weights were casted to. None means no casting was applied. This should only be set by internal code."""
 
-    _huggingface_config: AutoConfig | None = None
+    _huggingface_config: AutoConfig | None = PrivateAttr(default=None)
     """Hugging Face config. This should only be set by internal code."""
 
-    _weights_repo_id: str | None = None
+    _weights_repo_id: str | None = PrivateAttr(default=None)
     """Hugging Face repo id to load weights from only. This should only be set by internal code."""
 
     # TODO(zheng): Refactor QuantizationConfig to be a MAXConfig subclass that
     # also autopopulates default values.
-    _quant_config: QuantizationConfig | None = None
+    _quant: QuantizationConfig | None = PrivateAttr(default=None)
     """Optional config for specifying quantization parameters. This should only be set by internal code."""
 
-    _kv_cache_config: KVCacheConfig = field(default_factory=KVCacheConfig)
+    _kv_cache: KVCacheConfig = PrivateAttr(default_factory=KVCacheConfig)
     """The KVCache config."""
 
-    _config_file_section_name: str = "model_config"
+    _config_file_section_name: str = PrivateAttr(default="model_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
 
-    def __post_init__(self) -> None:
+    # TODO(SERVSYS-1083): This should just be a temporary fix until we can figure out a
+    # better way to inject custom PrivateAttrs without relying on a custom
+    # constructor.
+    # NOTE: We intentionally hide this constructor override from static type
+    # checkers so we preserve pydantic's generated `__init__` signature (or the
+    # project's mypy plugin behavior) for normal call sites.
+    if not TYPE_CHECKING:
+
+        def __init__(self, **data: Any) -> None:
+            """Initialize config, allowing tests/internal callers to seed PrivateAttrs.
+
+            Pydantic PrivateAttrs are not regular model fields, so they are not
+            accepted as constructor kwargs by default. Some tests (and debugging
+            utilities) intentionally seed `_huggingface_config` to avoid network
+            access and to validate config override plumbing. Hence, we need to
+            explicitly define this __init__ method to seed the PrivateAttr(s).
+            """
+            seeded_huggingface_config = data.pop("_huggingface_config", None)
+            super().__init__(**data)
+            if seeded_huggingface_config is not None:
+                self._huggingface_config = seeded_huggingface_config
+
+    @model_validator(mode="after")
+    def _normalize_model_path(self) -> Self:
+        """Normalize model and model_path fields after validation.
+
+        If both are specified, throw an error. Otherwise, sync model_path from model
+        if model is provided, then clear model since we use model_path from here on out.
+        """
         # if both are specified, throw an error.
         if self.model_path != "" and self.model != "":
             raise ValueError(
@@ -166,7 +208,10 @@ class MAXModelConfig(MAXModelConfigBase):
             self.model_path = self.model
         # We use self.model_path from here on out.
         self.model = ""
+        return self
 
+    # TODO(SERVSYS-1085): Figure out a better way to avoid having to roll our
+    # own custom __getstate__/__setstate__ methods.
     def __getstate__(self) -> dict[str, Any]:
         """Customize pickling to avoid serializing non-picklable HF config.
 
@@ -174,10 +219,16 @@ class MAXModelConfig(MAXModelConfigBase):
         the object remains pickleable across processes; it will be
         lazily re-initialized on access via the `huggingface_config` property.
         """
+        # NOTE: In pydantic v2, PrivateAttr values live in `__pydantic_private__`,
+        # not necessarily in `__dict__`. Preserve private state across processes,
+        # but explicitly drop `_huggingface_config` to avoid serializing possibly
+        # non-picklable / remote-code-derived transformer objects.
         state = self.__dict__.copy()
-        # Do not serialize potentially non-picklable HF configs
-        if "_huggingface_config" in state:
-            state["_huggingface_config"] = None
+        private = getattr(self, "__pydantic_private__", None)
+        if private is not None:
+            private_state = dict(private)
+            private_state["_huggingface_config"] = None
+            state["__pydantic_private__"] = private_state
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -186,9 +237,21 @@ class MAXModelConfig(MAXModelConfigBase):
         `_huggingface_config` is restored as None to preserve the lazy
         loading behavior defined in `huggingface_config`.
         """
+        private_state = state.pop("__pydantic_private__", None)
         self.__dict__.update(state)
-        if "_huggingface_config" not in self.__dict__:
-            self._huggingface_config = None
+
+        # Restore pydantic private attrs (and fill any missing defaults).
+        if private_state is None:
+            private_state = {}
+        private_state = dict(private_state)
+        private_state.setdefault("_huggingface_config", None)
+        private_state.setdefault("_weights_repo_id", None)
+        private_state.setdefault("_kv_cache", KVCacheConfig())
+        private_state.setdefault("_applied_dtype_cast_from", None)
+        private_state.setdefault("_applied_dtype_cast_to", None)
+        private_state.setdefault("_quant", None)
+        private_state.setdefault("_config_file_section_name", "model_config")
+        object.__setattr__(self, "__pydantic_private__", private_state)
 
     # TODO(zheng): This can't just be a __post_init__ method, because we need to
     # it also sets and updates other fields which may not be determined /
@@ -251,7 +314,11 @@ class MAXModelConfig(MAXModelConfigBase):
 
     @property
     def kv_cache_config(self) -> KVCacheConfig:
-        return self._kv_cache_config
+        # `_kv_cache` is a PrivateAttr. Some construction paths (notably
+        # unpickling) can bypass __init__, so the PrivateAttr may be absent.
+        if not hasattr(self, "_kv_cache"):
+            self._kv_cache = KVCacheConfig()
+        return self._kv_cache
 
     @property
     def model_name(self) -> str:
@@ -338,13 +405,16 @@ class MAXModelConfig(MAXModelConfigBase):
 
         return total_weights_size
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_weight_repo_id(self) -> str:
-        return (
-            self._weights_repo_id if self._weights_repo_id else self.model_path
-        )
+        # `_weights_repo_id` is a PrivateAttr. Some construction paths (notably
+        # unpickling) can bypass __init__, so the PrivateAttr may be absent.
+        weights_repo_id: str | None = getattr(self, "_weights_repo_id", None)
+        return weights_repo_id if weights_repo_id else self.model_path
 
-    @cached_property
+    @computed_field  # type: ignore[prop-decorator]
+    @property
     def huggingface_weight_repo(self) -> HuggingFaceRepo:
         return HuggingFaceRepo(
             repo_id=self.huggingface_weight_repo_id,
@@ -352,7 +422,8 @@ class MAXModelConfig(MAXModelConfigBase):
             trust_remote_code=self.trust_remote_code,
         )
 
-    @cached_property
+    @computed_field  # type: ignore[prop-decorator]
+    @property
     def huggingface_model_repo(self) -> HuggingFaceRepo:
         return HuggingFaceRepo(
             repo_id=self.model_path,
@@ -360,6 +431,7 @@ class MAXModelConfig(MAXModelConfigBase):
             trust_remote_code=self.trust_remote_code,
         )
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_config(self) -> AutoConfig:
         # Note: For multiprocessing, __getstate__ clears _huggingface_config
@@ -373,6 +445,7 @@ class MAXModelConfig(MAXModelConfigBase):
             )
         return self._huggingface_config
 
+    @computed_field  # type: ignore[prop-decorator]
     @cached_property
     def generation_config(self) -> GenerationConfig:
         """Retrieve the HuggingFace GenerationConfig for this model.
@@ -399,6 +472,7 @@ class MAXModelConfig(MAXModelConfigBase):
             )
             return GenerationConfig()
 
+    @computed_field  # type: ignore[prop-decorator]
     @cached_property
     def sampling_params_defaults(
         self,
@@ -468,7 +542,7 @@ class MAXModelConfig(MAXModelConfigBase):
         Raises:
             ValueError: If LoRA is enabled but incompatible with current model configuration.
         """
-        if self._kv_cache_config.enable_prefix_caching:
+        if self._kv_cache.enable_prefix_caching:
             raise ValueError(
                 "LoRA is not compatible with prefix caching. "
                 "Please disable prefix caching by using the --no-enable-prefix-caching flag."
@@ -849,7 +923,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 desc_act=hf_quant_config["desc_act"],
                 sym=hf_quant_config["sym"],
             )
-            self._quant_config = default_quantization_config
+            self._quant = default_quantization_config
 
     def _local_weight_path(self, relative_path: Path) -> str | None:
         """Checks common local locations for a weight file and returns its
@@ -919,6 +993,8 @@ class MAXModelConfig(MAXModelConfigBase):
         """
         return self.device_specs[0]
 
+    # TODO: This documentation dictionary is incomplete. Fortunately, we won't
+    # need this anymore once we've migrated to cyclopts for MAX CLI bindings.
     @staticmethod
     def help() -> dict[str, str]:
         max_model_help = {

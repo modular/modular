@@ -212,7 +212,7 @@ class FakeTokenGeneratorPipeline(
                 context.update(new_token=self.token_id)
                 self.token_id += 1
 
-                if context.current_length == context.max_length:
+                if len(context.tokens) == context.max_length:
                     context.status = GenerationStatus.MAXIMUM_LENGTH
 
                 if context.is_done:
@@ -331,7 +331,7 @@ def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
     input_tokens = inputs.input_tokens
     num_steps = inputs.num_steps
     batch_context_length = sum(
-        context.processed_length for context in inputs.batch.values()
+        context.tokens.processed_length for context in inputs.batch.values()
     )
 
     if batch_size == 0:
@@ -380,7 +380,7 @@ def enqueue_request(
         max_seq_len=max_seq_len,
         shared_prefix=shared_prefix,
     )
-    assert context.active_length == prompt_len
+    assert context.tokens.active_length == prompt_len
     queue.put_nowait(context)
 
 

@@ -39,18 +39,6 @@ from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from max.serve.telemetry.common import configure_metrics
 
 
-class MockModelConfig(MAXModelConfig):
-    def __init__(self):
-        self.served_model_name = "echo"
-
-
-class MockPipelineConfig(PipelineConfig):
-    def __init__(self):
-        self.max_batch_size = 1
-        self._model_config = MockModelConfig()
-        self.zmq_endpoint_base: str = generate_zmq_ipc_path()
-
-
 class SleepyEchoTokenGenerator(EchoTokenGenerator):
     def execute(
         self, inputs: TextGenerationInputs[TextContext]
@@ -68,7 +56,13 @@ def echo_factory():  # noqa: ANN201
 
 @pytest.fixture
 def mock_pipeline_config() -> PipelineConfig:
-    return MockPipelineConfig()
+    pipeline_config = PipelineConfig.model_construct(
+        max_batch_size=1, zmq_endpoint_base=generate_zmq_ipc_path()
+    )
+
+    model_config = MAXModelConfig.model_construct(served_model_name="echo")
+    pipeline_config._model = model_config
+    return pipeline_config
 
 
 @pytest.fixture()
@@ -105,7 +99,7 @@ def app(
 
     pipeline_task = PipelineTask.TEXT_GENERATION
     if (
-        pipeline_config.model_config.model_path
+        pipeline_config.model.model_path
         == "sentence-transformers/all-mpnet-base-v2"
     ):
         pipeline_task = PipelineTask.EMBEDDINGS_GENERATION

@@ -67,11 +67,10 @@ def retrieve_mock_text_generation_pipeline(
     mock_config = DummyPipelineConfig(
         model_path=generate_local_model_path(REPO_ID, REVISION),
         max_length=max_length,
+        max_batch_size=None,
         device_specs=device_specs,
         quantization_encoding=SupportedEncoding.float32,
         kv_cache_strategy=KVCacheStrategy.PAGED,
-        enable_structured_output=False,
-        gpu_profiling=GPUProfilingMode.OFF,
         eos_prob=eos_prob,
         vocab_size=vocab_size,
         eos_token=eos_token,

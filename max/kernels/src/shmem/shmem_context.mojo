@@ -302,11 +302,9 @@ struct SHMEMContext(ImplicitlyCopyable):
     @always_inline
     @parameter
     fn enqueue_function[
-        func_type: AnyTrivialRegType,
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: func_type,
-        signature_func: fn (* args: * declared_arg_types) -> None,
+        func: fn (* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -326,12 +324,9 @@ struct SHMEMContext(ImplicitlyCopyable):
         """Compiles and enqueues a kernel for execution on this device.
 
         Parameters:
-            func_type: The dtype of the function to launch.
             declared_arg_types: The declared argument types from the function
                 signature (usually inferred).
             func: The function to launch.
-            signature_func: The kernel function, passed again for type checking.
-                Typically the same as `func`.
             actual_arg_types: The types of the arguments being passed (usually inferred).
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
@@ -358,31 +353,18 @@ struct SHMEMContext(ImplicitlyCopyable):
         compiling it first:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from shmem import SHMEMContext
 
         fn kernel():
             print("hello from the GPU")
 
-        with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        If you are reusing the same function and parameters multiple times, this
-        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
-        first to remove the overhead:
-
-        ```mojo
-        with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel, kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+        with SHMEMContext() as ctx:
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
-        var gpu_kernel = self._ctx.compile_function[
+        var gpu_kernel = self._ctx.compile_function_experimental[
             func,
-            signature_func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
@@ -479,8 +461,8 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         ```mojo
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
-            ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """

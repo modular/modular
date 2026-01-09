@@ -368,7 +368,7 @@ fn matmul_stream_k[
             GROUP_M,
         ]
 
-        ctx.enqueue_function[first_wave, first_wave](
+        ctx.enqueue_function_experimental[first_wave](
             c_buffer,
             a_buffer,
             b_buffer,
@@ -400,7 +400,7 @@ fn matmul_stream_k[
             BLK_K,
             GROUP_M,
         ]
-        ctx.enqueue_function[full_tiles, full_tiles](
+        ctx.enqueue_function_experimental[full_tiles](
             c_buffer,
             a_buffer,
             b_buffer,
@@ -509,7 +509,7 @@ fn run_matmul_stream_k[
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         c_tensor,
         a_tensor,
         b_tensor,

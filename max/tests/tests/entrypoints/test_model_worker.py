@@ -30,11 +30,7 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    PIPELINE_REGISTRY,
-    MAXModelConfig,
-    PipelineConfig,
-)
+from max.pipelines.lib import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
 from max.serve import api_server
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
@@ -43,20 +39,13 @@ from max.serve.scheduler.queues import SchedulerZmqConfigs
 from max.serve.telemetry.metrics import NoopClient
 
 
-class MockModelConfig(MAXModelConfig):
-    def __init__(self):
-        self.served_model_name = "echo"
-
-
-class MockPipelineConfig(PipelineConfig):
-    def __init__(self):
-        self.max_batch_size = 1
-        self._model_config = MockModelConfig()
-
-
 @pytest.fixture
 def mock_pipeline_config() -> PipelineConfig:
-    return MockPipelineConfig()
+    pipeline_config = PipelineConfig.model_construct(max_batch_size=1)
+
+    model_config = MAXModelConfig.model_construct(served_model_name="echo")
+    pipeline_config._model = model_config
+    return pipeline_config
 
 
 @pytest.fixture(autouse=True)

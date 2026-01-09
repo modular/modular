@@ -287,7 +287,7 @@ method. For example:
 
 ```mojo
 # Enqueue the print_threads() kernel function
-ctx.enqueue_function[print_threads, print_threads](
+ctx.enqueue_function_experimental[print_threads](
     grid_dim=(2, 2, 1),   # 2x2x1 blocks per grid
     block_dim=(4, 4, 2),  # 4x4x2 threads per block
 )
@@ -374,7 +374,7 @@ def main():
         # Initialize GPU context for device 0 (default GPU device).
         ctx = DeviceContext()
 
-        ctx.enqueue_function[print_threads, print_threads](
+        ctx.enqueue_function_experimental[print_threads](
             grid_dim=(2, 2, 1),  # 2x2x1 blocks per grid
             block_dim=(4, 4, 2),  # 4x4x2 threads per block
         )
@@ -672,7 +672,7 @@ demonstrated this pattern:
 
 ```mojo title="scalar_add.mojo"
 ...
-scalar_add_kernel = ctx.compile_function[scalar_add, scalar_add]()
+scalar_add_kernel = ctx.compile_function_experimental[scalar_add]()
 
 ctx.enqueue_function(
     scalar_add_kernel,
@@ -729,7 +729,7 @@ shown above (note that the kernel function is provided as a compile-time
 parameter in this case):
 
 ```mojo
-ctx.enqueue_function[scalar_add, scalar_add](
+ctx.enqueue_function_experimental[scalar_add](
     device_buffer,
     num_elements,
     Float32(20.0),

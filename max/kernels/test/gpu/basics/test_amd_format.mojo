@@ -93,8 +93,8 @@ def main():
     with DeviceContext() as ctx:
         print("== test_format_float8_e5m2")
         comptime kernel_0 = test_format_float8_e5m2
-        ctx.enqueue_function[kernel_0, kernel_0](grid_dim=1, block_dim=1)
+        ctx.enqueue_function_experimental[kernel_0](grid_dim=1, block_dim=1)
 
         print("== test_format_float8_e4m3fn")
         comptime kernel_1 = test_format_float8_e4m3fn
-        ctx.enqueue_function[kernel_1, kernel_1](grid_dim=1, block_dim=1)
+        ctx.enqueue_function_experimental[kernel_1](grid_dim=1, block_dim=1)

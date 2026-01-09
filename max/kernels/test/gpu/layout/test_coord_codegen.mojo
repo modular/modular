@@ -15,7 +15,7 @@
 import sys
 
 from gpu.host.compile import _compile_code, get_gpu_target
-from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
+from layout._coord import ComptimeInt, Idx, Coord, RuntimeInt
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -29,12 +29,12 @@ fn kernel(v: Int, ptr: UnsafePointer[Int32]):
         v: Runtime value for dynamic indexing.
         ptr: Output pointer to store results.
     """
-    var l = MixedTuple(Idx[1](), MixedTuple(Idx(v), Idx[3]()))
+    var l = Coord(Idx[1](), Coord(Idx(v), Idx[3]()))
     ptr[0] = Int32(l[0].value())
     ptr[1] = Int32(l[1][0].value())
 
 
-fn test_mixed_tuple_codegen_memory() raises:
+fn test_coord_codegen_memory() raises:
     var amd_asm = _compile_code[
         kernel, target = get_gpu_target["amdgpu:gfx942"]()
     ]().asm
@@ -53,4 +53,4 @@ fn test_mixed_tuple_codegen_memory() raises:
 
 
 def main():
-    test_mixed_tuple_codegen_memory()
+    test_coord_codegen_memory()

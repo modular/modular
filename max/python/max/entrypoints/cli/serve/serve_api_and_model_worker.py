@@ -49,7 +49,7 @@ def serve_api_server_and_model_worker(
     # TODO: This is a workaround to support embeddings generation until the
     # changes to tie pipelines to tasks is complete. This will be removed.
     if (
-        pipeline_config.model_config.model_path
+        pipeline_config.model.model_path
         == "sentence-transformers/all-mpnet-base-v2"
     ):
         pipeline_task = PipelineTask.EMBEDDINGS_GENERATION

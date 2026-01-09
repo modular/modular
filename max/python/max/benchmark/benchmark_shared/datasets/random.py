@@ -27,6 +27,10 @@ from .types import ChatSession, SampledRequest, build_chat_message, encode_image
 
 logger = logging.getLogger(__name__)
 
+# Maximum ratio of model's max context length to use for random sequences.
+# Set to 95% to leave buffer room for other overheads, like re-tokenization and special tokens.
+MAX_CONTEXT_USAGE_RATIO = 0.95
+
 
 def _parse_percentile_spec(spec: str) -> dict[float, int]:
     """Parse a percentile specification string into a dictionary.
@@ -307,6 +311,9 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         min_output_len = kwargs.get("min_output_len", 1)
         image_size = kwargs.get("image_size", "")
         image_count = kwargs.get("image_count", 0)
+        model_max_length = min(
+            tokenizer.model_max_length, np.iinfo(np.int64).max
+        )
 
         # Validate required parameters
         if input_len is None:
@@ -427,8 +434,12 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                 )
 
         vocab_size = tokenizer.vocab_size
+        max_context_length = int(model_max_length * MAX_CONTEXT_USAGE_RATIO)
 
-        sys_prompt_len = np.floor(input_len * sys_prompt_ratio).astype(int)
+        sys_prompt_len = min(
+            max_context_length,
+            np.floor(input_len * sys_prompt_ratio).astype(int),
+        )
         sys_prompts = []
         for i in range(max_num_unique_sys_prompt):  # noqa: B007
             sys_prompt = np.random.randint(0, vocab_size, size=sys_prompt_len)
@@ -436,9 +447,21 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
         input_requests = []
         for i in range(num_requests):
+            input_len_cur = input_lens[i]
+            output_len_cur = (
+                int(output_lens[i]) if output_lens[i] is not None else 0
+            )
+            if input_len_cur + output_len_cur > max_context_length:
+                # Cap over-length sequences.
+                print(
+                    f"Capping too long sequences ({input_len_cur} + {output_len_cur})"
+                    f" > {max_context_length})..."
+                )
+                input_len_cur = max_context_length - output_len_cur
+
             sys_prompt_id = np.random.randint(0, max_num_unique_sys_prompt)
             user_prompt_offset = np.random.randint(0, vocab_size)
-            user_prompt_len = input_lens[i] - sys_prompt_len
+            user_prompt_len = input_len_cur - sys_prompt_len
             prompt_ids = sys_prompts[sys_prompt_id] + [
                 (user_prompt_offset + i + j) % vocab_size
                 for j in range(user_prompt_len)

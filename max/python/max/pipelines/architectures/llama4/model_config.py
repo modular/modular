@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Literal
 
 from max.dtype import DType
@@ -23,7 +22,6 @@ from max.nn import Llama3RopeScalingParams, ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     KVCacheConfig,
-    MAXModelConfig,
     MAXModelConfigBase,
     PipelineConfig,
     RopeType,
@@ -31,9 +29,8 @@ from max.pipelines.lib import (
 from transformers import AutoConfig
 
 
-@dataclass
-class Llama4ConfigBase(MAXModelConfigBase):
-    """Base configuration for Llama 4 models.
+class Llama4Config(MAXModelConfigBase):
+    """Configuration for Llama 4 models.
 
     Contains parameters specific to the Llama 4 architecture, typically
     extracted from a HuggingFace configuration object's text config.
@@ -130,15 +127,6 @@ class Llama4ConfigBase(MAXModelConfigBase):
         """Returns a dictionary describing the configuration parameters."""
         # TODO: Populate this with helpful descriptions based on Args above.
         return {}
-
-
-@dataclass
-class Llama4Config(MAXModelConfig, Llama4ConfigBase):
-    """Represents the complete MAX Engine configuration for Llama 4 models.
-
-    Combines the base Llama 4 parameters with MAX-specific settings and
-    provides methods to derive necessary pipeline components like KV cache parameters.
-    """
 
     @staticmethod
     def get_kv_params(
@@ -245,11 +233,11 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
             An initialized :obj:`Llama4Config` instance.
         """
         interleaved_rope_weights = (
-            pipeline_config.model_config.rope_type == RopeType.normal
+            pipeline_config.model.rope_type == RopeType.normal
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model_config.device_specs
+            for spec in pipeline_config.model.device_specs
         ]
 
         text_config = huggingface_config.text_config

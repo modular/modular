@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from typing import Literal
 
 from max.dtype import DType
@@ -37,13 +36,12 @@ from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
-    MAXModelConfig,
     MAXModelConfigBase,
     PipelineConfig,
     RopeType,
+    parse_float8_config,
     upper_bounded_default,
 )
-from max.pipelines.lib.float8 import parse_float8_config
 from transformers import AutoConfig
 
 
@@ -92,9 +90,8 @@ def create_rope_embedding(
         )
 
 
-@dataclass
-class Llama3ConfigBase(MAXModelConfigBase):
-    """Base configuration for Llama3 models."""
+class Llama3Config(MAXModelConfigBase):
+    """Model configuration for Llama3 graph construction/execution."""
 
     # Required fields
     hidden_size: int
@@ -125,6 +122,8 @@ class Llama3ConfigBase(MAXModelConfigBase):
     devices: list[DeviceRef]
     clip_qkv: float | None
     float8_config: Float8Config | None
+
+    # Optional fields
     lora_config: LoRAConfig | None = None
     dist_gemm_config: DistributedGemmConfig | None = None
     longrope_scaling_params: LongRoPEScalingParams | None = None
@@ -134,11 +133,6 @@ class Llama3ConfigBase(MAXModelConfigBase):
     @staticmethod
     def help() -> dict[str, str]:
         return {}
-
-
-@dataclass
-class Llama3Config(MAXModelConfig, Llama3ConfigBase):
-    """Implementation of MAXModelConfig for Llama3 models."""
 
     @staticmethod
     def calculate_attention_multiplier(
@@ -183,7 +177,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             devices=devices,
-            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
     @staticmethod
@@ -236,12 +230,10 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
         attention_bias: bool = False,
     ) -> Llama3Config:
-        _weights_format = weights_format(
-            pipeline_config.model_config.weight_path
-        )
+        _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model_config.rope_type == RopeType.normal
+            and pipeline_config.model.rope_type == RopeType.normal
         )
         rms_norm_eps = None
         if norm_method == "rms_norm":
@@ -252,7 +244,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model_config.device_specs[:n_devices]
+            for spec in pipeline_config.model.device_specs[:n_devices]
         ]
 
         # Normalize the LLM state dict so downstream introspection sees canonical
@@ -380,12 +372,12 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             interleaved_rope_weights=interleaved_rope_weights,
             vocab_size=huggingface_config.vocab_size,
             dtype=dtype,
-            # TODO: Since pipeline_config.model_config is a MAXModelConfig, these
+            # TODO: Since pipeline_config.model is a MAXModelConfig, these
             # fields should not have to reinstantiated. Once we roll out the final
             # iteration of MAXModelConfig, it will automatically instantiate based
             # on the underlying model repo id.
-            model_quantization_encoding=pipeline_config.model_config.graph_quantization_encoding,
-            quantization_config=pipeline_config.model_config._quant_config,
+            model_quantization_encoding=pipeline_config.model.graph_quantization_encoding,
+            quantization_config=pipeline_config.model._quant,
             return_logits=return_logits,
             return_hidden_states=return_hidden_states,
             max_seq_len=Llama3Config.calculate_max_seq_len(
@@ -412,7 +404,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             devices=device_refs,
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
             float8_config=float8_config,
-            use_subgraphs=pipeline_config.model_config.use_subgraphs,
+            use_subgraphs=pipeline_config.model.use_subgraphs,
             # Force-disable matmul-allreduce overlap for llama FP8.
             # TODO: GEX-2388: Figure out the issue and re-enable this.
             dist_gemm_config=DistributedGemmConfig(
@@ -422,5 +414,5 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             else DistributedGemmConfig.generate(),
             lora_config=pipeline_config.lora_config,
             logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
-            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )

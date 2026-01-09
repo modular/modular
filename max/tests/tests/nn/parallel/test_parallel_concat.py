@@ -29,21 +29,17 @@ def test_parallel_concat(
     shape: tuple[int, ...],
     num_arrays: int,
 ) -> None:
-    parallel_ops = ParallelArrayOps()
+    parallel_ops = ParallelArrayOps(accelerator=accelerator)
 
     arrays = [np.random.rand(*shape) for _ in range(num_arrays)]
 
     # Validate axis is within bounds
     if axis < -len(shape) or axis >= len(shape):
         with pytest.raises(IndexError):
-            _ = parallel_ops.concatenate(
-                arrays, axis=axis, accelerator=accelerator
-            )
+            _ = parallel_ops.concatenate(arrays, axis=axis)
         return
 
-    out_max = parallel_ops.concatenate(
-        arrays, axis=axis, accelerator=accelerator
-    )
+    out_max = parallel_ops.concatenate(arrays, axis=axis)
     out_np = np.concatenate(arrays, axis=axis)
 
     assert_equal(out_max.to_numpy(), out_np)

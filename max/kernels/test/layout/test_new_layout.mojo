@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._mixed_layout import MixedLayout, row_major
-from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
+from layout._layout import Layout, row_major
+from layout._coord import ComptimeInt, Idx, Coord, RuntimeInt
 from layout.int_tuple import IntTuple
 from testing import assert_equal, assert_true, TestSuite
 
@@ -23,7 +23,7 @@ def main():
 
 fn test_size_cosize() raises:
     # Row-major 3x4: last element (2,3) -> 11, cosize = 12
-    var layout1 = MixedLayout(
+    var layout1 = Layout(
         shape=(Idx[3](), Idx[4]()),
         stride=(Idx[4](), Idx[1]()),
     )
@@ -31,7 +31,7 @@ fn test_size_cosize() raises:
     assert_equal(layout1.cosize(), 12)
 
     # Layout with gaps: last element (1,1) -> 11, cosize = 12
-    var layout2 = MixedLayout(
+    var layout2 = Layout(
         shape=(Idx[2](), Idx[2]()), stride=(Idx[10](), Idx[1]())
     )
     assert_equal(layout2.size(), 4)
@@ -39,43 +39,43 @@ fn test_size_cosize() raises:
 
 
 fn test_crd2idx() raises:
-    var layout = MixedLayout(
+    var layout = Layout(
         shape=(Idx[4](), Idx[2]()),
         stride=(Idx[1](), Idx[4]()),
     )
 
     # Multi-dimensional coordinates
-    assert_equal(layout(MixedTuple(Idx[0](), Idx[0]())), 0)
-    assert_equal(layout(MixedTuple(Idx[1](), Idx[0]())), 1)
-    assert_equal(layout(MixedTuple(Idx[2](), Idx[0]())), 2)
-    assert_equal(layout(MixedTuple(Idx[3](), Idx[0]())), 3)
-    assert_equal(layout(MixedTuple(Idx[0](), Idx[1]())), 4)
-    assert_equal(layout(MixedTuple(Idx[1](), Idx[1]())), 5)
-    assert_equal(layout(MixedTuple(Idx[2](), Idx[1]())), 6)
-    assert_equal(layout(MixedTuple(Idx[3](), Idx[1]())), 7)
+    assert_equal(layout(Coord(Idx[0](), Idx[0]())), 0)
+    assert_equal(layout(Coord(Idx[1](), Idx[0]())), 1)
+    assert_equal(layout(Coord(Idx[2](), Idx[0]())), 2)
+    assert_equal(layout(Coord(Idx[3](), Idx[0]())), 3)
+    assert_equal(layout(Coord(Idx[0](), Idx[1]())), 4)
+    assert_equal(layout(Coord(Idx[1](), Idx[1]())), 5)
+    assert_equal(layout(Coord(Idx[2](), Idx[1]())), 6)
+    assert_equal(layout(Coord(Idx[3](), Idx[1]())), 7)
 
     assert_equal(layout.size(), 8)
 
 
 def test_row_major():
-    var shape = MixedTuple(Idx[3](), Idx(4))
+    var shape = Coord(Idx[3](), Idx(4))
     var layout = row_major(shape)
     assert_true(layout.shape == shape)
-    assert_true(layout.stride == MixedTuple(Idx(4), Idx[1]()))
+    assert_true(layout.stride == Coord(Idx(4), Idx[1]()))
 
-    var shape3 = MixedTuple(Idx[3](), Idx(4), Idx(5))
+    var shape3 = Coord(Idx[3](), Idx(4), Idx(5))
     var layout3 = row_major(shape3)
     assert_true(layout3.shape == shape3)
-    assert_true(layout3.stride == MixedTuple(Idx(20), Idx(5), Idx[1]()))
+    assert_true(layout3.stride == Coord(Idx(20), Idx(5), Idx[1]()))
 
-    var shape3_static = MixedTuple(
+    var shape3_static = Coord(
         ComptimeInt[3](), ComptimeInt[4](), ComptimeInt[5]()
     )
     var layout3_static = row_major(shape3_static)
     assert_true(layout3_static.shape == shape3_static)
     assert_true(
         layout3_static.stride
-        == MixedTuple(ComptimeInt[20](), ComptimeInt[5](), ComptimeInt[1]())
+        == Coord(ComptimeInt[20](), ComptimeInt[5](), ComptimeInt[1]())
     )
 
 

@@ -379,7 +379,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         self._default_eos_token_ids = set([self.eos])
 
         if pipeline_config:
-            huggingface_config = pipeline_config.model_config.huggingface_config
+            huggingface_config = pipeline_config.model.huggingface_config
             if eos_token_id := getattr(
                 huggingface_config, "eos_token_id", None
             ):
@@ -389,13 +389,13 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                     self._default_eos_token_ids.update(eos_token_id)
 
             self.enable_prefix_caching = (
-                pipeline_config.model_config.kv_cache_config.enable_prefix_caching
+                pipeline_config.model.kv_cache_config.enable_prefix_caching
                 if pipeline_config
                 else False
             )
 
             if image_token_id := getattr(
-                pipeline_config.model_config.huggingface_config,
+                pipeline_config.model.huggingface_config,
                 "image_token_id",
                 None,
             ):
@@ -406,7 +406,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                 )
 
             if video_token_id := getattr(
-                pipeline_config.model_config.huggingface_config,
+                pipeline_config.model.huggingface_config,
                 "video_token_id",
                 None,
             ):
@@ -414,7 +414,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
             # Qwen3VL specific: vision_start_token and vision_end_token
             if vision_start_token_id := getattr(
-                pipeline_config.model_config.huggingface_config,
+                pipeline_config.model.huggingface_config,
                 "vision_start_token_id",
                 None,
             ):
@@ -425,7 +425,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                 )
 
             if vision_end_token_id := getattr(
-                pipeline_config.model_config.huggingface_config,
+                pipeline_config.model.huggingface_config,
                 "vision_end_token_id",
                 None,
             ):

@@ -21,10 +21,10 @@ import inspect
 import json
 import pathlib
 from collections.abc import Callable
-from dataclasses import MISSING, Field, fields
+from dataclasses import MISSING
 from enum import Enum
 from pathlib import Path
-from types import UnionType
+from types import SimpleNamespace, UnionType
 from typing import (
     Any,
     TypeGuard,
@@ -41,13 +41,13 @@ from max.driver import DeviceSpec
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
-    MAXConfig,
     MAXModelConfig,
     PipelineConfig,
     ProfilingConfig,
     SamplingConfig,
     SpeculativeConfig,
 )
+from pydantic import BaseModel
 from typing_extensions import ParamSpec
 
 from .device_options import DevicesOptionType
@@ -140,7 +140,7 @@ def get_field_type(field_type: Any):  # noqa: ANN201
     return field_type
 
 
-def get_default(dataclass_field: Field[Any]) -> Any:
+def get_default(dataclass_field: Any) -> Any:
     if dataclass_field.default_factory != MISSING:
         default = dataclass_field.default_factory()
     elif dataclass_field.default != MISSING:
@@ -155,9 +155,7 @@ def is_multiple(field_type: Any) -> bool:
     return get_origin(field_type) is list
 
 
-def get_normalized_flag_name(
-    dataclass_field: Field[Any], field_type: Any
-) -> str:
+def get_normalized_flag_name(dataclass_field: Any, field_type: Any) -> str:
     normalized_name = dataclass_field.name.lower().replace("_", "-")
 
     if is_flag(field_type):
@@ -168,7 +166,7 @@ def get_normalized_flag_name(
 
 def create_click_option(
     help_for_fields: dict[str, str],
-    dataclass_field: Field[Any],
+    dataclass_field: Any,
     field_type: Any,
 ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     # Get Help text.
@@ -186,8 +184,56 @@ def create_click_option(
     )
 
 
+def _get_fields_from_pydantic_model(
+    cls: type[BaseModel],
+) -> list[SimpleNamespace]:
+    """Get fields from a Pydantic model.
+
+    Returns a list of Field objects compatible with dataclass Field API.
+    """
+
+    # Try to import PydanticUndefined to detect unset defaults
+    try:
+        from pydantic import PydanticUndefined
+    except ImportError:
+        try:
+            from pydantic_core import PydanticUndefined
+        except ImportError:
+            # Fallback: create a unique sentinel if we can't import it
+            PydanticUndefined = type("PydanticUndefined", (), {})()
+
+    pydantic_fields = []
+    model_fields = cls.model_fields
+
+    for field_name, field_info in model_fields.items():
+        # Create a simple object that mimics dataclass Field.
+        field_obj = SimpleNamespace()
+        field_obj.name = field_name
+
+        # Extract default value from Pydantic FieldInfo
+        # In Pydantic v2, field_info.default is PydanticUndefined if not set,
+        # otherwise it's the actual default value (which can be None)
+        default_value = getattr(field_info, "default", PydanticUndefined)
+        if default_value is not PydanticUndefined:
+            field_obj.default = default_value
+        else:
+            field_obj.default = MISSING
+
+        # Extract default_factory
+        # In Pydantic v2, default_factory is None if not set, otherwise it's the factory
+        default_factory = getattr(field_info, "default_factory", None)
+        if default_factory is not None:
+            field_obj.default_factory = default_factory
+        else:
+            field_obj.default_factory = MISSING
+
+        pydantic_fields.append(field_obj)
+
+    return pydantic_fields
+
+
 def config_to_flag(
-    cls: type[MAXConfig], prefix: str | None = None
+    cls: type[BaseModel], prefix: str | None = None
 ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     options = []
     if hasattr(cls, "help"):
@@ -195,7 +241,7 @@ def config_to_flag(
     else:
         help_text = {}
     field_types = get_type_hints(cls)
-    for _field in fields(cls):
+    for _field in _get_fields_from_pydantic_model(cls):
         # Skip private config fields.
         if _field.name.startswith("_") or _field.name in (
             "device_specs",

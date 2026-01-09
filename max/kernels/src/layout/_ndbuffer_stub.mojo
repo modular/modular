@@ -1036,6 +1036,7 @@ fn copy_from_nd_buffer_masked[
 ):
     comptime dst_rank = dst_data_layout.rank()
     comptime dst_element_layout = dst_thread_local.element_layout
+    comptime tile_mask_elt_rank = type_of(tile_mask.element_size).size
     # FIXME: Relax this to support any ranked data and thread layouts.
     __comptime_assert src_rank == 2, "Only rank-2 layouts is supported for now."
 
@@ -1055,7 +1056,8 @@ fn copy_from_nd_buffer_masked[
     if dst_element_layout.rank() == 1:
         var src_vectorized = vectorize[1, Int(dst_element_layout.shape[0])](src)
         var vec_mask = _vectorize_mask[
-            sizes = (1, Int(dst_element_layout.shape[0]))
+            rank=tile_mask_elt_rank,
+            sizes = (1, Int(dst_element_layout.shape[0])),
         ](tile_mask)
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
@@ -1081,10 +1083,11 @@ fn copy_from_nd_buffer_masked[
             Int(dst_element_layout.shape[1]),
         ](src)
         var vec_mask = _vectorize_mask[
+            rank=tile_mask_elt_rank,
             sizes = (
                 Int(dst_element_layout.shape[0]),
                 Int(dst_element_layout.shape[1]),
-            )
+            ),
         ](tile_mask)
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
@@ -1186,6 +1189,7 @@ fn copy_to_nd_buffer_masked[
 ):
     comptime src_rank = src_data_layout.rank()
     comptime src_element_layout = src_thread_local.element_layout
+    comptime tile_mask_elt_rank = type_of(tile_mask.element_size).size
     # FIXME: Relax this to support any ranked data and thread layouts.
     __comptime_assert src_rank == 2, "Only rank-2 layouts is supported for now."
 
@@ -1205,7 +1209,8 @@ fn copy_to_nd_buffer_masked[
     if src_element_layout.rank() == 1:
         var dst_vectorized = vectorize[1, Int(src_element_layout.shape[0])](dst)
         var vectorize_mask = _vectorize_mask[
-            sizes = (1, Int(src_element_layout.shape[0]))
+            rank=tile_mask_elt_rank,
+            sizes = (1, Int(src_element_layout.shape[0])),
         ](tile_mask)
         var dst_vectorized_buffer = dst_vectorized[0]
         var dst_element_layout = dst_vectorized[1]
@@ -1227,10 +1232,11 @@ fn copy_to_nd_buffer_masked[
             Int(src_element_layout.shape[1]),
         ](dst)
         var vectorize_mask = _vectorize_mask[
+            rank=tile_mask_elt_rank,
             sizes = (
                 Int(src_element_layout.shape[0]),
                 Int(src_element_layout.shape[1]),
-            )
+            ),
         ](tile_mask)
         var dst_vectorized_buffer = dst_vectorized[0]
         var dst_element_layout = dst_vectorized[1]

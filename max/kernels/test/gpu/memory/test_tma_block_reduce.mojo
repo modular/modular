@@ -207,7 +207,7 @@ def test_tma_block_reduce[
             comptime kernel = tma_reduction_kernel[
                 dtype, accum_type, simd_width
             ]
-            ctx.enqueue_function[kernel, kernel,](
+            ctx.enqueue_function[kernel, kernel](
                 tma_desc,
                 rows,
                 cols,

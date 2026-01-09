@@ -32,12 +32,12 @@ from layout.layout_tensor import (
     copy_local_to_dram,
 )
 
-from layout._mixed_layout_tensor import MixedLayoutTensor, stack_allocation
-from layout._mixed_layout import row_major
-from layout._mixed_tuple import (
-    MixedTuple,
-    MixedTupleLike,
-    mixed_tuple,
+from layout._tile_tensor import TileTensor, stack_allocation
+from layout._layout import row_major
+from layout._coord import (
+    Coord,
+    CoordLike,
+    coord,
     Idx,
     ComptimeInt,
 )
@@ -52,14 +52,14 @@ fn is_benchmark() -> Bool:
 
 fn gemm_kernel[
     c_dtype: DType,
-    c_shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    c_stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    c_shape_types: Variadic.TypesOfTrait[CoordLike],
+    c_stride_types: Variadic.TypesOfTrait[CoordLike],
     a_dtype: DType,
-    a_shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    a_stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    a_shape_types: Variadic.TypesOfTrait[CoordLike],
+    a_stride_types: Variadic.TypesOfTrait[CoordLike],
     b_dtype: DType,
-    b_shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    b_stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    b_shape_types: Variadic.TypesOfTrait[CoordLike],
+    b_stride_types: Variadic.TypesOfTrait[CoordLike],
     NUM_THREADS: Int,
     BM: Int where BM > -1,
     BN: Int where BN > -1,
@@ -69,19 +69,19 @@ fn gemm_kernel[
     TM: Int where TM > -1,
     TN: Int where TN > -1,
 ](
-    mat_c: MixedLayoutTensor[
+    mat_c: TileTensor[
         shape_types=c_shape_types,
         stride_types=c_stride_types,
         c_dtype,
         MutExternalOrigin,
     ],
-    mat_a: MixedLayoutTensor[
+    mat_a: TileTensor[
         shape_types=a_shape_types,
         stride_types=a_stride_types,
         a_dtype,
         MutExternalOrigin,
     ],
-    mat_b: MixedLayoutTensor[
+    mat_b: TileTensor[
         shape_types=b_shape_types,
         stride_types=b_stride_types,
         b_dtype,
@@ -211,9 +211,9 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var mat_a = MixedLayoutTensor(a_device.unsafe_ptr(), row_major[M, K]())
-    var mat_b = MixedLayoutTensor(b_device.unsafe_ptr(), row_major[K, N]())
-    var mat_c = MixedLayoutTensor(c_device.unsafe_ptr(), row_major[M, N]())
+    var mat_a = TileTensor(a_device.unsafe_ptr(), row_major[M, K]())
+    var mat_b = TileTensor(b_device.unsafe_ptr(), row_major[K, N]())
+    var mat_c = TileTensor(c_device.unsafe_ptr(), row_major[M, N]())
 
     comptime kernel = gemm_kernel[
         DType.float32,
@@ -235,7 +235,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         TN,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         mat_c,
         mat_a,
         mat_b,
@@ -245,9 +245,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(c_host, c_device)
 
-    var c_tensor_ref = MixedLayoutTensor(
-        c_device_ref.unsafe_ptr(), row_major[M, N]()
-    )
+    var c_tensor_ref = TileTensor(c_device_ref.unsafe_ptr(), row_major[M, N]())
 
     # Naive gemm.
     comptime BLOCK_DIM = 16
@@ -264,7 +262,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function[gemm_naive, gemm_naive](
+    ctx.enqueue_function_experimental[gemm_naive](
         c_tensor_ref,
         mat_a,
         mat_b,
@@ -293,7 +291,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         @always_inline
         @parameter
         fn run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function_experimental[kernel](
                 mat_c,
                 mat_a,
                 mat_b,
@@ -303,7 +301,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
         # Warmup
         for i in range(nwarmup):
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function_experimental[kernel](
                 mat_c,
                 mat_a,
                 mat_b,
@@ -366,9 +364,9 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var mat_a = MixedLayoutTensor(a_device.unsafe_ptr(), row_major[M, K]())
-    var mat_b = MixedLayoutTensor(b_device.unsafe_ptr(), row_major[K, N]())
-    var mat_c = MixedLayoutTensor(c_device.unsafe_ptr(), row_major[M, N]())
+    var mat_a = TileTensor(a_device.unsafe_ptr(), row_major[M, K]())
+    var mat_b = TileTensor(b_device.unsafe_ptr(), row_major[K, N]())
+    var mat_c = TileTensor(c_device.unsafe_ptr(), row_major[M, N]())
 
     comptime kernel = gemm_kernel[
         DType.float32,
@@ -390,7 +388,7 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
         TN,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         mat_c,
         mat_a,
         mat_b,
@@ -400,9 +398,7 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(c_host, c_device)
 
-    var c_tensor_ref = MixedLayoutTensor(
-        c_device_ref.unsafe_ptr(), row_major[M, N]()
-    )
+    var c_tensor_ref = TileTensor(c_device_ref.unsafe_ptr(), row_major[M, N]())
 
     # Naive gemm for reference
     comptime BLOCK_DIM = 16
@@ -419,7 +415,7 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function[gemm_naive, gemm_naive](
+    ctx.enqueue_function_experimental[gemm_naive](
         c_tensor_ref,
         mat_a,
         mat_b,
@@ -533,31 +529,31 @@ def main():
 
 fn matmul_kernel_naive[
     c_dtype: DType,
-    c_shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    c_stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    c_shape_types: Variadic.TypesOfTrait[CoordLike],
+    c_stride_types: Variadic.TypesOfTrait[CoordLike],
     a_dtype: DType,
-    a_shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    a_stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    a_shape_types: Variadic.TypesOfTrait[CoordLike],
+    a_stride_types: Variadic.TypesOfTrait[CoordLike],
     b_dtype: DType,
-    b_shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    b_stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    b_shape_types: Variadic.TypesOfTrait[CoordLike],
+    b_stride_types: Variadic.TypesOfTrait[CoordLike],
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
     s_type: DType = get_accum_type[c_dtype](),
 ](
-    c: MixedLayoutTensor[
+    c: TileTensor[
         shape_types=c_shape_types,
         stride_types=c_stride_types,
         c_dtype,
         MutExternalOrigin,
     ],
-    a: MixedLayoutTensor[
+    a: TileTensor[
         shape_types=a_shape_types,
         stride_types=a_stride_types,
         a_dtype,
         MutExternalOrigin,
     ],
-    b: MixedLayoutTensor[
+    b: TileTensor[
         shape_types=b_shape_types,
         stride_types=b_stride_types,
         b_dtype,
@@ -595,15 +591,15 @@ fn matmul_kernel_naive[
 fn outer_product_acc[
     M: Int, N: Int
 ](
-    res: MixedLayoutTensor[
+    res: TileTensor[
         mut=True,
         shape_types = Variadic.types[
-            T=MixedTupleLike, ComptimeInt[M], ComptimeInt[N]
+            T=CoordLike, ComptimeInt[M], ComptimeInt[N]
         ],
         ...,
     ],
-    lhs: MixedLayoutTensor,
-    rhs: MixedLayoutTensor,
+    lhs: TileTensor,
+    rhs: TileTensor,
 ) where (lhs.rank == 1) & (rhs.rank == 1):
     """Updates result tensor with the outer product of two vectors.
 
@@ -630,7 +626,7 @@ fn outer_product_acc[
 
         @parameter
         for j in range(N):
-            var idx = MixedTuple(Idx[i](), Idx[j]())
+            var idx = coord[i, j]()
             res[idx] += (lhs[(Idx[i](),)].cast[dtype]()) * (
                 rhs[(Idx[j](),)].cast[dtype]()
             )

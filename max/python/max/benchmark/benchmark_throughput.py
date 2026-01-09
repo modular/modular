@@ -398,7 +398,7 @@ async def all_tokens(
     )
     sampling_params = SamplingParams.from_input_and_generation_config(
         params,
-        sampling_params_defaults=config.model_config.sampling_params_defaults,
+        sampling_params_defaults=config.model.sampling_params_defaults,
     )
     request = TextGenerationRequest(
         request_id=RequestID(str(request_id)),

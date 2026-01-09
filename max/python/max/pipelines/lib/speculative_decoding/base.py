@@ -144,8 +144,8 @@ def hidden_states_return_config(
     For Eagle and DeepSeek MTP, we share the embedding and lm_head weights between the target and draft models and only take the last hidden state from the target model.
 
     """
-    assert pipeline_config._speculative_config is not None
-    if pipeline_config._speculative_config.is_eagle():
+    assert pipeline_config._speculative is not None
+    if pipeline_config._speculative.is_eagle():
         if is_draft:
             return ReturnHiddenStates.LAST
         else:
@@ -182,15 +182,15 @@ class SpeculativeDecodingPipelineBase(
 
         # Load target model
         self.target_devices = load_devices(
-            self.pipeline_config.model_config.device_specs
+            self.pipeline_config.model.device_specs
         )
-        target_config = self.pipeline_config.model_config.huggingface_config
+        target_config = self.pipeline_config.model.huggingface_config
         target_session = InferenceSession(devices=self.target_devices)
         self.pipeline_config.configure_session(target_session)
         target_config = AutoConfig.from_pretrained(
-            self.pipeline_config.model_config.model_path,
-            trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
-            revision=self.pipeline_config.model_config.huggingface_model_revision,
+            self.pipeline_config.model.model_path,
+            trust_remote_code=self.pipeline_config.model.trust_remote_code,
+            revision=self.pipeline_config.model.huggingface_model_revision,
         )
 
         # Expand EOS
@@ -214,47 +214,44 @@ class SpeculativeDecodingPipelineBase(
         else:
             self._eos_token_id = set([eos_token_id])
 
-        target_hf_repo = (
-            self.pipeline_config.model_config.huggingface_weight_repo
-        )
+        target_hf_repo = self.pipeline_config.model.huggingface_weight_repo
 
         weight_paths: list[Path] = []
         if (
-            self.pipeline_config.model_config.huggingface_weight_repo.repo_type
+            self.pipeline_config.model.huggingface_weight_repo.repo_type
             == RepoType.online
         ):
             # Download weight files if not existent.
             weight_paths = download_weight_files(
                 huggingface_model_id=target_hf_repo.repo_id,
                 filenames=[
-                    str(x)
-                    for x in self.pipeline_config.model_config.weight_path
+                    str(x) for x in self.pipeline_config.model.weight_path
                 ],
-                revision=self.pipeline_config.model_config.huggingface_weight_revision,
+                revision=self.pipeline_config.model.huggingface_weight_revision,
                 max_workers=8,
             )
         else:
             # Make sure the weight paths are absolute paths
             weight_paths = [
-                self.pipeline_config.model_config.model_path / x
-                for x in self.pipeline_config.model_config.weight_path
+                self.pipeline_config.model.model_path / x
+                for x in self.pipeline_config.model.weight_path
             ]
 
         target_weights = load_weights(weight_paths)
         _target_weights_format = weights_format(weight_paths)
 
-        if not self.pipeline_config.model_config.quantization_encoding:
+        if not self.pipeline_config.model.quantization_encoding:
             raise ValueError(
-                f"quantization_encoding must be provided, {self.pipeline_config.model_config.quantization_encoding}"
+                f"quantization_encoding must be provided, {self.pipeline_config.model.quantization_encoding}"
             )
 
         self._target_model = pipeline_model(
             pipeline_config=self.pipeline_config,
             session=target_session,
             huggingface_config=target_config,
-            encoding=self.pipeline_config.model_config.quantization_encoding,
+            encoding=self.pipeline_config.model.quantization_encoding,
             devices=self.target_devices,
-            kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
+            kv_cache_config=self.pipeline_config.model.kv_cache_config,
             weights=target_weights,
             adapter=weight_adapters.get(_target_weights_format),
             return_logits=ReturnLogits.VARIABLE,
@@ -266,7 +263,7 @@ class SpeculativeDecodingPipelineBase(
         # Calculate Max Length
         self._max_length = self._target_model.calculate_max_seq_len(
             self.pipeline_config,
-            huggingface_config=self.pipeline_config.model_config.huggingface_config,
+            huggingface_config=self.pipeline_config.model.huggingface_config,
         )
 
         # Load draft model
@@ -280,20 +277,18 @@ class SpeculativeDecodingPipelineBase(
             self.pipeline_config.draft_model_config.huggingface_config
         )
 
-        if hasattr(
-            self.pipeline_config.model_config.huggingface_config, "vocab_size"
-        ):
+        if hasattr(self.pipeline_config.model.huggingface_config, "vocab_size"):
             self.vocab_size = (
-                self.pipeline_config.model_config.huggingface_config.vocab_size
+                self.pipeline_config.model.huggingface_config.vocab_size
             )
         elif hasattr(
-            self.pipeline_config.model_config.huggingface_config, "text_config"
+            self.pipeline_config.model.huggingface_config, "text_config"
         ):
             if hasattr(
-                self.pipeline_config.model_config.huggingface_config.text_config,
+                self.pipeline_config.model.huggingface_config.text_config,
                 "vocab_size",
             ):
-                self.vocab_size = self.pipeline_config.model_config.huggingface_config.text_config.vocab_size
+                self.vocab_size = self.pipeline_config.model.huggingface_config.text_config.vocab_size
             else:
                 raise ValueError(
                     "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
@@ -356,7 +351,7 @@ class SpeculativeDecodingPipelineBase(
 
         draft_weights = load_weights(draft_weight_paths)
         _draft_weights_format = weights_format(draft_weight_paths)
-        assert self.pipeline_config._speculative_config is not None
+        assert self.pipeline_config._speculative is not None
 
         # Use draft model's pipeline model and weight adapters if provided
         # Otherwise fall back to target model's (for backward compatibility)
@@ -429,7 +424,7 @@ class SpeculativeDecodingPipelineBase(
         self._target_session = target_session
 
         self._num_draft_steps = (
-            self.pipeline_config._speculative_config.num_speculative_tokens
+            self.pipeline_config._speculative.num_speculative_tokens
         )
 
     @traced
@@ -450,7 +445,7 @@ class SpeculativeDecodingPipelineBase(
 
         if num_available_steps <= 0:
             raise ValueError(
-                f"Request {context.request_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
+                f"Request {context.request_id} length ({len(context.tokens)}) is larger than or equal to the configured max_length ({max_seq_len})"
             )
 
         return min(num_available_steps, num_steps)
@@ -610,7 +605,7 @@ class SpeculativeDecodingPipelineBase(
             # If all draft tokens are accepted, then the draft model has not
             # processed the bonus token. In this case only the draft needs to
             # go one step back. At the moment we do this for all cases.
-            context.rewind_processing(1)
+            context.tokens.rewind_processing(1)
 
         # Update metrics
         self._metrics.update(
@@ -640,7 +635,7 @@ class SpeculativeDecodingPipelineBase(
             )
 
             # Break early if beyond max length
-            current_length = context.processed_length + 1
+            current_length = context.tokens.processed_length + 1
             if current_length >= context_max_length:
                 context.status = GenerationStatus.MAXIMUM_LENGTH
 

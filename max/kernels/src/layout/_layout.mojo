@@ -22,25 +22,25 @@ from builtin.variadics import (
     _ReduceVariadicAndIdxToVariadic,
 )
 
-from ._mixed_tuple import (
+from ._coord import (
     ComptimeInt,
     Idx,
-    MixedTuple,
-    MixedTupleLike,
+    Coord,
+    CoordLike,
     RuntimeInt,
     crd2idx,
     idx2crd,
-    mixed_int_tuple_to_int_tuple,
+    coord_to_int_tuple,
     _IntToComptimeInt,
     _Splatted,
 )
 from .int_tuple import IntTuple
-from .layout import LayoutTrait
+from .layout import Layout as LegacyLayout
 
 
-struct MixedLayout[
-    shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+struct Layout[
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: Variadic.TypesOfTrait[CoordLike],
 ](ImplicitlyCopyable):
     """A layout that supports mixed compile-time and runtime dimensions.
 
@@ -53,27 +53,28 @@ struct MixedLayout[
         stride_types: The types for the stride dimensions.
     """
 
-    var shape: MixedTuple[*Self.shape_types]
-    """The shape of the layout as a mixed tuple."""
+    var shape: Coord[*Self.shape_types]
+    """The shape of the layout as a Coord."""
 
-    var stride: MixedTuple[*Self.stride_types]
-    """The stride of the layout as a mixed tuple."""
+    var stride: Coord[*Self.stride_types]
+    """The stride of the layout as a Coord."""
 
     comptime rank = Variadic.size(Self.shape_types)
-    comptime ALL_DIMS_KNOWN = MixedTuple[
-        *Self.shape_types
-    ].ALL_DIMS_KNOWN and MixedTuple[*Self.stride_types].ALL_DIMS_KNOWN
+    comptime ALL_DIMS_KNOWN = Coord[*Self.shape_types].ALL_DIMS_KNOWN and Coord[
+        *Self.stride_types
+    ].ALL_DIMS_KNOWN
+    comptime STATIC_PRODUCT = Coord[*Self.shape_types].STATIC_PRODUCT
 
     fn __init__(
         out self,
-        shape: MixedTuple[*Self.shape_types],
-        stride: MixedTuple[*Self.stride_types],
+        shape: Coord[*Self.shape_types],
+        stride: Coord[*Self.stride_types],
     ):
-        """Initialize a mixed layout with shape and stride.
+        """Initialize a layout with shape and stride.
 
         Args:
-            shape: The shape as a MixedTuple.
-            stride: The stride as a MixedTuple.
+            shape: The shape as a Coord.
+            stride: The stride as a Coord.
         """
         __comptime_assert (
             type_of(shape).__len__() == type_of(stride).__len__()
@@ -90,7 +91,7 @@ struct MixedLayout[
         self.stride = stride
 
     fn __call__[
-        index_type: MixedTupleLike,
+        index_type: CoordLike,
         *,
         linear_idx_type: DType = DType.int64,
     ](self, index: index_type) -> Scalar[linear_idx_type]:
@@ -107,9 +108,7 @@ struct MixedLayout[
     fn idx2crd[
         *,
         out_dtype: DType = DType.int64,
-    ](self, idx: Int) -> MixedTuple[
-        *_Splatted[RuntimeInt[out_dtype], Self.rank]
-    ]:
+    ](self, idx: Int) -> Coord[*_Splatted[RuntimeInt[out_dtype], Self.rank]]:
         """Maps a linear memory index back to logical coordinates.
 
         This is the inverse of `__call__` (crd2idx). Given a linear index,
@@ -122,7 +121,7 @@ struct MixedLayout[
             idx: The linear memory index to convert to coordinates.
 
         Returns:
-            A MixedTuple containing the logical coordinates corresponding to the linear index.
+            A Coord containing the logical coordinates corresponding to the linear index.
 
         Examples:
             For a layout with shape (3, 4) and row-major strides:
@@ -130,9 +129,9 @@ struct MixedLayout[
             - layout.idx2crd(5) returns (1, 1).
             - layout.idx2crd(11) returns (2, 3).
         """
-        comptime Shape = MixedTuple[*Self.shape_types]
-        comptime Stride = MixedTuple[*Self.stride_types]
-        return rebind[MixedTuple[*_Splatted[RuntimeInt[out_dtype], Self.rank]]](
+        comptime Shape = Coord[*Self.shape_types]
+        comptime Stride = Coord[*Self.stride_types]
+        return rebind[Coord[*_Splatted[RuntimeInt[out_dtype], Self.rank]]](
             idx2crd[Shape, Stride, out_dtype](idx, self.shape, self.stride)
         )
 
@@ -160,31 +159,29 @@ struct MixedLayout[
         """
         return self[linear_idx_type=linear_idx_type](Idx(self.size() - 1)) + 1
 
-    fn to_layout(self) -> Layout:
-        return Layout(
-            mixed_int_tuple_to_int_tuple(self.shape),
-            mixed_int_tuple_to_int_tuple(self.stride),
+    fn to_layout(self) -> LegacyLayout:
+        return LegacyLayout(
+            coord_to_int_tuple(self.shape),
+            coord_to_int_tuple(self.stride),
         )
 
 
-comptime _RowMajor[
-    *element_types: MixedTupleLike
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[MixedTupleLike],
+comptime _RowMajor[*element_types: CoordLike] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal = Variadic.empty_of_trait[CoordLike],
     VariadicType = Variadic.reverse[*element_types],
     Reducer=_RowMajorMapper,
 ]
 
 
 comptime _RowMajorMapper[
-    Prev: Variadic.TypesOfTrait[MixedTupleLike],
-    From: Variadic.TypesOfTrait[MixedTupleLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
 ] = Variadic.concat[
-    Variadic.types[T=MixedTupleLike, ComptimeInt[1]] if idx
+    Variadic.types[T=CoordLike, ComptimeInt[1]] if idx
     == 0 else (
         Variadic.types[
-            T=MixedTupleLike,
+            T=CoordLike,
             RuntimeInt[
                 From[idx - 1]
                 .DTYPE if not From[idx - 1]
@@ -193,7 +190,7 @@ comptime _RowMajorMapper[
             ],
         ] if not From[idx - 1].IS_STATIC_VALUE
         or not Prev[0].IS_STATIC_VALUE else Variadic.types[
-            T=MixedTupleLike,
+            T=CoordLike,
             ComptimeInt[From[idx - 1].STATIC_VALUE * Prev[0].STATIC_VALUE],
         ]
     ),
@@ -203,8 +200,8 @@ comptime _RowMajorMapper[
 
 @always_inline
 fn row_major(
-    var shape: MixedTuple,
-) -> MixedLayout[shape.element_types, _RowMajor[*shape.element_types]]:
+    var shape: Coord,
+) -> Layout[shape.element_types, _RowMajor[*shape.element_types]]:
     # Flatten the shape and compute row-major strides on the flattened representation
     # For now, we keep both shape and strides flat (not nested)
 
@@ -248,15 +245,15 @@ fn row_major(
                     rebind[StrideType](RuntimeInt[StrideType.DTYPE](stride_val))
                 )
 
-    return MixedLayout(shape^, MixedTuple(strides^))
+    return Layout(shape^, Coord(strides^))
 
 
 fn row_major[
     *idxs: Int
-]() -> MixedLayout[
+]() -> Layout[
     shape_types = _IntToComptimeInt[*idxs],
     stride_types = _RowMajor[*_IntToComptimeInt[*idxs]],
 ]:
-    var shape: MixedTuple[*_IntToComptimeInt[*idxs]]
+    var shape: Coord[*_IntToComptimeInt[*idxs]]
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(shape))
     return row_major(shape^)

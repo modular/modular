@@ -81,7 +81,7 @@ def main():
         ctx.enqueue_copy(src_buf=host_buffer, dst_buf=device_buffer)
 
         # Compile the scalar_add kernel function for execution on the GPU.
-        scalar_add_kernel = ctx.compile_function[scalar_add, scalar_add]()
+        scalar_add_kernel = ctx.compile_function_experimental[scalar_add]()
 
         # Launch the GPU kernel with the following arguments:
         #

@@ -180,7 +180,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Input row offset type: ["input_row_offsets_len"], UInt32
         input_row_offsets = Tensor.from_numpy(
             np.cumsum(
-                [0] + [ctx.active_length for ctx in context_batch],
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
         ).to(self.devices[0])
@@ -188,7 +188,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Input Ids: ["total_seq_len"], Int64
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.ascontiguousarray(
-            np.concatenate([ctx.next_tokens for ctx in context_batch])
+            np.concatenate([ctx.tokens.active for ctx in context_batch])
         )
         input_ids = Tensor.from_numpy(tokens).to(self.devices[0])
 
@@ -375,7 +375,6 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     ) -> Graph:
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
-
         model_config = PixtralConfig(
             image_token_index=self.huggingface_config.image_token_index,
             vocab_size=self.huggingface_config.text_config.vocab_size,

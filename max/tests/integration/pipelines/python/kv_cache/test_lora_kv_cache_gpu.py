@@ -90,7 +90,7 @@ def dump_kv_cache_to_torch(
     results = []
     for ctx in batch:
         req_blocks = cache.get_req_blocks(ctx.request_id)
-        seq_len = ctx.processed_length
+        seq_len = ctx.tokens.processed_length
 
         result = torch.empty(
             seq_len,

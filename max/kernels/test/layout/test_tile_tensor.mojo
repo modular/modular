@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._mixed_layout import MixedLayout, row_major
-from layout._mixed_layout_tensor import MixedLayoutTensor
-from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
+from layout._layout import Layout, row_major
+from layout._tile_tensor import TileTensor
+from layout._coord import ComptimeInt, Idx, Coord, RuntimeInt
 from layout.int_tuple import IntTuple
 from math import ceildiv
 from testing import (
@@ -35,11 +35,11 @@ fn test_distribute() raises:
     var array = InlineArray[UInt32, 16](fill=-1)
     var ptr = array.unsafe_ptr()
 
-    comptime data_layout_shape = MixedTuple[ComptimeInt[4], ComptimeInt[4]]
-    comptime data_layout_stride = MixedTuple[ComptimeInt[4], ComptimeInt[1]]
-    var layout_tensor = MixedLayoutTensor[dtype = DType.uint32](
+    comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
+    comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
+    var layout_tensor = TileTensor[dtype = DType.uint32](
         ptr=ptr,
-        layout=MixedLayout(
+        layout=Layout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
             stride=data_layout_stride(Idx[4](), Idx[1]()),
         ),
@@ -64,7 +64,7 @@ fn test_tile() raises:
     # Create a 4x4 tensor with row-major layout
     var data = InlineArray[UInt32, 16](fill=0)
 
-    var layout_tensor = MixedLayoutTensor[dtype = DType.uint32](
+    var layout_tensor = TileTensor[dtype = DType.uint32](
         data, row_major((Idx[4](), Idx[4]()))
     )
 
@@ -96,7 +96,7 @@ fn test_tile() raises:
 
 def test_tensor_span_constructor():
     var bytes: List[UInt8] = [0, 1, 2, 3]
-    var _tensor = MixedLayoutTensor(
+    var _tensor = TileTensor(
         bytes,
         row_major((Idx(2), Idx[2]())),
     )
@@ -104,7 +104,7 @@ def test_tensor_span_constructor():
 
 def test_fill():
     var stack = InlineArray[UInt32, 16](fill=0)
-    var tensor = MixedLayoutTensor(stack, row_major[4, 4]()).fill(1)
+    var tensor = TileTensor(stack, row_major[4, 4]()).fill(1)
     for i in range(tensor.layout.shape[0].value()):
         for j in range(tensor.layout.shape[1].value()):
             assert_equal(tensor[(Idx(i), Idx(j))], 1)
@@ -113,7 +113,7 @@ def test_fill():
 def test_fill_large():
     # layout._fillers.BATCH_SIZE is 2048, so we do 4096
     var stack = InlineArray[UInt32, 4096](fill=0)
-    var tensor = MixedLayoutTensor(stack, row_major[2048, 2]()).fill(1)
+    var tensor = TileTensor(stack, row_major[2048, 2]()).fill(1)
     for i in range(tensor.layout.shape[0].value()):
         for j in range(tensor.layout.shape[1].value()):
             assert_equal(tensor[(Idx(i), Idx(j))], 1)
@@ -133,9 +133,7 @@ fn test_slice() raises:
     # [4  5  6  7]
     # [8  9  10 11]
     # [12 13 14 15]
-    var tensor_2d = MixedLayoutTensor[dtype = DType.int32](
-        data_2d, row_major[4, 4]()
-    )
+    var tensor_2d = TileTensor[dtype = DType.int32](data_2d, row_major[4, 4]())
 
     # Slice to extract middle 2x2 region [1:3, 1:3]:
     # [5  6]
@@ -179,7 +177,7 @@ fn test_slice_3d() raises:
     for i in range(64):
         data_3d[i] = i
 
-    var tensor_3d = MixedLayoutTensor[dtype = DType.int32](
+    var tensor_3d = TileTensor[dtype = DType.int32](
         data_3d, row_major[4, 4, 4]()
     )
 
@@ -214,15 +212,15 @@ fn test_slice_3d() raises:
 #         data[i] = Float32(i)
 #
 #     # Create tensor with runtime shapes
-#     var shape = MixedTuple(
+#     var shape = Coord(
 #         RuntimeInt[DType.int32](3), RuntimeInt[DType.int32](4)
 #     )
-#     var stride = MixedTuple(
+#     var stride = Coord(
 #         RuntimeInt[DType.int32](4), RuntimeInt[DType.int32](1)
 #     )
 #     var layout = MixedLayout(shape^, stride^)
 #
-#     var tensor_runtime = MixedLayoutTensor[dtype = DType.float32](
+#     var tensor_runtime = TileTensor[dtype = DType.float32](
 #         data.unsafe_ptr(), layout^
 #     )
 #
@@ -250,9 +248,7 @@ fn test_vectorize() raises:
     for i in range(256):
         data[i] = i
 
-    var tensor = MixedLayoutTensor[dtype = DType.int32](
-        data, row_major[16, 16]()
-    )
+    var tensor = TileTensor[dtype = DType.int32](data, row_major[16, 16]())
 
     # Vectorize with 4x4 blocks
     var vectorized = tensor.vectorize[4, 4]()
@@ -292,7 +288,7 @@ fn test_vectorize_non_square() raises:
         data[i] = i
 
     # Create 8x8 tensor
-    var tensor = MixedLayoutTensor[dtype = DType.int32](data, row_major[8, 8]())
+    var tensor = TileTensor[dtype = DType.int32](data, row_major[8, 8]())
 
     # Vectorize with 2x4 blocks (different dimensions)
     var vectorized = tensor.vectorize[2, 4]()
@@ -320,7 +316,7 @@ fn test_vectorize_1d() raises:
         data[i] = i
 
     # Create 16-element 1D tensor
-    var tensor = MixedLayoutTensor[dtype = DType.int32](data, row_major[16]())
+    var tensor = TileTensor[dtype = DType.int32](data, row_major[16]())
 
     # Vectorize with width 4
     var vectorized = tensor.vectorize[4]()
@@ -340,14 +336,14 @@ fn test_vectorize_1d() raises:
 
 def test_indexing():
     var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
-    var tensor = MixedLayoutTensor(stack, row_major[2, 2]())
+    var tensor = TileTensor(stack, row_major[2, 2]())
     assert_equal(tensor[(Int32(0), Int64(0))], 1)
     assert_equal(tensor[(Int(1), Int64(0))], 3)
 
 
 def test_to_layout_tensor_square():
     var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
-    var tensor = MixedLayoutTensor(stack, row_major[2, 2]()).to_layout_tensor()
+    var tensor = TileTensor(stack, row_major[2, 2]()).to_layout_tensor()
     assert_equal(tensor.layout, layout.Layout.row_major(2, 2))
     assert_equal(tensor.rank, 2)
     assert_equal(
@@ -360,7 +356,7 @@ def test_to_layout_tensor_square():
 
 def test_to_layout_tensor_3d():
     var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
-    var tensor = MixedLayoutTensor(stack, row_major[64, 8, 4]())
+    var tensor = TileTensor(stack, row_major[64, 8, 4]())
     var lt = tensor.to_layout_tensor()
     assert_equal(lt.layout, layout.Layout.row_major(64, 8, 4))
     assert_equal(lt.rank, 3)
@@ -374,9 +370,7 @@ def test_to_layout_tensor_3d():
 
 def test_to_layout_tensor_3d_dynamic():
     var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
-    var tensor = MixedLayoutTensor(
-        stack, row_major((Idx[64](), Idx[8](), Idx(4)))
-    )
+    var tensor = TileTensor(stack, row_major((Idx[64](), Idx[8](), Idx(4))))
     var lt = tensor.to_layout_tensor()
     assert_equal(
         lt.layout, layout.Layout.row_major(64, 8, layout.UNKNOWN_VALUE)

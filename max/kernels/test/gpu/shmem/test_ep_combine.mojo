@@ -251,7 +251,7 @@ fn test_combine[
         1,  # p2p_world_size
         token_fmt_type,
     ]
-    var func = ctx.compile_function[dispatch, dispatch]()
+    var func = ctx.compile_function_experimental[dispatch]()
     shmem_module_init(func)
 
     comptime dispatch_cb = dispatch_cb_kernel[
@@ -267,7 +267,7 @@ fn test_combine[
         n_tokens_per_rank,
         type_of(format_handler),
     ]
-    var func_cb = ctx.compile_function[dispatch_cb, dispatch_cb]()
+    var func_cb = ctx.compile_function_experimental[dispatch_cb]()
 
     comptime combine = combine_kernel[
         input_type,
@@ -282,7 +282,7 @@ fn test_combine[
         n_tokens_per_rank,
         1,  # p2p_world_size
     ]
-    var func_combine = ctx.compile_function[combine, combine]()
+    var func_combine = ctx.compile_function_experimental[combine]()
     shmem_module_init(func_combine)
 
     comptime combine_cb = combine_cb_kernel[
@@ -297,7 +297,7 @@ fn test_combine[
         combine_msg_bytes,
         n_tokens_per_rank,
     ]
-    var func_combine_cb = ctx.compile_function[combine_cb, combine_cb]()
+    var func_combine_cb = ctx.compile_function_experimental[combine_cb]()
 
     var num_iters: Int = 100 if is_benchmark() or is_pressure_test() else 3
     var combine_stat_m: Float64 = 0

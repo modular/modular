@@ -85,13 +85,13 @@ def _choose_correct_data_parallel_degree(
     For DeepSeekV3, DP attention requires DP degree to match device count.
     TP attention requires DP degree to be 1.
     """
-    data_parallel_degree = pipeline_config.model_config.data_parallel_degree
+    data_parallel_degree = pipeline_config.model.data_parallel_degree
     if data_parallel_degree not in (1, num_devices):
         raise ValueError(
             f"--data-parallel-degree for DeepSeekV3 ({data_parallel_degree}) must be "
             f"1 (TP attention) or equal to the number of devices ({num_devices})."
         )
-    pipeline_config.model_config.data_parallel_degree = data_parallel_degree
+    pipeline_config.model.data_parallel_degree = data_parallel_degree
 
 
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
@@ -101,7 +101,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:
         """Finalizes the pipeline configuration."""
         _choose_correct_data_parallel_degree(
-            pipeline_config, len(pipeline_config.model_config.device_specs)
+            pipeline_config, len(pipeline_config.model.device_specs)
         )
 
     @classmethod
@@ -240,8 +240,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             float8_config=float8_config,
             ep_config=ep_config,
             graph_mode=graph_mode,
-            data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
-            use_subgraphs=self.pipeline_config.model_config.use_subgraphs,
+            data_parallel_degree=self.pipeline_config.model.data_parallel_degree,
+            use_subgraphs=self.pipeline_config.model.use_subgraphs,
             return_logits=self.return_logits,
         )
 
@@ -249,11 +249,11 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     def estimate_weights_size(cls, pipeline_config: PipelineConfig) -> int:
         """Calculates the estimated memory consumption of our model."""
 
-        model_config = pipeline_config.model_config
+        model_config = pipeline_config.model
         weights_size = model_config.weights_size()
         n_gpus_per_node = len(model_config.device_specs)
 
-        encoding = pipeline_config.model_config.quantization_encoding
+        encoding = pipeline_config.model.quantization_encoding
         assert encoding is not None
         dtype = encoding.dtype.size_in_bytes
         config = model_config.huggingface_config
@@ -339,7 +339,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             Estimated activation memory in bytes
         """
 
-        encoding = pipeline_config.model_config.quantization_encoding
+        encoding = pipeline_config.model.quantization_encoding
         assert encoding is not None
         mla_activation_memory: int = 0
         moe_activation_memory: int = 0
@@ -357,7 +357,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 max_kv_length = pipeline_config.max_batch_context_length
 
             mla_activation_memory += (
-                pipeline_config.model_config.data_parallel_degree
+                pipeline_config.model.data_parallel_degree
                 * 2  # 2 for K and V
                 * max_kv_length
                 * huggingface_config.num_attention_heads
@@ -367,7 +367,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         # Estimate activation memory during Expert Parallel MoE.
         if pipeline_config.ep_size > 1:
-            n_gpus_per_node = len(pipeline_config.model_config.device_specs)
+            n_gpus_per_node = len(pipeline_config.model.device_specs)
             max_input_len_per_rank = pipeline_config.prefill_chunk_size
 
             # Calculate the maximum number of tokens a rank may receive during all-to-all routing.
@@ -416,7 +416,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         # `_input_row_offsets_prealloc_cpu` tensor needs to reserve space for
         # `max_batch_size` of requests on each DP rank.
-        dp_size = self.pipeline_config.model_config.data_parallel_degree
+        dp_size = self.pipeline_config.model.data_parallel_degree
         max_batch_size *= dp_size
 
         self._input_row_offsets_prealloc_cpu = Tensor.from_numpy(
@@ -554,7 +554,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV3Inputs:
-        dp = self.pipeline_config.model_config.data_parallel_degree
+        dp = self.pipeline_config.model.data_parallel_degree
         if len(replica_batches) != dp:
             raise ValueError(
                 "Number of replica batches must match data parallel degree"
@@ -568,7 +568,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         else:
             # Create a ragged token vector of length: sum(len(t) for t in tokens).
             tokens = Tensor.from_numpy(
-                np.concatenate([ctx.next_tokens for ctx in context_batch])
+                np.concatenate([ctx.tokens.active for ctx in context_batch])
             ).to(self.devices[0])
 
             # Create a ragged token vector of length: sum(len(t) for t in tokens).
@@ -576,7 +576,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             # combined total_seq_len dimension.
             input_row_offsets = Tensor.from_numpy(
                 np.cumsum(
-                    [0] + [ctx.active_length for ctx in context_batch],
+                    [0] + [ctx.tokens.active_length for ctx in context_batch],
                     dtype=np.uint32,
                 )
             )

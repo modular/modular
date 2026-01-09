@@ -162,7 +162,7 @@ def test_tokenizer__truncates_to_max_length(
         prompt="Short message",
     )
     context: TextContext = asyncio.run(tokenizer.new_context(short_request))
-    assert context.current_length < 12
+    assert len(context.tokens) < 12
 
     long_request = TextGenerationRequest(
         request_id=RequestID("request_with_short_message"),
@@ -249,7 +249,7 @@ async def test_tokenizer__encode_and_decode(
         max_length=10,
         tokens=TokenBuffer(np.array(encoded, dtype=np.int64)),
     )
-    assert context.current_length == len(encoded)
+    assert len(context.tokens) == len(encoded)
     decoded = await tokenizer.decode(encoded)
     assert test_string == decoded
 
@@ -271,7 +271,7 @@ def test_text_tokenizer_with_constrained_decoding(
         enable_structured_output=True,
     )
 
-    tokenizer = TextTokenizer(pipeline_config.model_config.model_path)
+    tokenizer = TextTokenizer(pipeline_config.model.model_path)
 
     prompt = """
     Please provide a json response, with the person's name and age extracted from the excerpt.
@@ -284,7 +284,7 @@ def test_text_tokenizer_with_constrained_decoding(
 
     request = TextGenerationRequest(
         request_id=RequestID("request_with_tools"),
-        model_name=pipeline_config.model_config.model_path,
+        model_name=pipeline_config.model.model_path,
         messages=[
             TextGenerationRequestMessage(
                 role="user",
@@ -396,7 +396,7 @@ def test_tokenizer_stores_eos_token_ids(
     )
 
     # Test single eos token id
-    pipeline_config.model_config.huggingface_config.eos_token_id = 123456
+    pipeline_config.model.huggingface_config.eos_token_id = 123456
     tokenizer = TextTokenizer(
         model_path=modular_ai_llama_3_1_local_path,
         pipeline_config=pipeline_config,
@@ -404,7 +404,7 @@ def test_tokenizer_stores_eos_token_ids(
     assert tokenizer._default_eos_token_ids == {tokenizer.eos, 123456}
 
     # Test list of eos token ids
-    pipeline_config.model_config.huggingface_config.eos_token_id = [123, 456]
+    pipeline_config.model.huggingface_config.eos_token_id = [123, 456]
     tokenizer = TextTokenizer(
         model_path=modular_ai_llama_3_1_local_path,
         pipeline_config=pipeline_config,
@@ -789,7 +789,7 @@ ASSISTANT: """
     assert len(context.tokens) > 0
 
     # Decode the prompt tokens to verify our custom template was used
-    prompt_tokens = context.prompt_tokens
+    prompt_tokens = context.tokens.prompt
     decoded_prompt = await tokenizer.decode(prompt_tokens)
 
     # Should contain our custom format

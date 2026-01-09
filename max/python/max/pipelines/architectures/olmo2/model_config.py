@@ -55,7 +55,7 @@ class Olmo2Config(Llama3Config):
         Returns:
             KVCacheParams object with the correct head_dim from config.
         """
-        data_parallel_degree = pipeline_config.model_config.data_parallel_degree
+        data_parallel_degree = pipeline_config.model.data_parallel_degree
         if data_parallel_degree > 1:
             raise ValueError(
                 "Data parallelism is not supported for Olmo2 models"
@@ -148,7 +148,7 @@ class Olmo2Config(Llama3Config):
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model_config.device_specs[:n_devices]
+            for spec in pipeline_config.model.device_specs[:n_devices]
         ]
 
         # Override the KV parameters and attention multiplier with Olmo2-specific calculations

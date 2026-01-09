@@ -391,7 +391,7 @@ fn winograd_conv2d_gpu_launcher[
         block_size,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         input.get_immutable().as_any_origin(),
         filter.get_immutable().as_any_origin(),
         output.as_any_origin(),

@@ -139,7 +139,7 @@ async def test_swapping_to_host_multi_gpu(
     for i in range(10):  # noqa: B007
         reqs.append(create_text_context(gen_prompt(prompt_len)))
     for i in range(10):
-        reqs.append(create_text_context(reqs[i].all_tokens))
+        reqs.append(create_text_context(reqs[i].tokens.all))
 
     # Each batch has 4 requests
     batch_size = 4
@@ -154,13 +154,13 @@ async def test_swapping_to_host_multi_gpu(
 
         # Run 1 CE batch and 4 TG batches
         for iter in range(5):
-            prompt_tokens = sum(ctx.active_length for ctx in batch)
+            prompt_tokens = sum(ctx.tokens.active_length for ctx in batch)
 
             for ctx in batch:
                 kv_manager.alloc(ctx, num_steps=1)
             _ = kv_manager.get_runtime_inputs(batch)
 
-            new_prompt_tokens = sum(ctx.active_length for ctx in batch)
+            new_prompt_tokens = sum(ctx.tokens.active_length for ctx in batch)
 
             # Check cache hit rate for the first iteration (CE)
             if iter == 0:

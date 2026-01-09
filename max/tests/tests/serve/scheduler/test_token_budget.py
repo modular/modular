@@ -153,15 +153,15 @@ def test_token_budget__total_context_budget_with_chunking_exhausts_overage() -> 
     context = TextContext(
         tokens=TokenBuffer(np.ones(30, dtype=np.int64)), max_length=100
     )
-    assert context.current_length == 30
-    assert context.active_length == 30
+    assert len(context.tokens) == 30
+    assert context.tokens.active_length == 30
 
     status = total_budget.status_after_context(
         context, num_steps=1, request_type=RequestType.CE
     )
     assert status == BudgetStatus.BUDGET_EXHAUSTED
-    assert context.current_length == 30
-    assert context.active_length == 30
+    assert len(context.tokens) == 30
+    assert context.tokens.active_length == 30
     assert total_budget.used == 0
     assert total_budget.remaining == 20
 
@@ -175,10 +175,10 @@ def test_token_budget__total_context_budget_overage_does_not_chunk() -> None:
     context = TextContext(
         tokens=TokenBuffer(np.ones(200, dtype=np.int64)), max_length=300
     )
-    context.skip_processing(190)
+    context.tokens.skip_processing(190)
 
-    assert context.current_length == 200
-    assert context.active_length == 10
+    assert len(context.tokens) == 200
+    assert context.tokens.active_length == 10
 
     status = total_budget.status_after_context(
         context, num_steps=1, request_type=RequestType.CE
@@ -199,10 +199,10 @@ def test_token_budget__total_context_budget_chunking_disabled_for_unit_active_le
     context = TextContext(
         tokens=TokenBuffer(np.ones(50, dtype=np.int64)), max_length=100
     )
-    context.skip_processing(49)
+    context.tokens.skip_processing(49)
 
-    assert context.active_length == 1
-    assert context.current_length == 50
+    assert context.tokens.active_length == 1
+    assert len(context.tokens) == 50
 
     status = total_budget.status_after_context(
         context, num_steps=1, request_type=RequestType.CE
@@ -227,7 +227,7 @@ def test_token_budget__total_context_budget__ce_after_tg() -> None:
         tokens=TokenBuffer(np.ones(20, dtype=np.int64)), max_length=100
     )
     # Move it to the end, assuming it is a TG request
-    context.skip_processing(19)
+    context.tokens.skip_processing(19)
 
     # This should still show as available, as its a TG request, and this budget does not apply
     status = total_budget.status_after_context(

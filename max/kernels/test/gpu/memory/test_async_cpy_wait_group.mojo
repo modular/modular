@@ -65,7 +65,7 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     ctx.enqueue_copy(in_data_device, in_data)
     ctx.enqueue_copy(out_data_device, out_data)
 
-    ctx.enqueue_function[copy_via_shared, copy_via_shared](
+    ctx.enqueue_function_experimental[copy_via_shared](
         in_data_device,
         out_data_device,
         grid_dim=(1,),
@@ -162,7 +162,7 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     comptime kernel = copy_with_src_size
     comptime src_size = 3 * size_of[DType.float32]()
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         a_device,
         b_device,
         src_size,
@@ -211,7 +211,7 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
 
     comptime src_size = 3 * size_of[DType.bfloat16]()
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         a_device,
         b_device,
         grid_dim=(1, 1, 1),

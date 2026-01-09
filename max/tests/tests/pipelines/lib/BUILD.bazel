@@ -9,7 +9,7 @@ package(default_visibility = [
 
 modular_py_test(
     name = "lib",
-    srcs = glob(["test_*.py"]) + ["conftest.py"],
+    srcs = glob(["test_*.py"]),
     imports = ["."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable Fix and re-enable
     target_compatible_with = select({

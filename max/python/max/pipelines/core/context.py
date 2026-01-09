@@ -34,7 +34,6 @@ from max.interfaces import (
     TextGenerationContext,
     TextGenerationOutput,
     TokenBuffer,
-    TokenSlice,
     VLMTextGenerationContext,
 )
 
@@ -114,58 +113,8 @@ class TextContext:
                 )
 
     @property
-    def all_tokens(self) -> TokenSlice:
-        return self.tokens.all
-
-    @property
     def is_done(self) -> bool:
         return self.status.is_done
-
-    @property
-    def processed_length(self) -> int:
-        return self.tokens.processed_length
-
-    @property
-    def current_position(self) -> int:
-        return self.tokens.current_position
-
-    def skip_processing(self, n: int) -> None:
-        """Advance the processing window start by n.
-
-        Use after committing tokens to cache or accepting a draft so future steps no
-        longer reprocess those tokens. Validates that start <= end.
-        Args:
-            n (int): The number of tokens to skip.
-        """
-        self.tokens.skip_processing(n)
-
-    def rewind_processing(self, n: int) -> None:
-        """Rewind the processing window start by n.
-
-        Use after rejecting a draft so future steps reprocess those tokens.
-        Args:
-            n (int): The number of tokens to rewind.
-        """
-        self.tokens.rewind_processing(n)
-
-    def chunk(self, chunk_size: int) -> None:
-        """Optionally chunk the active token window to enforce a maximum size.
-
-        This is used by the text-generation scheduler when performing chunked
-        prefill. If the number of active prompt tokens exceeds the configured
-        per-batch target, the context is "chunked" by advancing indices so that
-        only a bounded number of active tokens remain.
-
-        Args:
-            chunk_size: The desired maximum number of active tokens to keep
-                in this context.
-
-        Raises:
-            ValueError: If `chunk_size` is negative or equal to/greater than the
-                current number of active tokens (``active_length``).
-
-        """
-        self.tokens.chunk(chunk_size)
 
     @property
     def min_tokens(self) -> int:
@@ -214,20 +163,6 @@ class TextContext:
     @property
     def matcher(self) -> llguidance.LLMatcher | None:
         return self._matcher
-
-    @property
-    def current_length(self) -> int:
-        """The current length of the sequence, including completed and active tokens."""
-        return len(self.tokens)
-
-    @property
-    def active_length(self) -> int:
-        """Current sequence length: num tokens input this iteration.
-
-        This will be the prompt size for context encoding, and simply 1 (or more) for
-        token generation.
-        """
-        return self.tokens.active_length
 
     def to_generation_output(self) -> TextGenerationOutput:
         """Get completion tokens that are ready to be returned to the user.
@@ -279,46 +214,6 @@ class TextContext:
             final_status=self.status,
         )
 
-    @property
-    def next_tokens(self) -> TokenSlice:
-        """Returns the tokens between start_idx and current_position.
-
-        Returns:
-            np.ndarray: Array of tokens that have been generated but not yet processed.
-        """
-        return self.tokens.active
-
-    @property
-    def prompt_tokens(self) -> TokenSlice:
-        """Returns the original prompt tokens.
-
-        Returns:
-            np.ndarray: Array of tokens from the initial prompt.
-        """
-        return self.tokens.prompt
-
-    @property
-    def generated_tokens(self) -> TokenSlice:
-        """Returns all tokens that have been generated after the prompt.
-
-        Returns:
-            np.ndarray: Array of generated tokens from prompt_len to end_idx.
-        """
-        return self.tokens.generated
-
-    def get_last_generated_token(self) -> int:
-        """Returns the most recently generated token. If no tokens have been generated, raises an error.
-
-        This is not a @property method since it can raise.
-
-        Returns:
-            int: The most recently generated token.
-        """
-        if len(self.tokens.generated) == 0:
-            raise ValueError("No tokens have been generated")
-
-        return int(self.tokens.generated[-1])
-
     def _is_eos(self, new_token: int) -> bool:
         """
         Checks for end-of-sequence conditions.
@@ -337,7 +232,7 @@ class TextContext:
             if len(self.tokens.generated) < len(eos):
                 continue
 
-            comp_tokens = self.generated_tokens
+            comp_tokens = self.tokens.generated
             comp_tokens = comp_tokens[len(comp_tokens) - len(eos) :]
 
             if np.array_equal(comp_tokens, eos):
@@ -367,7 +262,7 @@ class TextContext:
 
         if self._is_eos(new_token):
             self.status = GenerationStatus.END_OF_SEQUENCE
-        elif self.current_position >= self.max_length:
+        elif self.tokens.current_position >= self.max_length:
             self.status = GenerationStatus.MAXIMUM_LENGTH
 
         # Accept the token, and move the FSM for constrained decoding forward.
@@ -390,7 +285,7 @@ class TextContext:
 
         if self._is_eos(new_token):
             self.status = GenerationStatus.END_OF_SEQUENCE
-        elif self.current_position >= self.max_length:
+        elif self.tokens.current_position >= self.max_length:
             self.status = GenerationStatus.MAXIMUM_LENGTH
 
         # Accept the token, and move the FSM for constrained decoding forward.
@@ -410,18 +305,7 @@ class TextContext:
     ) -> int:
         """Compute the max number of steps we can execute for a given context
         without exceeding the max_seq_len."""
-        return max_seq_len - (self.current_length - self.active_length)
-
-    @property
-    def needs_ce(self) -> bool:
-        """Returns whether this context needs context encoding (CE).
-
-        CE mode indicates that the context has additional prompt tokens to encode.
-
-        Returns:
-            bool: True if the context needs CE, False otherwise.
-        """
-        return self.tokens.generated_length == 0
+        return max_seq_len - (len(self.tokens) - self.tokens.active_length)
 
     @property
     def is_initial_prompt(self) -> bool:
@@ -506,7 +390,7 @@ class TextAndVisionContext(TextContext):
     def image_idx(self) -> int:
         """Index of the next unencoded image in the prompt."""
         for i, img in enumerate(self.images):
-            if self.processed_length < img.end_idx:
+            if self.tokens.processed_length < img.end_idx:
                 return i
         return len(self.images)
 
@@ -544,13 +428,10 @@ class TextAndVisionContext(TextContext):
 
     def _validate_state(self) -> None:
         """Validates the state of the context."""
-        if img := self._find_bisected_image(self.current_position):
+        if img := self._find_bisected_image(self.tokens.current_position):
             raise ValueError(
-                f"It is invalid for the current_position ({self.current_position}) to bisect an image ({img})."
+                f"It is invalid for the current_position ({self.tokens.current_position}) to bisect an image ({img})."
             )
-
-    def chunk(self, chunk_size: int) -> None:
-        raise ValueError("Chunking is not supported for VLM.")
 
     def update(
         self,
@@ -559,16 +440,6 @@ class TextAndVisionContext(TextContext):
     ) -> None:
         super().update(new_token=new_token, log_probabilities=log_probabilities)
         self._validate_state()
-
-    def __repr__(self):
-        return (
-            f"{self.__class__.__name__}("
-            f"request_id={self.request_id}, "
-            f"processed_length={self.processed_length}, "
-            f"current_position={self.current_position}, "
-            f"images={self.images}"
-            ")"
-        )
 
 
 SPEECH_TOKEN_audio_chunk_size = 128

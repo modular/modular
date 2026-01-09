@@ -72,9 +72,9 @@ async def test_internvl_tokenizer_with_image() -> None:
     )
 
     # Verify image tokens were added
-    assert len(image_context.all_tokens) > len(text_context.all_tokens)
+    assert len(image_context.tokens.all) > len(text_context.tokens.all)
 
-    num_image_tokens = (image_context.all_tokens == image_token_id).sum()
+    num_image_tokens = (image_context.tokens.all == image_token_id).sum()
     assert num_image_tokens == expected_image_tokens
 
 

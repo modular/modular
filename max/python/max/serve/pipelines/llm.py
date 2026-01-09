@@ -185,7 +185,7 @@ class TokenGeneratorPipeline(
             with record_ms(METRICS.input_time):
                 context = await self.tokenizer.new_context(request)
 
-            METRICS.input_tokens(context.active_length)
+            METRICS.input_tokens(context.tokens.active_length)
 
             with record_ms(METRICS.output_time):
                 # stop detector is stateful, so new it up here for
@@ -252,7 +252,7 @@ class TokenGeneratorPipeline(
                             decoded_token=decoded_token,
                             token_log_probabilities=token_log_probabilities,
                             top_log_probabilities=top_log_probabilities,
-                            prompt_token_count=context.current_length,
+                            prompt_token_count=len(context.tokens),
                             stop_sequence=stop_sequence_match,
                             status=status,
                         )

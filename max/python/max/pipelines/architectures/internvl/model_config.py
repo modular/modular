@@ -26,7 +26,7 @@ from max.pipelines.architectures.llama3.model_config import (
     Llama3Config as Qwen2Config,
 )
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 
 
@@ -128,9 +128,8 @@ class VisionConfig:
         )
 
 
-@dataclass
-class InternVLConfigBase:
-    """Base configuration for InternVL models with required fields."""
+class InternVLConfig(MAXModelConfigBase):
+    """Configuration for InternVL models."""
 
     devices: list[DeviceRef]
     """Devices that the InternVL model is parallelized over."""
@@ -149,11 +148,6 @@ class InternVLConfigBase:
     # Composed language model configuration.
     llm_config: Qwen2Config | Qwen3Config
     """Language model configuration (Qwen2 or Qwen3)."""
-
-
-@dataclass
-class InternVLConfig(MAXModelConfig, InternVLConfigBase):
-    """Implementation of MAXModelConfig for InternVL models."""
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -281,7 +275,7 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
         return InternVLConfig(
             devices=[
                 DeviceRef(spec.device_type, spec.id)
-                for spec in pipeline_config.model_config.device_specs
+                for spec in pipeline_config.model.device_specs
             ],
             # Multimodal parameters
             downsample_ratio=getattr(

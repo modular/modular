@@ -13,8 +13,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
@@ -22,7 +20,6 @@ from max.nn import ReturnLogits, YarnScalingParams
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     KVCacheConfig,
-    MAXModelConfig,
     MAXModelConfigBase,
     PipelineConfig,
     RopeType,
@@ -30,9 +27,8 @@ from max.pipelines.lib import (
 from transformers import AutoConfig
 
 
-@dataclass
-class GptOssConfigBase(MAXModelConfigBase):
-    """Base configuration for GPT OSS models.
+class GptOssConfig(MAXModelConfigBase):
+    """Configuration for GPT OSS models.
 
     Contains parameters specific to the GPT OSS architecture, typically
     extracted from a HuggingFace configuration object's text config.
@@ -135,15 +131,6 @@ class GptOssConfigBase(MAXModelConfigBase):
     kv_params: KVCacheParams
     """KV cache parameters."""
 
-
-@dataclass
-class GptOssConfig(MAXModelConfig, GptOssConfigBase):
-    """Represents the complete MAX Engine configuration for GPT OSS models.
-
-    Combines the base GPT OSS parameters with MAX-specific settings and
-    provides methods to derive necessary pipeline components like KV cache parameters.
-    """
-
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
@@ -243,16 +230,14 @@ class GptOssConfig(MAXModelConfig, GptOssConfigBase):
         Returns:
             An initialized :obj:`GptOssConfig` instance.
         """
-        _weights_format = weights_format(
-            pipeline_config.model_config.weight_path
-        )
+        _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model_config.rope_type == RopeType.normal
+            and pipeline_config.model.rope_type == RopeType.normal
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model_config.device_specs
+            for spec in pipeline_config.model.device_specs
         ]
 
         # When tie_word_embeddings=True, the embedding weights are shared with

@@ -69,7 +69,7 @@ def test_compute_scatter_gather_indices() -> None:
 
     # Check that the image token indices are correct
     precomputed = ctx.image_token_indices
-    assert (precomputed == np.where(ctx.all_tokens == IMG)[0]).all()
+    assert (precomputed == np.where(ctx.tokens.all == IMG)[0]).all()
 
     # Test normal case: start_idx = 0
     scatter_indices, gather_indices = compute_scatter_gather_indices([ctx])
@@ -78,7 +78,7 @@ def test_compute_scatter_gather_indices() -> None:
     assert scatter_indices.tolist() == [4, 5, 6, 7, 10, 11, 12, 13, 14]
 
     # Test prefix cache hit case: start_idx = 8
-    ctx.skip_processing(8)
+    ctx.tokens.skip_processing(8)
     scatter_indices, gather_indices = compute_scatter_gather_indices([ctx])
     # 5 img tokens (img1)
     # 0-3 are skipped as img0 is not included
@@ -89,7 +89,7 @@ def test_compute_scatter_gather_indices() -> None:
     # ctx0 (start_idx=0), ctx1 (start_idx=8)
     ctx0 = copy.deepcopy(ctx)
     ctx1 = copy.deepcopy(ctx)
-    ctx0.rewind_processing(ctx0.processed_length)
+    ctx0.tokens.rewind_processing(ctx0.tokens.processed_length)
     scatter_indices, gather_indices = compute_scatter_gather_indices(
         [ctx0, ctx1]
     )
