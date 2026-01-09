@@ -334,8 +334,10 @@ For compile-time typechecking, we recommend that you use the
 also work correctly on Apple silicon GPUs.
 
 Note that `enqueue_function()` and `compile_function()`
-require the kernel function to be provided *twice* as parameters to enable
-compile-time typechecking of kernel arguments.
+currently require the kernel function to be provided *twice* as parameters. This
+requirement will be removed in a future API update, when typechecking will
+become the default behavior for both `enqueue_function()` and
+`compile_function()`.
 
 :::
 

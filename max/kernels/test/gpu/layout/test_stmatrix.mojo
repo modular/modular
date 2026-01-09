@@ -206,7 +206,7 @@ fn check_stmatrix_gen[
     ctx.enqueue_copy(b_device, b_host)
 
     comptime kernel_type = test_stmatrix_gen[input_type, output_type]
-    ctx.enqueue_function[kernel_type, kernel_type](
+    ctx.enqueue_function_experimental[kernel_type](
         c_device,
         a_device,
         b_device,
@@ -233,7 +233,7 @@ fn check_stmatrix_gen[
         b_tensor.layout,
         BLOCK_DIM,
     ]
-    ctx.enqueue_function[kernel_naive_type, kernel_naive_type](
+    ctx.enqueue_function_experimental[kernel_naive_type](
         c_tensor_ref,
         a_tensor,
         b_tensor,
@@ -299,7 +299,7 @@ fn check_stmatrix(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
-    ctx.enqueue_function[test_stmatrix, test_stmatrix](
+    ctx.enqueue_function_experimental[test_stmatrix](
         c_device,
         a_device,
         b_device,
@@ -343,7 +343,7 @@ fn check_stmatrix(
         b_tensor.layout,
         BLOCK_DIM,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         c_tensor_ref,
         a_tensor,
         b_tensor,

@@ -68,7 +68,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
             DType.float32, DType.float32, DType.float32
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -89,7 +89,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
             tile_size = WARP_SIZE * WARPS_PER_BLOCK,
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -138,7 +138,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
             BLOCK_DIM,
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -244,7 +244,7 @@ fn run_matvec_with_epilogue_fn(
             DType.float32,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function[kernel, kernel]()
+        var func = ctx.compile_function_experimental[kernel]()
         ctx.enqueue_function(
             func,
             c_device,
@@ -267,7 +267,7 @@ fn run_matvec_with_epilogue_fn(
             tile_size = WARP_SIZE * WARPS_PER_BLOCK,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function[kernel, kernel]()
+        var func = ctx.compile_function_experimental[kernel]()
         ctx.enqueue_function(
             func,
             c_device,
@@ -322,7 +322,7 @@ fn run_matvec_with_epilogue_fn(
             BLOCK_DIM,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function[kernel, kernel]()
+        var func = ctx.compile_function_experimental[kernel]()
         ctx.enqueue_function(
             func,
             c_device,

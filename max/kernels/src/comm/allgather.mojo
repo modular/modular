@@ -213,7 +213,7 @@ fn _allgather_p2p[
             ngpus,
             BLOCK_SIZE=BLOCK_SIZE,
         ]
-        curr_ctx.enqueue_function[allgather_p2p_kernel, allgather_p2p_kernel](
+        curr_ctx.enqueue_function_experimental[allgather_p2p_kernel](
             output_ptrs,
             list_of_in_ptrs,
             rank_sigs,

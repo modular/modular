@@ -246,7 +246,7 @@ fn bench_dispatch[
             TokenFmtType,
         ]
 
-        var func = ctx.compile_function[dispatch, dispatch]()
+        var func = ctx.compile_function_experimental[dispatch]()
         shmem_module_init(func)
 
         comptime dispatch_cb = dispatch_cb_kernel[
@@ -263,7 +263,7 @@ fn bench_dispatch[
             FormatHandlerType,
         ]
 
-        var func_cb = ctx.compile_function[dispatch_cb, dispatch_cb]()
+        var func_cb = ctx.compile_function_experimental[dispatch_cb]()
 
         @always_inline
         @parameter

@@ -592,7 +592,7 @@ fn init_vector_launch[
     # using num-threads = 1/4th of length to initialize the array
 
     comptime kernel = init_vector_gpu[dtype]
-    context.enqueue_function[kernel, kernel](
+    context.enqueue_function_experimental[kernel](
         out_device,
         length,
         init_type,

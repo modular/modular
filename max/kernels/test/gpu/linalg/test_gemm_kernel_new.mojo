@@ -235,7 +235,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         TN,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         mat_c,
         mat_a,
         mat_b,
@@ -262,7 +262,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function[gemm_naive, gemm_naive](
+    ctx.enqueue_function_experimental[gemm_naive](
         c_tensor_ref,
         mat_a,
         mat_b,
@@ -291,7 +291,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         @always_inline
         @parameter
         fn run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function_experimental[kernel](
                 mat_c,
                 mat_a,
                 mat_b,
@@ -301,7 +301,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
         # Warmup
         for i in range(nwarmup):
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function_experimental[kernel](
                 mat_c,
                 mat_a,
                 mat_b,
@@ -388,7 +388,7 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
         TN,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         mat_c,
         mat_a,
         mat_b,
@@ -415,7 +415,7 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function[gemm_naive, gemm_naive](
+    ctx.enqueue_function_experimental[gemm_naive](
         c_tensor_ref,
         mat_a,
         mat_b,

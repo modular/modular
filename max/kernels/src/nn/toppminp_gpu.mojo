@@ -535,7 +535,7 @@ fn run_radix_sort_pairs_gpu[
             dtype, out_idx_type, current_bit, ascending, BLOCK_SIZE
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             keys.current(ctx),
             keys.alternate(ctx),
             key_ids.current(ctx),
@@ -778,7 +778,7 @@ fn _topp_minp_sampling_gpu[
     comptime topk_kernel = topk_wrapper[
         dtype, out_idx_type, is_top_p, _test_sort=_test_sort
     ]
-    ctx.enqueue_function[topk_kernel, topk_kernel](
+    ctx.enqueue_function_experimental[topk_kernel](
         K,
         vocab_size,
         num_blocks_per_input,
@@ -829,7 +829,7 @@ fn _topp_minp_sampling_gpu[
     comptime topp_minp_kernel = topp_minp_sampling_kernel[
         dtype, out_idx_type, is_top_p
     ]
-    ctx.enqueue_function[topp_minp_kernel, topp_minp_kernel](
+    ctx.enqueue_function_experimental[topp_minp_kernel](
         p_thresholds.to_device_buffer(ctx),
         probs_buf,
         ids_buf,

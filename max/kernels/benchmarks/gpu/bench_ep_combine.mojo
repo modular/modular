@@ -261,7 +261,7 @@ fn bench_dispatch[
             TokenFmtType,
         ]
 
-        var func = ctx.compile_function[dispatch, dispatch]()
+        var func = ctx.compile_function_experimental[dispatch]()
         shmem_module_init(func)
 
         comptime dispatch_cb = dispatch_cb_kernel[
@@ -278,7 +278,7 @@ fn bench_dispatch[
             FormatHandlerType,
         ]
 
-        var func_cb = ctx.compile_function[dispatch_cb, dispatch_cb]()
+        var func_cb = ctx.compile_function_experimental[dispatch_cb]()
 
         comptime combine = combine_kernel[
             input_type,
@@ -293,7 +293,7 @@ fn bench_dispatch[
             n_tokens_per_rank,
             1,  # p2p_world_size
         ]
-        var func_combine = ctx.compile_function[combine, combine]()
+        var func_combine = ctx.compile_function_experimental[combine]()
         shmem_module_init(func_combine)
 
         comptime combine_cb = combine_cb_kernel[
@@ -308,7 +308,7 @@ fn bench_dispatch[
             combine_msg_bytes,
             n_tokens_per_rank,
         ]
-        var func_combine_cb = ctx.compile_function[combine_cb, combine_cb]()
+        var func_combine_cb = ctx.compile_function_experimental[combine_cb]()
 
         @always_inline
         @parameter
