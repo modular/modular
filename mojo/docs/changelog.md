@@ -686,6 +686,12 @@ what we publish.
   rapid typing. Previously, every keystroke triggered a full document parse;
   now updates are coalesced with a 150ms delay, reducing parse frequency by
   10-50x during active editing.
+- The Mojo compiler now supports the `--experimental-export-fixit` flag for
+  `mojo build`, `mojo run`, and `mojo package`. This flag exports fix-its to a
+  YAML file compatible with `clang-apply-replacements`, instead of applying them
+  directly. This is useful for integrating Mojo's fix-it suggestions into
+  external tooling workflows. The flag is mutually exclusive with
+  `--experimental-fixit` (which applies fix-its directly).
 
 ### Experimental changes
 
