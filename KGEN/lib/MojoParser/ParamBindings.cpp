@@ -581,8 +581,13 @@ ParamBindings::verifyBindingsImpl(
       if (const OperandValue *binding = operands.findKwArg(paramName)) {
         assert(passingKind != PassingKind::PosOnly);
 
-        PValue pValue = emitSingleParameterValue(*binding, expectedType,
-                                                 emitter, evaluator);
+        TypedAttr pValue = inference.getInferredValue(newBindings.size());
+        // ParamInfState does not install `UnboundAttr`: we should not do it
+        // here either now that evaluator support a sparse set of parameter
+        // being bound.
+        if (!pValue && sugarIsa<UnboundAttr>(binding->ir.getIfPValue().get()))
+          pValue = UnboundAttr::get(expectedType);
+
         if (!pValue) {
           emitTypeMismatch(idx, *binding, expectedType);
           return {{}, fitness};
