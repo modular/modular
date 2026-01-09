@@ -215,16 +215,20 @@ class DeepseekV3DecoderLayer(Module):
                 moe = MoE(**moe_kwargs)
 
             if config.ep_config is not None:
-                assert self.use_data_parallel_attention, (
-                    "Expert-parallel MoE/MLP is only compatiable with data-parallel attention."
-                )
+                if not self.use_data_parallel_attention:
+                    raise ValueError(
+                        "Expert-parallel MoE/MLP is only compatible with "
+                        "data-parallel attention."
+                    )
                 moe.sharding_strategy = ShardingStrategy.expert_parallel(
                     len(config.devices)
                 )
             else:
-                assert not self.use_data_parallel_attention, (
-                    "Tensor-parallel MoE/MLP is only compatiable with Tensor-parallel attention."
-                )
+                if self.use_data_parallel_attention:
+                    raise ValueError(
+                        "Tensor-parallel MoE/MLP is only compatible with "
+                        "tensor-parallel attention."
+                    )
                 moe.sharding_strategy = ShardingStrategy.tensor_parallel(
                     len(config.devices)
                 )
@@ -303,10 +307,13 @@ class DeepseekV3DecoderLayer(Module):
             mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
 
         else:
-            assert (
-                self.distributed_gemm_config is None
-                or not self.distributed_gemm_config.enable_matmul_allreduce
-            ), "Split matmul + allreduce is not supported for MoE models."
+            if (
+                self.distributed_gemm_config is not None
+                and self.distributed_gemm_config.enable_matmul_allreduce
+            ):
+                raise ValueError(
+                    "Split matmul + allreduce is not supported for MoE models."
+                )
             mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
             mlp_outs = self.allreduce(mlp_outs, signal_buffers)
 
