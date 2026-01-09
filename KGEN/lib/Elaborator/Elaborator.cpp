@@ -518,6 +518,22 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
   return node->getFirstConcreteFunc();
 }
 
+ErrorTreeOr<StructInstanceOp>
+Elaborator::getConcreteStructTypeInstance(ImplNode *parent, Location loc,
+                                          TypeInstanceRefAttr instref) {
+  ImplNode *implNode = lookupImplNode(instref.getSymbol());
+  assert(implNode && "the existence of an instance reference implies the "
+                     "struct instance must have been created already");
+
+  ElaborationState result =
+      specializeGenerator(parent, implNode->parent, loc, true);
+  if (result.shouldSkipNode())
+    return StructInstanceOp();
+  if (result.isError())
+    return ErrorTree(loc, "failed to concretize struct type");
+  return cast<StructInstanceOp>(implNode->inst);
+}
+
 ErrorTreeOr<TypeInstanceRefAttr>
 Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
                                            TypeGeneratorRefAttr genref) {
@@ -526,8 +542,6 @@ Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
   assert(gen && "expected a valid generator reference");
   // If this doesn't reference anything in the existing module, then it must
   // already refer to a concrete struct type in the new module.
-  // if (!gen)
-  //   return genref;
 
   auto vals =
       ParameterExprArrayAttr::get(loc.getContext(), genref.getParamValues());

@@ -13,6 +13,7 @@
 #include "KGEN/TransformUtils/ManglingUtils.h"
 #include "Support/Compiler/DiagnosticHandler.h"
 #include "Support/StringExtras.h"
+#include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/ScopeExit.h"
 
@@ -118,7 +119,8 @@ IREvaluatorContext::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
       getTypeRefForTypeValueIfResolved(getTypeNameAttr.getTypeValue());
   auto instanceRef = dyn_cast_if_present<TypeInstanceRefAttr>(typeRef);
   if (!instanceRef) {
-    emitError({*errorLoc, "'get_type_name' requires a concrete type"});
+    emitError({*errorLoc, "'get_type_name' requires a concrete type, got " +
+                              mlir::debugString(getTypeNameAttr)});
     return failure();
   }
   return {StringAttr::get(
