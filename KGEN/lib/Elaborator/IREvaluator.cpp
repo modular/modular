@@ -394,24 +394,22 @@ IREvaluator::resolveStructInstanceType(TypedAttr typeRef, StringRef funcName) {
     return failure();
   }
 
-  // Look up the impl node and get the StructGeneratorOp
-  SymbolRefAttr instanceSymbol = instanceRef.getSymbol();
-  ParamNode *genNode = elaborator->lookupImplNode(instanceSymbol)->parent;
-  if (!isa<StructGeneratorOp>(genNode->gen)) {
-    emitError({*errorLoc, Twine(funcName) + " requires a struct type"});
+  // Look up the impl node and get the StructInstanceOp.
+  ErrorTreeOr<StructInstanceOp> structInstanceOr =
+      elaborator->getConcreteStructTypeInstance(parent, *errorLoc, instanceRef);
+  if (structInstanceOr.isError()) {
+    emitError(structInstanceOr.takeError());
     return failure();
   }
-  StructGeneratorOp structGen = cast<StructGeneratorOp>(genNode->gen);
+
+  StructInstanceOp structInstance = structInstanceOr.takeValue();
+  // If the struct instance is not yet done concretizing, return null to retry
+  // later.
+  if (!structInstance)
+    return StructInstanceType();
 
   auto structType =
-      dyn_cast<StructInstanceType>(structGen.getValueDomainType());
-  if (!structType) {
-    emitError(
-        {*errorLoc, Twine(funcName) + " requires a struct type, got " +
-                        mlir::debugString(structGen.getValueDomainType())});
-    return failure();
-  }
-
+      cast<StructInstanceType>(structInstance.getValueDomainType());
   return structType;
 }
 
@@ -426,6 +424,8 @@ IREvaluator::evaluateStructFieldTypesAttr(StructFieldTypesAttr attr) {
   if (failed(structTypeOr))
     return failure();
   StructInstanceType structType = *structTypeOr;
+  if (!structType)
+    return TypedAttr();
 
   // Build variadic of field types
   MLIRContext *ctx = attr.getContext();
@@ -446,6 +446,8 @@ IREvaluator::evaluateStructFieldNamesAttr(StructFieldNamesAttr attr) {
   if (failed(structTypeOr))
     return failure();
   StructInstanceType structType = *structTypeOr;
+  if (!structType)
+    return TypedAttr();
 
   // Build variadic of field names as StringAttrs
   MLIRContext *ctx = attr.getContext();
@@ -466,6 +468,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateStructFieldIndexByNameAttr(
   if (failed(structTypeOr))
     return failure();
   StructInstanceType structType = *structTypeOr;
+  if (!structType)
+    return TypedAttr();
 
   // The field name should be a StringAttr after parameter evaluation
   auto fieldNameAttr = dyn_cast<StringAttr>(attr.getFieldName());
@@ -501,6 +505,8 @@ IREvaluator::evaluateStructFieldTypeByNameAttr(StructFieldTypeByNameAttr attr) {
   if (failed(structTypeOr))
     return failure();
   StructInstanceType structType = *structTypeOr;
+  if (!structType)
+    return TypedAttr();
 
   // The field name should be a StringAttr after parameter evaluation
   auto fieldNameAttr = dyn_cast<StringAttr>(attr.getFieldName());
