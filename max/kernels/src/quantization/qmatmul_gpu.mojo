@@ -13,9 +13,8 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from memory import LegacyUnsafePointer
+from memory import UnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, is_nvidia_gpu, simd_width_of, size_of
 
 from bit import log2_floor
@@ -2165,8 +2164,9 @@ fn gpu_qint4_repack_GPTQ[
             False,
         ]
 
+        # Create null tensor using MutExternalOrigin (null pointer with no real origin)
         var null_tensor = LayoutTensor[DType.int32, Layout()](
-            UnsafePointer[Int32]()
+            UnsafePointer[Int32, MutExternalOrigin]()
         )
 
         cuda_ctx.enqueue_function[repack, repack](

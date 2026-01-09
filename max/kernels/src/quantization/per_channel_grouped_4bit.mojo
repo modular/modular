@@ -14,9 +14,7 @@ from math import ceil, ceildiv
 from sys.info import size_of
 
 from layout import Layout, LayoutTensor
-from memory import LegacyUnsafePointer, bitcast, memcpy
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from memory import UnsafePointer, bitcast, memcpy
 from utils import IndexList, StaticTuple, product
 
 
@@ -336,7 +334,12 @@ struct Q4sym[
                 var src_ptr = UnsafePointer(to=encoded_data).address_space_cast[
                     output_ptr.address_space
                 ]()
-                memcpy(dest=output_ptr, src=src_ptr, count=1)
+                # Use unsafe_mut_cast for memcpy compatibility
+                memcpy(
+                    dest=output_ptr.unsafe_mut_cast[True](),
+                    src=src_ptr.unsafe_mut_cast[False](),
+                    count=1,
+                )
                 _ = encoded_data^
 
     @staticmethod
