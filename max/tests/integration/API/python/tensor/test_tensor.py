@@ -138,6 +138,25 @@ def test_squeeze() -> None:
     assert list(result.driver_tensor.shape) == [4, 6]
 
 
+def test_unsqueeze() -> None:
+    tensor = Tensor.ones(
+        [4, 6],
+        dtype=DType.float32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    # Unsqueeze at the end
+    result = tensor.unsqueeze(axis=-1)
+    result._sync_realize()
+    assert result.real
+    assert list(result.driver_tensor.shape) == [4, 6, 1]
+
+    # Unsqueeze at the beginning
+    result2 = tensor.unsqueeze(axis=0)
+    result2._sync_realize()
+    assert result2.real
+    assert list(result2.driver_tensor.shape) == [1, 4, 6]
+
+
 def test_reshape() -> None:
     tensor = Tensor.ones(
         [4, 6],

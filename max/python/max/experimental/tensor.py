@@ -1353,6 +1353,40 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         return F.squeeze(self, axis)
 
+    def unsqueeze(self, axis: int) -> Tensor:
+        """Inserts a size-1 dimension into the tensor.
+
+        Returns a tensor with a new size-1 dimension inserted at the specified
+        position. This is the inverse of :meth:`squeeze` and is useful for
+        adding dimensions needed for broadcasting or matrix operations.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.dtype import DType
+
+            # Create a 1D tensor
+            x = tensor.Tensor.constant([1.0, 2.0, 3.0], dtype=DType.float32)
+            print(x.shape)  # (3,)
+
+            # Add dimension at the end
+            y = x.unsqueeze(axis=-1)
+            print(y.shape)  # (3, 1)
+
+            # Add dimension at the beginning
+            z = x.unsqueeze(axis=0)
+            print(z.shape)  # (1, 3)
+
+        Args:
+            axis: The index at which to insert the new dimension. If negative,
+                indexes relative to 1 plus the rank of the tensor. For example,
+                ``axis=-1`` adds a dimension at the end.
+
+        Returns:
+            Tensor: A tensor with an additional size-1 dimension.
+        """
+        return F.unsqueeze(self, axis)
+
     def reshape(self, shape: ShapeLike) -> Tensor:
         """Reshapes the tensor to a new shape.
 
