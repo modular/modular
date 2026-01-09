@@ -100,7 +100,7 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
             b_tensor_bf16.layout,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             c_tensor_bf16,
             a_tensor_bf16,
             b_tensor_bf16,
@@ -147,7 +147,7 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
             b_tensor_fp32.layout,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             c_tensor_fp32,
             a_tensor_fp32,
             b_tensor_fp32,
@@ -287,7 +287,7 @@ fn run_matmul[
             b_tensor.layout,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -441,7 +441,7 @@ fn run_matmul_split_k[
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -583,7 +583,7 @@ fn run_matmul_transpose[
             BLOCK_DIM,
             transpose_b,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,

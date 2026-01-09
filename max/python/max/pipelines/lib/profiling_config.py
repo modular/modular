@@ -18,20 +18,20 @@ import enum
 import logging
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
 
-from max.config import MAXConfig
+from max.config import ConfigFileModel
 from max.engine import GPUProfilingMode
+from pydantic import Field, PrivateAttr, model_validator
+from typing_extensions import Self
 
 logger = logging.getLogger("max.pipelines")
 
 
-@dataclass
-class ProfilingConfig(MAXConfig):
-    gpu_profiling: GPUProfilingMode = GPUProfilingMode.OFF
+class ProfilingConfig(ConfigFileModel):
+    gpu_profiling: GPUProfilingMode = Field(default=GPUProfilingMode.OFF)
     """Whether to enable GPU profiling of the model."""
 
-    _config_file_section_name: str = "profiling_config"
+    _config_file_section_name: str = PrivateAttr(default="profiling_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
@@ -43,7 +43,9 @@ class ProfilingConfig(MAXConfig):
             "GPUProfilingMode": GPUProfilingMode,
         }
 
-    def __post_init__(self):
+    @model_validator(mode="after")
+    def _normalize_gpu_profiling(self) -> Self:
+        """Normalize gpu_profiling field after validation."""
         gpu_profiling_env = os.environ.get("MODULAR_ENABLE_PROFILING", "off")
 
         if self.gpu_profiling == GPUProfilingMode.OFF:
@@ -54,6 +56,7 @@ class ProfilingConfig(MAXConfig):
                 raise ValueError(  # noqa: B904
                     "gpu_profiling must be one of: " + ", ".join(valid_values)
                 )
+        return self
 
     @staticmethod
     def help() -> dict[str, str]:

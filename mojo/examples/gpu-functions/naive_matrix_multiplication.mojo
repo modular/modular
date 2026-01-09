@@ -70,9 +70,7 @@ def main():
     # Launch the compiled function on the GPU. The target device is specified
     # first, followed by all function arguments. The last two named parameters
     # are the dimensions of the grid in blocks, and the block dimensions.
-    ctx.enqueue_function_checked[
-        naive_matrix_multiplication, naive_matrix_multiplication
-    ](
+    ctx.enqueue_function_experimental[naive_matrix_multiplication](
         m_tensor,
         n_tensor,
         p_tensor,
@@ -99,6 +97,6 @@ fn naive_matrix_multiplication(
     var n_dim = p.dim(1)
     var k_dim = m.dim(1)
 
-    if row < m_dim and col < n_dim:
+    if row < UInt(m_dim) and col < UInt(n_dim):
         for j_index in range(k_dim):
             p[row, col] = p[row, col] + m[row, j_index] * n[j_index, col]

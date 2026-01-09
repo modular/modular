@@ -126,7 +126,7 @@ fn test_fp8_multistage_gemm[
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         c_tensor,
         a_tensor,
         b_tensor,

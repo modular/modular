@@ -722,7 +722,7 @@ fn moe_create_indices[
             expected_count=expected_count,
         ]
 
-        cuda_ctx.enqueue_function_checked[kernel, kernel](
+        cuda_ctx.enqueue_function[kernel, kernel](
             token_expert_order,
             lock,
             expert_start_indices,
@@ -1025,7 +1025,7 @@ fn router_group_limited[
             num_threads,
         ]
 
-        gpu_ctx.enqueue_function_checked[kernel, kernel](
+        gpu_ctx.enqueue_function[kernel, kernel](
             expert_indices,
             expert_weights,
             expert_scores,

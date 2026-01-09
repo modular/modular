@@ -267,7 +267,7 @@ fn run_mma_fp32_tf32(
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_tf32
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -323,7 +323,7 @@ fn run_mma_fp32_tf32(
             b_tensor.layout,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -434,7 +434,7 @@ fn run_mma_fp32_bf16(
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_bf16
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -489,7 +489,7 @@ fn run_mma_fp32_bf16(
             b_tensor.layout,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -598,7 +598,7 @@ fn run_mma_fp32_bf16_2(
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_bf16_2
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -654,7 +654,7 @@ fn run_mma_fp32_bf16_2(
             b_tensor.layout,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -763,7 +763,7 @@ fn run_mma_fp32_fp16(
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_fp16
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -819,7 +819,7 @@ fn run_mma_fp32_fp16(
             BLOCK_DIM,
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -928,7 +928,7 @@ fn run_mma_fp16_fp16(
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp16_fp16
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -983,7 +983,7 @@ fn run_mma_fp16_fp16(
             b_tensor.layout,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_tensor,
             a_tensor,
             b_tensor,

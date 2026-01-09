@@ -49,7 +49,7 @@ fn bench_empty_launch_caller(mut m: Bench, ctx: DeviceContext) raises:
         @parameter
         @always_inline
         fn launch(ctx: DeviceContext) raises:
-            ctx.enqueue_function_checked[empty_kernel, empty_kernel](
+            ctx.enqueue_function_experimental[empty_kernel](
                 grid_dim=Dim(1), block_dim=Dim(1)
             )
 
@@ -78,7 +78,7 @@ fn bench_empty_launch_many_params_caller(
     fn bench_empty_launch_many_params(mut b: Bencher) raises:
         @parameter
         fn launch() raises:
-            ctx.enqueue_function_checked[func_alias, func_alias](
+            ctx.enqueue_function_experimental[func_alias](
                 grid_dim=Dim(1), block_dim=Dim(1)
             )
 
@@ -96,7 +96,7 @@ fn bench_gpu_kernel_enqueue_caller(mut m: Bench, ctx: DeviceContext) raises:
 
     # Warm up before benchmarking
     for _ in range(NUM_WARMUP_ITERATIONS):
-        ctx.enqueue_function_checked[small_kernel, small_kernel](
+        ctx.enqueue_function_experimental[small_kernel](
             buf, grid_dim=Dim(1), block_dim=Dim(1)
         )
 
@@ -107,7 +107,7 @@ fn bench_gpu_kernel_enqueue_caller(mut m: Bench, ctx: DeviceContext) raises:
         @parameter
         fn launch() raises:
             for _ in range(NUM_KERNELS_PER_ITERATION):
-                ctx.enqueue_function_checked[small_kernel, small_kernel](
+                ctx.enqueue_function_experimental[small_kernel](
                     buf, grid_dim=Dim(1), block_dim=Dim(1)
                 )
 

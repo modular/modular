@@ -551,7 +551,7 @@ struct Bench(Stringable, Writable):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            ctx.enqueue_function_checked[example_kernel, example_kernel](
+            ctx.enqueue_function_experimental[example_kernel](
                 grid_dim=shape[0], block_dim=shape[1]
             )
 

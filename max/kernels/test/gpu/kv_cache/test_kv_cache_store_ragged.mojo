@@ -199,7 +199,9 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
         return q_device_tensor.load[width](idx)
 
     var k_cache_device = kv_collection_paged_device.get_key_cache(0)
-    kv_cache_store_ragged[input_fn=input_fn, target="gpu"](
+    kv_cache_store_ragged[
+        cache_t = type_of(k_cache_device), input_fn=input_fn, target="gpu"
+    ](
         k_cache_device,
         q_shape,
         input_row_offsets_managed.device_tensor(),

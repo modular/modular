@@ -7,6 +7,7 @@ _EXTRA_CONSTRAINTS = {
     "test_async_copy_wgmma.mojo": ["//:h100_gpu"],
     "test_dual_gemm.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_gemm_kernel.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_gemm_kernel_new.mojo": ["//:nvidia_gpu"],  # Requires 32-thread warps
     "test_gemv2.mojo": select({
         "//:h100_gpu": ["@platforms//:incompatible"],
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: PRDT-506
@@ -127,6 +128,9 @@ _B200_TESTS = [
     "test_matmul_sm100_block_scaled_mxfp8_2sm.mojo",
     "test_matmul_sm100_batched_block_scaled_mxfp8_1sm.mojo",
     "test_matmul_sm100_batched_block_scaled_mxfp8_2sm.mojo",
+    "test_block_scaled_smem.mojo",
+    "test_block_scaled_kernel.mojo",
+    "test_block_scaled_matmul_e2e.mojo",
 ]
 
 _GPU_MEMORY = {

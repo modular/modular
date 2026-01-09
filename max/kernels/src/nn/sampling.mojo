@@ -202,7 +202,7 @@ fn update_frequency_data[
             frequency_offsets.layout,
             new_tokens.layout,
         ]
-        dev_ctx.enqueue_function_checked[kernel, kernel](
+        dev_ctx.enqueue_function_experimental[kernel](
             compressed_frequency_data,
             frequency_offsets,
             new_tokens,

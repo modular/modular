@@ -76,7 +76,7 @@ other options, see the [install guide](/mojo/manual/install)).
     pixi add mojo
     ```
 
-3. Verify the project is configured correctly by checking the version of Mojo
+4. Verify the project is configured correctly by checking the version of Mojo
     that's installed within our project's virtual environment:
 
     ```bash
@@ -86,7 +86,7 @@ other options, see the [install guide](/mojo/manual/install)).
     You should see a version string indicating the version of Mojo installed.
     By default, this should be the latest nightly version.
 
-4. Activate the project's virtual environment:
+5. Activate the project's virtual environment:
 
     ```bash
     pixi shell
@@ -253,7 +253,7 @@ def main():
         )
     else:
         ctx = DeviceContext()
-        ctx.enqueue_function_checked[print_threads, print_threads](
+        ctx.enqueue_function[print_threads, print_threads](
             grid_dim=2, block_dim=64
         )
         ctx.synchronize()
@@ -269,12 +269,12 @@ mojo vector_addition.mojo
 You should see something like the following output (which is abbreviated here):
 
 ```output
-Block index: [ 1 ]	Thread index: [ 32 ]
-Block index: [ 1 ]	Thread index: [ 33 ]
-Block index: [ 1 ]	Thread index: [ 34 ]
+Block index: [ 1 ] Thread index: [ 32 ]
+Block index: [ 1 ] Thread index: [ 33 ]
+Block index: [ 1 ] Thread index: [ 34 ]
 ...
-Block index: [ 0 ]	Thread index: [ 30 ]
-Block index: [ 0 ]	Thread index: [ 31 ]
+Block index: [ 0 ] Thread index: [ 30 ]
+Block index: [ 0 ] Thread index: [ 31 ]
 Program finished
 ```
 
@@ -302,7 +302,7 @@ stream of queued operations to execute on the GPU. Operations within a stream
 execute in the order they are issued.
 
 The
-[`enqueue_function_checked()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_function_checked)
+[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_function)
 method compiles a kernel function and enqueues it to run on the given device.
 You must provide the name of the kernel function as a compile-time Mojo
 parameter, and the following arguments:
@@ -320,9 +320,9 @@ compile-time parameters and metaprogramming.)
 :::note
 
 `DeviceContext` also includes
-[`enqueue_function_checked()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function_checked)
+[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function)
 and
-[`compile_function_checked()`](/mojo/std/gpu/host/device_context/DeviceContext/#compile_function_checked)
+[`compile_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#compile_function)
 methods. However, these methods currently don't typecheck the arguments to the
 compiled kernel function, which can lead to obscure run-time errors if the
 argument ordering, types, or count doesn't match the kernel function's
@@ -330,14 +330,14 @@ definition. Additionally, these methods currently have known issues with Apple
 silicon GPUs.
 
 For compile-time typechecking, we recommend that you use the
-`enqueue_function_checked()` and `compile_function_checked()` methods, which
+`enqueue_function()` and `compile_function()` methods, which
 also work correctly on Apple silicon GPUs.
 
-Note that `enqueue_function_checked()` and `compile_function_checked()`
+Note that `enqueue_function()` and `compile_function()`
 currently require the kernel function to be provided *twice* as parameters. This
 requirement will be removed in a future API update, when typechecking will
-become the default behavior for both `enqueue_function_checked()` and
-`compile_function_checked()`.
+become the default behavior for both `enqueue_function()` and
+`compile_function()`.
 
 :::
 
@@ -442,7 +442,7 @@ Then, update `main()` to enqueue the kernel function with a 2x2x1 grid of
 thread blocks and a 16x4x2 arrangement of threads within each thread block:
 
 ```mojo title="vector_addition.mojo"
-        ctx.enqueue_function_checked[print_threads, print_threads](
+        ctx.enqueue_function[print_threads, print_threads](
             grid_dim=(2, 2, 1),
             block_dim=(16, 4, 2)
         )
@@ -457,12 +457,12 @@ mojo vector_addition.mojo
 You should see something like the following output (which is abbreviated here):
 
 ```output
-Block index: [ 1 1 0 ]	Thread index: [ 0 2 0 ]
-Block index: [ 1 1 0 ]	Thread index: [ 1 2 0 ]
-Block index: [ 1 1 0 ]	Thread index: [ 2 2 0 ]
+Block index: [ 1 1 0 ] Thread index: [ 0 2 0 ]
+Block index: [ 1 1 0 ] Thread index: [ 1 2 0 ]
+Block index: [ 1 1 0 ] Thread index: [ 2 2 0 ]
 ...
-Block index: [ 0 0 0 ]	Thread index: [ 14 1 0 ]
-Block index: [ 0 0 0 ]	Thread index: [ 15 1 0 ]
+Block index: [ 0 0 0 ] Thread index: [ 14 1 0 ]
+Block index: [ 0 0 0 ] Thread index: [ 15 1 0 ]
 Program finished
 ```
 
@@ -769,7 +769,7 @@ back to the CPU. Add the following code to the end of the `main()` function:
 
 ```mojo title="vector_addition.mojo"
         # Compile and enqueue the kernel
-        ctx.enqueue_function_checked[vector_addition, vector_addition](
+        ctx.enqueue_function[vector_addition, vector_addition](
             lhs_tensor,
             rhs_tensor,
             result_tensor,
@@ -874,7 +874,7 @@ def main():
         result_tensor = LayoutTensor[float_dtype, layout](result_device_buffer)
 
         # Compile and enqueue the kernel
-        ctx.enqueue_function_checked[vector_addition, vector_addition](
+        ctx.enqueue_function[vector_addition, vector_addition](
             lhs_tensor,
             rhs_tensor,
             result_tensor,
@@ -897,9 +897,10 @@ def main():
 
         print("Result vector:", result_host_buffer)
 ```
+
 </details>
 
-The `enqueue_function_checked()` method enqueues the compilation and invocation
+The `enqueue_function()` method enqueues the compilation and invocation
 of the `vector_addition()` kernel function, passing the input and output tensors
 as arguments. The `grid_dim` and `block_dim` arguments use the `num_blocks` and
 `block_size` `comptime` values we defined in the previous step.

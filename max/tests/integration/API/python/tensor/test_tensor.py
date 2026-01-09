@@ -36,6 +36,45 @@ def test_ones_defaults() -> None:
         assert_all_close([1] * 10, t)
 
 
+def test_zeros_like() -> None:
+    ref = Tensor.ones(
+        [4, 6],
+        dtype=DType.float32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    result = Tensor.zeros_like(ref)
+    result._sync_realize()
+    assert result.real
+    assert list(result.driver_tensor.shape) == [4, 6]
+    assert result.dtype == DType.float32
+
+
+def test_ones_like() -> None:
+    ref = Tensor.zeros(
+        [4, 6],
+        dtype=DType.float32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    result = Tensor.ones_like(ref)
+    result._sync_realize()
+    assert result.real
+    assert list(result.driver_tensor.shape) == [4, 6]
+    assert result.dtype == DType.float32
+
+
+def test_full_like() -> None:
+    ref = Tensor.zeros(
+        [4, 6],
+        dtype=DType.float32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    result = Tensor.full_like(ref, value=42.0)
+    result._sync_realize()
+    assert result.real
+    assert list(result.driver_tensor.shape) == [4, 6]
+    assert result.dtype == DType.float32
+
+
 def test_abs() -> None:
     tensor = Tensor.ones(
         [4, 6],
@@ -85,6 +124,18 @@ def test_clip() -> None:
     assert all((x.clip(max=0.0) <= 0.0)._values())
     assert all((x.clip(min=0.0) >= 0.0)._values())
     assert all(-0.5 <= v <= 0.5 for v in x.clip(min=-0.5, max=0.5)._values())
+
+
+def test_squeeze() -> None:
+    tensor = Tensor.ones(
+        [4, 1, 6],
+        dtype=DType.float32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    result = tensor.squeeze(axis=1)
+    result._sync_realize()
+    assert result.real
+    assert list(result.driver_tensor.shape) == [4, 6]
 
 
 def test_reshape() -> None:

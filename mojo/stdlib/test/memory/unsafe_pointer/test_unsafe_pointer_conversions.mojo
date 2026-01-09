@@ -143,8 +143,8 @@ def test_v1_immutable_any_converts_to_v2():
 
 
 def test_v1_to_v2_external():
-    _: UnsafePointer[Int, MutOrigin.external] = LegacyUnsafePointer[
-        Int, origin = MutOrigin.external
+    _: UnsafePointer[Int, MutExternalOrigin] = LegacyUnsafePointer[
+        Int, origin=MutExternalOrigin
     ]()
 
 

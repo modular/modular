@@ -52,7 +52,7 @@ fn _kernel_launch_helper[
     ctx.enqueue_copy(device_ptr, host_ptr)
 
     comptime kernel = kernel_wrapper[dtype, simd_width, kernel_fn]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         device_ptr, grid_dim=1, block_dim=block_size
     )
 

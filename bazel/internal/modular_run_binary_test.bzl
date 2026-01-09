@@ -40,7 +40,6 @@ def modular_run_binary_test(
         exec_properties = get_default_exec_properties(tags, gpu_constraints) | exec_properties,
         toolchains = toolchains + [
             "//bazel/internal:current_gpu_toolchain",
-            "//bazel/internal:lib_toolchain",
         ],
         **kwargs
     )

@@ -58,7 +58,7 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
     comptime kernel = warp_prefix_sum_kernel[dtype=dtype, exclusive=exclusive]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         out_device,
         in_device,
         size,
@@ -133,7 +133,7 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     comptime kernel = block_prefix_sum_kernel[
         dtype=dtype, block_size=BLOCK_SIZE, exclusive=exclusive
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         out_device,
         in_device,
         size,

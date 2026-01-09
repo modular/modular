@@ -1,0 +1,88 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Tests for the unified LayoutLike system."""
+
+from sys import size_of
+
+from layout._coord import (
+    ComptimeInt,
+    Idx,
+    Coord,
+    RuntimeInt,
+    coord_to_int_tuple,
+    coord,
+)
+from testing import assert_equal, assert_true, TestSuite
+
+
+fn test_nested_layouts() raises:
+    # Create nested layouts
+    var inner = Coord(Idx[2](), Idx(3))
+    var nested = Coord(inner, Idx[4]())
+    assert_equal(inner[1].value(), 3)
+    assert_equal(nested[0][0].value(), 2)
+    assert_equal(nested[1].value(), 4)
+    assert_equal(size_of[type_of(inner)](), size_of[Int]())
+    assert_equal(size_of[type_of(nested)](), size_of[Int]())
+
+
+fn test_int_tuple_conversion() raises:
+    var t = Coord(Coord(Idx[2](), Idx(3)), Idx[4]())
+    var t2 = coord_to_int_tuple(t)
+    assert_equal(t2[0][0], 2)
+    assert_equal(t2[0][1], 3)
+    assert_equal(t2[1], 4)
+
+
+fn test_list_literal_construction() raises:
+    var t = Coord[ComptimeInt[2], RuntimeInt[DType.int]](
+        Idx[2](),
+        Idx(3),
+    )
+    assert_equal(t[0].value(), 2)
+    assert_equal(t[1].value(), 3)
+
+
+fn test_flatten_empty() raises:
+    var t = Coord[]()
+    assert_true(t.flatten() == t)
+
+
+fn test_construction_from_int_variadic_empty() raises:
+    var t = coord[]()
+    assert_equal(len(t), 0)
+
+
+fn test_construction_from_int_variadic() raises:
+    var t = coord[1, 2, 3]()
+    assert_equal(len(t), 3)
+    assert_equal(t[0].value(), 1)
+    assert_equal(t[1].value(), 2)
+    assert_equal(t[2].value(), 3)
+
+
+fn test_construction_from_int_variadic_list() raises:
+    var t = coord[DType.int32]((1, 2, 3))
+    assert_equal(len(t), 3)
+    assert_equal(t[0].value(), 1)
+    assert_equal(t[1].value(), 2)
+    assert_equal(t[2].value(), 3)
+
+
+fn test_static_product() raises:
+    comptime p = coord[1, 2, 3]().STATIC_PRODUCT
+    assert_equal(p, 6)
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

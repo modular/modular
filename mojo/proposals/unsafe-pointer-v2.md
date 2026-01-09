@@ -294,7 +294,7 @@ def main():
     with DeviceContext() as ctx:
         var size = 128
         var buf = ctx.enqueue_create_buffer[DType.float32](size)
-        ctx.enqueue_function_checked[kernel, kernel](buf)
+        ctx.enqueue_function_experimental[kernel](buf)
         
         # ...
 ```

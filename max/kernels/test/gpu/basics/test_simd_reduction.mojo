@@ -58,7 +58,7 @@ def test_simd_reduction(ctx: DeviceContext):
             simd_width * Int(global_idx.x)
         ).reduce_add()
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         output_buffer,
         input_buffer,
         grid_dim=buffer_size // (block_dim * simd_width),

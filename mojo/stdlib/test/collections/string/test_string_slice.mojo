@@ -1006,6 +1006,18 @@ def test_replace():
         ),
         "abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz is a test",
     )
+    assert_equal(
+        StringSlice("🔥").replace("", "x"),
+        "x🔥",
+    )
+    assert_equal(
+        StringSlice("a🔥a🔥a").replace("🔥", "x"),
+        "axaxa",
+    )
+    assert_equal(
+        StringSlice("a🔥a🔥a").replace("a", "x"),
+        "x🔥x🔥x",
+    )
 
 
 def test_join():

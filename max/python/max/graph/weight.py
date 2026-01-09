@@ -235,6 +235,53 @@ def expert_parallel_sharding_strategy(
     )
 
 
+def gate_up_sharding_strategy(
+    weight: Weight, i: int, num_devices: int, axis: int
+) -> TensorValue:
+    """Shards a combined gate/up projection weight.
+
+    This strategy is designed for weights where the gate and up projections are
+    concatenated along a specific axis. It shards both projections equally.
+
+    Args:
+        weight: The :obj:`Weight` to shard.
+        i: The index of the current device.
+        num_devices: The total number of devices to shard across.
+        axis: The axis along which the gate and up projections are concatenated.
+
+    Returns:
+        A :obj:`TensorValue` representing the sharded portion for the i-th device.
+    """
+    full_dim = int(weight.shape[axis])
+    if full_dim % 2 != 0:
+        raise ValueError(
+            f"Dimension {axis} must be even for gate_up sharding, got {full_dim}"
+        )
+
+    moe_dim = full_dim // 2
+
+    # Compute the range for this device within the single projection dimension
+    start, end = _compute_shard_range(moe_dim, i, num_devices)
+
+    # Convert to slices
+    rank = len(weight.shape)
+    if axis < 0:
+        axis += rank
+
+    # Create slices for gate part
+    gate_slices = [slice(None)] * rank
+    gate_slices[axis] = slice(start, end)
+
+    # Create slices for up part (offset by moe_dim)
+    up_slices = [slice(None)] * rank
+    up_slices[axis] = slice(moe_dim + start, moe_dim + end)
+
+    sharded_gate = weight[tuple(gate_slices)]
+    sharded_up = weight[tuple(up_slices)]
+
+    return ops.concat((sharded_gate, sharded_up), axis=axis)
+
+
 @dataclass(frozen=True)
 class ShardingStrategy:
     """Specifies how a :obj:`Weight` should be sharded across multiple devices.
@@ -306,6 +353,14 @@ class ShardingStrategy:
     def is_expert_parallel(self) -> bool:
         """Whether the sharding strategy is expert parallel."""
         return self.shard is expert_parallel_sharding_strategy
+
+    @property
+    def is_gate_up(self) -> bool:
+        """Whether the sharding strategy is gate_up."""
+        # Check if this is a partial function wrapping gate_up_sharding_strategy.
+        if isinstance(self.shard, partial):
+            return self.shard.func is gate_up_sharding_strategy
+        return self.shard is gate_up_sharding_strategy
 
     @staticmethod
     def rowwise(num_devices: int) -> ShardingStrategy:
@@ -474,6 +529,24 @@ class ShardingStrategy:
         return ShardingStrategy(
             num_devices=num_devices, shard=expert_parallel_sharding_strategy
         )
+
+    @staticmethod
+    def gate_up(num_devices: int, axis: int = 2) -> ShardingStrategy:
+        """Creates a gate_up sharding strategy.
+
+        This strategy shards weights where gate and up projections are concatenated
+        along a specific axis.
+
+        Args:
+            num_devices: The number of devices to shard the weight across.
+            axis: The axis along which the gate and up projections are concatenated.
+                Defaults to 2 (common for MoE experts).
+
+        Returns:
+            A :obj:`ShardingStrategy` instance configured for gate_up sharding.
+        """
+        shard_fn = partial(gate_up_sharding_strategy, axis=axis)
+        return ShardingStrategy(num_devices=num_devices, shard=shard_fn)
 
 
 @dataclass

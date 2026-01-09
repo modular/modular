@@ -133,7 +133,7 @@ struct TopK:
 
         @parameter
         if target == "gpu":
-            dev_ctx.enqueue_function_checked[top_k_gpu[K], top_k_gpu[K]](
+            dev_ctx.enqueue_function_experimental[top_k_gpu[K]](
                 out_vals_tensor,
                 out_idxs_tensor,
                 in_vals_tensor,

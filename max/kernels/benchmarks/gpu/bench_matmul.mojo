@@ -96,7 +96,7 @@ fn _init_mxfp8_scales_launch[
     # using num-threads = 1/4th of length to initialize the array
 
     comptime kernel = _init_mxfp8_scales_gpu[dtype]
-    context.enqueue_function_checked[kernel, kernel](
+    context.enqueue_function_experimental[kernel](
         out_device,
         length,
         grid_dim=(num_blocks),

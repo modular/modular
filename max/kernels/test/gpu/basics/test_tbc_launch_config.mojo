@@ -47,7 +47,7 @@ fn test_thread_block_cluster():
 fn test_tbc_launch_config_2x1x1(ctx: DeviceContext) raises:
     print("== test_tbc_launch_config_2x1x1")
     comptime kernel = test_thread_block_cluster
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         grid_dim=(2, 2),
         block_dim=(1),
         cluster_dim=OptionalReg[Dim]((2, 1, 1)),
@@ -63,7 +63,7 @@ fn test_tbc_launch_config_2x1x1(ctx: DeviceContext) raises:
 fn test_tbc_launch_config_1x2x1(ctx: DeviceContext) raises:
     print("== test_tbc_launch_config_1x2x1")
     comptime kernel = test_thread_block_cluster
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         grid_dim=(2, 2),
         block_dim=(1),
         cluster_dim=OptionalReg[Dim]((1, 2, 1)),
@@ -107,7 +107,7 @@ fn test_tbc_launch_config_1x2x1(ctx: DeviceContext) raises:
 fn test_tbc_launch_config_2x2x2(ctx: DeviceContext) raises:
     print("== test_tbc_launch_config_2x2x2")
     comptime kernel = test_thread_block_cluster
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         grid_dim=(4, 4, 2),
         block_dim=(1),
         cluster_dim=OptionalReg[Dim]((2, 2, 2)),

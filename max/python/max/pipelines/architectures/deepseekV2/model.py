@@ -102,7 +102,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
     ) -> None:
-        if pipeline_config.model_config.device_specs[0] == DeviceSpec.cpu():
+        if pipeline_config.model.device_specs[0] == DeviceSpec.cpu():
             raise ValueError("DeepseekV2 currently only supported on gpu.")
 
         super().__init__(
@@ -164,11 +164,12 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
-            [0] + [ctx.active_length for ctx in context_batch], dtype=np.uint32
+            [0] + [ctx.tokens.active_length for ctx in context_batch],
+            dtype=np.uint32,
         )
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
+        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
 
         return DeepseekV2Inputs(
             tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
@@ -343,7 +344,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         kv_params = self.kv_params
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model_config.device_specs
+            for spec in pipeline_config.model.device_specs
         ]
 
         model_config = DeepseekV2Config(

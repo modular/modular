@@ -1837,7 +1837,7 @@ fn _mha_sm100_enqueue[
         PartitionType,
     ].kernel
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         q_tma_op,
         k_tma_op,
         v_tma_op,

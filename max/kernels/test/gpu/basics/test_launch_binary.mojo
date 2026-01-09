@@ -49,7 +49,7 @@ def test_vec_add(ctx: DeviceContext):
     var info = DeviceExternalFunction(
         ctx, _compile_code[vec_func, emission_kind="object"]()
     )
-    ctx.enqueue_function_checked(
+    ctx.enqueue_function(
         info,
         in0_device,
         in1_device,

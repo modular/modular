@@ -193,8 +193,10 @@ build:remote --local_test_jobs=HOST_CPUS
 build:remote --jobs=1000
 build:remote --repo_env=MODULAR_REMOTE_EXEC=1
 
-# Enable dynamic execution on Linux only
+# Enable dynamic execution
 build --internal_spawn_scheduler
+# Enable dynamic execution for exec config, helpful if remote exec is queueing
+build --experimental_dynamic_exclude_tools=false
 build:linux --spawn_strategy=dynamic,remote,worker,sandboxed,standalone
 build:macos --spawn_strategy=remote,worker,sandboxed,standalone
 build:macos --strategy=CppCompile=dynamic,remote,worker,sandboxed,standalone

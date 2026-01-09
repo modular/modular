@@ -109,7 +109,7 @@ detail about the specific APIs at this point other than the included comments,
 but all of the types, functions, and methods are discussed in more detail in
 later sections of this document.
 
-```mojo title="scalar_add_checked.mojo"
+```mojo title="scalar_add.mojo"
 from math import iota
 from sys import exit, has_accelerator
 
@@ -181,7 +181,7 @@ def main():
         ctx.enqueue_copy(src_buf=host_buffer, dst_buf=device_buffer)
 
         # Compile the scalar_add kernel function for execution on the GPU.
-        scalar_add_kernel = ctx.compile_function_checked[
+        scalar_add_kernel = ctx.compile_function[
             scalar_add, scalar_add
         ]()
 
@@ -193,7 +193,7 @@ def main():
         # - grid_dim=1: use 1 thread block
         # - block_dim=num_elements: use 'num_elements' threads per block (one
         #   thread per vector element)
-        ctx.enqueue_function_checked(
+        ctx.enqueue_function(
             scalar_add_kernel,
             device_buffer,
             num_elements,
@@ -282,12 +282,12 @@ dimensions.
 You specify the grid and thread block dimensions with the `grid_dim` and
 `block_dim` keyword arguments when you enqueue a kernel function to execute
 using the
-[`enqueue_function_checked()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function_checked)
+[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function)
 method. For example:
 
 ```mojo
 # Enqueue the print_threads() kernel function
-ctx.enqueue_function_checked[print_threads, print_threads](
+ctx.enqueue_function_experimental[print_threads](
     grid_dim=(2, 2, 1),   # 2x2x1 blocks per grid
     block_dim=(4, 4, 2),  # 4x4x2 threads per block
 )
@@ -321,7 +321,6 @@ threads executing the kernel using the following structures:
 | [`block_idx`](/mojo/std/gpu/primitives/id/#block_idx)  | Index of the block within the grid as `x`, `y`, and `z` values. |
 | [`thread_idx`](/mojo/std/gpu/primitives/id/#thread_idx)  | Index of the thread within the block as `x`, `y`, and `z` values. |
 | [`global_idx`](/mojo/std/gpu/primitives/id/#global_idx) | The global offset of the thread as `x`, `y`, and `z` values. That is, `global_idx.x = block_dim.x * block_idx.x + thread_idx.x`, `global_idx.y = block_dim.y * block_idx.y + thread_idx.y`, and `global_idx.z = block_dim.z * block_idx.z + thread_idx.z`. |
-
 
 :::note
 
@@ -375,7 +374,7 @@ def main():
         # Initialize GPU context for device 0 (default GPU device).
         ctx = DeviceContext()
 
-        ctx.enqueue_function_checked[print_threads, print_threads](
+        ctx.enqueue_function_experimental[print_threads](
             grid_dim=(2, 2, 1),  # 2x2x1 blocks per grid
             block_dim=(4, 4, 2),  # 4x4x2 threads per block
         )
@@ -388,11 +387,11 @@ This application produces output similar to this (with the output order
 indeterminate because of the concurrent execution of multiple threads):
 
 ```output
-block_idx: [ 0 1 0 ]	thread_idx: [ 0 0 0 ]	global_idx: [ 0 4 0 ]	calculated global_idx: [ 0 4 0 ]
-block_idx: [ 0 1 0 ]	thread_idx: [ 1 0 0 ]	global_idx: [ 1 4 0 ]	calculated global_idx: [ 1 4 0 ]
+block_idx: [ 0 1 0 ] thread_idx: [ 0 0 0 ] global_idx: [ 0 4 0 ] calculated global_idx: [ 0 4 0 ]
+block_idx: [ 0 1 0 ] thread_idx: [ 1 0 0 ] global_idx: [ 1 4 0 ] calculated global_idx: [ 1 4 0 ]
 ...
-block_idx: [ 1 1 0 ]	thread_idx: [ 2 3 1 ]	global_idx: [ 6 7 1 ]	calculated global_idx: [ 6 7 1 ]
-block_idx: [ 1 1 0 ]	thread_idx: [ 3 3 1 ]	global_idx: [ 7 7 1 ]	calculated global_idx: [ 7 7 1 ]
+block_idx: [ 1 1 0 ] thread_idx: [ 2 3 1 ] global_idx: [ 6 7 1 ] calculated global_idx: [ 6 7 1 ]
+block_idx: [ 1 1 0 ] thread_idx: [ 3 3 1 ] global_idx: [ 7 7 1 ] calculated global_idx: [ 7 7 1 ]
 Done
 ```
 
@@ -482,7 +481,7 @@ But it defines its `device_type` member as `UnsafePointer`, so the
 data represented by a `DeviceBuffer` is actually passed to the kernel function
 as a value of type
 [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer). The next
-section, [`DeviceBuffer` and `HostBuffer` ](#devicebuffer-and-hostbuffer),
+section, [`DeviceBuffer` and `HostBuffer`](#devicebuffer-and-hostbuffer),
 describes in more detail how to allocate memory buffers on the host and device
 and to exchange blocks of data between host and device.
 
@@ -662,20 +661,20 @@ explanation of object destruction.
 ### Compiling and enqueuing a kernel function for execution
 
 The
-[`compile_function_checked()`](/mojo/std/gpu/host/device_context/DeviceContext/#compile_function_checked)
+[`compile_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#compile_function)
 method accepts a kernel function as a compile-time
 [parameter](/mojo/manual/parameters) and then compiles it for the associated
 `DeviceContext`. Then you can enqueue the compiled kernel for execution by
 passing it to the
-[`enqueue_function_checked()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function_checked)
+[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function)
 method. The example in the [GPU programming model](#gpu-programming-model)
 demonstrated this pattern:
 
-```mojo title="scalar_add_checked.mojo"
+```mojo title="scalar_add.mojo"
 ...
-scalar_add_kernel = ctx.compile_function_checked[scalar_add, scalar_add]()
+scalar_add_kernel = ctx.compile_function_experimental[scalar_add]()
 
-ctx.enqueue_function_checked(
+ctx.enqueue_function(
     scalar_add_kernel,
     device_buffer,
     num_elements,
@@ -686,7 +685,7 @@ ctx.enqueue_function_checked(
 ```
 
 When using a compiled kernel function like this, you execute it by calling
-`enqueue_function_checked()` with the following arguments in this order:
+`enqueue_function()` with the following arguments in this order:
 
 - The kernel function to execute.
 - Any additional arguments specified by the kernel function definition in the
@@ -703,20 +702,18 @@ information on grid and thread block dimensions.
 The current implementations of
 [`compile_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#compile_function)
 and
-[`enqueue_function_checked()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function_checked)
+[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function)
 don't typecheck the arguments to the compiled kernel function, which can lead
 to obscure run-time errors if the argument ordering, types, or count doesn't
 match the kernel function's definition. Additionally, these methods currently
 have known issues with Apple silicon GPUs.
 
 For compile-time typechecking, we recommend that you use the
-`compile_function_checked()` and `enqueue_function_checked()` methods, which
+`compile_function()` and `enqueue_function()` methods, which
 also work correctly on Apple silicon GPUs.
 
-Note that `compile_function_checked()` currently requires the kernel function to
-be provided *twice* as parameters. This requirement will be removed in a future
-API update, when typechecking will become the default behavior for both
-`compile_function_checked()` and `enqueue_function_checked()`.
+Note that `compile_function()` requires the kernel function to be provided
+*twice* as parameters to enable compile-time typechecking of kernel arguments.
 
 :::
 
@@ -725,14 +722,14 @@ execute the same compiled kernel on the same device multiple times. This avoids
 the overhead of compiling the kernel each time it's executed.
 
 If your application needs to execute a kernel function only once, you can use an
-overloaded version of `enqueue_function_checked()` that compiles the kernel and
+overloaded version of `enqueue_function()` that compiles the kernel and
 enqueues it in a single step. Therefore, the following is equivalent to the
-separate calls to `compile_function_checked()` and `enqueue_function_checked()`
+separate calls to `compile_function()` and `enqueue_function()`
 shown above (note that the kernel function is provided as a compile-time
 parameter in this case):
 
 ```mojo
-ctx.enqueue_function_checked[scalar_add, scalar_add](
+ctx.enqueue_function_experimental[scalar_add](
     device_buffer,
     num_elements,
     Float32(20.0),

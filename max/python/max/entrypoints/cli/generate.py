@@ -56,7 +56,7 @@ class TrackMetrics:
         if self.first_token:
             self.first_token = False
             self.metrics.signpost("first_token")
-            self.metrics.prompt_size = inputs.context.current_length
+            self.metrics.prompt_size = len(inputs.context.tokens)
         self.metrics.new_token()
 
 

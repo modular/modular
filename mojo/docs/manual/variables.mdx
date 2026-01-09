@@ -38,7 +38,7 @@ Mojo has two ways to declare a variable:
   ```
 
 * Implicitly-declared variables are created the first time the variable is used,
-  either with an assignment statement, or with a type annotation:
+  either with an assignment statement or with a type annotation:
 
   ```mojo
   a = 5
@@ -97,7 +97,7 @@ name: String = "Sam"
 user_id: Int
 ```
 
-Here the `user_id` variable has a type, but is uninitialized.
+Here, the `user_id` variable has a type, but is uninitialized.
 
 Implicitly-declared variables are scoped at the function level. You create an
 implicitly-declared variable the first time you assign a value to a given name
@@ -371,12 +371,12 @@ specifically, if the values are movable, copyable, or implicitly copyable.
   another_value = one_value  # implicit copy
   ```
 
-  Here `one_value` is unchanged, and `another_value` gets a copy of the value.
+  Here, `one_value` is unchanged, and `another_value` gets a copy of the value.
 
   Implicitly copyable types are generally simple value types like `Int`,
-  `Float64`, and `Bool` which can be copied trivially.
+  `Float64`, and `Bool`, which can be copied trivially.
 
-- The ownership of a value can be  be explicitly transferred from one variable
+- The ownership of a value can be explicitly transferred from one variable
   to another by appending the *transfer sigil* (`^`) after the value to
   transfer:
 
@@ -404,7 +404,7 @@ when you retrieve a value from a collection, the collection returns a reference,
 instead of a copy.
 
 ```mojo
-animals: List[String] = ["Cats", "Dogs, "Zebras"]
+animals: List[String] = ["Cats", "Dogs", "Zebras"]
 print(animals[2])  # Prints "Zebras", does not copy the value.
 ```
 
@@ -426,7 +426,7 @@ item_ref += 1  # increments items[1]
 print(items[1])  # prints 78
 ```
 
-Here the name `item_ref` is bound to the reference to `items[1]`. All reads and
+Here, the name `item_ref` is bound to the reference to `items[1]`. All reads and
 writes to `item_ref` go to the referenced item.
 
 Reference bindings can also be used when iterating through collections with

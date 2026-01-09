@@ -189,7 +189,7 @@ def test_tma_5d_load_row_major[
         grid_dim1 = src_dim1 // cta_tile_dim1,
         grid_dim2 = src_dim2 // cta_tile_dim2,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(

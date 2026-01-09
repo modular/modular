@@ -21,6 +21,8 @@
 # Alternatively, run with:
 # br --run_under="mpirun -n $NUM_GPUS --allow-run-as-root --bind-to none" //max/kernels/benchmarks:gpu/bench_ep_dispatch
 
+from collections import OptionalReg
+
 from random import randint, randn, seed
 from sys import align_of, env_get_int, env_get_dtype, simd_width_of, size_of
 
@@ -259,7 +261,7 @@ fn bench_dispatch[
             TokenFmtType,
         ]
 
-        var func = ctx.compile_function_checked[dispatch, dispatch]()
+        var func = ctx.compile_function_experimental[dispatch]()
         shmem_module_init(func)
 
         comptime dispatch_cb = dispatch_cb_kernel[
@@ -276,7 +278,7 @@ fn bench_dispatch[
             FormatHandlerType,
         ]
 
-        var func_cb = ctx.compile_function_checked[dispatch_cb, dispatch_cb]()
+        var func_cb = ctx.compile_function_experimental[dispatch_cb]()
 
         comptime combine = combine_kernel[
             input_type,
@@ -291,7 +293,7 @@ fn bench_dispatch[
             n_tokens_per_rank,
             1,  # p2p_world_size
         ]
-        var func_combine = ctx.compile_function_checked[combine, combine]()
+        var func_combine = ctx.compile_function_experimental[combine]()
         shmem_module_init(func_combine)
 
         comptime combine_cb = combine_cb_kernel[
@@ -306,9 +308,7 @@ fn bench_dispatch[
             combine_msg_bytes,
             n_tokens_per_rank,
         ]
-        var func_combine_cb = ctx.compile_function_checked[
-            combine_cb, combine_cb
-        ]()
+        var func_combine_cb = ctx.compile_function_experimental[combine_cb]()
 
         @always_inline
         @parameter
@@ -323,7 +323,7 @@ fn bench_dispatch[
             recv_buf_ptrs[0] = recv_buf
             recv_count_ptrs[0] = recv_count
 
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 func,
                 input_tokens_tensor,
                 topk_ids_tensor,
@@ -339,7 +339,7 @@ fn bench_dispatch[
         @always_inline
         @parameter
         fn run_dispatch_cb(ctx: DeviceContext) raises:
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 func_cb,
                 format_handler,
                 row_offsets_tensor,
@@ -349,6 +349,11 @@ fn bench_dispatch[
                 recv_count,
                 atomic_counter,
                 Int32(my_rank),
+                OptionalReg[
+                    LayoutTensor[
+                        DType.bfloat16, Layout.row_major[2](), ImmutAnyOrigin
+                    ]
+                ](),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
@@ -372,7 +377,7 @@ fn bench_dispatch[
             combine_recv_buf_ptrs[0] = send_buf
             combine_recv_count_ptrs[0] = recv_count
 
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 func_combine,
                 output_tensor,
                 src_token_info_tensor,
@@ -381,6 +386,11 @@ fn bench_dispatch[
                 combine_recv_count_ptrs,
                 atomic_counter.unsafe_ptr(),
                 Int32(my_rank),
+                OptionalReg[
+                    LayoutTensor[
+                        input_type, Layout.row_major[2](), MutAnyOrigin
+                    ]
+                ](),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
@@ -388,7 +398,7 @@ fn bench_dispatch[
         @always_inline
         @parameter
         fn run_combine_cb(ctx: DeviceContext) raises:
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 func_combine_cb,
                 output_2_tensor,
                 send_buf,

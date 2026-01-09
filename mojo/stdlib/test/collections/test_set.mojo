@@ -535,5 +535,28 @@ def test_set_repr_wrap():
     )
 
 
+def test_write_to():
+    """Test Writable trait implementation."""
+    var set = Set[Int](10, 20, 30)
+    var output = String()
+    set.write_to(output)
+
+    assert_equal(output, "{10, 20, 30}")
+
+    # Test with different types
+    var string_set = Set[String]("hello", "world")
+    var string_output = String()
+    string_set.write_to(string_output)
+
+    assert_equal(string_output, "{'hello', 'world'}")
+
+    # Test empty set
+    var empty_set = Set[Int]()
+    var empty_output = String()
+    empty_set.write_to(empty_output)
+
+    assert_equal(empty_output, "{}")
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

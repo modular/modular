@@ -102,7 +102,7 @@ fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
     comptime kernel = copy_dram_to_sram_buffer_load_kernel[
         DType.bfloat16, 4, 16, 8, thread_layout
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         device_tensor,
         3,
         grid_dim=1,
@@ -198,7 +198,7 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     comptime kernel = copy_dram_to_local_buffer_load_kernel[
         DType.bfloat16, 4, 16, 8, thread_layout
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         device_tensor,
         3,
         grid_dim=1,

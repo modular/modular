@@ -254,9 +254,12 @@ async def test_ttft_recorded_once_per_request() -> None:
             yield chunk
 
     # Mock context returned by tokenizer
-    mock_context = Mock(
-        request_id=test_request_id, active_length=10, current_length=10
-    )
+    # Create mock tokens with proper __len__ and active_length
+    mock_tokens = Mock()
+    mock_tokens.__len__ = Mock(return_value=10)
+    mock_tokens.active_length = 10
+
+    mock_context = Mock(request_id=test_request_id, tokens=mock_tokens)
 
     # Mock request
     mock_request = Mock(request_id=test_request_id, tools=None)

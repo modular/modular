@@ -11,46 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import floor, iota
+from math import iota
 from os import abort
 from sys import size_of
 
 from algorithm.functional import parallelize_over_rows
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu.host import DeviceContext, HostBuffer
-from internal_utils import arg_parse
+from internal_utils import arg_parse, human_readable_size
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal, assert_true
 
 from utils import IndexList
-
-
-fn _pretty_print_float(val: Float64) -> String:
-    """This converts the float value to a string, but omits the fractional part
-    if not needed (e.g. prints 2 instead of 2.0).
-    """
-    if Float64(floor(val)) == val:
-        return String(Int(val))
-    return String(val)
-
-
-fn _human_memory(size: Int) -> String:
-    comptime KB = 1024
-    comptime MB = KB * KB
-    comptime GB = MB * KB
-
-    if size >= GB:
-        return _pretty_print_float(Float64(size) / GB) + "GiB"
-
-    if size >= MB:
-        return _pretty_print_float(Float64(size) / MB) + "MiB"
-
-    if size >= KB:
-        return _pretty_print_float(Float64(size) / KB) + "KiB"
-
-    return String(size) + "B"
 
 
 @fieldwise_init
@@ -179,7 +153,7 @@ fn bench_memcpy(
     b.bench_function[bench_func](
         BenchId(
             String("memcpy_", config),
-            input_id="length=" + _human_memory(length_in_bytes),
+            input_id="length=" + human_readable_size(length_in_bytes),
         ),
         [ThroughputMeasure(BenchMetric.bytes, transferred_size_in_bytes)],
     )
@@ -235,7 +209,7 @@ fn bench_p2p(
     b.bench_function[bench_func](
         BenchId(
             "memcpy_p2p",
-            input_id="length=" + _human_memory(length_in_bytes),
+            input_id="length=" + human_readable_size(length_in_bytes),
         ),
         measures=measures,
     )

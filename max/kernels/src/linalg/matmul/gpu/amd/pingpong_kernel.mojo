@@ -2201,7 +2201,7 @@ fn ping_pong_matmul[
             enable_swizzle,
         ].matmul_ping_pong
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             a_device_tensor,
             b_device_tensor,
             c_device_tensor,

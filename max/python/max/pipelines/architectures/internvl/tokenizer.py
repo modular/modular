@@ -577,13 +577,13 @@ class InternVLTokenizer(TextAndVisionTokenizer):
 
         # Get vision config overrides from pipeline config.
         vision_overrides = (
-            pipeline_config.model_config.vision_config_overrides
+            pipeline_config.model.vision_config_overrides
             if pipeline_config
             else {}
         )
 
         self.enable_prefix_caching = (
-            pipeline_config.model_config.kv_cache_config.enable_prefix_caching
+            pipeline_config.model.kv_cache_config.enable_prefix_caching
             if pipeline_config
             else False
         )

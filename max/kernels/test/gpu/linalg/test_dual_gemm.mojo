@@ -82,7 +82,7 @@ fn multistage_gemm_simple[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         c,
         a,
         b,

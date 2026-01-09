@@ -38,7 +38,7 @@ stdout). Messages below the configured level will be silently ignored.
 """
 
 import sys
-from io.write import _WriteBufferStack
+from fmt._utils import _WriteBufferStack
 from os import abort
 from sys.param_env import env_get_string
 from utils._ansi import Text, Color

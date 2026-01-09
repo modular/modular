@@ -26,14 +26,12 @@ def mock_pipeline_config(pipeline_role: PipelineRole) -> MagicMock:
     pipeline_config = MagicMock()
 
     # Model config attributes
-    pipeline_config.model_config = MagicMock()
-    pipeline_config.model_config.quantization_encoding = (
+    pipeline_config.model = MagicMock()
+    pipeline_config.model.quantization_encoding = (
         SupportedEncoding.float8_e4m3fn
     )
-    pipeline_config.model_config.data_parallel_degree = NUM_RANKS
-    pipeline_config.model_config.device_specs = [
-        MagicMock() for _ in range(NUM_RANKS)
-    ]
+    pipeline_config.model.data_parallel_degree = NUM_RANKS
+    pipeline_config.model.device_specs = [MagicMock() for _ in range(NUM_RANKS)]
 
     # Pipeline config attributes
     pipeline_config.pipeline_role = pipeline_role
@@ -114,18 +112,16 @@ def mock_weights_pipeline_config(
     huggingface_config = mock_huggingface_config()
 
     pipeline_config = MagicMock()
-    pipeline_config.model_config = MagicMock()
-    pipeline_config.model_config.quantization_encoding = (
+    pipeline_config.model = MagicMock()
+    pipeline_config.model.quantization_encoding = (
         SupportedEncoding.float8_e4m3fn
     )
-    pipeline_config.model_config.data_parallel_degree = dp_degree
-    pipeline_config.model_config.device_specs = [
-        MagicMock() for _ in range(n_gpus)
-    ]
-    pipeline_config.model_config.huggingface_config = huggingface_config
+    pipeline_config.model.data_parallel_degree = dp_degree
+    pipeline_config.model.device_specs = [MagicMock() for _ in range(n_gpus)]
+    pipeline_config.model.huggingface_config = huggingface_config
     # Use a large enough weights size to account for the algorithm's subtractions.
     # DeepSeek-V3 has ~671B parameters, ~700GB at FP8.
-    pipeline_config.model_config.weights_size.return_value = 700 * 1024**3
+    pipeline_config.model.weights_size.return_value = 700 * 1024**3
     pipeline_config.ep_size = ep_size
 
     return pipeline_config

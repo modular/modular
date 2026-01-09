@@ -40,7 +40,7 @@ identifier. For example:
 @export("my_func", ABI="C")
 fn my_function(
     name: StaticString,
-    ptr: OpaquePointer[MutOrigin.external],
+    ptr: OpaquePointer[MutExternalOrigin],
 ) -> None:
     pass
 ```

@@ -126,7 +126,7 @@ fn test_conv3d_gpu[
     ]
 
     # run gpu implementation
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         input_buf,
         filter_buf,
         output_buf,

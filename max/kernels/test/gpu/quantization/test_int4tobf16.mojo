@@ -79,7 +79,7 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
     var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 
     comptime kernel = call_int4tobf16[no_lop]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         Int32(0x76543210), out_device, grid_dim=1, block_dim=1
     )
 

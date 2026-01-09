@@ -101,9 +101,8 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
         mat_b.layout,
     ]
 
-    ctx.enqueue_function_checked[
-        load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn,
-        load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn,
+    ctx.enqueue_function_experimental[
+        load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn
     ](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
@@ -167,9 +166,8 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
         mat_b.layout,
     ]
 
-    ctx.enqueue_function_checked[
-        load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn,
-        load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn,
+    ctx.enqueue_function_experimental[
+        load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn
     ](
         mat_c.device_tensor(),
         mat_a.device_tensor(),

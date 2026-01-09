@@ -1386,7 +1386,7 @@ fn _topk_gpu[
     @parameter
     if env_get_bool["USE_OLD_TOP_K_KERNEL", False]() or _force_old_impl:
         comptime kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]
-        ctx.enqueue_function_checked[kernel_1, kernel_1](
+        ctx.enqueue_function_experimental[kernel_1](
             k_device,
             max_k,
             N,
@@ -1402,7 +1402,7 @@ fn _topk_gpu[
     else:
         var input_buf_tmp = ctx.enqueue_create_buffer[dtype](batch_size * N)
         comptime kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
-        ctx.enqueue_function_checked[kernel_1, kernel_1](
+        ctx.enqueue_function_experimental[kernel_1](
             k_device,
             max_k,
             N,
@@ -1483,7 +1483,7 @@ fn _topk_gpu[
 
     # Enqueue the second kernel (stage 2)
     comptime kernel_2 = _topk_stage2[dtype, out_idx_type, sampling, largest]
-    ctx.enqueue_function_checked[kernel_2, kernel_2](
+    ctx.enqueue_function_experimental[kernel_2](
         k_device,
         max_k,
         num_blocks_per_input_,
@@ -1992,7 +1992,7 @@ fn gumbel_sampling_gpu[
         hw_info.max_thread_block_size,
     ]
 
-    ctx.enqueue_function_checked[gumbel_kernel, gumbel_kernel](
+    ctx.enqueue_function_experimental[gumbel_kernel](
         noised_input,
         input,
         temperature.value().to_device_buffer(ctx),

@@ -268,7 +268,7 @@ def cli_serve(
         # Log Default Sampling Configuration
         sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(),
-            sampling_params_defaults=pipeline_config.model_config.sampling_params_defaults,
+            sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
         )
         sampling_params.log_sampling_info()
 
@@ -376,7 +376,7 @@ def cli_pipeline(
         pipeline_config,
         sampling_params=SamplingParams.from_input_and_generation_config(
             params,
-            sampling_params_defaults=pipeline_config.model_config.sampling_params_defaults,
+            sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
         ),
         prompt=prompt,
         image_urls=image_url,

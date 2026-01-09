@@ -180,7 +180,7 @@ fn spatial_merge[
         dtype, input.layout, output.layout, grid_thw.layout
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         output,
         input,
         grid_thw,

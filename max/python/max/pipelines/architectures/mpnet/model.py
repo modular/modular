@@ -157,7 +157,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         context_batch = replica_batches[0]
 
         # Get tokens and seq_ids.
-        tokens = [ctx.next_tokens for ctx in context_batch]
+        tokens = [ctx.tokens.active for ctx in context_batch]
 
         # Pad tokens for the batch.
         pad_value = getattr(self.huggingface_config, "pad_token_id", 1)

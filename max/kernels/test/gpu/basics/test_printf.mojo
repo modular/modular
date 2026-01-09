@@ -34,7 +34,7 @@ fn test_gpu_printf() raises:
 
     with DeviceContext() as ctx:
         comptime kernel = do_print
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             Int(98), Float64(123.456), grid_dim=1, block_dim=1
         )
         # Ensure queued function finished before proceeding.

@@ -305,7 +305,7 @@ fn mha_cross_gpu_naive[
         q_type,
         p_type,
     ]
-    ctx.enqueue_function_checked[kernel_0, kernel_0](
+    ctx.enqueue_function_experimental[kernel_0](
         p_device,
         q_device,
         k,
@@ -349,7 +349,7 @@ fn mha_cross_gpu_naive[
         p_type,
         output.dtype,
     ]
-    ctx.enqueue_function_checked[kernel_1, kernel_1](
+    ctx.enqueue_function_experimental[kernel_1](
         output_device,
         p_device,
         v,

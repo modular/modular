@@ -19,7 +19,6 @@ from typing import Any, TypeVar
 from unittest.mock import MagicMock, patch
 
 from max.driver import DeviceSpec
-from max.engine import GPUProfilingMode
 from max.graph.weights import WeightsFormat
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
@@ -62,49 +61,84 @@ class DummyPipelineConfig(PipelineConfig):
         self,
         model_path: str,
         quantization_encoding: SupportedEncoding,
-        max_batch_size: int | None = None,
-        max_length: int | None = None,
+        max_batch_size: int | None,
+        max_length: int | None,
         pdl_level: str = "1",
-        device_specs: list[DeviceSpec] = [],  # noqa: B006
+        device_specs: list[DeviceSpec] | None = None,
         kv_cache_strategy: KVCacheStrategy = KVCacheStrategy.MODEL_DEFAULT,
-        gpu_profiling: GPUProfilingMode = GPUProfilingMode.OFF,
-        enable_structured_output: bool = False,
         # TODO(AITLIB-328): These values do not belong in PipelineConfig,
         # but are somehow used by MockPipelineModel in pipeline_model.py.
         eos_prob: float | None = None,
         vocab_size: int | None = None,
         eos_token: int | None = None,
     ) -> None:
-        self.model_path = model_path
-        self.quantization_encoding = quantization_encoding
-        self.max_batch_size = max_batch_size
-        self.max_length = max_length
-        self.pdl_level = pdl_level
-        self.device_specs = device_specs
+        # Mirror the construction pattern used by other test fixtures:
+        # - Keep PipelineConfig surface minimal
+        # - Populate nested configs via `model_construct`
+        # - Attach nested configs via PipelineConfig's private attrs
+        #
+        # This avoids invoking expensive validation / resolution logic and keeps
+        # the config shape aligned with production code (e.g. `_model`, not
+        # legacy `_model_config`).
+        if device_specs is None:
+            device_specs = []
 
-        self._profiling_config = ProfilingConfig(
-            gpu_profiling=gpu_profiling,
+        # Seed `self` with a real (but unvalidated) PipelineConfig instance, so
+        # we keep pydantic-internal state consistent while still avoiding full
+        # validation / resolution.
+        base = PipelineConfig.model_construct(
+            max_batch_size=max_batch_size,
+            max_length=max_length,
+            pdl_level=pdl_level,
         )
-        self._sampling_config = SamplingConfig(
-            enable_structured_output=enable_structured_output,
-        )
-        self._lora_config = LoRAConfig(enable_lora=False)
+        self.__dict__.update(base.__dict__)
+        for attr in (
+            "__pydantic_fields_set__",
+            "__pydantic_extra__",
+            "__pydantic_private__",
+        ):
+            if hasattr(base, attr):
+                object.__setattr__(self, attr, getattr(base, attr))
 
-        self._model_config = DummyMAXModelConfig(
+        # Back-compat: some mocks historically accessed these directly from the
+        # pipeline config, even though they're conceptually model config fields.
+        object.__setattr__(self, "model_path", model_path)
+        object.__setattr__(self, "quantization_encoding", quantization_encoding)
+
+        # `PipelineConfig` stores nested configs in Pydantic PrivateAttrs, which
+        # live in `__pydantic_private__`. Since we used `model_construct()`,
+        # validators (including the one that would initialize PrivateAttrs) did
+        # not run, so we must initialize private attrs explicitly.
+        pydantic_private = getattr(self, "__pydantic_private__", None)
+        if pydantic_private is None:
+            pydantic_private = {}
+            object.__setattr__(self, "__pydantic_private__", pydantic_private)
+        assert isinstance(pydantic_private, dict)
+
+        model_config = DummyMAXModelConfig.model_construct(
             model_path=model_path,
             device_specs=device_specs,
             quantization_encoding=quantization_encoding,
-            _kv_cache_config=KVCacheConfig(
-                cache_strategy=kv_cache_strategy,
-            ),
-            _huggingface_config=MagicMock(),
         )
+        model_config._kv_cache = KVCacheConfig(
+            cache_strategy=kv_cache_strategy,
+        )
+        model_config._huggingface_config = MagicMock()
+        # Populate the private attrs that callers expect.
+        pydantic_private["_model"] = model_config
+        pydantic_private["_draft_model"] = None
+        pydantic_private["_sampling"] = SamplingConfig()
+        pydantic_private["_profiling"] = ProfilingConfig()
+        pydantic_private["_lora"] = LoRAConfig()
+        pydantic_private["_speculative"] = None
+        pydantic_private["_config_file_section_name"] = "pipeline_config"
+        pydantic_private["_unmatched_kwargs"] = {}
 
-        # TODO(AITLIB-328): These values do not belong in PipelineConfig,
-        # but are somehow used by MockPipelineModel in pipeline_model.py.
-        self.eos_prob = eos_prob
-        self.vocab_size = vocab_size
-        self.eos_token = eos_token
+        # These values don't belong in PipelineConfig, but are used by
+        # MockPipelineModel in pipeline_model.py.
+        object.__setattr__(self, "eos_prob", eos_prob)
+        object.__setattr__(self, "vocab_size", vocab_size)
+        object.__setattr__(self, "eos_token", eos_token)
 
 
 def mock_huggingface_config(func: Callable[_P, _R]) -> Callable[_P, _R]:

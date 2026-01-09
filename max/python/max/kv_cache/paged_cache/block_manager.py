@@ -152,9 +152,7 @@ class BlockManager:
 
         hashes = self.req_to_hashes[ctx.request_id]
 
-        num_unhashed_tokens = ctx.current_length - (
-            len(hashes) * self.block_size
-        )
+        num_unhashed_tokens = len(ctx.tokens) - (len(hashes) * self.block_size)
         if num_unhashed_tokens < self.block_size:
             return
 
@@ -163,7 +161,7 @@ class BlockManager:
             parent_hash_value = hashes[-1]
 
         unhashed_tokens = ctx.tokens[
-            len(hashes) * self.block_size : ctx.current_length
+            len(hashes) * self.block_size : len(ctx.tokens)
         ]
 
         images = ctx.images if isinstance(ctx, VLMTextGenerationContext) else []
@@ -188,7 +186,7 @@ class BlockManager:
         """
         self.assert_runtime_invariants(ctx)
 
-        if not self.enable_prefix_caching or ctx.active_length == 1:
+        if not self.enable_prefix_caching or ctx.tokens.active_length == 1:
             return
 
         req_blocks = self.req_to_blocks[ctx.request_id]
@@ -199,7 +197,7 @@ class BlockManager:
         # Query prefix cache for full blocks.
         prefix_cache_blocks = self.get_full_blocks_from_prefix_cache(ctx)
 
-        orig_start_idx = ctx.processed_length
+        orig_start_idx = ctx.tokens.processed_length
 
         if len(prefix_cache_blocks) > 0:
             # Update metrics.
@@ -218,7 +216,9 @@ class BlockManager:
             )
             # Update BlockManager's committed index and advance ctx start_idx
             self.req_to_committed_idx[ctx.request_id] = new_committed_idx
-            ctx.skip_processing(new_committed_idx - ctx.processed_length)
+            ctx.tokens.skip_processing(
+                new_committed_idx - ctx.tokens.processed_length
+            )
 
     @traced
     def _count_full_blocks_from_prefix_cache(
@@ -337,7 +337,7 @@ class BlockManager:
         )
         # we exclude the last inflight token to ensure that there is at least
         # one prompt token to be encoded.
-        num_inflight_blocks = (ctx.current_length - 1) // self.block_size
+        num_inflight_blocks = (len(ctx.tokens) - 1) // self.block_size
         uncommitted_hashes = req_hashes[
             num_committed_blocks:num_inflight_blocks
         ]
@@ -360,7 +360,7 @@ class BlockManager:
         )
         # we exclude the last inflight token to ensure that there is at least
         # one prompt token to be encoded.
-        num_inflight_blocks = (ctx.current_length - 1) // self.block_size
+        num_inflight_blocks = (len(ctx.tokens) - 1) // self.block_size
         uncommitted_hashes = req_hashes[
             num_committed_blocks:num_inflight_blocks
         ]
@@ -404,7 +404,7 @@ class BlockManager:
 
         # Count the number of tokens for which we know the values of and align
         # to the block size.
-        num_computed_blocks = ctx.processed_length // self.block_size
+        num_computed_blocks = ctx.tokens.processed_length // self.block_size
 
         # Commit these blocks into the prefix cache.
         for block_idx in range(num_committed_blocks, num_computed_blocks):
@@ -477,15 +477,15 @@ class BlockManager:
         # This should literally never happen unless the user sets an absurdly
         # large max seq len or the KV cache is very small.
         total_kv_slots = self.total_num_blocks * self.block_size
-        if ctx.current_length > total_kv_slots:
+        if len(ctx.tokens) > total_kv_slots:
             raise InsufficientBlocksError(
-                f"Insufficient KV pages for a single request with {ctx.current_length} tokens.\n"
+                f"Insufficient KV pages for a single request with {len(ctx.tokens)} tokens.\n"
                 f"The KVCache has {self.total_num_blocks} pages with page size {self.block_size}. This is only enough to support {total_kv_slots} tokens.\n"
                 "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
             )
 
         # Update metrics.
-        self._metrics.input_tokens += ctx.active_length
+        self._metrics.input_tokens += ctx.tokens.active_length
 
         # Determine number of new blocks to allocate.
         num_new_blocks = self.num_blocks_to_allocate(ctx, num_steps)
@@ -494,8 +494,10 @@ class BlockManager:
         # currently store in the reserved blocks.
         current_blocks = self.req_to_blocks[ctx.request_id]
         num_current_blocks = len(current_blocks)
-        assert ctx.processed_length <= (num_current_blocks * self.block_size), (
-            f"Expected at least {ceildiv(ctx.processed_length, self.block_size)} blocks to store KV for {ctx.processed_length} tokens, but only {num_current_blocks} are assigned. This should never happen."
+        assert ctx.tokens.processed_length <= (
+            num_current_blocks * self.block_size
+        ), (
+            f"Expected at least {ceildiv(ctx.tokens.processed_length, self.block_size)} blocks to store KV for {ctx.tokens.processed_length} tokens, but only {num_current_blocks} are assigned. This should never happen."
         )
 
         # Check that we have enough free blocks to allocate the new blocks.
@@ -524,11 +526,11 @@ class BlockManager:
         """
         current_blocks = self.req_to_blocks[ctx.request_id]
         num_current_blocks = len(current_blocks)
-        current_seq_len = ctx.current_length + num_steps - 1
+        current_seq_len = len(ctx.tokens) + num_steps - 1
         num_required_blocks = ceildiv(current_seq_len, self.block_size)
         num_new_blocks = num_required_blocks - num_current_blocks
 
-        if self.enable_prefix_caching and ctx.active_length != 1:
+        if self.enable_prefix_caching and ctx.tokens.active_length != 1:
             self.assert_runtime_invariants(ctx)
 
             # Compute block hashes. These hashes are used by the subsequent methods.
@@ -599,11 +601,14 @@ class BlockManager:
         for _ in range(num_uncommitted_blocks):
             block = req_blocks.pop()
             self.device_block_pool.free_block(block)
-        delta = ctx.processed_length - self.req_to_committed_idx[ctx.request_id]
+        delta = (
+            ctx.tokens.processed_length
+            - self.req_to_committed_idx[ctx.request_id]
+        )
         if delta > 0:
-            ctx.rewind_processing(delta)
+            ctx.tokens.rewind_processing(delta)
         elif delta < 0:
-            ctx.skip_processing(-delta)
+            ctx.tokens.skip_processing(-delta)
 
     @traced
     def get_req_blocks(self, request_id: RequestID) -> list[int]:

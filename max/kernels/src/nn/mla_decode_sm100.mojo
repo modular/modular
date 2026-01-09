@@ -701,7 +701,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         _use_valid_length=_use_valid_length,
         ragged=ragged,
     ].kernel
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         q_tma,
         k_tma,
         o_tma,

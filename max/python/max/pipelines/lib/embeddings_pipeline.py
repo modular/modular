@@ -74,30 +74,22 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         self._pipeline_config = pipeline_config
         self._weight_adapters = weight_adapters
         # Initialize Session.
-        devices = load_devices(self._pipeline_config.model_config.device_specs)
+        devices = load_devices(self._pipeline_config.model.device_specs)
         session = InferenceSession(devices=devices)
         self._pipeline_config.configure_session(session)
 
-        if not self._pipeline_config.model_config.quantization_encoding:
+        if not self._pipeline_config.model.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
 
         # Download weight files if not existent
-        # TODO: These should ideally not call _weights_repo_id directly. I believe
-        # huggingface_weight_repo_id property can be used here?
-        weight_model_id = (
-            self._pipeline_config.model_config._weights_repo_id
-            if self._pipeline_config.model_config._weights_repo_id
-            else self._pipeline_config.model_config.model_path
-        )
+        weight_model_id = self._pipeline_config.model.huggingface_weight_repo_id
 
         # Download weight files.
         weight_paths = download_weight_files(
             huggingface_model_id=weight_model_id,
-            filenames=[
-                str(x) for x in self._pipeline_config.model_config.weight_path
-            ],
-            revision=self._pipeline_config.model_config.huggingface_weight_revision,
-            force_download=self._pipeline_config.model_config.force_download,
+            filenames=[str(x) for x in self._pipeline_config.model.weight_path],
+            revision=self._pipeline_config.model.huggingface_weight_revision,
+            force_download=self._pipeline_config.model.force_download,
         )
 
         # Load weights
@@ -105,10 +97,10 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=self._pipeline_config.model_config.huggingface_config,
-            encoding=self._pipeline_config.model_config.quantization_encoding,
+            huggingface_config=self._pipeline_config.model.huggingface_config,
+            encoding=self._pipeline_config.model.quantization_encoding,
             devices=devices,
-            kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
+            kv_cache_config=self._pipeline_config.model.kv_cache_config,
             weights=weights,
             adapter=self._weight_adapters.get(
                 weights_format(weight_paths), None
@@ -154,7 +146,7 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
             if not self._pipeline_config.pool_embeddings:
                 # Remove padded tokens from embeddings
                 request_embeddings = request_embeddings[
-                    : context_batch[batch_index].active_length, :
+                    : context_batch[batch_index].tokens.active_length, :
                 ]
             res[request_id] = EmbeddingsGenerationOutput(request_embeddings)
         return res

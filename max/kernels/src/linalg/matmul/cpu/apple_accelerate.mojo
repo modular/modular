@@ -261,7 +261,7 @@ fn apple_gemv[
     var N = b.dim[0]() if transpose_b or b_packed else b.dim[1]()
 
     var transposed_b = NDBuffer[b.type, 2, MutAnyOrigin]()
-    var transposed_b_ptr = UnsafePointer[Scalar[b.type], MutOrigin.external]()
+    var transposed_b_ptr = UnsafePointer[Scalar[b.type], MutExternalOrigin]()
 
     # If both b_packed and transpose_b are False, we need to transpose B at
     # runtime (which is suboptimal, but enables faster gemv below).

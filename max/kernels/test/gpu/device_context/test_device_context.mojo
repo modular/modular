@@ -73,7 +73,7 @@ fn test_basic(ctx: DeviceContext) raises:
 
     # Execute the kernel on the device.
     #  - notice the simple function call like invocation
-    ctx.enqueue_function_checked[vec_func, vec_func](
+    ctx.enqueue_function_experimental[vec_func](
         in0_device,
         in1_device,
         out_device,
@@ -196,7 +196,7 @@ def test_kernel_pointer_conversions(ctx: DeviceContext):
         pass
 
     # No conversion needed
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         ToLegacyUnsafePointer(),
         ToUnsafePointer(),
         grid_dim=1,
@@ -204,7 +204,7 @@ def test_kernel_pointer_conversions(ctx: DeviceContext):
     )
 
     # Converts from UnsafePointer <-> LegacyUnsafePointer
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         ToUnsafePointer(),
         ToLegacyUnsafePointer(),
         grid_dim=1,

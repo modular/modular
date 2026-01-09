@@ -211,7 +211,11 @@ fn test_dynamic_fp4_quant[
                             var output_e2m1 = cast_uint_to_fp4e2m1[
                                 out_dtype = DType.float32,
                                 out_width = SF_VECTOR_SIZE // 2,
-                            ](output_tensor_host.load[4](row_idx, col_idx // 2))
+                            ](
+                                output_tensor_host.load[
+                                    (SF_VECTOR_SIZE // 2) // 2
+                                ](row_idx, col_idx // 2)
+                            )
                             assert_almost_equal(
                                 ref_output_e2m1,
                                 output_e2m1,
@@ -229,7 +233,11 @@ fn test_dynamic_fp4_quant[
                             var output_e2m1 = cast_uint_to_fp4e2m1[
                                 out_dtype = DType.float32,
                                 out_width=SF_VECTOR_SIZE,
-                            ](output_tensor_host.load[8](row_idx, col_idx // 2))
+                            ](
+                                output_tensor_host.load[(SF_VECTOR_SIZE // 2)](
+                                    row_idx, col_idx // 2
+                                )
+                            )
                             assert_almost_equal(
                                 ref_output_e2m1,
                                 output_e2m1,

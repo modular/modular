@@ -751,7 +751,7 @@ fn matmul_sm100[
     )
 
     comptime kernel = matmul_kernel[pipeline_t]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         args,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),

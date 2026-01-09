@@ -16,6 +16,8 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun -n $NUM_GPUS %t
 
+from collections import OptionalReg
+
 import time
 from io.io import _printf
 from math import sqrt
@@ -249,7 +251,7 @@ fn test_combine[
         1,  # p2p_world_size
         token_fmt_type,
     ]
-    var func = ctx.compile_function_checked[dispatch, dispatch]()
+    var func = ctx.compile_function_experimental[dispatch]()
     shmem_module_init(func)
 
     comptime dispatch_cb = dispatch_cb_kernel[
@@ -265,7 +267,7 @@ fn test_combine[
         n_tokens_per_rank,
         type_of(format_handler),
     ]
-    var func_cb = ctx.compile_function_checked[dispatch_cb, dispatch_cb]()
+    var func_cb = ctx.compile_function_experimental[dispatch_cb]()
 
     comptime combine = combine_kernel[
         input_type,
@@ -280,7 +282,7 @@ fn test_combine[
         n_tokens_per_rank,
         1,  # p2p_world_size
     ]
-    var func_combine = ctx.compile_function_checked[combine, combine]()
+    var func_combine = ctx.compile_function_experimental[combine]()
     shmem_module_init(func_combine)
 
     comptime combine_cb = combine_cb_kernel[
@@ -295,7 +297,7 @@ fn test_combine[
         combine_msg_bytes,
         n_tokens_per_rank,
     ]
-    var func_combine_cb = ctx.compile_function_checked[combine_cb, combine_cb]()
+    var func_combine_cb = ctx.compile_function_experimental[combine_cb]()
 
     var num_iters: Int = 100 if is_benchmark() or is_pressure_test() else 3
     var combine_stat_m: Float64 = 0
@@ -318,7 +320,7 @@ fn test_combine[
         recv_buf_ptrs[0] = recv_buf
         recv_count_ptrs[0] = recv_count
 
-        ctx.enqueue_function_checked(
+        ctx.enqueue_function(
             func,
             input_tokens_tensor,
             topk_ids_tensor,
@@ -330,7 +332,7 @@ fn test_combine[
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
-        ctx.enqueue_function_checked(
+        ctx.enqueue_function(
             func_cb,
             format_handler,
             row_offsets_tensor,
@@ -340,6 +342,9 @@ fn test_combine[
             recv_count,
             atomic_counter,
             Int32(my_rank),
+            OptionalReg[
+                LayoutTensor[input_type, Layout.row_major[2](), ImmutAnyOrigin]
+            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -358,7 +363,7 @@ fn test_combine[
         combine_recv_buf_ptrs[0] = send_buf
         combine_recv_count_ptrs[0] = recv_count
 
-        ctx.enqueue_function_checked(
+        ctx.enqueue_function(
             func_combine,
             output_tensor,
             src_token_info_tensor,
@@ -367,6 +372,9 @@ fn test_combine[
             combine_recv_count_ptrs,
             atomic_counter,
             Int32(my_rank),
+            OptionalReg[
+                LayoutTensor[input_type, Layout.row_major[2](), MutAnyOrigin]
+            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -374,7 +382,7 @@ fn test_combine[
     @always_inline
     @parameter
     fn run_combine_cb(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked(
+        ctx.enqueue_function(
             func_combine_cb,
             output_2_tensor,
             send_buf,

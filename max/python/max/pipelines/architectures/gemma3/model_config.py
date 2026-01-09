@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Literal
 
 from max.dtype import DType
@@ -24,7 +23,6 @@ from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     KVCacheConfig,
-    MAXModelConfig,
     MAXModelConfigBase,
     PipelineConfig,
     RopeType,
@@ -32,12 +30,11 @@ from max.pipelines.lib import (
 from transformers import AutoConfig
 
 
-@dataclass
-class Gemma3ConfigBase(MAXModelConfigBase):
-    """Base configuration for Gemma 3 models.
+class Gemma3Config(MAXModelConfigBase):
+    """Represents the MAX Engine configuration for Gemma 3 models.
 
-    Contains parameters specific to the Gemma 3 architecture, typically
-    extracted from a HuggingFace configuration object's text config.
+    Contains parameters specific to the Gemma 3 architecture (typically extracted
+    from HuggingFace configs), plus MAX-specific runtime settings and helpers.
     """
 
     # Gemma 3 specific parameters (taken from Transformer's `configuration_gemma3.py`)
@@ -128,15 +125,6 @@ class Gemma3ConfigBase(MAXModelConfigBase):
     float8_config: Float8Config | None = None
     """Float8 quantization configuration."""
 
-
-@dataclass
-class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
-    """Represents the complete MAX Engine configuration for Gemma 3 models.
-
-    Combines the base Gemma 3 parameters with MAX-specific settings and
-    provides methods to derive necessary pipeline components like KV cache parameters.
-    """
-
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
@@ -167,7 +155,7 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             devices=devices,
-            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
     @staticmethod
@@ -240,16 +228,14 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
         Returns:
             An initialized :obj:`Gemma3Config` instance.
         """
-        _weights_format = weights_format(
-            pipeline_config.model_config.weight_path
-        )
+        _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model_config.rope_type == RopeType.normal
+            and pipeline_config.model.rope_type == RopeType.normal
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model_config.device_specs
+            for spec in pipeline_config.model.device_specs
         ]
 
         # When tie_word_embeddings=True, the embedding weights are shared with

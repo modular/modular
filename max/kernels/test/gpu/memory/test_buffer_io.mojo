@@ -195,7 +195,7 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
     ctx.enqueue_copy(a_device_buf, a_host_buf)
 
     comptime kernel_func = kernel[dtype, width]
-    ctx.enqueue_function_checked[kernel_func, kernel_func](
+    ctx.enqueue_function_experimental[kernel_func](
         a_device_buf, grid_dim=1, block_dim=1
     )
     ctx.enqueue_copy(a_host_buf, a_device_buf)
@@ -219,7 +219,7 @@ def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext):
     ctx.enqueue_copy(a_device_buf, a_host_buf)
 
     comptime kernel_lds_func = kernel_lds[dtype, width]
-    ctx.enqueue_function_checked[kernel_lds_func, kernel_lds_func](
+    ctx.enqueue_function_experimental[kernel_lds_func](
         a_device_buf, grid_dim=1, block_dim=1
     )
     ctx.enqueue_copy(a_host_buf, a_device_buf)

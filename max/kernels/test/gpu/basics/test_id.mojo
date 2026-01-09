@@ -27,7 +27,7 @@ def test_fill_thread_idx(ctx: DeviceContext):
     fn kernel(output: UnsafePointer[Scalar[DType.int], MutAnyOrigin]):
         output[global_idx.x] = thread_idx.x
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         output_buffer,
         grid_dim=buffer_size // block_dim,
         block_dim=block_dim,
@@ -51,7 +51,7 @@ def test_fill_block_idx(ctx: DeviceContext):
     fn kernel(output: UnsafePointer[Scalar[DType.int], MutAnyOrigin]):
         output[global_idx.x] = block_idx.x
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         output_buffer,
         grid_dim=buffer_size // block_dim,
         block_dim=block_dim,

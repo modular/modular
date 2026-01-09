@@ -85,7 +85,7 @@ fn test_gpu_print_formattable() raises:
 
     with DeviceContext() as ctx:
         comptime kernel = do_print
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             Int(42), Float64(7.2), grid_dim=1, block_dim=1
         )
         # Ensure queued function finished before proceeding.

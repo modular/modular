@@ -47,9 +47,7 @@ def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int):
         print(Float32(thing.get_val(idx)) * 2)
 
     comptime kernel = kernel_fn
-    ctx.enqueue_function_checked[kernel, kernel](
-        grid_dim=(1,), block_dim=(size)
-    )
+    ctx.enqueue_function_experimental[kernel](grid_dim=(1,), block_dim=(size))
 
 
 def trait_repro(ctx: DeviceContext):

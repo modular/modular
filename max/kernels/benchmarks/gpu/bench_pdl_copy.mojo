@@ -130,7 +130,7 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     @parameter
     fn run_func() raises:
         for _ in range(10):
-            context.enqueue_function_checked[copy1, copy1](
+            context.enqueue_function_experimental[copy1](
                 a_device,
                 b_device,
                 length,
@@ -138,7 +138,7 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
                 block_dim=(block_dim),
                 attributes=pdl_launch_attributes(),
             )
-            context.enqueue_function_checked[copy2, copy2](
+            context.enqueue_function_experimental[copy2](
                 b_device,
                 c_device,
                 d_device,
@@ -205,14 +205,14 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     @parameter
     fn run_func() raises:
         for _ in range(10):
-            context.enqueue_function_checked[copy1_n, copy1_n](
+            context.enqueue_function_experimental[copy1_n](
                 a_device,
                 b_device,
                 length,
                 grid_dim=(grid_dim),
                 block_dim=(block_dim),
             )
-            context.enqueue_function_checked[copy2_n, copy2_n](
+            context.enqueue_function_experimental[copy2_n](
                 b_device,
                 c_device,
                 d_device,

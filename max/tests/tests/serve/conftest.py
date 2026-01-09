@@ -39,29 +39,7 @@ def fixture_tokenizer(
     return tokenizer
 
 
-class MockKVCacheConfig(KVCacheConfig):
-    def __init__(self, enable_prefix_caching: bool):
-        self.enable_prefix_caching = enable_prefix_caching
-
-
-class MockModelConfig(MAXModelConfig):
-    def __init__(self, enable_prefix_caching: bool):
-        self.served_model_name = "echo"
-        self._kv_cache_config = MockKVCacheConfig(
-            enable_prefix_caching=enable_prefix_caching
-        )
-
-
 DEFAULT_ZMQ_ENDPOINT_BASE = "ipc:///tmp/my-secret-uuid-abc123"
-
-
-class MockPipelineConfig(PipelineConfig):
-    def __init__(self, enable_prefix_caching: bool):
-        self.max_batch_size = 1
-        self._model_config = MockModelConfig(
-            enable_prefix_caching=enable_prefix_caching
-        )
-        self.zmq_endpoint_base: str = DEFAULT_ZMQ_ENDPOINT_BASE
 
 
 @pytest.fixture
@@ -76,4 +54,22 @@ def enable_prefix_caching(request: pytest.FixtureRequest) -> bool:
 
 @pytest.fixture
 def mock_pipeline_config(enable_prefix_caching: bool) -> PipelineConfig:
-    return MockPipelineConfig(enable_prefix_caching=enable_prefix_caching)
+    pipeline_config = PipelineConfig.model_construct(
+        # scheduler-required surface
+        max_batch_size=1,
+        enable_prefix_caching=enable_prefix_caching,
+        zmq_endpoint_base=DEFAULT_ZMQ_ENDPOINT_BASE,
+    )
+
+    kv_cache_config = KVCacheConfig.model_construct(
+        enable_prefix_caching=enable_prefix_caching,
+    )
+
+    model_config = MAXModelConfig.model_construct(
+        served_model_name="echo",
+    )
+
+    model_config._kv_cache = kv_cache_config
+    pipeline_config._model = model_config
+
+    return pipeline_config

@@ -94,7 +94,7 @@ class MockPipelineModel(PipelineModel):
         self._lora_manager = (
             LoRAManager(
                 config=self.pipeline_config.lora_config,
-                base_model_path=pipeline_config.model_config.model_path,
+                base_model_path=pipeline_config.model.model_path,
                 base_dtype=self.encoding.dtype,
                 n_heads=huggingface_config.num_attention_heads,
                 n_kv_heads=huggingface_config.num_key_value_heads,
@@ -133,7 +133,7 @@ class MockPipelineModel(PipelineModel):
             enable_prefix_caching=False,
             cache_strategy=KVCacheStrategy.PAGED,
             devices=devices,
-            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
     @classmethod

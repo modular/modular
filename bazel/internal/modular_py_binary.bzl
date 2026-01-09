@@ -51,7 +51,6 @@ def modular_py_binary(
     mojo_test_env_name = name + ".mojo_test_env"
     extra_toolchains = [
         "@//bazel/internal:current_gpu_toolchain",
-        "@//bazel/internal:lib_toolchain",
         mojo_test_env_name,
     ]
     extra_data = RUNTIME_SANITIZER_DATA + [

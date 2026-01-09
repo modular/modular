@@ -78,7 +78,7 @@ def test_vendor_blas[
         transpose_b=transpose_b,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         c_ref_tensor,
         a_tensor,
         b_tensor,

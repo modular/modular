@@ -38,7 +38,7 @@ fn test_cluster_sync_kernel():
 fn test_cluster_sync(ctx: DeviceContext) raises:
     print("== test_cluster_sync")
     comptime kernel = test_cluster_sync_kernel
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         grid_dim=(2, 2, 2),
         block_dim=(1),
         cluster_dim=Dim((2, 2, 2)),

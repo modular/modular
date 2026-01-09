@@ -20,9 +20,7 @@ from comm import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.distributed_matmul import matmul_allreduce
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal
 
 from utils import IndexList, StaticTuple
@@ -75,13 +73,21 @@ fn overlap_matmul_allreduce_test[
     var B_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var C_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var C_reduced_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var A_host_list = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
-    var B_host_list = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
-    var C_reduced_host_list = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
+    var A_host_list = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
+        capacity=ngpus
+    )
+    var B_host_list = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
+        capacity=ngpus
+    )
+    var C_reduced_host_list = List[
+        UnsafePointer[Scalar[dtype], MutExternalOrigin]
+    ](capacity=ngpus)
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        fill={}
+    )
 
     var mn = m.value * n.value
     var mk = m.value * k.value
@@ -102,9 +108,9 @@ fn overlap_matmul_allreduce_test[
         C_reduced_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mn))
 
         # Allocate matmul inputs A B and final output C_reduced on host
-        A_host_list.append(UnsafePointer[Scalar[dtype]].alloc(mk))
-        B_host_list.append(UnsafePointer[Scalar[dtype]].alloc(nk))
-        C_reduced_host_list.append(UnsafePointer[Scalar[dtype]].alloc(mn))
+        A_host_list.append(alloc[Scalar[dtype]](mk))
+        B_host_list.append(alloc[Scalar[dtype]](nk))
+        C_reduced_host_list.append(alloc[Scalar[dtype]](mn))
 
         # Initialize A with i and B with 1
         for j in range(mk):

@@ -25,6 +25,25 @@ import numpy.typing as npt
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 
+GiB = 1024 * 1024 * 1024
+
+
+def _prime_cache(accelerator: Device, bytes: int = GiB) -> None:
+    """Prime the pinned memory manager cache for the given accelerator.
+
+    Populate the host memory manager by allocating and immediately freeing a
+    large pinned tensor. If the host memory manager is activated, future allocations
+    and free will likely hit the cache and be much faster.
+
+    Args:
+        accelerator: The accelerator to prime the cache for.
+        bytes: The number of bytes to allocate.
+    """
+    pinned = Tensor(
+        shape=(bytes,), dtype=DType.int8, device=accelerator, pinned=True
+    )
+    del pinned
+
 
 class ParallelArrayOps:
     """Parallelized numpy array operations for performance-critical data processing.
@@ -41,14 +60,30 @@ class ParallelArrayOps:
         >>> result = ops.concatenate([arr1, arr2, arr3], axis=0)
     """
 
-    def __init__(self, max_workers: int = 24) -> None:
+    def __init__(
+        self, accelerator: Device | None = None, max_workers: int = 24
+    ) -> None:
         """Initialize parallel array operations with a thread pool.
 
         Args:
+            accelerator: The accelerator to allocate pinned memory on. If provided,
+                the results of the concatenate operation will be allocated on a
+                pinned buffer on the specified accelerator.
             max_workers: Maximum number of worker threads. Default is 24, which works
                 well for typical server CPUs. Consider setting to match your expected
                 number of arrays (e.g., 20 for up to 20 concurrent copies).
         """
+        if accelerator is not None:
+            if accelerator.is_host:
+                raise ValueError(
+                    "Unable to allocate pinned memory on CPU. A provided device must be a GPU."
+                )
+
+            # By priming the cache here, we can move some overhead from runtime
+            # to __init__.
+            _prime_cache(accelerator)
+        self._accelerator = accelerator
+
         self._pool = ThreadPoolExecutor(max_workers=max_workers)
         self._max_workers = max_workers
 
@@ -106,9 +141,7 @@ class ParallelArrayOps:
         self,
         arrays: Sequence[npt.NDArray[Any]],
         axis: int = 0,
-        default_copy: bool = True,
         min_chunk_size_mb: float = 50.0,
-        accelerator: Device | None = None,
     ) -> Tensor:
         """Concatenate arrays in parallel along the specified axis.
 
@@ -117,27 +150,18 @@ class ParallelArrayOps:
         workers, maximizing memory bandwidth utilization. Uses intelligent heuristics
         to avoid splitting when overhead would exceed benefits.
 
-        Note: By default, this matches np.concatenate's behavior of always returning a copy,
-        even when arrays contains a single array. For performance optimization, you can set
-        default_copy=False to avoid the arbitrary unnecessary copy and return the single
-        array directly without copying.
+        This matches np.concatenate's behavior of always returning a copy,
+        even when arrays contains a single array.
 
         Args:
             arrays: List of numpy arrays to concatenate. Must have compatible shapes
                 (same shape except along concatenation axis) and identical dtypes.
             axis: Axis along which to concatenate. Negative values count from the end.
                 Default is 0.
-            default_copy: If True (default), return a copy when arrays contains a single
-                array, matching np.concatenate's behavior. If False, return the array
-                directly without copying to avoid unnecessary memory allocation and
-                improve performance.
             min_chunk_size_mb: Minimum chunk size in MB when splitting arrays. Default is
                 50 MB. Prevents creating too many small work items that would have excessive
                 overhead. Arrays are only split if the resulting chunks would be at least
                 this size.
-            accelerator: If provided, the result may be allocated on a pinned buffer on
-                the specified accelerator. The output will not be pinned if the number
-                of arrays is one and default_copy is False.
 
         Returns:
             Concatenated array with the same dtype as the input arrays.
@@ -149,11 +173,6 @@ class ParallelArrayOps:
         n = len(arrays)
         if n == 0:
             raise ValueError("Cannot concatenate empty list of arrays.")
-
-        if accelerator is not None and accelerator.is_host:
-            raise ValueError(
-                "Unable to allocate pinned memory on CPU. A provided device must be a GPU."
-            )
 
         # Validate shapes and compute output shape
         first = arrays[0]
@@ -171,20 +190,17 @@ class ParallelArrayOps:
 
         if n == 1:
             # This copy is likely not needed, but it mocks the exact behaviour of numpy.concatenate.
-            if default_copy:
-                if accelerator is None:
-                    return Tensor.from_numpy(first.copy())
-                else:
-                    out_max = Tensor(
-                        shape=first.shape,
-                        dtype=DType.from_numpy(first.dtype),
-                        device=accelerator,
-                        pinned=True,
-                    )
-                    np.copyto(out_max.to_numpy(), first)
-                    return out_max
+            if self._accelerator is None:
+                return Tensor.from_numpy(first.copy())
             else:
-                return Tensor.from_numpy(first)
+                out_max = Tensor(
+                    shape=first.shape,
+                    dtype=DType.from_numpy(first.dtype),
+                    device=self._accelerator,
+                    pinned=True,
+                )
+                np.copyto(out_max.to_numpy(), first)
+                return out_max
 
         # Pre-compute expected shape slices for efficient validation
         # All arrays must match: shape[:axis] and shape[axis+1:]
@@ -234,8 +250,8 @@ class ParallelArrayOps:
 
         # Allocate output tensor. It will be pinned on an accelerator if one is provided.
         max_dtype = DType.from_numpy(first_dtype)
-        if accelerator is not None:
-            device = accelerator
+        if self._accelerator is not None:
+            device = self._accelerator
             pinned = True
         else:
             device = CPU()

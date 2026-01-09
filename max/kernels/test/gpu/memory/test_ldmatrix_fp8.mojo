@@ -127,7 +127,7 @@ fn check_ldmatrix_fp8[
     ctx.enqueue_copy(b_device, b_host)
 
     comptime kernel_func = test_ldmatrix_fp8[input_type]
-    ctx.enqueue_function_checked[kernel_func, kernel_func](
+    ctx.enqueue_function_experimental[kernel_func](
         c_device,
         a_device,
         b_device,
@@ -170,7 +170,7 @@ fn check_ldmatrix_fp8[
         BLOCK_DIM,
         transpose_b=True,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         c_tensor_ref,
         a_tensor,
         b_tensor,

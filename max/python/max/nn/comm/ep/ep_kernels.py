@@ -19,6 +19,8 @@ This file contains the kernels for Expert Parallelism (EP) communication.
 
 from __future__ import annotations
 
+from typing import Any
+
 from max.dtype import DType
 from max.graph import (
     BufferValue,
@@ -27,6 +29,7 @@ from max.graph import (
     StaticDim,
     TensorType,
     TensorValue,
+    Value,
     ops,
 )
 
@@ -174,6 +177,7 @@ def call_ep_dispatch_cb(
     recv_buf_ptrs: TensorValue,
     recv_count_ptrs: TensorValue,
     config: EPConfig,
+    input_tokens: TensorValue | None = None,
 ) -> tuple[TensorValue, ...]:
     """Complete Expert Parallelism token dispatch and prepare for expert
     computation.
@@ -192,6 +196,9 @@ def call_ep_dispatch_cb(
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks)
         config: EP configuration.
+        input_tokens: Input tokens for the shared experts. If shared experts
+        fusion is enabled, this will be bundled with the inputs of the routed
+        expert, and passed to the grouped matmul kernel.
 
     Returns:
         A tuple containing:
@@ -230,10 +237,25 @@ def call_ep_dispatch_cb(
 
     device_ref = atomic_counter.device
 
+    op_name = "ep.dispatch_cb"
+    input_vals: list[Value[Any]] = [
+        atomic_counter,
+        recv_buf_ptrs,
+        recv_count_ptrs,
+    ]
+    if input_tokens is not None:
+        assert config.fused_shared_expert, (
+            "Shared experts fusion must be enabled when input_tokens is provided"
+        )
+        op_name += ".fused_shared_expert"
+        input_vals.append(input_tokens)
+        max_recv_tokens += config.max_tokens_per_rank
+        n_local_experts += 1
+
     results = ops.inplace_custom(
-        "ep.dispatch_cb",
+        op_name,
         device=device_ref,
-        values=[atomic_counter, recv_buf_ptrs, recv_count_ptrs],
+        values=input_vals,
         out_types=[
             TensorType(
                 dtype=config.dispatch_dtype,
@@ -270,6 +292,7 @@ def call_ep_dispatch_cb_fp8(
     recv_buf_ptrs: TensorValue,
     recv_count_ptrs: TensorValue,
     config: EPConfig,
+    input_tokens: TensorValue | None = None,
 ) -> tuple[TensorValue, ...]:
     """Complete Expert Parallelism token dispatch and prepare for expert
     computation.
@@ -288,6 +311,9 @@ def call_ep_dispatch_cb_fp8(
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks)
         config: EP configuration.
+        input_tokens: Input tokens for the shared experts. If shared experts
+        fusion is enabled, this will be bundled with the inputs of the routed
+        expert, and passed to the grouped matmul kernel.
 
     Returns:
         A tuple containing:
@@ -337,10 +363,26 @@ def call_ep_dispatch_cb_fp8(
 
     device_ref = atomic_counter.device
 
+    op_name = "ep.dispatch_cb.fp8"
+    input_vals: list[Value[Any]] = [
+        atomic_counter,
+        recv_buf_ptrs,
+        recv_count_ptrs,
+    ]
+
+    if input_tokens is not None:
+        assert config.fused_shared_expert, (
+            "Shared experts fusion must be enabled when input_tokens is provided"
+        )
+        op_name += ".fused_shared_expert"
+        input_vals.append(input_tokens)
+        max_recv_tokens += config.max_tokens_per_rank
+        n_local_experts += 1
+
     results = ops.inplace_custom(
-        "ep.dispatch_cb.fp8",
+        op_name,
         device=device_ref,
-        values=[atomic_counter, recv_buf_ptrs, recv_count_ptrs],
+        values=input_vals,
         out_types=[
             TensorType(
                 dtype=config.dispatch_dtype,
@@ -446,6 +488,90 @@ def call_ep_combine(
         out_types=[],
         parameters=parameters,
     )
+
+
+def call_ep_combine_fused_shared_expert(
+    input_tokens: TensorValue,
+    src_info: TensorValue,
+    atomic_counter: BufferValue,
+    send_buf_ptrs: TensorValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+    num_tokens: Dim,
+) -> TensorValue:
+    """Initiate Expert Parallelism token combine phase.
+
+    This function launches the EP combine kernel that sends expert outputs back
+    to their original devices based on source routing information. The kernel
+    uses non-blocking SHMEM communication and returns immediately after
+    initiating transfers.
+
+    Args:
+        input_tokens: Expert output tokens to send back to original devices.
+            Shape: (max_tokens_per_rank, hidden_size)
+            Results from expert computation that need to be routed back
+        src_info: Source routing information from dispatch phase.
+            Shape: (max_tokens_per_rank, 2)
+            [original_token_index, topk_index] for each token
+        atomic_counter: Buffer for synchronization between thread blocks.
+        send_buf_ptrs: Device pointers to SHMEM send buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_local_experts * n_ranks * max_tokens_per_rank, msg_bytes).
+        recv_buf_ptrs: Device pointers to SHMEM receive buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (max_tokens_per_rank, top_k, msg_bytes).
+        recv_count_ptrs: Device pointers to SHMEM receive count buffers for
+            each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_experts,)
+        config: EP configuration.
+        num_tokens: Number of original input tokens before expert processing.
+
+    Returns:
+        output_tokens: Output tokens for the shared experts.
+            Shape: (num_tokens, hidden_size)
+            The output tokens for the shared experts.
+
+    Note:
+        This is a non-blocking operation. Call call_ep_combine_cb() to wait for
+        completion and collect the final outputs.
+    """
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "combine_dtype": config.combine_dtype,
+        "hidden_size": config.hidden_size,
+        "top_k": config.top_k,
+        "n_experts": config.n_experts,
+        "max_token_per_rank": config.max_tokens_per_rank,
+        "n_gpus_per_node": config.n_gpus_per_node,
+        "n_nodes": config.n_nodes,
+    }
+
+    device_ref = atomic_counter.device
+
+    result = ops.inplace_custom(
+        "ep.combine.fused_shared_expert",
+        device=device_ref,
+        values=[
+            atomic_counter,
+            input_tokens,
+            src_info,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+        ],
+        out_types=[
+            TensorType(
+                dtype=config.combine_dtype,
+                shape=[num_tokens, config.hidden_size],
+                device=device_ref,
+            ),  # output_tokens
+        ],
+        parameters=parameters,
+    )
+
+    return result[0].tensor
 
 
 def call_ep_combine_cb(

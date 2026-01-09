@@ -42,7 +42,7 @@ def _convert_safetensor_with_model_config(
         for before, after in LLAMA_SAFETENSOR_MAPPING.items():
             max_name = max_name.replace(before, after)
         new_state_dict[max_name] = value.data()
-    if model_config._quant_config:
+    if model_config._quant:
         # hack: argsort the perm_idx array
         for key, weight_data in new_state_dict.items():
             np_array = np.from_dlpack(weight_data.data)  # type: ignore
@@ -103,7 +103,7 @@ def convert_safetensor_state_dict(
     **unused_kwargs,
 ) -> dict[str, WeightData]:
     return _convert_safetensor_with_model_config(
-        state_dict, huggingface_config, pipeline_config.model_config
+        state_dict, huggingface_config, pipeline_config.model
     )
 
 

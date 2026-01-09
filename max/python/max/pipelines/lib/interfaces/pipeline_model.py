@@ -205,7 +205,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         self._lora_manager: LoRAManager | None = (
             LoRAManager(
                 pipeline_config.lora_config,
-                pipeline_config.model_config.model_name,
+                pipeline_config.model.model_name,
                 self.dtype,
                 huggingface_config.num_attention_heads,
                 huggingface_config.num_key_value_heads,
@@ -257,7 +257,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         return (
             self.encoding.dtype
             if self.encoding is not None
-            else self.pipeline_config.model_config.quantization_encoding.dtype
+            else self.pipeline_config.model.quantization_encoding.dtype
         )
 
     @classmethod
@@ -353,7 +353,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         # TODO move this logic to the PipelineModel instead of PipelineConfig class.
         # Better yet, make this more accurate by loading and measuring memory consumption
         # after we load the model
-        return pipeline_config.model_config.weights_size()
+        return pipeline_config.model.weights_size()
 
     @classmethod
     def estimate_activation_memory(

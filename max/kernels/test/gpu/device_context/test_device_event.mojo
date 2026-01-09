@@ -81,10 +81,10 @@ def test_event_record_and_synchronize(ctx: DeviceContext):
     # Create event and stream
     var event = ctx.create_event()
     var stream = ctx.create_stream()
-    var func = ctx.compile_function_checked[simple_kernel, simple_kernel]()
+    var func = ctx.compile_function_experimental[simple_kernel]()
 
     # Launch kernel on stream
-    stream.enqueue_function_checked(
+    stream.enqueue_function(
         func,
         input_device,
         output_device,
@@ -139,10 +139,10 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext):
     var stream1 = ctx.create_stream()
     var stream2 = ctx.create_stream()
     var event = ctx.create_event()
-    var func = ctx.compile_function_checked[simple_kernel, simple_kernel]()
+    var func = ctx.compile_function_experimental[simple_kernel]()
 
     # Stream 1: input -> intermediate (multiply by multiplier1)
-    stream1.enqueue_function_checked(
+    stream1.enqueue_function(
         func,
         input_device,
         intermediate_device,
@@ -157,7 +157,7 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext):
 
     # Stream 2: wait for event, then intermediate -> output (multiply by multiplier2)
     stream2.enqueue_wait_for(event)
-    stream2.enqueue_function_checked(
+    stream2.enqueue_function(
         func,
         intermediate_device,
         output_device,
@@ -208,11 +208,11 @@ def test_multiple_events_synchronization(ctx: DeviceContext):
         output_devices.append(ctx.enqueue_create_buffer[DType.float32](length))
         multipliers.append(Float32(i + 1))
 
-    var func = ctx.compile_function_checked[simple_kernel, simple_kernel]()
+    var func = ctx.compile_function_experimental[simple_kernel]()
 
     # Launch kernels on all streams
     for i in range(num_streams):
-        streams[i].enqueue_function_checked(
+        streams[i].enqueue_function(
             func,
             input_device,
             output_devices[i],
@@ -269,10 +269,10 @@ def test_event_dependency_chain(ctx: DeviceContext):
     var event1_copied = event1
     var event2_moved = event2^
 
-    var func = ctx.compile_function_checked[simple_kernel, simple_kernel]()
+    var func = ctx.compile_function_experimental[simple_kernel]()
 
     # Stage 1: input -> buffer1 (multiply by 2)
-    stream1.enqueue_function_checked(
+    stream1.enqueue_function(
         func,
         input_device,
         buffer1,
@@ -285,7 +285,7 @@ def test_event_dependency_chain(ctx: DeviceContext):
 
     # Stage 2: buffer1 -> buffer2 (multiply by 3), wait for stage 1
     stream2.enqueue_wait_for(event1_copied)
-    stream2.enqueue_function_checked(
+    stream2.enqueue_function(
         func,
         buffer1,
         buffer2,
@@ -298,7 +298,7 @@ def test_event_dependency_chain(ctx: DeviceContext):
 
     # Stage 3: buffer2 -> buffer3 (multiply by 5), wait for stage 2
     stream3.enqueue_wait_for(event2_moved)
-    stream3.enqueue_function_checked(
+    stream3.enqueue_function(
         func,
         buffer2,
         buffer3,
@@ -354,8 +354,8 @@ def test_event_across_context_streams(ctx: DeviceContext):
     custom_stream.enqueue_wait_for(event)
 
     # Launch kernel on custom stream
-    var func = ctx.compile_function_checked[simple_kernel, simple_kernel]()
-    custom_stream.enqueue_function_checked(
+    var func = ctx.compile_function_experimental[simple_kernel]()
+    custom_stream.enqueue_function(
         func,
         input_device,
         output_device,

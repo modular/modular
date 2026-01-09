@@ -1309,12 +1309,25 @@ fn cp_async_bulk_tensor_global_shared_cta[
         2,
         3,
         4,
-    ), "Expecting rank-1, 2, 3, or 4 tensors"
+        5,
+    ), "Expecting rank-1, 2, 3, 4, or 5 tensors"
 
     comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
 
     @parameter
-    if rank == 4:
+    if rank == 5:
+        llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.5d", NoneType](
+            src_mem,
+            tma_descriptor,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            Int32(coords[2]),
+            Int32(coords[3]),
+            Int32(coords[4]),
+            eviction_policy._value,
+            cache_hint,
+        )
+    elif rank == 4:
         llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.4d", NoneType](
             src_mem,
             tma_descriptor,

@@ -42,7 +42,7 @@ fn launch_p2p_copy_kernel(
     var grid_size = ceildiv(num_elements, BLOCK_SIZE)
 
     # Launch the kernel on both devices
-    ctx1.enqueue_function_checked[p2p_copy_kernel, p2p_copy_kernel](
+    ctx1.enqueue_function_experimental[p2p_copy_kernel](
         dst_buf,
         src_buf,
         num_elements,

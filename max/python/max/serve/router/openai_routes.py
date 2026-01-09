@@ -794,7 +794,7 @@ async def openai_create_chat_completion(
                 stop_token_ids=completion_request.stop_token_ids,
                 stop=_convert_stop(completion_request.stop),
             ),
-            sampling_params_defaults=request.app.state.pipeline_config.model_config.sampling_params_defaults,
+            sampling_params_defaults=request.app.state.pipeline_config.model.sampling_params_defaults,
         )
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
@@ -1272,7 +1272,7 @@ async def openai_create_completion(
                 ),
                 sampling_params_defaults=get_app_pipeline_config(
                     request.app
-                ).model_config.sampling_params_defaults,
+                ).model.sampling_params_defaults,
             )
             tgr = TextGenerationRequest(
                 # Generate a unique request_id for each prompt in the request
@@ -1387,7 +1387,7 @@ async def create_streaming_audio_speech(
             SamplingParamsInput(
                 min_new_tokens=audio_generation_request.min_tokens
             ),
-            sampling_params_defaults=request.app.state.pipeline_config.model_config.sampling_params_defaults,
+            sampling_params_defaults=request.app.state.pipeline_config.model.sampling_params_defaults,
         )
         audio_request = AudioGenerationRequest(
             request_id=request_id,

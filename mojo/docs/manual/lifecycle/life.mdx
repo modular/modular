@@ -91,7 +91,7 @@ struct MyPet:
 
 :::note
 
-Mojo does not require a destructor to destroy an instance. But in some cases you
+Mojo does not require a destructor to destroy an instance. But in some cases, you
 may need to define a custom destructor to release resources (for example, if a
 struct dynamically allocates memory using
 [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer)). We'll
@@ -207,7 +207,7 @@ var b = Target(a)
 ```
 
 In general, types should only support implicit conversions when the conversion
-is lossless, and ideally inexpensive. For example, converting an integer to a
+is lossless and ideally inexpensive. For example, converting an integer to a
 floating-point number is usually lossless (except for very large positive and
 negative integers, where the conversion may be approximate), but converting a
 floating-point number to an integer is very likely to lose information. So
@@ -363,7 +363,7 @@ performs a deep copy:
 
 ```mojo
 struct HeapArray(Copyable):
-    var data: UnsafePointer[Int, MutOrigin.external]
+    var data: UnsafePointer[Int, MutExternalOrigin]
     var size: Int
     var cap: Int
 
@@ -454,7 +454,7 @@ this destructor more in [Death of a value](/mojo/manual/lifecycle/death).
 If your type doesn't use any pointers for heap-allocated data, then writing the
 constructor and copy constructor is all boilerplate code that you shouldn't have
 to write. For most structs that don't manage memory explicitly, you can just add
-the `Copyable` trait to your struct definition and Mojo will synthesize the
+the `Copyable` trait to your struct definition, and Mojo will synthesize the
 `__copyinit__()` method.
 
 :::note
@@ -638,7 +638,7 @@ ownership of a stored value, the `OwnedPointer` can be moved, but not copied.
 
 In some (rare) cases, you may not want a type to be copyable *or* movable. The
 [`Atomic`](/mojo/std/os/atomic/Atomic/) type is an example of a type that's
-neither copyable or movable.
+neither copyable nor movable.
 
 ## Trivial types
 
@@ -657,7 +657,7 @@ registers, not indirectly through memory.
 
 As such, Mojo provides a struct decorator to declare these types of values:
 `@register_passable("trivial")`. This decorator tells Mojo that the type should
-be copyable and movable but that it has no user-defined logic for this (no
+be copyable and movable, but that it has no user-defined logic for this (no
 custom copy constructor or move constructor). It also tells Mojo to pass the
 value in CPU registers whenever possible, which has clear performance benefits.
 

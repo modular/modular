@@ -130,7 +130,7 @@ class FusedSamplingProcessor:
         self.seed = Tensor.from_numpy(
             np.array(
                 [
-                    context.sampling_params.seed + context.current_length
+                    context.sampling_params.seed + len(context.tokens)
                     for context in context_batch
                 ],
                 dtype=np.uint64,
@@ -267,11 +267,11 @@ def _build_token_frequency_csr(
     # Calculate max size needed for token frequency pairs (upper bound)
     if include_prompt:
         total_tokens = sum(
-            context.current_length + padding_size for context in batch
+            len(context.tokens) + padding_size for context in batch
         )
     else:
         total_tokens = sum(
-            len(context.generated_tokens) + padding_size for context in batch
+            len(context.tokens.generated) + padding_size for context in batch
         )
     token_frequency_pairs = np.empty((total_tokens, 2), dtype=np.int32)
 
@@ -280,7 +280,7 @@ def _build_token_frequency_csr(
     current_offset = 0
     for i, context in enumerate(batch):
         tokens = (
-            context.all_tokens if include_prompt else context.generated_tokens
+            context.tokens.all if include_prompt else context.tokens.generated
         )
         unique_tokens, counts = np.unique(tokens, return_counts=True)
 

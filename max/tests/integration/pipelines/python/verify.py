@@ -199,6 +199,9 @@ class DiscrepancyReport:
     kl_div_per_prompt: list[float] | None = None
     """KL divergence for each prompt (only for logit outputs)."""
 
+    max_kl_div: float | None = None
+    """Max KL divergence across all prompts (only for logit outputs)."""
+
     @property
     def avg_mae(self) -> float:
         """Calculate average mean absolute error across all prompts."""
@@ -411,9 +414,11 @@ def compute_discrepancy_report(
 
     mae_per_prompt, rmse_per_prompt, kl_div_per_prompt = [], [], []
     model_modality: ModelModality | None = None
+    model_max_kl_div: float | None = None
     for result, reference in zip(results, references, strict=True):
         verify_matching_prompts(result, reference)
-        kl_div = None
+        avg_kl_div = None
+        max_kl_div = None
         if "embeddings" in result and "embeddings" in reference:
             mae, rmse = calculate_mae_and_rmse(
                 result["embeddings"].astype(np.float64),
@@ -421,7 +426,7 @@ def compute_discrepancy_report(
             )
             model_modality = ModelModality.EMBEDDING
         elif "values" in result and "values" in reference:
-            mae, rmse, kl_div = calculate_logit_discrepancies(
+            mae, rmse, avg_kl_div, max_kl_div = calculate_logit_discrepancies(
                 result["values"], reference["values"]
             )
             model_modality = ModelModality.LOGIT
@@ -431,8 +436,13 @@ def compute_discrepancy_report(
             )
         mae_per_prompt.append(mae)
         rmse_per_prompt.append(rmse)
-        if kl_div is not None:
-            kl_div_per_prompt.append(kl_div)
+        if avg_kl_div is not None:
+            kl_div_per_prompt.append(avg_kl_div)
+        if max_kl_div is not None:
+            if model_max_kl_div is None:
+                model_max_kl_div = max_kl_div
+            else:
+                model_max_kl_div = max(model_max_kl_div, max_kl_div)
 
     if model_modality is None:
         raise ValueError("Could not determine model modality")
@@ -441,6 +451,7 @@ def compute_discrepancy_report(
         mae_per_prompt=mae_per_prompt,
         rmse_per_prompt=rmse_per_prompt,
         kl_div_per_prompt=kl_div_per_prompt if kl_div_per_prompt else None,
+        max_kl_div=max_kl_div,
         model_modality=model_modality,
     )
 
@@ -483,7 +494,7 @@ def calculate_mae_and_rmse(
 
 def calculate_logit_discrepancies(
     result_values: list[TokenInfo], reference_values: list[TokenInfo]
-) -> tuple[float, float, float]:
+) -> tuple[float, float, float, float]:
     """Calculate MAE, RMSE and KL Divergence between result and reference logits.
 
     Args:
@@ -491,11 +502,12 @@ def calculate_logit_discrepancies(
         reference_values: List of token logits from the reference model
 
     Returns:
-        A tuple containing (MAE, RMSE, KL_divergence) as float values
+        A tuple containing (MAE, RMSE, avg KL_divergence, max KL_divergence)
     """
     total_mae = 0.0
     total_rmse = 0.0
     total_kl_div = 0.0
+    max_kl_div = 0.0
     steps = 0
 
     for res_token, ref_token in zip(
@@ -512,13 +524,22 @@ def calculate_logit_discrepancies(
         total_kl_div += kl_divergence_from_logits(
             res_logits_float64, ref_logits_float64
         )
+        max_kl_div = max(
+            max_kl_div,
+            kl_divergence_from_logits(res_logits_float64, ref_logits_float64),
+        )
         steps += 1
 
     mae_average = total_mae / steps
     rmse_average = total_rmse / steps
     kl_div_average = total_kl_div / steps
 
-    return float(mae_average), float(rmse_average), float(kl_div_average)
+    return (
+        float(mae_average),
+        float(rmse_average),
+        float(kl_div_average),
+        float(max_kl_div),
+    )
 
 
 def print_discrepancy_report(report: DiscrepancyReport) -> None:
@@ -544,9 +565,7 @@ def print_discrepancy_report(report: DiscrepancyReport) -> None:
         formatted_kl_div = ", ".join(
             formatter(error) for error in report.kl_div_per_prompt
         )
-        CONSOLE.print(
-            f"KL Div: {formatter(report.avg_kl_div)} <— Use this number if unsure"
-        )
+        CONSOLE.print(f"KL Div: {formatter(report.max_kl_div)}")
 
     CONSOLE.print(f"RMSE:   {formatter(report.avg_rmse)}")
     CONSOLE.print(f"MAE:    {formatter(report.avg_mae)}")

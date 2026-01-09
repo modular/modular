@@ -823,7 +823,7 @@ fn _softmax_gpu[
         sink=sink,
         logsoftmax=logsoftmax,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         shape,
         output,
         sink_weights.value(),

@@ -56,11 +56,11 @@ def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memor
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
 
-            devices = load_devices(mock_config.model_config.device_specs)
+            devices = load_devices(mock_config.model.device_specs)
             MemoryEstimator.estimate_memory_footprint(
                 mock_config,
                 DUMMY_LLAMA_ARCH.pipeline_model,
-                mock_config.model_config,
+                mock_config.model,
                 devices,
             )
 
@@ -93,11 +93,11 @@ def test_memory_estimation__raise_oom_error_all_defaults_no_valid_solution() -> 
                 device_specs=[],
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
-            devices = load_devices(mock_config.model_config.device_specs)
+            devices = load_devices(mock_config.model.device_specs)
             MemoryEstimator.estimate_memory_footprint(
                 mock_config,
                 DUMMY_LLAMA_ARCH.pipeline_model,
-                mock_config.model_config,
+                mock_config.model,
                 devices,
             )
 
@@ -130,11 +130,11 @@ def test_memory_estimation__raise_oom_error_all_defaults(
                 device_specs=[],
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
-            devices = load_devices(mock_config.model_config.device_specs)
+            devices = load_devices(mock_config.model.device_specs)
             MemoryEstimator.estimate_memory_footprint(
                 mock_config,
                 DUMMY_LLAMA_ARCH.pipeline_model,
-                mock_config.model_config,
+                mock_config.model,
                 devices,
             )
 
@@ -165,11 +165,11 @@ def test_memory_estimation__raise_oom_error_max_length_set() -> None:
                 device_specs=[],
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
-            devices = load_devices(mock_config.model_config.device_specs)
+            devices = load_devices(mock_config.model.device_specs)
             MemoryEstimator.estimate_memory_footprint(
                 mock_config,
                 DUMMY_LLAMA_ARCH.pipeline_model,
-                mock_config.model_config,
+                mock_config.model,
                 devices,
             )
 
@@ -198,11 +198,11 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set() -> None:
                 device_specs=[],
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
-            devices = load_devices(mock_config.model_config.device_specs)
+            devices = load_devices(mock_config.model.device_specs)
             MemoryEstimator.estimate_memory_footprint(
                 mock_config,
                 DUMMY_LLAMA_ARCH.pipeline_model,
-                mock_config.model_config,
+                mock_config.model,
                 devices,
             )
 
@@ -235,10 +235,10 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_se
                 device_specs=[],
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
-            devices = load_devices(mock_config.model_config.device_specs)
+            devices = load_devices(mock_config.model.device_specs)
             MemoryEstimator.estimate_memory_footprint(
                 mock_config,
                 DUMMY_LLAMA_ARCH.pipeline_model,
-                mock_config.model_config,
+                mock_config.model,
                 devices,
             )

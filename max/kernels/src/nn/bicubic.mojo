@@ -297,7 +297,7 @@ fn resize_bicubic[
         comptime kernel = gpu_bicubic_kernel[
             output.dtype, input.layout, output.layout, output.address_space
         ]
-        ctx.get_device_context().enqueue_function_checked[kernel, kernel](
+        ctx.get_device_context().enqueue_function_experimental[kernel](
             output,
             input,
             grid_dim=(N, C),

@@ -115,7 +115,7 @@ def start_workers(
                     )
                 )
 
-                METRICS.pipeline_load(pipeline_config.model_config.model_path)
+                METRICS.pipeline_load(pipeline_config.model.model_path)
 
                 logger.info(
                     f"\n\n{'*' * 80}\n\n"

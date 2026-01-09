@@ -90,7 +90,7 @@ At any given time, a pointer can be in one of several states:
   be declared but uninitialized.
 
   ```mojo
-  var ptr: UnsafePointer[Int, MutOrigin.external]
+  var ptr: UnsafePointer[Int, MutExternalOrigin]
   ```
 
 - Null. A null pointer has an address of 0, indicating an invalid pointer.
@@ -355,7 +355,7 @@ s_ptr = UnsafePointer(to=s)
 ```
 
 When allocating memory with the `alloc()` function, the returned pointer has
-an `origin` value of `MutOrigin.external`. This value represents an origin that
+an `origin` value of `MutExternalOrigin`. This value represents an origin that
 is mutable and doesn't *alias* existing values. For example, it doesn't
 point to the memory allocated for any other variable. That means the compiler
 won't unnecessarily extend the lifetimes of unrelated values. This memory isn't tracked
@@ -418,7 +418,7 @@ You can create a `UnsafePointer` from a raw memory address using the
 
 ```mojo
 fn write_to_address(mmio_address: Int, value: Int32):
-    var ptr = UnsafePointer[Int32, MutOrigin.external](
+    var ptr = UnsafePointer[Int32, MutExternalOrigin](
       unsafe_from_address=mmio_address
     )
 
@@ -475,16 +475,16 @@ the return type as an `UnsafePointer`, and Mojo will handle the type conversion
 for you.
 
 Notably, the `origin` parameter when working across FFI boundaries should often
-be set to `(MutOrigin/ImmutOrigin).external`, since the pointer points to memory
+be set to `(Mut/Immut)ExternalOrigin`, since the pointer points to memory
 external to the mojo program.
 
 ```mojo
 from sys.ffi import external_call
 
-def get_foreign_pointer() -> UnsafePointer[Int, MutOrigin.external]:
+def get_foreign_pointer() -> UnsafePointer[Int, MutExternalOrigin]:
     var ptr = external_call[
         "my_c_function", # external function name
-        UnsafePointer[Int, MutOrigin.external] # return type
+        UnsafePointer[Int, MutExternalOrigin] # return type
     ]()
     return ptr
 ```

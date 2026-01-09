@@ -98,7 +98,7 @@ fn test_async_copy[
     arange(input.tensor())
 
     comptime kernel = async_copy_kernel[layout, BM, BN]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         input.device_tensor(), grid_dim=(N // BN, M // BM), block_dim=(BM, BN)
     )
 
@@ -238,7 +238,7 @@ fn test_swizzle_copy[
         num_threads,
     ]
 
-    ctx.enqueue_function_checked[copy, copy](
+    ctx.enqueue_function_experimental[copy](
         a_tensor.device_tensor(),
         b_tensor.device_tensor(),
         grid_dim=(ceildiv(M, BM), 1, 1),
@@ -379,7 +379,7 @@ fn test_partial_copy_dram_to_sram_async[
     comptime kernel_type = partial_copy_dram_to_sram_async_kernel[
         layout, thread_layout, num_threads, block_dim_count
     ]
-    ctx.enqueue_function_checked[kernel_type, kernel_type](
+    ctx.enqueue_function_experimental[kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(1,),
@@ -487,7 +487,7 @@ fn test_copy_dram_to_sram[
     comptime kernel_type = copy_dram_to_sram_kernel[
         layout, thread_layout, num_threads, block_dim_count
     ]
-    ctx.enqueue_function_checked[kernel_type, kernel_type](
+    ctx.enqueue_function_experimental[kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(1,),
@@ -611,7 +611,7 @@ fn test_copy_sram_to_dram[
         block_dim_count,
         binary_op,
     ]
-    ctx.enqueue_function_checked[kernel_type, kernel_type](
+    ctx.enqueue_function_experimental[kernel_type](
         input.device_tensor(),
         grid_dim=(1,),
         block_dim=(block_dim_x, block_dim_y, block_dim_z),
@@ -771,7 +771,7 @@ fn test_copy_local_to_local[
     comptime kernel_type = copy_local_to_local_kernel[
         dtype, layout, WM, WN, MMA_M, MMA_N, num_threads, block_dim_count
     ]
-    ctx.enqueue_function_checked[kernel_type, kernel_type](
+    ctx.enqueue_function_experimental[kernel_type](
         output.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(block_dim_x, block_dim_y, block_dim_z),
@@ -912,7 +912,7 @@ fn test_copy_dram_to_local[
     comptime kernel_type = copy_dram_to_local_kernel[
         layout, num_threads, block_dim_count
     ]
-    ctx.enqueue_function_checked[kernel_type, kernel_type](
+    ctx.enqueue_function_experimental[kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(1,),
@@ -1058,7 +1058,7 @@ fn test_copy_local_to_sram[
         num_threads,
         block_dim_count,
     ]
-    ctx.enqueue_function_checked[kernel_type, kernel_type](
+    ctx.enqueue_function_experimental[kernel_type](
         output.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(block_dim_x, block_dim_y, block_dim_z),

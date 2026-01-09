@@ -126,9 +126,6 @@ def py_repl(
     extra_data = []
     extra_env = {}
 
-    if "//bazel/internal:lib_toolchain" not in toolchains and "@//bazel/internal:lib_toolchain" not in toolchains:
-        extra_toolchains.append("@//bazel/internal:lib_toolchain")
-
     if direct:
         transitive_mojo_deps = name + ".mojo_deps"
         collect_transitive_mojoinfo(

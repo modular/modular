@@ -302,11 +302,13 @@ async def test_prefix_caching_with_random_prompts(
 
             prompt = gen_prompt(prompt_len - 1)
 
-            orig_start_idx = context.processed_length
+            orig_start_idx = context.tokens.processed_length
             for tok in prompt:
                 context.update(tok)
 
-            context.rewind_processing(context.processed_length - orig_start_idx)
+            context.tokens.rewind_processing(
+                context.tokens.processed_length - orig_start_idx
+            )
 
             # This fetch can trigger evictions from the tree.
             for ctx in batch:
@@ -584,7 +586,7 @@ async def test_prefix_caching_grouped_prefixes(
 
         ctxs = list(batch.values())
         request_ids_and_prompts = {
-            request_id: batch[request_id].next_tokens for request_id in batch
+            request_id: batch[request_id].tokens.active for request_id in batch
         }
         for ctx in ctxs:
             kv_manager.alloc(ctx, num_steps=num_steps)
@@ -610,14 +612,16 @@ async def test_prefix_caching_grouped_prefixes(
     for _ in range(num_tg_steps):
         for ctx in batch.values():
             extended = gen_prompt(np.random.randint(0, 10))
-            orig_start_idx = ctx.processed_length
+            orig_start_idx = ctx.tokens.processed_length
             for tok in extended:
                 ctx.update(tok)
-            ctx.rewind_processing(ctx.processed_length - orig_start_idx)
+            ctx.tokens.rewind_processing(
+                ctx.tokens.processed_length - orig_start_idx
+            )
 
         ctxs = list(batch.values())
         orig_request_ids_and_prompts = {
-            request_id: ctx.next_tokens for request_id, ctx in batch.items()
+            request_id: ctx.tokens.active for request_id, ctx in batch.items()
         }
         for ctx in ctxs:
             kv_manager.alloc(ctx, num_steps=num_steps)
@@ -658,16 +662,16 @@ def run_forward(
     If the context has unprocessed tokens, they are included in the prompt
     passed to the model to ensure proper KV projection tracking.
     """
-    orig_start_idx = ctx.processed_length
-    num_unprocessed = len(ctx.all_tokens) - ctx.processed_length
+    orig_start_idx = ctx.tokens.processed_length
+    num_unprocessed = len(ctx.tokens.all) - ctx.tokens.processed_length
 
     for tok in prompt:
         ctx.update(tok)
-    ctx.rewind_processing(ctx.processed_length - orig_start_idx)
+    ctx.tokens.rewind_processing(ctx.tokens.processed_length - orig_start_idx)
 
     # Include any unprocessed tokens from context in the prompt for the model
     if num_unprocessed > 0:
-        all_tokens_array = np.array(ctx.all_tokens)
+        all_tokens_array = np.array(ctx.tokens.all)
         unprocessed_tokens = all_tokens_array[:num_unprocessed]
         full_prompt = np.concatenate([unprocessed_tokens, prompt])
     else:
@@ -910,7 +914,7 @@ async def test_prefix_caching_with_images_and_page_size_gt_1() -> None:
         run_and_check_num_cached_tokens(kv_manager, ctx1, do_step=False) == 12
     )
 
-    assert ctx1.processed_length == 12
+    assert ctx1.tokens.processed_length == 12
     assert (
         kv_manager._replica_managers[0].block_manager.req_to_committed_idx[
             ctx1.request_id

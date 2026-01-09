@@ -104,7 +104,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
     """
 
     # Aliases
-    comptime Mutable = Span[Self.T, MutOrigin(unsafe_cast=Self.origin)]
+    comptime Mutable = Span[Self.T, unsafe_origin_mutcast[Self.origin]]
     """The mutable version of the `Span`."""
     comptime Immutable = Span[Self.T, ImmutOrigin(Self.origin)]
     """The immutable version of the `Span`."""

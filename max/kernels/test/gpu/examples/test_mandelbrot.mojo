@@ -93,7 +93,7 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
     @always_inline
     @parameter
     fn run_mandelbrot(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked[mandelbrot, mandelbrot](
+        ctx.enqueue_function_experimental[mandelbrot](
             out_device,
             grid_dim=(ceildiv(height, BLOCK_SIZE),),
             block_dim=(BLOCK_SIZE,),

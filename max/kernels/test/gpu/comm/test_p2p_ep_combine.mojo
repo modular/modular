@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
+
 from io.io import _printf
 from random import randint, randn, seed
 from sys import (
@@ -50,7 +52,7 @@ from utils import IndexList
 
 fn legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[Int32, MutOrigin.external], n_tokens: Int):
+](topk_ids: UnsafePointer[Int32, MutExternalOrigin], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
@@ -122,8 +124,8 @@ fn test_combine[
     # Shared atomic counter buffer for dispatch and combine
     var atomic_counters_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
 
-    var host_topk_ids_list = InlineArray[UnsafePointer[Int32, MutOrigin.external], n_ranks](fill={})
-    var host_input_tokens_list = InlineArray[UnsafePointer[Scalar[input_type], MutOrigin.external], n_ranks](fill={})
+    var host_topk_ids_list = InlineArray[UnsafePointer[Int32, MutExternalOrigin], n_ranks](fill={})
+    var host_input_tokens_list = InlineArray[UnsafePointer[Scalar[input_type], MutExternalOrigin], n_ranks](fill={})
 
     var device_topk_bufs_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
     var device_input_bufs_list = List[DeviceBuffer[input_type]](capacity=n_ranks)
@@ -231,28 +233,28 @@ fn test_combine[
     # Dispatch helpers
     @always_inline
     @parameter
-    fn get_dispatch_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutOrigin.external]) raises:
+    fn get_dispatch_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutExternalOrigin]) raises:
         return type_of(result)(dispatch_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * msg_bytes)
 
     # Combine helpers
     @always_inline
     @parameter
-    fn get_combine_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutOrigin.external]) raises:
+    fn get_combine_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutExternalOrigin]) raises:
         return type_of(result)(combine_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * combine_msg_bytes)
 
     @always_inline
     @parameter
-    fn get_combine_recv_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutOrigin.external]) raises:
+    fn get_combine_recv_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutExternalOrigin]) raises:
         return type_of(result)(combine_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes)
 
     @always_inline
     @parameter
-    fn get_combine_recv_count_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt64, MutOrigin.external]) raises:
+    fn get_combine_recv_count_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt64, MutExternalOrigin]) raises:
         return type_of(result)(combine_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts)
 
     @always_inline
     @parameter
-    fn get_atomic_counters_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[Int32, MutOrigin.external]) raises:
+    fn get_atomic_counters_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[Int32, MutExternalOrigin]) raises:
         return type_of(result)(atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * 2 * n_experts)
 
     @always_inline
@@ -396,7 +398,7 @@ fn test_combine[
     @parameter
     fn run_dispatch(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function_checked[dispatch, dispatch](
+        ctx.enqueue_function[dispatch, dispatch](
             get_input_tokens_tensor(dev_idx, slot_idx),
             get_topk_ids_tensor(dev_idx, slot_idx),
             get_dispatch_send_buf_ptr(dev_idx, slot_idx),
@@ -412,7 +414,7 @@ fn test_combine[
     @parameter
     fn run_dispatch_cb(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function_checked[dispatch_cb, dispatch_cb](
+        ctx.enqueue_function[dispatch_cb, dispatch_cb](
             type_of(format_handler)(get_output_tensor(dev_idx, slot_idx)),
             get_row_offsets_tensor(dev_idx, slot_idx),
             get_expert_ids_tensor(dev_idx, slot_idx),
@@ -421,6 +423,9 @@ fn test_combine[
             dispatch_recv_count_bufs_inputs[slot_idx][dev_idx],
             get_atomic_counters_ptr(dev_idx, slot_idx),
             Int32(dev_idx),
+            OptionalReg[
+                LayoutTensor[input_type, Layout.row_major[2](), ImmutAnyOrigin]
+            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -435,7 +440,7 @@ fn test_combine[
     @parameter
     fn run_combine(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function_checked[combine, combine](
+        ctx.enqueue_function[combine, combine](
             get_output_tensor(dev_idx, slot_idx),
             get_src_token_info_tensor(dev_idx, slot_idx),
             get_combine_send_buf_ptr(dev_idx, slot_idx),
@@ -443,6 +448,9 @@ fn test_combine[
             combine_recv_count_bufs_inputs[slot_idx],
             get_atomic_counters_ptr(dev_idx, slot_idx),
             Int32(dev_idx),
+            OptionalReg[
+                LayoutTensor[input_type, Layout.row_major[2](), MutAnyOrigin]
+            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -451,7 +459,7 @@ fn test_combine[
     @parameter
     fn run_combine_cb(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function_checked[combine_cb, combine_cb](
+        ctx.enqueue_function[combine_cb, combine_cb](
             get_output_2_tensor(dev_idx, slot_idx),
             get_combine_recv_buf_ptr(dev_idx, slot_idx),
             get_combine_recv_count_ptr(dev_idx, slot_idx),

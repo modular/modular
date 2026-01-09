@@ -47,7 +47,7 @@ class MockHuggingFaceConfig(AutoConfig):
 
 class MockModelConfig(MAXModelConfig):
     def __init__(self):
-        self._kv_cache_config = MockKVCacheConfig()
+        self._kv_cache = MockKVCacheConfig()
         self._huggingface_config = MockHuggingFaceConfig()
 
 

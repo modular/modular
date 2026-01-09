@@ -99,7 +99,7 @@ def test_qwen3vl_tokenizer() -> None:
     # Use all_tokens (tokens[:end_idx]) instead of full tokens array to exclude resize padding
     # The context resizes tokens to CHUNK_SIZE boundary, so we should only compare the actual tokens
     sdk_input_ids = (
-        context.all_tokens
+        context.tokens.all
     )  # This is tokens[:end_idx], excluding resize padding
     assert isinstance(sdk_input_ids, np.ndarray)
 
@@ -191,7 +191,7 @@ def test_qwen3vl_tokenizer_no_images() -> None:
     # Use all_tokens (tokens[:end_idx]) instead of full tokens array to exclude resize padding
     # The context resizes tokens to CHUNK_SIZE boundary, so we should only compare the actual tokens
     sdk_input_ids = (
-        context.all_tokens
+        context.tokens.all
     )  # This is tokens[:end_idx], excluding resize padding
     assert isinstance(sdk_input_ids, np.ndarray)
 

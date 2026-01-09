@@ -53,7 +53,7 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
 
 def test_producer_consumer_kernel(ctx: DeviceContext):
     comptime kernel = producer_consumer_kernel[64]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         grid_dim=(1),
         block_dim=(64),
     )
@@ -127,7 +127,7 @@ fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
 
 def test_producer_consumer_pipeline_kernel(ctx: DeviceContext):
     comptime kernel = producer_consumer_pipeline_kernel[4]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         4,
         grid_dim=(1),
         block_dim=(128),
@@ -262,7 +262,7 @@ def test_cpasync_producer_consumer_pipeline[
     comptime kernel = cpaysnc_producer_consumer_pipeline_kernel[
         num_stages, origin_of(src_device), origin_of(dst_device)
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         Span[Float32, origin_of(src_device)](
             ptr=UnsafePointer[Float32, origin_of(src_device)](src_device.ptr),
             length=size,

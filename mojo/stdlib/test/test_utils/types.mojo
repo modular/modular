@@ -498,9 +498,9 @@ struct AbortOnCopy(ImplicitlyCopyable):
 
 struct Observable[
     *,
-    CopyOrigin: MutOrigin = MutOrigin.external,
-    MoveOrigin: MutOrigin = MutOrigin.external,
-    DelOrigin: MutOrigin = MutOrigin.external,
+    CopyOrigin: MutOrigin = MutExternalOrigin,
+    MoveOrigin: MutOrigin = MutExternalOrigin,
+    DelOrigin: MutOrigin = MutExternalOrigin,
 ](Copyable):
     """A type that tracks the number of times it has been copied, moved, and destroyed.
 

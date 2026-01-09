@@ -3696,7 +3696,7 @@ fn conv_gpu[
             var grid_dim_x = ceildiv(
                 output.dim[2](), block_size
             )  # w / block size for 2d
-            ctx.enqueue_function_checked[conv_gpu_n, conv_gpu_n](
+            ctx.enqueue_function[conv_gpu_n, conv_gpu_n](
                 input,
                 filter,
                 output,
@@ -3711,7 +3711,7 @@ fn conv_gpu[
         var grid_dim_x = ceildiv(
             output.dim[2]() * output.dim[3](), block_size
         )  # h * w / block size for 3d
-        ctx.enqueue_function_checked[conv_gpu_3d, conv_gpu_3d](
+        ctx.enqueue_function[conv_gpu_3d, conv_gpu_3d](
             input,
             filter,
             output,

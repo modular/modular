@@ -10,11 +10,6 @@ Contents:
     extension).
   - A `modular_run_binary_test` target for each binary (with a `_test` suffix).
 
-**Note:** `scalar_add_checked.mojo` is a version of `scalar_add.mojo` that uses
-`compile_function_checked()` and `enqueue_function_checked()`. After kernel
-typechecking becomes the default behavior, this file will be no longer needed
-and can be deleted.
-
 **Note:** These examples require a [supported
 GPU](https://docs.modular.com/max/faq/#gpu-requirements) to compile and run the
 kernels. If your system doesn't have a supported GPU, you can compile the

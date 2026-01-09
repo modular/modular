@@ -39,6 +39,33 @@ def test_arange_defaults() -> None:
         assert_all_close(range(10), t)
 
 
+def test_arange_start_stop() -> None:
+    t = Tensor.arange(5, 10, dtype=DType.float32, device=CPU())
+    assert_all_close([5, 6, 7, 8, 9], t)
+
+
+def test_arange_start_stop_step() -> None:
+    t = Tensor.arange(0, 10, 2, dtype=DType.float32, device=CPU())
+    assert_all_close([0, 2, 4, 6, 8], t)
+
+
+def test_arange_float_step() -> None:
+    # Note: Use values that divide evenly to avoid floating point precision issues
+    # (1.0 / 0.2 = 5.0 exactly, but 1.0 // 0.2 = 4.0 due to floating point)
+    t = Tensor.arange(0.0, 1.0, 0.25, dtype=DType.float32, device=CPU())
+    assert_all_close([0.0, 0.25, 0.5, 0.75], t)
+
+
+def test_arange_negative_step() -> None:
+    t = Tensor.arange(5, 0, -1, dtype=DType.float32, device=CPU())
+    assert_all_close([5, 4, 3, 2, 1], t)
+
+
+def test_arange_float_start_stop() -> None:
+    t = Tensor.arange(0.5, 3.5, 1.0, dtype=DType.float32, device=CPU())
+    assert_all_close([0.5, 1.5, 2.5], t)
+
+
 def test_invalid() -> None:
     t = Tensor.arange(10, dtype=DType.float32, device=CPU())
     with pytest.raises(

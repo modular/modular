@@ -273,7 +273,8 @@ fn winograd_conv2d_gpu_nhwc[
     ].stack_allocation()
 
     # Pre-transform filter (G^T * filter * G)
-    var filter_slice = filter.slice[:, :, slice_indices= (0, 1)](offsets=(0))
+    # offsets=(0, 0) specifies indices for the non-sliced dimensions (rank-2)
+    var filter_slice = filter.slice[:, :, slice_indices= (0, 1)](offsets=(0, 0))
     matmul[False](scratch, g, filter_slice)
     matmul[True](g_transformed, scratch, g)
 
@@ -390,7 +391,7 @@ fn winograd_conv2d_gpu_launcher[
         block_size,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         input.get_immutable().as_any_origin(),
         filter.get_immutable().as_any_origin(),
         output.as_any_origin(),

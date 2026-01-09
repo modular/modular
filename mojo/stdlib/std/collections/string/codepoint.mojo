@@ -22,6 +22,7 @@ from sys.intrinsics import likely
 
 from bit import count_leading_zeros
 from bit._mask import splat
+from os import abort
 
 
 @always_inline
@@ -178,10 +179,12 @@ struct Codepoint(
         Returns:
             A `Codepoint` representing the codepoint of the given character.
         """
+        if string.byte_length() == 0:
+            abort("Codepoint.ord: input string must not be empty")
 
         # SAFETY:
         #   This is safe because `StringSlice` is guaranteed to point to valid
-        #   UTF-8.
+        #   UTF-8, and we verified above that the input is non-empty.
         var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
             string.as_bytes()
         )

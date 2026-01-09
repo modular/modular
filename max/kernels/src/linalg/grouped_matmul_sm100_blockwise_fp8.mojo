@@ -638,7 +638,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         a_offsets,
@@ -2214,7 +2214,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     # TODO
     var problem_shape = StaticTuple[Int32, 3](max_num_tokens_per_expert, N, K)
 
-    ctx.enqueue_function_checked[kernel, kernel, dump_asm=False](
+    ctx.enqueue_function[kernel, kernel, dump_asm=False](
         num_active_experts,
         a_tma_op,
         b_tma_op,

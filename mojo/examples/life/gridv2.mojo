@@ -23,7 +23,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Stringable):
     # ===-------------------------------------------------------------------===#
 
     comptime num_cells = Self.rows * Self.cols
-    var data: UnsafePointer[Int8, MutOrigin.external]
+    var data: UnsafePointer[Int8, MutExternalOrigin]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods

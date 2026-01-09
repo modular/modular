@@ -33,13 +33,13 @@ def test_function_error(ctx: DeviceContext):
         var res_host = DeviceBuffer[DType.uint32](
             ctx, ptr_owned.unsafe_ptr(), 1, owning=False
         )
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             res_host, block_dim=(1), grid_dim=(1)
         )
         ctx.synchronize()
     except e:
         # The error should point to the ctx.enqueue_function call in sync mode.
-        # CHECK: max/kernels/test/gpu/device_context/test_function_error_sync_mode.mojo:36:53 failed calling 'test_function_error_sync_mode::kernel' on device cuda:0 with error 'CUDA call failed: CUDA_ERROR_ILLEGAL_ADDRESS (an illegal memory access was encountered)'
+        # CHECK: max/kernels/test/gpu/device_context/test_function_error_sync_mode.mojo:36:45 failed calling 'test_function_error_sync_mode::kernel' on device cuda:0 with error 'CUDA call failed: CUDA_ERROR_ILLEGAL_ADDRESS (an illegal memory access was encountered)'
         print(e)
 
 

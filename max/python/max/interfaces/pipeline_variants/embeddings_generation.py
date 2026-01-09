@@ -63,15 +63,6 @@ class EmbeddingsContext(BaseContext, Protocol):
         """
         ...
 
-    @property
-    def active_length(self) -> int:
-        """The length of the active array.
-
-        Returns:
-            The length as int.
-        """
-        ...
-
 
 EmbeddingsGenerationContextType = TypeVar(
     "EmbeddingsGenerationContextType", bound=EmbeddingsContext

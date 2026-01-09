@@ -28,10 +28,7 @@ from .datasets import DATASET_REGISTRY, DatasetMode
 
 logger = logging.getLogger(__name__)
 
-from max.config import (
-    MAXConfig,
-    deep_merge_max_configs,
-)
+from max.config import MAXConfig, deep_merge_max_configs
 
 
 class Backend(str, enum.Enum):
@@ -187,7 +184,7 @@ class BaseBenchmarkConfig(MAXConfig):
             "endpoint": [endpoint.value for endpoint in Endpoint],
             "dataset_name": list(DATASET_REGISTRY.keys()),
             "dataset_mode": [mode.value for mode in DatasetMode],
-            "random_distribution_type": ["uniform", "normal"],
+            "random_distribution_type": ["uniform", "normal", "gamma"],
         }
 
     @classmethod
@@ -508,7 +505,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "obfuscated_conversations_coefficient_of_variation": "Coefficient of variation for output length for obfuscated-conversations dataset when output_lengths is not provided.",
             "obfuscated_conversations_shuffle": "Shuffle the obfuscated-conversations dataset.",
             "random_coefficient_of_variation": "Coefficient of variation for input/output length, used only for random sampling.",
-            "random_distribution_type": "Type of probability distribution for sampled input/output length. Choices: uniform, normal",
+            "random_distribution_type": "Type of probability distribution for sampled input/output length. Choices: uniform, normal, gamma",
             "random_first_turn_ratio": "Ratio of the length of the first turn to the length of subsequent turns.",
             "random_image_size": "Size of random images to generate.",
             "random_input_len": "Number of input tokens per request, used only for random sampling.",

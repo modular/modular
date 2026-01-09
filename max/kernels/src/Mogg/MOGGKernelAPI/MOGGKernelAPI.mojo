@@ -34,9 +34,6 @@ from math import (
     sqrt,
     tanh,
 )
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from random import randn, seed
 from sys import align_of, external_call, llvm_intrinsic
 from sys.info import simd_width_of, size_of, _current_target
@@ -6585,7 +6582,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     ) raises:
         # Dummy position_ids - won't be used since has_position_ids=False
         var dummy_position_ids = DynamicTensor[dtype = DType.uint32, rank=2](
-            UnsafePointer[UInt32](), IndexList[2](0)
+            {}, IndexList[2](0)
         )
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
@@ -7739,8 +7736,8 @@ struct Struct_kv_cache_store_paged:
             kv_lookup_table,
             max_lengths,
         )
-
-        var cache: paged_kv_collection.CacheType
+        comptime KVCacheT = paged_kv_collection.CacheType
+        var cache: KVCacheT
 
         @parameter
         if key_or_value == 0:
@@ -7764,7 +7761,9 @@ struct Struct_kv_cache_store_paged:
                 idx,
             )
 
-        kv_cache_store_ragged[input_fn=input_fn, target=target](
+        kv_cache_store_ragged[
+            cache_t=KVCacheT, input_fn=input_fn, target=target
+        ](
             cache,
             inputs.shape(),
             input_row_offsets.to_layout_tensor(),
@@ -8696,7 +8695,9 @@ struct DistributedAllReduceSum:
         var out_buf = managed_tensor_slice_to_ndbuffer(output)
 
         # Marshal signal buffers.
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -8780,7 +8781,9 @@ struct DistributedAllGather:
         for i in range(num_devices * num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -8881,7 +8884,9 @@ struct DistributedMatmulAllReduce:
                 NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape]
             ](managed_tensor_slice_to_ndbuffer(outputs[i]))
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -8964,6 +8969,7 @@ struct AdvancedIndexingGetItem:
     fn execute[
         input_rank: Int,
         index_rank: Int,
+        output_rank: Int,
         input_type: DType,
         index_type: DType,
         num_index_tensors: Int,
@@ -8972,15 +8978,18 @@ struct AdvancedIndexingGetItem:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_tensor: OutputTensor[
-            dtype=input_type, rank = input_rank + index_rank - num_index_tensors
-        ],
+        out_tensor: OutputTensor[dtype=input_type, rank=output_rank],
         input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank],
         indices: FusedInputVariadicTensors[
             index_type, index_rank, size=num_index_tensors
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:
+        # TODO: Uses `where` clause when emit mojo is turned on by default.
+        __comptime_assert (
+            output_rank == input_rank + index_rank - num_index_tensors
+        )
+
         @parameter
         @always_inline
         fn input_tensor_fn[
@@ -9394,7 +9403,7 @@ struct MatmulStaticScaledFloat8:
         var output_dummy = NDBuffer[
             DType.float32, 2, MutAnyOrigin, DimList(Dim(), N)
         ](
-            UnsafePointer[Scalar[DType.float32]](),
+            {},
             IndexList[2](M, N),
         )
 

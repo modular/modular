@@ -439,7 +439,7 @@ class MemoryEstimator:
         upper = pipeline_config.max_length
         inferred_max_length = upper
 
-        model_config = pipeline_config.model_config
+        model_config = pipeline_config.model
         if not model_config.quantization_encoding:
             raise ValueError(
                 "quantization_encoding must be provided in pipeline_config"
@@ -515,7 +515,7 @@ class MemoryEstimator:
         inferred_max_batch_size = cast(int, pipeline_config.max_batch_size)
         lower = 1
         upper = cast(int, pipeline_config.max_batch_size)
-        model_config = pipeline_config.model_config
+        model_config = pipeline_config.model
 
         while not found_valid_max_batch_size:
             inferred_max_batch_size = (lower + upper) // 2

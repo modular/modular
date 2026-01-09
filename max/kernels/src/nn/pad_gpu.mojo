@@ -189,7 +189,7 @@ fn _pad_constant_impl[
     comptime block_rows = max_threads // threads_per_row
     comptime kernel = padded_copy_kernel[dtype, tensor_layout, simd_width]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         input_tensor,
         output_tensor,
         rows_per_block,

@@ -87,6 +87,7 @@ _VERDICT_EMOJI = {
 class VerificationVerdict:
     status: VerificationStatus
     discrepancy_report: DiscrepancyReport | None = None
+    kl_div_threshold: float | None = None
 
     @property
     def emoji(self) -> str:
@@ -251,30 +252,40 @@ def dump_results(
     if any_logit:
         to.write("\n\n## LLMs\n")
         to.write(
-            "**KL Div** = average over all prompts (lower is better)\n"
-            "Note: This is NOT the max threshold used for pass/fail checks\n\n"
-            "**Diff** = change from previous run\n"
+            "**KL Div (max)** = max KL Div over all prompts. This is the threshold used for pass/fail checks.\n"
+            "**KL Div (avg)** = average over all prompts (lower is better)\n"
+            "**Diff** = change of the average KL Div from previous run\n"
             "  • Negative = accuracy improved\n"
             "  • Positive = accuracy worsened\n"
             "  • N/A = no previous verdict\n"
             "  • --- = no change\n"
         )
-        to.write("| Status | Model | KL Div | Diff |\n")
-        to.write("| :----: | :---  | :---:  | :---:|\n")
+        to.write(
+            "| Status | Model | KL Div (max) | KL Div (avg) | Diff (avg) |\n"
+        )
+        to.write(
+            "| :----: | :---- | :----------: | :----------: | :--------: |\n"
+        )
 
         for name, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
             if verdict.discrepancy_report is None:
                 continue
             if verdict.discrepancy_report.model_modality != Modality.LOGIT:
                 continue
-            kl = f"{verdict.discrepancy_report.avg_kl_div:.2e}"
+            kl_max = f"{verdict.discrepancy_report.max_kl_div:.2e}"
+            threshold_max = f"{verdict.kl_div_threshold:.2e}"
+            kl_avg = f"{verdict.discrepancy_report.avg_kl_div:.2e}"
+            if kl_max > threshold_max:
+                kl_max_str = f"{kl_max} (>{threshold_max})"
+            else:
+                kl_max_str = f"{kl_max} (<={threshold_max})"
 
             diff_str = "N/A"
             if previous_verdicts and name in previous_verdicts:
                 diff_str = compute_diff(verdict, previous_verdicts[name])
 
             to.write(
-                f"| {verdict.emoji} | {display_name(name)} | {kl} | {diff_str} |\n"
+                f"| {verdict.emoji} | {display_name(name)} | {kl_max_str} | {kl_avg} | {diff_str} |\n"
             )
 
     if any_embedding:
@@ -532,6 +543,7 @@ def run_llm_verification(
         return VerificationVerdict(
             status=status,
             discrepancy_report=result.discrepancy_report,
+            kl_div_threshold=kl_div_threshold,
         )
     except Exception:
         traceback.print_exc()
@@ -894,21 +906,6 @@ PIPELINES = {
             kl_div_threshold=5.2e-3,
         ),
     ),
-    "meta-llama/Llama-3.2-11B-Vision-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big"],
-        run=_make_pipeline_runner(
-            pipeline="meta-llama/Llama-3.2-11B-Vision-Instruct",
-            encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama3-vision_golden/1/80e47cd8ba86f3c0f2c9768eb966136fc3e5974f5dd01177a7464338b85221d2/torch_llama3-vision_golden.tar.gz",
-                json_file="torch_llama3_2_bfloat16_golden.json",
-            ),
-            # Note: llama-vision is not yet using llama3 rope.
-            cos_dist_threshold=5e-3,
-            kl_div_threshold=5.4e-3,
-        ),
-    ),
     "OpenGVLab/InternVL3-1B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         # TODO(KERN-1861): MI300x: Memory access fault by GPU node-2.
@@ -1210,9 +1207,9 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz",
                 json_file="vllm_deepseek-r1_float8_golden.json",
             ),
-            cos_dist_threshold=5.1e-01,
-            kl_div_threshold=2.5e00,
-            timeout=1200,
+            cos_dist_threshold=4.5e-3,
+            kl_div_threshold=6.6e-2,
+            timeout=1800,
         ),
     ),
     "google/gemma-3-1b-it-bfloat16": PipelineDef(

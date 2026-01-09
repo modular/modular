@@ -106,7 +106,7 @@ def test_kernel_1[
     # Use 1D thread block for memory coalescing
     comptime BLOCKSIZE = 32
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c.device_tensor(),
         a.device_tensor(),
         b.device_tensor(),
@@ -123,7 +123,7 @@ def test_kernel_1[
         @always_inline
         @parameter
         fn run_kernel(ctx: DeviceContext) raises:
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 c.device_tensor[update=False](),
                 a.device_tensor[update=False](),
                 b.device_tensor[update=False](),

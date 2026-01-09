@@ -179,12 +179,12 @@ class TestPipelineConfigUtilityMethods:
         config._create_lora_config_if_needed(kwargs)
 
         # Should create LoRA config
-        assert config._lora_config is not None
-        assert config._lora_config.lora_paths == [
+        assert config.lora_config is not None
+        assert config.lora_config.lora_paths == [
             "/path/to/lora1",
             "/path/to/lora2",
         ]
-        assert config._lora_config.max_lora_rank == 32
+        assert config.lora_config.max_lora_rank == 32
 
         # Should remove LoRA-related kwargs
         assert "lora_paths" not in kwargs
@@ -204,7 +204,7 @@ class TestPipelineConfigUtilityMethods:
         }
         config._create_lora_config_if_needed(kwargs)
         # LoRA config should not be created if no lora_paths are provided.
-        assert config._lora_config is None
+        assert config.lora_config is None
 
     @mock_pipeline_config_resolve
     def test_create_draft_model_config_if_needed_with_model_path(self) -> None:
@@ -220,9 +220,9 @@ class TestPipelineConfigUtilityMethods:
         config._create_draft_model_config_if_needed(kwargs)
 
         # Should create draft model config
-        assert config._draft_model_config is not None
-        assert config._draft_model_config.model_path == "/path/to/draft"
-        assert config._draft_model_config.quantization_encoding == "float32"
+        assert config.draft_model_config is not None
+        assert config.draft_model_config.model_path == "/path/to/draft"
+        assert config.draft_model_config.quantization_encoding == "float32"
 
         # Should remove draft-related kwargs
         assert "draft_model_path" not in kwargs
@@ -243,7 +243,7 @@ class TestPipelineConfigUtilityMethods:
 
         config._create_draft_model_config_if_needed(kwargs)
         # Draft model config should not be created if no model_path is provided.
-        assert config._draft_model_config is None
+        assert config.draft_model_config is None
 
     @mock_pipeline_config_resolve
     def test_create_and_set_config_basic(self) -> None:
@@ -257,13 +257,13 @@ class TestPipelineConfigUtilityMethods:
         kv_cache_kwargs: dict[str, Any] = {}
 
         config._create_and_set_config(
-            "_sampling_config", SamplingConfig, matched_kwargs, kv_cache_kwargs
+            "_sampling", SamplingConfig, matched_kwargs, kv_cache_kwargs
         )
 
         # Should create and set the config
-        assert config._sampling_config is not None
-        assert config._sampling_config.enable_structured_output is True
-        assert config._sampling_config.enable_penalties is True
+        assert config.sampling_config is not None
+        assert config.sampling_config.enable_structured_output is True
+        assert config.sampling_config.enable_penalties is True
 
     @mock_pipeline_config_resolve
     def test_create_and_set_config_model_config_with_kv_cache(self) -> None:
@@ -274,13 +274,13 @@ class TestPipelineConfigUtilityMethods:
         kv_cache_kwargs: dict[str, Any] = {"kv_cache_page_size": 256}
 
         config._create_and_set_config(
-            "_model_config", MAXModelConfig, matched_kwargs, kv_cache_kwargs
+            "_model", MAXModelConfig, matched_kwargs, kv_cache_kwargs
         )
 
         # Should create model config with KV cache config
-        assert config._model_config is not None
-        assert config._model_config.model_path == "/test/path"
-        assert config._model_config._kv_cache_config.kv_cache_page_size == 256
+        assert config.model is not None
+        assert config.model.model_path == "/test/path"
+        assert config.model._kv_cache.kv_cache_page_size == 256
 
     @mock_pipeline_config_resolve
     def test_create_and_set_config_sampling_with_echo_enabled(self) -> None:
@@ -291,13 +291,13 @@ class TestPipelineConfigUtilityMethods:
         kv_cache_kwargs: dict[str, Any] = {}
 
         config._create_and_set_config(
-            "_sampling_config", SamplingConfig, matched_kwargs, kv_cache_kwargs
+            "_sampling", SamplingConfig, matched_kwargs, kv_cache_kwargs
         )
 
         # Should create sampling config with variable logits enabled
-        assert config._sampling_config is not None
-        assert config._sampling_config.enable_min_tokens is True
-        assert config._sampling_config.enable_variable_logits is True
+        assert config.sampling_config is not None
+        assert config.sampling_config.enable_min_tokens is True
+        assert config.sampling_config.enable_variable_logits is True
 
     @mock_pipeline_config_resolve
     def test_process_remaining_config_classes(self) -> None:
@@ -324,10 +324,10 @@ class TestPipelineConfigUtilityMethods:
         assert "unknown_param" in unmatched_kwargs
 
         # Should update configs
-        assert config._sampling_config.enable_structured_output is True
-        assert config._sampling_config.enable_penalties is True
-        assert config._model_config.model_path == "/override/path"
-        assert config._model_config._kv_cache_config.kv_cache_page_size == 128
+        assert config.sampling_config.enable_structured_output is True
+        assert config.sampling_config.enable_penalties is True
+        assert config.model.model_path == "/override/path"
+        assert config.model._kv_cache.kv_cache_page_size == 128
 
     @mock_pipeline_config_resolve
     def test_process_remaining_config_classes_no_matches(self) -> None:
@@ -373,22 +373,22 @@ class TestPipelineConfigUtilityMethods:
         assert config.max_batch_size == 4
 
         # LoRA config
-        assert config._lora_config is not None
-        assert config._lora_config.lora_paths == ["/lora1", "/lora2"]
-        assert config._lora_config.max_lora_rank == 64
+        assert config.lora_config is not None
+        assert config.lora_config.lora_paths == ["/lora1", "/lora2"]
+        assert config.lora_config.max_lora_rank == 64
 
         # Draft model config
-        assert config._draft_model_config is not None
-        assert config._draft_model_config.model_path == "/draft/model"
-        assert config._draft_model_config.quantization_encoding == "float32"
+        assert config.draft_model_config is not None
+        assert config.draft_model_config.model_path == "/draft/model"
+        assert config.draft_model_config.quantization_encoding == "float32"
 
         # Sampling config
-        assert config._sampling_config.enable_structured_output is True
-        assert config._sampling_config.enable_penalties is False
+        assert config.sampling_config.enable_structured_output is True
+        assert config.sampling_config.enable_penalties is False
 
         # Model config with KV cache
-        assert config._model_config.quantization_encoding == "bfloat16"
-        assert config._model_config._kv_cache_config.kv_cache_page_size == 512
+        assert config.model.quantization_encoding == "bfloat16"
+        assert config.model.kv_cache_config.kv_cache_page_size == 512
 
 
 @prepare_registry
@@ -419,12 +419,8 @@ def test_config_post_init__with_weight_path_but_no_model_path() -> None:
         ],
     )
 
-    assert (
-        config.model_config.model_path == "modularai/Llama-3.1-8B-Instruct-GGUF"
-    )
-    assert config.model_config.weight_path == [
-        Path("llama-3.1-8b-instruct-q4_0.gguf")
-    ]
+    assert config.model.model_path == "modularai/Llama-3.1-8B-Instruct-GGUF"
+    assert config.model.weight_path == [Path("llama-3.1-8b-instruct-q4_0.gguf")]
 
 
 @prepare_registry
@@ -435,18 +431,17 @@ def test_config_post_init__other_repo_weights(
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     config = PipelineConfig(
         model_path=llama_3_1_8b_instruct_local_path,
-        weight_path=Path(
-            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
-        ),
+        weight_path=[
+            Path(
+                "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+            )
+        ],
     )
 
     assert (
-        config.model_config._weights_repo_id
-        == "modularai/Llama-3.1-8B-Instruct-GGUF"
+        config.model._weights_repo_id == "modularai/Llama-3.1-8B-Instruct-GGUF"
     )
-    assert config.model_config.weight_path == [
-        Path("llama-3.1-8b-instruct-q4_0.gguf")
-    ]
+    assert config.model.weight_path == [Path("llama-3.1-8b-instruct-q4_0.gguf")]
 
 
 @mock_pipeline_config_hf_dependencies
@@ -457,12 +452,16 @@ def test_config_init__reformats_with_str_weights_path(
     # We expect this to convert the string.
     config = PipelineConfig(
         model_path=modular_ai_llama_3_1_local_path,
-        weight_path="modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf",
+        weight_path=[
+            Path(
+                "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+            )
+        ],
     )
 
-    assert isinstance(config.model_config.weight_path, list)
-    assert len(config.model_config.weight_path) == 1
-    assert isinstance(config.model_config.weight_path[0], Path)
+    assert isinstance(config.model.weight_path, list)
+    assert len(config.model.weight_path) == 1
+    assert isinstance(config.model.weight_path[0], Path)
 
 
 @pytest.mark.skipif(not is_h100_h200(), reason="This fails on MI300")
@@ -476,7 +475,7 @@ def test_validate_model_path__correct_repo_id_provided(
         quantization_encoding=SupportedEncoding.bfloat16,
     )
 
-    assert config.model_config.model_path == modular_ai_llama_3_1_local_path
+    assert config.model.model_path == modular_ai_llama_3_1_local_path
 
 
 @prepare_registry
@@ -626,7 +625,7 @@ def test_config_is_picklable(
         quantization_encoding=SupportedEncoding.bfloat16,
     )
 
-    config.model_config._huggingface_config = None
+    config.model._huggingface_config = None
 
     pickle_path = tmp_path / "config.pkl"
     with open(pickle_path, "wb") as f:

@@ -62,7 +62,7 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
         """
         # Create the pipeline model.
         # None of the arguments are used except for the config and devices.
-        devices = load_devices(pipeline_config.model_config.device_specs)
+        devices = load_devices(pipeline_config.model.device_specs)
         self.pipeline_model = pipeline_model(
             pipeline_config=pipeline_config,
             session=None,
@@ -81,7 +81,7 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
         self, inputs: AudioGenerationInputs[TTSContext]
     ) -> dict[RequestID, AudioGenerationOutput]:
         METRICS.input_tokens(
-            sum(ctx.active_length for ctx in inputs.batch.values())
+            sum(ctx.tokens.active_length for ctx in inputs.batch.values())
         )
 
         next_chunk = getattr(self.pipeline_model, "next_chunk")  # noqa: B009

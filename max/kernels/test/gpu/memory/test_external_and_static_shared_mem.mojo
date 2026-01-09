@@ -49,7 +49,7 @@ def test_external_shared_mem(ctx: DeviceContext):
     ctx.enqueue_copy(res_device, res_host_ptr)
 
     comptime kernel_func = dynamic_smem_kernel
-    ctx.enqueue_function_checked[kernel_func, kernel_func, dump_llvm=True](
+    ctx.enqueue_function_experimental[kernel_func, dump_llvm=True](
         res_device,
         grid_dim=1,
         block_dim=16,

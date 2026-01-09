@@ -86,7 +86,7 @@ async def lifespan(
     try:
         if not settings.disable_telemetry:
             send_telemetry_log(
-                serving_settings.pipeline_config.model_config.model_name
+                serving_settings.pipeline_config.model.model_name
             )
     except Exception as e:
         logger.warning("Failed to send telemetry log: %s", e)
@@ -132,9 +132,7 @@ async def lifespan(
             else None
         )
 
-        METRICS.pipeline_load(
-            serving_settings.pipeline_config.model_config.model_name
-        )
+        METRICS.pipeline_load(serving_settings.pipeline_config.model.model_name)
 
         pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline
         if serving_settings.pipeline_task in (
@@ -142,14 +140,14 @@ async def lifespan(
             PipelineTask.EMBEDDINGS_GENERATION,
         ):
             pipeline = TokenGeneratorPipeline(
-                model_name=serving_settings.pipeline_config.model_config.model_name,
+                model_name=serving_settings.pipeline_config.model.model_name,
                 tokenizer=serving_settings.tokenizer,
                 lora_queue=lora_queue,
                 scheduler_zmq_configs=scheduler_zmq_configs,
             )
         elif serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION:
             pipeline = AudioGeneratorPipeline(
-                model_name=serving_settings.pipeline_config.model_config.model_name,
+                model_name=serving_settings.pipeline_config.model.model_name,
                 tokenizer=serving_settings.tokenizer,
                 lora_queue=lora_queue,
                 scheduler_zmq_configs=scheduler_zmq_configs,
@@ -250,7 +248,7 @@ def fastapi_app(
 
     async def reset_prefix_cache() -> Response:
         """Reset the prefix cache."""
-        if not serving_settings.pipeline_config.model_config.kv_cache_config.enable_prefix_caching:
+        if not serving_settings.pipeline_config.model.kv_cache_config.enable_prefix_caching:
             return Response(
                 status_code=400,
                 content="Prefix caching is not enabled. Ignoring request",

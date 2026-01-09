@@ -22,9 +22,6 @@ from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, initialize, static
 from linalg.distributed_matmul import matmul_allreduce
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils import IndexList, StaticTuple
 
 
@@ -88,13 +85,21 @@ fn bench_matmul_all_reduce[
     var B_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var C_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var C_reduced_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var A_host_list = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
-    var B_host_list = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
-    var C_reduced_host_list = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
+    var A_host_list = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
+        capacity=ngpus
+    )
+    var B_host_list = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
+        capacity=ngpus
+    )
+    var C_reduced_host_list = List[
+        UnsafePointer[Scalar[dtype], MutExternalOrigin]
+    ](capacity=ngpus)
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        fill={}
+    )
 
     var mn = m.value * n.value
     var mk = m.value * k.value
@@ -115,9 +120,9 @@ fn bench_matmul_all_reduce[
         C_reduced_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mn))
 
         # Allocate matmul inputs A B and final output C_reduced on host
-        A_host_list.append(UnsafePointer[Scalar[dtype]].alloc(mk))
-        B_host_list.append(UnsafePointer[Scalar[dtype]].alloc(nk))
-        C_reduced_host_list.append(UnsafePointer[Scalar[dtype]].alloc(mn))
+        A_host_list.append(alloc[Scalar[dtype]](mk))
+        B_host_list.append(alloc[Scalar[dtype]](nk))
+        C_reduced_host_list.append(alloc[Scalar[dtype]](mn))
 
         # Initialize randomdly A and b
         random.randn(A_host_list[i], mk)

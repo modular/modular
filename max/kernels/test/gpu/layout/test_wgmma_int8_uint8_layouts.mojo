@@ -214,7 +214,7 @@ def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext):
         a_type=a_type,
         b_type=b_type,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -335,7 +335,7 @@ def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext):
         a_type=a_type,
         b_type=b_type,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -458,7 +458,7 @@ def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext):
         a_type=a_type,
         b_type=b_type,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -581,7 +581,7 @@ def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext):
         a_type=a_type,
         b_type=b_type,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),

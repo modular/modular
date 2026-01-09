@@ -175,7 +175,7 @@ def test_tma_4d_load_row_major[
         smem_tile_layout,  # smem layout
         grid_dim1 = src_dim1 // cta_tile_dim1,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(

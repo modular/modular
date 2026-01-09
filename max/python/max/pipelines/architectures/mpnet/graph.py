@@ -30,7 +30,7 @@ from transformers import AutoConfig
 def _quantization_encoding(
     pipeline_config: PipelineConfig,
 ) -> QuantizationEncoding | None:
-    if supported_encoding := pipeline_config.model_config.quantization_encoding:
+    if supported_encoding := pipeline_config.model.quantization_encoding:
         return supported_encoding.quantization_encoding
     return None
 

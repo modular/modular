@@ -21,6 +21,8 @@
 # Alternatively, run with:
 # br --run_under="mpirun -n $NUM_GPUS --allow-run-as-root --bind-to none" //max/kernels/benchmarks:gpu/bench_ep_dispatch
 
+from collections import OptionalReg
+
 from random import randint, randn, seed
 from sys import align_of, env_get_int, env_get_dtype, simd_width_of, size_of
 
@@ -244,7 +246,7 @@ fn bench_dispatch[
             TokenFmtType,
         ]
 
-        var func = ctx.compile_function_checked[dispatch, dispatch]()
+        var func = ctx.compile_function_experimental[dispatch]()
         shmem_module_init(func)
 
         comptime dispatch_cb = dispatch_cb_kernel[
@@ -261,7 +263,7 @@ fn bench_dispatch[
             FormatHandlerType,
         ]
 
-        var func_cb = ctx.compile_function_checked[dispatch_cb, dispatch_cb]()
+        var func_cb = ctx.compile_function_experimental[dispatch_cb]()
 
         @always_inline
         @parameter
@@ -276,7 +278,7 @@ fn bench_dispatch[
             recv_buf_ptrs[0] = recv_buf
             recv_count_ptrs[0] = recv_count
 
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 func,
                 input_tokens_tensor,
                 topk_ids_tensor,
@@ -292,7 +294,7 @@ fn bench_dispatch[
         @always_inline
         @parameter
         fn run_dispatch_cb(ctx: DeviceContext) raises:
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 func_cb,
                 format_handler,
                 row_offsets_tensor,
@@ -302,6 +304,11 @@ fn bench_dispatch[
                 recv_count,
                 atomic_counter.unsafe_ptr(),
                 Int32(my_rank),
+                OptionalReg[
+                    LayoutTensor[
+                        DType.bfloat16, Layout.row_major[2](), ImmutAnyOrigin
+                    ]
+                ](),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )

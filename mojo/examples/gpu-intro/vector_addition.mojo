@@ -90,7 +90,7 @@ def main():
         result_tensor = LayoutTensor[float_dtype, layout](result_device_buffer)
 
         # Compile and enqueue the kernel
-        ctx.enqueue_function_checked[vector_addition, vector_addition](
+        ctx.enqueue_function_experimental[vector_addition](
             lhs_tensor,
             rhs_tensor,
             result_tensor,

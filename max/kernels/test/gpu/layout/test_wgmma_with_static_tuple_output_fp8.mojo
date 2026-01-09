@@ -207,7 +207,7 @@ fn wgmma_e4m3_e4m3_f32[
         transpose_b=transpose_b,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         a_tensor,
         b_tensor,
         c_tensor,

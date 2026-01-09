@@ -25,7 +25,7 @@ def test_function_attributes():
         x[0] = Int(thread_idx.x)
 
     with DeviceContext() as ctx:
-        var func = ctx.compile_function_checked[kernel, kernel]()
+        var func = ctx.compile_function_experimental[kernel]()
         assert_equal(func.get_attribute(Attribute.LOCAL_SIZE_BYTES), 0)
 
 

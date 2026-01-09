@@ -78,8 +78,7 @@ Read the `mojo/stdlib/benchmarks/README.md` for details on how to run benchmarks
 ### Documentation Validation
 
 ```bash
-mojo doc --diagnose-missing-doc-strings --validate-doc-strings \
-  -o /dev/null stdlib/std/
+mojo doc --diagnose-missing-doc-strings -Werror -o /dev/null stdlib/std/
 ```
 
 ## High-Level Architecture

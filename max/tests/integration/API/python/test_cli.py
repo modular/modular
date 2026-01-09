@@ -71,7 +71,7 @@ TEST_COMMANDS = [
             "cpu",
         ],
         expected={
-            "model_config": {
+            "model": {
                 "trust_remote_code": True,
             },
         },
@@ -87,7 +87,7 @@ TEST_COMMANDS = [
             "cpu",
         ],
         expected={
-            "model_config": {
+            "model": {
                 "trust_remote_code": False,
             },
             "max_length": 10,
@@ -102,7 +102,7 @@ TEST_COMMANDS = [
             "gpu",
         ],
         expected={
-            "model_config": {
+            "model": {
                 "model_path": "modularai/Llama-3.1-8B-Instruct-GGUF",
                 "trust_remote_code": False,
                 "kv_cache_config": {
@@ -170,7 +170,7 @@ TEST_COMMANDS = [
             "gpu",
         ],
         expected={
-            "model_config": {
+            "model": {
                 "model_path": "OpenGVLab/InternVL2-8B",
                 "vision_config_overrides": {"max_dynamic_patch": 24},
             },
@@ -187,7 +187,7 @@ TEST_COMMANDS = [
             "gpu",
         ],
         expected={
-            "model_config": {
+            "model": {
                 "model_path": "OpenGVLab/InternVL2-8B",
                 "vision_config_overrides": {
                     "max_dynamic_patch": 12,
@@ -207,7 +207,7 @@ TEST_COMMANDS = [
     #         "lama-3.1-8b-instruct-bf16.gguf",
     #     ],
     #     expected={
-    #         "model_config": {
+    #         "model": {
     #             "model_path": "modularai/Llama-3.1-8B-Instruct-GGUF",
     #             "trust_remote_code": False,
     #             "weight_path": [
@@ -227,7 +227,7 @@ TEST_COMMANDS = [
     #         "gpu:0",
     #     ],
     #     expected={
-    #         "model_config": {
+    #         "model": {
     #             "model_path": "modularai/Llama-3.1-8B-Instruct-GGUF",
     #             "trust_remote_code": False,
     #             "weight_path": [
@@ -384,9 +384,13 @@ VALID_RESULTS = {
 def test_pipeline_config_cli_parsing() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
     field_types = get_type_hints(PipelineConfig)
-    for config_field in fields(PipelineConfig):
-        if not config_field.name.startswith("_"):
-            validate_field_type(field_types[config_field.name])
+    for field_name, field_info in PipelineConfig.model_fields.items():
+        # Pydantic models aren't dataclasses; use model_fields for introspection.
+        # `section_name` is an internal helper for config-file section selection,
+        # not a real CLI/config parameter.
+        if field_name.startswith("_") or field_name == "section_name":
+            continue
+        validate_field_type(field_types.get(field_name, field_info.annotation))
 
 
 @prepare_registry

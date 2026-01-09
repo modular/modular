@@ -23,7 +23,7 @@ from max.graph.weights import WeightData
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 
 
@@ -96,7 +96,7 @@ class VisionConfig:
             llm_dtype=llm_dtype,
             devices=[
                 DeviceRef(spec.device_type, spec.id)
-                for spec in pipeline_config.model_config.device_specs
+                for spec in pipeline_config.model.device_specs
             ],
             patch_size=vision_config.patch_size,
             temporal_patch_size=vision_config.temporal_patch_size,
@@ -113,9 +113,8 @@ class VisionConfig:
         )
 
 
-@dataclass
-class Qwen3VLConfigBase:
-    """Base configuration for Qwen3VL models with required fields."""
+class Qwen3VLConfig(MAXModelConfigBase):
+    """Configuration for Qwen3VL models."""
 
     devices: list[DeviceRef]
     """Devices that the Qwen3VL model is parallelized over."""
@@ -164,11 +163,6 @@ class Qwen3VLConfigBase:
     # Composed language model configuration.
     llm_config: Llama3Config
     """Language model configuration using Llama3 architecture."""
-
-
-@dataclass
-class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
-    """Implementation of MAXModelConfig for Qwen3VL models."""
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -280,7 +274,7 @@ class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
             dtype=dtype,
             devices=[
                 DeviceRef(spec.device_type, spec.id)
-                for spec in pipeline_config.model_config.device_specs
+                for spec in pipeline_config.model.device_specs
             ],
             # Multimodal parameters
             image_token_id=huggingface_config.image_token_id,

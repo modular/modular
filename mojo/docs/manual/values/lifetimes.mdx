@@ -128,8 +128,8 @@ few ways to specify origin values:
   associated with the value (or values) passed in.
 * Inferred origin. You can use inferred parameters to capture the origin of a
   value passed in to a function.
-* External origins. The external origins, `MutOrigin.external` and
-  `ImmutOrigin.external` represent values that are not tracked by the lifetime
+* External origins. The external origins, `MutExternalOrigin` and
+  `ImmutExternalOrigin` represent values that are not tracked by the lifetime
   checker, such as dynamically-allocated memory.
 * Wildcard origins. The `ImmutAnyOrigin` and `MutAnyOrigin` `comptime` values
   are special cases indicating a reference that might access any live value.
@@ -220,13 +220,13 @@ inferred origin.
 
 #### External origins
 
-The external origins, `MutOrigin.external` and `ImmutOrigin.external` represent
+The external origins, `MutExternalOrigin` and `ImmutExternalOrigin` represent
 values that do not alias any existing value. That is, they point to memory that
 is not owned by any other variable, and are therefore not tracked by the
 lifetime checker. For example, the
 [`alloc()`](/mojo/std/memory/unsafe_pointer/alloc/) function returns an
 `UnsafePointer` to a new dynamically-allocated block of memory, with the origin
-`MutOrigin.external`. The origin indicates that the memory is not managed by the
+`MutExternalOrigin`. The origin indicates that the memory is not managed by the
 Mojo ownership system. When you use an unsafe API like this, you're responsible
 for managing the lifetime yourself: for example, a struct that allocates memory
 should generally free that memory in its destructor.
@@ -293,7 +293,7 @@ specifier can be either:
   ref [self]
   ```
 
-* An [`AddressSpace`](/nightly/mojo/stdlib/memory/pointer/AddressSpace) value.
+* An [`AddressSpace`](/mojo/std/memory/pointer/AddressSpace) value.
 
 * An underscore character (`_`) to indicate that the origin is *unbound*. This
   is equivalent to omitting the origin specifier.

@@ -231,7 +231,7 @@ Call the function like this
 fn run_func(ctx: DeviceContext, iteration: Int) raises:
     var offset = (iteration*n2)%n
     #var offset = 0
-    ctx.enqueue_function_checked(
+    ctx.enqueue_function(
         func, a_d, b_d, n2, offset,
         grid_dim=((n2//simd_size + BLOCK_SIZE -1) // BLOCK_SIZE),
         block_dim=(BLOCK_SIZE),

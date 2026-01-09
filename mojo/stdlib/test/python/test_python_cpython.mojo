@@ -365,9 +365,9 @@ def _test_capsule_api(cpy: CPython):
 
 
 def _test_memory_management_api(cpy: CPython):
-    var ptr = cpy.lib.call[
-        "PyObject_Malloc", OpaquePointer[MutOrigin.external]
-    ](64)
+    var ptr = cpy.lib.call["PyObject_Malloc", OpaquePointer[MutExternalOrigin]](
+        64
+    )
     assert_true(ptr)
 
     cpy.PyObject_Free(ptr)

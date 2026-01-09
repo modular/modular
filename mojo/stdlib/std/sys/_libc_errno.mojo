@@ -15,7 +15,7 @@ from sys.ffi import c_int, external_call
 from sys.info import CompilationTarget, platform_map
 
 
-fn _errno_ptr(out result: UnsafePointer[c_int, MutOrigin.external]):
+fn _errno_ptr(out result: UnsafePointer[c_int, MutExternalOrigin]):
     @parameter
     if CompilationTarget.is_linux():
         result = external_call["__errno_location", type_of(result)]()
@@ -428,7 +428,7 @@ struct ErrNo(Equatable, ImplicitlyCopyable, Stringable, Writable):
                 self != ErrNo.SUCCESS, "macos can't stringify ErrNo.SUCCESS"
             )
         var ptr = external_call[
-            "strerror", UnsafePointer[Byte, MutOrigin.external]
+            "strerror", UnsafePointer[Byte, MutExternalOrigin]
         ](self.value)
         var string = StringSlice(unsafe_from_utf8_ptr=ptr)
         string.write_to(writer)
