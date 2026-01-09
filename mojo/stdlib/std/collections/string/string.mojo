@@ -25,7 +25,7 @@ from collections.string.string_slice import (
 )
 from builtin.builtin_slice import ContiguousSlice
 from hashlib.hasher import Hasher
-from fmt._utils import (
+from format._utils import (
     STACK_BUFFER_BYTES,
     _TotalWritableBytes,
     _WriteBufferStack,

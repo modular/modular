@@ -36,7 +36,7 @@ from collections.string import (
     chr,
     ord,
 )
-from fmt import Writable, Writer
+from format import Writable, Writer
 from hashlib.hash import Hashable, hash
 from io.file import FileHandle, open
 from io.file_descriptor import FileDescriptor

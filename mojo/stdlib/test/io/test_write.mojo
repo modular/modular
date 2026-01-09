@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from fmt import Writable, Writer
-from fmt._utils import _hex_digits_to_hex_chars, _write_hex
+from format import Writable, Writer
+from format._utils import _hex_digits_to_hex_chars, _write_hex
 from memory.memory import memset_zero
 from testing import assert_equal, TestSuite
 
