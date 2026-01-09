@@ -117,8 +117,18 @@ print(mine.first)
 2
 ```
 
-Initializer lists make it simple to construct instances without spelling out the type name.
-For example, here's the standard way to call a function:
+Initializer lists make it easier to construct instances without spelling out
+full type names. Due to Mojo’s type system, those names can grow long and
+complex as generic parameters, constraints, and nested types accumulate.
+Writing them out explicitly can quickly become verbose and hard to read.
+Initializer lists simplify code, improving readability and maintainability.
+
+For example, some machine-learning operations produce tensor view types whose
+fully spelled-out names can run to thousands of characters. Initializer lists
+let you construct these values concisely, relying on surrounding type context
+instead of repeating the entire type.
+
+Here's the standard way to call a function:
 
 ```mojo title="Calling a function"
 def process_pair(pair: MyPair):
@@ -127,9 +137,10 @@ def process_pair(pair: MyPair):
 process_pair(MyPair(2, 4))
 ```
 
-Because `process_pair` expects a `MyPair` instance, Mojo infers that
-from context. Use braces to construct the instance with an initializer
-list:
+Because `process_pair` expects a `MyPair` instance, Mojo can infer the type from
+context. The braces construct the instance using an initializer list. Although
+the syntax uses braces, this is not a `Set`. It is an initializer list used to
+create a `MyPair` value:
 
 ```mojo title="Using an initializer list"
 process_pair({2, 4})
