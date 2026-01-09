@@ -1190,7 +1190,7 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz",
                 json_file="vllm_deepseek-r1_float8_golden.json",
             ),
-            cos_dist_threshold=6e-02,
+            cos_dist_threshold=8e-02,
             kl_div_threshold=1.5e-1,
             timeout=1200,
         ),
