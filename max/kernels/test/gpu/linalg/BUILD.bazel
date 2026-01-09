@@ -7,7 +7,7 @@ _EXTRA_CONSTRAINTS = {
     "test_async_copy_wgmma.mojo": ["//:h100_gpu"],
     "test_dual_gemm.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_gemm_kernel.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
-    "test_gemm_kernel_mixed.mojo": ["//:nvidia_gpu"],  # Requires 32-thread warps
+    "test_gemm_kernel_new.mojo": ["//:nvidia_gpu"],  # Requires 32-thread warps
     "test_gemv2.mojo": select({
         "//:h100_gpu": ["@platforms//:incompatible"],
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: PRDT-506

@@ -14,21 +14,21 @@
 
 from sys import size_of
 
-from layout._mixed_tuple import (
+from layout._coord import (
     ComptimeInt,
     Idx,
-    MixedTuple,
+    Coord,
     RuntimeInt,
-    mixed_int_tuple_to_int_tuple,
-    mixed_tuple,
+    coord_to_int_tuple,
+    coord,
 )
 from testing import assert_equal, assert_true, TestSuite
 
 
 fn test_nested_layouts() raises:
     # Create nested layouts
-    var inner = MixedTuple(Idx[2](), Idx(3))
-    var nested = MixedTuple(inner, Idx[4]())
+    var inner = Coord(Idx[2](), Idx(3))
+    var nested = Coord(inner, Idx[4]())
     assert_equal(inner[1].value(), 3)
     assert_equal(nested[0][0].value(), 2)
     assert_equal(nested[1].value(), 4)
@@ -37,15 +37,15 @@ fn test_nested_layouts() raises:
 
 
 fn test_int_tuple_conversion() raises:
-    var t = MixedTuple(MixedTuple(Idx[2](), Idx(3)), Idx[4]())
-    var t2 = mixed_int_tuple_to_int_tuple(t)
+    var t = Coord(Coord(Idx[2](), Idx(3)), Idx[4]())
+    var t2 = coord_to_int_tuple(t)
     assert_equal(t2[0][0], 2)
     assert_equal(t2[0][1], 3)
     assert_equal(t2[1], 4)
 
 
 fn test_list_literal_construction() raises:
-    var t = MixedTuple[ComptimeInt[2], RuntimeInt[DType.int]](
+    var t = Coord[ComptimeInt[2], RuntimeInt[DType.int]](
         Idx[2](),
         Idx(3),
     )
@@ -54,17 +54,17 @@ fn test_list_literal_construction() raises:
 
 
 fn test_flatten_empty() raises:
-    var t = MixedTuple[]()
+    var t = Coord[]()
     assert_true(t.flatten() == t)
 
 
 fn test_construction_from_int_variadic_empty() raises:
-    var t = mixed_tuple[]()
+    var t = coord[]()
     assert_equal(len(t), 0)
 
 
 fn test_construction_from_int_variadic() raises:
-    var t = mixed_tuple[1, 2, 3]()
+    var t = coord[1, 2, 3]()
     assert_equal(len(t), 3)
     assert_equal(t[0].value(), 1)
     assert_equal(t[1].value(), 2)
@@ -72,7 +72,7 @@ fn test_construction_from_int_variadic() raises:
 
 
 fn test_construction_from_int_variadic_list() raises:
-    var t = mixed_tuple[DType.int32]((1, 2, 3))
+    var t = coord[DType.int32]((1, 2, 3))
     assert_equal(len(t), 3)
     assert_equal(t[0].value(), 1)
     assert_equal(t[1].value(), 2)
@@ -80,7 +80,7 @@ fn test_construction_from_int_variadic_list() raises:
 
 
 fn test_static_product() raises:
-    comptime p = mixed_tuple[1, 2, 3]().STATIC_PRODUCT
+    comptime p = coord[1, 2, 3]().STATIC_PRODUCT
     assert_equal(p, 6)
 
 

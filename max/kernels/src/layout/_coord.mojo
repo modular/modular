@@ -25,10 +25,10 @@ from builtin.variadics import (
 from sys.intrinsics import _type_is_eq_parse_time
 
 
-trait MixedTupleLike(ImplicitlyCopyable, Representable):
+trait CoordLike(ImplicitlyCopyable, Representable):
     """Trait for unified layout handling of compile-time and runtime indices."""
 
-    comptime VariadicType: Variadic.TypesOfTrait[MixedTupleLike]
+    comptime VariadicType: Variadic.TypesOfTrait[CoordLike]
     comptime STATIC_VALUE: Int
     comptime IS_STATIC_VALUE = False
     comptime IS_TUPLE = False
@@ -55,7 +55,7 @@ trait MixedTupleLike(ImplicitlyCopyable, Representable):
         """
         ...
 
-    fn tuple(var self) -> MixedTuple[*Self.VariadicType]:
+    fn tuple(var self) -> Coord[*Self.VariadicType]:
         """Get the value of this type.
         Only valid for tuple types.
         """
@@ -79,14 +79,14 @@ trait MixedTupleLike(ImplicitlyCopyable, Representable):
 
 
 @register_passable("trivial")
-struct ComptimeInt[val: Int](MixedTupleLike):
+struct ComptimeInt[val: Int](CoordLike):
     """Compile-time known index value.
 
     Parameters:
         val: The compile-time integer value.
     """
 
-    comptime VariadicType: Variadic.TypesOfTrait[MixedTupleLike] = Tuple[
+    comptime VariadicType: Variadic.TypesOfTrait[CoordLike] = Tuple[
         Self
     ].element_types
     comptime STATIC_VALUE: Int = Self.val
@@ -118,20 +118,20 @@ struct ComptimeInt[val: Int](MixedTupleLike):
         return Self.val
 
     @always_inline("nodebug")
-    fn tuple(var self) -> MixedTuple[*Self.VariadicType]:
+    fn tuple(var self) -> Coord[*Self.VariadicType]:
         constrained[False, "ComptimeInt is not a tuple type"]()
-        return rebind[MixedTuple[*Self.VariadicType]](self)
+        return rebind[Coord[*Self.VariadicType]](self)
 
 
 @register_passable("trivial")
-struct RuntimeInt[dtype: DType = DType.int](MixedTupleLike):
+struct RuntimeInt[dtype: DType = DType.int](CoordLike):
     """Runtime index value with configurable precision.
 
     Parameters:
         dtype: The data type for the runtime integer value. Defaults to `DType.int`.
     """
 
-    comptime VariadicType: Variadic.TypesOfTrait[MixedTupleLike] = Tuple[
+    comptime VariadicType: Variadic.TypesOfTrait[CoordLike] = Tuple[
         Self
     ].element_types
     comptime STATIC_VALUE: Int = -1
@@ -170,9 +170,9 @@ struct RuntimeInt[dtype: DType = DType.int](MixedTupleLike):
         return Int(self.val)
 
     @always_inline("nodebug")
-    fn tuple(var self) -> MixedTuple[*Self.VariadicType]:
+    fn tuple(var self) -> Coord[*Self.VariadicType]:
         constrained[False, "RuntimeInt is not a tuple type"]()
-        return rebind[MixedTuple[*Self.VariadicType]](self)
+        return rebind[Coord[*Self.VariadicType]](self)
 
 
 fn Idx(value: Int) -> RuntimeInt[DType.int]:
@@ -204,16 +204,14 @@ fn Idx[value: Int]() -> ComptimeInt[value]:
 
 
 @fieldwise_init("implicit")
-struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
+struct Coord[*element_types: CoordLike](CoordLike, Sized):
     """A struct representing tuple-like data with compile-time and runtime elements.
 
     Parameters:
-        element_types: The variadic pack of element types that implement `MixedTupleLike`.
+        element_types: The variadic pack of element types that implement `CoordLike`.
     """
 
-    comptime VariadicType: Variadic.TypesOfTrait[
-        MixedTupleLike
-    ] = Self.element_types
+    comptime VariadicType: Variadic.TypesOfTrait[CoordLike] = Self.element_types
     comptime STATIC_VALUE: Int = -1
     comptime IS_TUPLE = True
     comptime ALL_DIMS_KNOWN = _AllStatic[*Self.element_types]
@@ -228,6 +226,20 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         Empty initialize a tensor with static dims.
         """
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+    fn __init__[
+        rank: Int, dtype: DType
+    ](
+        out self: Coord[*_Splatted[RuntimeInt[dtype], rank]],
+        index_list: std.utils.IndexList[rank, element_type=dtype],
+    ):
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+        @parameter
+        for i in range(rank):
+            UnsafePointer(to=self[i]).init_pointee_copy(
+                rebind[type_of(self[i])](RuntimeInt[dtype](index_list[i]))
+            )
 
     @staticmethod
     @always_inline("nodebug")
@@ -259,7 +271,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
     @always_inline("nodebug")
     fn __repr__(self) -> String:
-        var result = String("MixedTuple(")
+        var result = String("Coord(")
 
         @parameter
         for i in range(Self.__len__()):
@@ -289,7 +301,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     fn __init__(
         out self,
         *,
-        var storage: VariadicPack[_, MixedTupleLike, *Self.element_types],
+        var storage: VariadicPack[_, CoordLike, *Self.element_types],
     ):
         """Construct from a low-level variadic pack.
 
@@ -353,7 +365,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
     @always_inline("nodebug")
     fn value(self) -> Int:
-        constrained[False, "MixedTuple is not a value type"]()
+        constrained[False, "Coord is not a value type"]()
         abort()
 
     @always_inline("nodebug")
@@ -370,7 +382,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         var result = 0
         debug_assert(
             Self.__len__() == t.__len__(),
-            "Length of MixedTuple (",
+            "Length of Coord (",
             Self.__len__(),
             ") and IntTuple (",
             t.__len__(),
@@ -390,7 +402,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
                     i,
                     "] but got value",
                 )
-                result += MixedTuple(self[i]).inner_product(t_elem)
+                result += Coord(self[i]).inner_product(t_elem)
             else:
                 debug_assert(
                     not t_elem.is_tuple(),
@@ -403,9 +415,9 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
     @always_inline("nodebug")
     fn inner_product[
-        *other_types: MixedTupleLike
-    ](self, other: MixedTuple[*other_types]) -> Int:
-        """Calculate the inner product with another MixedTupleLike.
+        *other_types: CoordLike
+    ](self, other: Coord[*other_types]) -> Int:
+        """Calculate the inner product with another CoordLike.
 
         Parameters:
             other_types: The types of the other value.
@@ -416,13 +428,11 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         Returns:
             The inner product of the two values.
         """
-        __comptime_assert (
-            Self.__len__() == MixedTuple[*other_types].__len__()
-        ), (
-            "Length of MixedTuple ("
+        __comptime_assert Self.__len__() == Coord[*other_types].__len__(), (
+            "Length of Coord ("
             + String(Self.__len__())
-            + ") and MixedTuple[*other_types] ("
-            + String(MixedTuple[*other_types].__len__())
+            + ") and Coord[*other_types] ("
+            + String(Coord[*other_types].__len__())
             + ") must match"
         )
         var result = 0
@@ -434,9 +444,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
             @parameter
             if T.IS_TUPLE and U.IS_TUPLE:
-                result += MixedTuple(self[i]).inner_product(
-                    MixedTuple(other[i])
-                )
+                result += Coord(self[i]).inner_product(Coord(other[i]))
             elif T.IS_VALUE and U.IS_VALUE:
                 result += self[i].value() * other[i].value()
             else:
@@ -445,10 +453,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
                     String(
                         "Element ",
                         i,
-                        (
-                            " of MixedTuple must both be a tuple or both be"
-                            " a value"
-                        ),
+                        " of Coord must both be a tuple or both be a value",
                     ),
                 ]()
 
@@ -456,18 +461,16 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
     @always_inline("nodebug")
     fn __eq__[
-        *other_types: MixedTupleLike
-    ](self, other: MixedTuple[*other_types]) -> Bool:
+        *other_types: CoordLike
+    ](self, other: Coord[*other_types]) -> Bool:
         """Check if this tuple's elements are equal to the other tuple's elements.
         """
 
-        __comptime_assert (
-            Self.__len__() == MixedTuple[*other_types].__len__()
-        ), (
-            "Length of MixedTuple ("
+        __comptime_assert Self.__len__() == Coord[*other_types].__len__(), (
+            "Length of Coord ("
             + String(Self.__len__())
-            + ") and MixedTuple[*other_types] ("
-            + String(MixedTuple[*other_types].__len__())
+            + ") and Coord[*other_types] ("
+            + String(Coord[*other_types].__len__())
             + ") must match"
         )
 
@@ -478,7 +481,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
             @parameter
             if T.IS_TUPLE and U.IS_TUPLE:
-                if MixedTuple(self[i]) != MixedTuple(other[i]):
+                if Coord(self[i]) != Coord(other[i]):
                     return False
             elif T.IS_VALUE and U.IS_VALUE:
                 if self[i].value() != other[i].value():
@@ -489,7 +492,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
                     String(
                         "Element ",
                         i,
-                        " of MixedTuple must both be a tuple or both be",
+                        " of Coord must both be a tuple or both be",
                         " a value",
                     ),
                 ]()
@@ -498,17 +501,17 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
     @always_inline("nodebug")
     fn __ne__[
-        *other_types: MixedTupleLike
-    ](self, other: MixedTuple[*other_types]) -> Bool:
+        *other_types: CoordLike
+    ](self, other: Coord[*other_types]) -> Bool:
         return not self == other
 
     @always_inline("nodebug")
-    fn tuple(var self) -> MixedTuple[*Self.VariadicType]:
-        return rebind[MixedTuple[*Self.VariadicType]](self)
+    fn tuple(var self) -> Coord[*Self.VariadicType]:
+        return rebind[Coord[*Self.VariadicType]](self)
 
     @always_inline("nodebug")
-    fn reverse(var self) -> MixedTuple[*Variadic.reverse[*Self.element_types]]:
-        return MixedTuple[*Variadic.reverse[*Self.element_types]](
+    fn reverse(var self) -> Coord[*Variadic.reverse[*Self.element_types]]:
+        return Coord[*Variadic.reverse[*Self.element_types]](
             rebind[Tuple[*Variadic.reverse[*Self.element_types]]](
                 self._storage.reverse()
             )
@@ -516,36 +519,34 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
     @always_inline("nodebug")
     fn concat[
-        *other_element_types: MixedTupleLike
-    ](var self, var other: MixedTuple[*other_element_types]) -> MixedTuple[
+        *other_element_types: CoordLike
+    ](var self, var other: Coord[*other_element_types]) -> Coord[
         *Variadic.concat[Self.element_types, other_element_types]
     ]:
-        return MixedTuple[
-            *Variadic.concat[Self.element_types, other_element_types]
-        ](
+        return Coord[*Variadic.concat[Self.element_types, other_element_types]](
             rebind[
                 Tuple[*Variadic.concat[Self.element_types, other_element_types]]
             ](self._storage.concat(other._storage))
         )
 
     @always_inline("nodebug")
-    fn flatten(var self) -> MixedTuple[*_Flattened[*Self.element_types]]:
-        """Convert a nested MixedTuple to a flattened MixedTuple.
+    fn flatten(var self) -> Coord[*_Flattened[*Self.element_types]]:
+        """Convert a nested Coord to a flattened Coord.
 
 
         Returns:
-            A flattened MixedTuple containing all leaf values in order.
+            A flattened Coord containing all leaf values in order.
 
         Examples:
             ```mojo
-            from layout._mixed_tuple import MixedTuple, Idx
-            var nested = MixedTuple(
+            from layout._coord import Coord, Idx
+            var nested = Coord(
                 Idx[5](),
-                MixedTuple(Idx[3](), Idx[2]()),
+                Coord(Idx[3](), Idx[2]()),
                 Idx(7)
             )
             var flat = nested.flatten()
-            # flat is MixedTuple(Idx[5](), Idx[3](), Idx[2](), Idx(7))
+            # flat is Coord(Idx[5](), Idx[3](), Idx[2](), Idx(7))
             ```
         """
         comptime FlatTypes = _Flattened[*Self.element_types]
@@ -558,13 +559,13 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
             __get_mvalue_as_litref(flat_tuple)
         )
 
-        # TODO: Implement fully generic flatten for deeply nested MixedTuples
+        # TODO: Implement fully generic flatten for deeply nested Coords
         # For now, this only works for non-nested or single-level nested tuples
         # For the test cases in test_mixed_layout (which are all non-nested), this works
-        # Deep nesting like MixedTuple(A, MixedTuple(B, MixedTuple(C))) is not yet supported
+        # Deep nesting like Coord(A, Coord(B, Coord(C))) is not yet supported
 
         __comptime_assert flat_size == Self.__len__(), (
-            "flatten() currently only supports non-nested MixedTuples -"
+            "flatten() currently only supports non-nested Coords -"
             " nested tuple flattening not yet implemented"
         )
 
@@ -575,14 +576,14 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
                 rebind[FlatTypes[i]](self[i])
             )
 
-        return MixedTuple(flat_tuple^)
+        return Coord(flat_tuple^)
 
 
 # Implementation based off runtime_tuple.mojo's crd2idx.
 fn crd2idx[
-    Index: MixedTupleLike,
-    Shape: MixedTupleLike,
-    Stride: MixedTupleLike,
+    Index: CoordLike,
+    Shape: CoordLike,
+    Stride: CoordLike,
     out_type: DType = DType.int64,
 ](crd: Index, shape: Shape, stride: Stride) -> Scalar[out_type]:
     """Calculate the index from a coordinate tuple."""
@@ -640,10 +641,10 @@ fn crd2idx[
 
 # Implementation based off crd2idx - computes the inverse operation
 fn idx2crd[
-    Shape: MixedTupleLike,
-    Stride: MixedTupleLike,
+    Shape: CoordLike,
+    Stride: CoordLike,
     out_dtype: DType = DType.int64,
-](idx: Int, shape: Shape, stride: Stride) -> MixedTuple[
+](idx: Int, shape: Shape, stride: Stride) -> Coord[
     *_Splatted[RuntimeInt[out_dtype], Shape.__len__()]
 ]:
     """Calculate the coordinate tuple from a linear index.
@@ -652,8 +653,8 @@ fn idx2crd[
     it computes the multi-dimensional coordinates.
 
     Parameters:
-        Shape: The shape type (must be MixedTupleLike).
-        Stride: The stride type (must be MixedTupleLike).
+        Shape: The shape type (must be CoordLike).
+        Stride: The stride type (must be CoordLike).
         out_dtype: The output data type for coordinate values.
 
     Args:
@@ -662,7 +663,7 @@ fn idx2crd[
         stride: The stride of the tensor.
 
     Returns:
-        A MixedTuple containing the coordinate values for each dimension.
+        A Coord containing the coordinate values for each dimension.
 
     Examples:
         For a 2D tensor with shape (3, 4) and row-major strides (4, 1):
@@ -683,7 +684,7 @@ fn idx2crd[
         ")",
     )
 
-    comptime Result = MixedTuple[*_Splatted[RuntimeInt[out_dtype], shape_len]]
+    comptime Result = Coord[*_Splatted[RuntimeInt[out_dtype], shape_len]]
     var result: Result
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(result))
 
@@ -720,34 +721,34 @@ fn idx2crd[
     return result^
 
 
-fn mixed_int_tuple_to_int_tuple[
-    *element_types: MixedTupleLike
-](value: MixedTuple[*element_types]) -> IntTuple:
-    """Convert a MixedTuple to an IntTuple, preserving the nested structure.
+fn coord_to_int_tuple[
+    *element_types: CoordLike
+](value: Coord[*element_types]) -> IntTuple:
+    """Convert a Coord to an IntTuple, preserving the nested structure.
 
-    This function recursively traverses the MixedTuple and converts each element:
+    This function recursively traverses the Coord and converts each element:
     - Value elements (ComptimeInt, RuntimeInt) become integer values in the IntTuple
-    - Tuple elements (nested MixedTuple) become nested IntTuples
+    - Tuple elements (nested Coord) become nested IntTuples
 
     Parameters:
-        element_types: The variadic pack of element types in the MixedTuple.
+        element_types: The variadic pack of element types in the Coord.
 
     Args:
-        value: The MixedTuple to convert.
+        value: The Coord to convert.
 
     Returns:
-        An IntTuple with the same structure and values as the input MixedTuple.
+        An IntTuple with the same structure and values as the input Coord.
     """
     var result = IntTuple()
 
     @parameter
-    for i in range(MixedTuple[*element_types].__len__()):
+    for i in range(Coord[*element_types].__len__()):
         comptime T = element_types[i]
 
         @parameter
         if T.IS_TUPLE:
             # Recursively convert nested tuples
-            result.append(mixed_int_tuple_to_int_tuple(value[i].tuple()))
+            result.append(coord_to_int_tuple(value[i].tuple()))
         else:
             # Convert value elements to integers
             result.append(IntTuple(value[i].value()))
@@ -756,41 +757,41 @@ fn mixed_int_tuple_to_int_tuple[
 
 
 @always_inline
-fn mixed_int_tuple_to_index_list[
-    *element_types: MixedTupleLike
-](value: MixedTuple[*element_types]) -> std.utils.IndexList[value.rank]:
-    """Convert a flat MixedTuple to an IndexList.
+fn coord_to_index_list[
+    *element_types: CoordLike
+](value: Coord[*element_types]) -> std.utils.IndexList[value.rank]:
+    """Convert a flat Coord to an IndexList.
 
     Parameters:
-        element_types: The variadic pack of element types in the MixedTuple.
+        element_types: The variadic pack of element types in the Coord.
 
     Args:
-        value: The MixedTuple to convert.
+        value: The Coord to convert.
 
     Returns:
-        An IndexList with the same rank and values as the input MixedTuple.
+        An IndexList with the same rank and values as the input Coord.
     """
     var result = std.utils.IndexList[value.rank]()
 
     @parameter
-    for i in range(MixedTuple[*element_types].__len__()):
+    for i in range(Coord[*element_types].__len__()):
         result[i] = value[i].value()
 
     return result
 
 
-fn mixed_int_tuple_to_int_tuple[*element_types: MixedTupleLike]() -> IntTuple:
-    """Convert a MixedTuple to an IntTuple, preserving the nested structure.
+fn coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
+    """Convert a Coord to an IntTuple, preserving the nested structure.
 
-    This function recursively traverses the MixedTuple and converts each element:
+    This function recursively traverses the Coord and converts each element:
     - Value elements (ComptimeInt, RuntimeInt) become integer values in the IntTuple
-    - Tuple elements (nested MixedTuple) become nested IntTuples
+    - Tuple elements (nested Coord) become nested IntTuples
 
     Parameters:
-        element_types: The variadic pack of element types in the MixedTuple.
+        element_types: The variadic pack of element types in the Coord.
 
     Returns:
-        An IntTuple with the same structure and values as the input MixedTuple.
+        An IntTuple with the same structure and values as the input Coord.
     """
     var result = IntTuple()
 
@@ -801,7 +802,7 @@ fn mixed_int_tuple_to_int_tuple[*element_types: MixedTupleLike]() -> IntTuple:
         @parameter
         if T.IS_TUPLE:
             # Recursively convert nested tuples
-            result.append(mixed_int_tuple_to_int_tuple[element_types[i]]())
+            result.append(coord_to_int_tuple[element_types[i]]())
         else:
 
             @parameter
@@ -813,24 +814,22 @@ fn mixed_int_tuple_to_int_tuple[*element_types: MixedTupleLike]() -> IntTuple:
     return result
 
 
-fn mixed_tuple[
+fn coord[
     dtype: DType, *element_types: Movable
-](var values: Tuple[*element_types]) -> MixedTuple[
+](var values: Tuple[*element_types]) -> Coord[
     *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
 ] where _AllEqual[Int, *element_types]:
-    """Helper to create a MixedTuple from a variadic pack of integers.
+    """Helper to create a Coord from a variadic pack of integers.
     Parameters:
         dtype: The data type for the runtime integer values.
         rank: The number of elements in the tuple.
     Args:
         values: The run-time integer values.
     Returns:
-        A `MixedTuple` instance containing `ComptimeInt` elements for each value.
-    Usage: mixed_tuple[5, 3, 2]() creates MixedTuple(ComptimeInt[5](), ComptimeInt[3](), ComptimeInt[2]()).
+        A `Coord` instance containing `ComptimeInt` elements for each value.
+    Usage: coord[5, 3, 2]() creates Coord(ComptimeInt[5](), ComptimeInt[3](), ComptimeInt[2]()).
     """
-    var tuple: MixedTuple[
-        *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
-    ]
+    var tuple: Coord[*_Splatted[RuntimeInt[dtype], type_of(values).__len__()]]
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(tuple))
 
     @parameter
@@ -843,43 +842,43 @@ fn mixed_tuple[
     return tuple^
 
 
-fn mixed_tuple[*values: Int]() -> MixedTuple[*_IntToComptimeInt[*values]]:
-    """Helper to create a MixedTuple from a variadic pack of integers.
+fn coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
+    """Helper to create a Coord from a variadic pack of integers.
     Parameters:
         values: The compile-time integer values.
     Returns:
-        A `MixedTuple` instance containing `ComptimeInt` elements for each value.
-    Usage: mixed_tuple[5, 3, 2]() creates MixedTuple(ComptimeInt[5](), ComptimeInt[3](), ComptimeInt[2]()).
+        A `Coord` instance containing `ComptimeInt` elements for each value.
+    Usage: coord[5, 3, 2]() creates Coord(ComptimeInt[5](), ComptimeInt[3](), ComptimeInt[2]()).
     """
     # values is a ZST since all elements are comptime
-    var tuple: MixedTuple[*_IntToComptimeInt[*values]]
+    var tuple: Coord[*_IntToComptimeInt[*values]]
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(tuple))
     return tuple^
 
 
 comptime _FlattenReducer[
-    Prev: Variadic.TypesOfTrait[MixedTupleLike],
-    From: Variadic.TypesOfTrait[MixedTupleLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
 ] = Variadic.concat[
     Prev,
     From[idx]
     .VariadicType if From[idx]
-    .IS_TUPLE else Variadic.types[T=MixedTupleLike, From[idx]],
+    .IS_TUPLE else Variadic.types[T=CoordLike, From[idx]],
 ]
 
 
 comptime _Flattened[
-    *element_types: MixedTupleLike
+    *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[MixedTupleLike],
+    BaseVal = Variadic.empty_of_trait[CoordLike],
     VariadicType=element_types,
     Reducer=_FlattenReducer,
 ]
 
 comptime _NextOffset[
     prev_offset: Int,
-    element_type: MixedTupleLike,
+    element_type: CoordLike,
 ] = prev_offset + (
     1 if element_type.IS_VALUE else Variadic.size(
         _Flattened[*element_type.VariadicType]
@@ -888,13 +887,13 @@ comptime _NextOffset[
 
 
 comptime _FlattenOffsetReducer[
-    Prev: Variadic.TypesOfTrait[MixedTupleLike],
-    From: Variadic.TypesOfTrait[MixedTupleLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
 ] = Variadic.concat[
     Prev,
     Variadic.types[
-        T=MixedTupleLike,
+        T=CoordLike,
         ComptimeInt[
             0 if idx
             == 0 else _NextOffset[
@@ -907,9 +906,9 @@ comptime _FlattenOffsetReducer[
 
 
 comptime _FlattenedOffsets[
-    *element_types: MixedTupleLike
+    *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[MixedTupleLike],
+    BaseVal = Variadic.empty_of_trait[CoordLike],
     VariadicType=element_types,
     Reducer=_FlattenOffsetReducer,
 ]
@@ -919,12 +918,12 @@ fn _get_flattened_helper[
     flat_idx: Int,
     current_offset: Int,
     i: Int,
-    *element_types: MixedTupleLike,
-](tuple: MixedTuple[*element_types]) -> Int:
+    *element_types: CoordLike,
+](tuple: Coord[*element_types]) -> Int:
     """Helper function to recursively access flattened elements."""
 
     @parameter
-    if i >= MixedTuple[*element_types].__len__():
+    if i >= Coord[*element_types].__len__():
         constrained[False, "flat_idx out of bounds"]()
         abort()
 
@@ -953,22 +952,22 @@ fn _get_flattened_helper[
 
 
 fn _get_flattened[
-    flat_idx: Int, *element_types: MixedTupleLike
-](tuple: MixedTuple[*element_types]) -> Int:
-    """Access an element from a nested MixedTuple using a flat index.
+    flat_idx: Int, *element_types: CoordLike
+](tuple: Coord[*element_types]) -> Int:
+    """Access an element from a nested Coord using a flat index.
 
     Parameters:
         flat_idx: The index into the flattened representation.
         element_types: The variadic element types of the tuple.
 
     Args:
-        tuple: The nested MixedTuple to access.
+        tuple: The nested Coord to access.
 
     Returns:
         The value at the given flat index.
 
     Examples:
-        For tuple = MixedTuple(Idx[5](), MixedTuple(Idx[3](), Idx[2]()), Idx(7)):
+        For tuple = Coord(Idx[5](), Coord(Idx[3](), Idx[2]()), Idx(7)):
         - get_flattened[0](tuple) returns 5  (first element)
         - get_flattened[1](tuple) returns 3  (first element of nested tuple)
         - get_flattened[2](tuple) returns 2  (second element of nested tuple)
@@ -979,20 +978,16 @@ fn _get_flattened[
 
 comptime _AllStaticReducer[
     Prev: Variadic.ValuesOfType[Bool],
-    From: Variadic.TypesOfTrait[MixedTupleLike],
+    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
 ] = (Variadic.values[From[idx].IS_STATIC_VALUE and Prev[0]])
 
 
-comptime _AllStatic[
-    *element_types: MixedTupleLike
-] = _ReduceVariadicAndIdxToValue[
+comptime _AllStatic[*element_types: CoordLike] = _ReduceVariadicAndIdxToValue[
     BaseVal = Variadic.values[True],
     VariadicType=element_types,
     Reducer=_AllStaticReducer,
-][
-    0
-]
+][0]
 
 comptime _AllEqualReducer[
     T: AnyType,
@@ -1018,13 +1013,13 @@ comptime _AllEqual[
 
 comptime _StaticProductReducer[
     Prev: Variadic.ValuesOfType[Int],
-    From: Variadic.TypesOfTrait[MixedTupleLike],
+    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
 ] = (Variadic.values[From[idx].STATIC_VALUE * Prev[0]])
 
 
 comptime _StaticProduct[
-    *element_types: MixedTupleLike
+    *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToValue[
     BaseVal = Variadic.values[1],
     VariadicType=element_types,
@@ -1034,19 +1029,19 @@ comptime _StaticProduct[
 ]
 
 comptime _IntToComptimeIntMapper[
-    Prev: Variadic.TypesOfTrait[MixedTupleLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.ValuesOfType[Int],
     idx: Int,
 ] = Variadic.concat[Prev, Variadic.types[ComptimeInt[From[idx]]]]
 
 
 comptime _IntToComptimeInt[*values: Int] = _ReduceValueAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[MixedTupleLike],
+    BaseVal = Variadic.empty_of_trait[CoordLike],
     VariadicType=values,
     Reducer=_IntToComptimeIntMapper,
 ]
 
-comptime _Splatted[T: MixedTupleLike, count: Int] = __mlir_attr[
+comptime _Splatted[T: CoordLike, count: Int] = __mlir_attr[
     `#kgen.variadic.splat<`,
     T,
     `,`,

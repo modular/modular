@@ -17,9 +17,8 @@ import sys
 from gpu import thread_idx
 from gpu.host import DeviceContext
 from gpu.host.compile import _compile_code, get_gpu_target
-from layout import Layout, RuntimeLayout
-from layout._mixed_layout import MixedLayout
-from layout._mixed_tuple import Idx, MixedTuple
+from layout._layout import Layout
+from layout._coord import Idx, Coord
 from layout.int_tuple import IntTuple
 from memory import LegacyUnsafePointer
 
@@ -59,18 +58,16 @@ fn test_codegen_memory[
 
 fn kernel_mixed_dimensions(x: Int, ptr: UnsafePointer[Int32]):
     # Create layout with mixed compile-time and runtime dimensions
-    var layout = MixedLayout(
-        shape=(Idx[8](), Idx(x)), stride=(Idx(x), Idx[1]())
-    )
-    ptr[0] = Int32(layout(MixedTuple(Idx[0](), Idx(x - 1))))
+    var layout = Layout(shape=(Idx[8](), Idx(x)), stride=(Idx(x), Idx[1]()))
+    ptr[0] = Int32(layout(Coord(Idx[0](), Idx(x - 1))))
 
 
 fn kernel_thread_idx(ptr: UnsafePointer[Int32]):
-    comptime layout = MixedLayout(
+    comptime layout = Layout(
         shape=(Idx[8](), Idx[2]()), stride=(Idx[1](), Idx[1]())
     )
     ptr[0] = Int32(
-        layout(MixedTuple(Idx(Int(thread_idx.x)), Idx(Int(thread_idx.y))))
+        layout(Coord(Idx(Int(thread_idx.x)), Idx(Int(thread_idx.y))))
     )
 
 

@@ -29,26 +29,26 @@ from layout._fillers import BATCH_SIZE
 
 from .swizzle import Swizzle, make_ldmatrix_swizzle
 
-from ._mixed_layout import MixedLayout
-from ._mixed_tuple import (
+from ._layout import Layout
+from ._coord import (
     ComptimeInt,
     RuntimeInt,
     Idx,
-    MixedTuple,
-    MixedTupleLike,
+    Coord,
+    CoordLike,
     _AllEqual,
     _IntToComptimeInt,
-    mixed_tuple,
-    mixed_int_tuple_to_int_tuple,
-    mixed_int_tuple_to_index_list,
+    coord,
+    coord_to_int_tuple,
+    coord_to_index_list,
 )
 
 
 @fieldwise_init
-struct MixedLayoutTensor[
+struct TileTensor[
     mut: Bool,
-    shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: Variadic.TypesOfTrait[CoordLike],
     //,
     dtype: DType,
     origin: Origin[mut=mut],
@@ -57,15 +57,15 @@ struct MixedLayoutTensor[
     linear_idx_type: DType = _get_index_type(address_space),
 ](Copyable, DevicePassable, Writable):
     comptime rank = Variadic.size(Self.shape_types)
-    comptime SHAPE_KNOWN = MixedTuple[*Self.shape_types].ALL_DIMS_KNOWN
-    comptime STRIDE_KNOWN = MixedTuple[*Self.shape_types].ALL_DIMS_KNOWN
+    comptime SHAPE_KNOWN = Coord[*Self.shape_types].ALL_DIMS_KNOWN
+    comptime STRIDE_KNOWN = Coord[*Self.shape_types].ALL_DIMS_KNOWN
     comptime ALL_DIMS_KNOWN = Self.SHAPE_KNOWN and Self.STRIDE_KNOWN
 
     var ptr: UnsafePointer[
         Scalar[Self.dtype], Self.origin, address_space = Self.address_space
     ]
 
-    var layout: MixedLayout[
+    var layout: Layout[
         shape_types = Self.shape_types,
         stride_types = Self.stride_types,
     ]
@@ -77,13 +77,13 @@ struct MixedLayoutTensor[
 
     @staticmethod
     fn get_type_name() -> String:
-        return "MixedLayoutTensor"
+        return "TileTensor"
 
     @staticmethod
     fn get_device_type_name() -> String:
         return Self.get_type_name()
 
-    comptime GenericType = MixedLayoutTensor[
+    comptime GenericType = TileTensor[
         shape_types = Self.shape_types,
         stride_types = Self.stride_types,
         Self.dtype,
@@ -95,7 +95,7 @@ struct MixedLayoutTensor[
     fn __init__(
         out self: Self.GenericType,
         var span: Span[Scalar[Self.dtype], Self.origin],
-        var layout: MixedLayout[Self.shape_types, Self.stride_types],
+        var layout: Layout[Self.shape_types, Self.stride_types],
     ):
         self.ptr = span.unsafe_ptr()
         self.layout = layout^
@@ -104,7 +104,7 @@ struct MixedLayoutTensor[
     fn __init__(
         out self: Self.GenericType,
         ref [Self.origin]device_buffer: DeviceBuffer[Self.dtype],
-        var layout: MixedLayout[Self.shape_types, Self.stride_types],
+        var layout: Layout[Self.shape_types, Self.stride_types],
     ):
         """Create a `LayoutTensor` from a `DeviceBuffer`. The layout must have
         statically known dimensions.
@@ -121,9 +121,9 @@ struct MixedLayoutTensor[
 
         ```mojo
         from gpu.host import DeviceContext, DeviceBuffer
-        from layout._mixed_layout import row_major
-        from layout._mixed_layout_tensor import MixedLayoutTensor
-        from layout._mixed_tuple import Idx
+        from layout._layout import row_major
+        from layout._tile_tensor import TileTensor
+        from layout._coord import Idx
 
         comptime dtype = DType.float32
 
@@ -139,8 +139,8 @@ struct MixedLayoutTensor[
             host_buf[i] = i
         ctx.enqueue_copy(dev_buf, host_buf)
 
-        # Create MixedLayoutTensor to use on device
-        var tensor = MixedLayoutTensor(
+        # Create TileTensor to use on device
+        var tensor = TileTensor(
              dev_buf,
              row_major((Idx[4](), Idx[4]())),
         )
@@ -161,7 +161,7 @@ struct MixedLayoutTensor[
     fn __init__(
         out self: Self.GenericType,
         ref [Self.origin]host_buffer: HostBuffer[Self.dtype],
-        var layout: MixedLayout[Self.shape_types, Self.stride_types],
+        var layout: Layout[Self.shape_types, Self.stride_types],
     ):
         """Create a `LayoutTensor` from a `HostBuffer`. The layout must have
         statically known dimensions.
@@ -170,16 +170,16 @@ struct MixedLayoutTensor[
 
         ```mojo
         from gpu.host import DeviceContext, HostBuffer
-        from layout._mixed_layout import row_major
-        from layout._mixed_layout_tensor import MixedLayoutTensor
-        from layout._mixed_tuple import Idx
+        from layout._layout import row_major
+        from layout._tile_tensor import TileTensor
+        from layout._coord import Idx
 
         comptime dtype = DType.float32
 
         var ctx = DeviceContext()
         var host_buf = ctx.enqueue_create_host_buffer[dtype](8)
 
-        var tensor = MixedLayoutTensor(
+        var tensor = TileTensor(
             host_buf,
             row_major((Idx[4](), Idx[4]())),
         )
@@ -198,7 +198,7 @@ struct MixedLayoutTensor[
 
     @always_inline("nodebug")
     fn __getitem__(
-        self, tuple: MixedTuple
+        self, tuple: Coord
     ) -> Scalar[Self.dtype] where Variadic.size(
         tuple.element_types
     ) == Variadic.size(Self.shape_types):
@@ -214,7 +214,7 @@ struct MixedLayoutTensor[
     ] where Variadic.size(tuple.element_types) == Variadic.size(
         Self.shape_types
     ):
-        var linear_tuple: MixedTuple[
+        var linear_tuple: Coord[
             *_Splatted[RuntimeInt[Self.linear_idx_type], Self.rank]
         ]
         __mlir_op.`lit.ownership.mark_initialized`(
@@ -234,11 +234,31 @@ struct MixedLayoutTensor[
 
     @always_inline("nodebug")
     fn __setitem__(
-        self, tuple: MixedTuple, value: Scalar[Self.dtype]
+        self, tuple: Coord, value: Scalar[Self.dtype]
     ) where (tuple.rank == Self.rank) & Self.mut:
         self.ptr.mut_cast[True]()[
             self.layout[linear_idx_type = Self.linear_idx_type](tuple)
         ] = value
+
+    @always_inline("nodebug")
+    fn load[
+        width: Int
+    ](self, tuple: Coord) -> SIMD[Self.dtype, width] where Variadic.size(
+        tuple.element_types
+    ) == Variadic.size(Self.shape_types):
+        return self.ptr.load[width=width](
+            self.layout[linear_idx_type = Self.linear_idx_type](tuple)
+        )
+
+    @always_inline("nodebug")
+    fn store[
+        width: Int
+    ](self, tuple: Coord, value: SIMD[Self.dtype, width]) where (
+        tuple.rank == Self.rank
+    ) & Self.mut:
+        self.ptr.mut_cast[True]().store(
+            self.layout[linear_idx_type = Self.linear_idx_type](tuple), value
+        )
 
     fn numel(self) -> Int:
         var result = 1
@@ -262,12 +282,12 @@ struct MixedLayoutTensor[
         Example:
 
         ```mojo
-        from layout._mixed_layout_tensor import MixedLayoutTensor
-        from layout._mixed_layout import row_major
+        from layout._tile_tensor import TileTensor
+        from layout._layout import row_major
 
         def main():
             var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
-            var tensor = MixedLayoutTensor(storage, row_major[2, 3]()).fill(1.0)
+            var tensor = TileTensor(storage, row_major[2, 3]()).fill(1.0)
             print(tensor)  # Internally calls `write_to` with a StringWriter
         ```
 
@@ -314,7 +334,7 @@ struct MixedLayoutTensor[
     @always_inline("nodebug")
     fn tile[
         *tile_sizes: Int
-    ](self, coordinates: MixedTuple) -> MixedLayoutTensor[
+    ](self, coordinates: Coord) -> TileTensor[
         shape_types = _IntToComptimeInt[*tile_sizes],
         stride_types = Self.stride_types,
         dtype = Self.dtype,
@@ -322,12 +342,12 @@ struct MixedLayoutTensor[
         address_space = Self.address_space,
         linear_idx_type = Self.linear_idx_type,
     ]:
-        return _tile(self, mixed_tuple[*tile_sizes](), coordinates)
+        return _tile(self, coord[*tile_sizes](), coordinates)
 
     @always_inline("nodebug")
     fn distribute[
-        thread_layout: MixedLayout,
-    ](self, thread_id: Int) -> MixedLayoutTensor[
+        thread_layout: Layout,
+    ](self, thread_id: Int) -> TileTensor[
         shape_types = _Divide[Self.shape_types, thread_layout.shape_types],
         stride_types = _Multiply[Self.stride_types, thread_layout.shape_types],
         dtype = Self.dtype,
@@ -342,7 +362,7 @@ struct MixedLayoutTensor[
         *,
         use_runtime_layout: Bool = (
             not Self.ALL_DIMS_KNOWN
-            or MixedTuple[*Self.shape_types].STATIC_PRODUCT > BATCH_SIZE
+            or Coord[*Self.shape_types].STATIC_PRODUCT > BATCH_SIZE
         ),
     ](self, val: Scalar[Self.dtype]) -> Self where Self.mut:
         """Fill the entire tensor with a single value.
@@ -378,14 +398,12 @@ struct MixedLayoutTensor[
         Example:
 
         ```mojo
-        from layout import Layout, LayoutTensor
+        from layout._layout import row_major
+        from layout._tile_tensor import TileTensor
 
         def main():
             var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
-            var tensor = LayoutTensor[
-                DType.float32,
-                Layout([3, 4]),
-            ](storage).fill(0.0)
+            var tensor = TileTensor(storage, row_major[3,4]()).fill(0.0)
             print(tensor)
         ```
 
@@ -394,6 +412,11 @@ struct MixedLayoutTensor[
         avoid warnings about an unused value:
 
         ```mojo
+        from layout._layout import row_major
+        from layout._tile_tensor import TileTensor
+
+        var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
+        var tensor = TileTensor(storage, row_major[3,4]()).fill(0.0)
         tensor = tensor.fill(0.0)
         # or
         _ = tensor.fill(0.0)
@@ -402,7 +425,7 @@ struct MixedLayoutTensor[
 
         @parameter
         if not use_runtime_layout:
-            comptime num_elements = MixedTuple[*Self.shape_types].STATIC_PRODUCT
+            comptime num_elements = Coord[*Self.shape_types].STATIC_PRODUCT
 
             # TODO: MSTDL-1352 we can use memory element to fill the tensor.
             @parameter
@@ -421,10 +444,21 @@ struct MixedLayoutTensor[
     fn dim[i: Int](self) -> Scalar[Self.linear_idx_type]:
         return Scalar[Self.linear_idx_type](self.layout.shape[i].value())
 
+    @always_inline("nodebug")
+    fn dim(self, index: Int) -> Scalar[Self.linear_idx_type]:
+        @parameter
+        for i in range(Self.rank):
+            if index == i:
+                return Scalar[Self.linear_idx_type](
+                    self.layout.shape[i].value()
+                )
+        # Should this raise instead?
+        std.os.abort("attempt to dynamically index out of bounds")
+
     @always_inline
     fn slice[
         *slices: ContiguousSlice
-    ](self) -> MixedLayoutTensor[
+    ](self) -> TileTensor[
         shape_types = _Slice[slices, Self.shape_types],
         stride_types = Self.stride_types,
         Self.dtype,
@@ -450,30 +484,16 @@ struct MixedLayoutTensor[
 
         Example:
 
-        For a 4x4 tensor `t` with values:
-
-        ```
-        [1 2 3 4]
-        [5 6 7 8]
-        [9 10 11 12]
-        [13 14 15 16]
-        ```
-
-        ```mojo
-        t.slice[Slice(1, 3), Slice(0, 2)]()
-        ```
-
-        will extract:
-
-        ```
-        [5 6]
-        [9 10]
-        ```
 
         For a 3D tensor, you can slice all three dimensions:
 
         ```mojo
-        tensor_3d.slice[Slice(0, 2), Slice(1, 3), Slice(0, 4)]()
+        from layout._layout import row_major
+        from layout._tile_tensor import TileTensor
+        comptime layout_3d = row_major[16, 16, 16]()
+        var stack = InlineArray[UInt8, layout_3d.STATIC_PRODUCT](fill=0)
+        var tensor_3d = TileTensor(stack, layout_3d)
+        var slice = tensor_3d.slice[0:2, 1:3, 0:4]()
         ```
 
         Performance:
@@ -512,7 +532,7 @@ struct MixedLayoutTensor[
         # Even though slice bounds are compile-time known, we use RuntimeInt
         # because we can't change ComptimeInt[4] to ComptimeInt[2] in the type system
         comptime NewShapeTypes = _Slice[slices, Self.shape_types]
-        var new_shape: MixedTuple[*NewShapeTypes]
+        var new_shape: Coord[*NewShapeTypes]
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(new_shape)
         )
@@ -530,9 +550,9 @@ struct MixedLayoutTensor[
             )
 
         # Strides remain unchanged
-        var new_layout = MixedLayout(new_shape^, self.layout.stride)
+        var new_layout = Layout(new_shape^, self.layout.stride)
 
-        return MixedLayoutTensor[
+        return TileTensor[
             shape_types=NewShapeTypes,
             stride_types = Self.stride_types,
             Self.dtype,
@@ -545,7 +565,7 @@ struct MixedLayoutTensor[
     # Vectorization
     # ===------------------------------------------------------------------=== #
 
-    comptime VectorizedType[*vector_shape: Int] = MixedLayoutTensor[
+    comptime VectorizedType[*vector_shape: Int] = TileTensor[
         shape_types = _CeilDiv[
             Self.shape_types, _IntToComptimeInt[*vector_shape]
         ],
@@ -610,7 +630,7 @@ struct MixedLayoutTensor[
         - Enables strided access patterns suitable for SIMD vector loads.
         - Zero-cost abstraction at compile time when used with static shapes.
         """
-        return _vectorize(self, mixed_tuple[*vector_shape]())
+        return _vectorize(self, coord[*vector_shape]())
 
     @always_inline("nodebug")
     fn vectorize(self) -> Self.SIMDVectorizedType where Self.ALL_DIMS_KNOWN:
@@ -630,9 +650,9 @@ struct MixedLayoutTensor[
         self,
         out result: LayoutTensor[
             Self.dtype,
-            Layout(
-                mixed_int_tuple_to_int_tuple[*Self.shape_types](),
-                mixed_int_tuple_to_int_tuple[*Self.stride_types](),
+            layout.Layout(
+                coord_to_int_tuple[*Self.shape_types](),
+                coord_to_int_tuple[*Self.stride_types](),
             ),
             Self.origin,
             address_space = Self.address_space,
@@ -650,27 +670,66 @@ struct MixedLayoutTensor[
         return {
             self.ptr,
             layout.RuntimeLayout[result.layout](
-                mixed_int_tuple_to_index_list(self.layout.shape),
-                mixed_int_tuple_to_index_list(self.layout.stride),
+                coord_to_index_list(self.layout.shape),
+                coord_to_index_list(self.layout.stride),
             ),
         }
+
+    comptime OriginCastType[
+        mut: Bool,
+        origin: Origin[mut=mut],
+    ] = TileTensor[
+        shape_types = Self.shape_types,
+        stride_types = Self.stride_types,
+        dtype = Self.dtype,
+        origin=origin,
+        address_space = Self.address_space,
+        linear_idx_type = Self.linear_idx_type,
+    ]
+    """Type alias for origin-cast result tensors.
+
+    Parameters:
+        mut: Whether the result tensor is mutable.
+        origin: The origin for the result tensor.
+    """
+
+    comptime _AsMut = Self.OriginCastType[True, _]
+
+    @always_inline("nodebug")
+    fn as_any_origin(
+        self: Self._AsMut,
+    ) -> type_of(self).OriginCastType[True, MutAnyOrigin]:
+        """Casts the origin of the mutable `LayoutTensor` to `MutAnyOrigin`.
+
+        Returns:
+            A pointer with the origin set to `MutAnyOrigin`.
+
+        This requires the tensor to already be mutable as casting mutability
+        is inherently very unsafe.
+
+        It is usually preferred to maintain concrete origin values instead of
+        using `MutAnyOrigin`. However, if it is needed, keep in mind that
+        `MutAnyOrigin` can alias any memory value, so Mojo's ASAP
+        destruction will not apply during the lifetime of the tensor.
+        """
+        return {self.ptr.as_any_origin(), self.layout.copy()}
 
 
 @always_inline("nodebug")
 fn stack_allocation[
-    shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: Variadic.TypesOfTrait[CoordLike],
     //,
     dtype: DType,
     address_space: AddressSpace = AddressSpace.GENERIC,
-](var layout: MixedLayout[shape_types, stride_types]) -> MixedLayoutTensor[
+](var layout: Layout[shape_types, stride_types]) -> TileTensor[
     shape_types=shape_types,
     stride_types=stride_types,
     dtype,
     MutExternalOrigin,
     address_space=address_space,
 ] where layout.ALL_DIMS_KNOWN:
-    return MixedLayoutTensor[
+    return TileTensor[
         shape_types=shape_types,
         stride_types=stride_types,
         dtype,
@@ -678,7 +737,7 @@ fn stack_allocation[
         address_space=address_space,
     ](
         std.memory.stack_allocation[
-            MixedTuple[*shape_types].STATIC_PRODUCT,
+            Coord[*shape_types].STATIC_PRODUCT,
             Scalar[dtype],
             address_space=address_space,
         ](),
@@ -689,7 +748,7 @@ fn stack_allocation[
 @always_inline
 fn _pretty_print_2d_tensor[
     W: Writer
-](tensor: MixedLayoutTensor, mut writer: W) where tensor.rank == 2:
+](tensor: TileTensor, mut writer: W) where tensor.rank == 2:
     var m_dim = tensor.layout.shape[0]
     var n_dim = tensor.layout.shape[1]
     for m in range(m_dim.value()):
@@ -701,11 +760,11 @@ fn _pretty_print_2d_tensor[
 
 @always_inline("nodebug")
 fn _distribute[
-    thread_layout: MixedLayout,
+    thread_layout: Layout,
 ](
-    data_layout_tensor: MixedLayoutTensor,
+    data_layout_tensor: TileTensor,
     thread_id: Int,
-) -> MixedLayoutTensor[
+) -> TileTensor[
     shape_types = _Divide[
         data_layout_tensor.shape_types, thread_layout.shape_types
     ],
@@ -717,8 +776,7 @@ fn _distribute[
     address_space = data_layout_tensor.address_space,
     linear_idx_type = data_layout_tensor.linear_idx_type,
 ]:
-    """A simplified implementation of LayoutTensor.distribute on MixedLayoutTensor.
-    """
+    """A simplified implementation of LayoutTensor.distribute on TileTensor."""
 
     var offset: UInt = 0
 
@@ -731,10 +789,10 @@ fn _distribute[
             thread_coord_i * Int(data_layout_tensor.layout.stride[i].value())
         )
 
-    comptime ShapeType = MixedTuple[
+    comptime ShapeType = Coord[
         *_Divide[data_layout_tensor.shape_types, thread_layout.shape_types]
     ]
-    comptime StrideType = MixedTuple[
+    comptime StrideType = Coord[
         *_Multiply[data_layout_tensor.stride_types, thread_layout.shape_types]
     ]
     # Since the thread layout and tensor layout have ALL_DIMS_KNOWN this is safe
@@ -743,9 +801,9 @@ fn _distribute[
     __comptime_assert StrideType.ALL_DIMS_KNOWN
     var stride = StrideType()
 
-    var layout = MixedLayout(shape^, stride^)
+    var layout = Layout(shape^, stride^)
 
-    return MixedLayoutTensor[
+    return TileTensor[
         data_layout_tensor.dtype,
         data_layout_tensor.origin,
         address_space = data_layout_tensor.address_space,
@@ -759,18 +817,18 @@ fn _distribute[
 @always_inline("nodebug")
 fn _tile[
     dtype: DType,
-    shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    stride_types: Variadic.TypesOfTrait[MixedTupleLike],
-    coord_types: Variadic.TypesOfTrait[MixedTupleLike],
-    tile_shape_types: Variadic.TypesOfTrait[MixedTupleLike],
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+    coord_types: Variadic.TypesOfTrait[CoordLike],
+    tile_shape_types: Variadic.TypesOfTrait[CoordLike],
     //,
 ](
-    data_layout_tensor: MixedLayoutTensor[
+    data_layout_tensor: TileTensor[
         shape_types=shape_types, stride_types=stride_types, dtype, ...
     ],
-    tile_shape: MixedTuple[*tile_shape_types],
-    tile_coords: MixedTuple[*coord_types],
-) -> MixedLayoutTensor[
+    tile_shape: Coord[*tile_shape_types],
+    tile_coords: Coord[*coord_types],
+) -> TileTensor[
     shape_types=tile_shape_types,
     stride_types=stride_types,
     dtype,
@@ -778,11 +836,11 @@ fn _tile[
     address_space = data_layout_tensor.address_space,
     linear_idx_type = data_layout_tensor.linear_idx_type,
 ]:
-    """Extract a tile (sub-tensor) from a MixedLayoutTensor at specified coordinates.
+    """Extract a tile (sub-tensor) from a TileTensor at specified coordinates.
 
     This function creates a view into a specific rectangular region of the source tensor
     without copying data. It computes the memory offset for the tile and creates a new
-    MixedLayoutTensor with the tile dimensions while preserving the original stride pattern.
+    TileTensor with the tile dimensions while preserving the original stride pattern.
 
     Difference from LayoutTensor.tile:
         This simplified implementation returns a tile with the original tensor's
@@ -802,10 +860,10 @@ fn _tile[
     Args:
         data_layout_tensor: The source tensor to extract the tile from.
         tile_shape: The shape that the layout should be tiled into.
-        tile_coords: The index of the tile to extract as a MixedTuple.
+        tile_coords: The index of the tile to extract as a Coord.
 
     Returns:
-        A MixedLayoutTensor representing a view into the specified tile region.
+        A TileTensor representing a view into the specified tile region.
         The returned tensor has the tile_shape as its dimensions and shares memory
         with the original tensor.
     """
@@ -813,19 +871,19 @@ fn _tile[
     var offset: UInt = 0
 
     @parameter
-    for i in range(MixedTuple[*coord_types].__len__()):
+    for i in range(Coord[*coord_types].__len__()):
         offset += UInt(
             tile_coords[i].value()
             * tile_shape[i].value()
             * Int(data_layout_tensor.layout.stride[i].value())
         )
 
-    var tile_layout = MixedLayout(
+    var tile_layout = Layout(
         shape=tile_shape,
         stride=data_layout_tensor.layout.stride,
     )
 
-    return MixedLayoutTensor[
+    return TileTensor[
         shape_types=tile_shape_types,
         stride_types=stride_types,
         dtype,
@@ -841,16 +899,16 @@ fn _tile[
 @always_inline("nodebug")
 fn _vectorize[
     dtype: DType,
-    shape_types: Variadic.TypesOfTrait[MixedTupleLike],
-    stride_types: Variadic.TypesOfTrait[MixedTupleLike],
-    vector_shape_types: Variadic.TypesOfTrait[MixedTupleLike],
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+    vector_shape_types: Variadic.TypesOfTrait[CoordLike],
     //,
 ](
-    data_layout_tensor: MixedLayoutTensor[
+    data_layout_tensor: TileTensor[
         shape_types=shape_types, stride_types=stride_types, dtype, ...
     ],
-    vector_shape: MixedTuple[*vector_shape_types],
-) -> MixedLayoutTensor[
+    vector_shape: Coord[*vector_shape_types],
+) -> TileTensor[
     shape_types = _CeilDiv[shape_types, vector_shape_types],
     stride_types = _Multiply[stride_types, vector_shape_types],
     dtype,
@@ -858,7 +916,7 @@ fn _vectorize[
     address_space = data_layout_tensor.address_space,
     linear_idx_type = data_layout_tensor.linear_idx_type,
 ]:
-    """Create a vectorized view of a MixedLayoutTensor.
+    """Create a vectorized view of a TileTensor.
 
     This function creates a new view where the shape is divided by the vector
     shape (ceiling division) and strides are multiplied by the vector shape.
@@ -872,24 +930,24 @@ fn _vectorize[
 
     Args:
         data_layout_tensor: The source tensor to vectorize.
-        vector_shape: The shape of each vector unit as a MixedTuple.
+        vector_shape: The shape of each vector unit as a Coord.
 
     Returns:
-        A MixedLayoutTensor representing a vectorized view. Each logical element
+        A TileTensor representing a vectorized view. Each logical element
         in the result corresponds to a vector block in the original tensor.
     """
     comptime NewShapeTypes = _CeilDiv[shape_types, vector_shape_types]
     comptime NewStrideTypes = _Multiply[stride_types, vector_shape_types]
 
     # Since ALL_DIMS_KNOWN is required, we can use compile-time values directly
-    __comptime_assert MixedTuple[*NewShapeTypes].ALL_DIMS_KNOWN
-    __comptime_assert MixedTuple[*NewStrideTypes].ALL_DIMS_KNOWN
-    var new_shape = MixedTuple[*NewShapeTypes]()
-    var new_stride = MixedTuple[*NewStrideTypes]()
+    __comptime_assert Coord[*NewShapeTypes].ALL_DIMS_KNOWN
+    __comptime_assert Coord[*NewStrideTypes].ALL_DIMS_KNOWN
+    var new_shape = Coord[*NewShapeTypes]()
+    var new_stride = Coord[*NewStrideTypes]()
 
-    var new_layout = MixedLayout(new_shape^, new_stride^)
+    var new_layout = Layout(new_shape^, new_stride^)
 
-    return MixedLayoutTensor[
+    return TileTensor[
         shape_types=NewShapeTypes,
         stride_types=NewStrideTypes,
         dtype,
@@ -910,7 +968,7 @@ fn _get_index_type(address_space: AddressSpace) -> DType:
         return DType.int64
 
 
-comptime _Splatted[T: MixedTupleLike, count: Int] = __mlir_attr[
+comptime _Splatted[T: CoordLike, count: Int] = __mlir_attr[
     `#kgen.variadic.splat<`,
     T,
     `,`,
@@ -921,40 +979,40 @@ comptime _Splatted[T: MixedTupleLike, count: Int] = __mlir_attr[
 
 
 comptime _MultiplyMapper[
-    Rhs: Variadic.TypesOfTrait[MixedTupleLike],
-    element_types: Variadic.TypesOfTrait[MixedTupleLike],
+    Rhs: Variadic.TypesOfTrait[CoordLike],
+    element_types: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
 ] = ComptimeInt[element_types[idx].STATIC_VALUE * Rhs[idx].STATIC_VALUE]
 
 
 comptime _Multiply[
-    Lhs: Variadic.TypesOfTrait[MixedTupleLike],
-    Rhs: Variadic.TypesOfTrait[MixedTupleLike],
+    Lhs: Variadic.TypesOfTrait[CoordLike],
+    Rhs: Variadic.TypesOfTrait[CoordLike],
 ] = _MapVariadicAndIdxToType[
-    To=MixedTupleLike,
+    To=CoordLike,
     VariadicType=Lhs,
     Mapper = _MultiplyMapper[Rhs=Rhs],
 ]
 
 comptime _DivideMapper[
-    Rhs: Variadic.TypesOfTrait[MixedTupleLike],
-    element_types: Variadic.TypesOfTrait[MixedTupleLike],
+    Rhs: Variadic.TypesOfTrait[CoordLike],
+    element_types: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
 ] = ComptimeInt[element_types[idx].STATIC_VALUE // Rhs[idx].STATIC_VALUE]
 
 
 comptime _Divide[
-    Lhs: Variadic.TypesOfTrait[MixedTupleLike],
-    Rhs: Variadic.TypesOfTrait[MixedTupleLike],
+    Lhs: Variadic.TypesOfTrait[CoordLike],
+    Rhs: Variadic.TypesOfTrait[CoordLike],
 ] = _MapVariadicAndIdxToType[
-    To=MixedTupleLike,
+    To=CoordLike,
     VariadicType=Lhs,
     Mapper = _DivideMapper[Rhs=Rhs],
 ]
 
 comptime _CeilDivMapper[
-    Rhs: Variadic.TypesOfTrait[MixedTupleLike],
-    element_types: Variadic.TypesOfTrait[MixedTupleLike],
+    Rhs: Variadic.TypesOfTrait[CoordLike],
+    element_types: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
 ] = ComptimeInt[
     (element_types[idx].STATIC_VALUE + Rhs[idx].STATIC_VALUE - 1)
@@ -963,10 +1021,10 @@ comptime _CeilDivMapper[
 
 
 comptime _CeilDiv[
-    Lhs: Variadic.TypesOfTrait[MixedTupleLike],
-    Rhs: Variadic.TypesOfTrait[MixedTupleLike],
+    Lhs: Variadic.TypesOfTrait[CoordLike],
+    Rhs: Variadic.TypesOfTrait[CoordLike],
 ] = _MapVariadicAndIdxToType[
-    To=MixedTupleLike,
+    To=CoordLike,
     VariadicType=Lhs,
     Mapper = _CeilDivMapper[Rhs=Rhs],
 ]
@@ -974,7 +1032,7 @@ comptime _CeilDiv[
 
 comptime _ToRuntimeMapper[
     dtype: DType,
-    element_types: Variadic.TypesOfTrait[MixedTupleLike],
+    element_types: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
 ] = RuntimeInt[dtype]
 """Convert shape types to RuntimeInt for slicing operations.
@@ -990,9 +1048,9 @@ Parameters:
 
 
 comptime _ToRuntimeInts[
-    element_types: Variadic.TypesOfTrait[MixedTupleLike], dtype: DType
+    element_types: Variadic.TypesOfTrait[CoordLike], dtype: DType
 ] = _MapVariadicAndIdxToType[
-    To=MixedTupleLike,
+    To=CoordLike,
     VariadicType=element_types,
     Mapper = _ToRuntimeMapper[dtype],
 ]
@@ -1005,7 +1063,7 @@ Parameters:
 
 comptime _SliceMapper[
     slices: Variadic.ValuesOfType[ContiguousSlice],
-    From: Variadic.TypesOfTrait[MixedTupleLike],
+    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
 ] = ComptimeInt[
     slices[idx].end.or_else(From[idx].STATIC_VALUE)
@@ -1014,9 +1072,9 @@ comptime _SliceMapper[
 
 comptime _Slice[
     slices: Variadic.ValuesOfType[ContiguousSlice],
-    element_types: Variadic.TypesOfTrait[MixedTupleLike],
+    element_types: Variadic.TypesOfTrait[CoordLike],
 ] = _MapVariadicAndIdxToType[
-    To=MixedTupleLike,
+    To=CoordLike,
     VariadicType=element_types,
     Mapper = _SliceMapper[slices=slices],
 ]
