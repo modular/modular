@@ -108,6 +108,8 @@ struct ScalingFactorLoader[
 # copy_sf_tmem - Copy scaling factors from SMEM to TMEM
 # =============================================================================
 
+from .tmem import TmemTensor
+
 
 @always_inline
 fn copy_sf_tmem[
@@ -117,7 +119,7 @@ fn copy_sf_tmem[
     cta_group: Int,
 ](
     sf_smem: LayoutTensor[address_space = AddressSpace.SHARED, ...],
-    sf_tmem: UInt32,
+    sf_tmem: TmemTensor,
 ):
     """Copy scaling factors from shared memory to tensor memory.
 
@@ -132,15 +134,15 @@ fn copy_sf_tmem[
 
     Args:
         sf_smem: Source SMEM tensor containing scaling factors.
-        sf_tmem: Destination TMEM address for scaling factors.
+        sf_tmem: Destination TMEM tensor for scaling factors.
     """
-    comptime sf_smem_size = sf_smem_layout.size()
+    var tmem_base = sf_tmem.offset()
 
     @parameter
     for i in range(TILE_MN // SF_MN_GROUP_SIZE):
         comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
         comptime sf_offset = sf_smem_layout(idx) * size_of[sf_dtype]()
-        var sf_tmem_addr = sf_tmem + i * (SF_MN_GROUP_SIZE // 32)
+        var sf_tmem_addr = tmem_base + UInt32(i * (SF_MN_GROUP_SIZE // 32))
         var sf_desc = MMASmemDescriptor.create[
             8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
         ](sf_smem.ptr + sf_offset)

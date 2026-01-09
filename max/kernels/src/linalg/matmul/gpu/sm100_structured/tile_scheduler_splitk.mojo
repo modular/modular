@@ -28,6 +28,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.bit import prev_power_of_two
 
 from linalg.structuring import SMemPtr
+from .tmem import TmemAddress, TmemTensor
 
 
 @fieldwise_init
@@ -649,22 +650,22 @@ struct TileScheduler[
         write_back: Bool = False,
     ](
         self,
-        tmem_addr: UInt32,
+        tmem: TmemAddress,
         reduction_workspace: LayoutTensor[accum_type, workspace_layout],
         epilogue_thread_idx: UInt,
         reduction_tile_idx: UInt32,
     ):
-        comptime data_paths = 16  # same as lanes
-        comptime bits = 256
-        # only load from TMEM when not using split-k
-        comptime total_rep = Self.ROW_SIZE // 8
-
         # 128 is a magic number that is provided by the NVCC backend.
         # register size that is greater than that will not compile.
         comptime widths_per_stage = Self._get_widths_per_stage[128]()
         comptime widths = widths_per_stage[0]
         comptime num_widths = widths_per_stage[1]
-        comptime fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
+
+        # TmemTensor for split-K reduction.
+        # Use cta_group=2 to force is_lower_required=True - split-K always
+        # needs both upper and lower fragments for the full reduction.
+        comptime accum_layout = Layout.row_major(Self.BM, Self.ROW_SIZE)
+        comptime AccumTmem = TmemTensor[accum_type, accum_layout, cta_group=2]
 
         var local_warp_id = epilogue_thread_idx // UInt(WARP_SIZE)
 
@@ -678,46 +679,40 @@ struct TileScheduler[
         var warp_id_x = local_warp_id if Self.BM == 128 else local_warp_id % 2
         var warp_id_y = 0 if Self.BM == 128 else local_warp_id // 2
 
-        from .tmem import TmemAddress
-
         var reduction_frag = workspace_tile.tile[REDUCTION_BM, REDUCTION_BN](
             Int(warp_id_x), Int(warp_id_y)
         )
         var reduction_upper = reduction_frag.tile[16, REDUCTION_BN](0, 0)
         var reduction_lower = reduction_frag.tile[16, REDUCTION_BN](1, 0)
-        var tmem = TmemAddress(tmem_addr)
+        var stage_addr = tmem  # Track address for iteration
 
         @parameter
         for stage in range(num_widths):
             comptime stage_width = widths[stage]
             comptime stage_rep = stage_width // 8
-            comptime stage_frag_size = stage_rep * fragment_size
 
-            var stage_frag_upper = tmem.load_upper[
-                accum_type, stage_frag_size, data_paths, bits, stage_rep
-            ]()
-            var stage_frag_lower = tmem.load_lower[
-                accum_type, stage_frag_size, data_paths, bits, stage_rep
-            ]()
-            TmemAddress.wait_load()
+            var stage_tmem = AccumTmem(stage_addr)
+            var frags = stage_tmem.load_fragments[stage_rep]()
+            AccumTmem.wait_load()
 
-            var reduction_upper_subtile = Self._to_next_subtile[
-                widths=widths, curr_stage=stage
-            ](reduction_upper)
-            var reduction_lower_subtile = Self._to_next_subtile[
-                widths=widths, curr_stage=stage
-            ](reduction_lower)
+            # Get workspace subtiles for this stage
+            var ws_upper = (
+                Self._to_next_subtile[widths=widths, curr_stage=stage](
+                    reduction_upper
+                )
+                .vectorize[1, 2]()
+                .distribute[Layout.row_major(8, 4)](lane_id())
+            )
+            var ws_lower = (
+                Self._to_next_subtile[widths=widths, curr_stage=stage](
+                    reduction_lower
+                )
+                .vectorize[1, 2]()
+                .distribute[Layout.row_major(8, 4)](lane_id())
+            )
 
-            var reduction_frag_upper = reduction_upper_subtile.vectorize[
-                1, 2
-            ]().distribute[Layout.row_major(8, 4)](lane_id())
-
-            var reduction_frag_lower = reduction_lower_subtile.vectorize[
-                1, 2
-            ]().distribute[Layout.row_major(8, 4)](lane_id())
-
-            comptime num_m = reduction_frag_upper.layout.shape[0].value()
-            comptime num_n = reduction_frag_upper.layout.shape[1].value()
+            comptime num_m = ws_upper.layout.shape[0].value()
+            comptime num_n = ws_upper.layout.shape[1].value()
 
             @parameter
             for m in range(num_m):
@@ -726,44 +721,39 @@ struct TileScheduler[
                 for n in range(num_n):
                     comptime i = m * num_n + n
 
-                    var v2_upper = rebind[reduction_frag_upper.element_type](
+                    var v2_upper = rebind[ws_upper.element_type](
                         SIMD[accum_type, 2](
-                            stage_frag_upper[2 * i], stage_frag_upper[2 * i + 1]
+                            frags.upper[2 * i], frags.upper[2 * i + 1]
                         )
                     )
-                    var v2_lower = rebind[reduction_frag_lower.element_type](
+                    var v2_lower = rebind[ws_lower.element_type](
                         SIMD[accum_type, 2](
-                            stage_frag_lower[2 * i], stage_frag_lower[2 * i + 1]
+                            frags.lower[2 * i], frags.lower[2 * i + 1]
                         )
                     )
 
                     @parameter
                     if do_reduction:
-                        v2_upper += reduction_frag_upper[m, n]
-                        v2_lower += reduction_frag_lower[m, n]
+                        v2_upper += ws_upper[m, n]
+                        v2_lower += ws_lower[m, n]
 
                     @parameter
                     if write_back:
-                        reduction_frag_upper[m, n] = v2_upper
-                        reduction_frag_lower[m, n] = v2_lower
+                        ws_upper[m, n] = v2_upper
+                        ws_lower[m, n] = v2_lower
                     else:
-                        stage_frag_upper[2 * i] = v2_upper[0]
-                        stage_frag_upper[2 * i + 1] = v2_upper[1]
-                        stage_frag_lower[2 * i] = v2_lower[0]
-                        stage_frag_lower[2 * i + 1] = v2_lower[1]
+                        frags.upper[2 * i] = v2_upper[0]
+                        frags.upper[2 * i + 1] = v2_upper[1]
+                        frags.lower[2 * i] = v2_lower[0]
+                        frags.lower[2 * i + 1] = v2_lower[1]
 
-            # Can't hold all accumulators in registers, store back to TMEM.
+            # Store modified fragments back to TMEM
             @parameter
             if not write_back:
-                tmem.store_upper[
-                    data_paths=data_paths, bits=bits, repeat=stage_rep
-                ](stage_frag_upper)
-                tmem.store_lower[
-                    data_paths=data_paths, bits=bits, repeat=stage_rep
-                ](stage_frag_lower)
-                TmemAddress.wait_store()
+                stage_tmem.store_fragments[stage_rep](frags)
+                AccumTmem.wait_store()
 
-            tmem = tmem + stage_width
+            stage_addr = stage_addr + stage_width
 
     @always_inline
     fn reduction[
@@ -772,7 +762,7 @@ struct TileScheduler[
     ](
         self,
         reduction_workspace: LayoutTensor[accum_type, workspace_layout],
-        tmem_addr: UInt32,
+        tmem: TmemAddress,
         epilogue_thread_idx: UInt,
         work_info: WorkInfo,
     ) -> Bool:
@@ -784,7 +774,7 @@ struct TileScheduler[
             if work_info.k_start == 0:
                 # first split don't wait and just write to workspace.
                 self.store_to_workspace[do_reduction=False, write_back=True](
-                    tmem_addr,
+                    tmem,
                     reduction_workspace,
                     epilogue_thread_idx,
                     reduction_tile_idx,
@@ -799,7 +789,7 @@ struct TileScheduler[
                 )
 
                 self.store_to_workspace[do_reduction=True, write_back=True](
-                    tmem_addr,
+                    tmem,
                     reduction_workspace,
                     epilogue_thread_idx,
                     reduction_tile_idx,
@@ -825,7 +815,7 @@ struct TileScheduler[
                 work_info.k_start,
             )
             self.store_to_workspace[do_reduction=True, write_back=False](
-                tmem_addr,
+                tmem,
                 reduction_workspace,
                 epilogue_thread_idx,
                 reduction_tile_idx,

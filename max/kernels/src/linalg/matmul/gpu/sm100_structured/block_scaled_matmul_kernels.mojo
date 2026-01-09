@@ -89,7 +89,7 @@ from linalg.matmul.gpu.profiler import MatmulProfileWarp
 from .pipeline import ProducerConsumerPipeline
 from .tile_pipeline import OutputTilePipeline
 from .barriers import TmemDeallocBarrier, WarpGroupBarrier
-from .tmem import TmemAllocation
+from .tmem import TmemAllocation, TmemTensor, BlockScaledTmem
 from .tile_scheduler import TileScheduler
 from .tile_loader import TileLoaderTMA
 from .tile_writer import EpilogueConfig
@@ -197,20 +197,6 @@ struct BlockScaledKernelContext[
         self.mma_complete_mask = self_mask | peer_mask
 
         self.ptr_tmem_addr = tmem_addr_ptr
-
-    @always_inline
-    fn get_sfa_tmem_offset(
-        self, tmem_addr: UInt32, num_accum_stages: Int
-    ) -> UInt32:
-        """Get TMEM offset for A scaling factors."""
-        return tmem_addr + UInt32(num_accum_stages * Self.MMA_N)
-
-    @always_inline
-    fn get_sfb_tmem_offset(self, sfa_tmem: UInt32) -> UInt32:
-        """Get TMEM offset for B scaling factors."""
-        return sfa_tmem + UInt32(Self.SFA_NUM_COLS) * UInt32(
-            Self.num_pipeline_stages
-        )
 
 
 # =============================================================================
@@ -463,9 +449,27 @@ struct BlackwellBlockScaledMatmulKernel[
         Self.cta_group,
     ]
 
-    # ========== TMEM Allocation Type ==========
+    # ========== TMEM Types ==========
 
     comptime Tmem = TmemAllocation[Self.cta_group]
+
+    # Unified TMEM region for accumulators and scaling factors
+    comptime TmemRegion = BlockScaledTmem[
+        accum_dtype = Self.accum_type,
+        MMA_M = Self.MMA_M,
+        MMA_N = Self.MMA_N,
+        num_accum_stages = Self.num_accum_pipeline_stages,
+        sf_dtype = Self.sfa_dtype,
+        BM = Self.BM,
+        num_pipeline_stages = Self.num_pipeline_stages,
+        cta_group = Self.cta_group,
+        total_cols = Self.NUM_TMEM_COLS,
+    ]
+
+    # Typed tile accessors
+    comptime AccumTensor = Self.TmemRegion.AccumTile
+    comptime SFATensor = Self.TmemRegion.SFATile
+    comptime SFBTensor = Self.TmemRegion.SFBTile
 
     # ========== Expected Bytes Calculation ==========
 
@@ -495,9 +499,8 @@ struct BlackwellBlockScaledMatmulKernel[
     fn mma_block_scaled[
         tiles_origin: MutOrigin,
     ](
-        accum_tmem: UInt32,
-        sfa_tmem: UInt32,
-        sfb_tmem: UInt32,
+        accum: Self.AccumTensor,
+        tmem_region: Self.TmemRegion,
         tiles: BlockScaledConsumerStage[
             tiles_origin,
             Self.a_type,
@@ -516,25 +519,32 @@ struct BlackwellBlockScaledMatmulKernel[
         k_iter: UInt32,
         k_start: UInt32,
     ):
-        """Copy scaling factors to TMEM and execute block-scaled MMA."""
+        """Copy scaling factors to TMEM and execute block-scaled MMA.
+
+        Args:
+            accum: Typed TMEM tensor for accumulators.
+            tmem_region: TMEM region with typed accessors for scaling factors.
+            tiles: Consumer stage with A, B, SFA, SFB tiles.
+            mma_op: Block-scaled MMA operation instance.
+            k_iter: Current K iteration index.
+            k_start: Starting K iteration (for init_c).
+        """
         var stage = tiles.stage()
 
         if elect_one_sync():
 
             @parameter
             for j in range(Int(Self.config.k_group_size)):
-                var offset = stage * UInt32(Self.config.k_group_size) + UInt32(
+                # Compute linear index for this k-iteration
+                var sf_idx = stage * UInt32(Self.config.k_group_size) + UInt32(
                     j
                 )
                 var a_tile, b_tile = tiles.get_tile(j)
-                var sfa_tile, sfb_tile = tiles.get_sf_tile(j)
+                var sfa_smem, sfb_smem = tiles.get_sf_tile(j)
 
-                var sfa_tmem_offset = sfa_tmem + offset * UInt32(
-                    Self.SFA_NUM_COLS
-                )
-                var sfb_tmem_offset = sfb_tmem + offset * UInt32(
-                    Self.SFB_NUM_COLS
-                )
+                # Get typed TMEM tiles for scaling factors
+                var sfa_tmem = tmem_region.sfa(sf_idx)
+                var sfb_tmem = tmem_region.sfb(sf_idx)
 
                 # Copy scaling factors from SMEM to TMEM
                 copy_sf_tmem[
@@ -542,20 +552,20 @@ struct BlackwellBlockScaledMatmulKernel[
                     Self.sfa_smem_layout,
                     Self.BM,
                     Self.cta_group,
-                ](sfa_tile, sfa_tmem_offset)
+                ](sfa_smem, sfa_tmem)
                 copy_sf_tmem[
                     Self.sfb_dtype,
                     Self.sfb_smem_layout,
                     Self.MMA_N,
                     Self.cta_group,
-                ](sfb_tile, sfb_tmem_offset)
+                ](sfb_smem, sfb_tmem)
 
                 mma_op.mma(
                     a_tile,
                     b_tile,
-                    accum_tmem,
-                    sfa_tmem_offset,
-                    sfb_tmem_offset,
+                    UInt32(accum.offset()),
+                    UInt32(sfa_tmem.offset()),
+                    UInt32(sfb_tmem.offset()),
                     init_c=((k_iter + UInt32(j)) == k_start),
                 )
 
@@ -856,12 +866,8 @@ struct BlackwellBlockScaledMatmulKernel[
             with MatmulProfilerType[2](workspace, 0):
                 var tmem = Self.Tmem.allocate(tmem_addr_arr)
 
-                # Compute scaling factor TMEM offsets
-                var tmem_addr = tmem.addr
-                var sfa_tmem = ctx.get_sfa_tmem_offset(
-                    tmem_addr, Self.num_accum_pipeline_stages
-                )
-                var sfb_tmem = ctx.get_sfb_tmem_offset(sfa_tmem)
+                # Create unified TMEM region for accumulators and scaling factors
+                var tmem_region = Self.TmemRegion(tmem)
 
                 var mma_ctx = Self.MmaCtx(
                     tmem,
@@ -883,10 +889,14 @@ struct BlackwellBlockScaledMatmulKernel[
                                             Self.config.k_group_size,
                                         ):
                                             with consumer.acquire() as tiles:
+                                                # Get typed accumulator tensor
+                                                var accum = tmem_region.accum(
+                                                    stage.index
+                                                )
+
                                                 Self.mma_block_scaled(
-                                                    stage.tmem.offset(),
-                                                    sfa_tmem,
-                                                    sfb_tmem,
+                                                    accum,
+                                                    tmem_region,
                                                     tiles,
                                                     mma_op,
                                                     i,
