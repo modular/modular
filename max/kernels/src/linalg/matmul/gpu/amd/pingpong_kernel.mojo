@@ -29,7 +29,9 @@ from gpu.memory import AddressSpace
 from gpu.mma import mma
 from sys import llvm_intrinsic
 from gpu.sync import barrier, schedule_barrier, s_waitcnt
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from memory.unsafe import bitcast
 
 from utils import Index, IndexList, StaticTuple
@@ -248,7 +250,7 @@ struct TileLoaderLDS[
         //,
     ](
         self,
-        dst: SMemTileType[Self.dtype, dst_layout, **_],
+        dst: SMemTileType[Self.dtype, dst_layout, ...],
         src_row: Int,
         src_col: Int,
     ):
@@ -385,7 +387,7 @@ fn _load_from_lds[
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
         # Offset pointer by 16 bytes for second load
-        var shared_ptr_offset = shared_ptr.offset(16)
+        var shared_ptr_offset = shared_ptr + 16
         var shared_ptr3_hi = __mlir_op.`builtin.unrealized_conversion_cast`[
             _type = __mlir_type.`!llvm.ptr<3>`
         ](shared_ptr_offset)
@@ -424,10 +426,10 @@ fn load_lds_fragment[
     swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
 ](
     smem_tile: SMemTileType[
-        dtype, smem_layout, element_layout=smem_element_layout, **_
+        dtype, smem_layout, element_layout=smem_element_layout, ...
     ],
     reg_frag: RegTileType[
-        dtype, frag_layout, element_layout=frag_element_layout, **_
+        dtype, frag_layout, element_layout=frag_element_layout, ...
     ],
 ):
     """Load LDS → registers with MMA access pattern.
@@ -551,7 +553,7 @@ fn load_lds_fragment[
                 comptime frag_idx = m_idx * k_splits + k_idx
                 frag_ptr[frag_idx] = rebind[FragElement](
                     _load_from_lds[width=frag_width](
-                        smem_tile.ptr.offset(full_offset)
+                        smem_tile.ptr + full_offset
                     )
                 )
     else:
@@ -566,9 +568,7 @@ fn load_lds_fragment[
                 full_offset = swizzle.value()(full_offset)
 
             frag_ptr[i] = rebind[FragElement](
-                _load_from_lds[width=frag_width](
-                    smem_tile.ptr.offset(full_offset)
-                )
+                _load_from_lds[width=frag_width](smem_tile.ptr + full_offset)
             )
 
 
@@ -787,7 +787,7 @@ struct MmaOp[
         _ = self.out_reg_tile.fill(0)
 
     @always_inline
-    fn load_a[which: Int](self, smem_tile: SMemTileType[Self.in_type, **_]):
+    fn load_a[which: Int](self, smem_tile: SMemTileType[Self.in_type, ...]):
         """Load A[which] from LDS → registers.
 
         Accepts SMemTileType with matching dtype - layout compatibility validated
@@ -808,7 +808,7 @@ struct MmaOp[
         ](smem_frag, reg_frag)
 
     @always_inline
-    fn load_b[which: Int](self, smem_tile: SMemTileType[Self.in_type, **_]):
+    fn load_b[which: Int](self, smem_tile: SMemTileType[Self.in_type, ...]):
         """Load B[which] from LDS → registers.
 
         Accepts SMemTileType with matching dtype - layout compatibility validated
@@ -1054,8 +1054,8 @@ struct TileBuffers[
     @always_inline
     fn __init__(
         out self,
-        a: LayoutTensor[Self.in_type, Self.a_layout, *_, **_],
-        b: LayoutTensor[_, Self.b_layout, *_, **_],
+        a: LayoutTensor[Self.in_type, Self.a_layout, ...],
+        b: LayoutTensor[_, Self.b_layout, ...],
         block_row: Int,
         block_col: Int,
         warp_id: Int,
@@ -1183,7 +1183,6 @@ struct TileBuffers[
     @always_inline
     fn _load_tile_4warp[
         half_data_rows: Int,
-        //,
         which: Int,
     ](
         self,
@@ -2202,7 +2201,7 @@ fn ping_pong_matmul[
             enable_swizzle,
         ].matmul_ping_pong
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             a_device_tensor,
             b_device_tensor,
             c_device_tensor,

@@ -40,7 +40,9 @@ from layout.layout import *
 from layout.layout_tensor import LayoutTensor, Layout, copy_dram_to_sram
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulKernels
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from memory.unsafe import bitcast
 from quantization import Q4sym
 from quantization.qmatmul_gpu import multistage_gemm_q, pack_Q_tile
@@ -572,7 +574,7 @@ fn test_repack_Q4_0_for_sm8x(
         DType.bfloat16,
     ]
 
-    ctx.enqueue_function_checked[repack, repack](
+    ctx.enqueue_function[repack, repack](
         gguf_b_tensor,
         repacked_b_tensor,
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
@@ -590,7 +592,7 @@ fn test_repack_Q4_0_for_sm8x(
         pack_factor,
     ]
 
-    ctx.enqueue_function_checked[dequan, dequan](
+    ctx.enqueue_function[dequan, dequan](
         repacked_b_tensor,
         repacked_dequan_tensor,
         grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),
@@ -824,7 +826,7 @@ fn test_quantized[
         pack_factor,
     ]
 
-    ctx.enqueue_function_checked[dequan, dequan](
+    ctx.enqueue_function[dequan, dequan](
         b_tensor,
         b_ref_tensor,
         grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),

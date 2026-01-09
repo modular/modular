@@ -17,7 +17,9 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import grid_dim
 from gpu.host import DeviceContext, FuncAttribute
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from internal_utils import assert_almost_equal, zero
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -124,7 +126,7 @@ fn test_fp8_multistage_gemm[
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c_tensor,
         a_tensor,
         b_tensor,

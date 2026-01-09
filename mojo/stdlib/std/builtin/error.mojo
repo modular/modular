@@ -17,7 +17,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 from collections.string.format import _CurlyEntryFormattable
-from io.write import _WriteBufferStack
+from fmt._utils import _WriteBufferStack
 from sys import _libc, external_call, is_gpu
 from sys.ffi import c_char, CStringSlice
 
@@ -27,7 +27,7 @@ from memory import (
     alloc,
     memcpy,
 )
-from io.write import _WriteBufferStack, _TotalWritableBytes
+from fmt._utils import _WriteBufferStack, _TotalWritableBytes
 
 
 # ===-----------------------------------------------------------------------===#
@@ -50,7 +50,7 @@ struct StackTrace(Copyable, Movable, Stringable):
     fn __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[UInt8, MutOrigin.external],
+        unsafe_from_raw_pointer: UnsafePointer[UInt8, MutExternalOrigin],
     ):
         """Construct a StackTrace from a raw pointer to a C string.
 
@@ -113,7 +113,7 @@ struct StackTrace(Copyable, Movable, Stringable):
         if depth < 0:
             return None
 
-        var buffer = UnsafePointer[UInt8, MutOrigin.external]()
+        var buffer = UnsafePointer[UInt8, MutExternalOrigin]()
         var num_bytes = external_call["KGEN_CompilerRT_GetStackTrace", Int](
             UnsafePointer(to=buffer), depth
         )
@@ -135,14 +135,6 @@ struct StackTrace(Copyable, Movable, Stringable):
 # ===-----------------------------------------------------------------------===#
 # Error
 # ===-----------------------------------------------------------------------===#
-
-
-@fieldwise_init
-struct _ErrorWriter(Writer):
-    var data: List[Byte]
-
-    fn write_bytes(mut self, bytes: Span[Byte, _]):
-        self.data.extend(bytes)
 
 
 struct Error(

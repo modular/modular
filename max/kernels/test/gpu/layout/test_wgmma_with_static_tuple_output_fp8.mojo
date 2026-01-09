@@ -32,7 +32,9 @@ from layout.tensor_core_async import (
     _rhs_descriptor,
     tile_layout_k_major,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils import StaticTuple
 
@@ -205,7 +207,7 @@ fn wgmma_e4m3_e4m3_f32[
         transpose_b=transpose_b,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tensor,
         b_tensor,
         c_tensor,

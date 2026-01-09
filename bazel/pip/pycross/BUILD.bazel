@@ -19,5 +19,6 @@ modular_py_test(
     srcs = glob(["test_*.py"]),
     deps = [
         ":generate",
+        requirement("packaging"),
     ],
 )

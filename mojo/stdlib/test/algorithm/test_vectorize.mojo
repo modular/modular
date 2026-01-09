@@ -15,6 +15,8 @@ from algorithm import vectorize
 from memory import memcmp
 from testing import assert_equal
 from testing import TestSuite
+from math import iota
+from sys.intrinsics import masked_load, masked_store
 
 
 def test_vectorize():
@@ -43,6 +45,56 @@ def test_vectorize():
             vector.unsafe_ptr().load[width=width](idx)
             + vector.unsafe_ptr().load[width=width](idx),
         )
+
+    vectorize[2](len(vector), add)
+
+    assert_equal(vector[0], 6.0)
+    assert_equal(vector[1], 8.0)
+    assert_equal(vector[2], 10.0)
+    assert_equal(vector[3], 12.0)
+    assert_equal(vector[4], 14.0)
+
+
+def test_vectorize_evl():
+    # Create a mem of size 5
+    var vector_stack = InlineArray[Float32, 5](1.0, 2.0, 3.0, 4.0, 5.0)
+    var vector = Span(vector_stack)
+
+    @always_inline
+    fn add_two[width: Int](idx: Int, evl: Int) unified {var vector}:
+        if evl == width:
+            vector.unsafe_ptr().store[width=width](
+                idx, vector.unsafe_ptr().load[width=width](idx) + 2
+            )
+        else:
+            for i in range(evl):
+                vector[idx + i] = vector[idx + i] + 2
+
+    vectorize[2](len(vector), add_two)
+
+    assert_equal(vector[0], 3.0)
+    assert_equal(vector[1], 4.0)
+    assert_equal(vector[2], 5.0)
+    assert_equal(vector[3], 6.0)
+    assert_equal(vector[4], 7.0)
+
+    @always_inline
+    fn add[width: Int](idx: Int, evl: Int) unified {var vector}:
+        if evl == width:
+            vector.unsafe_ptr().store[width=width](
+                idx,
+                vector.unsafe_ptr().load[width=width](idx)
+                + vector.unsafe_ptr().load[width=width](idx),
+            )
+        else:
+            var ptr = vector.unsafe_ptr() + idx
+            var incr = iota[DType.int32, width]()
+            var mask = incr.lt(evl)
+            var loaded = masked_load[width](
+                ptr, mask, SIMD[DType.float32, width]()
+            )
+            var result = loaded + loaded
+            masked_store[width](result, ptr, mask)
 
     vectorize[2](len(vector), add)
 

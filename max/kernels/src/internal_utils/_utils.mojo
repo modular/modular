@@ -14,11 +14,13 @@
 import time
 from collections import OptionalReg
 from io.io import _snprintf
-from math import ceildiv
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from math import ceildiv, floor
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from random import rand, random_float64
 from sys import argv, env_get_string
 from builtin.device_passable import DevicePassable
@@ -109,7 +111,7 @@ struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
 
 
 fn initialize(
-    buffer: NDBuffer[mut=True, **_], init_type: InitializationType
+    buffer: NDBuffer[mut=True, ...], init_type: InitializationType
 ) raises:
     if init_type == InitializationType.zero:
         buffer.zero()
@@ -125,7 +127,7 @@ fn initialize(
 
 @parameter
 @always_inline
-fn arange(buffer: NDBuffer[mut=True, *_]):
+fn arange(buffer: NDBuffer[mut=True, ...]):
     @parameter
     if buffer.rank == 2:
         for i in range(buffer.dim[0]()):
@@ -136,11 +138,11 @@ fn arange(buffer: NDBuffer[mut=True, *_]):
             buffer.data[i] = i
 
 
-fn zero(buffer: NDBuffer[mut=True, *_, **_]):
+fn zero(buffer: NDBuffer[mut=True, ...]):
     buffer.zero()
 
 
-fn fill(buffer: NDBuffer[mut=True, *_], val: Scalar):
+fn fill(buffer: NDBuffer[mut=True, ...], val: Scalar):
     buffer.fill(val.cast[buffer.type]())
 
 
@@ -465,7 +467,7 @@ struct Mode(ImplicitlyCopyable, Stringable):
 
 fn random[
     dtype: DType
-](buffer: NDBuffer[mut=True, dtype, **_], min: Float64 = 0, max: Float64 = 1):
+](buffer: NDBuffer[mut=True, dtype, ...], min: Float64 = 0, max: Float64 = 1,):
     @parameter
     if dtype.is_float8():
         var size = buffer.num_elements()
@@ -510,12 +512,12 @@ struct Timer:
     var report: List[String]
 
     fn __init__(out self):
-        self.start = time.perf_counter_ns()
+        self.start = Float64(time.perf_counter_ns())
         self.current = self.start
         self.report = List[String]()
 
     fn measure(mut self, msg: String):
-        var current = time.perf_counter_ns()
+        var current = Float64(time.perf_counter_ns())
         var elapsed = current - self.current
         self.current = current
         self.report.append("[" + msg + "] " + String(elapsed / 1e6) + " (ms)")
@@ -565,7 +567,7 @@ fn init_vector_gpu[
     elif mode == InitializationType.fill:
         values = SIMD[dtype, 4](value)
     elif mode == InitializationType.uniform_distribution:
-        var rng = Random(offset=tid)
+        var rng = Random(offset=UInt64(tid))
         values = SIMD[dtype, 4](rng.step_uniform())
     elif mode == InitializationType.arange:
         values = SIMD[dtype, 4](
@@ -590,7 +592,7 @@ fn init_vector_launch[
     # using num-threads = 1/4th of length to initialize the array
 
     comptime kernel = init_vector_gpu[dtype]
-    context.enqueue_function_checked[kernel, kernel](
+    context.enqueue_function[kernel, kernel](
         out_device,
         length,
         init_type,
@@ -598,3 +600,37 @@ fn init_vector_launch[
         grid_dim=(num_blocks),
         block_dim=(block_dim),
     )
+
+
+fn _pretty_print_float(val: Float64) -> String:
+    """Converts float to string, omitting fractional part if not needed.
+
+    Examples:
+        _pretty_print_float(2.0) returns "2"
+        _pretty_print_float(2.5) returns "2.5"
+    """
+    if Float64(floor(val)) == val:
+        return String(Int(val))
+    return String(val)
+
+
+fn human_readable_size(size: Int) -> String:
+    """Formats a byte size into human-readable form (KB, MB, GB).
+
+    Args:
+        size: Size in bytes.
+
+    Returns:
+        Human-readable string (e.g., "4KB", "256MB", "2GB").
+    """
+    comptime KB = 1024
+    comptime MB = KB * KB
+    comptime GB = MB * KB
+
+    if size >= GB:
+        return _pretty_print_float(Float64(size) / GB) + "GB"
+    if size >= MB:
+        return _pretty_print_float(Float64(size) / MB) + "MB"
+    if size >= KB:
+        return _pretty_print_float(Float64(size) / KB) + "KB"
+    return String(size) + "B"

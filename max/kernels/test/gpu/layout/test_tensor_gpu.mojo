@@ -18,7 +18,9 @@ from gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import Layout, LayoutTensor
@@ -60,7 +62,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
 
     comptime kernel = copy_to_sram_test_kernel[tensor_layout]
     var ptr = UnsafePointer(to=check_state).bitcast[Scalar[DType.bool]]()
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         tensor.device_tensor(),
         DeviceBuffer[DType.bool](
             ctx,

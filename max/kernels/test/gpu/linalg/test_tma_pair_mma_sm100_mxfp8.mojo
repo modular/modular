@@ -41,7 +41,9 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, max_finite, min_finite
 from utils.static_tuple import StaticTuple
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import fill, zero, random, assert_almost_equal
 from math import ceildiv
 from builtin.simd import _convert_f32_to_float8_ue8m0
@@ -570,7 +572,7 @@ fn sm100_blockscaled_mxfp8_cta_pair[
     __comptime_assert transpose_b, "Only support transposed B"
 
     __comptime_assert (
-        a_type == b_type and a_type is DType.float8_e4m3fn
+        a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     var M = c.dim(0)
@@ -712,7 +714,7 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         cta_group=cta_group,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         a_scales_tma_op,

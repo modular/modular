@@ -107,10 +107,10 @@ fn matmul[
     s_type: DType = get_accum_type[c_type](),
 ](
     C: LayoutTensor[
-        mut=True, c_type, c_layout, element_layout=element_layout, **_
+        mut=True, c_type, c_layout, element_layout=element_layout, ...
     ],
-    A: LayoutTensor[a_type, a_layout, element_layout=element_layout, **_],
-    B: LayoutTensor[b_type, b_layout, element_layout=element_layout, **_],
+    A: LayoutTensor[a_type, a_layout, element_layout=element_layout, ...],
+    B: LayoutTensor[b_type, b_layout, element_layout=element_layout, ...],
 ):
     comptime M = Int(c_layout.shape[0])
     comptime N = Int(c_layout.shape[1])
@@ -139,7 +139,7 @@ fn matmul[
 fn get_tile[
     dtype: DType, //, tile_size: Int
 ](
-    input_tensor: LayoutTensor[dtype, **_],
+    input_tensor: LayoutTensor[dtype, ...],
     n: Int,
     h: Int,
     w: Int,
@@ -273,7 +273,8 @@ fn winograd_conv2d_gpu_nhwc[
     ].stack_allocation()
 
     # Pre-transform filter (G^T * filter * G)
-    var filter_slice = filter.slice[:, :, slice_indices= (0, 1)](offsets=(0))
+    # offsets=(0, 0) specifies indices for the non-sliced dimensions (rank-2)
+    var filter_slice = filter.slice[:, :, slice_indices= (0, 1)](offsets=(0, 0))
     matmul[False](scratch, g, filter_slice)
     matmul[True](g_transformed, scratch, g)
 
@@ -329,10 +330,10 @@ fn winograd_conv2d_gpu_launcher[
     filter_type: DType,
     output_type: DType,
 ](
-    input: LayoutTensor[input_type, element_layout=element_layout, **_],
-    filter: LayoutTensor[filter_type, element_layout=element_layout, **_],
+    input: LayoutTensor[input_type, element_layout=element_layout, ...],
+    filter: LayoutTensor[filter_type, element_layout=element_layout, ...],
     output: LayoutTensor[
-        mut=True, output_type, element_layout=element_layout, **_
+        mut=True, output_type, element_layout=element_layout, ...
     ],
     stride: IndexList[2],
     dilation: IndexList[2],
@@ -390,7 +391,7 @@ fn winograd_conv2d_gpu_launcher[
         block_size,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         input.get_immutable().as_any_origin(),
         filter.get_immutable().as_any_origin(),
         output.as_any_origin(),
@@ -511,8 +512,8 @@ fn test_winograd_conv_gpu[
     ctx.synchronize()
 
     # Verify results
-    comptime atol = 1e-06 if dtype is DType.float32 else 1e-1
-    comptime rtol = 1e-06 if dtype is DType.float32 else 1e-4
+    comptime atol = 1e-06 if dtype == DType.float32 else 1e-1
+    comptime rtol = 1e-06 if dtype == DType.float32 else 1e-4
 
     with output_device.map_to_host() as output_host:
         with output_ref_device.map_to_host() as output_ref_host:

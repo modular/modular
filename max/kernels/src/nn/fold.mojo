@@ -33,8 +33,8 @@ fn fold[
     padding: Tuple[Int, Int],
     target: StaticString,
 ](
-    input: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    input: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
     output_size: IndexList[2],
     kernel_size: IndexList[2],
     ctx: DeviceContextPtr,
@@ -173,7 +173,7 @@ fn fold[
 fn fold_shape[
     dtype: DType
 ](
-    input: LayoutTensor[dtype, **_],
+    input: LayoutTensor[dtype, ...],
     output_size: IndexList[2],
     kernel_size: IndexList[2],
 ) raises -> IndexList[4]:

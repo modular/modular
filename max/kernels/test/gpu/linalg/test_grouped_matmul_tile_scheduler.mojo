@@ -17,7 +17,9 @@ from gpu import block_idx
 from gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils.index import Index
 
@@ -95,7 +97,7 @@ def test(ctx: DeviceContext):
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function_checked[
+    ctx.enqueue_function[
         test_kernel[False, offset_shape],
         test_kernel[False, offset_shape],
     ](
@@ -137,7 +139,7 @@ def test(ctx: DeviceContext):
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function_checked[
+    ctx.enqueue_function[
         test_kernel[True, offset_shape], test_kernel[True, offset_shape]
     ](
         dev_group_offsets,

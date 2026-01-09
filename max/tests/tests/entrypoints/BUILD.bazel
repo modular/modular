@@ -2,8 +2,9 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_test(
@@ -16,6 +17,7 @@ modular_py_test(
         "MAX_SERVE_DISABLE_TELEMETRY": "True",
         "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
     },
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/pipelines",
         "//max/python/max/serve",

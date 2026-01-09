@@ -15,7 +15,9 @@ import gpu.warp as warp
 from gpu import barrier, global_idx
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 
@@ -60,7 +62,7 @@ fn test_barrier[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(output_buffer, output_host)
     ctx.enqueue_copy(shared_buffer, shared_host)
 
-    ctx.enqueue_function_checked[kernel[dtype], kernel[dtype]](
+    ctx.enqueue_function[kernel[dtype], kernel[dtype]](
         input_buffer,
         output_buffer,
         shared_buffer,

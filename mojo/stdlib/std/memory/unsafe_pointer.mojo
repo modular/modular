@@ -48,7 +48,7 @@ from .legacy_unsafe_pointer import _default_invariant
 fn alloc[
     type: AnyType, /
 ](count: Int, *, alignment: Int = align_of[type]()) -> UnsafePointer[
-    type, MutOrigin.external
+    type, MutExternalOrigin
 ]:
     """Allocates contiguous storage for `count` elements of `type` with
     alignment `alignment`.
@@ -219,8 +219,8 @@ struct UnsafePointer[
 
     - `free()`: Frees memory previously allocated by `alloc()`. Do not call on
       pointers that were not allocated by `alloc()`.
-    - `offset(i)` / `+ i` / `- i`: Pointer arithmetic. Returns a new pointer
-      shifted by `i` elements. No bounds checking.
+    - `+ i` / `- i`: Pointer arithmetic. Returns a new pointer shifted by `i`
+      elements. No bounds checking.
     - `[]` or `[i]`: Dereference to a reference of the pointee (or at
       offset `i`). Only valid if the memory at that location is initialized.
     - `load()`: Loads `width` elements starting at `offset` (default 0) as
@@ -406,7 +406,7 @@ struct UnsafePointer[
     fn __init__[
         disambig: Int = 0  # FIXME: Work around name mangling conflict.
     ](
-        other: UnsafePointer[mut=True, **_],
+        other: UnsafePointer[mut=True, ...],
         out self: UnsafePointer[
             other.type,
             MutAnyOrigin,
@@ -428,7 +428,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     @implicit
     fn __init__(
-        other: UnsafePointer[**_],
+        other: UnsafePointer[...],
         out self: UnsafePointer[
             other.type,
             ImmutAnyOrigin,
@@ -475,7 +475,6 @@ struct UnsafePointer[
         out self,
         other: LegacyUnsafePointer[
             Self.type,
-            mut = Self.mut,
             origin = Self.origin,
             address_space = Self.address_space,
         ],
@@ -530,19 +529,17 @@ struct UnsafePointer[
         self,
         out result: LegacyUnsafePointer[
             Self.type,
-            mut = Self.mut,
             origin = Self.origin,
             address_space = Self.address_space,
         ],
     ):
-        result = LegacyUnsafePointer(self.address)
+        result = type_of(result)(self.address)
 
     @always_inline("builtin")
     fn as_legacy_pointer(
         self,
         out result: LegacyUnsafePointer[
             Self.type,
-            mut = Self.mut,
             origin = Self.origin,
             address_space = Self.address_space,
         ],
@@ -576,21 +573,6 @@ struct UnsafePointer[
         return self._as_legacy()[]
 
     @always_inline("nodebug")
-    fn offset[I: Indexer, //](self, idx: I) -> Self:
-        """Returns a new pointer shifted by the specified offset.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            idx: The offset of the new pointer.
-
-        Returns:
-            The offset pointer.
-        """
-        return self._as_legacy().offset(idx)
-
-    @always_inline("nodebug")
     fn __getitem__[
         I: Indexer, //
     ](self, offset: I) -> ref [Self.origin, Self.address_space] Self.type:
@@ -607,6 +589,22 @@ struct UnsafePointer[
         """
         return self._as_legacy()[offset]
 
+    @deprecated("use `ptr + offset` instead of `ptr.offset(offset)`")
+    @always_inline("nodebug")
+    fn offset[I: Indexer, //](self, idx: I) -> Self:
+        """Returns a new pointer shifted by the specified offset.
+
+        Parameters:
+            I: A type that can be used as an index.
+
+        Args:
+            idx: The offset of the new pointer.
+
+        Returns:
+            The offset pointer.
+        """
+        return self + idx
+
     @always_inline("nodebug")
     fn __add__[I: Indexer, //](self, offset: I) -> Self:
         """Return a pointer at an offset from the current one.
@@ -620,7 +618,7 @@ struct UnsafePointer[
         Returns:
             An offset pointer.
         """
-        return self.offset(offset)
+        return __mlir_op.`pop.offset`(self.address, index(offset)._mlir_value)
 
     @always_inline
     fn __sub__[I: Indexer, //](self, offset: I) -> Self:
@@ -665,7 +663,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn __eq__(
         self,
-        rhs: UnsafePointer[Self.type, address_space = Self.address_space, **_],
+        rhs: UnsafePointer[Self.type, address_space = Self.address_space, ...],
     ) -> Bool:
         """Returns True if the two pointers are equal.
 
@@ -694,7 +692,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn __ne__(
         self,
-        rhs: UnsafePointer[Self.type, address_space = Self.address_space, **_],
+        rhs: UnsafePointer[Self.type, address_space = Self.address_space, ...],
     ) -> Bool:
         """Returns True if the two pointers are not equal.
 
@@ -723,7 +721,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn __lt__(
         self,
-        rhs: UnsafePointer[Self.type, address_space = Self.address_space, **_],
+        rhs: UnsafePointer[Self.type, address_space = Self.address_space, ...],
     ) -> Bool:
         """Returns True if this pointer represents a lower address than rhs.
 
@@ -752,7 +750,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn __le__(
         self,
-        rhs: UnsafePointer[Self.type, address_space = Self.address_space, **_],
+        rhs: UnsafePointer[Self.type, address_space = Self.address_space, ...],
     ) -> Bool:
         """Returns True if this pointer represents a lower than or equal
            address than rhs.
@@ -783,7 +781,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn __gt__(
         self,
-        rhs: UnsafePointer[Self.type, address_space = Self.address_space, **_],
+        rhs: UnsafePointer[Self.type, address_space = Self.address_space, ...],
     ) -> Bool:
         """Returns True if this pointer represents a higher address than rhs.
 
@@ -814,7 +812,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn __ge__(
         self,
-        rhs: UnsafePointer[Self.type, address_space = Self.address_space, **_],
+        rhs: UnsafePointer[Self.type, address_space = Self.address_space, ...],
     ) -> Bool:
         """Returns True if this pointer represents a higher than or equal
            address than rhs.
@@ -873,14 +871,12 @@ struct UnsafePointer[
         other_type: type_of(
             LegacyUnsafePointer[
                 Self.type,
-                mut=_,
                 origin=_,
                 address_space = Self.address_space,
             ]
         ),
     ](self) -> LegacyUnsafePointer[
         type = Self.type,
-        mut = Self.mut & other_type.origin.mut,
         origin = origin_of(Self.origin, other_type.origin),
         address_space = Self.address_space,
     ]:
@@ -936,7 +932,6 @@ struct UnsafePointer[
 
     comptime _LegacyPointerType = LegacyUnsafePointer[
         Self.type,
-        mut = Self.mut,
         origin = Self.origin,
         address_space = Self.address_space,
     ]
@@ -1033,7 +1028,7 @@ struct UnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
-    ](self: UnsafePointer[Scalar[dtype], **_]) -> SIMD[dtype, width]:
+    ](self: UnsafePointer[Scalar[dtype], ...]) -> SIMD[dtype, width]:
         """Loads `width` elements from the value the pointer points to.
 
         Use `alignment` to specify minimal known alignment in bytes; pass a
@@ -1080,7 +1075,7 @@ struct UnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
-    ](self: UnsafePointer[Scalar[dtype], **_], offset: Scalar) -> SIMD[
+    ](self: UnsafePointer[Scalar[dtype], ...], offset: Scalar) -> SIMD[
         dtype, width
     ]:
         """Loads the value the pointer points to with the given offset.
@@ -1119,7 +1114,7 @@ struct UnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
-    ](self: UnsafePointer[Scalar[dtype], **_], offset: I) -> SIMD[dtype, width]:
+    ](self: UnsafePointer[Scalar[dtype], ...], offset: I) -> SIMD[dtype, width]:
         """Loads the value the pointer points to with the given offset.
 
         Constraints:
@@ -1156,7 +1151,7 @@ struct UnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], ...],
         offset: I,
         val: SIMD[dtype, width],
     ) where type_of(self).mut:
@@ -1191,7 +1186,7 @@ struct UnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], ...],
         offset: Scalar[offset_type],
         val: SIMD[dtype, width],
     ) where type_of(self).mut:
@@ -1224,7 +1219,7 @@ struct UnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], ...],
         val: SIMD[dtype, width],
     ) where type_of(self).mut:
         """Stores a single element value `val` at element offset 0.
@@ -1268,7 +1263,7 @@ struct UnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], ...],
         val: SIMD[dtype, width],
     ) where type_of(self).mut:
         return self._as_legacy()._store[
@@ -1278,7 +1273,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn strided_load[
         dtype: DType, T: Intable, //, width: Int
-    ](self: UnsafePointer[Scalar[dtype], **_], stride: T) -> SIMD[dtype, width]:
+    ](self: UnsafePointer[Scalar[dtype], ...], stride: T) -> SIMD[dtype, width]:
         """Performs a strided load of the SIMD vector.
 
         Parameters:
@@ -1301,7 +1296,7 @@ struct UnsafePointer[
         //,
         width: Int = 1,
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], ...],
         val: SIMD[dtype, width],
         stride: T,
     ) where type_of(self).mut:
@@ -1326,7 +1321,7 @@ struct UnsafePointer[
         width: Int = 1,
         alignment: Int = align_of[dtype](),
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], ...],
         offset: SIMD[_, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
         default: SIMD[dtype, width] = 0,
@@ -1374,7 +1369,7 @@ struct UnsafePointer[
         width: Int = 1,
         alignment: Int = align_of[dtype](),
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], ...],
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
@@ -1454,7 +1449,7 @@ struct UnsafePointer[
     fn mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
+        target_mut, unsafe_origin_mutcast[Self.origin, target_mut]
     ]:
         """Changes the mutability of a pointer.
 
@@ -1475,7 +1470,7 @@ struct UnsafePointer[
     fn unsafe_mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, Origin[mut=target_mut](unsafe_cast=Self.origin)
+        target_mut, unsafe_origin_mutcast[Self.origin, target_mut]
     ]:
         """Changes the mutability of a pointer.
 
@@ -1495,8 +1490,8 @@ struct UnsafePointer[
             Casting the mutability of a pointer is inherently very unsafe.
             Improper usage can lead to undefined behavior. Consider restricting
             types to their proper mutability at the function signature level.
-            For example, taking an `MutUnsafePointer[T, **_]` as an
-            argument over an unbound `UnsafePointer[T, **_]` is preferred.
+            For example, taking an `MutUnsafePointer[T, ...]` as an
+            argument over an unbound `UnsafePointer[T, ...]` is preferred.
         """
         return self._as_legacy().unsafe_mut_cast[target_mut]()
 

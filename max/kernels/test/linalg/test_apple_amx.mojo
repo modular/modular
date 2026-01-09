@@ -21,21 +21,21 @@ from linalg.arch.cpu.apple_amx_intrinsics import *
 from testing import *
 
 
-fn fill_a(buf: LayoutTensor[mut=True, *_, **_]):
+fn fill_a(buf: LayoutTensor[mut=True, ...]):
     # Fills the A matrix with the following values row + 2*col
     for i in range(buf.dim[0]()):
         for j in range(buf.dim[1]()):
             buf[i, j] = Scalar[buf.dtype](i // (j + 1) + j)
 
 
-fn fill_b(buf: LayoutTensor[mut=True, *_, **_]):
+fn fill_b(buf: LayoutTensor[mut=True, ...]):
     # Fills the A matrix with the following values row/(col + 1) + col
     for i in range(buf.dim[0]()):
         for j in range(buf.dim[1]()):
             buf[i, j] = Scalar[buf.dtype](i // (j + 1) + j)
 
 
-fn clear_c(buf: LayoutTensor[mut=True, *_, **_]):
+fn clear_c(buf: LayoutTensor[mut=True, ...]):
     _ = buf.fill(0)
 
 

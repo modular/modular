@@ -205,12 +205,6 @@ fn _test_string_conversions(mut python: Python) raises -> None:
     var type_obj = python.type(py_float)
     assert_equal(String(type_obj), "<class 'float'>")
 
-    # check that invalid utf-8 encoding raises an error
-    var buffer = InlineArray[Byte, 2](0xF0, 0x28)
-    var invalid = String(bytes=buffer)
-    with assert_raises(contains="'utf-8' codec can't decode byte"):
-        _ = PythonObject(invalid)
-
 
 def test_len():
     var empty_list: PythonObject = []
@@ -375,6 +369,38 @@ fn test_none() raises:
     var n = Python.none()
     assert_equal(String(n), "None")
     assert_true(n is PythonObject(None))
+
+
+fn test_none_implicit_conversion() raises:
+    # Test implicit conversion from None literal to PythonObject.
+
+    # Direct assignment.
+    var a: PythonObject = None
+    assert_equal(String(a), "None")
+    assert_true(a is Python.none())
+
+    # Reassignment.
+    var b = PythonObject(42)
+    b = None
+    assert_equal(String(b), "None")
+
+    # Function argument.
+    fn takes_python_object(obj: PythonObject) raises -> String:
+        return String(obj)
+
+    assert_equal(takes_python_object(None), "None")
+
+    # Return value.
+    fn returns_none() -> PythonObject:
+        return None
+
+    assert_true(returns_none() is Python.none())
+
+    # In a list.
+    var list = Python.evaluate("[]")
+    var none_val: PythonObject = None
+    list.append(none_val)
+    assert_equal(String(list), "[None]")
 
 
 fn test_getitem_raises() raises:

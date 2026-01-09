@@ -24,7 +24,7 @@ from utils import IndexList
 
 @always_inline
 fn get_batch_from_row_offsets(
-    row_offsets: LayoutTensor[DType.uint32, **_], tok_idx: Int
+    row_offsets: LayoutTensor[DType.uint32, ...], tok_idx: Int
 ) -> Int:
     """Calculate the batch_idx for the given flattened token_idx using row_offsets.
     """
@@ -54,12 +54,12 @@ fn merge_ragged_tensors[
     //,
     target: StaticString = "cpu",
 ](
-    c: LayoutTensor[mut=True, dtype, **_],
-    c_row_offsets: LayoutTensor[mut=True, DType.uint32, **_],
-    a: LayoutTensor[dtype, **_],
-    a_row_offsets: LayoutTensor[DType.uint32, **_],
-    b: LayoutTensor[dtype, **_],
-    b_row_offsets: LayoutTensor[DType.uint32, **_],
+    c: LayoutTensor[mut=True, dtype, ...],
+    c_row_offsets: LayoutTensor[mut=True, DType.uint32, ...],
+    a: LayoutTensor[dtype, ...],
+    a_row_offsets: LayoutTensor[DType.uint32, ...],
+    b: LayoutTensor[dtype, ...],
+    b_row_offsets: LayoutTensor[DType.uint32, ...],
     ctx: DeviceContextPtr,
 ) raises:
     __comptime_assert c.rank == rank, "c.rank must equal rank"

@@ -116,7 +116,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for item in values:
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
-    fn __init__(out self, items: List[Self.V, *_]):
+    fn __init__(out self, items: List[Self.V, ...]):
         """Create a `Counter` from an input iterable.
 
         Args:
@@ -136,7 +136,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
     @staticmethod
-    fn fromkeys(keys: List[Self.V, *_], value: Int) -> Self:
+    fn fromkeys(keys: List[Self.V, ...], value: Int) -> Self:
         """Create a new `Counter` from a list of keys and a default value.
 
         Args:

@@ -134,6 +134,8 @@ def test_math():
             asin,
             cos,
             acos,
+            cosh,
+            sinh,
             tanh,
             atanh,
             exp,

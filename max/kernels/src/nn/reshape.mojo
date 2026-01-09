@@ -26,7 +26,7 @@ fn reshape[
     output_rank: Int,
     single_thread_blocking_override: Bool = True,
 ](
-    input: LayoutTensor[dtype, **_],
+    input: LayoutTensor[dtype, ...],
     new_shape: IndexList[output_rank],
 ) -> LayoutTensor[
     dtype,
@@ -62,7 +62,7 @@ fn layout_tensor_reshape[
     dtype: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: LayoutTensor[dtype, **_],
+    input: LayoutTensor[dtype, ...],
     new_shape: IndexList[output_rank],
 ) -> LayoutTensor[
     dtype,
@@ -83,8 +83,8 @@ fn reshape_shape[
     target_shape_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: LayoutTensor[input_type, **_],
-    target_shape_buf: LayoutTensor[target_shape_type, **_],
+    input_buf: LayoutTensor[input_type, ...],
+    target_shape_buf: LayoutTensor[target_shape_type, ...],
 ) raises -> IndexList[output_rank]:
     __comptime_assert (
         target_shape_buf.rank == 1

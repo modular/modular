@@ -17,7 +17,11 @@ from math import iota, ceildiv
 from sys import is_nvidia_gpu
 
 from layout import LayoutTensor, Layout, UNKNOWN_VALUE
-from memory import LegacyOpaquePointer as OpaquePointer
+from memory import LegacyUnsafePointer
+
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 
 from utils.index import IndexList, Index
 from builtin.device_passable import DevicePassable
@@ -742,7 +746,6 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
     fn mask[
         dtype: DType,
         width: Int,
-        //,
         *,
         element_type: DType = DType.uint32,
     ](
@@ -1184,7 +1187,7 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         @parameter
-        if dtype is DType.bool or dtype.is_integral():
+        if dtype == DType.bool or dtype.is_integral():
             return self.lhs.mask(coord, score_vec) & self.rhs.mask(
                 coord, score_vec
             )
@@ -1288,7 +1291,7 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         @parameter
-        if dtype is DType.bool or dtype.is_integral():
+        if dtype == DType.bool or dtype.is_integral():
             return self.lhs.mask(coord, score_vec) | self.rhs.mask(
                 coord, score_vec
             )

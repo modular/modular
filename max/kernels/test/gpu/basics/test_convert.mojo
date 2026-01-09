@@ -13,7 +13,9 @@
 
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.compile import _compile_code
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import *
 
 
@@ -83,7 +85,7 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     device_buf.enqueue_fill(0)
 
     comptime kernel = convert_kernel[src_type, dst_type, size]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         device_buf, grid_dim=(1), block_dim=(1)
     )
     with device_buf.map_to_host() as host_buf:

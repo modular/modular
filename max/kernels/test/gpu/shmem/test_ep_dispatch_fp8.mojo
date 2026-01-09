@@ -16,6 +16,8 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun -n $NUM_GPUS %t
 
+from collections import OptionalReg
+
 import time
 from io.io import _printf
 from math import sqrt
@@ -256,7 +258,7 @@ fn test_dispatch[
         token_fmt_type,
     ]
 
-    var func = ctx.compile_function_checked[dispatch, dispatch]()
+    var func = ctx.compile_function[dispatch, dispatch]()
     shmem_module_init(func)
 
     comptime dispatch_cb = dispatch_cb_kernel[
@@ -273,7 +275,7 @@ fn test_dispatch[
         type_of(format_handler),
     ]
 
-    var func_cb = ctx.compile_function_checked[dispatch_cb, dispatch_cb]()
+    var func_cb = ctx.compile_function[dispatch_cb, dispatch_cb]()
 
     var num_iters: Int = 100 if is_benchmark() or is_pressure_test() else 3
     var dispatch_stat_m: Float64 = 0
@@ -296,7 +298,7 @@ fn test_dispatch[
         recv_buf_ptrs[0] = recv_buf
         recv_count_ptrs[0] = recv_count
 
-        ctx.enqueue_function_checked(
+        ctx.enqueue_function(
             func,
             input_tokens_tensor,
             topk_ids_tensor,
@@ -312,7 +314,7 @@ fn test_dispatch[
     @always_inline
     @parameter
     fn run_dispatch_cb(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked(
+        ctx.enqueue_function(
             func_cb,
             format_handler,
             row_offsets_tensor,
@@ -322,6 +324,9 @@ fn test_dispatch[
             recv_count,
             atomic_counter,
             Int32(my_rank),
+            OptionalReg[
+                LayoutTensor[input_type, Layout.row_major[2](), ImmutAnyOrigin]
+            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )

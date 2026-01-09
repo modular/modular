@@ -33,7 +33,9 @@ from gpu.sync import (
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
@@ -129,7 +131,7 @@ fn tma_reduction_kernel[
     # Create barrier for TMA transfer from GMEM to SMEM.
     var mbar = stack_allocation[1, Int64, address_space = AddressSpace.SHARED]()
 
-    var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
+    var descriptor_ptr = LegacyUnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
     if thread_idx.x == 0:
@@ -205,7 +207,7 @@ def test_tma_block_reduce[
             comptime kernel = tma_reduction_kernel[
                 dtype, accum_type, simd_width
             ]
-            ctx.enqueue_function_checked[kernel, kernel,](
+            ctx.enqueue_function[kernel, kernel,](
                 tma_desc,
                 rows,
                 cols,
@@ -236,7 +238,7 @@ def test_tma_block_reduce[
                 input_fn_2d,
             ]
 
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 d_out,
                 cols,  # num_cols
                 grid_dim=grid_dim,

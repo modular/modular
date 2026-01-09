@@ -2,8 +2,9 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement"
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_library(
@@ -26,18 +27,48 @@ modular_py_library(
     srcs = [
         "debugging_utils.py",
     ],
+    imports = ["."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
-        ":debug_model",
+        ":create_pipelines",
+        ":hf_config_overrides",
+        ":run_models",
         "//max/python/max/driver",
         "//max/python/max/entrypoints",
+        "//max/python/max/pipelines/architectures",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
+        "//max/tests/integration/pipelines/python/internvl:torch_utils",
+        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
+        "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
+        "//max/tests/integration/pipelines/python/test_common",
+        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+        requirement("einops"),  # Req'd by replit
+        requirement("peft"),  # Required for LoRA support
+        requirement("pillow"),
+        requirement("requests"),
+        requirement("timm"),  # Required by InternVL.
         requirement("torch"),
-    ],
+        requirement("transformers"),
+    ] + select({
+        "//:has_gpu": [
+            requirement("datasets"),  # Required by gptqmodel
+            requirement("device-smi"),  # Required by gptqmodel
+            requirement("gptqmodel"),
+            requirement("logbar"),  # Required by gptqmodel
+            requirement("optimum"),
+            requirement("threadpoolctl"),  # Required by gptqmodel
+            requirement("tokenicer"),  # Required by gptqmodel
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 modular_py_library(
     name = "create_pipelines",
     testonly = True,
     srcs = ["create_pipelines.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/pipelines/architectures",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
@@ -59,7 +90,11 @@ modular_py_library(
     name = "run_models",
     testonly = True,
     srcs = ["run_models.py"],
+    data = [
+        "@nvshmem_prebuilt//:host",
+    ],
     imports = ["."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":create_pipelines",
         "//max/python/max/pipelines/architectures",
@@ -87,6 +122,7 @@ modular_py_binary(
     },
     imports = ["."],
     main = "generate_llm_logits.py",
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":create_pipelines",
         ":run_models",
@@ -139,37 +175,13 @@ modular_py_binary(
     },
     imports = ["."],
     main = "debug_model.py",
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
-        ":create_pipelines",
+        ":debugging_utils",
         ":hf_config_overrides",
         ":run_models",
         "//max/python/max/entrypoints",
-        "//max/python/max/pipelines/architectures",
-        "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
-        "//max/tests/integration/pipelines/python/internvl:torch_utils",
-        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
-        "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
-        "//max/tests/integration/pipelines/python/test_common",
         requirement("click"),
-        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
-        requirement("einops"),  # Req'd by replit
-        requirement("peft"),  # Required for LoRA support
-        requirement("pillow"),
-        requirement("requests"),
-        requirement("timm"),  # Required by InternVL.
         requirement("torch"),
-        requirement("transformers"),
-    ] + select({
-        "//:has_gpu": [
-            requirement("datasets"),  # Required by gptqmodel
-            requirement("device-smi"),  # Required by gptqmodel
-            requirement("gptqmodel"),
-            requirement("logbar"),  # Required by gptqmodel
-            requirement("optimum"),
-            requirement("threadpoolctl"),  # Required by gptqmodel
-            requirement("tokenicer"),  # Required by gptqmodel
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )

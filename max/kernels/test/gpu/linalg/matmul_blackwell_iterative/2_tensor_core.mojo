@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -413,7 +415,7 @@ fn kernel_2[
         num_threads=block_dim,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c,

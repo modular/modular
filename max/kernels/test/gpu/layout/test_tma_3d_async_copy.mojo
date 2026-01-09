@@ -154,7 +154,7 @@ def test_tma_3d_load_row_major[
         type_of(tma_tensor).desc_layout,  # desc_tile
         smem_tile_layout,  # smem layout
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(

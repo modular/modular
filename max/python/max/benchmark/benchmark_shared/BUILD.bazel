@@ -10,8 +10,8 @@ modular_py_library(
     ],
     deps = [
         "//max/python/max/config",
-        "//max/python/max/pipelines/lib",
-        "//max/python/max/serve",
+        "//max/python/max/serve:config",
+        requirement("aiohttp"),
         requirement("datasets"),
         requirement("huggingface-hub"),
         requirement("msgspec"),
@@ -21,8 +21,9 @@ modular_py_library(
         requirement("psutil"),
         requirement("pyyaml"),
         requirement("requests"),
-        requirement("safetensors"),
+        requirement("scipy"),
         requirement("transformers"),
+        requirement("tqdm"),
         requirement("typing-extensions"),
     ],
 )

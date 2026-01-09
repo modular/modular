@@ -15,7 +15,9 @@ import gpu.warp as warp
 from gpu import barrier, global_idx, grid_dim
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 
@@ -46,7 +48,7 @@ fn test_grid_dim(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(output_buffer, output_host)
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         output_buffer,
         buffer_size,
         grid_dim=(20, 15, 10),

@@ -67,7 +67,7 @@ def run_elementwise[dtype: DType](ctx: DeviceContext):
             )
 
             @parameter
-            if dtype is DType.float32:
+            if dtype == DType.float32:
                 assert_almost_equal(
                     out_host[i],
                     exp(in_host[i]),

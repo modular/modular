@@ -202,7 +202,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     comptime k_group_size = Int(config.k_group_size)
 
     constrained[
-        (a_type == b_type is DType.float8_e4m3fn)
+        (a_type == b_type == DType.float8_e4m3fn)
         or (a_type == b_type and a_type in (DType.bfloat16, DType.float32)),
         "Unsupported input dtype",
     ]()
@@ -396,7 +396,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 schedule=schedule,
             ]
 
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 a_tma_op,
                 b_tma_op,
                 c_tma_op,
@@ -422,7 +422,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 c_tma_op.desc_layout,
             ]
 
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 a_tma_op,
                 b_tma_op,
                 c_tma_op,
@@ -446,7 +446,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
             c_tma_op.layout,
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             c_tma_op,
             a,
             b,
@@ -567,7 +567,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         k_group_size == 1
     ), "Only support k_group_size == 1 for now"
 
-    __comptime_assert (a_type == b_type is DType.float8_e4m3fn) or (
+    __comptime_assert (a_type == b_type == DType.float8_e4m3fn) or (
         a_type == b_type and a_type in (DType.bfloat16, DType.float32)
     ), "Unsupported input dtype"
 
@@ -728,7 +728,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         raster_order=raster_order,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

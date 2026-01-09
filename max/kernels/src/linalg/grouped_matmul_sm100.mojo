@@ -13,7 +13,9 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import LegacyUnsafePointer, bitcast
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 
 from bit import next_power_of_two, prev_power_of_two
@@ -96,7 +98,7 @@ struct WarpRole(ImplicitlyCopyable):
 
     @always_inline
     fn __eq__(self, other: UInt) -> Bool:
-        return self._role == other
+        return self._role == Int32(other)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -108,7 +110,7 @@ struct WarpRole(ImplicitlyCopyable):
 
     @always_inline
     fn __ge__(self, other: UInt) -> Bool:
-        return self._role >= other
+        return self._role >= Int32(other)
 
     @staticmethod
     @always_inline
@@ -197,8 +199,7 @@ fn load_AB[
     mma_mbar[stage].wait(phase)
 
     var a_gmem_slice_coord = (
-        peer_cta_coord[2] * UInt(a_tma_rows)
-        + work_tile_coord[0]
+        Int32(peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0])
         + expert_ids[Int(scheduler.current_group_idx)] * scheduler.static_MN
     )
     var b_gmem_slice_coord = (
@@ -317,7 +318,7 @@ fn stsm_helper[
     transpose_c: Bool = False,
 ](
     vec: SIMD[_, _],
-    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
+    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
     comptime stsmx4_row_size = 32 // size_of[dst.dtype]()
@@ -347,8 +348,8 @@ fn stsm_helper[
     comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
         layout, element_type = DType.uint32, linear_idx_type = DType.uint32
     ]
-    var stsm_lane_offset: UInt32 = (lane & 15) * UInt(stride0) + (
-        lane >> 4
+    var stsm_lane_offset = UInt32(
+        (lane & 15) * UInt(stride0) + (lane >> 4)
     ) * 8 if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(
         Int(lane)
     )
@@ -478,7 +479,7 @@ fn multi_stage_store_C[
     var phase = accum_pipeline_consumer_state.phase()
     accum_full_mbar[index].wait(phase)
     # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
-    var tmem_offset = index * stage_stride_cols + tmem_addr
+    var tmem_offset = index * UInt32(stage_stride_cols) + tmem_addr
 
     @parameter
     for stage in range(num_stages):
@@ -533,7 +534,7 @@ fn multi_stage_store_C[
             )
 
             # Guard the write to shared memory is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
 
         else:
             var c_smem_warp_tile = c_smem_tile.tile[32, stageN](Int(warp_id), 0)
@@ -552,7 +553,7 @@ fn multi_stage_store_C[
             )
 
             # Guard the write to shared memory is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
 
         var lane = lane_id()
 
@@ -579,7 +580,7 @@ fn multi_stage_store_C[
             or cta_group == 1 else coord_n_mma_m128
         )
 
-        var n_inbound_size = group_end_idx - coord_n
+        var n_inbound_size = group_end_idx - UInt32(coord_n)
 
         comptime M = c_smem_tile.layout.shape[1].value()
 
@@ -671,9 +672,9 @@ fn multi_stage_store_C[
                     width=simd_size, alignment=alignment
                 ]()
                 var chunk_idx = rest // stageN
-                var n = coord_n + n_idx
+                var n = UInt32(coord_n) + n_idx
                 var m = (
-                    work_tile_coord[0]
+                    UInt32(work_tile_coord[0])
                     + (chunk_idx * vec_chunkM + vec_chunkM_idx) * simd_size
                 )
                 if m < cM:
@@ -690,7 +691,7 @@ fn multi_stage_store_C[
         @parameter
         if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
 
 
 fn zero_output[
@@ -781,7 +782,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
     mnk: StaticTuple[UInt32, 3],
 ):
-    __comptime_assert c_type is not DType.float32, "c_type cannot be float32"
+    __comptime_assert c_type != DType.float32, "c_type cannot be float32"
 
     comptime num_output_warps = 4
 
@@ -993,9 +994,9 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= 1 << (i * cta_group)
 
-    a_multicast_mask <<= rank_m
-    b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
+    a_multicast_mask <<= UInt16(rank_m)
+    b_multicast_mask <<= UInt16(peer_cta_coord[0])
+    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
@@ -1267,10 +1268,10 @@ fn _grouped_matmul_sm100_persistent[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c_device: LayoutTensor[c_type, c_layout, *_, **_],
-    a_device: LayoutTensor[a_type, a_layout, *_, **_],
+    c_device: LayoutTensor[c_type, c_layout, ...],
+    a_device: LayoutTensor[a_type, a_layout, ...],
     expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
-    b_device: LayoutTensor[b_type, b_layout, *_, **_],
+    b_device: LayoutTensor[b_type, b_layout, ...],
     b_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -1447,7 +1448,7 @@ fn _grouped_matmul_sm100_persistent[
 
     var mnk = StaticTuple[UInt32, 3](M, N, K)
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         num_active_experts,
         a_tma_op,
         expert_ids,

@@ -16,7 +16,9 @@ from sys import env_get_int
 
 from gpu import block_dim, global_idx, grid_dim
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal, assert_true
 
 
@@ -40,7 +42,7 @@ fn launch_p2p_copy_kernel(
     var grid_size = ceildiv(num_elements, BLOCK_SIZE)
 
     # Launch the kernel on both devices
-    ctx1.enqueue_function_checked[p2p_copy_kernel, p2p_copy_kernel](
+    ctx1.enqueue_function[p2p_copy_kernel, p2p_copy_kernel](
         dst_buf,
         src_buf,
         num_elements,

@@ -68,7 +68,7 @@ struct ManagedLayoutTensor[
 
     @always_inline
     fn __init__(
-        out self, runtime_layout: RuntimeLayout[Self.layout, **_]
+        out self, runtime_layout: RuntimeLayout[Self.layout, ...]
     ) raises:
         self.ctx = DeviceContext(api="cpu")
 
@@ -104,7 +104,7 @@ struct ManagedLayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        runtime_layout: RuntimeLayout[Self.layout, **_],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
         ctx: DeviceContext,
     ) raises:
         __comptime_assert (

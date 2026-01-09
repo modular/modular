@@ -31,7 +31,7 @@ with open("my_file.txt", "r") as f:
 
 """
 
-from io.write import _WriteBufferStack
+from fmt._utils import _WriteBufferStack
 from os import PathLike, abort, makedirs, remove
 from os import SEEK_END
 from os.path import dirname
@@ -269,8 +269,8 @@ struct FileHandle(Defaultable, Movable, Writer):
         ```
         """
 
-        var list = self.read_bytes(size)
-        return String(bytes=list)
+        var bytes = self.read_bytes(size)
+        return String(from_utf8=bytes)
 
     fn read[
         dtype: DType, origin: MutOrigin
@@ -611,7 +611,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             var fd = self._get_raw_fd()
             var bytes_written = external_call["write", c_ssize_t](
                 fd,
-                bytes.unsafe_ptr().offset(total_written),
+                bytes.unsafe_ptr() + total_written,
                 len(bytes) - total_written,
             )
 
@@ -622,6 +622,17 @@ struct FileHandle(Defaultable, Movable, Writer):
                 abort("write() returned 0 bytes (file may be full or closed)")
 
             total_written += Int(bytes_written)
+
+    fn write_string(mut self, string: StringSlice):
+        """
+        Write a `StringSlice` to this `FileHandle`.
+
+        This method is required by the `Writer` trait.
+
+        Args:
+            string: The `StringSlice` to write to this `FileHandle`.
+        """
+        self.write_bytes(string.as_bytes())
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.
@@ -668,7 +679,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         var total_written = 0
 
         while total_written < len:
-            var current_ptr = ptr.offset(total_written)
+            var current_ptr = ptr + total_written
             var bytes_written = external_call["write", c_ssize_t](
                 fd, current_ptr.address, len - total_written
             )

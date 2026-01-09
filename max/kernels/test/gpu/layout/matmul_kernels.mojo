@@ -25,7 +25,9 @@ from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils.index import Index
 
 comptime NWARMUP = 1
@@ -200,7 +202,7 @@ fn run_gemm_kernel_1[
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked[func, func](
+        ctx.enqueue_function[func, func](
             a,
             b,
             c,
@@ -220,7 +222,7 @@ fn run_gemm_kernel_1[
         ),
         0,
     )
-    ctx.enqueue_function_checked[func, func](
+    ctx.enqueue_function[func, func](
         a,
         b,
         c,
@@ -315,7 +317,7 @@ fn run_gemm_kernel_2[
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             a,
             b,
             c,
@@ -335,7 +337,7 @@ fn run_gemm_kernel_2[
         ),
         0,
     )
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a,
         b,
         c,
@@ -468,7 +470,7 @@ fn run_gemm_kernel_3[
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             a,
             b,
             c,
@@ -488,7 +490,7 @@ fn run_gemm_kernel_3[
         ),
         0,
     )
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a,
         b,
         c,
@@ -641,7 +643,7 @@ fn run_gemm_kernel_4[
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             a,
             b,
             c,
@@ -661,7 +663,7 @@ fn run_gemm_kernel_4[
         ),
         0,
     )
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a,
         b,
         c,
@@ -810,7 +812,7 @@ fn run_gemm_kernel_5[
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             a,
             b,
             c,
@@ -829,7 +831,7 @@ fn run_gemm_kernel_5[
         ),
         0,
     )
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a,
         b,
         c,
@@ -1003,7 +1005,7 @@ fn run_gemm_kernel_6[
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             a,
             b,
             c,
@@ -1022,7 +1024,7 @@ fn run_gemm_kernel_6[
         ),
         0,
     )
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a,
         b,
         c,
@@ -1238,7 +1240,7 @@ fn run_gemm_kernel_tc[
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             a,
             b,
             c,
@@ -1257,7 +1259,7 @@ fn run_gemm_kernel_tc[
         ),
         0,
     )
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a,
         b,
         c,

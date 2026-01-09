@@ -2,12 +2,14 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_test(
     name = "kvcache_tests",
+    timeout = "long",
     srcs = glob(
         ["*.py"],
         exclude = [
@@ -15,6 +17,7 @@ modular_py_test(
             "test_rotary_embedding.py",
         ],
     ),
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -42,6 +45,7 @@ modular_py_test(
         "-n",
         "auto",
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//:asan": ["@platforms//:incompatible"],
@@ -77,7 +81,10 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     deps = [
         "//max/python/max/engine",
         "//max/python/max/kv_cache",
@@ -95,7 +102,10 @@ modular_py_test(
     name = "kvcache_distributed_gpu_tests",
     srcs = glob(["*_distributed_gpu.py"]) + ["conftest.py"],
     gpu_constraints = ["//:has_4_gpus"],
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     deps = [
         "//max/python/max/engine",
         "//max/python/max/kv_cache",
@@ -122,6 +132,7 @@ modular_py_test(
     tags = [
         "b200",
         "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [

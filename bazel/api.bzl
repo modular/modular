@@ -41,9 +41,19 @@ py_repl = _py_repl
 requirement = _requirement
 strip_prefix = _strip_prefix
 
+def has_resource_tag(tags):
+    for tag in tags:
+        if tag.startswith("resources:"):
+            return True
+    return False
+
+# buildifier: disable=function-docstring
 def modular_py_test(tags = [], **kwargs):
     if "external-exclusive" in tags:
         tags.append("exclusive")
+    if not has_resource_tag(tags):
+        # Default to 2 GB of memory
+        tags = tags + ["resources:memory:2000"]  # 2 GB
     _modular_py_test(tags = tags, **kwargs)
 
 def modular_cc_binary(deps = [], **kwargs):
@@ -54,11 +64,12 @@ def modular_cc_binary(deps = [], **kwargs):
         **kwargs
     )
 
-def modular_generate_stubfiles(name, pyi_srcs, deps = [], **_kwargs):
+def modular_generate_stubfiles(name, pyi_srcs, deps = [], tags = [], **_kwargs):
     modular_py_library(
         name = name,
         pyi_srcs = pyi_srcs,
         deps = deps + ["@modular_wheel//:wheel"],
+        tags = tags + ["no-pydeps"],  # Pydeps works internally but not externally
     )
 
 # buildifier: disable=function-docstring

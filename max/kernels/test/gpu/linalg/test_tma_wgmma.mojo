@@ -62,7 +62,7 @@ fn _load_a_reg_tile[
         layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
-        *_, **_,
+        ...,
     ],
 ):
     __comptime_assert ret.layout[0].shape[0].value() > 0
@@ -341,7 +341,7 @@ def test_tma_wgmma[
         a_smem=a_smem,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),

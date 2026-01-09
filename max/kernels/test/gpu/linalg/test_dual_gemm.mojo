@@ -82,7 +82,7 @@ fn multistage_gemm_simple[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c,
         a,
         b,
@@ -258,7 +258,7 @@ fn test_dual_matmul[
 
     var dual_gemm_time: Float64 = 0.0
     if do_benchmark:
-        dual_gemm_time = benchmark.run[run_dual_gemm](
+        dual_gemm_time = benchmark.run[func3=run_dual_gemm](
             max_runtime_secs=5.0
         ).mean()
         print(
@@ -353,7 +353,7 @@ fn test_dual_matmul[
             )
 
     if do_benchmark:
-        var dgs = benchmark.run[run_naive_dual_gemm](
+        var dgs = benchmark.run[func3=run_naive_dual_gemm](
             max_runtime_secs=5.0
         ).mean()
         print(

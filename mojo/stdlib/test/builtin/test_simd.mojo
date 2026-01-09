@@ -372,9 +372,7 @@ def test_issue_20421():
     var a = alloc[UInt8](count=16 * 64, alignment=64)
     for i in range(16 * 64):
         a[i] = i & 255
-    var av16 = (
-        a.offset(128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
-    )
+    var av16 = (a + 128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
     assert_equal(
         av16,
         SIMD[DType.int32, 4](-943274556, -875902520, -808530484, -741158448),
@@ -1552,7 +1550,7 @@ def test_reduce():
             assert_equal(X2(6, -3).reduce_max(), 6)
 
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             # reduce_and
             var x8b = SIMD[DType.bool, 8](
                 False, False, True, True, False, True, False, True
@@ -2042,7 +2040,7 @@ def test_comparison():
             assert_true(mixed_ge[3])
 
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             var all_true = SIMD[DType.bool, 4](fill=True)
             var all_false = SIMD[DType.bool, 4](fill=False)
             var mixed = SIMD[DType.bool, 4](True, True, False, False)

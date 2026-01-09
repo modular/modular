@@ -188,7 +188,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     @always_inline
     fn __init__(out self):
         """Constructs a static int tuple of the given size."""
-        self = 0
+        self.data = StaticTuple[_, Self.size](fill=Self._int_type(0))
 
     @always_inline
     @implicit
@@ -246,7 +246,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = Self(values=elems)
 
     @always_inline
-    @implicit
     fn __init__(out self, fill: Int):
         """Constructs a static int tuple given a set of arguments.
 
@@ -936,7 +935,7 @@ fn Index[
 
 
 @always_inline
-fn product[size: Int](tuple: IndexList[size, **_], end_idx: Int = size) -> Int:
+fn product[size: Int](tuple: IndexList[size, ...], end_idx: Int = size) -> Int:
     """Computes a product of values in the tuple up to the given index.
 
     Parameters:
@@ -955,7 +954,7 @@ fn product[size: Int](tuple: IndexList[size, **_], end_idx: Int = size) -> Int:
 @always_inline
 fn product[
     size: Int
-](tuple: IndexList[size, **_], start_idx: Int, end_idx: Int) -> Int:
+](tuple: IndexList[size, ...], start_idx: Int, end_idx: Int) -> Int:
     """Computes a product of values in the tuple in the given index range.
 
     Parameters:

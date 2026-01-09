@@ -17,7 +17,9 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu import thread_idx
 from gpu.memory import external_memory
 from gpu.sync import barrier
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 
@@ -47,7 +49,7 @@ def test_external_shared_mem(ctx: DeviceContext):
     ctx.enqueue_copy(res_device, res_host_ptr)
 
     comptime kernel_func = dynamic_smem_kernel
-    ctx.enqueue_function_checked[kernel_func, kernel_func, dump_llvm=True](
+    ctx.enqueue_function[kernel_func, kernel_func, dump_llvm=True](
         res_device,
         grid_dim=1,
         block_dim=16,

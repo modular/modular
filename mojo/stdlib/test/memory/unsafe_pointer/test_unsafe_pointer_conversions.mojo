@@ -17,25 +17,25 @@ from testing import TestSuite
 # V2 -> V1 tests
 
 
-fn v1_mutable(_p: LegacyUnsafePointer[Int, mut=True, origin=_]):
+fn v1_mutable(_p: LegacyUnsafePointer[mut=True, Int, origin=_]):
     pass
 
 
-fn v1_immutable(_p: LegacyUnsafePointer[Int, mut=False, origin=_]):
+fn v1_immutable(_p: LegacyUnsafePointer[mut=False, Int, origin=_]):
     pass
 
 
-fn v1_mutable_any(_p: LegacyUnsafePointer[Int, mut=True, origin=MutAnyOrigin]):
+fn v1_mutable_any(_p: LegacyUnsafePointer[mut=True, Int, origin=MutAnyOrigin]):
     pass
 
 
 fn v1_immutable_any(
-    _p: LegacyUnsafePointer[Int, mut=False, origin=ImmutAnyOrigin]
+    _p: LegacyUnsafePointer[mut=False, Int, origin=ImmutAnyOrigin]
 ):
     pass
 
 
-fn v1_unbound(_p: LegacyUnsafePointer[Int, **_]):
+fn v1_unbound(_p: LegacyUnsafePointer[Int, ...]):
     pass
 
 
@@ -102,7 +102,7 @@ fn v2_immutable_any(_p: UnsafePointer[Int, ImmutAnyOrigin]):
     pass
 
 
-fn v2_unbound(_p: UnsafePointer[Int, **_]):
+fn v2_unbound(_p: UnsafePointer[Int, ...]):
     pass
 
 
@@ -143,8 +143,8 @@ def test_v1_immutable_any_converts_to_v2():
 
 
 def test_v1_to_v2_external():
-    _: UnsafePointer[Int, MutOrigin.external] = LegacyUnsafePointer[
-        Int, origin = MutOrigin.external
+    _: UnsafePointer[Int, MutExternalOrigin] = LegacyUnsafePointer[
+        Int, origin=MutExternalOrigin
     ]()
 
 

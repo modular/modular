@@ -4,6 +4,7 @@ load("@rules_python//python:defs.bzl", "py_test")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", requirement = "pip_requirement")
+load("//bazel/pip/pydeps:pydeps_test.bzl", "pydeps_test")
 load(":modular_py_library.bzl", "modular_py_library")
 load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
@@ -17,6 +18,8 @@ def modular_py_test(
         env = {},
         args = [],
         data = [],
+        ignore_extra_deps = [],
+        ignore_unresolved_imports = [],
         mojo_deps = [],
         tags = [],
         exec_properties = {},
@@ -34,6 +37,8 @@ def modular_py_test(
         env: Any environment variables that should be set during the test runtime
         args: Arguments passed to the test execution
         data: Runtime deps of the test target
+        ignore_extra_deps: Forwarded to pydeps_test
+        ignore_unresolved_imports: Forwarded to pydeps_test
         mojo_deps: mojo_library targets the test depends on at runtime
         tags: Tags added to the py_test target
         exec_properties: https://bazel.build/reference/be/common-definitions#common-attributes
@@ -44,10 +49,12 @@ def modular_py_test(
         **kwargs: Extra arguments passed through to py_test
     """
 
+    if len(imports) > 1:
+        fail("modular_py_test only supports a single import path.")
+
     validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
     toolchains = [
         "//bazel/internal:current_gpu_toolchain",
-        "//bazel/internal:lib_toolchain",
     ]
 
     has_test = False
@@ -146,7 +153,8 @@ def modular_py_test(
             name = name + ".mypy_library",
             data = data + extra_data,
             toolchains = toolchains,
-            tags = [ALLOW_UNUSED_TAG],
+            # Pydeps test is added below
+            tags = [ALLOW_UNUSED_TAG, "no-pydeps"],
             deps = deps + [
                 requirement("pytest"),
                 "@rules_python//python/runfiles",
@@ -201,4 +209,17 @@ def modular_py_test(
             tags = tags,
             imports = imports,
             **kwargs
+        )
+
+    if "no-pydeps" not in tags:
+        pydeps_test(
+            name = name + ".pydeps_test",
+            data = data,
+            srcs = srcs,
+            # We provide pytest as a convenience, okay if not used.
+            ignore_extra_deps = ignore_extra_deps + [requirement("pytest")],
+            ignore_unresolved_imports = ignore_unresolved_imports,
+            imports = imports,
+            deps = deps + [requirement("pytest")],
+            tags = ["pydeps"],
         )

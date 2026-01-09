@@ -27,7 +27,7 @@ from layout import LayoutTensor
 
 fn _argn[
     is_max: Bool
-](input: LayoutTensor, axis: Int, output: LayoutTensor[mut=True, **_]) raises:
+](input: LayoutTensor, axis: Int, output: LayoutTensor[mut=True, ...]) raises:
     """
     Finds the indices of the maximum/minimum element along the specified axis.
 
@@ -125,8 +125,8 @@ fn _argn[
         for i in range(start, end):
             var input_offset = i * input_stride
             var output_offset = i * output_stride
-            var input_dim_ptr = input.ptr.offset(input_offset)
-            var output_dim_ptr = output.ptr.offset(output_offset)
+            var input_dim_ptr = input.ptr + input_offset
+            var output_dim_ptr = output.ptr + output_offset
             var global_val: Scalar[input.dtype]
 
             # initialize limits
@@ -191,7 +191,7 @@ fn _argn[
 fn argmax(
     input: LayoutTensor,
     axis: Int,
-    output: LayoutTensor[mut=True, **_],
+    output: LayoutTensor[mut=True, ...],
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
@@ -208,7 +208,7 @@ fn argmax(
 fn argmax(
     input: LayoutTensor,
     axis_buf: LayoutTensor,
-    output: LayoutTensor[mut=True, **_],
+    output: LayoutTensor[mut=True, ...],
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
@@ -230,7 +230,7 @@ fn argmax(
 fn argmin(
     input: LayoutTensor,
     axis: Int,
-    output: LayoutTensor[mut=True, **_],
+    output: LayoutTensor[mut=True, ...],
 ) raises:
     """
     Finds the indices of the minimum element along the specified axis.
@@ -247,7 +247,7 @@ fn argmin(
 fn argmin(
     input: LayoutTensor,
     axis_buf: LayoutTensor,
-    output: LayoutTensor[mut=True, **_],
+    output: LayoutTensor[mut=True, ...],
 ) raises:
     """
     Finds the indices of the minimum element along the specified axis.

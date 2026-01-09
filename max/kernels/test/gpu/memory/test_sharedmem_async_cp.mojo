@@ -15,7 +15,9 @@ import time
 
 from gpu import memory, sync, thread_idx
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn copy_via_shared(
@@ -31,8 +33,8 @@ fn copy_via_shared(
     ] = src.address_space_cast[AddressSpace.GLOBAL]()
 
     memory.async_copy[4](
-        src_global.offset(thread_id),
-        mem_buff.offset(thread_id),
+        src_global + thread_id,
+        mem_buff + thread_id,
     )
 
     var m_barrier = stack_allocation[
@@ -66,7 +68,7 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     ctx.enqueue_copy(out_device, out_data)
 
     comptime kernel = copy_via_shared
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         in_device,
         out_device,
         grid_dim=(1,),

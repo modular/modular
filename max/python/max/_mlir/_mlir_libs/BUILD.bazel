@@ -56,5 +56,8 @@ This is likely to occur when bumping LLVM, you can run
 # ===----------------------------------------------------------------------=== #
 """,
     pyi_srcs = glob(["**/*.pyi"]),
-    tags = ["no-mypy"],
+    tags = [
+        "no-mypy",
+        "no-pydeps",  # Needs _mlir (invalid relative import) and max._mlir.ir (which would cause a circular dependency)
+    ],
 )

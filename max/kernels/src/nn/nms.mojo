@@ -111,7 +111,7 @@ fn _get_bounding_box[
 ](
     batch_size: Int,
     box_idx: Int,
-    boxes: LayoutTensor[dtype, **_],
+    boxes: LayoutTensor[dtype, ...],
 ) -> BoundingBox[dtype]:
     """Extract a bounding box from a tensor of boxes.
 
@@ -135,9 +135,9 @@ fn _get_bounding_box[
 fn non_max_suppression[
     dtype: DType
 ](
-    boxes: LayoutTensor[dtype, **_],
-    scores: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, DType.int64, **_],
+    boxes: LayoutTensor[dtype, ...],
+    scores: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, DType.int64, ...],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
@@ -190,8 +190,8 @@ fn non_max_suppression[
 fn non_max_suppression_shape_func[
     dtype: DType
 ](
-    boxes: LayoutTensor[dtype, **_],
-    scores: LayoutTensor[dtype, **_],
+    boxes: LayoutTensor[dtype, ...],
+    scores: LayoutTensor[dtype, ...],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
@@ -238,8 +238,8 @@ fn non_max_suppression[
     dtype: DType,
     func: fn (Int64, Int64, Int64) capturing [_] -> None,
 ](
-    boxes: LayoutTensor[dtype, **_],
-    scores: LayoutTensor[dtype, **_],
+    boxes: LayoutTensor[dtype, ...],
+    scores: LayoutTensor[dtype, ...],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
@@ -288,7 +288,7 @@ fn non_max_suppression[
             var offset = scores.runtime_layout(
                 RuntimeTuple[scores.layout.shape](b, c, 0)
             )
-            var per_class_scores_ptr = scores.ptr.offset(offset)
+            var per_class_scores_ptr = scores.ptr + offset
 
             # Filter boxes by score threshold
             # This reduces the number of boxes to sort and process

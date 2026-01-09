@@ -185,9 +185,7 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         # Set up priority stream and events to be reused across collective launches
         var priority = self._ctx.stream_priority_range().greatest
-        self._priority_stream = self._ctx.create_stream(
-            priority=priority, blocking=False
-        )
+        self._priority_stream = self._ctx.create_stream(priority=priority)
         self._begin_event = self._ctx.create_event()
         self._end_event = self._ctx.create_event()
 
@@ -228,9 +226,7 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         # Set up priority stream and events to be reused across collective launches
         var priority = self._ctx.stream_priority_range().greatest
-        self._priority_stream = self._ctx.create_stream(
-            priority=priority, blocking=False
-        )
+        self._priority_stream = self._ctx.create_stream(priority=priority)
         self._begin_event = self._ctx.create_event()
         self._end_event = self._ctx.create_event()
 
@@ -303,58 +299,9 @@ struct SHMEMContext(ImplicitlyCopyable):
         """
         return SHMEMBuffer[dtype](self._ctx, size)
 
-    fn enqueue_create_host_buffer[
-        dtype: DType
-    ](self, size: Int) raises -> HostBuffer[dtype]:
-        """Enqueues the creation of a HostBuffer.
-
-        This function allocates memory on the host that is accessible by the device.
-        The memory is page-locked (pinned) for efficient data transfer between host and device.
-
-        Pinned memory is guaranteed to remain resident in the host's RAM, not be
-        paged/swapped out to disk. Memory allocated normally (for example, using
-        [`alloc()`](/mojo/std/memory/unsafe_pointer/alloc)
-        is pageable—individual pages of memory can be moved to secondary storage
-        (disk/SSD) when main memory fills up.
-
-        Using pinned memory allows devices to make fast transfers
-        between host memory and device memory, because they can use direct
-        memory access (DMA) to transfer data without relying on the CPU.
-
-        Allocating too much pinned memory can cause performance issues, since it
-        reduces the amount of memory available for other processes.
-
-        Parameters:
-            dtype: The data type to be stored in the allocated memory.
-
-        Args:
-            size: The number of elements of `type` to allocate memory for.
-
-        Returns:
-            A `HostBuffer` object that wraps the allocated host memory.
-
-        Raises:
-            If memory allocation fails or if the device context is invalid.
-
-        Example:
-
-        ```mojo
-        from gpu.host import DeviceContext
-
-        with DeviceContext() as ctx:
-            # Allocate host memory accessible by the device
-            var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](1024)
-
-            # Use the host buffer for device operations
-            # ...
-        ```
-        """
-        var host_ptr = alloc[Scalar[dtype]](size)
-        return HostBuffer[dtype](self._ctx, host_ptr, size, owning=True)
-
     @always_inline
     @parameter
-    fn enqueue_function_checked[
+    fn enqueue_function[
         func_type: AnyTrivialRegType,
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
@@ -417,7 +364,7 @@ struct SHMEMContext(ImplicitlyCopyable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -427,13 +374,13 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         ```mojo
         with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function_checked[kernel, kernel]()
-            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
+            var compile_func = ctx.compile_function[kernel, kernel]()
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
-        var gpu_kernel = self._ctx.compile_function_checked[
+        var gpu_kernel = self._ctx.compile_function[
             func,
             signature_func,
             dump_asm=dump_asm,
@@ -444,7 +391,7 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         shmem_module_init(gpu_kernel)
 
-        self._ctx._enqueue_function_checked(
+        self._ctx._enqueue_function(
             gpu_kernel,
             args,
             grid_dim=grid_dim,
@@ -532,12 +479,12 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         ```mojo
         with DeviceContext() as ctx:
-            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
-            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
-        var gpu_kernel = self._ctx.compile_function_checked[
+        var gpu_kernel = self._ctx.compile_function[
             func,
             signature_func,
             dump_asm=dump_asm,
@@ -601,7 +548,7 @@ struct SHMEMContext(ImplicitlyCopyable):
                 "Warning: cooperative launch not supported on at least one PE;"
                 " GPU-side synchronization may cause hang"
             )
-        self._priority_stream._enqueue_function_checked(
+        self._priority_stream._enqueue_function(
             gpu_kernel,
             args,
             grid_dim=Dim(grid_x, grid_y, grid_z),

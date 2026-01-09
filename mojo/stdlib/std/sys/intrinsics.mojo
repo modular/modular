@@ -140,7 +140,7 @@ fn gather[
 
     @parameter
     if size == 1:
-        return UnsafePointer[Scalar[dtype], MutOrigin.external](
+        return UnsafePointer[Scalar[dtype], MutExternalOrigin](
             unsafe_from_address=Int(base[0])
         ).load[invariant=invariant]() if mask else passthrough[0]
 
@@ -150,7 +150,7 @@ fn gather[
 
         @parameter
         for i in range(size):
-            result[i] = UnsafePointer[Scalar[dtype], MutOrigin.external](
+            result[i] = UnsafePointer[Scalar[dtype], MutExternalOrigin](
                 unsafe_from_address=Int(base[i])
             ).load[invariant=invariant]() if mask[i] else passthrough[i]
         return result
@@ -236,7 +236,7 @@ fn scatter[
     @parameter
     if size == 1:
         if mask:
-            var ptr = UnsafePointer[Scalar[dtype], MutOrigin.external](
+            var ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
                 unsafe_from_address=Int(base[0])
             )
             ptr.store(value[0])
@@ -476,7 +476,7 @@ struct PrefetchOptions(Defaultable):
 @always_inline("nodebug")
 fn prefetch[
     dtype: DType, //, params: PrefetchOptions = PrefetchOptions()
-](addr: UnsafePointer[Scalar[dtype], **_]):
+](addr: UnsafePointer[Scalar[dtype], ...]):
     """Prefetches an instruction or data into cache before it is used.
 
     The prefetch function provides prefetching hints for the target
@@ -523,7 +523,7 @@ fn masked_load[
     size: Int,
     alignment: Int = 1,
 ](
-    addr: UnsafePointer[mut=False, Scalar[dtype], **_],
+    addr: UnsafePointer[mut=False, Scalar[dtype], ...],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
 ) -> SIMD[dtype, size]:
@@ -571,7 +571,7 @@ fn masked_store[
     alignment: Int = 1,
 ](
     value: SIMD,
-    addr: UnsafePointer[mut=True, Scalar[value.dtype], **_],
+    addr: UnsafePointer[mut=True, Scalar[value.dtype], ...],
     mask: SIMD[DType.bool, size],
 ):
     """Stores a value at a memory location, skipping masked lanes.
@@ -613,7 +613,7 @@ fn compressed_store[
     dtype: DType, size: Int
 ](
     value: SIMD[dtype, size],
-    addr: UnsafePointer[mut=True, Scalar[dtype], **_],
+    addr: UnsafePointer[mut=True, Scalar[dtype], ...],
     mask: SIMD[DType.bool, size],
 ):
     """Compresses the lanes of `value`, skipping `mask` lanes, and stores
@@ -655,7 +655,7 @@ fn compressed_store[
 fn strided_load[
     dtype: DType, //, simd_width: Int, *, invariant: Bool = False
 ](
-    addr: UnsafePointer[mut=False, Scalar[dtype], **_],
+    addr: UnsafePointer[mut=False, Scalar[dtype], ...],
     stride: Int,
     mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
         fill=True
@@ -701,7 +701,7 @@ fn strided_store[
     dtype: DType, //, simd_width: Int
 ](
     value: SIMD[dtype, simd_width],
-    addr: UnsafePointer[mut=True, Scalar[dtype], **_],
+    addr: UnsafePointer[mut=True, Scalar[dtype], ...],
     stride: Int,
     mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
         fill=True
@@ -932,7 +932,7 @@ fn assume(val: Bool):
 @always_inline
 fn implicitarg_ptr(
     out result: UnsafePointer[
-        UInt8, MutOrigin.external, address_space = AddressSpace.CONSTANT
+        UInt8, MutExternalOrigin, address_space = AddressSpace.CONSTANT
     ]
 ):
     """

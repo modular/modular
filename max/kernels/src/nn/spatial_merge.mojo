@@ -165,9 +165,9 @@ fn spatial_merge_kernel[
 fn spatial_merge[
     dtype: DType,
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
-    input: LayoutTensor[dtype, **_],
-    grid_thw: LayoutTensor[DType.int64, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
+    input: LayoutTensor[dtype, ...],
+    grid_thw: LayoutTensor[DType.int64, ...],
     hidden_size: Int,
     merge_size: Int,
     ctx: DeviceContext,
@@ -180,7 +180,7 @@ fn spatial_merge[
         dtype, input.layout, output.layout, grid_thw.layout
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         output,
         input,
         grid_thw,

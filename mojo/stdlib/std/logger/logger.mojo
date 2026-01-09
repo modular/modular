@@ -38,7 +38,7 @@ stdout). Messages below the configured level will be silently ignored.
 """
 
 import sys
-from io.write import _WriteBufferStack
+from fmt._utils import _WriteBufferStack
 from os import abort
 from sys.param_env import env_get_string
 from utils._ansi import Text, Color
@@ -62,7 +62,6 @@ comptime DEFAULT_LEVEL = Level._from_str(
 @fieldwise_init
 struct Level(
     Comparable,
-    Identifiable,
     ImplicitlyCopyable,
     Stringable,
     Writable,
@@ -97,6 +96,7 @@ struct Level(
     comptime CRITICAL = Self(60)
     """A serious error indicating that the program itself may be unable to continue running."""
 
+    @always_inline
     fn __eq__(self, other: Self) -> Bool:
         """Returns True if this level equals the other level.
 
@@ -119,34 +119,23 @@ struct Level(
         """
         return self._value < other._value
 
-    fn __is__(self, other: Self) -> Bool:
-        """Returns True if this level is identical to the other level.
-
-        Args:
-            other: The level to compare with.
-
-        Returns:
-            Bool: True if this level is identical to the other level, False otherwise.
-        """
-        return self == other
-
     fn color(self) -> Color:
         """Returns the ANSI color of the level.
 
         Returns:
             The corresponding Color of the level.
         """
-        if self is Self.TRACE:
+        if self == Self.TRACE:
             return Color.GREEN
-        if self is Self.DEBUG:
+        if self == Self.DEBUG:
             return Color.GREEN
-        if self is Self.INFO:
+        if self == Self.INFO:
             return Color.YELLOW
-        if self is Self.WARNING:
+        if self == Self.WARNING:
             return Color.BLUE
-        if self is Self.ERROR:
+        if self == Self.ERROR:
             return Color.MAGENTA
-        if self is Self.CRITICAL:
+        if self == Self.CRITICAL:
             return Color.RED
 
         return Color("")
@@ -184,19 +173,19 @@ struct Level(
         Args:
             writer: The writer to write to.
         """
-        if self is Self.NOTSET:
+        if self == Self.NOTSET:
             writer.write("NOTSET")
-        elif self is Self.TRACE:
+        elif self == Self.TRACE:
             writer.write("TRACE")
-        elif self is Self.DEBUG:
+        elif self == Self.DEBUG:
             writer.write("DEBUG")
-        elif self is Self.INFO:
+        elif self == Self.INFO:
             writer.write("INFO")
-        elif self is Self.WARNING:
+        elif self == Self.WARNING:
             writer.write("WARNING")
-        elif self is Self.ERROR:
+        elif self == Self.ERROR:
             writer.write("ERROR")
-        elif self is Self.CRITICAL:
+        elif self == Self.CRITICAL:
             writer.write("CRITICAL")
 
     @no_inline

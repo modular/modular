@@ -24,7 +24,7 @@ from os import abort
 
 
 struct Node[
-    ElementType: Copyable,
+    ElementType: Copyable & ImplicitlyDestructible,
 ](Copyable):
     """A node in a linked list data structure.
 
@@ -32,7 +32,7 @@ struct Node[
         ElementType: The type of element stored in the node.
     """
 
-    comptime _NodePointer = UnsafePointer[Self, MutOrigin.external]
+    comptime _NodePointer = UnsafePointer[Self, MutExternalOrigin]
 
     var value: Self.ElementType
     """The value stored in this node."""
@@ -60,7 +60,7 @@ struct Node[
         self.next = next.value() if next else Self._NodePointer()
 
     fn __str__[
-        _ElementType: Copyable & Writable
+        _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](self: Node[_ElementType]) -> String:
         """Convert this node's value to a string representation.
 
@@ -78,7 +78,7 @@ struct Node[
 
     @no_inline
     fn write_to[
-        _ElementType: Copyable & Writable
+        _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](self: Node[_ElementType], mut writer: Some[Writer]):
         """Write this node's value to the given writer.
 
@@ -96,12 +96,12 @@ struct Node[
 struct _LinkedListIter[
     mut: Bool,
     //,
-    ElementType: Copyable,
+    ElementType: Copyable & ImplicitlyDestructible,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     var src: Pointer[LinkedList[Self.ElementType], Self.origin]
-    var curr: UnsafePointer[Node[Self.ElementType], MutOrigin.external]
+    var curr: UnsafePointer[Node[Self.ElementType], MutExternalOrigin]
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -138,7 +138,7 @@ struct _LinkedListIter[
 
 
 struct LinkedList[
-    ElementType: Copyable,
+    ElementType: Copyable & ImplicitlyDestructible,
 ](Boolable, Copyable, Defaultable, Iterable, Sized):
     """A doubly-linked list implementation.
 
@@ -152,7 +152,7 @@ struct LinkedList[
     """
 
     comptime _NodePointer = UnsafePointer[
-        Node[Self.ElementType], MutOrigin.external
+        Node[Self.ElementType], MutExternalOrigin
     ]
 
     comptime IteratorType[
@@ -649,7 +649,7 @@ struct LinkedList[
     fn _get_node_ptr[
         I: Indexer, //
     ](ref self, idx: I) -> UnsafePointer[
-        Node[Self.ElementType], MutOrigin.external
+        Node[Self.ElementType], MutExternalOrigin
     ]:
         """Get a pointer to the node at the specified index.
 
@@ -754,7 +754,7 @@ struct LinkedList[
         return len(self) != 0
 
     fn __str__[
-        _ElementType: Copyable & Writable
+        _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](self: LinkedList[_ElementType]) -> String:
         """Convert the list to its string representation.
 
@@ -773,7 +773,7 @@ struct LinkedList[
         return writer
 
     fn __repr__[
-        _ElementType: Copyable & Writable
+        _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](self: LinkedList[_ElementType]) -> String:
         """Convert the list to its string representation.
 
@@ -792,7 +792,7 @@ struct LinkedList[
         return writer
 
     fn write_to[
-        _ElementType: Copyable & Writable
+        _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](self: LinkedList[_ElementType], mut writer: Some[Writer]):
         """Write the list to the given writer.
 
@@ -810,7 +810,7 @@ struct LinkedList[
 
     @no_inline
     fn _write[
-        W: Writer, _ElementType: Copyable & Writable
+        W: Writer, _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](
         self: LinkedList[_ElementType],
         mut writer: W,

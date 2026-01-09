@@ -21,7 +21,9 @@ from internal_utils import assert_almost_equal, random, zero
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from linalg.matmul.vendor.blas import matmul
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn test_matmul[
@@ -99,7 +101,7 @@ fn test_matmul[
         BLOCK_DIM,
         transpose_b=True,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c_tensor_ref,
         a_tensor,
         b_tensor,

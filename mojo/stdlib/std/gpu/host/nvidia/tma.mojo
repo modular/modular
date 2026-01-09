@@ -90,14 +90,15 @@ struct TensorMapDataType:
         __comptime_assert dtype in (
             DType.float32,
             DType.bfloat16,
+            DType.uint8,
             DType.float8_e4m3fn,
             DType.float8_e8m0fnu,
         ), "Unsupported dtype"
 
         @parameter
-        if dtype is DType.float32:
+        if dtype == DType.float32:
             return Self.FLOAT32
-        elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
+        elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu, DType.uint8):
             return Self.UINT8
         else:
             return Self.BFLOAT16

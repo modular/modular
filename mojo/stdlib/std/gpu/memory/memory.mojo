@@ -66,7 +66,7 @@ from ..intrinsics import Scope
 
 @fieldwise_init
 @register_passable("trivial")
-struct CacheOperation(Equatable, Identifiable):
+struct CacheOperation(Equatable):
     """Represents different GPU cache operation policies.
 
     This struct defines various caching behaviors for GPU memory operations,
@@ -142,17 +142,6 @@ struct CacheOperation(Equatable, Identifiable):
         """
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
-        """Tests if two `CacheOperation` instances are identical.
-
-        Args:
-            other: The `CacheOperation` to compare against.
-
-        Returns:
-            True if the operations are identical, False otherwise.
-        """
-        return self == other
-
     fn __or__(self, other: Self) -> Self:
         """Returns the bitwise OR of two `CacheOperation` instances.
 
@@ -174,21 +163,21 @@ struct CacheOperation(Equatable, Identifiable):
         Returns:
             A string literal containing the PTX mnemonic for this operation.
         """
-        if self is Self.ALWAYS:
+        if self == Self.ALWAYS:
             return "ca"
-        if self is Self.GLOBAL:
+        if self == Self.GLOBAL:
             return "cg"
-        if self is Self.STREAMING:
+        if self == Self.STREAMING:
             return "cs"
-        if self is Self.LAST_USE:
+        if self == Self.LAST_USE:
             return "lu"
-        if self is Self.VOLATILE:
+        if self == Self.VOLATILE:
             return "cv"
-        if self is Self.WRITE_BACK:
+        if self == Self.WRITE_BACK:
             return "wb"
-        if self is Self.WRITE_THROUGH:
+        if self == Self.WRITE_THROUGH:
             return "wt"
-        if self is Self.WORKGROUP:
+        if self == Self.WORKGROUP:
             return "wg"
 
         return "unknown cache operation"
@@ -201,7 +190,7 @@ struct CacheOperation(Equatable, Identifiable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct CacheEviction(Equatable, Identifiable):
+struct CacheEviction(Equatable):
     """Represents cache eviction policies for GPU memory operations.
 
     This struct defines different cache eviction priorities that control how data is
@@ -269,17 +258,6 @@ struct CacheEviction(Equatable, Identifiable):
         """
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
-        """Tests if two CacheEviction instances are identical.
-
-        Args:
-            other: The CacheEviction to compare against.
-
-        Returns:
-            True if the eviction policies are identical, False otherwise.
-        """
-        return self == other
-
     @always_inline
     fn mnemonic(self) -> StaticString:
         """Returns the string mnemonic for this cache eviction policy.
@@ -290,15 +268,15 @@ struct CacheEviction(Equatable, Identifiable):
         Returns:
             A string literal containing the mnemonic for this eviction policy.
         """
-        if self is Self.EVICT_NORMAL:
+        if self == Self.EVICT_NORMAL:
             return "evict_normal"
-        if self is Self.EVICT_FIRST:
+        if self == Self.EVICT_FIRST:
             return "evict_first"
-        if self is Self.EVICT_LAST:
+        if self == Self.EVICT_LAST:
             return "evict_last"
-        if self is Self.EVICT_UNCHANGED:
+        if self == Self.EVICT_UNCHANGED:
             return "evict_unchanged"
-        if self is Self.NO_ALLOCATE:
+        if self == Self.NO_ALLOCATE:
             return "no_allocate"
         return "unknown cache eviction"
 
@@ -310,7 +288,7 @@ struct CacheEviction(Equatable, Identifiable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Fill(Equatable, Identifiable):
+struct Fill(Equatable):
     """Represents memory fill patterns for GPU memory operations.
 
     This struct defines different fill patterns that can be used when allocating or
@@ -340,17 +318,6 @@ struct Fill(Equatable, Identifiable):
         """
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
-        """Tests if two Fill instances are identical.
-
-        Args:
-            other: The Fill instance to compare against.
-
-        Returns:
-            True if the fill patterns are identical, False otherwise.
-        """
-        return self == other
-
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the fill pattern.
@@ -361,11 +328,11 @@ struct Fill(Equatable, Identifiable):
         Returns:
             A string describing the fill pattern.
         """
-        if self is Self.NONE:
+        if self == Self.NONE:
             return "none"
-        if self is Self.ZERO:
+        if self == Self.ZERO:
             return "zero"
-        if self is Self.NAN:
+        if self == Self.NAN:
             return "nan"
         return "unknown fill"
 
@@ -377,7 +344,7 @@ struct Fill(Equatable, Identifiable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Consistency(Equatable, Identifiable, ImplicitlyCopyable):
+struct Consistency(Equatable, ImplicitlyCopyable):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
@@ -422,17 +389,6 @@ struct Consistency(Equatable, Identifiable, ImplicitlyCopyable):
         """
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
-        """Tests if two Consistency instances are identical.
-
-        Args:
-            other: The Consistency instance to compare against.
-
-        Returns:
-            True if the consistency levels are identical, False otherwise.
-        """
-        return self == other
-
     fn __str__(self) -> String:
         """Returns a string representation of the consistency level.
 
@@ -448,13 +404,13 @@ struct Consistency(Equatable, Identifiable, ImplicitlyCopyable):
         Returns:
             A string literal containing the consistency level mnemonic.
         """
-        if self is Self.WEAK:
+        if self == Self.WEAK:
             return "weak"
-        if self is Self.RELAXED:
+        if self == Self.RELAXED:
             return "relaxed"
-        if self is Self.ACQUIRE:
+        if self == Self.ACQUIRE:
             return "acquire"
-        if self is Self.RELEASE:
+        if self == Self.RELEASE:
             return "release"
 
         return "unknown consistency"
@@ -467,7 +423,7 @@ struct Consistency(Equatable, Identifiable, ImplicitlyCopyable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ReduceOp(Equatable, Identifiable):
+struct ReduceOp(Equatable):
     """Represents reduction operations for parallel reduction algorithms.
 
     This struct defines different reduction operations that can be performed
@@ -545,17 +501,17 @@ struct ReduceOp(Equatable, Identifiable):
         Returns:
             A string literal containing the reduction operation mnemonic.
         """
-        if self is Self.ADD:
+        if self == Self.ADD:
             return "add"
-        if self is Self.MIN:
+        if self == Self.MIN:
             return "min"
-        if self is Self.MAX:
+        if self == Self.MAX:
             return "max"
-        if self is Self.AND:
+        if self == Self.AND:
             return "and"
-        if self is Self.OR:
+        if self == Self.OR:
             return "or"
-        if self is Self.XOR:
+        if self == Self.XOR:
             return "xor"
 
         return "unknown reduce operation"
@@ -582,9 +538,9 @@ fn _mark_eviction[
     """
 
     @parameter
-    if eviction_policy is CacheEviction.EVICT_NORMAL:
+    if eviction_policy == CacheEviction.EVICT_NORMAL:
         return 0
-    elif eviction_policy is CacheEviction.EVICT_LAST:
+    elif eviction_policy == CacheEviction.EVICT_LAST:
         return inlined_assembly[
             "createpolicy.fractional.L2::evict_last.b64 $0;",
             UInt64,
@@ -592,7 +548,7 @@ fn _mark_eviction[
         ]()
     else:
         __comptime_assert (
-            eviction_policy is CacheEviction.EVICT_FIRST
+            eviction_policy == CacheEviction.EVICT_FIRST
         ), "invalid eviction policy, only support normal, first, and last"
         return inlined_assembly[
             "createpolicy.fractional.L2::evict_first.b64 $0;",
@@ -685,7 +641,7 @@ fn async_copy[
     ) else CacheOperation.ALWAYS.mnemonic()
     comptime access_size = _int_to_str[size]()
 
-    comptime cache_hint = ".L2::cache_hint" if eviction_policy is not CacheEviction.EVICT_NORMAL else StaticString(
+    comptime cache_hint = ".L2::cache_hint" if eviction_policy != CacheEviction.EVICT_NORMAL else StaticString(
         ""
     )
     var cache_policy = _mark_eviction[eviction_policy]()
@@ -706,7 +662,7 @@ fn async_copy[
         comptime asm = cp_async_asm + args_with_fill
 
         @parameter
-        if eviction_policy is CacheEviction.EVICT_NORMAL:
+        if eviction_policy == CacheEviction.EVICT_NORMAL:
             inlined_assembly[asm + ";", NoneType, constraints="r,l,n,r"](
                 Int32(Int(dst)), src, Int32(size), Int32(src_size)
             )
@@ -741,7 +697,7 @@ fn async_copy[
         comptime copy_asm = header_asm + "@p " + cp_async_asm + args_with_fill
 
         @parameter
-        if eviction_policy is CacheEviction.EVICT_NORMAL:
+        if eviction_policy == CacheEviction.EVICT_NORMAL:
             inlined_assembly[
                 copy_asm + ";\n" + footer_asm,
                 NoneType,
@@ -782,7 +738,7 @@ fn async_copy[
         comptime asm = cp_async_asm + args
 
         @parameter
-        if eviction_policy is CacheEviction.EVICT_NORMAL:
+        if eviction_policy == CacheEviction.EVICT_NORMAL:
             inlined_assembly[asm + ";", NoneType, constraints="r,l,n"](
                 Int32(Int(dst)), src, Int32(size)
             )
@@ -1353,12 +1309,25 @@ fn cp_async_bulk_tensor_global_shared_cta[
         2,
         3,
         4,
-    ), "Expecting rank-1, 2, 3, or 4 tensors"
+        5,
+    ), "Expecting rank-1, 2, 3, 4, or 5 tensors"
 
-    comptime cache_hint: Bool = eviction_policy is not CacheEviction.EVICT_NORMAL
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
 
     @parameter
-    if rank == 4:
+    if rank == 5:
+        llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.5d", NoneType](
+            src_mem,
+            tma_descriptor,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            Int32(coords[2]),
+            Int32(coords[3]),
+            Int32(coords[4]),
+            eviction_policy._value,
+            cache_hint,
+        )
+    elif rank == 4:
         llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.4d", NoneType](
             src_mem,
             tma_descriptor,
@@ -1448,7 +1417,7 @@ fn cp_async_bulk_tensor_reduce[
     __comptime_assert (
         rank == 1 or rank == 2
     ), "Expecting rank-1 or rank-2 tensors"
-    comptime cache_hint: Bool = eviction_policy is not CacheEviction.EVICT_NORMAL
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
 
     @parameter
     if rank == 2:
@@ -1583,7 +1552,7 @@ fn _load_impl[
 
     comptime cache_policy_inst = (
         "" if cache_policy
-        is CacheOperation.ALWAYS else ("." + cache_policy_mnemonic)
+        == CacheOperation.ALWAYS else ("." + cache_policy_mnemonic)
     )
     comptime v_width = ("" if width == 1 else ".v" + _int_to_str[width]())
 
@@ -1796,7 +1765,7 @@ fn _get_multimem_ld_reduce_asm[
     )
     comptime accum = (
         ".acc::" + _get_type_mnemonic[accum_type]()
-    ) if accum_type is not dtype else ""
+    ) if accum_type != dtype else ""
     comptime asm = "multimem.ld_reduce." + consistency.mnemonic() + "." + scope.mnemonic() + ss + op + accum + vec + dtype_mnemonic
     return asm
 
@@ -2175,17 +2144,17 @@ fn _get_type_mnemonic[dtype: DType]() -> StaticString:
     This internal utility function converts floating point DTypes into their
     corresponding string mnemonics used in GPU assembly instructions.
     """
-    if dtype is DType.float32:
+    if dtype == DType.float32:
         return "f32"
-    elif dtype is DType.float16:
+    elif dtype == DType.float16:
         return "f16"
-    elif dtype is DType.bfloat16:
+    elif dtype == DType.bfloat16:
         return "bf16"
-    elif dtype is DType.float64:
+    elif dtype == DType.float64:
         return "f64"
-    elif dtype is DType.float8_e4m3fn:
+    elif dtype == DType.float8_e4m3fn:
         return "e4m3"
-    elif dtype is DType.float8_e5m2:
+    elif dtype == DType.float8_e5m2:
         return "e5m2"
 
     return "unknown dtype mnemonic"

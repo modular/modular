@@ -146,7 +146,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
         type_of(template_tma_tensormap).layout,  # thread layout
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         new_src.device_tensor(),
         template_tma_tensormap,
@@ -302,7 +302,7 @@ def test_tma_replace_global_addr_in_smem_descriptor[
         type_of(template_tma_tensormap).layout,  # thread layout
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         new_src.device_tensor(),
         template_tma_tensormap,
@@ -498,7 +498,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
         type_of(template_tma_tensormap).desc_layout,  # desc layout
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         new_src.device_tensor(),
         template_tma_tensormap,

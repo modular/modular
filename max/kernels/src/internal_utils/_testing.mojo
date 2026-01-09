@@ -18,7 +18,9 @@ from math import exp2
 import testing
 from buffer import NDBuffer
 from builtin._location import __call_location, _SourceLocation
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing.testing import _assert_cmp_error
 
 from utils.numerics import FPUtils
@@ -111,12 +113,12 @@ fn _assert_with_measure_impl[
     dtype: DType,
     //,
     measure: fn[dtype: DType] (
-        UnsafePointer[Scalar[dtype], mut=False],
-        UnsafePointer[Scalar[dtype], mut=False],
+        LegacyUnsafePointer[mut=False, Scalar[dtype]],
+        LegacyUnsafePointer[mut=False, Scalar[dtype]],
         Int,
     ) -> Float64,
 ](
-    x: UnsafePointer[Scalar[dtype], **_],
+    x: UnsafePointer[Scalar[dtype], ...],
     y: type_of(x),
     n: Int,
     msg: String = "",
@@ -145,8 +147,8 @@ fn _assert_with_measure_impl[
 @always_inline
 fn assert_with_measure[
     measure: fn[dtype: DType] (
-        UnsafePointer[Scalar[dtype], mut=False],
-        UnsafePointer[Scalar[dtype], mut=False],
+        LegacyUnsafePointer[mut=False, Scalar[dtype]],
+        LegacyUnsafePointer[mut=False, Scalar[dtype]],
         Int,
     ) -> Float64,
 ](
@@ -165,3 +167,19 @@ fn assert_with_measure[
         location=location.or_else(__call_location()),
         threshold=threshold,
     )
+
+
+@always_inline
+fn pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
+    # Returns (rtol, atol) modeled after PyTorch defaults.
+    @parameter
+    if dtype == DType.float16:
+        return (1e-3, 1e-5)
+    elif dtype == DType.bfloat16:
+        return (1.6e-2, 1e-5)
+    elif dtype == DType.float32:
+        return (1.3e-6, 1e-5)
+    elif dtype == DType.float64:
+        return (1e-7, 1e-7)
+    else:
+        return (0.0, 0.0)

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
+
 from io.io import _printf
 from random import randint, randn, seed
 from sys import (
@@ -47,7 +49,7 @@ from utils import IndexList
 
 fn legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[Int32, MutOrigin.external], n_tokens: Int):
+](topk_ids: UnsafePointer[Int32, MutExternalOrigin], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
@@ -122,8 +124,8 @@ fn test_dispatch[
     var recv_count_bufs_list = List[DeviceBuffer[DType.uint64]](capacity=n_ranks)
     var atomic_counters_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
 
-    var host_topk_ids_list = InlineArray[UnsafePointer[Int32, MutOrigin.external], n_ranks](fill={})
-    var host_input_tokens_list = InlineArray[UnsafePointer[Scalar[input_type], MutOrigin.external], n_ranks](fill={})
+    var host_topk_ids_list = InlineArray[UnsafePointer[Int32, MutExternalOrigin], n_ranks](fill={})
+    var host_input_tokens_list = InlineArray[UnsafePointer[Scalar[input_type], MutExternalOrigin], n_ranks](fill={})
 
     var device_topk_bufs_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
     var device_input_bufs_list = List[DeviceBuffer[input_type]](capacity=n_ranks)
@@ -212,12 +214,12 @@ fn test_dispatch[
 
     @always_inline
     @parameter
-    fn get_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutOrigin.external]) raises:
+    fn get_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutExternalOrigin]) raises:
         return type_of(result)(send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * msg_bytes)
 
     @always_inline
     @parameter
-    fn get_atomic_counters_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[Int32, MutOrigin.external]) raises:
+    fn get_atomic_counters_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[Int32, MutExternalOrigin]) raises:
         return type_of(result)(atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * 2 * n_experts)
 
     @always_inline
@@ -332,7 +334,7 @@ fn test_dispatch[
     @parameter
     fn run_dispatch(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function_checked[dispatch, dispatch](
+        ctx.enqueue_function[dispatch, dispatch](
             get_input_tokens_tensor(dev_idx, slot_idx),
             get_topk_ids_tensor(dev_idx, slot_idx),
             get_send_buf_ptr(dev_idx, slot_idx),
@@ -348,7 +350,7 @@ fn test_dispatch[
     @parameter
     fn run_dispatch_cb(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function_checked[dispatch_cb, dispatch_cb](
+        ctx.enqueue_function[dispatch_cb, dispatch_cb](
             BlockwiseFP8TokenFormat[hidden_size, top_k, gpu_alignment](
                 get_output_tensor(dev_idx, slot_idx),
                 get_output_scales_tensor(dev_idx, slot_idx),
@@ -360,6 +362,9 @@ fn test_dispatch[
             recv_count_bufs_inputs[slot_idx][dev_idx],
             get_atomic_counters_ptr(dev_idx, slot_idx),
             Int32(dev_idx),
+            OptionalReg[
+                LayoutTensor[input_type, Layout.row_major[2](), ImmutAnyOrigin]
+            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )

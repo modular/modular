@@ -224,6 +224,135 @@ fn vectorize[
 
 @always_inline
 fn vectorize[
+    func: fn[width: Int] (idx: Int, evl: Int) unified -> None,
+    //,
+    simd_width: Int,
+    /,
+    *,
+    unroll_factor: Int = 1,
+](size: Int, closure: func):
+    """Simplifies SIMD optimized loops by mapping a function across a range from
+    0 to `size`, incrementing by `simd_width` at each step. The main loop runs
+    with a fixed SIMD width of `simd_width`. Any remainder (`size % simd_width`)
+    is executed with a single final call using predication via the `evl`
+    (effective vector length) argument.
+
+    Compared to `vectorize` variants that run the remainder as scalar
+    iterations (`width=1`), this version keeps the SIMD width fixed and passes
+    the number of active lanes in `evl` for the last (partial) vector. The
+    closure is responsible for honoring `evl` (e.g. using masked loads/stores)
+    to avoid out-of-bounds accesses.
+
+    Parameters:
+        func: The function that will be called in the loop body. It must accept
+            an `idx` and an `evl` (effective vector length). For all full SIMD
+            iterations `evl == simd_width`. For the final partial iteration
+            `0 < evl < simd_width`.
+        simd_width: The SIMD vector width.
+        unroll_factor: The unroll factor for the main loop (Default 1).
+
+    Args:
+        size: The upper limit for the loop.
+        closure: The captured state of the function bound to func.
+
+    The below example demonstrates how to set multiple values at the same time
+    using SIMD registers, while handling the tail with `evl` by generating a mask:
+
+    ```mojo
+    from algorithm.functional import vectorize
+    from sys import simd_width_of
+    from math import iota
+    from sys.intrinsics import masked_store
+
+    comptime size = 10
+    comptime simd_width = simd_width_of[DType.int32]()  # assumed 4 in this example
+
+    fn main():
+        var p = alloc[Int32](size)
+
+        fn closure[width: Int](i: Int, evl: Int) unified {mut}:
+            print("storing", evl, "of", width, "els at pos", i)
+            var val = SIMD[DType.int32, width](i)
+
+            # Optimization: Constant propagation eliminates this check in the main loop
+            if evl == width:
+                p.store[width=width](i, val)
+            else:
+                # Tail loop: Generate mask from EVL to prevent OOB
+                var mask = iota[DType.int32, width]().lt(evl)
+                masked_store[width](val, p + i, mask)
+
+        vectorize[simd_width](size, closure)
+
+        print(p.load[width=simd_width]())
+        print(p.load[width=simd_width](simd_width))
+        print(p.load[width=2](2 * simd_width))
+        p.free()
+    ```
+
+    On a machine with a SIMD register size of 128, this will set 4xInt32 values
+    on each full iteration. The remainder of 10 % 4 is 2, so the tail will be
+    handled by a single call with `evl=2`:
+
+    ```plaintext
+    storing 4 of 4 els at pos 0
+    storing 4 of 4 els at pos 4
+    storing 2 of 4 els at pos 8
+    [0, 0, 0, 0]
+    [4, 4, 4, 4]
+    [8, 8]
+    ```
+
+    You can also unroll the main loop to potentially improve performance at the
+    cost of binary size:
+
+    ```
+    vectorize[simd_width, unroll_factor=2](size, closure)
+    ```
+
+    In the generated assembly the full-width calls will be repeated, resulting
+    in fewer arithmetic, comparison, and conditional jump operations. In
+    pseudocode:
+
+    ```
+    closure[4](0, 4)
+    closure[4](4, 4)
+    closure[4](8, 2)  # single predicated tail call
+    ```
+
+    Notes:
+        - This implementation does not execute the remainder as scalar
+          iterations. The closure must correctly handle `evl` to keep memory
+          accesses in-bounds.
+        - If `size < simd_width`, the loop will consist of a single call:
+          `closure[simd_width](0, size)`.
+    """
+    __comptime_assert simd_width > 0, "simd width must be > 0"
+    __comptime_assert unroll_factor > 0, "unroll factor must be > 0"
+    debug_assert(size >= 0, "size must be >= 0")
+
+    comptime unrolled_simd_width = simd_width * unroll_factor
+    var simd_end = Int(align_down(UInt(size), UInt(simd_width)))
+    var unrolled_end = Int(align_down(UInt(size), UInt(unrolled_simd_width)))
+
+    for unrolled_idx in range(0, unrolled_end, unrolled_simd_width):
+
+        @parameter
+        for idx in range(unroll_factor):
+            closure[simd_width](unrolled_idx + idx * simd_width, simd_width)
+
+    @parameter
+    if unroll_factor > 1:
+        for simd_idx in range(unrolled_end, simd_end, simd_width):
+            closure[simd_width](simd_idx, simd_width)
+
+    var remainder = size - simd_end
+    if remainder > 0:
+        closure[simd_width](simd_end, remainder)
+
+
+@always_inline
+fn vectorize[
     func: fn[width: Int] (idx: Int) unified -> None,
     //,
     simd_width: Int,
@@ -1094,7 +1223,7 @@ fn _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
 @always_inline
 fn _get_start_indices_of_nth_subvolume[
     rank: Int, //, subvolume_rank: Int = 1
-](n: Int, shape: IndexList[rank, **_], out res: type_of(shape)):
+](n: Int, shape: IndexList[rank, ...], out res: type_of(shape)):
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
@@ -1162,7 +1291,7 @@ fn _get_start_indices_of_nth_subvolume_uint[
     rank: Int,
     //,
     subvolume_rank: UInt = 1,
-](n: UInt, shape: IndexList[rank, **_]) -> type_of(shape):
+](n: UInt, shape: IndexList[rank, ...]) -> type_of(shape):
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
@@ -1253,7 +1382,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "",
-](shape: IndexList[rank, **_]) raises:
+](shape: IndexList[rank, ...]) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1333,7 +1462,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "",
-](shape: IndexList[rank, **_], context: DeviceContext) raises:
+](shape: IndexList[rank, ...], context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1371,7 +1500,7 @@ fn elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "",
-](shape: IndexList[rank, **_], context: DeviceContextPtr) raises:
+](shape: IndexList[rank, ...], context: DeviceContextPtr) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1434,7 +1563,7 @@ fn _elementwise_impl[
     *,
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
-](shape: IndexList[rank, **_], context: DeviceContext) raises:
+](shape: IndexList[rank, ...], context: DeviceContext) raises:
     @parameter
     if is_cpu[target]():
         _elementwise_impl_cpu[
@@ -1458,7 +1587,7 @@ fn _elementwise_impl_cpu[
     /,
     *,
     use_blocking_impl: Bool = False,
-](shape: IndexList[rank, **_]):
+](shape: IndexList[rank, ...]):
     comptime impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
     impl[func, simd_width, use_blocking_impl=use_blocking_impl](shape)
 
@@ -1473,7 +1602,7 @@ fn _elementwise_impl_cpu_1d[
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
-](shape: IndexList[rank, **_]):
+](shape: IndexList[rank, ...]):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -1498,7 +1627,7 @@ fn _elementwise_impl_cpu_1d[
 
         @always_inline
         fn blocking_task_fun[simd_width: Int](idx: Int) unified {read}:
-            func[simd_width, rank](idx)
+            func[simd_width, rank](IndexList[rank](idx))
 
         vectorize[simd_width, unroll_factor=unroll_factor](
             problem_size, blocking_task_fun
@@ -1518,7 +1647,7 @@ fn _elementwise_impl_cpu_1d[
         @always_inline
         fn func_wrapper[simd_width: Int](idx: Int) unified {read start_offset}:
             var offset = start_offset + idx
-            func[simd_width, rank](offset)
+            func[simd_width, rank](IndexList[rank](offset))
 
         vectorize[simd_width, unroll_factor=unroll_factor](len, func_wrapper)
 
@@ -1535,7 +1664,7 @@ fn _elementwise_impl_cpu_nd[
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
-](shape: IndexList[rank, **_]):
+](shape: IndexList[rank, ...]):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns
     when all sub-tasks have completed.
@@ -1629,7 +1758,7 @@ fn _elementwise_impl_gpu[
         IndexList[rank]
     ) capturing [_] -> None,
     simd_width: UInt,
-](shape: IndexList[rank, **_], ctx: DeviceContext) raises:
+](shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
 
@@ -1671,7 +1800,7 @@ fn _elementwise_impl_gpu[
     comptime block_size_unrounded = registers_per_block // registers_per_thread
 
     # when testing other elementwise kernels, they appear to also use 128 as the block size on blackwell specifically
-    comptime block_size = 128 if ctx.default_device_info is B200 else block_size_unrounded - (
+    comptime block_size = 128 if ctx.default_device_info == B200 else block_size_unrounded - (
         block_size_unrounded % 2
     )
 
@@ -1686,7 +1815,7 @@ fn _elementwise_impl_gpu[
     )
     @parameter
     @__llvm_metadata(
-        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](block_size)
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
     )
     fn _elementwise_gpu_kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
         # process the packed region
@@ -1745,7 +1874,7 @@ fn _elementwise_impl_gpu[
         comptime kernel = _elementwise_gpu_kernel[
             block_size = UInt(block_size), handle_uneven_simd=False
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
             block_dim=Int(block_size),
             attributes=pdl_launch_attributes(),
@@ -1754,7 +1883,7 @@ fn _elementwise_impl_gpu[
         comptime kernel = _elementwise_gpu_kernel[
             block_size = UInt(block_size), handle_uneven_simd=True
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
             block_dim=Int(block_size),
             attributes=pdl_launch_attributes(),
@@ -1816,27 +1945,27 @@ fn _stencil_impl_cpu[
     //,
     rank: Int,
     stencil_rank: Int,
-    stencil_axis: IndexList[stencil_rank, **_],
+    stencil_axis: IndexList[stencil_rank, ...],
     simd_width: Int,
     dtype: DType,
-    map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> Tuple[
-        IndexList[stencil_rank, **_],
-        IndexList[stencil_rank, **_],
+    map_fn: fn (IndexList[stencil_rank, ...]) capturing [_] -> Tuple[
+        IndexList[stencil_rank, ...],
+        IndexList[stencil_rank, ...],
     ],
     map_strides: fn (dim: Int) capturing [_] -> Int,
     load_fn: fn[simd_width: Int, dtype: DType] (
-        IndexList[rank, **_]
+        IndexList[rank, ...]
     ) capturing [_] -> SIMD[dtype, simd_width],
     compute_init_fn: fn[simd_width: Int] () capturing [_] -> SIMD[
         dtype, simd_width
     ],
     compute_fn: fn[simd_width: Int] (
-        IndexList[rank, **_],
+        IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
     ) capturing [_] -> SIMD[dtype, simd_width],
     compute_finalize_fn: fn[simd_width: Int] (
-        IndexList[rank, **_], SIMD[dtype, simd_width]
+        IndexList[rank, ...], SIMD[dtype, simd_width]
     ) capturing [_] -> None,
 ](
     shape: IndexList[rank, element_type=shape_element_type],
@@ -1985,27 +2114,27 @@ fn _stencil_impl_gpu[
     //,
     rank: Int,
     stencil_rank: Int,
-    stencil_axis: IndexList[stencil_rank, **_],
+    stencil_axis: IndexList[stencil_rank, ...],
     simd_width: Int,
     dtype: DType,
-    map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> Tuple[
-        IndexList[stencil_rank, **_],
-        IndexList[stencil_rank, **_],
+    map_fn: fn (IndexList[stencil_rank, ...]) capturing [_] -> Tuple[
+        IndexList[stencil_rank, ...],
+        IndexList[stencil_rank, ...],
     ],
     map_strides: fn (dim: Int) capturing [_] -> Int,
     load_fn: fn[simd_width: Int, dtype: DType] (
-        IndexList[rank, **_]
+        IndexList[rank, ...]
     ) capturing [_] -> SIMD[dtype, simd_width],
     compute_init_fn: fn[simd_width: Int] () capturing [_] -> SIMD[
         dtype, simd_width
     ],
     compute_fn: fn[simd_width: Int] (
-        IndexList[rank, **_],
+        IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
     ) capturing [_] -> SIMD[dtype, simd_width],
     compute_finalize_fn: fn[simd_width: Int] (
-        IndexList[rank, **_], SIMD[dtype, simd_width]
+        IndexList[rank, ...], SIMD[dtype, simd_width]
     ) capturing [_] -> None,
 ](
     ctx: DeviceContext,
@@ -2116,6 +2245,6 @@ fn _stencil_impl_gpu[
     )
 
     # Compile and launch kernel
-    ctx.enqueue_function_checked[stencil_kernel, stencil_kernel](
+    ctx.enqueue_function[stencil_kernel, stencil_kernel](
         grid_dim=grid_dim, block_dim=block_dim
     )

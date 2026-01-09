@@ -29,7 +29,9 @@ from buffer import Dim, DimList, NDBuffer
 from gpu import global_idx, grid_dim, block_dim
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import LegacyUnsafePointer, bitcast
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from random import Random
 from internal_utils._utils import (
     InitializationType,
@@ -94,7 +96,7 @@ fn _init_mxfp8_scales_launch[
     # using num-threads = 1/4th of length to initialize the array
 
     comptime kernel = _init_mxfp8_scales_gpu[dtype]
-    context.enqueue_function_checked[kernel, kernel](
+    context.enqueue_function[kernel, kernel](
         out_device,
         length,
         grid_dim=(num_blocks),

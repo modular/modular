@@ -77,6 +77,9 @@ class EPConfig:
     dispatch_fp8_config: Float8InputScaleSpec | None = None
     """Configuration for float8 quantization of the dispatch tokens."""
 
+    fused_shared_expert: bool = False
+    """Whether to fuse the shared expert computation with the routed experts."""
+
     def __post_init__(self):
         if self.dispatch_dtype.is_float8():
             if self.dispatch_fp8_config is None:

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout._mixed_layout import MixedLayout, row_major
-from layout._mixed_layout_tensor import MixedLayoutTensor, MixedLayoutTensorIter
+from layout._mixed_layout_tensor import MixedLayoutTensor
 from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
 from layout.int_tuple import IntTuple
 from math import ceildiv
@@ -100,42 +100,6 @@ def test_tensor_span_constructor():
         bytes,
         row_major((Idx(2), Idx[2]())),
     )
-
-
-def test_layout_tensor_iterator():
-    comptime buf_size = 16
-    var storage = InlineArray[Int16, buf_size](uninitialized=True)
-    for i in range(buf_size):
-        storage[i] = i
-    var tile_layout = row_major((Idx[2](), Idx[2]()))
-    var iter = MixedLayoutTensorIter(storage, tile_layout)
-
-    var tile = next(iter)
-    assert_equal(tile[(Idx(0), Idx(0))], 0)
-    assert_equal(tile[(Idx(0), Idx(1))], 1)
-    assert_equal(tile[(Idx(1), Idx(0))], 2)
-    assert_equal(tile[(Idx(1), Idx(1))], 3)
-    assert_equal(tile.layout.size(), 4)
-    tile = next(iter)
-    assert_equal(tile[(Idx(0), Idx(0))], 4)
-    assert_equal(tile[(Idx(0), Idx(1))], 5)
-    assert_equal(tile[(Idx(1), Idx(0))], 6)
-    assert_equal(tile[(Idx(1), Idx(1))], 7)
-    assert_equal(tile.layout.size(), 4)
-    tile = next(iter)
-    assert_equal(tile[(Idx(0), Idx(0))], 8)
-    assert_equal(tile[(Idx(0), Idx(1))], 9)
-    assert_equal(tile[(Idx(1), Idx(0))], 10)
-    assert_equal(tile[(Idx(1), Idx(1))], 11)
-    assert_equal(tile.layout.size(), 4)
-    tile = next(iter)
-    assert_equal(tile[(Idx(0), Idx(0))], 12)
-    assert_equal(tile[(Idx(0), Idx(1))], 13)
-    assert_equal(tile[(Idx(1), Idx(0))], 14)
-    assert_equal(tile[(Idx(1), Idx(1))], 15)
-    assert_equal(tile.layout.size(), 4)
-    with assert_raises():
-        _ = next(iter)  # raises StopIteration
 
 
 def test_fill():
@@ -275,3 +239,152 @@ fn test_slice_3d() raises:
 #
 #     # Original[2][2] = 2*4 + 2 = 10
 #     assert_equal(sliced[(Idx(1), Idx(1))], Float32(10))
+
+
+fn test_vectorize() raises:
+    """Test tensor vectorization functionality."""
+    # Create a 16x16 tensor with row-major layout
+    var data = InlineArray[Int32, 256](uninitialized=True)
+
+    # Initialize with sequential values
+    for i in range(256):
+        data[i] = i
+
+    var tensor = MixedLayoutTensor[dtype = DType.int32](
+        data, row_major[16, 16]()
+    )
+
+    # Vectorize with 4x4 blocks
+    var vectorized = tensor.vectorize[4, 4]()
+
+    # Verify vectorized tensor shape: 16/4 x 16/4 = 4x4
+    assert_equal(vectorized.layout.shape[0].value(), 4)
+    assert_equal(vectorized.layout.shape[1].value(), 4)
+
+    # Verify vectorized tensor strides: original_stride * vector_shape
+    # Original row-major 16x16 has strides [16, 1]
+    # Vectorized strides should be [16*4, 1*4] = [64, 4]
+    assert_equal(vectorized.layout.stride[0].value(), 64)
+    assert_equal(vectorized.layout.stride[1].value(), 4)
+
+    # Verify that vectorized[i, j] points to the start of the (i,j) 4x4 block
+    # Block (0, 0) starts at element 0
+    assert_equal(vectorized[(Idx(0), Idx(0))], 0)
+
+    # Block (0, 1) starts at element 4 (column offset by vector width)
+    assert_equal(vectorized[(Idx(0), Idx(1))], 4)
+
+    # Block (1, 0) starts at element 64 (row offset by vector height * row stride)
+    assert_equal(vectorized[(Idx(1), Idx(0))], 64)
+
+    # Block (1, 1) starts at element 68
+    assert_equal(vectorized[(Idx(1), Idx(1))], 68)
+
+    # Block (3, 3) is the last block, starts at element 3*64 + 3*4 = 204
+    assert_equal(vectorized[(Idx(3), Idx(3))], 204)
+
+
+fn test_vectorize_non_square() raises:
+    """Test vectorization with non-square vector shapes."""
+    var data = InlineArray[Int32, 64](uninitialized=True)
+
+    for i in range(64):
+        data[i] = i
+
+    # Create 8x8 tensor
+    var tensor = MixedLayoutTensor[dtype = DType.int32](data, row_major[8, 8]())
+
+    # Vectorize with 2x4 blocks (different dimensions)
+    var vectorized = tensor.vectorize[2, 4]()
+
+    # Shape should be 8/2 x 8/4 = 4x2
+    assert_equal(vectorized.layout.shape[0].value(), 4)
+    assert_equal(vectorized.layout.shape[1].value(), 2)
+
+    # Strides should be [8*2, 1*4] = [16, 4]
+    assert_equal(vectorized.layout.stride[0].value(), 16)
+    assert_equal(vectorized.layout.stride[1].value(), 4)
+
+    # Verify block positions
+    assert_equal(vectorized[(Idx(0), Idx(0))], 0)  # Block (0,0) at element 0
+    assert_equal(vectorized[(Idx(0), Idx(1))], 4)  # Block (0,1) at element 4
+    assert_equal(vectorized[(Idx(1), Idx(0))], 16)  # Block (1,0) at element 16
+    assert_equal(vectorized[(Idx(3), Idx(1))], 52)  # Block (3,1) at element 52
+
+
+fn test_vectorize_1d() raises:
+    """Test vectorization of 1D tensor."""
+    var data = InlineArray[Int32, 16](uninitialized=True)
+
+    for i in range(16):
+        data[i] = i
+
+    # Create 16-element 1D tensor
+    var tensor = MixedLayoutTensor[dtype = DType.int32](data, row_major[16]())
+
+    # Vectorize with width 4
+    var vectorized = tensor.vectorize[4]()
+
+    # Shape should be 16/4 = 4
+    assert_equal(vectorized.layout.shape[0].value(), 4)
+
+    # Stride should be 1*4 = 4
+    assert_equal(vectorized.layout.stride[0].value(), 4)
+
+    # Verify block positions
+    assert_equal(vectorized[(Idx(0),)], 0)
+    assert_equal(vectorized[(Idx(1),)], 4)
+    assert_equal(vectorized[(Idx(2),)], 8)
+    assert_equal(vectorized[(Idx(3),)], 12)
+
+
+def test_indexing():
+    var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
+    var tensor = MixedLayoutTensor(stack, row_major[2, 2]())
+    assert_equal(tensor[(Int32(0), Int64(0))], 1)
+    assert_equal(tensor[(Int(1), Int64(0))], 3)
+
+
+def test_to_layout_tensor_square():
+    var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
+    var tensor = MixedLayoutTensor(stack, row_major[2, 2]()).to_layout_tensor()
+    assert_equal(tensor.layout, layout.Layout.row_major(2, 2))
+    assert_equal(tensor.rank, 2)
+    assert_equal(
+        rebind[std.utils.IndexList[2]](
+            tensor.runtime_layout.shape.value.canonicalize()
+        ),
+        std.utils.IndexList[2](2, 2),
+    )
+
+
+def test_to_layout_tensor_3d():
+    var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
+    var tensor = MixedLayoutTensor(stack, row_major[64, 8, 4]())
+    var lt = tensor.to_layout_tensor()
+    assert_equal(lt.layout, layout.Layout.row_major(64, 8, 4))
+    assert_equal(lt.rank, 3)
+    assert_equal(
+        rebind[std.utils.IndexList[3]](
+            lt.runtime_layout.shape.value.canonicalize()
+        ),
+        std.utils.IndexList[3](64, 8, 4),
+    )
+
+
+def test_to_layout_tensor_3d_dynamic():
+    var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
+    var tensor = MixedLayoutTensor(
+        stack, row_major((Idx[64](), Idx[8](), Idx(4)))
+    )
+    var lt = tensor.to_layout_tensor()
+    assert_equal(
+        lt.layout, layout.Layout.row_major(64, 8, layout.UNKNOWN_VALUE)
+    )
+    assert_equal(lt.rank, 3)
+    assert_equal(
+        rebind[std.utils.IndexList[3]](
+            lt.runtime_layout.shape.value.canonicalize()
+        ),
+        std.utils.IndexList[3](64, 8, 4),
+    )

@@ -59,9 +59,9 @@ struct DataType:
         ), "Unsupported dtype"
 
         @parameter
-        if dtype is DType.float32:
+        if dtype == DType.float32:
             return Self.FLOAT32
-        elif dtype is DType.float8_e4m3fn:
+        elif dtype == DType.float8_e4m3fn:
             return Self.UINT8
         else:
             return Self.BFLOAT16

@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections.string.string_slice import get_static_string
-from io.write import _WriteBufferHeap, _WriteBufferStack
+from fmt._utils import _WriteBufferHeap, _WriteBufferStack
 from sys import _libc as libc
 from sys import (
     external_call,
@@ -125,7 +125,7 @@ struct _fdopen[mode: StaticString = "a"]:
         ```
         """
         # getdelim will allocate the buffer using malloc().
-        var buffer = UnsafePointer[UInt8, MutOrigin.external]()
+        var buffer = UnsafePointer[UInt8, MutExternalOrigin]()
         var n = UInt64(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
@@ -363,6 +363,27 @@ fn print[
     """Prints elements to the text stream. Each element is separated by `sep`
     and followed by `end`.
 
+    This function accepts any number of values, but their types must implement
+    the [`Writable`](/mojo/std/io/write/Writable) trait. Most built-in types
+    (like `Int`, `Float64`, `Bool`, `String`) implement both
+    [`Stringable`](/mojo/std/builtin/str/Stringable/) and
+    [`Writable`](/mojo/std/io/write/Writable) traits. If a type only
+    implements `Stringable`, it can still be printed by first converting it to
+    `String`.
+
+    For string formatting, use the
+    [`format()`](/mojo/std/collections/string/string/String#format) function.
+
+    Examples:
+
+    ```mojo
+    print("Hello, World!")                   # Hello, World!
+
+    print("The answer is", 42)               # The answer is 42
+
+    print("{} is {}".format("Mojo", "🔥"))   # Mojo is 🔥
+    ```
+
     Parameters:
         Ts: The elements types.
 
@@ -404,14 +425,14 @@ fn print[
             end.write_to(buffer)
             buffer.nul_terminate()
 
-            var span = buffer.as_span()
+            var slice = buffer.as_string_slice()
 
             @parameter
             if is_nvidia_gpu():
-                _printf["%s"](span.unsafe_ptr())
+                _printf["%s"](slice.unsafe_ptr())
             elif is_amd_gpu():
                 var msg = printf_begin()
-                _ = printf_append_string_n(msg, span, is_last=True)
+                _ = printf_append_string_n(msg, slice.as_bytes(), is_last=True)
             else:
                 return CompilationTarget.unsupported_target_error[
                     operation = __get_current_function_name()

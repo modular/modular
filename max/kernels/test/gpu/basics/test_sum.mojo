@@ -16,7 +16,9 @@ from math import ceildiv
 from gpu import block, global_idx, warp
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 comptime dtype = DType.uint64
@@ -55,7 +57,7 @@ def test_warp_sum(ctx: DeviceContext):
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
     comptime kernel = warp_sum_kernel[dtype=dtype]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         out_device,
         in_device,
         size,
@@ -119,7 +121,7 @@ def test_block_sum(ctx: DeviceContext):
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
     comptime kernel = block_sum_kernel[dtype=dtype, block_size=BLOCK_SIZE]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         out_device,
         in_device,
         size,

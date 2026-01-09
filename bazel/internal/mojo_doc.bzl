@@ -26,7 +26,7 @@ def _mojo_doc_implementation(ctx):
         mnemonic = "MojoDoc",
         arguments = [
                         "doc",
-                        "--validate-doc-strings",
+                        "-Werror",
                         "-o",
                         mojodoc_output.path,
                         file_args,

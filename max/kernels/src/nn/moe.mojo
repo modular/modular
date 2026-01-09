@@ -13,7 +13,9 @@
 
 
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os.atomic import Atomic
 from sys.info import simd_width_of
 
@@ -282,8 +284,8 @@ fn _count_expert_tokens[
     //,
     expected_count: Int,
 ](
-    topk_ids: LayoutTensor[input_type, *_, **_],
-    smem: LayoutTensor[mut=True, DType.uint32, *_, **_],
+    topk_ids: LayoutTensor[input_type, ...],
+    smem: LayoutTensor[mut=True, DType.uint32, ...],
     bg_params: _BucketGroupParams[num_threads, input_type],
 ) -> UInt64:
     comptime width = bg_params.width
@@ -384,9 +386,9 @@ fn _copy_tokens_smem_to_gmem[
     //,
     expected_count: Int,
 ](
-    token_expert_order: LayoutTensor[mut=True, DType.uint32, *_, **_],
-    restore_token_order: LayoutTensor[mut=True, DType.uint32, *_, **_],
-    smem: LayoutTensor[DType.uint32, *_, **_],
+    token_expert_order: LayoutTensor[mut=True, DType.uint32, ...],
+    restore_token_order: LayoutTensor[mut=True, DType.uint32, ...],
+    smem: LayoutTensor[DType.uint32, ...],
     g_offset: UInt32,
     total_writes: UInt64,
     bg_params: _BucketGroupParams[num_threads, input_type],
@@ -440,10 +442,10 @@ fn _copy_tokens_to_gmem[
     //,
     expected_count: Int,
 ](
-    topk_ids: LayoutTensor[input_type, *_, **_],
-    smem: LayoutTensor[DType.uint32, *_, **_],
-    token_expert_order: LayoutTensor[mut=True, DType.uint32, *_, **_],
-    restore_token_order: LayoutTensor[mut=True, DType.uint32, *_, **_],
+    topk_ids: LayoutTensor[input_type, ...],
+    smem: LayoutTensor[DType.uint32, ...],
+    token_expert_order: LayoutTensor[mut=True, DType.uint32, ...],
+    restore_token_order: LayoutTensor[mut=True, DType.uint32, ...],
     total_writes: UInt64,
     g_offset: UInt32,
     bg_params: _BucketGroupParams[num_threads, input_type],
@@ -666,12 +668,12 @@ fn moe_create_indices[
     target: StaticString,
     expected_count: Int = 8192,
 ](
-    token_expert_order: LayoutTensor[mut=True, DType.uint32, **_],
-    expert_start_indices: LayoutTensor[mut=True, DType.uint32, **_],
-    restore_token_order: LayoutTensor[mut=True, DType.uint32, **_],
-    expert_ids: LayoutTensor[mut=True, DType.int32, **_],
-    expert_usage_stats: LayoutTensor[mut=True, DType.uint32, **_],
-    topk_ids: LayoutTensor[input_type, **_],
+    token_expert_order: LayoutTensor[mut=True, DType.uint32, ...],
+    expert_start_indices: LayoutTensor[mut=True, DType.uint32, ...],
+    restore_token_order: LayoutTensor[mut=True, DType.uint32, ...],
+    expert_ids: LayoutTensor[mut=True, DType.int32, ...],
+    expert_usage_stats: LayoutTensor[mut=True, DType.uint32, ...],
+    topk_ids: LayoutTensor[input_type, ...],
     context: DeviceContextPtr,
 ) raises:
     __comptime_assert is_gpu[
@@ -720,7 +722,7 @@ fn moe_create_indices[
             expected_count=expected_count,
         ]
 
-        cuda_ctx.enqueue_function_checked[kernel, kernel](
+        cuda_ctx.enqueue_function[kernel, kernel](
             token_expert_order,
             lock,
             expert_start_indices,
@@ -956,10 +958,10 @@ fn router_group_limited[
     norm_weights: Bool,
     target: StaticString,
 ](
-    expert_indices: LayoutTensor[mut=True, DType.int32, **_],
-    expert_weights: LayoutTensor[mut=True, scores_type, **_],
-    expert_scores: LayoutTensor[scores_type, **_],
-    expert_bias: LayoutTensor[bias_type, **_],
+    expert_indices: LayoutTensor[mut=True, DType.int32, ...],
+    expert_weights: LayoutTensor[mut=True, scores_type, ...],
+    expert_scores: LayoutTensor[scores_type, ...],
+    expert_bias: LayoutTensor[bias_type, ...],
     routed_scaling_factor: Float32,
     context: DeviceContextPtr,
 ) raises:
@@ -1023,7 +1025,7 @@ fn router_group_limited[
             num_threads,
         ]
 
-        gpu_ctx.enqueue_function_checked[kernel, kernel](
+        gpu_ctx.enqueue_function[kernel, kernel](
             expert_indices,
             expert_weights,
             expert_scores,

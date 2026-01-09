@@ -125,7 +125,7 @@ more help with it, see our [Pixi basics guide](/pixi).
 
         ```sh
         uv pip install mojo \
-          --index-url https://dl.modular.com/public/nightly/python/simple/ \
+          --index https://whl.modular.com/nightly/simple/ \
           --prerelease allow
         ```
 
@@ -164,7 +164,7 @@ more help with it, see our [Pixi basics guide](/pixi).
 
         ```sh
         pip install --pre mojo \
-          --index-url https://dl.modular.com/public/nightly/python/simple/
+          --extra-index-url https://whl.modular.com/nightly/simple/
         ```
 
         </TabItem>
@@ -507,7 +507,7 @@ specifications.
 <TabItem value="mac" label="Mac">
 
 - macOS Sequoia (15) or later
-- Apple silicon (M1/M2/M3/M4 processor)
+- Apple silicon (M1 - M5 processor)
 - Python 3.10 - 3.14
 - Xcode or Xcode Command Line Tools 16 or later
 - We have [limited compatibility](#gpu-compatibility) for Apple Silicon GPUs.

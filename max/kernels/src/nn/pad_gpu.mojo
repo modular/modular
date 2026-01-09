@@ -10,7 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from gpu import block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
 from layout import Layout, RuntimeLayout, LayoutTensor
@@ -187,7 +189,7 @@ fn _pad_constant_impl[
     comptime block_rows = max_threads // threads_per_row
     comptime kernel = padded_copy_kernel[dtype, tensor_layout, simd_width]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         input_tensor,
         output_tensor,
         rows_per_block,

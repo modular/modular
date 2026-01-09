@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import sqrt
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import LegacyUnsafePointer, bitcast
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -771,7 +773,7 @@ def test_tma_umma[
             b_swizzle=b_swizzle,
             num_threads=block_dim,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             a_tma_op,
             b_tma_op,
             c.device_tensor(),
@@ -801,7 +803,7 @@ def test_tma_umma[
             num_threads=block_dim,
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             a.device_tensor(),
             b_tma_op,
             c.device_tensor(),

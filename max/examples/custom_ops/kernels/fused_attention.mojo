@@ -185,7 +185,7 @@ fn fused_attention_cpu[
     Q: LayoutTensor,
     K: LayoutTensor,
     V: LayoutTensor,
-    O: LayoutTensor[mut=True, *_, **_],
+    O: LayoutTensor[mut=True, ...],
 ):
     comptime N = K.shape[0]()
     comptime D = K.shape[1]()
@@ -373,7 +373,7 @@ def fused_attention_gpu[
     Q: LayoutTensor,
     K: LayoutTensor,
     V: LayoutTensor,
-    O: LayoutTensor[mut=True, *_, **_],
+    O: LayoutTensor[mut=True, ...],
 ):
     comptime kernel_func = fused_attention_kernel[
         Q.dtype,
@@ -387,7 +387,7 @@ def fused_attention_gpu[
         BN,
         BD,
     ]
-    ctx.enqueue_function_checked[kernel_func, kernel_func](
+    ctx.enqueue_function[kernel_func, kernel_func](
         Q,
         K,
         V,

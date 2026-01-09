@@ -13,10 +13,13 @@
 
 from hashlib import default_comp_time_hasher
 from math import ceildiv
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
+
 from sys import size_of
 
 from buffer.buffer import NDBuffer
@@ -75,10 +78,10 @@ trait LoadOp(DevicePassable):
     fn __call__(
         self,
         a_smem_tile: LayoutTensor[
-            _, _, address_space = AddressSpace.SHARED, *_, **_
+            _, _, address_space = AddressSpace.SHARED, ...
         ],
         b_smem_tile: LayoutTensor[
-            _, _, address_space = AddressSpace.SHARED, *_, **_
+            _, _, address_space = AddressSpace.SHARED, ...
         ],
         m: UInt32,
         n: UInt32,
@@ -225,18 +228,18 @@ struct TMALoadOp[
 
     @always_inline
     fn __init__(out self, args: Self.args_type):
-        self.a_tma_ptr = UnsafePointer(
+        self.a_tma_ptr = LegacyUnsafePointer(
             to=rebind[Self.a_tma_type](args.a_tma_op)
         )
-        self.b_tma_ptr = UnsafePointer(
+        self.b_tma_ptr = LegacyUnsafePointer(
             to=rebind[Self.b_tma_type](args.b_tma_op)
         )
 
     @staticmethod
     @always_inline
     def to_kernel_args(
-        a: LayoutTensor[Self.a_type, *_, **_],
-        b: LayoutTensor[Self.b_type, *_, **_],
+        a: LayoutTensor[Self.a_type, ...],
+        b: LayoutTensor[Self.b_type, ...],
         ctx: DeviceContext,
     ) -> Self.args_type:
         var a_tma_op = create_tma_tile[
@@ -264,10 +267,10 @@ struct TMALoadOp[
     fn __call__(
         self,
         a_smem_tile: LayoutTensor[
-            _, _, address_space = AddressSpace.SHARED, *_, **_
+            _, _, address_space = AddressSpace.SHARED, ...
         ],
         b_smem_tile: LayoutTensor[
-            _, _, address_space = AddressSpace.SHARED, *_, **_
+            _, _, address_space = AddressSpace.SHARED, ...
         ],
         m: UInt32,
         n: UInt32,
@@ -636,8 +639,8 @@ struct Pipeline[
         ]()
 
         var num_iters = args.num_iters
-        var m: UInt32 = block_idx.y * UInt(BM)
-        var n: UInt32 = block_idx.x * UInt(BN)
+        var m = UInt32(block_idx.y * UInt(BM))
+        var n = UInt32(block_idx.x * UInt(BN))
 
         for i in range(num_iters):
             if elect_one_thread:
@@ -748,7 +751,7 @@ fn matmul_sm100[
     )
 
     comptime kernel = matmul_kernel[pipeline_t]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         args,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),

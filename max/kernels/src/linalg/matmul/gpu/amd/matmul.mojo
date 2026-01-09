@@ -223,7 +223,9 @@ struct MMATileBuffers[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(config.num_threads())
+    )
 )
 fn gemm_kernel_amd[
     c_type: DType,
@@ -754,7 +756,7 @@ fn write_output_fragments[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c_reg_fragment: LayoutTensor,
-    c_gmem_fragment: LayoutTensor[mut=True, **_],
+    c_gmem_fragment: LayoutTensor[mut=True, ...],
     warp_tile_m: Int,
     warp_tile_n: Int,
     M: Int,

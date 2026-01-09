@@ -59,7 +59,7 @@ fn libm_call[
     ], "input dtype must be float32 or float64"
 
     @parameter
-    if dtype is DType.float32:
+    if dtype == DType.float32:
         return _simd_apply[_float32_dispatch, result_dtype=dtype](arg)
     else:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg)

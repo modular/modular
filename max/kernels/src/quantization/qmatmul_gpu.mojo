@@ -13,7 +13,9 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, is_nvidia_gpu, simd_width_of, size_of
 
 from bit import log2_floor
@@ -106,26 +108,29 @@ fn multistage_mma_q[
     c: LayoutTensor[
         mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL
     ],
-    a_iter_arg: LayoutTensorIter[_, a_layout, **_],
-    b_iter_arg: LayoutTensorIter[b_type, b_layout, **_],
+    a_iter_arg: LayoutTensorIter[_, a_layout, ...],
+    b_iter_arg: LayoutTensorIter[b_type, b_layout, ...],
     a_smem_iter_arg: LayoutTensorIter[
         mut=True,
         a_type,
         a_smem_layout,
-        address_space = AddressSpace.SHARED, **_,
+        address_space = AddressSpace.SHARED,
+        ...,
     ],
     mut b_smem_iter: LayoutTensorIter[
         mut=True,
         b_type,
         b_smem_layout,
-        address_space = AddressSpace.SHARED, **_,
+        address_space = AddressSpace.SHARED,
+        ...,
     ],
     scales_smem_iter_arg: LayoutTensorIter[
         scales_type,
         scales_smem_layout,
-        address_space = AddressSpace.SHARED, **_,
+        address_space = AddressSpace.SHARED,
+        ...,
     ],
-    scales_iter_arg: LayoutTensorIter[scales_type, scales_layout, **_],
+    scales_iter_arg: LayoutTensorIter[scales_type, scales_layout, ...],
     num_iters: Int,
     /,
     *,
@@ -173,7 +178,7 @@ fn multistage_mma_q[
     @parameter
     fn _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
-    ](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
+    ](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
         copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=swizzle](
             dst.vectorize[1, simd_size](),
             src.vectorize[1, simd_size](),
@@ -732,7 +737,7 @@ fn multistage_qgemm_kernel[
             var m = (Int(thread_offset) + dst_idx) // N
             var n = (Int(thread_offset) + dst_idx) % N
             if UInt(m) < M and UInt(n) < UInt(N):
-                var vec = c_reg_frag.ptr.offset(src_idx).load[
+                var vec = (c_reg_frag.ptr + src_idx).load[
                     width=src_simd_width_y,
                     alignment = align_of[SIMD[c_type, src_simd_width_y]](),
                 ]()
@@ -1426,9 +1431,9 @@ fn multistage_gemm_q[
     config: MatmulConfig[a_type, b_type, c_type, True],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, **_],
-    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, **_],
-    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, **_],
+    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, ...],
     runtime_config: MatmulConfig[a_type, b_type, c_type, True],
     ctx: DeviceContext,
 ) raises:
@@ -1487,9 +1492,7 @@ fn multistage_gemm_q[
                         elementwise_lambda_fn,
                     ]
 
-                    ctx.enqueue_function_checked[
-                        gemm_kernel_type, gemm_kernel_type
-                    ](
+                    ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
                         c,
                         a,
                         b,
@@ -1517,7 +1520,7 @@ fn multistage_gemm_q[
         elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
+    ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
         c,
         a,
         b,
@@ -1539,9 +1542,9 @@ fn matmul_gpu_qint4[
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, **_],
-    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, **_],
-    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
+    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     __comptime_assert c.rank == 2
@@ -1564,9 +1567,9 @@ fn matmul_gpu_qint4_impl[
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, **_],
-    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, **_],
-    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
+    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
     ctx: Optional[DeviceContext],
 ) raises:
     __comptime_assert c.rank == 2
@@ -2063,9 +2066,9 @@ fn gpu_qint4_repack_Q4_0[
     //,
     target: StaticString,
 ](
-    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
+    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
     b_packed: LayoutTensor[
-        DType.uint8, address_space = AddressSpace.GENERIC, **_
+        DType.uint8, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -2089,7 +2092,7 @@ fn gpu_qint4_repack_Q4_0[
         b.layout, b_packed.layout, DType.bfloat16
     ]
 
-    cuda_ctx.enqueue_function_checked[repack, repack](
+    cuda_ctx.enqueue_function[repack, repack](
         b,
         b_packed,
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
@@ -2104,8 +2107,8 @@ fn gpu_qint4_repack_GPTQ[
     group_size: Int,
     target: StaticString,
 ](
-    b: LayoutTensor[DType.uint8, **_],
-    b_packed: LayoutTensor[DType.uint8, **_],
+    b: LayoutTensor[DType.uint8, ...],
+    b_packed: LayoutTensor[DType.uint8, ...],
     perm_idx: OptionalReg[
         LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
@@ -2145,7 +2148,7 @@ fn gpu_qint4_repack_GPTQ[
             perm_layout = perm_idx.T.layout,
         ]
 
-        cuda_ctx.enqueue_function_checked[repack, repack](
+        cuda_ctx.enqueue_function[repack, repack](
             b,
             b_packed,
             perm_idx.value(),
@@ -2166,7 +2169,7 @@ fn gpu_qint4_repack_GPTQ[
             UnsafePointer[Int32]()
         )
 
-        cuda_ctx.enqueue_function_checked[repack, repack](
+        cuda_ctx.enqueue_function[repack, repack](
             b,
             b_packed,
             null_tensor,

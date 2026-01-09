@@ -496,7 +496,7 @@ fn sort[
     The function doesn't return anything, the span is updated in-place.
 
     Parameters:
-        T: Copyable type of the underlying data.
+        T: Type of the underlying data.
         origin: Origin of span.
         cmp_fn: The comparison function.
         stable: Whether the sort should be stable.

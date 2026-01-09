@@ -16,7 +16,9 @@ from math import isclose
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from internal_utils import fill, ndbuffer_to_str, zero
 from layout import Layout, LayoutTensor, RuntimeLayout
@@ -715,7 +717,7 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     ]
 
     # This would fail with block_dim=(64, 64) = 4096 threads.
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         LayoutTensor[output_dev_tensor.dtype, layout_4d](
             output_dev_tensor.ptr,
             RuntimeLayout[layout_4d].row_major(

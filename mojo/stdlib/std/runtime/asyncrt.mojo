@@ -31,7 +31,7 @@ struct _Chain(Boolable, Defaultable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
-    var storage: UnsafePointer[Int, MutOrigin.external]
+    var storage: UnsafePointer[Int, MutExternalOrigin]
 
     fn __init__(out self):
         self.storage = {}
@@ -136,7 +136,7 @@ fn parallelism_level() -> Int:
 
 
 fn create_task(
-    var handle: Coroutine[*_], out task: Task[handle.type, handle.origins]
+    var handle: Coroutine[...], out task: Task[handle.type, handle.origins]
 ):
     """Run the coroutine as a task on the AsyncRT Runtime.
 
@@ -158,7 +158,7 @@ fn create_task(
 
 
 @always_inline
-fn _run(var handle: Coroutine[*_], out result: handle.type):
+fn _run(var handle: Coroutine[...], out result: handle.type):
     """Executes a coroutine and waits for its completion.
     This function runs the given coroutine on the async runtime and blocks until
     it completes. The result of the coroutine is stored in the output parameter.
@@ -293,7 +293,7 @@ struct TaskGroupContext(ImplicitlyCopyable):
     var callback: Self.tg_callback_fn_type
     """Callback function to be invoked on the TaskGroup when an operation completes."""
 
-    var task_group: UnsafePointer[TaskGroup, MutOrigin.external]
+    var task_group: UnsafePointer[TaskGroup, MutExternalOrigin]
     """Pointer to the TaskGroup that owns or is associated with this context."""
 
 
@@ -384,7 +384,7 @@ struct TaskGroup(Defaultable):
         self.counter += 1
         task._get_ctx[TaskGroupContext]()[] = TaskGroupContext(
             Self._task_complete_callback,
-            UnsafePointer(to=self).unsafe_origin_cast[MutOrigin.external](),
+            UnsafePointer(to=self).unsafe_origin_cast[MutExternalOrigin](),
         )
         _async_execute[NoneType](task._handle, desired_worker_id)
         self.tasks.append(_TaskGroupBox(task^))
@@ -442,7 +442,7 @@ struct DeviceContextPtr(Defaultable):
     by the graph compiler.
     """
 
-    var _handle: OpaquePointer[MutOrigin.external]
+    var _handle: OpaquePointer[MutExternalOrigin]
     """The underlying pointer to the C++ `DeviceContext`."""
 
     @always_inline
@@ -453,7 +453,7 @@ struct DeviceContextPtr(Defaultable):
         """
         self._handle = {}
 
-    fn __init__(out self, handle: OpaquePointer[MutOrigin.external]):
+    fn __init__(out self, handle: OpaquePointer[MutExternalOrigin]):
         """Initialize a `DeviceContextPtr` from a raw pointer.
 
         Args:

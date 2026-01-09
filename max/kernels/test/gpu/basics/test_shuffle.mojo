@@ -16,7 +16,9 @@ from gpu import barrier, thread_idx
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 
@@ -50,7 +52,7 @@ fn _kernel_launch_helper[
     ctx.enqueue_copy(device_ptr, host_ptr)
 
     comptime kernel = kernel_wrapper[dtype, simd_width, kernel_fn]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         device_ptr, grid_dim=1, block_dim=block_size
     )
 

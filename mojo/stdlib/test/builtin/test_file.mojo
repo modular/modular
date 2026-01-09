@@ -52,13 +52,13 @@ def test_file_read_bytes_multi():
     ) as f:
         var bytes1 = f.read_bytes(12)
         assert_equal(len(bytes1), 12, "12 bytes")
-        var string1 = String(bytes=bytes1)
+        var string1 = String(unsafe_from_utf8=bytes1)
         assert_equal(len(string1), 12, "12 chars")
         assert_equal(string1, "Lorem ipsum ")
 
         var bytes2 = f.read_bytes(6)
         assert_equal(len(bytes2), 6, "6 bytes")
-        var string2 = String(bytes=bytes2)
+        var string2 = String(unsafe_from_utf8=bytes2)
         assert_equal(len(string2), 6, "6 chars")
         assert_equal(string2, "dolor ")
 
@@ -120,7 +120,7 @@ def test_file_read_bytes_large_with_resizing():
         var all_bytes = f.read_bytes()  # size=-1 default
         assert_equal(len(all_bytes), Int(DUMMY_FILE_SIZE))
         # Verify content is correct
-        var content = String(bytes=all_bytes)
+        var content = String(unsafe_from_utf8=all_bytes)
         assert_true(content.startswith("Lorem ipsum"))
 
 

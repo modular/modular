@@ -81,9 +81,9 @@ fn scatter_nd_gpu[
         data_offset += index * element_count_dim
 
     # Set updates_data_base to appropriate offset (from where to copy).
-    var updates_data_base = updates_data_ptr.offset(num_updates_elements * id)
+    var updates_data_base = updates_data_ptr + num_updates_elements * id
     # Set output_data_base to appropriate offset (where to copy).
-    var output_data_base = output_data_ptr.offset(data_offset)
+    var output_data_base = output_data_ptr + data_offset
 
     # Start copying appropriate amount of elements.
     for i in range(num_updates_elements):
@@ -98,10 +98,10 @@ fn scatter_nd[
     indices_rank: Int,
     updates_rank: Int,
 ](
-    data: NDBuffer[dtype, data_rank, *_],
-    indices: NDBuffer[indices_type, indices_rank, *_],
-    updates: NDBuffer[dtype, updates_rank, *_],
-    output: NDBuffer[dtype, data_rank, *_],
+    data: NDBuffer[dtype, data_rank, _, _, _],
+    indices: NDBuffer[indices_type, indices_rank, _, _, _],
+    updates: NDBuffer[dtype, updates_rank, _, _, _],
+    output: NDBuffer[dtype, data_rank, _, _, _],
     ctx: DeviceContext,
 ) raises:
     """
@@ -231,7 +231,7 @@ fn scatter_nd[
     var num_updates_elements = count_copy
     comptime kernel = scatter_nd_gpu[dtype=dtype, indices_type=indices_type]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         output_device,
         indices_device,
         element_counts_and_input_dims_device,
@@ -258,7 +258,7 @@ fn scatter_nd[
 fn linear_fill[
     dtype: DType
 ](
-    buf: NDBuffer[dtype, _, MutAnyOrigin, *_],
+    buf: NDBuffer[dtype, _, MutAnyOrigin, ...],
     elems: VariadicList[Scalar[dtype]],
 ):
     debug_assert(

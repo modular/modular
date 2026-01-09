@@ -7,7 +7,9 @@ modular_py_library(
     srcs = glob(["**/*.py"]),
     deps = [
         requirement("numpy"),
-        "//max/python/max/_core_mojo",
+        requirement("typing-extensions"),
+        requirement("rich"),
+        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/experimental",

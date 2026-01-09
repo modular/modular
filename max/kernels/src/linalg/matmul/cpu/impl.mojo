@@ -62,7 +62,7 @@ trait InnerMatmulKernel(ImplicitlyCopyable):
         simd_size: Int,
     ](
         self,
-        c: LayoutTensor[mut=True, **_],
+        c: LayoutTensor[mut=True, ...],
         a: LayoutTensor,
         b_packed: LayoutTensor,
         global_offset: GemmShape,
@@ -388,7 +388,7 @@ struct TiledMatmul[
     #  need to remap every time K and kernel_cols changes.
     fn _view_buffer_as(
         self,
-        b_packed_ptr: UnsafePointer[Scalar[Self.b_type], **_],
+        b_packed_ptr: UnsafePointer[Scalar[Self.b_type], ...],
         tile_n: Int,
         tile_k: Int,
         n_inner_size: Int,
@@ -595,7 +595,7 @@ fn _matmul_cpu_impl[
         comptime alignment = align_of[SIMD[c.type, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
-        var a_packed_ptr = UnsafePointer[Scalar[a.type], MutOrigin.external]()
+        var a_packed_ptr = UnsafePointer[Scalar[a.type], MutExternalOrigin]()
         if use_i8mm:
             a_packed_ptr = alloc[Scalar[a.type]](mh * kh, alignment=alignment)
         var a_packed = NDBuffer[a.type, 2, _, a.shape](

@@ -21,7 +21,9 @@ from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal
 
 from utils.index import IndexList
@@ -85,7 +87,7 @@ fn test_stmatrix(
 
     mma(d_reg, a_reg, b_reg, d_reg)
     st_matrix[4](
-        c_shared.offset(thread_idx.x * 4), rebind[SIMD[DType.float32, 4]](d_reg)
+        c_shared + thread_idx.x * 4, rebind[SIMD[DType.float32, 4]](d_reg)
     )
 
     var grp = lane_id() // 16
@@ -153,7 +155,7 @@ fn test_stmatrix_gen[
 
     mma(d_reg, a_reg, b_reg, d_reg)
     st_matrix[c_frag_size](
-        c_shared.offset(thread_idx.x * 4),
+        c_shared + thread_idx.x * 4,
         rebind[SIMD[DType.float32, c_frag_size]](d_reg),
     )
     var grp = lane_id() // 16
@@ -204,7 +206,7 @@ fn check_stmatrix_gen[
     ctx.enqueue_copy(b_device, b_host)
 
     comptime kernel_type = test_stmatrix_gen[input_type, output_type]
-    ctx.enqueue_function_checked[kernel_type, kernel_type](
+    ctx.enqueue_function[kernel_type, kernel_type](
         c_device,
         a_device,
         b_device,
@@ -231,7 +233,7 @@ fn check_stmatrix_gen[
         b_tensor.layout,
         BLOCK_DIM,
     ]
-    ctx.enqueue_function_checked[kernel_naive_type, kernel_naive_type](
+    ctx.enqueue_function[kernel_naive_type, kernel_naive_type](
         c_tensor_ref,
         a_tensor,
         b_tensor,
@@ -297,7 +299,7 @@ fn check_stmatrix(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
-    ctx.enqueue_function_checked[test_stmatrix, test_stmatrix](
+    ctx.enqueue_function[test_stmatrix, test_stmatrix](
         c_device,
         a_device,
         b_device,
@@ -341,7 +343,7 @@ fn check_stmatrix(
         b_tensor.layout,
         BLOCK_DIM,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c_tensor_ref,
         a_tensor,
         b_tensor,

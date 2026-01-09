@@ -85,7 +85,7 @@ struct _dirent_macos(Copyable):
 struct _DirHandle:
     """Handle to an open directory descriptor opened via opendir."""
 
-    var _handle: OpaquePointer[MutOrigin.external]
+    var _handle: OpaquePointer[MutExternalOrigin]
 
     fn __init__(out self, var path: String) raises:
         """Construct the _DirHandle using the path provided.
@@ -137,7 +137,7 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", UnsafePointer[_dirent_linux, MutOrigin.external]
+                "readdir", UnsafePointer[_dirent_linux, MutExternalOrigin]
             ](self._handle)
             if not ep:
                 break
@@ -165,7 +165,7 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", UnsafePointer[_dirent_macos, MutOrigin.external]
+                "readdir", UnsafePointer[_dirent_macos, MutExternalOrigin]
             ](self._handle)
             if not ep:
                 break
@@ -228,7 +228,7 @@ fn listdir[PathLike: os.PathLike](path: PathLike) raises -> List[String]:
 # ===----------------------------------------------------------------------=== #
 
 
-@no_inline
+@always_inline
 fn abort() -> Never:
     """Terminates execution, using a target dependent trap instruction if
     available.
@@ -241,7 +241,7 @@ fn abort() -> Never:
         pass
 
 
-@no_inline
+@always_inline
 fn abort[*, prefix: StaticString = "ABORT:"](message: String) -> Never:
     """Calls a target dependent trap instruction if available.
 

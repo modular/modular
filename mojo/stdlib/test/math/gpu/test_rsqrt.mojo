@@ -69,7 +69,7 @@ def run_elementwise[
             )
 
             @parameter
-            if dtype is DType.float32:
+            if dtype == DType.float32:
                 assert_almost_equal(
                     out_host[i],
                     rsqrt(in_host[i]),

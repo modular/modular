@@ -37,7 +37,7 @@ async def test_internvl_tokenizer_new_context_smoke(
     mock_tokenizer = MagicMock()
     mock_tokenizer.eos_token_id = 2
     mock_tokenizer.model_max_length = 2048
-    mock_tokenizer.encode.return_value = [1, 2, 3]
+    mock_tokenizer.encode.return_value = np.array([1, 2, 3], dtype=np.int64)
     mock_tokenizer.apply_chat_template.return_value = "test prompt"
 
     mocker.patch(
@@ -52,6 +52,7 @@ async def test_internvl_tokenizer_new_context_smoke(
     tokenizer = InternVLTokenizer("test-model")
 
     # Mock the processor to return expected format
+    # InternVL processor returns Python lists for input_ids, not numpy arrays
     tokenizer.processor = MagicMock()
     tokenizer.processor.return_value = {"input_ids": [1, 2, 3]}
     tokenizer.processor.apply_chat_template.return_value = "test prompt"
@@ -76,7 +77,9 @@ async def test_super_long(
     mock_tokenizer = MagicMock()
     mock_tokenizer.eos_token_id = 2
     mock_tokenizer.model_max_length = 5
-    mock_tokenizer.encode.return_value = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    mock_tokenizer.encode.return_value = np.array(
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=np.int64
+    )
     mock_tokenizer.apply_chat_template.return_value = "test prompt"
 
     mocker.patch(
@@ -91,6 +94,7 @@ async def test_super_long(
     tokenizer = InternVLTokenizer("test-model")
 
     # Mock the processor to return expected format
+    # InternVL processor returns Python lists for input_ids, not numpy arrays
     tokenizer.processor = MagicMock()
     tokenizer.processor.return_value = {
         "input_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -119,7 +123,7 @@ async def test_internvl_tokenizer_image_token_indices(
     mock_tokenizer = MagicMock()
     mock_tokenizer.eos_token_id = 2
     mock_tokenizer.model_max_length = 2048
-    mock_tokenizer.encode.return_value = [1, 2, 3]
+    mock_tokenizer.encode.return_value = np.array([1, 2, 3], dtype=np.int64)
     mock_tokenizer.apply_chat_template.return_value = "test prompt"
 
     mocker.patch(
@@ -142,6 +146,7 @@ async def test_internvl_tokenizer_image_token_indices(
 
     # Mock the processor to return input_ids with image token
     # IMAGE_CONTEXT_TOKEN_ID = 151667
+    # InternVL processor returns Python lists for input_ids, not numpy arrays
     tokenizer.processor = MagicMock()
     tokenizer.processor.return_value = {
         # 2 image tokens at positions 2, 3
@@ -194,6 +199,7 @@ async def test_internvl_tokenizer_image_placement(
     mock_tokenizer.eos_token_id = 2
     mock_tokenizer.model_max_length = 4096
     # Need one image in input_ids
+    # InternVL processor returns Python lists for input_ids, not numpy arrays
     mock_tokenizer.return_value = {"input_ids": [1, 2, 151667, 151667, 3, 4]}
 
     # Define a fixed, multi-turn prompt that the mocked template will return.

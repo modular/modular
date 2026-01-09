@@ -18,7 +18,7 @@ from .pwd import Passwd
 comptime uid_t = Int32
 comptime gid_t = Int32
 comptime time_t = Int
-comptime char = UnsafePointer[c_char, MutOrigin.external]
+comptime char = UnsafePointer[c_char, MutExternalOrigin]
 
 
 @register_passable("trivial")
@@ -53,7 +53,7 @@ fn _build_pw_struct(
 
 fn _getpw_macos(uid: UInt32) raises -> Passwd:
     var passwd_ptr = external_call[
-        "getpwuid", UnsafePointer[_C_Passwd, MutOrigin.external]
+        "getpwuid", UnsafePointer[_C_Passwd, MutExternalOrigin]
     ](uid)
     if not passwd_ptr:
         raise Error("user ID not found in the password database: ", uid)
@@ -62,7 +62,7 @@ fn _getpw_macos(uid: UInt32) raises -> Passwd:
 
 fn _getpw_macos(var name: String) raises -> Passwd:
     var passwd_ptr = external_call[
-        "getpwnam", UnsafePointer[_C_Passwd, MutOrigin.external]
+        "getpwnam", UnsafePointer[_C_Passwd, MutExternalOrigin]
     ](name.as_c_string_slice().unsafe_ptr())
     if not passwd_ptr:
         raise Error("user name not found in the password database: ", name)

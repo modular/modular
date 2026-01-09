@@ -13,7 +13,9 @@
 
 from gpu import *
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal, assert_true
 
 from utils.numerics import inf, isnan, nan, neg_inf
@@ -54,7 +56,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
     var block_dim = 32
 
     comptime kernel = id
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         in_device,
         out_device,
         length,

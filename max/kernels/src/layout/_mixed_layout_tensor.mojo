@@ -39,6 +39,8 @@ from ._mixed_tuple import (
     _AllEqual,
     _IntToComptimeInt,
     mixed_tuple,
+    mixed_int_tuple_to_int_tuple,
+    mixed_int_tuple_to_index_list,
 )
 
 
@@ -205,13 +207,13 @@ struct MixedLayoutTensor[
         ]
 
     @always_inline("nodebug")
-    fn __getitem__(
-        self, tuple: Tuple
-    ) -> Scalar[Self.dtype] where Variadic.size(
-        tuple.element_types
-    ) == Variadic.size(Self.shape_types) where _AllEqual[
-        Int, *tuple.element_types
-    ]:
+    fn __getitem__[
+        *IndexTypes: Indexer & Copyable
+    ](self, tuple: Tuple[*IndexTypes]) -> Scalar[
+        Self.dtype
+    ] where Variadic.size(tuple.element_types) == Variadic.size(
+        Self.shape_types
+    ):
         var linear_tuple: MixedTuple[
             *_Splatted[RuntimeInt[Self.linear_idx_type], Self.rank]
         ]
@@ -223,7 +225,7 @@ struct MixedLayoutTensor[
         for i in range(Variadic.size(tuple.element_types)):
             UnsafePointer(to=linear_tuple[i]).init_pointee_copy(
                 rebind[type_of(linear_tuple).element_types[i]](
-                    RuntimeInt[Self.linear_idx_type](rebind[Int](tuple[i]))
+                    RuntimeInt[Self.linear_idx_type](index(tuple[i]))
                 )
             )
         return self.ptr[
@@ -233,7 +235,7 @@ struct MixedLayoutTensor[
     @always_inline("nodebug")
     fn __setitem__(
         self, tuple: MixedTuple, value: Scalar[Self.dtype]
-    ) where tuple.rank == Self.rank where Self.mut:
+    ) where (tuple.rank == Self.rank) & Self.mut:
         self.ptr.mut_cast[True]()[
             self.layout[linear_idx_type = Self.linear_idx_type](tuple)
         ] = value
@@ -429,7 +431,7 @@ struct MixedLayoutTensor[
         Self.origin,
         address_space = Self.address_space,
         linear_idx_type = Self.linear_idx_type,
-    ] where (Variadic.size(slices) == Self.rank) where Self.ALL_DIMS_KNOWN:
+    ] where (Variadic.size(slices) == Self.rank) & Self.ALL_DIMS_KNOWN:
         """Extract a slice from the tensor using slice objects.
 
         This method creates a view into a subset of the tensor defined by the
@@ -537,7 +539,121 @@ struct MixedLayoutTensor[
             Self.origin,
             address_space = Self.address_space,
             linear_idx_type = Self.linear_idx_type,
-        ](self.ptr.offset(offset), new_layout^)
+        ](self.ptr + offset, new_layout^)
+
+    # ===------------------------------------------------------------------=== #
+    # Vectorization
+    # ===------------------------------------------------------------------=== #
+
+    comptime VectorizedType[*vector_shape: Int] = MixedLayoutTensor[
+        shape_types = _CeilDiv[
+            Self.shape_types, _IntToComptimeInt[*vector_shape]
+        ],
+        stride_types = _Multiply[
+            Self.stride_types, _IntToComptimeInt[*vector_shape]
+        ],
+        dtype = Self.dtype,
+        origin = Self.origin,
+        address_space = Self.address_space,
+        linear_idx_type = Self.linear_idx_type,
+    ]
+    """Type alias for vectorized tensor types.
+
+    Parameters:
+        vector_shape: The shape of each vector unit along each axis.
+    """
+
+    comptime SIMDVectorizedType = Self.VectorizedType[
+        1, simd_width_of[Self.dtype]()
+    ]
+    """Result type for SIMD-width vectorization."""
+
+    @always_inline("nodebug")
+    fn vectorize[
+        *vector_shape: Int
+    ](self) -> Self.VectorizedType[*vector_shape] where Self.ALL_DIMS_KNOWN:
+        """Reshape a tensor into a vectorized form for efficient SIMD operations.
+
+        This method transforms the tensor's logical layout to enable efficient
+        vectorized processing, treating blocks of elements as vector units. The
+        transformation is particularly useful for SIMD (Single Instruction
+        Multiple Data) operations and hardware acceleration.
+
+        Unlike `LayoutTensor.vectorize`, this simplified implementation does not
+        track the vector shape in an `element_layout`. Users must manually handle
+        loading SIMD vectors from each logical element position.
+
+        Parameters:
+            vector_shape: The dimensions of each vector unit along each axis of
+                the tensor. For example, in a 2D tensor, `vectorize[4, 4]` treats
+                4x4 blocks as vector units.
+
+        Returns:
+            A view of the tensor with a vectorized layout, where each element in
+            the resulting tensor represents the start of a vector block from the
+            original tensor.
+
+        Constraints:
+            All dimensions must be statically known (`ALL_DIMS_KNOWN`).
+
+        Example:
+
+        For a 16x16 tensor, `vectorize[4, 4]` will produce a 4x4 tensor
+        where each element position is the starting point of a 4x4 block
+        from the original tensor. The strides are scaled by the vector shape
+        so that adjacent elements in the vectorized tensor are spaced apart
+        by the vector dimensions.
+
+        Performance:
+
+        - Creates a view without copying data, making it very efficient.
+        - Enables strided access patterns suitable for SIMD vector loads.
+        - Zero-cost abstraction at compile time when used with static shapes.
+        """
+        return _vectorize(self, mixed_tuple[*vector_shape]())
+
+    @always_inline("nodebug")
+    fn vectorize(self) -> Self.SIMDVectorizedType where Self.ALL_DIMS_KNOWN:
+        """Return a SIMD-width vectorized view of this tensor.
+
+        This is a convenience method that vectorizes along the last dimension
+        by the SIMD width for the tensor's dtype.
+
+        Returns:
+            A `Self.VectorizedType[1, simd_width_of[Self.dtype]()]` view whose
+            last dimension stride equals the SIMD width for the tensor's dtype.
+        """
+        return self.vectorize[1, simd_width_of[Self.dtype]()]()
+
+    @always_inline("nodebug")
+    fn to_layout_tensor(
+        self,
+        out result: LayoutTensor[
+            Self.dtype,
+            Layout(
+                mixed_int_tuple_to_int_tuple[*Self.shape_types](),
+                mixed_int_tuple_to_int_tuple[*Self.stride_types](),
+            ),
+            Self.origin,
+            address_space = Self.address_space,
+        ],
+    ):
+        """Return a LayoutTensor with the same shape, stride, and address space
+        of this tensor. Currently it expects flat layouts.
+
+        This is a utility to help with porting LayoutTensor methods to this type.
+
+        Returns:
+            A LayoutTensor with the same shape, stride, and address space of
+            this tensor.
+        """
+        return {
+            self.ptr,
+            layout.RuntimeLayout[result.layout](
+                mixed_int_tuple_to_index_list(self.layout.shape),
+                mixed_int_tuple_to_index_list(self.layout.stride),
+            ),
+        }
 
 
 @always_inline("nodebug")
@@ -551,14 +667,14 @@ fn stack_allocation[
     shape_types=shape_types,
     stride_types=stride_types,
     dtype,
-    MutOrigin.external,
+    MutExternalOrigin,
     address_space=address_space,
 ] where layout.ALL_DIMS_KNOWN:
     return MixedLayoutTensor[
         shape_types=shape_types,
         stride_types=stride_types,
         dtype,
-        MutOrigin.external,
+        MutExternalOrigin,
         address_space=address_space,
     ](
         std.memory.stack_allocation[
@@ -650,7 +766,7 @@ fn _tile[
     //,
 ](
     data_layout_tensor: MixedLayoutTensor[
-        shape_types=shape_types, stride_types=stride_types, dtype, **_
+        shape_types=shape_types, stride_types=stride_types, dtype, ...
     ],
     tile_shape: MixedTuple[*tile_shape_types],
     tile_coords: MixedTuple[*coord_types],
@@ -722,253 +838,65 @@ fn _tile[
     )
 
 
-struct MixedLayoutTensorIter[
-    mut: Bool,
+@always_inline("nodebug")
+fn _vectorize[
     dtype: DType,
     shape_types: Variadic.TypesOfTrait[MixedTupleLike],
     stride_types: Variadic.TypesOfTrait[MixedTupleLike],
+    vector_shape_types: Variadic.TypesOfTrait[MixedTupleLike],
     //,
-    origin: Origin[mut=mut],
-    /,
-    *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-    axis: Optional[Int] = None,
-    linear_idx_type: DType = _get_index_type(address_space),
-](ImplicitlyCopyable, Iterable, Iterator):
-    """Iterator for traversing a memory buffer with a specific layout.
+](
+    data_layout_tensor: MixedLayoutTensor[
+        shape_types=shape_types, stride_types=stride_types, dtype, ...
+    ],
+    vector_shape: MixedTuple[*vector_shape_types],
+) -> MixedLayoutTensor[
+    shape_types = _CeilDiv[shape_types, vector_shape_types],
+    stride_types = _Multiply[stride_types, vector_shape_types],
+    dtype,
+    data_layout_tensor.origin,
+    address_space = data_layout_tensor.address_space,
+    linear_idx_type = data_layout_tensor.linear_idx_type,
+]:
+    """Create a vectorized view of a MixedLayoutTensor.
 
-    `MixedLayoutTensorIter` provides a way to iterate through memory according to a
-    specific layout pattern, constructing layout tensors at each position. This
-    enables efficient traversal of multi-dimensional data structures with custom
-    memory layouts.
+    This function creates a new view where the shape is divided by the vector
+    shape (ceiling division) and strides are multiplied by the vector shape.
+    This effectively groups elements into vector-sized blocks.
 
     Parameters:
-        mut: Whether the iterator allows mutation of the underlying data.
-        dtype: The data type of the tensor elements.
-        shape_types: The inferred shape types from the layout.
-        stride_types: The inferred stride types from the layout.
-        origin: Origin tracking for memory safety.
-        address_space: The memory address space (`GLOBAL`, `SHARED`, etc.).
-        axis: Optional axis for dimension-specific operations.
-        linear_idx_type: Integer type used for indexing into memory.
+        dtype: Data type of the tensor elements.
+        shape_types: Shape types of the source tensor.
+        stride_types: Stride types of the source tensor.
+        vector_shape_types: Types of the vector shape dimensions.
 
-    Notes:
+    Args:
+        data_layout_tensor: The source tensor to vectorize.
+        vector_shape: The shape of each vector unit as a MixedTuple.
 
-    The returned layout tensor is NOT vectorized. Users should explicitly vectorize
-    if needed for performance-critical operations.
+    Returns:
+        A MixedLayoutTensor representing a vectorized view. Each logical element
+        in the result corresponds to a vector block in the original tensor.
     """
+    comptime NewShapeTypes = _CeilDiv[shape_types, vector_shape_types]
+    comptime NewStrideTypes = _Multiply[stride_types, vector_shape_types]
 
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = Self
-    comptime Element = Self.MixedLayoutTensorType
+    # Since ALL_DIMS_KNOWN is required, we can use compile-time values directly
+    __comptime_assert MixedTuple[*NewShapeTypes].ALL_DIMS_KNOWN
+    __comptime_assert MixedTuple[*NewStrideTypes].ALL_DIMS_KNOWN
+    var new_shape = MixedTuple[*NewShapeTypes]()
+    var new_stride = MixedTuple[*NewStrideTypes]()
 
-    comptime linear_uint_type = Scalar[
-        _unsigned_integral_type_of[Self.linear_idx_type]()
-    ]
-    """The unsigned integer type used for indexing into memory."""
+    var new_layout = MixedLayout(new_shape^, new_stride^)
 
-    var ptr: UnsafePointer[
-        Scalar[Self.dtype], Self.origin, address_space = Self.address_space
-    ]
-    """Pointer to the memory region being iterated, with appropriate type and memory attributes."""
-
-    var offset: Self.linear_uint_type
-    """Current offset from the base pointer, representing the iterator's position in memory."""
-
-    var stride: Self.linear_uint_type
-    """Step size between consecutive elements or blocks in memory during iteration."""
-
-    var bound: Self.linear_uint_type
-    """Upper bound of the memory region, limiting the iteration range."""
-
-    comptime MixedLayoutType = MixedLayout[Self.shape_types, Self.stride_types]
-    var layout: Self.MixedLayoutType
-    """Representation of the layout pattern used for mapping logical indices to memory locations."""
-
-    var idx: Self.linear_uint_type
-    """Current logical index position within the iteration sequence."""
-
-    @always_inline
-    fn __init__(
-        out self: MixedLayoutTensorIter[
-            dtype = Self.dtype,
-            shape_types = Self.shape_types,
-            stride_types = Self.stride_types,
-            Self.origin,
-            address_space = AddressSpace.GENERIC,
-            axis = Self.axis,
-            linear_idx_type = Self.linear_idx_type,
-        ],
-        span: Span[Scalar[Self.dtype], Self.origin],
-        var layout: MixedLayout[Self.shape_types, Self.stride_types],
-        offset: Self.linear_uint_type = 0,
-        idx: Self.linear_uint_type = 0,
-    ):
-        """Initialize an iterator with a runtime layout.
-
-        Creates an iterator with a runtime-determined layout, allowing for more
-        flexible memory traversal patterns.
-
-        Args:
-            span: Span containing the memory region.
-            layout: Layout determined at runtime.
-            offset: Initial offset from the base pointer.
-            idx: Initial index position.
-
-        Constraints:
-            The runtime layout must have the same bitwidth as specified for the
-            iterator.
-        """
-        self = {span.unsafe_ptr(), len(span), layout^, offset, idx}
-
-    @always_inline
-    fn __init__(
-        out self,
-        ptr: UnsafePointer[
-            Scalar[Self.dtype], Self.origin, address_space = Self.address_space
-        ],
-        bound: Self.linear_uint_type,
-        var layout: MixedLayout[Self.shape_types, Self.stride_types],
-        offset: Self.linear_uint_type = 0,
-        idx: Self.linear_uint_type = 0,
-    ):
-        """Initialize an iterator with a runtime layout.
-
-        Creates an iterator with a runtime-determined layout, allowing for more
-        flexible memory traversal patterns.
-
-        Args:
-            ptr: Pointer to the beginning of the memory region.
-            bound: Upper bound of the memory region.
-            layout: Layout determined at runtime.
-            offset: Initial offset from the base pointer.
-            idx: Initial index position.
-
-        Constraints:
-            The runtime layout must have the same bitwidth as specified for the
-            iterator.
-        """
-
-        __comptime_assert (
-            Self.linear_idx_type.is_signed()
-        ), "Linear index type must be signed."
-
-        self.ptr = ptr
-        self.offset = offset
-        self.bound = bound
-        self.layout = layout
-        self.stride = layout.size()
-        self.idx = idx
-
-    comptime MixedLayoutTensorType = MixedLayoutTensor[
-        shape_types = Self.shape_types,
-        stride_types = Self.stride_types,
-        Self.dtype,
-        Self.origin,
-        address_space = Self.address_space,
-        linear_idx_type = Self.linear_idx_type,
-    ]
-
-    @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        return self
-
-    @always_inline
-    fn get(self) -> Self.MixedLayoutTensorType:
-        """Get the layout tensor at the current iterator position.
-
-        Returns a layout tensor representing the data at the current position
-        of the iterator.
-
-        Returns:
-            A tensor view at the current iterator position with the
-            same type, layout, and memory characteristics as specified by the
-            output parameter.
-        """
-
-        return Self.MixedLayoutTensorType(
-            self.ptr + Int(self.offset),
-            self.layout,
-        )
-
-    @always_inline
-    fn _incr(mut self):
-        """Increment the iterator by 1.
-
-        Advances the iterator by a single position. This is equivalent to
-        `iter += 1` but without the division operation, making it more
-        efficient.
-        """
-        self.offset += self.stride
-
-    @always_inline
-    fn __next__(mut self) raises StopIteration -> Self.Element:
-        """Return an iterator pointing to a position ahead by rhs steps.
-
-        Creates a new iterator that points rhs positions ahead of the current
-        one.
-
-
-        Returns:
-           A MixedLayoutTensor at the given offset.
-        """
-        if self.offset >= self.bound:
-            raise StopIteration()
-
-        var next_idx = Self.linear_uint_type(0)
-        var next_offset = self.offset + self.stride
-        var item = self.get()
-
-        @parameter
-        if Self.axis:
-            next_idx = self.idx + 1
-        self.idx = next_idx
-        self.offset = next_offset
-
-        return item^
-
-    comptime BitcastType[
-        new_type: DType, *, address_space: AddressSpace = Self.address_space
-    ] = MixedLayoutTensorIter[
-        dtype=new_type,
-        shape_types = Self.shape_types,
-        stride_types = Self.stride_types,
-        Self.origin,
-        address_space=address_space,
-        linear_idx_type = Self.linear_idx_type,
-    ]
-
-    @always_inline
-    fn bitcast[
-        new_type: DType,
-        *,
-        target_address_space: AddressSpace = Self.address_space,
-    ](self) -> Self.BitcastType[new_type, address_space = Self.address_space]:
-        """Reinterpret the iterator's underlying pointer as a different data
-        type.
-
-        This method performs a bitcast operation, allowing you to view the same
-        memory location as a different data type without copying or converting
-        the data.
-
-        Parameters:
-            new_type: The target data type to cast to.
-            target_address_space: The memory address space for the new
-                iterator (defaults to current).
-
-        Returns:
-            A new MixedLayoutTensorIter with the same layout but different data type.
-        """
-        return Self.BitcastType[new_type, address_space = Self.address_space](
-            self.ptr.bitcast[Scalar[new_type]]().address_space_cast[
-                Self.address_space
-            ](),
-            Int(self.bound),
-            self.layout,
-            Int(self.offset),
-            idx=Int(self.idx),
-        )
+    return MixedLayoutTensor[
+        shape_types=NewShapeTypes,
+        stride_types=NewStrideTypes,
+        dtype,
+        data_layout_tensor.origin,
+        address_space = data_layout_tensor.address_space,
+        linear_idx_type = data_layout_tensor.linear_idx_type,
+    ](data_layout_tensor.ptr, new_layout^)
 
 
 fn _get_index_type(address_space: AddressSpace) -> DType:
@@ -1024,6 +952,25 @@ comptime _Divide[
     Mapper = _DivideMapper[Rhs=Rhs],
 ]
 
+comptime _CeilDivMapper[
+    Rhs: Variadic.TypesOfTrait[MixedTupleLike],
+    element_types: Variadic.TypesOfTrait[MixedTupleLike],
+    idx: Int,
+] = ComptimeInt[
+    (element_types[idx].STATIC_VALUE + Rhs[idx].STATIC_VALUE - 1)
+    // Rhs[idx].STATIC_VALUE
+]
+
+
+comptime _CeilDiv[
+    Lhs: Variadic.TypesOfTrait[MixedTupleLike],
+    Rhs: Variadic.TypesOfTrait[MixedTupleLike],
+] = _MapVariadicAndIdxToType[
+    To=MixedTupleLike,
+    VariadicType=Lhs,
+    Mapper = _CeilDivMapper[Rhs=Rhs],
+]
+
 
 comptime _ToRuntimeMapper[
     dtype: DType,
@@ -1073,113 +1020,3 @@ comptime _Slice[
     VariadicType=element_types,
     Mapper = _SliceMapper[slices=slices],
 ]
-
-
-@always_inline("nodebug")
-fn copy[
-    thread_layout: MixedLayout
-](
-    dst: MixedLayoutTensor,
-    src: MixedLayoutTensor,
-) where dst.SHAPE_KNOWN where src.SHAPE_KNOWN where dst.mut:
-    # global memory
-    var src_fragment = src.distribute[thread_layout=thread_layout](
-        Int(thread_idx.x)
-    )
-    # shared memory
-    var dst_fragment = dst.distribute[thread_layout=thread_layout](
-        Int(thread_idx.x)
-    )
-
-    # Two fragments have the same shape but different stride
-    comptime size = MixedTuple[*dst_fragment.shape_types].STATIC_PRODUCT
-
-    @parameter
-    for i in range(size):
-        var dst_idx = dst_fragment.layout(MixedTuple(Idx[i]()))
-        var src_idx = src_fragment.layout(MixedTuple(Idx[i]()))
-        dst_fragment.ptr.mut_cast[True]()[dst_idx] = src_fragment.ptr[
-            src_idx
-        ].cast[dst.dtype]()
-
-
-@always_inline("nodebug")
-fn copy_local[
-    warp_layout: MixedLayout
-](
-    dst: MixedLayoutTensor,
-    src: MixedLayoutTensor,
-) where dst.SHAPE_KNOWN where src.SHAPE_KNOWN where dst.mut:
-    """Copy data from src to dst using warp-local distribution.
-
-    This function distributes work across threads in a warp. For a 2D warp layout,
-    it computes the thread's position and determines which portion of the source
-    data to copy to the destination.
-
-    Handles both cases:
-    - src is [M, 1] (column vector) → distribute by rows, each thread gets M/num_rows elements
-    - src is [1, N] (row vector) → distribute by columns, each thread gets N/num_cols elements
-
-    Parameters:
-        warp_layout: The layout describing how threads are arranged in the warp.
-            For example, (8, 4) : (4, 1) means 8 rows × 4 columns of threads.
-
-    Args:
-        dst: Destination tensor (must be mutable, rank 1).
-        src: Source tensor to copy from (rank 2, with one dimension = 1).
-
-    Constraints:
-        - Both dst and src must have statically known shapes.
-        - dst must be mutable and rank 1.
-        - src must be rank 2 with one dimension equal to 1.
-    """
-    # Convert lane index (thread within warp) to warp coordinates (row, col)
-    var coord = warp_layout.idx2crd(Int(lane_id()))
-    var row = coord[0].value()
-    var col = coord[1].value()
-
-    comptime dst_size = MixedTuple[*dst.shape_types].STATIC_PRODUCT
-
-    @parameter
-    if src.rank == 2:
-        comptime src_dim0 = src.shape_types[0].STATIC_VALUE
-        comptime src_dim1 = src.shape_types[1].STATIC_VALUE
-
-        @parameter
-        if src_dim1 == 1:
-            # Source is [M, 1] - column vector, distribute by rows
-            # Each of the num_rows threads gets M/num_rows elements
-            comptime num_rows = warp_layout.shape_types[0].STATIC_VALUE
-            comptime elems_per_thread = src_dim0 // num_rows
-
-            __comptime_assert (
-                dst_size == elems_per_thread
-            ), "dst size must match elements per thread"
-
-            @parameter
-            for i in range(elems_per_thread):
-                # Each thread accesses elements based on its row
-                var src_row = row * elems_per_thread + i
-                __comptime_assert dst.rank == 1
-                dst[mixed_tuple[i]()] = src[(src_row, 0)].cast[dst.dtype]()
-
-        elif src_dim0 == 1:
-            # Source is [1, N] - row vector, distribute by columns
-            # Each of the num_cols threads gets N/num_cols elements
-            comptime num_cols = warp_layout.shape_types[1].STATIC_VALUE
-            comptime elems_per_thread = src_dim1 // num_cols
-
-            __comptime_assert (
-                dst_size == elems_per_thread
-            ), "dst size must match elements per thread"
-
-            @parameter
-            for i in range(elems_per_thread):
-                # Each thread accesses elements based on its column
-                var src_col = col * elems_per_thread + i
-                __comptime_assert dst.rank == 1
-                dst[mixed_tuple[i]()] = src[(0, src_col)].cast[dst.dtype]()
-        else:
-            abort("src must have one dimension equal to 1")
-    else:
-        abort("src must be rank 2")

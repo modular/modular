@@ -70,7 +70,6 @@ methods.
 """
 
 
-from collections.string.string import _chr_ascii
 from builtin.variadics import Variadic
 from utils import Variant
 
@@ -92,7 +91,7 @@ struct _PrecompiledEntries[
     var format: StringSlice[Self.origin]
 
 
-comptime _FormatArgs = VariadicPack[element_trait=_CurlyEntryFormattable, *_]
+comptime _FormatArgs = VariadicPack[element_trait=_CurlyEntryFormattable, ...]
 
 
 struct _FormatUtils:

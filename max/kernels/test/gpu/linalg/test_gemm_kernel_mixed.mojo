@@ -18,19 +18,21 @@ from std.builtin.variadics import Variadic
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu import block_idx, thread_idx, warp_id, global_idx, lane_id
+from gpu.memory import async_copy_wait_all
 from gpu.sync import barrier
 from memory import alloc
 from testing import assert_almost_equal
 from utils import Index
 from utils.numerics import get_accum_type
 
-
-from layout._mixed_layout_tensor import (
-    MixedLayoutTensor,
-    copy,
-    copy_local,
-    stack_allocation,
+from layout.layout_tensor import (
+    Layout,
+    copy_sram_to_local,
+    copy_dram_to_sram_async,
+    copy_local_to_dram,
 )
+
+from layout._mixed_layout_tensor import MixedLayoutTensor, stack_allocation
 from layout._mixed_layout import row_major
 from layout._mixed_tuple import (
     MixedTuple,
@@ -71,29 +73,28 @@ fn gemm_kernel[
         shape_types=c_shape_types,
         stride_types=c_stride_types,
         c_dtype,
-        MutOrigin.external,
+        MutExternalOrigin,
     ],
     mat_a: MixedLayoutTensor[
         shape_types=a_shape_types,
         stride_types=a_stride_types,
         a_dtype,
-        MutOrigin.external,
+        MutExternalOrigin,
     ],
     mat_b: MixedLayoutTensor[
         shape_types=b_shape_types,
         stride_types=b_stride_types,
         b_dtype,
-        MutOrigin.external,
+        MutExternalOrigin,
     ],
 ) where (
-    mat_a.rank == 2
-) where (
-    mat_b.rank == 2
-) where (
-    mat_c.rank == 2
-) where (
-    mat_a.ALL_DIMS_KNOWN
-) where mat_b.ALL_DIMS_KNOWN where mat_c.ALL_DIMS_KNOWN:
+    (mat_a.rank == 2)
+    & (mat_b.rank == 2)
+    & (mat_c.rank == 2)
+    & mat_a.ALL_DIMS_KNOWN
+    & mat_b.ALL_DIMS_KNOWN
+    & mat_c.ALL_DIMS_KNOWN
+):
     var K = mat_a.dim[1]()
 
     var a_tile_sram = stack_allocation[
@@ -134,19 +135,18 @@ fn gemm_kernel[
         var a_tile_dram = mat_a.tile[BM, BK](
             (Idx(Int(block_idx.y)), Idx(Int(k_i)))
         )
-
-        copy[thread_layout = row_major[NUM_THREADS // BK, BK]()](
-            a_tile_sram, a_tile_dram
-        )
+        copy_dram_to_sram_async[
+            thread_layout = Layout.row_major(NUM_THREADS // BK, BK)
+        ](a_tile_sram.to_layout_tensor(), a_tile_dram.to_layout_tensor())
 
         var b_tile_dram = mat_b.tile[BK, BN](
             (Idx(Int(k_i)), Idx(Int(block_idx.x)))
         )
+        copy_dram_to_sram_async[
+            thread_layout = Layout.row_major(NUM_THREADS // BN, BN)
+        ](b_tile_sram.to_layout_tensor(), b_tile_dram.to_layout_tensor())
 
-        copy[thread_layout = row_major[NUM_THREADS // BN, BN]()](
-            b_tile_sram, b_tile_dram
-        )
-
+        async_copy_wait_all()
         barrier()
 
         @parameter
@@ -158,8 +158,12 @@ fn gemm_kernel[
             var b_smem_warp_row = b_tile_sram.tile[BK, WN](
                 (Idx[0](), Idx(warp_n))
             ).slice[k_j : k_j + 1, :]()
-            copy_local[warp_layout=warp_layout](a_reg, a_smem_warp_row)
-            copy_local[warp_layout=warp_layout](b_reg, b_smem_warp_row)
+            copy_sram_to_local[
+                src_warp_layout = warp_layout.to_layout(), axis=0
+            ](a_reg.to_layout_tensor(), a_smem_warp_row.to_layout_tensor())
+            copy_sram_to_local[
+                src_warp_layout = warp_layout.to_layout(), axis=1
+            ](b_reg.to_layout_tensor(), b_smem_warp_row.to_layout_tensor())
             outer_product_acc(c_reg, a_reg, b_reg)
 
         # Otherwise a data race, faster threads will modify shared memory.
@@ -169,22 +173,9 @@ fn gemm_kernel[
         (Idx(Int(block_idx.y)), Idx(Int(block_idx.x)))
     ).tile[WM, WN]((Idx(warp_m), Idx(warp_n)))
 
-    # Copy from LOCAL (c_reg) to GENERIC (c_warp_tile)
-    # Manually calculate indices similar to copy_local
-    var lane_coord = warp_layout.idx2crd(Int(lane_id()))
-    var lane_row = lane_coord[0].value()
-    var lane_col = lane_coord[1].value()
-
-    @parameter
-    for i in range(TM):
-
-        @parameter
-        for j in range(TN):
-            # Calculate global position within warp tile
-            var warp_row = lane_row * TM + i
-            var warp_col = lane_col * TN + j
-            comptime ij = mixed_tuple[i, j]()
-            c_warp_tile[(Idx(warp_row), Idx(warp_col))] = c_reg[ij]
+    copy_local_to_dram[dst_thread_layout = warp_layout.to_layout()](
+        c_warp_tile.to_layout_tensor(), c_reg.to_layout_tensor()
+    )
 
 
 fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
@@ -244,7 +235,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         TN,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         mat_c,
         mat_a,
         mat_b,
@@ -273,7 +264,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function_checked[gemm_naive, gemm_naive](
+    ctx.enqueue_function[gemm_naive, gemm_naive](
         c_tensor_ref,
         mat_a,
         mat_b,
@@ -302,7 +293,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         @always_inline
         @parameter
         fn run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 mat_c,
                 mat_a,
                 mat_b,
@@ -312,7 +303,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
         # Warmup
         for i in range(nwarmup):
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 mat_c,
                 mat_a,
                 mat_b,
@@ -399,7 +390,7 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
         TN,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         mat_c,
         mat_a,
         mat_b,
@@ -428,7 +419,7 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function_checked[gemm_naive, gemm_naive](
+    ctx.enqueue_function[gemm_naive, gemm_naive](
         c_tensor_ref,
         mat_a,
         mat_b,
@@ -558,24 +549,24 @@ fn matmul_kernel_naive[
         shape_types=c_shape_types,
         stride_types=c_stride_types,
         c_dtype,
-        MutOrigin.external,
+        MutExternalOrigin,
     ],
     a: MixedLayoutTensor[
         shape_types=a_shape_types,
         stride_types=a_stride_types,
         a_dtype,
-        MutOrigin.external,
+        MutExternalOrigin,
     ],
     b: MixedLayoutTensor[
         shape_types=b_shape_types,
         stride_types=b_stride_types,
         b_dtype,
-        MutOrigin.external,
+        MutExternalOrigin,
     ],
     m: Int,
     n: Int,
     k: Int,
-) where (c.rank == 2) where (a.rank == 2) where (b.rank == 2):
+) where ((c.rank == 2) & (a.rank == 2) & (b.rank == 2)):
     var x = Int(global_idx.x)
     var y = Int(global_idx.y)
 
@@ -609,11 +600,11 @@ fn outer_product_acc[
         shape_types = Variadic.types[
             T=MixedTupleLike, ComptimeInt[M], ComptimeInt[N]
         ],
-        **_,
+        ...,
     ],
     lhs: MixedLayoutTensor,
     rhs: MixedLayoutTensor,
-) where (lhs.rank == 1) where (rhs.rank == 1):
+) where (lhs.rank == 1) & (rhs.rank == 1):
     """Updates result tensor with the outer product of two vectors.
 
     Computes `res += outer(lhs, rhs)` where `lhs` and `rhs` are vectors and

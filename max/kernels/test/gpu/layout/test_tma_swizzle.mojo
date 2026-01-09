@@ -91,7 +91,7 @@ def test_tma_swizzle[
     var dst = ManagedLayoutTensor[dtype, layout](ctx)
 
     @parameter
-    if dtype is DType.float8_e4m3fn:
+    if dtype == DType.float8_e4m3fn:
         random(src.tensor[update=False]())
         random(dst.tensor[update=False]())
     else:
@@ -126,7 +126,7 @@ def test_tma_swizzle[
         type_of(tma_tensor).layout,
         type_of(tma_tensor).desc_layout,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(shape[1] // tile_shape[1], shape[0] // tile_shape[0]),
