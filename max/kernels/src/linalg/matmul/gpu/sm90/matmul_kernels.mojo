@@ -372,7 +372,9 @@ struct HopperMatmulSM90Kernel[
             multicast_column_mask |= Int(1 << (i * CLUSTER_N))
         multicast_column_mask <<= Int(rank_n)
 
-        var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (rank_m * CLUSTER_N)
+        var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (
+            Int32(rank_m) * CLUSTER_N
+        )
         return (multicast_row_mask, multicast_column_mask)
 
     @staticmethod
@@ -1007,8 +1009,8 @@ struct HopperMatmulSM90Kernel[
                         reduction_workspace,
                         output_reg_tile,
                         work_tile_info,
-                        Self.num_consumer,
-                        local_warp_group_idx,
+                        UInt32(Self.num_consumer),
+                        UInt32(local_warp_group_idx),
                     )
 
                     # check if this is the reduction tile

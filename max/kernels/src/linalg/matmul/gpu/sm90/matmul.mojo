@@ -640,8 +640,8 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         Index(N, K),
         config.block_tile_shape,
         splits,
-        config.num_consumer,
-        config.num_pipeline_stages,
+        UInt32(config.num_consumer),
+        UInt32(config.num_pipeline_stages),
         Index(config.cluster_shape[1], config.cluster_shape[0]),
         raster_order,
     ]
@@ -669,7 +669,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
 
     var locks_buffer_size_bytes = (
         scheduler.get_required_locks_buffer_size_bytes[
-            accum_type, config.num_consumer
+            accum_type, UInt32(config.num_consumer)
         ](
             Index(M, N, K),
             config.block_tile_shape,
