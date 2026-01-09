@@ -21,6 +21,7 @@
 #include <elf.h>
 #include <link.h>
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier), external symbol
 extern const ElfW(Ehdr) __ehdr_start __attribute__((visibility("hidden")));
 #endif // __APPLE__
 

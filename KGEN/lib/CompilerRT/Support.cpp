@@ -52,6 +52,7 @@ static uint16_t float2bfloat(float floatValue) {
 // Provide a float->bfloat conversion routine in case the runtime doesn't have
 // one.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT BF16ABIType
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 __truncsfbf2(float f) {
   uint16_t bf = float2bfloat(f);
   // The output can be a float type, bitcast it from uint16_t.
@@ -63,6 +64,7 @@ __truncsfbf2(float f) {
 // Provide a double->bfloat conversion routine in case the runtime doesn't have
 // one.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT BF16ABIType
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 __truncdfbf2(double d) {
   // This does a double rounding step, but it's precise enough for our use
   // cases.
