@@ -86,12 +86,11 @@ ParamInfState::ParamInfState(ASTDecl &declScope,
                              size_t numPreCheckedParam,
                              ArrayRef<Type> declaredParamTypes,
                              PogListAttr declaredParamPogs,
-                             ParamInfDiags &diags,
                              bool allowImplicitConversions)
     : declScope(declScope), shared(declScope.getShared()),
       evaluator(declScope.getShared()), givenBindings(givenBindings),
       declaredParamTypes(declaredParamTypes),
-      declaredParamPogs(declaredParamPogs), diags(diags),
+      declaredParamPogs(declaredParamPogs),
       allowImplicitConversions(allowImplicitConversions) {
 
   size_t finalSize = declaredParamTypes.size();
@@ -1341,7 +1340,7 @@ RetryLabel:
 
   // We're speculatively trying different options.  If we have errors on one
   // path we need to roll them back.
-  auto savedDiags = diags.saveDiags();
+  auto savedDiags = inferenceDiags.saveDiags();
 
   // See if the types match with inference, if not, remember why.
   switch (matcher.matchTypes(argType, expectedType)) {
@@ -1361,11 +1360,11 @@ RetryLabel:
   // Before we check with the implicit conversions, save any diagnostics
   // accumulated without it.  If both fail, we default to the non-implicit
   // conversion diagnostics.
-  auto noImplicitConversionDiags = diags.saveDiags();
+  auto noImplicitConversionDiags = inferenceDiags.saveDiags();
 
   // Go back to diagnostics before we did the thing that failed.
-  diags.resetDiags(std::move(savedDiags));
-  savedDiags = diags.saveDiags();
+  inferenceDiags.resetDiags(std::move(savedDiags));
+  savedDiags = inferenceDiags.saveDiags();
 
   // Zero cost conversions don't count as implicit conversions. We attempt this
   // after trying to match the types to try to infer values first.
@@ -1393,8 +1392,8 @@ RetryLabel:
 
     // If that didn't work out, keep going, but with the original
     // diagnostics.
-    diags.resetDiags(std::move(savedDiags));
-    savedDiags = diags.saveDiags();
+    inferenceDiags.resetDiags(std::move(savedDiags));
+    savedDiags = inferenceDiags.saveDiags();
   }
 
   // If implicit conversions are enabled and the target type is known, then
@@ -1415,7 +1414,7 @@ RetryLabel:
   /// where the type of 'v' depends on 'dt' being inferred.
   ASTDecl *expectedDecl = expectedType.getDecl(shared);
   if (!allowImplicitConversions || !expectedDecl) {
-    diags.resetDiags(std::move(noImplicitConversionDiags));
+    inferenceDiags.resetDiags(std::move(noImplicitConversionDiags));
     return failure();
   }
 
@@ -1448,7 +1447,7 @@ RetryLabel:
     // a failure.
     if (noImplicitConversionDiags.has_value() ||
         nonParamType.mlirType == expectedType.mlirType) {
-      diags.resetDiags(std::move(noImplicitConversionDiags));
+      inferenceDiags.resetDiags(std::move(noImplicitConversionDiags));
       return failure();
     }
 
@@ -1481,7 +1480,7 @@ RetryLabel:
 
   // Otherwise restore the diags from the non-implicit conversion path,
   // they'll be less confusing.
-  diags.resetDiags(std::move(noImplicitConversionDiags));
+  inferenceDiags.resetDiags(std::move(noImplicitConversionDiags));
   return failure();
 }
 

@@ -772,9 +772,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     break;
   }
 
-  // Check that the signature can be rebound with this set of bindings. We use
-  // diagnostic handlers to capture any issues.
-  ParamInfDiags inferenceDiags;
+  // Check that the signature can be rebound with this set of bindings.
 
   // Determine if this is an initializer that returns Self, which can be used
   // for inferring parameters on Self.
@@ -790,7 +788,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       callable.paramBindings.declScope, callable.paramBindings.getParameters(),
       callable.paramBindings.getNumPreCheckedParams(),
       signature.getInputParamTypes(), signature.getParamListAttrs(),
-      inferenceDiags, allowImplicitConversions);
+      allowImplicitConversions);
 
   // TODO: inferForCall will eventually be separated. We will eventually blend
   // parameter inference into overload resolution have something like:
@@ -822,7 +820,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   };
 
   auto [newBindings, bindingFitness] = callable.paramBindings.verifyBindings(
-      signature, getDiag, inference, inferenceDiags, funcIfDirect);
+      signature, getDiag, inference, funcIfDirect);
 
   // If there is an error, we just forward the diagnostics.
   if (diag)
