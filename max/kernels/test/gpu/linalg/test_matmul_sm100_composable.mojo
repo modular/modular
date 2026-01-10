@@ -31,7 +31,8 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 # Additional imports for testing
-from internal_utils import assert_almost_equal, random, zero
+from internal_utils import assert_almost_equal
+from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -112,10 +113,10 @@ def test_blackwell_matmul_tma_umma[
     )
 
     # Initialize matmul operands
-    random(a_host)
-    random(b_host)
-    zero(c_host)
-    zero(c_host_ref)
+    rand(a_host.data, a_host.num_elements())
+    rand(b_host.data, b_host.num_elements())
+    c_host.zero()
+    c_host_ref.zero()
 
     # Move operands to the Device
 

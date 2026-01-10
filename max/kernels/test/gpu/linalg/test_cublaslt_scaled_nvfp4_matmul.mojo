@@ -18,7 +18,8 @@ from gpu.host import DeviceContext
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from internal_utils import assert_almost_equal, random, zero, fill
+from internal_utils import assert_almost_equal
+from random import rand
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.vendor.blas import Backend, Handle, matmul
 from internal_utils._utils import ValOrDim, dynamic, static
@@ -145,8 +146,8 @@ fn test_block_scaled_nvfp4_cublaslt[
         b_scales_host_ptr, dynamic_b_scales_shape
     )
 
-    random(a_scales_host)
-    random(b_scales_host)
+    rand(a_scales_host.data, a_scales_host.num_elements())
+    rand(b_scales_host.data, b_scales_host.num_elements())
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](a_scales_size)
     var a_scales_device_nd = NDBuffer[
@@ -195,8 +196,8 @@ fn test_block_scaled_nvfp4_cublaslt[
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
-    random(a_host, min=0, max=255)
-    random(b_host, min=0, max=255)
+    rand(a_host.data, a_host.num_elements(), min=0, max=255)
+    rand(b_host.data, b_host.num_elements(), min=0, max=255)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)

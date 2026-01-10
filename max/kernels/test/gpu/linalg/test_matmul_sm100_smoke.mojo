@@ -41,7 +41,8 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from internal_utils import assert_almost_equal, random
+from internal_utils import assert_almost_equal
+from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu.sm100.matmul import (
@@ -153,8 +154,8 @@ def test_blackwell_matmul[
     )
 
     # Initialize with random data
-    random(a_host)
-    random(b_host)
+    rand(a_host.data, a_host.num_elements())
+    rand(b_host.data, b_host.num_elements())
 
     # Copy to device
     ctx.enqueue_copy(a_device, a_host_ptr)

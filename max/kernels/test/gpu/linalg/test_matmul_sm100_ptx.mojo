@@ -21,7 +21,8 @@ from gpu.host import DeviceContext
 from gpu.host.compile import _compile_code, get_gpu_target
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from internal_utils import assert_almost_equal, random, zero
+from internal_utils import assert_almost_equal
+from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul.gpu.sm100.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,

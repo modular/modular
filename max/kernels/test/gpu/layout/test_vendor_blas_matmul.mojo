@@ -17,7 +17,8 @@ from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import assert_almost_equal, random, zero
+from internal_utils import assert_almost_equal
+from random import rand
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from linalg.matmul.vendor.blas import matmul
@@ -48,11 +49,11 @@ fn test_matmul[
         c_host_ref_ptr
     )
 
-    random(a_host)
-    random(b_host)
+    rand(a_host.data, a_host.num_elements())
+    rand(b_host.data, b_host.num_elements())
 
-    zero(c_host)
-    zero(c_host_ref)
+    c_host.zero()
+    c_host_ref.zero()
 
     var a_device = ctx.enqueue_create_buffer[input_type](M * K)
     var a_device_nd = NDBuffer[input_type, 2, _, static_a_shape](

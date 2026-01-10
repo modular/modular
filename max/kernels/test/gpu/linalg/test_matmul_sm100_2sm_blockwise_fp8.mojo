@@ -26,9 +26,8 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
-    random,
-    zero,
 )
+from random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -201,8 +200,8 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         b_scales_device.unsafe_ptr(), dynamic_b_scales_shape
     )
 
-    zero(c_host)
-    zero(c_host_ref)
+    c_host.zero()
+    c_host_ref.zero()
 
     # Initialize matmul operands
     if simple_init():
@@ -223,10 +222,10 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
                 ](0.5)
 
     else:
-        random(a_host)
-        random(b_host)
-        random(a_scales_host)
-        random(b_scales_host)
+        rand(a_host.data, a_host.num_elements())
+        rand(b_host.data, b_host.num_elements())
+        rand(a_scales_host.data, a_scales_host.num_elements())
+        rand(b_scales_host.data, b_scales_host.num_elements())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)

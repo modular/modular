@@ -24,7 +24,8 @@ from gpu.mma import (
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from internal_utils import assert_equal, random, zero
+from internal_utils import assert_equal
+from random import rand
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tensor_core_async import (
@@ -170,10 +171,10 @@ fn wgmma_e4m3_e4m3_f32[
     )
 
     # Initialize matmul operands
-    random(a_host)
-    random(b_host)
-    zero(c_host)
-    zero(c_host_ref)
+    rand(a_host.data, a_host.num_elements())
+    rand(b_host.data, b_host.num_elements())
+    c_host.zero()
+    c_host_ref.zero()
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)

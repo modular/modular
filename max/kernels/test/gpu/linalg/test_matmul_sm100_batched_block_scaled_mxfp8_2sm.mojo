@@ -22,7 +22,8 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from internal_utils import assert_almost_equal, random, zero, fill
+from internal_utils import assert_almost_equal
+from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
@@ -263,8 +264,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 for k in range(K):
                     b_host[b, n, k] = random_ui64(0, 1).cast[b_type]()
     else:
-        random(a_host)
-        random(b_host)
+        rand(a_host.data, a_host.num_elements())
+        rand(b_host.data, b_host.num_elements())
 
     comptime scales_6d_layout[layout: Layout] = Layout.row_major(
         layout.shape[0].value(),

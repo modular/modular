@@ -18,7 +18,8 @@ from gpu.host import DeviceContext
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from internal_utils import assert_almost_equal, random, zero, fill
+from internal_utils import assert_almost_equal
+from random import rand
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.vendor.blas import Backend, Handle, matmul
 from internal_utils._utils import ValOrDim, dynamic, static
@@ -111,8 +112,8 @@ fn test_scaled_mxfp8_cublaslt[
         ref_scales_type, 2, _, static_ref_b_scales_shape
     ](b_scales_device_ref.unsafe_ptr(), dynamic_ref_b_scales_shape)
 
-    fill(a_scales_host_ref, Scalar[ref_scales_type](1.0))
-    fill(b_scales_host_ref, Scalar[ref_scales_type](1.0))
+    a_scales_host_ref.fill(Scalar[ref_scales_type](1.0))
+    b_scales_host_ref.fill(Scalar[ref_scales_type](1.0))
 
     # NOTE: We can't initialize this scales randomly as our naive kernel cannot handle mxfp8 style scaling.
     for i in range(a_scales_host_ref.dim(0)):
@@ -248,8 +249,8 @@ fn test_scaled_mxfp8_cublaslt[
         b_scales_host,
     )
 
-    random(a_host)
-    random(b_host)
+    rand(a_host.data, a_host.num_elements())
+    rand(b_host.data, b_host.num_elements())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)

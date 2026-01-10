@@ -32,8 +32,6 @@ from internal_utils._utils import (
     InitializationType,
     dynamic,
     init_vector_launch,
-    initialize,
-    random,
     static,
 )
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul

@@ -44,7 +44,8 @@ from utils.static_tuple import StaticTuple
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from internal_utils import fill, zero, random, assert_almost_equal
+from internal_utils import assert_almost_equal
+from random import rand
 from math import ceildiv
 from builtin.simd import _convert_f32_to_float8_ue8m0
 from gpu.sync import syncwarp
@@ -808,8 +809,8 @@ def test_blockscaled_pair_cta_mxfp8[
         ref_scales_type, 2, _, static_ref_b_scales_shape
     ](b_scales_device_ref.unsafe_ptr(), dynamic_ref_b_scales_shape)
 
-    fill(a_scales_host_ref, Scalar[ref_scales_type](1.0))
-    fill(b_scales_host_ref, Scalar[ref_scales_type](1.0))
+    a_scales_host_ref.fill(Scalar[ref_scales_type](1.0))
+    b_scales_host_ref.fill(Scalar[ref_scales_type](1.0))
 
     for i in range(a_scales_host_ref.dim(0)):
         for j in range(a_scales_host_ref.dim(1) // 32):
@@ -985,8 +986,8 @@ def test_blockscaled_pair_cta_mxfp8[
             for k in range(K):
                 b_host[n, k] = Float32(1 if n == k else 0).cast[b_type]()
     else:
-        random(a_host)
-        random(b_host)
+        rand(a_host.data, a_host.num_elements())
+        rand(b_host.data, b_host.num_elements())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
