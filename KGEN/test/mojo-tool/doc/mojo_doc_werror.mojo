@@ -4,17 +4,42 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Test that -Werror converts warnings to errors for `mojo doc`
+# RUN: mojo doc --diagnose-missing-doc-strings -Wno-error %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=WNO-ERROR
+# RUN: not mojo doc --diagnose-missing-doc-strings -Werror %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=WERROR
+# RUN: mojo doc --diagnose-missing-doc-strings -Werror -Wno-error %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=WERROR-THEN-WNO
+# RUN: not mojo doc --diagnose-missing-doc-strings -Wno-error -Werror %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=WNO-THEN-WERROR
 
-# RUN: not mojo doc --diagnose-missing-doc-strings -Werror %s -o /dev/null 2>&1 | FileCheck %s --check-prefix CHECK-WERROR
+# WERROR: error: unknown argument 'y' in doc string
+# WERROR-NOT: warning: unknown argument 'y' in doc string
 
-# CHECK-WERROR: error: unknown argument 'y' in doc string
-# CHECK-WERROR-NOT: warning: unknown argument 'y' in doc string
+# WNO-ERROR: warning: unknown argument 'y' in doc string
+# WNO-ERROR-NOT: error: unknown argument 'y' in doc string
+
+# -Werror followed by -Wno-error: warnings remain warnings (last wins)
+# WERROR-THEN-WNO: warning: unknown argument 'y' in doc string
+# WERROR-THEN-WNO-NOT: error: unknown argument 'y' in doc string
+
+# -Wno-error followed by -Werror: warnings become errors (last wins)
+# WNO-THEN-WERROR: error: unknown argument 'y' in doc string
+# WNO-THEN-WERROR-NOT: warning: unknown argument 'y' in doc string
 
 # Test that --validate-doc-strings is a deprecated alias for -Werror.
-# RUN: not mojo doc --diagnose-missing-doc-strings --validate-doc-strings %s -o /dev/null 2>&1 | FileCheck %s --check-prefix CHECK-DEPRECATED
-# CHECK-DEPRECATED: warning: --validate-doc-strings is deprecated, use -Werror instead
-# CHECK-DEPRECATED: error: unknown argument 'y' in doc string
+# RUN: not mojo doc --diagnose-missing-doc-strings --validate-doc-strings %s -o /dev/null 2>&1 | FileCheck %s --check-prefix DEPRECATED
+# DEPRECATED: warning: --validate-doc-strings is deprecated, use -Werror instead
+# DEPRECATED: error: unknown argument 'y' in doc string
+
+# Test that -Wno-error takes precedence over --validate-doc-strings.
+# RUN: mojo doc --diagnose-missing-doc-strings --validate-doc-strings -Wno-error %s -o /dev/null 2>&1 | FileCheck %s --check-prefix DEPRECATED-WNO
+# RUN: mojo doc --diagnose-missing-doc-strings -Wno-error --validate-doc-strings %s -o /dev/null 2>&1 | FileCheck %s --check-prefix DEPRECATED-WNO
+# DEPRECATED-WNO-NOT: --validate-doc-strings is deprecated
+# DEPRECATED-WNO: warning: unknown argument 'y' in doc string
+# DEPRECATED-WNO-NOT: error: unknown argument 'y' in doc string
+
+# Test that -Werror takes precedence over --validate-doc-strings.
+# RUN: not mojo doc --diagnose-missing-doc-strings --validate-doc-strings -Werror %s -o /dev/null 2>&1 | FileCheck %s --check-prefix DEPRECATED-WERROR
+# RUN: not mojo doc --diagnose-missing-doc-strings -Werror --validate-doc-strings %s -o /dev/null 2>&1 | FileCheck %s --check-prefix DEPRECATED-WERROR
+# DEPRECATED-WERROR-NOT: --validate-doc-strings is deprecated
+# DEPRECATED-WERROR: error: unknown argument 'y' in doc string
 
 
 fn f(x: Int):

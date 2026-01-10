@@ -124,7 +124,8 @@ int State::parseDiagnosticFormatArguments(
     llvm::opt::InputArgList &args,
     llvm::opt::OptSpecifier diagnosticFormatOptionID,
     llvm::opt::OptSpecifier disableWarningsOptionID,
-    llvm::opt::OptSpecifier warningsAsErrorsOptionID) {
+    llvm::opt::OptSpecifier warningsAsErrorsOptionID,
+    llvm::opt::OptSpecifier noWarningsAsErrorsOptionID) {
   StringLiteral kDiagnosticFormatText = "text";
   StringLiteral kDiagnosticFormatJSON = "json";
   StringRef format =
@@ -144,8 +145,14 @@ int State::parseDiagnosticFormatArguments(
   if (disableWarningsOptionID.isValid())
     disableWarnings = args.hasArg(disableWarningsOptionID);
 
-  if (warningsAsErrorsOptionID.isValid())
-    warningsAsErrors = args.hasArg(warningsAsErrorsOptionID);
+  // Use hasFlag for -Werror/-Wno-error with "last one wins" semantics.
+  if (warningsAsErrorsOptionID.isValid()) {
+    if (noWarningsAsErrorsOptionID.isValid())
+      warningsAsErrors = args.hasFlag(warningsAsErrorsOptionID,
+                                      noWarningsAsErrorsOptionID, false);
+    else
+      warningsAsErrors = args.hasArg(warningsAsErrorsOptionID);
+  }
 
   return EXIT_SUCCESS;
 }

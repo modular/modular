@@ -65,7 +65,7 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
   // Parse diagnostic format arguments.
   if (int exitCode = state.parseDiagnosticFormatArguments(
           args, optionIDs.diagnosticFormat, optionIDs.disableWarnings,
-          optionIDs.warningsAsErrors)) {
+          optionIDs.warningsAsErrors, optionIDs.noWarningsAsErrors)) {
     result.exitCode = exitCode;
     return result;
   }
