@@ -609,8 +609,9 @@ fn test_repack_Q4_0_for_sm8x(
 
     comptime rtol = 2e-2
     assert_almost_equal(
-        gguf_dequan_ref_host,
-        repacked_dequan_host,
+        gguf_dequan_ref_host.data,
+        repacked_dequan_host.data,
+        gguf_dequan_ref_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
     )
@@ -853,8 +854,9 @@ fn test_quantized[
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
     )

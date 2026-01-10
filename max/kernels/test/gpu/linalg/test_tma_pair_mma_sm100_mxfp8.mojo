@@ -1028,8 +1028,9 @@ def test_blockscaled_pair_cta_mxfp8[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=1e-3,
         rtol=1e-4,
     )

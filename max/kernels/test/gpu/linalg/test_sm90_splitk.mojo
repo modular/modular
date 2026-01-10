@@ -212,13 +212,14 @@ fn test_warp_specialize_gemm_with_multicasting[
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host, c_host_ref, threshold=0.001
+        c_host.data, c_host_ref.data, c_host.num_elements(), threshold=0.001
     )
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
     )

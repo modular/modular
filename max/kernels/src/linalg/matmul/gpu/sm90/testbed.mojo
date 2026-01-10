@@ -266,15 +266,17 @@ fn test_matmul_sm90[
     @parameter
     if measure_threshold:
         assert_with_measure[relative_difference](
-            c_host,
-            c_host_ref,
+            c_host.data,
+            c_host_ref.data,
+            c_host.num_elements(),
             threshold=measure_threshold.value(),
         )
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
     )

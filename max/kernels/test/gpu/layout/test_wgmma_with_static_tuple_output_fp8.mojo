@@ -265,7 +265,7 @@ fn wgmma_e4m3_e4m3_f32[
 
     ctx.synchronize()
 
-    assert_equal(c_host, c_host_ref)
+    assert_equal(c_host.data, c_host_ref.data, c_host.num_elements())
 
     # Cleanup
     a_host_ptr.free()

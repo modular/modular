@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from internal_utils import correlation, kl_div
-from internal_utils._testing import _assert_with_measure_impl
+from internal_utils._testing import assert_with_measure
 from itertools import product
 from memory import LegacyUnsafePointer
 
@@ -36,7 +36,7 @@ fn test_assert_with_custom_measure() raises:
     ) -> Float64:
         return 0
 
-    _assert_with_measure_impl[always_zero](t0, t1, 100)
+    assert_with_measure[always_zero](t0, t1, 100)
 
     t0.free()
     t1.free()

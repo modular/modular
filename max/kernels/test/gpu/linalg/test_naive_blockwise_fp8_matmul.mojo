@@ -229,8 +229,9 @@ fn test_naive_blockwise_fp8_matmul[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=0.0001,
         rtol=0.0001,
     )
