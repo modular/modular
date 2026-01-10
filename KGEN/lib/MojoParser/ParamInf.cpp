@@ -438,20 +438,20 @@ ParamMatcher::ResultCode ParamMatcher::matchTypes(Type actualType,
   if (auto actualDRT = dyn_cast<LIT::StructType>(actualType)) {
     if (auto expectedDRT = dyn_cast<LIT::StructType>(expectedType)) {
       // Ignore if these are two fundamentally different symbols.
-      if (actualDRT.getSymbol() != expectedDRT.getSymbol())
-        return error();
+      if (actualDRT.getSymbol() == expectedDRT.getSymbol()) {
+        // Fail if the parameter lists fundamentally mismatch.
+        assert(
+            actualDRT.getParamValues().size() ==
+                expectedDRT.getParamValues().size() &&
+            "two instances of same struct must have same length param lists");
 
-      // Fail if the parameter lists fundamentally mismatch.
-      assert(actualDRT.getParamValues().size() ==
-                 expectedDRT.getParamValues().size() &&
-             "two instances of same struct must have same length param lists");
-
-      // Match up the parameter bindings.
-      for (auto [actual, expected] : llvm::zip(actualDRT.getParamValues(),
-                                               expectedDRT.getParamValues())) {
-        PROP(matchParams(actual, expected));
+        // Match up the parameter bindings.
+        for (auto [actual, expected] : llvm::zip(
+                 actualDRT.getParamValues(), expectedDRT.getParamValues())) {
+          PROP(matchParams(actual, expected));
+        }
+        return Match;
       }
-      return Match;
     }
   }
 
@@ -481,22 +481,16 @@ ParamMatcher::ResultCode ParamMatcher::matchTypes(Type actualType,
   // Handle OriginType.
   if (auto actual = dyn_cast<OriginType>(actualType))
     if (auto expected = dyn_cast<OriginType>(expectedType)) {
-      // Try to match up the types so we infer parameters properly.
-      switch (matchSingleEltStruct(actual.isMutable(), expected.isMutable())) {
-      case Match:
+      // If the mutable bit is resolved, check for conversions from mut=true to
+      // mut=false.
+      if (!state.paramFinder.hasReferences(expectedType)) {
+        if (!IREmitter::canZeroCostConvert(actualType, expectedType, shared))
+          return error();
         return Match;
-      case Retry:
-        return Retry;
-      case Error:
-        resetError();
-        break;
       }
 
-      // If that fails, check compatibility, actualType might be mutable=true,
-      // and expected might be mutable=false, and this is fine.
-      if (!IREmitter::canZeroCostConvert(actualType, expectedType, shared))
-        return error();
-      return Match;
+      // Otherwise infer it.
+      return matchSingleEltStruct(actual.isMutable(), expected.isMutable());
     }
 
   // Handle PointerType.
@@ -541,12 +535,12 @@ ParamMatcher::ResultCode ParamMatcher::matchTypes(Type actualType,
       // type.
       ArrayRef<Type> actInputs = actual.getInputParamTypes();
       ArrayRef<Type> expInputs = expected.getInputParamTypes();
-      if (actInputs.size() != expInputs.size())
-        return error();
-      for (auto [ai, ei] : llvm::zip_equal(actInputs, expInputs)) {
-        PROP(matchTypes(ai, ei));
+      if (actInputs.size() == expInputs.size()) {
+        for (auto [ai, ei] : llvm::zip_equal(actInputs, expInputs)) {
+          PROP(matchTypes(ai, ei));
+        }
+        return matchTypes(actual.getBody(), expected.getBody());
       }
-      return matchTypes(actual.getBody(), expected.getBody());
     }
   }
 
@@ -740,13 +734,13 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
     if (auto expectedGetWitness = dyn_cast<GetWitnessAttr>(expectedAttr)) {
       // The trait name and witness name are immediates, not parameters, so they
       // must match exactly.
-      if (actualGetWitness.getTraitName() !=
-              expectedGetWitness.getTraitName() ||
-          actualGetWitness.getWitnessName() !=
-              expectedGetWitness.getWitnessName())
-        return error();
-      return matchParams(actualGetWitness.getTypeValue(),
-                         expectedGetWitness.getTypeValue());
+      if (actualGetWitness.getTraitName() ==
+              expectedGetWitness.getTraitName() &&
+          actualGetWitness.getWitnessName() ==
+              expectedGetWitness.getWitnessName()) {
+        return matchParams(actualGetWitness.getTypeValue(),
+                           expectedGetWitness.getTypeValue());
+      }
     }
   }
 
@@ -842,10 +836,9 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
   // StructExtractAttr can also line up.
   if (auto actualExtract = dyn_cast<LIT::StructExtractAttr>(actualAttr)) {
     if (auto expectedExtract = dyn_cast<LIT::StructExtractAttr>(expectedAttr)) {
-      if (actualExtract.getField() != expectedExtract.getField())
-        return error();
-      return matchParams(actualExtract.getStructValue(),
-                         expectedExtract.getStructValue());
+      if (actualExtract.getField() == expectedExtract.getField())
+        return matchParams(actualExtract.getStructValue(),
+                           expectedExtract.getStructValue());
     }
   }
 
