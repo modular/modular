@@ -372,7 +372,9 @@ struct HopperMatmulSM90Kernel[
             multicast_column_mask |= Int(1 << (i * CLUSTER_N))
         multicast_column_mask <<= Int(rank_n)
 
-        var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (rank_m * CLUSTER_N)
+        var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (
+            Int32(rank_m) * CLUSTER_N
+        )
         return (multicast_row_mask, multicast_column_mask)
 
     @staticmethod
@@ -401,14 +403,6 @@ struct HopperMatmulSM90Kernel[
 
         var rank_m = block_id_in_cluster.y
         var rank_n = block_id_in_cluster.x
-
-        # Check and wait for PDL grids if needed
-        @parameter
-        if (
-            Self.pdl_level > PDLLevel.OFF
-            and Self.pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
-        ):
-            wait_on_dependent_grids()
 
         var warp_id = get_warp_id()
         var lane_predicate = elect_one_sync()
@@ -811,6 +805,15 @@ struct HopperMatmulSM90Kernel[
         # Split thread blocks into producer and consumer warp groups
         if warp_group_idx == 0:
             # Producer warp group
+
+            # Check and wait for PDL grids if needed
+            @parameter
+            if (
+                Self.pdl_level > PDLLevel.OFF
+                and Self.pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+            ):
+                wait_on_dependent_grids()
+
             _ = Self.setup_producer()
 
             if warp_id == 0 and lane_predicate:
@@ -1007,8 +1010,8 @@ struct HopperMatmulSM90Kernel[
                         reduction_workspace,
                         output_reg_tile,
                         work_tile_info,
-                        Self.num_consumer,
-                        local_warp_group_idx,
+                        UInt32(Self.num_consumer),
+                        UInt32(local_warp_group_idx),
                     )
 
                     # check if this is the reduction tile

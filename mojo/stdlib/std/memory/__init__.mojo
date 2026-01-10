@@ -25,7 +25,7 @@ specialized memory. Most code should prefer higher-level collections and
 automatic memory management.
 """
 
-from .arc import ArcPointer
+from .arc_pointer import ArcPointer
 from .legacy_unsafe_pointer import (
     LegacyOpaquePointer,
     LegacyUnsafePointer,

@@ -587,7 +587,7 @@ struct OutputTilePipeline[
         """Acquire stage for MMA, waiting for epilogue to finish."""
         var idx = self.pipeline.producer_stage()
         self.pipeline.wait_consumer()
-        var tmem = Self.Stage.Tmem(self.tmem.addr, idx)
+        var tmem = Self.Stage.Tmem(self.tmem, Int(idx))
         return Self.Stage(idx, tmem, self.pipeline)
 
     @always_inline
@@ -615,7 +615,7 @@ struct OutputTilePipeline[
         """Acquire stage for epilogue, waiting for MMA to complete."""
         var idx = self.pipeline.consumer_stage()
         self.pipeline.wait_producer()
-        var tmem = Self.Stage.Tmem(self.tmem.addr, idx)
+        var tmem = Self.Stage.Tmem(self.tmem, Int(idx))
         return Self.Stage(idx, tmem, self.pipeline)
 
     @always_inline

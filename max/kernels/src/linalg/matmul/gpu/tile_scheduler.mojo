@@ -197,9 +197,13 @@ struct TileScheduler[
 
         @parameter
         if Self.raster_dim == 0:  # rasterize along M
-            self.idx = block_idx.x * grid_dim.y + block_idx.y
+            self.idx = UInt32(block_idx.x) * UInt32(grid_dim.y) + UInt32(
+                block_idx.y
+            )
         else:
-            self.idx = block_idx.x + grid_dim.x * block_idx.y
+            self.idx = UInt32(block_idx.x) + UInt32(grid_dim.x) * UInt32(
+                block_idx.y
+            )
 
     @always_inline
     fn get_current_work_info(mut self) -> WorkInfo:
@@ -212,8 +216,8 @@ struct TileScheduler[
             var n = UInt(n_block_idx * Self.tile_shape[1])
 
             return WorkInfo(
-                m,
-                n,
+                UInt32(m),
+                UInt32(n),
                 0,
                 ceildiv(Self.problem_shape[2], Self.tile_shape[2]),
                 is_valid,
@@ -224,8 +228,8 @@ struct TileScheduler[
                 self.prob_shape[1]
             )
             return WorkInfo(
-                m,
-                n,
+                UInt32(m),
+                UInt32(n),
                 0,
                 ceildiv(self.prob_shape[2], Self.tile_shape[2]),
                 is_valid,
@@ -314,8 +318,8 @@ struct TileScheduler[
         var n = UInt(n_block_idx * Self.tile_shape[1])
         # Only support K starting from 0 for now.
         return WorkInfo(
-            m,
-            n,
+            UInt32(UInt(m)),
+            UInt32(UInt(n)),
             0,
             ceildiv(Self.problem_shape[2], Self.tile_shape[2]),
             is_valid,

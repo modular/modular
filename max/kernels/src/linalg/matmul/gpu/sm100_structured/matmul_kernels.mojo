@@ -88,7 +88,7 @@ from .tile_pipeline import (
     OutputTilePipeline,
 )
 from .barriers import TmemDeallocBarrier, WarpGroupBarrier
-from .tmem import TmemAllocation
+from .tmem import TmemAllocation, TmemTensor
 from .warp_context import MmaWarpContext, EpilogueWarpContext
 from .tile_loader import TileLoaderTMA
 from .tile_scheduler import TileScheduler
@@ -280,7 +280,7 @@ fn consumer_main_loop[
     cluster_shape: IndexList[3] = Index(1, 1, 1),
     k_group_size: UInt = 1,
 ](
-    tmem_addr: UInt32,
+    tmem_addr: Int,
     a_smem_iter: SMemTileIter[a_type, a_smem_layout],
     b_smem_iter: SMemTileIter[b_type, b_smem_layout],
     load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
@@ -730,10 +730,16 @@ struct BlackwellMatmulSM100Kernel[
     ]
 
     # ========== Tensor Memory Type ==========
-    # Opaque TMEM allocation for MMA accumulators
+    # TMEM allocation and typed accumulator tensor
 
     comptime max_tmem_cols: UInt = 512
     comptime Tmem = TmemAllocation[Self.cta_group]
+
+    # Layout-parameterized TMEM tensor for type-safe accumulator access
+    comptime accum_layout = Layout.row_major(Self.MMA_M, Self.MMA_N)
+    comptime AccumTensor = TmemTensor[
+        Self.accum_type, Self.accum_layout, cta_group = Self.cta_group
+    ]
 
     # ========== Output Tile Pipeline Type ==========
     # Manages MMA→Epilogue pipeline for TMEM accumulator stages
@@ -908,6 +914,9 @@ struct BlackwellMatmulSM100Kernel[
             iter_idx: K iteration index.
             k_start: Starting K iteration (for init_c determination).
         """
+        # Get typed accumulator tensor from TMEM stage
+        var accum = tmem_stage.tensor[Self.accum_type, Self.accum_layout]()
+
         if elect_one_sync():
 
             @parameter
@@ -915,7 +924,7 @@ struct BlackwellMatmulSM100Kernel[
                 var a_tile, b_tile = tiles.get_tile(j)
                 var is_first_k = (iter_idx + j) == k_start
                 mma_op.mma(
-                    a_tile, b_tile, tmem_stage.offset(), init_c=is_first_k
+                    a_tile, b_tile, UInt32(accum.offset()), init_c=is_first_k
                 )
             mma_op.commit(tiles.mbar())
 

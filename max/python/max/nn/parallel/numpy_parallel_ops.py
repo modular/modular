@@ -33,7 +33,7 @@ def _prime_cache(accelerator: Device, bytes: int = GiB) -> None:
 
     Populate the host memory manager by allocating and immediately freeing a
     large pinned tensor. If the host memory manager is activated, future allocations
-    and free will likely hit the cache and be much faster.
+    and frees will likely hit the cache and be much faster.
 
     Args:
         accelerator: The accelerator to prime the cache for.

@@ -45,9 +45,9 @@ from .tile_writer import (
     TMAStoreCoords,
     TMAStoreExecutor,
     TMEMToSMemWriter,
-    load_tmem_fragments,
     tma_wait_pipelined,
 )
+from .tmem import TmemArrayType
 
 
 @register_passable("trivial")
@@ -141,6 +141,15 @@ struct BlockScaledTileWriter[
         Self.cg2_num_stages if Self.cta_group == 2 else Self.cg1_num_stages
     )
 
+    # TMEM array type for accumulator tiles
+    comptime accum_tile_layout = Layout.row_major(Self.BM, Self.stageN)
+    comptime AccumTmemArray = TmemArrayType[
+        Self.accum_type,
+        Self.accum_tile_layout,
+        Self.num_stages,
+        cta_group = Self.cta_group,
+    ]
+
     var c_tma_op: Self.TmaOpPtr
 
     @always_inline
@@ -181,7 +190,7 @@ struct BlockScaledTileWriter[
         # Perform reduction and check if this is the last split
         var is_last_split = scheduler.reduction(
             reduction_tensor,
-            stage.tmem.offset(),
+            stage.tmem.address(),
             epilogue_thread_idx,
             work_info,
         )
@@ -202,7 +211,7 @@ struct BlockScaledTileWriter[
         c_shape: Tuple[UInt32, UInt32],
     ):
         """TMEM → Registers → SMEM → GMEM pipeline."""
-        var tmem_offset = output_stage.tmem.offset()
+        var accum_tiles = Self.AccumTmemArray(output_stage.tmem.offset())
 
         comptime simd_size = simd_width_of[Self.c_type]()
         var warp_id = get_warp_id()
@@ -258,17 +267,13 @@ struct BlockScaledTileWriter[
 
         @parameter
         for stage in range(Self.num_stages):
-            var stage_tmem_addr = tmem_offset + (stage * Self.stageN)
-
-            upper_frag_casted, lower_frag_casted = load_tmem_fragments[
-                Self.accum_type,
-                Self.epilogue_dtype,
-                Self.fragment_size,
-                Self.is_lower_frag_required,
-                Self.data_paths,
-                Self.bits,
-                Self.rep,
-            ](stage_tmem_addr)
+            # Load fragments from TMEM tile - is_lower_required handled internally
+            var frags = accum_tiles[stage].load_fragments[Self.rep]()
+            Self.AccumTmemArray.Tile.wait_load()
+            var casted = frags.cast[Self.epilogue_dtype]()
+            # rebind bridges TmemTensor's (4 * rep) to our (rep * 4) type
+            upper_frag_casted = rebind[type_of(upper_frag_casted)](casted.upper)
+            lower_frag_casted = rebind[type_of(lower_frag_casted)](casted.lower)
 
             @parameter
             if stage == Self.num_stages - 1:

@@ -433,7 +433,7 @@ struct RingBuffer[
             # In multi-cluster mode, one thread per block arrives
             if self.warp_group_thread_idx < UInt(Self.cluster_size):
                 _ = self.empty_mbar[Int(read_idx)][].arrive_cluster(
-                    self.warp_group_thread_idx
+                    UInt32(self.warp_group_thread_idx)
                 )
         else:
             # In single-block mode, only thread 0 arrives
@@ -471,7 +471,7 @@ struct RingBuffer[
             if Self.cluster_size > 1:
                 if self.warp_group_thread_idx < UInt(Self.cluster_size):
                     _ = self.empty_mbar[i][].arrive_cluster(
-                        self.warp_group_thread_idx
+                        UInt32(self.warp_group_thread_idx)
                     )
             else:
                 if self.warp_group_thread_idx == 0:

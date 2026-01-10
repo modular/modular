@@ -46,7 +46,7 @@ class DeepseekV2Config(MAXModelConfigBase):
     ep_size: int = 1
     routed_scaling_factor: float = 1.0
     kv_lora_rank: int = 512
-    q_lora_rank: int = 1536
+    q_lora_rank: int | None = 1536
     qk_rope_head_dim: int = 64
     v_head_dim: int = 128
     qk_nope_head_dim: int = 128

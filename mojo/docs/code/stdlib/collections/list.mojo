@@ -40,6 +40,8 @@ fn extend_span():
 
 
 fn extend_dtype():
+    from collections import List
+
     numbers: List[Int64] = [1, 2]
     more = SIMD[DType.int64, 2](3, 4)
     numbers.extend(more)
@@ -48,6 +50,8 @@ fn extend_dtype():
 
 
 fn extend_dtype_count():
+    from collections import List
+
     numbers: List[Int64] = [1, 2]
     more = SIMD[DType.int64, 4](3, 4, 5, 6)
     numbers.extend(more, count=2)
@@ -107,7 +111,7 @@ fn clear():
 
 
 fn steal():
-    from sys.info import size_of
+    from collections import List
     from memory import ArcPointer
 
     list: List[Int64] = [1, 2, 3, 4]

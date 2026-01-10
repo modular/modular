@@ -111,7 +111,8 @@ def call_ep_dispatch(
 
     This function launches the EP dispatch kernel that distributes input tokens
     to expert devices based on top-k routing decisions. The kernel uses
-    non-blocking SHMEM communication and returns immediately after initiating
+    non-blocking SHMEM communication in multi-node scenarios and returns
+    immediately after initiating transfers.
     transfers.
 
     Args:
@@ -121,13 +122,13 @@ def call_ep_dispatch(
             Shape: (num_tokens, top_k)
             Values: Expert indices in range [0, n_experts)
         atomic_counter: Buffer for synchronization between thread blocks.
-        send_buf_ptrs: Device pointers to SHMEM send buffers for each GPU.
+        send_buf_ptrs: Device pointers to the send buffers for each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (max_tokens_per_rank, msg_bytes)
-        recv_buf_ptrs: Device pointers to SHMEM receive buffers for each GPU.
+        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)
-        recv_count_ptrs: Device pointers to SHMEM receive count buffers for
+        recv_count_ptrs: Device pointers to the receive count buffers for
             each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks)
@@ -183,15 +184,15 @@ def call_ep_dispatch_cb(
     computation.
 
     This function launches the EP dispatch callback kernel that waits for all
-    local token transfers to complete, then organizes the received tokens into
-    a format suitable for grouped matmul computation.
+    inter-device communication to complete, then organizes the received tokens
+    into a format suitable for grouped matmul computation.
 
     Args:
         atomic_counter: Buffer for synchronization between thread blocks.
-        recv_buf_ptrs: Device pointers to SHMEM receive buffers for each GPU.
+        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)
-        recv_count_ptrs: Device pointers to SHMEM receive count buffers for
+        recv_count_ptrs: Device pointers to the receive count buffers for
             each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks)
@@ -298,15 +299,15 @@ def call_ep_dispatch_cb_fp8(
     computation.
 
     This function launches the EP dispatch callback kernel that waits for all
-    local token transfers to complete, then organizes the received tokens into
-    a format suitable for grouped matmul computation.
+    inter-device communication to complete, then organizes the received tokens
+    into a format suitable for grouped matmul computation.
 
     Args:
         atomic_counter: Buffer for synchronization between thread blocks.
-        recv_buf_ptrs: Device pointers to SHMEM receive buffers for each GPU.
+        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)
-        recv_count_ptrs: Device pointers to SHMEM receive count buffers for
+        recv_count_ptrs: Device pointers to the receive count buffers for
             each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks)
@@ -436,8 +437,8 @@ def call_ep_combine(
 
     This function launches the EP combine kernel that sends expert outputs back
     to their original devices based on source routing information. The kernel
-    uses non-blocking SHMEM communication and returns immediately after
-    initiating transfers.
+    uses non-blocking SHMEM communication in multi-node scenarios and returns
+    immediately after initiating transfers.
 
     Args:
         input_tokens: Expert output tokens to send back to original devices.
@@ -447,13 +448,13 @@ def call_ep_combine(
             Shape: (max_tokens_per_rank, 2)
             [original_token_index, topk_index] for each token
         atomic_counter: Buffer for synchronization between thread blocks.
-        send_buf_ptrs: Device pointers to SHMEM send buffers for each GPU.
+        send_buf_ptrs: Device pointers to the send buffers for each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts * n_ranks * max_tokens_per_rank, msg_bytes).
-        recv_buf_ptrs: Device pointers to SHMEM receive buffers for each GPU.
+        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (max_tokens_per_rank, top_k, msg_bytes).
-        recv_count_ptrs: Device pointers to SHMEM receive count buffers for
+        recv_count_ptrs: Device pointers to the receive count buffers for
             each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_experts,)
@@ -504,8 +505,8 @@ def call_ep_combine_fused_shared_expert(
 
     This function launches the EP combine kernel that sends expert outputs back
     to their original devices based on source routing information. The kernel
-    uses non-blocking SHMEM communication and returns immediately after
-    initiating transfers.
+    uses non-blocking SHMEM communication in multi-node scenarios and returns
+    immediately after initiating transfers.
 
     Args:
         input_tokens: Expert output tokens to send back to original devices.
@@ -515,13 +516,13 @@ def call_ep_combine_fused_shared_expert(
             Shape: (max_tokens_per_rank, 2)
             [original_token_index, topk_index] for each token
         atomic_counter: Buffer for synchronization between thread blocks.
-        send_buf_ptrs: Device pointers to SHMEM send buffers for each GPU.
+        send_buf_ptrs: Device pointers to the send buffers for each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts * n_ranks * max_tokens_per_rank, msg_bytes).
-        recv_buf_ptrs: Device pointers to SHMEM receive buffers for each GPU.
+        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (max_tokens_per_rank, top_k, msg_bytes).
-        recv_count_ptrs: Device pointers to SHMEM receive count buffers for
+        recv_count_ptrs: Device pointers to the receive count buffers for
             each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_experts,)
@@ -580,28 +581,33 @@ def call_ep_combine_cb(
     recv_count_ptrs: TensorValue,
     config: EPConfig,
     num_tokens: Dim,
+    router_weights: TensorValue,
 ) -> TensorValue:
     """Complete Expert Parallelism token combine and return final outputs.
 
-    This function launches the EP combine callback kernel that waits for all
-    expert output transfers to complete, then organizes the received tokens
-    back into their original format and positions.
+    This function launches the EP combine callback kernel, which waits for all
+    inter-device communication to complete, then computes the weighted sum of
+    routed expert outputs for each token.
 
     Args:
         atomic_counter: Buffer for synchronization between thread blocks.
-        recv_buf_ptrs: Device pointers to SHMEM receive buffers for each GPU.
+        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (max_tokens_per_rank, top_k, msg_bytes)
-        recv_count_ptrs: Device pointers to SHMEM receive count buffers for
+        recv_count_ptrs: Device pointers to the receive count buffers for
             each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_experts,)
         config: EP configuration.
         num_tokens: Number of original input tokens before expert processing.
+        router_weights: Router weights for the current device. Once all tokens
+            are received, all routed experts' outputs for each token will be
+            weighted and summed to produce the final output for the token.
+            Shape: (num_tokens, top_k)
 
     Returns:
         output_tokens: Final output tensor with expert results.
-            Shape: (num_tokens, top_k, hidden_size)
+            Shape: (num_tokens, hidden_size)
             Expert outputs arranged back in original token order.
 
     Note:
@@ -624,11 +630,11 @@ def call_ep_combine_cb(
     result = ops.inplace_custom(
         "ep.combine_cb",
         device=device_ref,
-        values=[atomic_counter, recv_buf_ptrs, recv_count_ptrs],
+        values=[atomic_counter, recv_buf_ptrs, recv_count_ptrs, router_weights],
         out_types=[
             TensorType(
                 dtype=config.combine_dtype,
-                shape=[num_tokens, config.top_k, config.hidden_size],
+                shape=[num_tokens, config.hidden_size],
                 device=device_ref,
             ),  # output_tokens
         ],

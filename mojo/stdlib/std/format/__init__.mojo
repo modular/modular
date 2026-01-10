@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Text formatting: traits for writing types as human-readable UTF-8 strings.
 
-The `fmt` package provides traits that control how types format themselves as
+The `format` package provides traits that control how types format themselves as
 text and where that text gets written. The `Writable` trait describes how a
 type converts itself to UTF-8 text, while the `Writer` trait accepts formatted
 output from writable types. Together, they enable efficient formatting without

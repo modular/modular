@@ -120,6 +120,9 @@ def _fit_gamma_parameters(
         if k <= 0 or theta <= 0:
             return 1e9
         q_model = gamma.ppf(p, a=k, scale=theta)
+        if np.any(q_model == 0):
+            return 1e9
+
         if percentiles[0.5] > OBJECTIVE_SWITCH_THRESHOLD:
             errors = np.log(q_model) - np.log(q_target)
         else:
@@ -453,7 +456,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             )
             if input_len_cur + output_len_cur > max_context_length:
                 # Cap over-length sequences.
-                print(
+                logger.info(
                     f"Capping too long sequences ({input_len_cur} + {output_len_cur})"
                     f" > {max_context_length})..."
                 )

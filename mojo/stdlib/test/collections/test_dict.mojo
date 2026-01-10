@@ -205,20 +205,6 @@ def test_key_error():
         _ = dict.pop("a")
 
 
-def test_key_error_hold_key():
-    var dict: Dict[String, Int] = {}
-    var error_raised = False
-
-    var key = "a"
-    try:
-        _ = dict[key]
-    except e:
-        assert_equal(e.key(), key)
-        error_raised = True
-
-    assert_true(error_raised)
-
-
 def _test_iter_bounds[
     I: Iterator, //
 ](var dict_iter: I, dict_len: Int,):

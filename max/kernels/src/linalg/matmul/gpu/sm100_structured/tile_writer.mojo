@@ -19,7 +19,6 @@ This module provides modular components for the output pipeline:
 2. **TMEMToSMemWriter**: Write TMEM accumulators to shared memory
 3. **TMAStoreExecutor**: Execute TMA stores with proper SMEM tiling
 4. **EpilogueApplier**: Apply element-wise operations on fragments
-5. **load_tmem_fragments**: Load accumulator data from TMEM
 
 The SM100 epilogue pipeline flows as:
     TMEM (accumulators) → Registers → SMEM → GMEM (via TMA)
@@ -205,55 +204,6 @@ fn store_fragment_to_smem[
         st_matrix[simd_width=stmtx_simd_width, transpose=transpose_c](
             dst.ptr + offset, bitcast[DType.float32, stmtx_simd_width](v)
         )
-
-
-# =============================================================================
-# load_tmem_fragments - Load and cast TMEM fragments
-# =============================================================================
-
-
-@always_inline
-fn load_tmem_fragments[
-    accum_type: DType,
-    epilogue_type: DType,
-    frag_size: Int,
-    is_lower_required: Bool,
-    data_paths: Int = 16,
-    bits: Int = 256,
-    repeat: Int = 1,
-](
-    tmem_addr: UInt32,
-) -> Tuple[
-    SIMD[epilogue_type, frag_size * repeat],
-    SIMD[epilogue_type, frag_size * repeat],
-]:
-    """Load upper/lower TMEM fragments and cast to epilogue type."""
-    from .tmem import TmemAddress
-
-    comptime width = frag_size * repeat
-    var tmem = TmemAddress(tmem_addr)
-
-    var upper_frag = tmem.load_upper[
-        accum_type, width, data_paths, bits, repeat
-    ]()
-    var lower_frag = SIMD[accum_type, width]()
-
-    @parameter
-    if is_lower_required:
-        lower_frag = tmem.load_lower[
-            accum_type, width, data_paths, bits, repeat
-        ]()
-
-    TmemAddress.wait_load()
-
-    var upper_casted = upper_frag.cast[epilogue_type]()
-    var lower_casted = SIMD[epilogue_type, width]()
-
-    @parameter
-    if is_lower_required:
-        lower_casted = lower_frag.cast[epilogue_type]()
-
-    return (upper_casted, lower_casted)
 
 
 # =============================================================================
@@ -722,49 +672,6 @@ struct TMEMToSMemWriter[
     fn __init__(out self, warp_id: UInt32, lane_id: UInt32):
         self.warp_id = warp_id
         self.lane_id = lane_id
-
-    @always_inline
-    fn write_stage[
-        repeat: Int, bits: Int = 256
-    ](
-        self,
-        tmem_addr: UInt32,
-        stage: Int,
-        c_smem_tile: SMemTileType[
-            Self.c_type, Self.c_smem_layout, alignment=128
-        ],
-    ):
-        """Load TMEM fragments and write to SMEM with proper tiling."""
-        from .tmem import TmemAddress
-
-        comptime frag_size = Self.Config.fragment_size
-        comptime is_lower_required = Self.Config.is_lower_frag_required
-        comptime width = frag_size * repeat
-
-        # Compute stage TMEM address using TmemAddress abstraction
-        var tmem = TmemAddress(tmem_addr + UInt32(stage * Self.stageN))
-
-        # Load fragments
-        var upper_frag = tmem.load_upper[
-            Self.accum_type, width, Self.data_paths, bits, repeat
-        ]()
-
-        var lower_frag = SIMD[Self.accum_type, width]()
-
-        @parameter
-        if is_lower_required:
-            lower_frag = tmem.load_lower[
-                Self.accum_type, width, Self.data_paths, bits, repeat
-            ]()
-
-        TmemAddress.wait_load()
-
-        # Cast and write fragments
-        self.write_fragments[repeat](
-            upper_frag.cast[Self.c_type](),
-            lower_frag.cast[Self.c_type](),
-            c_smem_tile,
-        )
 
     @always_inline
     fn write_fragments[

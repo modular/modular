@@ -72,7 +72,7 @@ class RotaryEmbedding(Module):
 
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
         # Calculate theta for n/2 blocks: theta_for_block_i = theta ** (-2i/n) where n is dim for each head.
-        iota = F.range(0, n, step=2, dtype=DType.float64, device=self.device)
+        iota = F.arange(0, n, step=2, dtype=DType.float64, device=self.device)
         inv_freq = F.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
 
         return inv_freq
@@ -92,7 +92,7 @@ class RotaryEmbedding(Module):
             inv_freqs = self._compute_inv_freqs()
 
             # Generate position ids [0, 1, ..., max_seq_len*2] for a sequence of length (max_seq_len*2).
-            t = F.range(
+            t = F.arange(
                 0, self.max_seq_len * 2, device=self.device, dtype=DType.float32
             )
             # Rotation matrix for block i =  [cos(m*theta_i) -sin(m*theta_i); sin(m*theta_i) -cos(m*theta_i)] for each position_id m.
@@ -251,7 +251,7 @@ class YarnRotaryEmbedding(RotaryEmbedding):
             # Compute YARN frequencies
             inv_freqs = self._compute_yarn_freqs()
 
-            t = F.range(
+            t = F.arange(
                 0,
                 self.max_seq_len,
                 1,
@@ -285,7 +285,7 @@ class YarnRotaryEmbedding(RotaryEmbedding):
 
         # Base frequencies
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
-        range_output = F.range(
+        range_output = F.arange(
             start=0,
             stop=rope_dim,
             step=2,
@@ -395,7 +395,7 @@ class YarnRotaryEmbedding(RotaryEmbedding):
         )
 
         linear_func = (
-            F.range(
+            F.arange(
                 0, dim, 1, out_dim=dim, device=self.device, dtype=DType.int64
             ).cast(DType.float32)
             - min_val
