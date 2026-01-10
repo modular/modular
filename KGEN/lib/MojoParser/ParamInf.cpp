@@ -902,6 +902,25 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
   if (expectedSugar)
     return matchParams(actualAttr, expectedSugar.getExpanded());
 
+  if (paramIndexRefDepth) {
+    IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
+    expectedAttr = adjuster.replace(expectedAttr);
+  }
+
+  if (state.paramFinder.hasReferences(expectedAttr)) {
+    // This can not be a simple expression, which should have already been
+    // handled above.
+    assert(!isa<ParamIndexRefAttr>(expectedAttr));
+    // We are trying to much a dependent expression that is not yet fully
+    // resolved, we can not prove that two expression won't converge at the
+    // moment, return `Match` here.
+    // FIXME: we should only do this when matching parameter, argument should
+    // be inferred left-to-right always, and should be considered to be a
+    // failure when we see an unresolved dependent argument type.
+    // TODO: maybe have a code for `Defer`?
+    return Match;
+  }
+
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN ATTRS:\n"; actualAttr.dump();
              expectedAttr.dump(); llvm::errs() << "\n");
   return error();
@@ -1434,6 +1453,21 @@ RetryLabel:
   // base element.  Our solution to this is to rip and replace parameters that
   // contain unbound parameters, replacing them with UnboundAttr so inference
   // can find them.
+
+  // TODO: at this point, if we still have an unresolvable dependent type, we
+  // should raise an error. But we probably do need to try to pull default
+  // parameter value first to handle cases like
+  //
+  // fn store[
+  //     dtype: DType
+  //     width: Int = 1,
+  // ](
+  //     self: UnsafePointer[Scalar[dtype], ...],
+  //     val: SIMD[dtype, width],
+  // )
+  //
+  // # here Int(8) need to be implicitly converted to SIMD[dtype, 1],
+  // store(ptr, Int(8))
   auto nonParamType =
       expectedType.getWithUnknownParametersReplaced(emitter.shared);
   FailureOr<PValue> pValue = OverloadSet::canConstructType(
@@ -1489,6 +1523,44 @@ void ParamInfState::inferOneParam(ASTExprAnd<AnyValue> binding,
   (void)inferOneOperand(binding, expectedType, ArgConvention::ReadReg);
 }
 
+static PValue emitSingleParam(ASTDecl &scope, ASTExprAnd<AnyValue> binding,
+                              ASTType expectedType,
+                              ParserParameterEvaluator &evaluator) {
+
+  IREmitter emitter(scope, EC_TypeParamValue);
+  PValue bindingVal = binding.ir.getIfPValue();
+  assert(bindingVal && "Parameters are always PValue's");
+
+  // Parameters can only be unpacked into a variadic.
+  // FIXME: This results in a poor error message.
+  if (isa<UnpackedAttr>(bindingVal.get()))
+    return {};
+
+  // Check the type matches what is expected, and perform an implicit
+  // conversion if needed.
+  expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
+
+  // We don't typecheck the '_' magic parameter, we propagate it.
+  if (isa<UnboundAttr>(bindingVal.get()))
+    return {};
+
+  // If the parameter already has the right type, then we're good.
+  if (expectedType.isEqualCanon(bindingVal.getType()))
+    // Align sugar if necessary.
+    return ParamOperatorAttr::getRebind(bindingVal, expectedType);
+
+  // If the parameter can be implicitly converted, do so.
+  if (IREmitter::canImplicitlyConvertToType(
+          {bindingVal, binding.expr}, expectedType, emitter.getDeclScope())) {
+    ValueDest tmpDest(EC_CallParamValue);
+    CValue converted = emitter.emitImplicitConversionToType(
+        {bindingVal, binding.expr}, expectedType, tmpDest);
+    return converted.getIfPValue().get();
+  }
+
+  return {};
+}
+
 /// Given an incomplete parameter binding set for a parameter list, try to
 /// infer the value of the next parameter. We only do this if there are any
 /// inferred parameters present.  The 'hasArguments' field specifies whether
@@ -1514,42 +1586,29 @@ void ParamInfState::inferFromParamList(bool hasArguments) {
       cast<PogListAttr>(evaluator.getReboundAttribute(declaredParamPogs));
 
   auto inferAndEmitOneParam = [&](ASTExprAnd<AnyValue> binding,
-                                  ASTType expectedType) -> TypedAttr {
+                                  ASTType expectedType,
+                                  size_t paramIdx) -> TypedAttr {
     if (failed(inferOneOperand(binding, expectedType, ArgConvention::ReadReg)))
       return {};
 
-    IREmitter emitter(declScope, EC_TypeParamValue);
-    PValue bindingVal = binding.ir.getIfPValue();
-    assert(bindingVal && "Parameters are always PValue's");
+    PValue bindingVal =
+        emitSingleParam(declScope, binding, expectedType, evaluator);
+    if (bindingVal)
+      return bindingVal;
 
-    // Parameters can only be unpacked into a variadic.
-    // FIXME: This results in a poor error message.
-    if (isa<UnpackedAttr>(bindingVal.get()))
+    expectedType = evaluator.getReboundType(expectedType);
+    if (paramFinder.hasReferences(expectedType)) {
+      // We are handling a parameter that has a unresolved dependent type, defer
+      // the binding of it.
+      deferredGivenParam.push_back({binding, paramIdx});
       return {};
-
-    // Check the type matches what is expected, and perform an implicit
-    // conversion if needed.
-    expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
-
-    // We don't typecheck the '_' magic parameter, we propagate it.
-    if (isa<UnboundAttr>(bindingVal.get()))
-      return {};
-
-    // If the parameter already has the right type, then we're good.
-    if (expectedType.isEqualCanon(bindingVal.getType()))
-      // Align sugar if necessary.
-      return ParamOperatorAttr::getRebind(bindingVal, expectedType);
-
-    // If the parameter can be implicitly converted, do so.
-    if (IREmitter::canImplicitlyConvertToType(
-            {bindingVal, binding.expr}, expectedType, emitter.getDeclScope())) {
-      ValueDest tmpDest(EC_CallParamValue);
-      CValue converted = emitter.emitImplicitConversionToType(
-          {bindingVal, binding.expr}, expectedType, tmpDest);
-      return converted.getIfPValue().get();
     }
 
+    // Something weird happens if we do not do this. But I forgot why :(
+    //
     // Otherwise, we have an error.
+    // diags.addFailure(InferenceFailure::TypeConflictFailure{
+    //     paramIdx, expectedType, binding.ir.getIfPValue().getType()});
     return {};
   };
 
@@ -1574,13 +1633,27 @@ void ParamInfState::inferFromParamList(bool hasArguments) {
     // If we have a varargs parameters, then it will eat the rest of the
     // parameters, but we have to check each of them.
     if (declaredParamPogs.isPosVarArg(idx)) {
-      auto expectedVariadic = sugarCast<VariadicType>(expectedType);
-      Type varArgsEltType = expectedVariadic.getElementType();
-      while (posIdx != numParams) {
-        // FIXME: pack and install variadics parameter correctly.
-        if (!givenBindings[posIdx].keyword)
-          inferOneParam(givenBindings[posIdx], varArgsEltType);
+      if (evaluator.getIndexBindings()[idx]) {
+        // HACK: this is installed by precheck parameter, which (seems to)
+        // handles PosVarArgs in struct. That is,
+        // struct Tuple[*elt_types]:
+        //    fn tuple_method[a : Int]():
+        //        pass
+        //
+        // lit.tuple_method[*elt_types : pos_vararg, a : Int]
+        // in which `pos_vararg` appears at the first of the parameter list
+        // instead of the last, we can not consume all the following parameter
+        // in this case...
         ++posIdx;
+      } else {
+        auto expectedVariadic = sugarCast<VariadicType>(expectedType);
+        Type varArgsEltType = expectedVariadic.getElementType();
+        while (posIdx != numParams) {
+          // FIXME: pack and install variadics parameter correctly.
+          if (!givenBindings[posIdx].keyword)
+            inferOneParam(givenBindings[posIdx], varArgsEltType);
+          ++posIdx;
+        }
       }
       continue;
     }
@@ -1590,7 +1663,7 @@ void ParamInfState::inferFromParamList(bool hasArguments) {
     if (posIdx < numParams && (pog.getPassingKind() == PassingKind::PosOrKw ||
                                pog.getPassingKind() == PassingKind::PosOnly)) {
       TypedAttr paramVal =
-          inferAndEmitOneParam(givenBindings[posIdx], expectedType);
+          inferAndEmitOneParam(givenBindings[posIdx], expectedType, idx);
       if (paramVal && !evaluator.getIndexBindings()[idx])
         evaluator.overwriteIndexBinding(idx, paramVal);
 
@@ -1605,7 +1678,7 @@ void ParamInfState::inferFromParamList(bool hasArguments) {
       if (const OperandValue *param =
               givenBindings.findKwArg(declaredParamPogs.getName(idx))) {
 
-        TypedAttr paramVal = inferAndEmitOneParam(*param, expectedType);
+        TypedAttr paramVal = inferAndEmitOneParam(*param, expectedType, idx);
         if (paramVal && !evaluator.getIndexBindings()[idx])
           evaluator.overwriteIndexBinding(idx, paramVal);
 
@@ -1840,6 +1913,24 @@ ParamInfState::inferForCall(FnTypeGeneratorType signature,
       auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
       evaluator.overwriteIndexBinding(i, empty);
       break;
+    }
+  }
+
+  for (auto [paramVal, paramIdx] : deferredGivenParam) {
+    ASTType expectedType =
+        evaluator.getReboundType(declaredParamTypes[paramIdx]);
+
+    PValue bindingVal =
+        emitSingleParam(declScope, paramVal, expectedType, evaluator);
+
+    if (bindingVal) {
+      // This is a user provided parameter, we must not overwrite it with a
+      // inferred value.
+      // TODO: we should implement a more correct algorithm to handle deferred
+      // parameter correctly: anything that depends on a deferred parameter must
+      // be deferred too.
+      assert(!getInferredValue(paramIdx));
+      evaluator.overwriteIndexBinding(paramIdx, bindingVal);
     }
   }
 

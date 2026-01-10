@@ -145,7 +145,34 @@ public:
   /// refine dependent types as we infer parameters.
   ParserParameterEvaluator evaluator;
 
+  /// Cached finder to identify types that contains unbound ParamIndexRefAttrs.
+  ParamIndexRefAttrFinder paramFinder;
+
 private:
+  // This is a list of given parameter with a dependent type that are not
+  // resolvable immediately. We have to deferred the resolution of it.
+  //
+  // This is to handle cases like:
+  //
+  // fn foo[rank : Int, coord : IndexList[rank, Int]](i : SomeThing[rank]):
+  //    pass
+  //
+  // fn foo_user():
+  //    var i = SomeThing[2]
+  //    foo[coord = Tuple(1, 2)](i)
+  //
+  // When binding `coord` with `coord: Tuple[Int, Int]`, we do not know that
+  // `rank=2` nor `Tuple[Int, Int]` is convertible to `IndexList[2, Int]`, we
+  // have to postpone the binding till `rank` is resolved.
+  //
+  // Do we need to support this? I don't think this is too crazy to require user
+  // to type `foo[rank = 2, coord = (1, 2)]` here?
+  //
+  // TODO: The handling we have at the moment is incomplete: we simply go over
+  // the list again after inference is done, but we maybe should resolve it
+  // eagerly in the future to handle more complicated case.
+  SmallVector<std::pair<ASTExprAnd<AnyValue>, size_t>, 1> deferredGivenParam;
+
   LogicalResult inferSelfFromInitResult(FnTypeGeneratorType signature);
 
   /// Infer parameters from an operand being passed into this function. This is
@@ -173,9 +200,6 @@ private:
 
   /// The expression of the current argument being used for parameter inference.
   const ExprNode *curArgExpr = nullptr;
-
-  /// Cached finder to identify types that contains unbound ParamIndexRefAttrs.
-  ParamIndexRefAttrFinder paramFinder;
 };
 
 } // namespace M::KGEN::LIT
