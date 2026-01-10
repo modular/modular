@@ -84,7 +84,7 @@ void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
 }
 
 //===----------------------------------------------------------------------===//
-// ParameterInferenceState
+// ParameterInference
 //===----------------------------------------------------------------------===//
 
 ParamInf::ParamInf(ASTDecl &declScope, const CallOperands &givenBindings,
@@ -117,9 +117,16 @@ ParamInf::ParamInf(ASTDecl &declScope, const CallOperands &givenBindings,
 }
 
 void ParamInf::dump() const {
-  llvm::errs() << "ParameterInferenceState:\n";
+  auto &os = llvm::errs() << "ParamInf:\n";
   for (auto [idx, value] : llvm::enumerate(evaluator.getIndexBindings())) {
-    llvm::errs() << "  *(0," << idx << ") = " << value << "\n";
+    os << "  *(0," << idx << ") = ";
+    if (value)
+      os << value;
+    else
+      os << "<not yet set> : "
+         << const_cast<ParamInf *>(this)->evaluator.getReboundType(
+                declaredParamTypes[idx]);
+    os << "\n";
   }
 }
 
@@ -1633,8 +1640,6 @@ void ParamInf::inferFromParamList(bool hasArguments) {
 
     // If we have a varargs parameters, then it will eat the rest of the
     // parameters, but we have to check each of them.
-    // If we have a varargs parameters, then it will eat the rest of the
-    // parameters, but we have to check each of them.
     if (declaredParamPogs.isPosVarArg(idx)) {
       if (evaluator.getIndexBindings()[idx]) {
         // HACK: this is installed by precheck parameter, which (seems to)
@@ -1648,15 +1653,38 @@ void ParamInf::inferFromParamList(bool hasArguments) {
         // instead of the last, we can not consume all the following parameter
         // in this case...
         ++posIdx;
-      } else {
-        auto expectedVariadic = sugarCast<VariadicType>(expectedType);
-        Type varArgsEltType = expectedVariadic.getElementType();
-        while (posIdx != numParams) {
-          // FIXME: pack and install variadics parameter correctly.
-          if (!givenBindings[posIdx].keyword)
-            inferOneParam(givenBindings[posIdx], varArgsEltType);
-          ++posIdx;
-        }
+        continue;
+      }
+
+      // If there are no parameter values, nothing to do.
+      if (posIdx == numParams)
+        continue;
+
+      auto expectedVariadic = sugarCast<VariadicType>(expectedType);
+
+      // Unpacked variadics (`Tuple[*elts]` where elts is a variadic list) can
+      // be passed directly as a whole variadic parameter.
+      if (auto unpacked = dyn_cast<UnpackedAttr>(
+              givenBindings[posIdx].ir.getIfPValue().get())) {
+        // FIXME: Make sure to only unpack *x in pos varargs and **x in kw
+        // varargs.
+        TypedAttr paramVal = inferAndEmitOneParam(
+            {unpacked.getValue(), givenBindings[posIdx].expr}, expectedVariadic,
+            idx);
+        if (paramVal && !evaluator.getIndexBindings()[idx])
+          evaluator.overwriteIndexBinding(idx, paramVal);
+        ++posIdx;
+        continue;
+      }
+
+      // Otherwise, we infer the element type of the variadic from the values
+      // provided.
+      Type varArgsEltType = expectedVariadic.getElementType();
+      while (posIdx != numParams) {
+        // FIXME: pack and install variadics parameter correctly.
+        if (!givenBindings[posIdx].keyword)
+          inferOneParam(givenBindings[posIdx], varArgsEltType);
+        ++posIdx;
       }
       continue;
     }

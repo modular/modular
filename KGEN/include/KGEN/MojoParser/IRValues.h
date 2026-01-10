@@ -75,6 +75,14 @@ struct ASTExprAnd {
   /// additional semantic information.
   const ExprNode *expr;
 
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG ASTExprAnd()
+      : ir(ValueType()), expr(nullptr) {}
+
+  template <typename DerivedValueType>
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG
+  ASTExprAnd(DerivedValueType &&ir, const ExprNode *expr)
+      : ir(std::move(ir)), expr(expr) {}
+
   bool isNull() const { return ir.isNull(); }
   bool operator!() const { return !ir; }
   explicit operator bool() const { return bool(ir); }
