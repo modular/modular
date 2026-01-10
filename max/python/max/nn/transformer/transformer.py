@@ -86,6 +86,9 @@ class ReturnHiddenStates(str, Enum):
     ALL = "all"
     LAST_NORMALIZED = "last_normalized"
     ALL_NORMALIZED = "all_normalized"
+    # Returns hidden states from the second-to-last layer
+    # This matches diffusers' hidden_states[-2] pattern for text encoders
+    SECOND_TO_LAST = "second_to_last"
 
 
 Block = TypeVar("Block", bound=Module, covariant=True)
@@ -131,7 +134,10 @@ class Transformer(Module):
         input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
         freqs_cis = self.rope.freqs_cis
+        prev_h = h
+
         for idx, layer in enumerate(self.layers):
+            prev_h = h
             h = layer(
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
@@ -193,6 +199,8 @@ class Transformer(Module):
             ret_val += (self.norm(h),)
         elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
             ret_val += (self.norm(last_h),)
+        elif self.return_hidden_states == ReturnHiddenStates.SECOND_TO_LAST:
+            ret_val += (prev_h,)
 
         return ret_val
 

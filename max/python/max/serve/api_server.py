@@ -31,6 +31,7 @@ from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
+    ImageGeneratorPipeline,
     TokenGeneratorPipeline,
 )
 from max.serve.pipelines.model_worker import start_model_worker
@@ -134,7 +135,11 @@ async def lifespan(
 
         METRICS.pipeline_load(serving_settings.pipeline_config.model.model_name)
 
-        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline
+        pipeline: (
+            TokenGeneratorPipeline
+            | AudioGeneratorPipeline
+            | ImageGeneratorPipeline
+        )
         if serving_settings.pipeline_task in (
             PipelineTask.TEXT_GENERATION,
             PipelineTask.EMBEDDINGS_GENERATION,
@@ -148,6 +153,13 @@ async def lifespan(
         elif serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION:
             pipeline = AudioGeneratorPipeline(
                 model_name=serving_settings.pipeline_config.model.model_name,
+                tokenizer=serving_settings.tokenizer,
+                lora_queue=lora_queue,
+                scheduler_zmq_configs=scheduler_zmq_configs,
+            )
+        elif serving_settings.pipeline_task == PipelineTask.IMAGE_GENERATION:
+            pipeline = ImageGeneratorPipeline(
+                model_name=serving_settings.pipeline_config.model_config.model_name,
                 tokenizer=serving_settings.tokenizer,
                 lora_queue=lora_queue,
                 scheduler_zmq_configs=scheduler_zmq_configs,
