@@ -10,10 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Architecture registration for sentence-transformers/all-MiniLM-L6-v2"""
+"""Architecture registration for MiniLM sentence transformer."""
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import EmbeddingsContext, PipelineTask
+from max.interfaces import PipelineTask
+from max.pipelines import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
@@ -37,7 +38,7 @@ minilm_arch = SupportedArchitecture(
     },
     pipeline_model=MiniLMPipelineModel,
     tokenizer=MiniLMTokenizer,
-    context_type=EmbeddingsContext,
+    context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
