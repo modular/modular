@@ -149,12 +149,19 @@ private:
 // value.
 class ParamIndexRefAttrFinder {
 public:
-  bool hasReferences(TypedAttr value);
-  bool hasReferences(Type type);
+  bool hasReferences(TypedAttr value) {
+    return findOneReference(value).has_value();
+  }
+  bool hasReferences(Type type) { return findOneReference(type).has_value(); }
+
+  /// This scans the specified value or type for parameter references.  It runs
+  /// nullopt if there are none, or the index of the first that it encounters.
+  std::optional<size_t> findOneReference(TypedAttr value);
+  std::optional<size_t> findOneReference(Type type);
 
 private:
   // Depth aware cache to avoid visiting the same attr twice.
-  DenseMap<std::pair<size_t, const void *>, bool> cached;
+  DenseMap<std::pair<size_t, const void *>, ssize_t> cached;
 };
 
 //===----------------------------------------------------------------------===//
