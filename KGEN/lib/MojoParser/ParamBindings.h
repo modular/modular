@@ -27,7 +27,7 @@ class PValue;
 class StructDeclOp;
 class TypeSignatureType;
 class ParamInfDiags;
-class ParamInfState;
+class ParamInf;
 
 //===----------------------------------------------------------------------===//
 // ParamBindings
@@ -107,7 +107,7 @@ public:
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
       LITGeneratorType sig,
       llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
-      ParamInfState &inference, ASTDecl *declIfKnown) const;
+      ParamInf &inference, ASTDecl *declIfKnown) const;
 
   /// Attempt to bind the current set of parameters to the provided parameter
   /// types and list. This applies parameter inference and any default values to
@@ -154,7 +154,7 @@ private:
   /// in the evaluator used by the implementation.
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindingsImpl(
       const CallOperands &operands, ArrayRef<Type> expectedParamTypes,
-      PogListAttr paramListAttr, ParamInfState &inference,
+      PogListAttr paramListAttr, ParamInf &inference,
       llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
       bool partial, ASTDecl *declIfDirect) const;
 

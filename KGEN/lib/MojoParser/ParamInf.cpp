@@ -81,12 +81,9 @@ void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
 // ParameterInferenceState
 //===----------------------------------------------------------------------===//
 
-ParamInfState::ParamInfState(ASTDecl &declScope,
-                             const CallOperands &givenBindings,
-                             size_t numPreCheckedParam,
-                             ArrayRef<Type> declaredParamTypes,
-                             PogListAttr declaredParamPogs,
-                             bool allowImplicitConversions)
+ParamInf::ParamInf(ASTDecl &declScope, const CallOperands &givenBindings,
+                   size_t numPreCheckedParam, ArrayRef<Type> declaredParamTypes,
+                   PogListAttr declaredParamPogs, bool allowImplicitConversions)
     : declScope(declScope), shared(declScope.getShared()),
       evaluator(declScope.getShared()), givenBindings(givenBindings),
       declaredParamTypes(declaredParamTypes),
@@ -113,7 +110,7 @@ ParamInfState::ParamInfState(ASTDecl &declScope,
     evaluator.appendIndexBinding(TypedAttr());
 }
 
-void ParamInfState::dump() const {
+void ParamInf::dump() const {
   llvm::errs() << "ParameterInferenceState:\n";
   for (auto [idx, value] : llvm::enumerate(evaluator.getIndexBindings())) {
     llvm::errs() << "  *(0," << idx << ") = " << value << "\n";
@@ -152,7 +149,7 @@ namespace {
 /// allows the Int addition to fold.
 class ParamMatcher {
 public:
-  ParamMatcher(const ExprNode *expr, ParamInfState &state)
+  ParamMatcher(const ExprNode *expr, ParamInf &state)
       : expr(expr), state(state), shared(state.shared) {}
   ~ParamMatcher() {}
 
@@ -196,7 +193,7 @@ private:
 
   /// This is the expression we're inferring within.
   const ExprNode *const expr;
-  ParamInfState &state;
+  ParamInf &state;
   SharedState &shared;
 };
 } // end anonymous namespace
@@ -1052,8 +1049,7 @@ ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
 /// custom logic is required because often (eg in this case) the "actual" type
 /// will have UnboundAttr parameters, instead of fully bound ones like a normal
 /// argument.
-LogicalResult
-ParamInfState::inferSelfFromInitResult(FnTypeGeneratorType signature) {
+LogicalResult ParamInf::inferSelfFromInitResult(FnTypeGeneratorType signature) {
   // We don't not have a expr for init self result, use the call expression
   // location to report parameter match error.
   curArgExpr = givenBindings.callExpr;
@@ -1145,9 +1141,9 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue *init,
 /// Infer parameters from an operand being passed into this function. This is
 /// only called on the top level function operands being matched up, not
 /// anything in recursive functiontype positions.
-LogicalResult ParamInfState::inferOneOperand(ASTExprAnd<AnyValue> operand,
-                                             ASTType origExpectedType,
-                                             ArgConvention expectedConvention) {
+LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
+                                        ASTType origExpectedType,
+                                        ArgConvention expectedConvention) {
   // Whenever a parameter is bound, we need to re-evaluate the expected type and
   // try again.
 RetryLabel:
@@ -1518,8 +1514,7 @@ RetryLabel:
   return failure();
 }
 
-void ParamInfState::inferOneParam(ASTExprAnd<AnyValue> binding,
-                                  Type expectedType) {
+void ParamInf::inferOneParam(ASTExprAnd<AnyValue> binding, Type expectedType) {
   (void)inferOneOperand(binding, expectedType, ArgConvention::ReadReg);
 }
 
@@ -1569,7 +1564,7 @@ static PValue emitSingleParam(ASTDecl &scope, ASTExprAnd<AnyValue> binding,
 /// be installed into evaluator.
 ///
 /// TODO: remove `installParam` and make it always true.
-void ParamInfState::inferFromParamList(bool hasArguments) {
+void ParamInf::inferFromParamList(bool hasArguments) {
   if (hasInferredForCall)
     return;
 
@@ -1715,11 +1710,10 @@ void ParamInfState::inferFromParamList(bool hasArguments) {
   }
 }
 
-LogicalResult
-ParamInfState::inferForCall(FnTypeGeneratorType signature,
-                            const CallOperands &operands,
-                            const OperandValueList &variadicKwOperands,
-                            bool returnsSelf, bool hasCTADParams) {
+LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
+                                     const CallOperands &operands,
+                                     const OperandValueList &variadicKwOperands,
+                                     bool returnsSelf, bool hasCTADParams) {
   // First try to infer parameters from the already provided bindings.
   inferFromParamList(/*hasArguments*/ true);
   hasInferredForCall = true;
@@ -1961,8 +1955,8 @@ ParamInfState::inferForCall(FnTypeGeneratorType signature,
 
 /// Given an incomplete parameter binding set, try to infer parameters on Self
 /// of a method from the first argument.
-LogicalResult ParamInfState::inferCTADParams(FnTypeGeneratorType signature,
-                                             const CallOperands &operands) {
+LogicalResult ParamInf::inferCTADParams(FnTypeGeneratorType signature,
+                                        const CallOperands &operands) {
   // Consider "conditional conformance" cases like:
   //     struct X[A: AnyType]:
   //       fn foo[B: Movable](self: X[B]): ...

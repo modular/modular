@@ -256,7 +256,7 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindingsImpl(
     const CallOperands &origOperands, ArrayRef<Type> expectedParamTypes,
-    PogListAttr paramListAttr, ParamInfState &inference,
+    PogListAttr paramListAttr, ParamInf &inference,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     bool partial, ASTDecl *declIfDirect) const {
 
@@ -796,7 +796,7 @@ std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(
     LITGeneratorType sig,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
-    ParamInfState &inference, ASTDecl *declIfKnown) const {
+    ParamInf &inference, ASTDecl *declIfKnown) const {
   return verifyBindingsImpl(parameters, sig.getInputParamTypes(),
                             sig.getMetadata(), inference, getDiag,
                             /*partial=*/false, declIfKnown);
@@ -806,9 +806,9 @@ ParameterExprArrayAttr
 ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
                                  PogListAttr paramList, bool partial) const {
   // The inference diagnostics will be unused.
-  ParamInfState inference(declScope, getParameters(), getNumPreCheckedParams(),
-                          paramTypes, paramList,
-                          /*allowImplicitConversions=*/true);
+  ParamInf inference(declScope, getParameters(), getNumPreCheckedParams(),
+                     paramTypes, paramList,
+                     /*allowImplicitConversions=*/true);
   std::optional<MojoInflightDiag> diag;
   auto [bindings, _] = verifyBindingsImpl(
       parameters, paramTypes, paramList, inference,
@@ -871,9 +871,9 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
                                       PogListAttr paramListAttr,
                                       ASTDecl *declIfKnown,
                                       bool partial) const {
-  ParamInfState inference(declScope, getParameters(), getNumPreCheckedParams(),
-                          expectedParamTypes, paramListAttr,
-                          /*allowImplicitConversions=*/true);
+  ParamInf inference(declScope, getParameters(), getNumPreCheckedParams(),
+                     expectedParamTypes, paramListAttr,
+                     /*allowImplicitConversions=*/true);
   std::optional<MojoInflightDiag> diag;
   auto getDiags = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
     diag = shared.emitError(loc ? *loc : getExprLoc());
