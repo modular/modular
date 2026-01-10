@@ -107,8 +107,7 @@ public:
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
       LITGeneratorType sig,
       llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
-      ParamInfState &inference, ParamInfDiags &inferenceDiags,
-      ASTDecl *declIfKnown) const;
+      ParamInfState &inference, ASTDecl *declIfKnown) const;
 
   /// Attempt to bind the current set of parameters to the provided parameter
   /// types and list. This applies parameter inference and any default values to
@@ -156,7 +155,6 @@ private:
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindingsImpl(
       const CallOperands &operands, ArrayRef<Type> expectedParamTypes,
       PogListAttr paramListAttr, ParamInfState &inference,
-      ParamInfDiags &inferenceDiags,
       llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
       bool partial, ASTDecl *declIfDirect) const;
 

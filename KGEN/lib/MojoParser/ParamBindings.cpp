@@ -257,7 +257,6 @@ std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindingsImpl(
     const CallOperands &origOperands, ArrayRef<Type> expectedParamTypes,
     PogListAttr paramListAttr, ParamInfState &inference,
-    ParamInfDiags &inferenceDiags,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     bool partial, ASTDecl *declIfDirect) const {
 
@@ -371,7 +370,8 @@ ParamBindings::verifyBindingsImpl(
 
     // If we succeeded inference but didn't get a value for this parameter,
     // then the parameter must not be present: complain.
-    inferenceDiags.addFailure(InferenceFailure::NotFoundFailure{paramIdx});
+    inference.inferenceDiags.addFailure(
+        InferenceFailure::NotFoundFailure{paramIdx});
     return PValue();
   };
 
@@ -453,13 +453,13 @@ ParamBindings::verifyBindingsImpl(
         if (paramIdx < structSig.getNumParams()) {
           diag << " of parent struct '" << structOp.getDeclName().getValue()
                << "'";
-          inferenceDiags.addExplanation(diag);
+          inference.inferenceDiags.addExplanation(diag);
           diag.attachNote(structOp.getLoc()) << " struct declared here";
           return;
         }
       }
     }
-    inferenceDiags.addExplanation(diag);
+    inference.inferenceDiags.addExplanation(diag);
   };
 
   auto emitTypeMismatch = [&](size_t index, ASTExprAnd<AnyValue> binding,
@@ -786,11 +786,9 @@ std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(
     LITGeneratorType sig,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
-    ParamInfState &inference, ParamInfDiags &inferenceDiags,
-    ASTDecl *declIfKnown) const {
+    ParamInfState &inference, ASTDecl *declIfKnown) const {
   return verifyBindingsImpl(parameters, sig.getInputParamTypes(),
-                            sig.getMetadata(), inference, inferenceDiags,
-                            getDiag,
+                            sig.getMetadata(), inference, getDiag,
                             /*partial=*/false, declIfKnown);
 }
 
@@ -798,13 +796,12 @@ ParameterExprArrayAttr
 ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
                                  PogListAttr paramList, bool partial) const {
   // The inference diagnostics will be unused.
-  ParamInfDiags inferenceDiags;
   ParamInfState inference(declScope, getParameters(), getNumPreCheckedParams(),
-                          paramTypes, paramList, inferenceDiags,
+                          paramTypes, paramList,
                           /*allowImplicitConversions=*/true);
   std::optional<MojoInflightDiag> diag;
   auto [bindings, _] = verifyBindingsImpl(
-      parameters, paramTypes, paramList, inference, inferenceDiags,
+      parameters, paramTypes, paramList, inference,
       [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
         // Ignore any errors.
         diag = shared.emitError(loc ? *loc : getExprLoc());
@@ -864,18 +861,17 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
                                       PogListAttr paramListAttr,
                                       ASTDecl *declIfKnown,
                                       bool partial) const {
-  ParamInfDiags inferenceDiags;
   ParamInfState inference(declScope, getParameters(), getNumPreCheckedParams(),
-                          expectedParamTypes, paramListAttr, inferenceDiags,
+                          expectedParamTypes, paramListAttr,
                           /*allowImplicitConversions=*/true);
   std::optional<MojoInflightDiag> diag;
   auto getDiags = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
     diag = shared.emitError(loc ? *loc : getExprLoc());
     return *diag;
   };
-  auto [bindings, fitness] = verifyBindingsImpl(
-      parameters, expectedParamTypes, paramListAttr, inference, inferenceDiags,
-      getDiags, partial, declIfKnown);
+  auto [bindings, fitness] =
+      verifyBindingsImpl(parameters, expectedParamTypes, paramListAttr,
+                         inference, getDiags, partial, declIfKnown);
   return {bindings, fitness, std::move(diag)};
 }
 

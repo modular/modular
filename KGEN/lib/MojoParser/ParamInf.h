@@ -90,10 +90,13 @@ public:
   ASTDecl &declScope;
   SharedState &shared;
 
+  // Built up diagnostic state for failures.
+  // TODO: Keep removing this.
+  ParamInfDiags inferenceDiags;
+
   ParamInfState(ASTDecl &declScope, const CallOperands &givenBindings,
                 size_t numPreCheckedBindings, ArrayRef<Type> declaredParamTypes,
-                PogListAttr declaredParamPogs, ParamInfDiags &diags,
-                bool allowImplicitConversions);
+                PogListAttr declaredParamPogs, bool allowImplicitConversions);
 
   /// Given an incomplete parameter binding set for a parameter list, try to
   /// infer the value of the next parameter. We only do this if there are any
@@ -135,7 +138,7 @@ public:
   void dump() const;
 
   void addFailure(InferenceFailure &&info) {
-    diags.addFailure(std::move(info));
+    inferenceDiags.addFailure(std::move(info));
   }
 
   /// This is the evaluator instance parameter inference uses to progressively
@@ -164,9 +167,6 @@ private:
 
   /// This describes the nature of the parameter list we're inferring for.
   PogListAttr declaredParamPogs;
-
-  /// The current set of parameter inference diagnostics.
-  ParamInfDiags &diags;
 
   /// True if implicit conversions in argument lists are permitted.
   const bool allowImplicitConversions;
