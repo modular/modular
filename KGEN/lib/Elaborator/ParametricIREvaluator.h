@@ -189,6 +189,10 @@ private:
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
   FailureOr<TypedAttr> evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry);
 
+  ErrorTreeOr<StructInstanceOp>
+  getConcreteStructTypeInstanceInternal(Location loc,
+                                        TypeInstanceRefAttr instref) override;
+
   void dump() {
     for (auto pair : getCurrentParamEval().getDeclBindings()) {
       llvm::dbgs() << "[param name]: " << pair.first

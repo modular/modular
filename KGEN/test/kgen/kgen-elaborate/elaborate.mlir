@@ -2123,16 +2123,42 @@ kgen.generator @get_array_type<T: type>() -> !kgen.type {
 // CHECK-MAIN-SAME: struct_inst<"WeirdStruct"(data: array<[[SIZEOF]], index>)>
 kgen.struct.generator @WeirdStruct<T: type> = struct_inst<"WeirdStruct"(data: typevalue<apply(:() -> !kgen.type @get_array_type<:type T>)>)>
 
-kgen.generator @use_type<T: type>() {
-  kgen.return
+kgen.generator @get_struct_field_types<T: type>() -> !kgen.variadic<type> {
+  %variadic = kgen.param.constant: variadic<type> = <#kgen.struct_field_types<T>>
+  kgen.return %variadic : !kgen.variadic<type>
+}
+
+kgen.generator @get_struct_field_names<T: type>() -> !kgen.variadic<string> {
+  %variadic = kgen.param.constant: variadic<string> = <#kgen.struct_field_names<T>>
+  kgen.return %variadic : !kgen.variadic<string>
+}
+
+kgen.generator @get_struct_field_index_by_name<T: type>() -> index {
+  %index = kgen.param.constant: index = <#kgen.struct_field_index_by_name<T, "data">>
+  kgen.return %index : index
+}
+
+kgen.generator @get_struct_field_type_by_name<T: type>() -> !kgen.type {
+  %type = kgen.param.constant: type = <#kgen.struct_field_type_by_name<T, "data">>
+  kgen.return %type : !kgen.type
 }
 
 #weird_struct = #kgen.type<typevalue<:() -> !kgen.type #kgen.genref<@WeirdStruct<:type index>>>, struct<(apply(:() -> !kgen.type @get_array_type<:type index>))>> : !kgen.type
 
 // CHECK: kgen.func @gen_structs
 kgen.generator @gen_structs() {
-  // CHECK-NEXT: kgen.call {{.*}}WeirdStruct,T=index{{.*}}, struct<(array<[[SIZEOF:.+]], index>)>
-  kgen.call @use_type<:type #weird_struct>() : () -> ()
+  // CHECK-NEXT: kgen.param.constant: variadic<type> = <[array<[[SIZEOF:.+]], index>]>
+  kgen.param.apply test_struct_field_types = [() -> !kgen.variadic<type>: @get_struct_field_types<:type #weird_struct>]()
+  kgen.param.constant: variadic<type> = <test_struct_field_types>
+  // CHECK-NEXT: kgen.param.constant: variadic<string> = <["data"]>
+  kgen.param.apply test_struct_field_names = [() -> !kgen.variadic<string>: @get_struct_field_names<:type #weird_struct>]()
+  kgen.param.constant: variadic<string> = <test_struct_field_names>
+  // CHECK-NEXT: kgen.param.constant = <0>
+  kgen.param.apply test_struct_field_index_by_name = [() -> index: @get_struct_field_index_by_name<:type #weird_struct>]()
+  kgen.param.constant: index = <test_struct_field_index_by_name>
+  // CHECK-NEXT: kgen.param.constant: type = <array<[[SIZEOF:.+]], index>>
+  kgen.param.apply test_struct_field_type_by_name = [() -> !kgen.type: @get_struct_field_type_by_name<:type #weird_struct>]()
+  kgen.param.constant: type = <test_struct_field_type_by_name>
   kgen.return
 }
 
