@@ -10,10 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MiniLM pipeline model implementation.
+"""Defines the MiniLM pipeline model.
 
-This module defines the pipeline model for the all-MiniLM-L6-v2 sentence
-transformer, handling input preparation, model execution, and output processing.
+Implementation is based on BertModel from the transformers library.
 """
 
 from __future__ import annotations
@@ -147,7 +146,7 @@ class MiniLMPipelineModel(PipelineModel[TextContext]):
 
         context_batch = replica_batches[0]
 
-        tokens = [ctx.next_tokens for ctx in context_batch]
+        tokens = [ctx.tokens.active for ctx in context_batch]
 
         pad_value = getattr(self.huggingface_config, "pad_token_id", 0)
         next_tokens_batch, _ = collate_batch(
