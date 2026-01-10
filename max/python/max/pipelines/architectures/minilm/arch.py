@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Architecture registration for MiniLM sentence transformer."""
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
@@ -17,25 +18,26 @@ from max.pipelines import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
-    TextTokenizer,
 )
 
 from . import weight_adapters
-from .model import MPNetPipelineModel
+from .model import MiniLMPipelineModel
+from .tokenizer import MiniLMTokenizer
 
-mpnet_arch = SupportedArchitecture(
-    name="MPNetForMaskedLM",
+minilm_arch = SupportedArchitecture(
+    name="BertModel",
     task=PipelineTask.EMBEDDINGS_GENERATION,
     example_repo_ids=[
-        "sentence-transformers/all-mpnet-base-v2",
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "sentence-transformers/all-MiniLM-L12-v2",
     ],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
         SupportedEncoding.float32: [],
         SupportedEncoding.bfloat16: [],
     },
-    pipeline_model=MPNetPipelineModel,
-    tokenizer=TextTokenizer,
+    pipeline_model=MiniLMPipelineModel,
+    tokenizer=MiniLMTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
