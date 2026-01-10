@@ -353,50 +353,57 @@ void VerifyingParameterCollector::verifyRefType(StructTypeInterface refType) {
 //===----------------------------------------------------------------------===//
 
 template <typename T>
-static bool
-hasReferencesImpl(T value, size_t depth,
-                  DenseMap<std::pair<size_t, const void *>, bool> &cache) {
+static std::optional<size_t> findFirstReferenceImpl(
+    T value, size_t depth,
+    DenseMap<std::pair<size_t, const void *>, ssize_t> &cache) {
   if (!value)
-    return false;
+    return -1;
 
   // If we've already processed this value, just reuse the memoized result.
   std::pair<size_t, const void *> cacheKey(depth, value.getAsOpaquePointer());
   auto it = cache.find(cacheKey);
   if (it != cache.end())
-    return it->second;
+    return it->second == -1 ? std::optional<size_t>()
+                            : static_cast<size_t>(it->second);
 
   // Signatures push a parameter scope.
   if constexpr (std::is_base_of_v<Type, T>)
     if (isa<ParameterScopeTypeInterface>(value))
       ++depth;
 
-  bool hasReference = false;
+  ssize_t hasReference = -1;
   // Check to see if this is locally an index with the right depth.
   if constexpr (std::is_base_of_v<Attribute, T>)
     if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value))
       if (indexRef.getDepth() == depth)
-        hasReference = true;
+        hasReference = indexRef.getIndex();
 
-  if (!hasReference) {
+  if (hasReference == -1) {
     value.walkImmediateSubElements(
         [&](Attribute attr) {
-          hasReference |= hasReferencesImpl(attr, depth, cache);
+          if (hasReference == -1)
+            if (auto result = findFirstReferenceImpl(attr, depth, cache))
+              hasReference = result.value();
         },
         [&](Type type) {
-          hasReference |= hasReferencesImpl(type, depth, cache);
+          if (hasReference == -1)
+            if (auto result = findFirstReferenceImpl(type, depth, cache))
+              hasReference = result.value();
         });
   }
 
   cache[cacheKey] = hasReference;
-  return hasReference;
+  return hasReference == -1 ? std::optional<size_t>()
+                            : static_cast<size_t>(hasReference);
 }
 
-bool ParamIndexRefAttrFinder::hasReferences(TypedAttr value) {
-  return hasReferencesImpl(value, 0, cached);
+std::optional<size_t>
+ParamIndexRefAttrFinder::findOneReference(TypedAttr value) {
+  return findFirstReferenceImpl(value, 0, cached);
 }
 
-bool ParamIndexRefAttrFinder::hasReferences(Type type) {
-  return hasReferencesImpl(type, 0, cached);
+std::optional<size_t> ParamIndexRefAttrFinder::findOneReference(Type type) {
+  return findFirstReferenceImpl(type, 0, cached);
 }
 
 //===----------------------------------------------------------------------===//
