@@ -284,14 +284,14 @@ class MambaModelBase(PipelineModel[TextContext]):
                 model_inputs.tokens,
                 model_inputs.input_row_offsets,
                 model_inputs.return_n_logits,
-                model_inputs.lora_ids,  # type: ignore
-                model_inputs.lora_ranks,  # type: ignore
-                model_inputs.lora_grouped_offsets,  # type: ignore
-                model_inputs.num_active_loras,  # type: ignore
-                model_inputs.lora_end_idx,  # type: ignore
-                model_inputs.batch_seq_len,  # type: ignore
-                model_inputs.lora_ids_kv,  # type: ignore
-                model_inputs.lora_grouped_offsets_kv,  # type: ignore
+                model_inputs.lora_ids,  # type: ignore[arg-type]
+                model_inputs.lora_ranks,  # type: ignore[arg-type]
+                model_inputs.lora_grouped_offsets,  # type: ignore[arg-type]
+                model_inputs.num_active_loras,  # type: ignore[arg-type]
+                model_inputs.lora_end_idx,  # type: ignore[arg-type]
+                model_inputs.batch_seq_len,  # type: ignore[arg-type]
+                model_inputs.lora_ids_kv,  # type: ignore[arg-type]
+                model_inputs.lora_grouped_offsets_kv,  # type: ignore[arg-type]
                 *model_inputs.signal_buffers,
             )
         else:

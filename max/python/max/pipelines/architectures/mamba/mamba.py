@@ -97,7 +97,7 @@ class Mamba(Module):
                     dim=config.hidden_size,
                     mixer=ssm,
                     mlp=None,  # TODO: Add MLP support if needed
-                    norm=create_norm(),  # type: ignore[arg-type]
+                    norm=create_norm(),  # type: ignore
                     norm2=None,
                     fused_add_norm=True,  # Enable fused path
                     residual_in_fp32=config.residual_in_fp32,
@@ -175,7 +175,7 @@ class Mamba(Module):
             h = h + residual
 
         # Apply final normalization
-        h = self.norm(h)  # type: ignore[assignment]
+        h = self.norm(h)  # type: ignore
 
         # Get last token logits
         last_token_indices = input_row_offsets[1:] - 1

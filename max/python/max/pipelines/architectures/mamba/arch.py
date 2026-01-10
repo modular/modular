@@ -18,11 +18,11 @@ from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
     SupportedEncoding,
-    TextTokenizer,
 )
 
 from . import weight_adapters
 from .model import MambaModel
+from .tokenizer import MambaTokenizer
 
 mamba_arch = SupportedArchitecture(
     name="MambaForCausalLM",
@@ -35,7 +35,7 @@ mamba_arch = SupportedArchitecture(
         SupportedEncoding.float32: [],
     },
     pipeline_model=MambaModel,
-    tokenizer=TextTokenizer,
+    tokenizer=MambaTokenizer,
     context_type=TextContext,
     rope_type=RopeType.normal,
     default_weights_format=WeightsFormat.safetensors,

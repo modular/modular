@@ -85,7 +85,7 @@ def convert_safetensor_state_dict(
             if len(shape) == 3 and shape[1] == 1:
                 # Squeeze the middle dimension (in_channels/groups = 1)
                 # Convert via DLPack protocol to numpy
-                arr = np.from_dlpack(weight_data)  # type: ignore[arg-type]
+                arr = np.from_dlpack(weight_data)  # type: ignore
                 arr = arr.reshape(
                     shape[0], shape[2]
                 ).copy()  # copy to ensure contiguity

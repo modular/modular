@@ -109,7 +109,7 @@ class DistributedMamba(Module):
                     dim=config.hidden_size,
                     mixer=ssm,
                     mlp=None,  # TODO: Add MLP support if needed
-                    norm=create_norm(),  # type: ignore[arg-type]
+                    norm=create_norm(),  # type: ignore
                     norm2=None,
                     fused_add_norm=config.fused_add_norm,
                     residual_in_fp32=config.residual_in_fp32,
@@ -213,7 +213,7 @@ class DistributedMamba(Module):
             h, residual = layer_output
 
         # Apply final normalization
-        h = self.norm(h)  # type: ignore[assignment]
+        h = self.norm(h)  # type: ignore
 
         # Get logits - VocabParallelEmbedding returns list[TensorValue]
         logits_list: list[TensorValue] = self.lm_head(h, signal_buffers)

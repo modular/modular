@@ -155,7 +155,7 @@ def _assign_weight(module: Module, key: str, value: Any) -> None:
     path = key.split(".")
     for attr in path[:-1]:
         if attr.isnumeric():
-            module = module[int(attr)]  # type: ignore
+            module = module[int(attr)]  # type: ignore[index]
         else:
             module = getattr(module, attr)
     setattr(module, path[-1], value)
