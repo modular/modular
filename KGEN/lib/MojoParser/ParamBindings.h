@@ -26,7 +26,6 @@ class PogListAttr;
 class PValue;
 class StructDeclOp;
 class TypeSignatureType;
-class ParamInfDiags;
 class ParamInf;
 
 //===----------------------------------------------------------------------===//

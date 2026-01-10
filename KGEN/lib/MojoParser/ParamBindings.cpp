@@ -370,8 +370,7 @@ ParamBindings::verifyBindingsImpl(
 
     // If we succeeded inference but didn't get a value for this parameter,
     // then the parameter must not be present: complain.
-    inference.inferenceDiags.addFailure(
-        InferenceFailure::NotFoundFailure{paramIdx});
+    inference.inferenceDiags.addFailure(InferenceFailure::NotFound{paramIdx});
     return PValue();
   };
 

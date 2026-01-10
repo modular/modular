@@ -21,21 +21,31 @@ class ExprNode;
 /// These are the different failure modes that we know happen.
 struct InferenceFailure {
   /// This failure happens when a parameter is found of the wrong type.
-  struct TypeConflictFailure {
+  struct TypeConflict {
     size_t paramIdx; // TODO: Render this name.
     ASTType paramType, argParamType;
   };
 
   /// This failure happens when a parameter is inferred to two different values.
-  struct ValueConflictFailure {
+  struct ValueConflict {
     size_t paramIdx;
     TypedAttr v1, v2;
   };
 
   /// This failure happens when the parameter isn't found at all.
-  struct NotFoundFailure {
+  struct NotFound {
     size_t paramIdx;
   };
+
+  /// This failure happens when merge* is called, but the expected type/value
+  /// still has an unresolved dependent type which can't be inferred.
+  struct DependsOnUnresolved {
+    size_t paramIdx;
+  };
+
+  /// This failure hasn't been categorized yet.
+  /// FIXME: Remove this.
+  struct Unclassified {};
 
   template <typename Failure>
   InferenceFailure(Failure info) : info(info) {}
@@ -44,7 +54,9 @@ struct InferenceFailure {
   void addExplanation(MojoInflightDiag &diag) const;
 
 private:
-  SmartVariant<TypeConflictFailure, ValueConflictFailure, NotFoundFailure> info;
+  SmartVariant<TypeConflict, ValueConflict, NotFound, DependsOnUnresolved,
+               Unclassified>
+      info;
 };
 
 //===----------------------------------------------------------------------===//
