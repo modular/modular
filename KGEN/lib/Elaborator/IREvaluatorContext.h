@@ -178,6 +178,22 @@ public:
   virtual ~IREvaluatorContext() = default;
 
 protected:
+  /// Struct Field Reflection Helpers
+
+  /// Helper to resolve a type reference to a StructInstanceType.
+  /// Emits an error with the given function name context on failure.
+  /// Returns null StructInstanceType if struct instance is not yet done
+  /// concretizing (to retry later).
+  FailureOr<StructInstanceType> resolveStructInstanceType(TypedAttr typeRef,
+                                                          StringRef funcName);
+
+  /// Struct Field Reflection Evaluators
+  FailureOr<TypedAttr> evaluateStructFieldTypesAttr(StructFieldTypesAttr attr);
+  FailureOr<TypedAttr> evaluateStructFieldNamesAttr(StructFieldNamesAttr attr);
+  FailureOr<TypedAttr>
+  evaluateStructFieldIndexByNameAttr(StructFieldIndexByNameAttr attr);
+  FailureOr<TypedAttr>
+  evaluateStructFieldTypeByNameAttr(StructFieldTypeByNameAttr attr);
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
 
@@ -236,6 +252,13 @@ private:
              TargetInfoAttr, EmitAs, EmissionOptions emissionOptions) = 0;
 
   virtual ImplNodeBase *getParentNode() = 0;
+
+  /// Look up the StructInstanceOp for a given TypeInstanceRefAttr. If
+  /// elaboration is not yet done for the struct instance, the implementation
+  /// should set up waiters and return null.
+  virtual ErrorTreeOr<StructInstanceOp>
+  getConcreteStructTypeInstanceInternal(Location loc,
+                                        TypeInstanceRefAttr instref) = 0;
 };
 
 } // namespace M::KGEN
