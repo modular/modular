@@ -230,6 +230,21 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         return UnsafePointer[origin = origin_of(self)](ptr)[]
 
     @always_inline("nodebug")
+    fn unsafe_ptr(
+        ref self,
+    ) -> UnsafePointer[Self.element_type, origin_of(self)]:
+        """Returns a pointer to the static tuple.
+
+        Returns:
+            A pointer to the static tuple.
+        """
+        return (
+            UnsafePointer(to=self._mlir_value)
+            .bitcast[Self.element_type]()
+            .unsafe_origin_cast[origin_of(self)]()
+        )
+
+    @always_inline("nodebug")
     fn _replace[idx: Int](self, val: Self.element_type) -> Self:
         """Replaces the value at the specified index.
 
