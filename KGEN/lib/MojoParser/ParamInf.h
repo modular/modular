@@ -193,8 +193,6 @@ private:
   LogicalResult inferOneOperand(ASTExprAnd<AnyValue> operand,
                                 ASTType expectedType,
                                 ArgConvention expectedConvention);
-  /// Infer parameters from a single parameter binding.
-  void inferOneParam(ASTExprAnd<AnyValue> binding, Type expectedType);
 
   /// These are the bindings originally provided to the callable. These are used
   /// to infer parameters from other parameter values.

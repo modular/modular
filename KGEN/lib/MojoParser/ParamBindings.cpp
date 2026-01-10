@@ -732,14 +732,10 @@ ParamBindings::verifyBindingsImpl(
       continue;
     }
 
-    // If the parameter is a variadic list, it may consume many values, and they
-    // all get packed up into a VariadicAttr.
-    // fitness.hasVariadicParams = true;
-
     // Unpacked variadics can be passed directly as a whole variadic parameter.
     if (auto unpacked =
             dyn_cast<UnpackedAttr>(binding.ir.getIfPValue().get())) {
-      PValue paramValue = handlePosBinding(
+      PValue paramValue = handlePosBindingMigrated(
           idx, {PValue(unpacked.getValue()), binding.expr}, requestedType);
       if (!paramValue)
         return {{}, fitness};

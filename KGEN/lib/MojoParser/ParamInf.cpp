@@ -1172,7 +1172,10 @@ RetryLabel:
   // avoids unnecessary checks & dealing with errors unrelated to parameter
   // inference here. The only operands that can contribute to param inference
   // are either those whose expected types contain param references.
-  // FIXME: This is just covering up for a bunch of bugs.  Remove.
+  //
+  // FIXME: This is covering up for a bunch of bugs, but is necessary because
+  // removing it exacerbates incorrect "could not infer X" error messages when
+  // there are fundamental type mismatches.
   if (!paramFinder.hasReferences(expectedType))
     return success();
 
@@ -1533,10 +1536,6 @@ RetryLabel:
   return failure();
 }
 
-void ParamInf::inferOneParam(ASTExprAnd<AnyValue> binding, Type expectedType) {
-  (void)inferOneOperand(binding, expectedType, ArgConvention::ReadReg);
-}
-
 static PValue emitSingleParam(ASTDecl &scope, ASTExprAnd<AnyValue> binding,
                               ASTType expectedType,
                               ParserParameterEvaluator &evaluator) {
@@ -1660,10 +1659,9 @@ void ParamInf::inferFromParamList(bool hasArguments) {
       if (posIdx == numParams)
         continue;
 
-      auto expectedVariadic = sugarCast<VariadicType>(expectedType);
-
       // Unpacked variadics (`Tuple[*elts]` where elts is a variadic list) can
       // be passed directly as a whole variadic parameter.
+      auto expectedVariadic = sugarCast<VariadicType>(expectedType);
       if (auto unpacked = dyn_cast<UnpackedAttr>(
               givenBindings[posIdx].ir.getIfPValue().get())) {
         // FIXME: Make sure to only unpack *x in pos varargs and **x in kw
@@ -1677,15 +1675,35 @@ void ParamInf::inferFromParamList(bool hasArguments) {
         continue;
       }
 
-      // Otherwise, we infer the element type of the variadic from the values
-      // provided.
+      // Otherwise, we infer the variadic to be the elements of the variadic
+      // list being passed in.
       Type varArgsEltType = expectedVariadic.getElementType();
+      SmallVector<TypedAttr> elements;
+      bool isBroken = false; // FIXME: Error handling here is a mess.
+
       while (posIdx != numParams) {
+        // This pass just skips keyword parameters, they are handled later.
+        if (givenBindings[posIdx].keyword) {
+          ++posIdx;
+          continue;
+        }
         // FIXME: pack and install variadics parameter correctly.
-        if (!givenBindings[posIdx].keyword)
-          inferOneParam(givenBindings[posIdx], varArgsEltType);
+        TypedAttr paramVal =
+            inferAndEmitOneParam(givenBindings[posIdx], varArgsEltType, idx);
         ++posIdx;
+        if (!paramVal) {
+          isBroken = true;
+          continue;
+        }
+        // Realign sugar.
+        if (paramVal.getType() != varArgsEltType)
+          paramVal = ParamOperatorAttr::getRebind(paramVal, varArgsEltType);
+        elements.push_back(paramVal);
       }
+
+      if (!isBroken && !evaluator.getIndexBindings()[idx])
+        evaluator.overwriteIndexBinding(
+            idx, VariadicAttr::get(elements, expectedVariadic));
       continue;
     }
 
@@ -1734,8 +1752,6 @@ void ParamInf::inferFromParamList(bool hasArguments) {
     for (size_t i = 0, e = declaredParamTypes.size(); i != e; ++i) {
       if (declaredParamPogs.isPosVarArg(i) &&
           !evaluator.getIndexBindings()[i]) {
-        // FIXME: variadic element type may be dependent on an earlier inferred
-        // parameter, we should get the rebound type.
         auto type = evaluator.getReboundType(declaredParamTypes[i]);
         auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
         evaluator.overwriteIndexBinding(i, empty);
@@ -1822,6 +1838,14 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
       // Stringable.
       Type elementType = packType.getVariadicElementType();
 
+      // It is possible the pack element types are not being inferred - for
+      // exmaple, they could have been explicitly specified.  If this is the
+      // case, then we need to perform an implicit conversion to the element
+      // type that was explicitly specified.  Be careful though, it is possible
+      // the specified type list is completely wrong in length or content.
+      VariadicAttr eltsTypesIfResolved =
+          dyn_cast<VariadicAttr>(packType.getVariadic());
+
       SmallVector<TypedAttr> types;
       IREmitter emitter(declScope, EC_TypeParamValue);
       while (posOperandIdx != numOperands) {
@@ -1830,42 +1854,59 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
           continue;
         curArgExpr = operand.expr;
 
-        ASTType toPush = operand.ir.getRValueTypeIfResolvable();
-        if (!toPush) {
-          shared.emitWarning(operand.expr->getLoc(),
-                             "could not infer parameter type for this value, "
-                             "because it is not concrete");
-          return failure();
-        }
-
-        // Infer nonmaterializable types as their materialization target.
-        if (ASTType nmTarget = toPush.getNonmaterializableTarget(shared))
-          toPush = nmTarget;
-        Type metatype = toPush.getMetaType();
-        TypedAttr actualAttr = TypeParamAttr::get(
-            toPush, metatype ? metatype : TypeType::get(shared.getContext()));
-        SyntheticNode node(operand.expr->getLoc());
-        if (!IREmitter::canImplicitlyConvertToType(
-                {actualAttr, node}, elementType, emitter.getDeclScope())) {
-
-          // If that didn't work, then we fail due to the type mismatch.  If the
-          // variadic type is due to a parameter mismatch, record it.
-          if (auto ire =
-                  sugarDynCast<ParamIndexRefAttr>(packType.getVariadic());
-              ire && ire.getDepth() == 0) {
-            // Otherwise, we failed to infer the parameter. Record this failure.
-            addFailure(InferenceFailure::TypeConflict{
-                ire.getIndex(), elementType, actualAttr.getType()});
+        // If the element types for the pack were specified, convert the value
+        // to that type.
+        TypedAttr attrForElementType;
+        if (eltsTypesIfResolved &&
+            types.size() < eltsTypesIfResolved.getValues().size()) {
+          attrForElementType = eltsTypesIfResolved.getValues()[types.size()];
+        } else {
+          // Otherwise, infer the variadic element type from the value's type.
+          ASTType toPush = operand.ir.getRValueTypeIfResolvable();
+          if (!toPush) {
+            // FIXME: We shouldn't be direct emitting warnings here! This needs
+            // to end up in overload set reasons etc.
+            shared.emitWarning(operand.expr->getLoc(),
+                               "could not infer parameter type for this value, "
+                               "because it is not concrete");
+            return failure();
           }
-          return failure();
-        }
 
-        // Perform a conversion (e.g. from a concrete to trait type) as needed.
-        PValue result = emitter.emitPValue({actualAttr, node},
-                                           EC_TypeParamValue, elementType);
-        if (!result)
-          return failure();
-        types.push_back(result);
+          // Infer nonmaterializable types as their materialization target.
+          if (ASTType nmTarget = toPush.getNonmaterializableTarget(shared))
+            toPush = nmTarget;
+          Type metatype = toPush.getMetaType();
+          attrForElementType = TypeParamAttr::get(
+              toPush, metatype ? metatype : TypeType::get(shared.getContext()));
+          // Make sure the value is compatible with the expected trait, this
+          // produces better error messages.  It would be great to sink this
+          // into matchType at some point!
+          if (!IREmitter::canImplicitlyConvertToType(
+                  {attrForElementType, operand.expr}, elementType,
+                  emitter.getDeclScope())) {
+
+            // If that didn't work, then we fail due to the type mismatch.  If
+            // the variadic type is due to a parameter mismatch, record it.
+            if (auto ire =
+                    sugarDynCast<ParamIndexRefAttr>(packType.getVariadic());
+                ire && ire.getDepth() == 0) {
+              // Otherwise, we failed to infer the parameter. Record this
+              // failure.
+              addFailure(InferenceFailure::TypeConflict{
+                  ire.getIndex(), elementType, attrForElementType.getType()});
+            }
+            return failure();
+          }
+
+          // Perform a conversion (e.g. from a concrete to trait type) as
+          // needed.
+          attrForElementType =
+              emitter.emitPValue({attrForElementType, operand.expr},
+                                 EC_TypeParamValue, elementType);
+          if (!attrForElementType)
+            return failure();
+        }
+        types.push_back(attrForElementType);
       }
 
       // Infer the value of type list from the types we have.
