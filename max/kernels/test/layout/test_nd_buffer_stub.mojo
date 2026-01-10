@@ -787,7 +787,7 @@ fn test_vectorize_mask():
                 IndexList[2](11, 15), IndexList[2](tile_i, tile_j)
             )
 
-            var vec_mas = _vectorize_mask[sizes = IndexList[2](2, 2)](tile_mas)
+            var vec_mas = _vectorize_mask[sizes= (2, 2)](tile_mas)
             for i in range(2):
                 for j in range(2):
                     var mask = vec_mas.access_mask((i, j))
