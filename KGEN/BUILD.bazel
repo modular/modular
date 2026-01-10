@@ -933,6 +933,10 @@ modular_shared_library(
         "MODULAR_BUILDING_COMPILERRT",
     ] + CONFIG_SECTION_LOCAL_DEFINES,
     output_name = "KGENCompilerRTShared",
+    visibility = [
+        "//KGEN:consumers",
+        "//KGEN/test/tracy:__pkg__",
+    ],
     deps = [
         "//MLRT:AsyncRT/Runtime",
         "//MLRT:AsyncRT/RuntimeGlobals",
@@ -949,7 +953,10 @@ modular_shared_library(
         "//Support:Threading",
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:llvm-symbolizer",
-    ],
+    ] + select({
+        "//:tracy_enabled": ["@tracy//:Tracy"],
+        "//conditions:default": [],
+    }),
 )
 
 modular_cc_library(
