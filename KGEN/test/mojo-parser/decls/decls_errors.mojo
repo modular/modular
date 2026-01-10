@@ -274,7 +274,7 @@ fn first_and_rest[T: AnyTrivialRegType, *Ts: AnyType](*values: *Ts):
 
 
 fn unresolvedPackCall[*t : AnyType](var *args: *t):
-  # expected-error @below {{invalid call to 'examplePack': assigning 0 operands to an unresolvable variadic pack argument}}
+  # expected-error @below {{invalid call to 'examplePack': 'examplePack' parameter 'Ts' has 'Variadic[AnyType]' type, but value has type 'Variadic[AnyType]'}}
   var _ = examplePack[*t]()
 
 fn badPackCalls(value: Int):

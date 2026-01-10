@@ -31,11 +31,12 @@ fn f0[*elt_type: Copyable](t: SomeVA[*elt_type]):
     pass
 
 
-# CHECK: @"f1{{.*}}"<elt_type: variadic<!mt_Int>{{.*}}(%t: !lit.ref<!lit.struct<#SomeVA <:variadic<!AnyType> upcast(:variadic<!mt_Int> elt_type)>
+# CHECK-LABEL: lit.fn @"f1
+# CHECK-SAME: <elt_type: variadic<!mt_Int>{{.*}}(%t: !lit.ref<!lit.struct<#SomeVA <:variadic<!AnyType> upcast(:variadic<!mt_Int> elt_type)>
 fn f1[*elt_type: type_of(Int)](t: SomeVA[*elt_type]):
     pass
 
-
+# CHECK-LABEL: lit.fn @"foo
 fn foo():
     # CHECK: lit.call {{.*}}::@"f0{{.*}}"[{{.*}}]<:variadic<!Copyable> [!SomeCopyable, !SomeCopyable]>
     f0(SomeVA[SomeCopyable, SomeCopyable]())
