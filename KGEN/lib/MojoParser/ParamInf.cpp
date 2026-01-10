@@ -38,13 +38,19 @@ extern bool checkConventionsConvertible(ArgConvention expectedConv,
 //===----------------------------------------------------------------------===//
 
 void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
-  if (isa<NotFoundFailure>(info)) {
+  if (isa<NotFound>(info)) {
     diag << ", it isn't used in any argument";
     return;
   }
 
-  if (isa<ValueConflictFailure>(info)) {
-    auto failure = cast<ValueConflictFailure>(info);
+  if (isa<DependsOnUnresolved>(info)) {
+    // TODO: Could print which one.
+    diag << ", it depends on an unresolved parameter";
+    return;
+  }
+
+  if (isa<ValueConflict>(info)) {
+    auto failure = cast<ValueConflict>(info);
     diag << ", it inferred to two different values: " << failure.v1 << " and "
          << failure.v2;
     diag.attachNote(diag.getLastLoc())
@@ -53,7 +59,7 @@ void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
     return;
   }
 
-  auto failure = cast<TypeConflictFailure>(info);
+  auto failure = cast<TypeConflict>(info);
   if (sugarIsa<TypeType>(failure.paramType)) {
     if (auto anyStruct = sugarDynCast<StructMetaType>(failure.argParamType)) {
       diag << ", argument type " << ASTType(anyStruct.getType())
@@ -153,10 +159,10 @@ public:
       : expr(expr), state(state), shared(state.shared) {}
   ~ParamMatcher() {}
 
-  // FIXME: Add a error reason, pulling it out of ParameterInferenceDiagnostics.
-
   // This is set to the parameter index we successfully inferred.
   ssize_t retryParamIdx = -1;
+  /// This is set when an error is encountered.
+  std::optional<InferenceFailure> failureReason;
 
   enum ResultCode { Match, Error, Retry };
   ResultCode matchTypes(Type actualType, Type expectedType);
@@ -165,15 +171,16 @@ public:
                                 FnTypeGeneratorType expected);
   ResultCode matchSingleEltStruct(TypedAttr actual, TypedAttr expected);
 
-  void resetError() {
-    /*TODO: Clear error info when ParamMatcher implements it.*/
-  }
+  void resetError() { failureReason.reset(); }
 
 private:
   // These are methods used by the recursive walker.
   bool isUnset() const { return retryParamIdx == -1; }
 
-  ResultCode error() { return Error; }
+  ResultCode error(InferenceFailure &&reason) {
+    failureReason = std::move(reason);
+    return Error;
+  }
 
 private:
   /// This is how many signature types deep inference is inside parameter
@@ -222,7 +229,7 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   // TODO: Consider default parameter values and enable parameter inference to
   // reconcile differences.
   if (actual.getInputParamTypes() != expected.getInputParamTypes())
-    return error();
+    return error(InferenceFailure::Unclassified{});
 
   // If the functions differ in return type conventions, check if the nominal
   // types are equal.
@@ -258,7 +265,7 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   }
 
   if (actualEffects != expectedEffects)
-    return error();
+    return error(InferenceFailure::Unclassified{});
 
   PROP(matchParams(actual.getCaptureOrigins(), expected.getCaptureOrigins()));
 
@@ -272,12 +279,12 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     size_t expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
     if (actualArgTypes.size() < expectedVariadicArgIndex) {
       // Caller didn't supply enough arguments.
-      return error();
+      return error(InferenceFailure::Unclassified{});
     }
   } else { // No variadic
     if (actualArgTypes.size() != expectedArgTypes.size()) {
       // Caller didn't supply the expected number of arguments.
-      return error();
+      return error(InferenceFailure::Unclassified{});
     }
   }
 
@@ -303,7 +310,7 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     ASTType expectedAstType = expectedArgTypes[actualArgIndex];
 
     if (!checkConventionsConvertible(expectedConv, actualConv))
-      return error();
+      return error(InferenceFailure::Unclassified{});
 
     Type expectedValueAstType =
         RefType::stripRefConvention(expectedAstType, expectedConv);
@@ -341,7 +348,7 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       ASTType actualAstType = actualArgTypes[actualArgIndex];
 
       if (!checkConventionsConvertible(expectedConv, actualConv))
-        return error();
+        return error(InferenceFailure::Unclassified{});
 
       Type actualValueAstType =
           RefType::stripRefConvention(actualAstType, actualConv);
@@ -368,7 +375,7 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
           emitter.emitMetaTypeToTraitConversion(
               {CValue(actualValueAstType), expr}, expectedTraitType);
       if (!actualAstTypeAsVariadicElTrait)
-        return error();
+        return error(InferenceFailure::Unclassified{});
 
       // And since we have it, let's use it to build up a kgen.variadic
       // parameter value.
@@ -418,7 +425,7 @@ ParamMatcher::ResultCode ParamMatcher::matchTypes(Type actualType,
       auto expectedDRT = expectedMetaType.getType();
       // Ignore if these are two fundamentally different symbols.
       if (actualDRT.getSymbol() != expectedDRT.getSymbol())
-        return error();
+        return error(InferenceFailure::Unclassified{});
 
       // Fail if the parameter lists fundamentally mismatch.
       assert(actualDRT.getParamValues().size() ==
@@ -485,7 +492,7 @@ ParamMatcher::ResultCode ParamMatcher::matchTypes(Type actualType,
       // mut=false.
       if (!state.paramFinder.hasReferences(expectedType)) {
         if (!IREmitter::canZeroCostConvert(actualType, expectedType, shared))
-          return error();
+          return error(InferenceFailure::Unclassified{});
         return Match;
       }
 
@@ -529,7 +536,7 @@ ParamMatcher::ResultCode ParamMatcher::matchTypes(Type actualType,
         // Matching two FnTypeGeneratorType should have been handled above
         assert(!isa<FnType>(actual.getBody()) ||
                !isa<FnType>(expected.getBody()));
-        return error();
+        return error(InferenceFailure::Unclassified{});
       }
       // This a simple type generator, match the input parameter types and body
       // type.
@@ -564,12 +571,24 @@ ParamMatcher::ResultCode ParamMatcher::matchTypes(Type actualType,
   if (succeeded(typeUpCastable) && typeUpCastable.value())
     return Match;
 
-  // TODO: We're not handling a lot of important things, e.g., implicit
-  // conversions that cause us to see i1->Bool and similar things here, etc. as
-  // such, we can't treat conversion errors for unknown things as failures.
+  // Ok we have a failure, let's figure out why.
+
+  // If the expected type has unresolved bindings that can't be inferred, then
+  // we may have some other parameter that needs to be inferred before this
+  // type can be matched.  Report that failure so the caller can decide what
+  // to do about it.
+  Type adjustedExpectedType = expectedType;
+  if (paramIndexRefDepth) {
+    IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
+    adjustedExpectedType = adjuster.replace(expectedType);
+  }
+  if (auto paramIdx = state.paramFinder.findOneReference(adjustedExpectedType))
+    return error(InferenceFailure::DependsOnUnresolved{*paramIdx});
+
+  // Otherwise we have a generalized mismatch.
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN TYPES:\n"; actualType.dump();
              expectedType.dump(); llvm::errs() << "\n");
-  return error();
+  return error(InferenceFailure::Unclassified{});
 }
 
 ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
@@ -687,10 +706,12 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
 
       if (!fixableByUpCast) {
         if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
-          state.addFailure(InferenceFailure::TypeConflictFailure{
+          state.addFailure(InferenceFailure::TypeConflict{
+              ire.getIndex(), expectedAttr.getType(), actualAttr.getType()});
+          return error(InferenceFailure::TypeConflict{
               ire.getIndex(), expectedAttr.getType(), actualAttr.getType()});
         }
-        return error();
+        return error(InferenceFailure::Unclassified{});
       }
     }
   }
@@ -770,7 +791,7 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
         // FIXME: Figure out why this is happening in invalid code.  Something
         // else not propagating failures aggressively?
         if (!actualAttr)
-          return error();
+          return error(InferenceFailure::Unclassified{});
 
         assert(actualAttr && "Already checked implicit convertibility");
         assert(isEqualCanon(actualAttr.getType(), expectedType));
@@ -790,9 +811,10 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
       // If we saw this parameter before, make sure it is compatible with
       // (or more specific than) the other values we've inferred.
       if (!isEqualCanon(inferredValue, actualAttr)) {
-        state.addFailure(InferenceFailure::ValueConflictFailure{
+        state.addFailure(InferenceFailure::ValueConflict{
             parameterIndex, inferredValue, actualAttr});
-        return error();
+        return error(InferenceFailure::ValueConflict{
+            parameterIndex, inferredValue, actualAttr});
       }
       return Match;
     }
@@ -804,7 +826,7 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
   if (auto actualVar = dyn_cast<VariadicAttr>(actualAttr)) {
     if (auto expectedVar = dyn_cast<VariadicAttr>(expectedAttr)) {
       if (actualVar.getValues().size() != expectedVar.getValues().size())
-        return error();
+        return error(InferenceFailure::Unclassified{});
       for (auto [act, exp] :
            llvm::zip(actualVar.getValues(), expectedVar.getValues())) {
         PROP(matchParams(act, exp));
@@ -818,7 +840,7 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
       if (actualSym.getSymbol() != expectedSym.getSymbol() ||
           actualSym.getParamValues().size() !=
               expectedSym.getParamValues().size())
-        return error();
+        return error(InferenceFailure::Unclassified{});
       for (auto [act, exp] : llvm::zip(actualSym.getParamValues(),
                                        expectedSym.getParamValues())) {
         PROP(matchParams(act, exp));
@@ -850,7 +872,7 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
       if (expectedSet.getOperands().empty())
         return Match;
       if (actualSet.getOperands().size() != expectedSet.getOperands().size())
-        return error();
+        return error(InferenceFailure::Unclassified{});
       for (auto [actual, expected] : llvm::zip_equal(
                actualSet.getOperands(), expectedSet.getOperands())) {
         PROP(matchParams(actual, expected));
@@ -892,28 +914,32 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
   if (expectedSugar)
     return matchParams(actualAttr, expectedSugar.getExpanded());
 
+  // Ok we have a failure, let's figure out why.
+
+  // If the expected value has unresolved bindings that can't be inferred, then
+  // we may have some other parameter that needs to be inferred before this
+  // value can be matched.  Report that failure so the caller can decide what
+  // to do about it.
+  TypedAttr adjustedExpectedAttr = expectedAttr;
   if (paramIndexRefDepth) {
     IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
-    expectedAttr = adjuster.replace(expectedAttr);
+    adjustedExpectedAttr = adjuster.replace(expectedAttr);
   }
-
-  if (state.paramFinder.hasReferences(expectedAttr)) {
-    // This can not be a simple expression, which should have already been
-    // handled above.
-    assert(!isa<ParamIndexRefAttr>(expectedAttr));
-    // We are trying to much a dependent expression that is not yet fully
-    // resolved, we can not prove that two expression won't converge at the
-    // moment, return `Match` here.
-    // FIXME: we should only do this when matching parameter, argument should
-    // be inferred left-to-right always, and should be considered to be a
-    // failure when we see an unresolved dependent argument type.
-    // TODO: maybe have a code for `Defer`?
+  if (auto paramIdx =
+          state.paramFinder.findOneReference(adjustedExpectedAttr)) {
+    assert(!isa<ParamIndexRefAttr>(adjustedExpectedAttr) &&
+           "should have inferred this above");
+#if 0 // FIXME: Enable this when out-of-order binding is ready.
+    state.addFailure(InferenceFailure::DependsOnUnresolved{*paramIdx});
+    return error(InferenceFailure::DependsOnUnresolved{*paramIdx});
+#endif
     return Match;
   }
 
+  // Otherwise we have a generalized mismatch.
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN ATTRS:\n"; actualAttr.dump();
              expectedAttr.dump(); llvm::errs() << "\n");
-  return error();
+  return error(InferenceFailure::Unclassified{});
 }
 
 // Special Hack (tm) for matching mlir values for pointers and references to
@@ -949,19 +975,14 @@ ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
   if (auto expExtract = sugarDynCast<LIT::StructExtractAttr>(expected)) {
     // If these are two lined up extracts, look through them.
     if (auto actExtract = sugarDynCast<LIT::StructExtractAttr>(actual)) {
-      if (expExtract.getField() != actExtract.getField())
-        return error();
-      return matchSingleEltStruct(actExtract.getStructValue(),
-                                  expExtract.getStructValue());
+      if (expExtract.getField() == actExtract.getField())
+        return matchSingleEltStruct(actExtract.getStructValue(),
+                                    expExtract.getStructValue());
     }
 
-    // If the types mismatch, it might be due to an origin mutability
-    // conversion, which we can handle.
-    if (actual.getType() != expected.getType()) {
-      // See if we can infer anything from the types, this allows us to infer
-      // 'is_mut' parameter from "origin<1>" and "origin<is_mut>".
-      PROP(matchTypes(actual.getType(), expected.getType()));
-    }
+    // See if we can infer anything from the types, this allows us to infer
+    // 'is_mut' parameter from "origin<1>" and "origin<is_mut>".
+    PROP(matchTypes(actual.getType(), expected.getType()));
 
     // Ok, we have a struct that seems like it could line up.  See if we can
     // implicitly construct this from a value of this type.  If so, then we
@@ -988,7 +1009,7 @@ ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
           nonParamDRT, CallOperands(expr, {{actual, expr}}), state.declScope,
           /*isImplicitConversion=*/true);
       if (failed(pValue) || !pValue.value())
-        return error();
+        return error(InferenceFailure::Unclassified{});
 
       // If we succeeded, figure out what the concrete type being inferred would
       // be with any parameters bound.
@@ -1080,8 +1101,7 @@ RetryLabel:
       case ParamMatcher::Match:
         break;
       case ParamMatcher::Error:
-        addFailure(
-            InferenceFailure::ValueConflictFailure{idx, selfParam, retParam});
+        addFailure(InferenceFailure::ValueConflict{idx, selfParam, retParam});
         return failure();
       }
     } else if (!paramFinder.hasReferences(retParam)) {
@@ -1098,8 +1118,7 @@ RetryLabel:
       case ParamMatcher::Match:
         break;
       case ParamMatcher::Error:
-        addFailure(
-            InferenceFailure::ValueConflictFailure{idx, retParam, selfParam});
+        addFailure(InferenceFailure::ValueConflict{idx, retParam, selfParam});
         return failure();
       }
     }
@@ -1807,7 +1826,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
                   sugarDynCast<ParamIndexRefAttr>(packType.getVariadic());
               ire && ire.getDepth() == 0) {
             // Otherwise, we failed to infer the parameter. Record this failure.
-            addFailure(InferenceFailure::TypeConflictFailure{
+            addFailure(InferenceFailure::TypeConflict{
                 ire.getIndex(), elementType, actualAttr.getType()});
           }
           return failure();
