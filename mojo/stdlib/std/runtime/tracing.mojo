@@ -282,6 +282,12 @@ fn _is_op_logging_enabled[level: TraceLevel]() -> Bool:
 
 
 @always_inline
+fn _is_tracy_enabled() -> Bool:
+    """Returns whether the Tracy bridge is enabled in CompilerRT."""
+    return external_call["KGEN_CompilerRT_TracyIsEnabled", Int]() != 0
+
+
+@always_inline
 fn _is_mojo_profiling_enabled[level: TraceLevel]() -> Bool:
     """Returns whether Mojo profiling is enabled for the specified level."""
     return is_profiling_enabled[TraceCategory.MAX, level]()
@@ -294,7 +300,7 @@ fn _is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
 
 
 @always_inline
-fn _validate_single_tracing_enabled() -> Bool:
+fn _validate_single_tracing_enabled[level: TraceLevel]() -> Bool:
     """Validates that at most one tracing system is enabled."""
     var enabled_count = 0
 
@@ -304,6 +310,14 @@ fn _validate_single_tracing_enabled() -> Bool:
 
     # Check GPU profiling
     if _gpu_is_enabled():
+        enabled_count += 1
+
+    # Check Tracy profiling
+    if _is_tracy_enabled():
+        enabled_count += 1
+
+    # Check op logging
+    if _is_op_logging_enabled[level]():
         enabled_count += 1
 
     return enabled_count <= 1
@@ -382,6 +396,9 @@ struct Trace[
     var color: Optional[Color]
     """Color of the trace span in NSight Systems viewer, only used for NVTX markers."""
 
+    var _tracy_ctx: UInt64
+    """Packed Tracy context id when a Tracy zone is active via CompilerRT."""
+
     # This constructor is intentionally hidden because Variant is too flexible
     # about what it allows and we want to ensure that only StaticString or
     # String are used.
@@ -420,9 +437,12 @@ struct Trace[
 
         # Validate that only one tracing system is enabled
         debug_assert(
-            _validate_single_tracing_enabled(),
+            _validate_single_tracing_enabled[Self.level](),
             "only one tracing system should be enabled at a time",
         )
+
+        # Always initialize the tracy context to zero: it's set in __enter__.
+        self._tracy_ctx = 0
 
         @parameter
         if _is_gpu_profiler_enabled[Self.category, Self.level]():
@@ -448,7 +468,7 @@ struct Trace[
                 self.detail += String("target=", Self.target.value())
             self.int_payload = task_id
         else:
-            self._name_value = StaticString("")
+            self._name_value = _name_value^
             self.detail = ""
             self.int_payload = None
 
@@ -554,6 +574,15 @@ struct Trace[
             self._emit_op_log("LAUNCH")
             return
 
+        # Start a Tracy zone if the bridge is available.
+        if _is_tracy_enabled():
+            name_str = self.name()
+            color_val = UInt32(Int(self.color.value())) if self.color else 0
+            self._tracy_ctx = external_call[
+                "KGEN_CompilerRT_TracyZoneBegin", UInt64
+            ](name_str.unsafe_ptr(), len(name_str), color_val)
+            return
+
         @parameter
         if _is_gpu_profiler_enabled[Self.category, Self.level]():
 
@@ -647,6 +676,13 @@ struct Trace[
         @parameter
         if _is_op_logging_enabled[Self.level]():
             self._emit_op_log("COMPLETE")
+            return
+
+        # End Tracy zone early to guarantee pairing even on early returns.
+        if self._tracy_ctx != 0:
+            external_call["KGEN_CompilerRT_TracyZoneEnd", NoneType](
+                self._tracy_ctx
+            )
             return
 
         @parameter
