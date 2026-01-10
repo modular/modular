@@ -667,6 +667,37 @@ ParamBindings::verifyBindingsImpl(
       return {{}, fitness};
     }
 
+    // A duplicate of `handlePosBinding`, the only difference is that it pulls
+    // parameter value directly from `ParamInfState`.
+    // Both `handlePosBinding` and `handlePosBindingMigrated` is going to be
+    // killed.
+    auto handlePosBindingMigrated = [&](size_t index,
+                                        ASTExprAnd<AnyValue> binding,
+                                        ASTType expectedType) -> PValue {
+      // If the parameter list expected a keyword only parameter, we have too
+      // many positional parameters.
+      if (passingKind == PassingKind::KwOnly) {
+        auto &diag = getDiag({});
+        diag << "callee";
+        emitWrongArgOrParamCount(diag, countNumPosOnly(paramListAttr),
+                                 countNumPositional(paramListAttr),
+                                 operands.getNumPositional(),
+                                 "positional parameter");
+        return {};
+      }
+
+      TypedAttr pValue = inference.getInferredValue(newBindings.size());
+      // ParamInfState does not install `UnboundAttr`: we should not do it
+      // here either now that evaluator support a sparse set of parameter
+      // being bound.
+      if (!pValue && sugarIsa<UnboundAttr>(binding.ir.getIfPValue().get()))
+        pValue = UnboundAttr::get(expectedType);
+
+      if (!pValue)
+        emitTypeMismatch(index, binding, expectedType);
+      return pValue;
+    };
+
     // This lambda hides the diagnostic and error handling logic for checking a
     // single positional parameter binding.
     auto handlePosBinding = [&](size_t index, ASTExprAnd<AnyValue> binding,
@@ -683,17 +714,8 @@ ParamBindings::verifyBindingsImpl(
         return {};
       }
 
-#if 1
       PValue pValue =
           emitSingleParameterValue(binding, expectedType, emitter, evaluator);
-#else
-      TypedAttr pValue = inference.getInferredValue(newBindings.size());
-      // ParamInfState does not install `UnboundAttr`: we should not do it
-      // here either now that evaluator support a sparse set of parameter
-      // being bound.
-      if (!pValue && sugarIsa<UnboundAttr>(binding.ir.getIfPValue().get()))
-        pValue = UnboundAttr::get(expectedType);
-#endif
 
       if (!pValue)
         emitTypeMismatch(index, binding, expectedType);
@@ -702,7 +724,7 @@ ParamBindings::verifyBindingsImpl(
 
     // Scalar parameter values are installed directly.
     if (!paramListAttr.isPosVarArg(idx)) {
-      PValue paramValue = handlePosBinding(idx, binding, expectedType);
+      PValue paramValue = handlePosBindingMigrated(idx, binding, expectedType);
       if (!paramValue)
         return {{}, fitness};
       if (failed(setParamValueAndVerify(paramValue, expectedType)))
