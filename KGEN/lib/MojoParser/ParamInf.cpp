@@ -1604,11 +1604,13 @@ void ParamInfState::inferFromParamList(bool hasArguments) {
       return {};
     }
 
+#if 0
     // Something weird happens if we do not do this. But I forgot why :(
-    //
+    diags.addFailure(InferenceFailure::TypeConflictFailure{
+        paramIdx, expectedType, binding.ir.getIfPValue().getType()});
+#endif
+
     // Otherwise, we have an error.
-    // diags.addFailure(InferenceFailure::TypeConflictFailure{
-    //     paramIdx, expectedType, binding.ir.getIfPValue().getType()});
     return {};
   };
 

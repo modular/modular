@@ -683,17 +683,17 @@ ParamBindings::verifyBindingsImpl(
         return {};
       }
 
+#if 1
       PValue pValue =
           emitSingleParameterValue(binding, expectedType, emitter, evaluator);
-      //
-      // Switch to the following line to see the default value dependency error.
-      //
-      // TypedAttr pValue = inference.getInferredValue(newBindings.size());
-      // // ParamInfState does not install `UnboundAttr`: we should not do it
-      // // here either now that evaluator support a sparse set of parameter
-      // // being bound.
-      // if (!pValue && sugarIsa<UnboundAttr>(binding.ir.getIfPValue().get()))
-      //   pValue = UnboundAttr::get(expectedType);
+#else
+      TypedAttr pValue = inference.getInferredValue(newBindings.size());
+      // ParamInfState does not install `UnboundAttr`: we should not do it
+      // here either now that evaluator support a sparse set of parameter
+      // being bound.
+      if (!pValue && sugarIsa<UnboundAttr>(binding.ir.getIfPValue().get()))
+        pValue = UnboundAttr::get(expectedType);
+#endif
 
       if (!pValue)
         emitTypeMismatch(index, binding, expectedType);
