@@ -79,12 +79,12 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-// ParamInfState
+// ParamInf
 //===----------------------------------------------------------------------===//
 
 /// This class provides the implementation details that help to infer
 /// information about the specified parameter.
-class ParamInfState {
+class ParamInf {
 public:
   /// This is the declaration that we do name lookup against.
   ASTDecl &declScope;
@@ -94,9 +94,9 @@ public:
   // TODO: Keep removing this.
   ParamInfDiags inferenceDiags;
 
-  ParamInfState(ASTDecl &declScope, const CallOperands &givenBindings,
-                size_t numPreCheckedBindings, ArrayRef<Type> declaredParamTypes,
-                PogListAttr declaredParamPogs, bool allowImplicitConversions);
+  ParamInf(ASTDecl &declScope, const CallOperands &givenBindings,
+           size_t numPreCheckedBindings, ArrayRef<Type> declaredParamTypes,
+           PogListAttr declaredParamPogs, bool allowImplicitConversions);
 
   /// Given an incomplete parameter binding set for a parameter list, try to
   /// infer the value of the next parameter. We only do this if there are any

@@ -784,11 +784,11 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     hasCTADParams = !fn.getIsStatic() && isa<StructDeclOp>(fn->getParentOp());
   }
 
-  ParamInfState inference(
-      callable.paramBindings.declScope, callable.paramBindings.getParameters(),
-      callable.paramBindings.getNumPreCheckedParams(),
-      signature.getInputParamTypes(), signature.getParamListAttrs(),
-      allowImplicitConversions);
+  ParamInf inference(callable.paramBindings.declScope,
+                     callable.paramBindings.getParameters(),
+                     callable.paramBindings.getNumPreCheckedParams(),
+                     signature.getInputParamTypes(),
+                     signature.getParamListAttrs(), allowImplicitConversions);
 
   // TODO: inferForCall will eventually be separated. We will eventually blend
   // parameter inference into overload resolution have something like:
