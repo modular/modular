@@ -79,7 +79,11 @@ def werror : Flag<["--", "-"], "Werror">,
   Group<DiagnosticOptionGroup>, Index<5>,
   HelpText<"Treat warnings as errors.">;
 
-def validate_doc_strings : Flag<["--", "-"], "validate-doc-strings">,
+def wno_error : Flag<["--", "-"], "Wno-error">,
   Group<DiagnosticOptionGroup>, Index<6>,
+  HelpText<"Do not treat warnings as errors (overrides -Werror).">;
+
+def validate_doc_strings : Flag<["--", "-"], "validate-doc-strings">,
+  Group<DiagnosticOptionGroup>, Index<7>,
   Flags<[HelpHidden]>,
   HelpText<"Deprecated: use -Werror instead. Treat doc string warnings as errors.">;

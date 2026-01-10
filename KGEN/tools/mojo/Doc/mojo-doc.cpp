@@ -71,11 +71,15 @@ static int doc(const State &subcommandState) {
 
   if (int result = state.parseDiagnosticFormatArguments(
           args, options::OPT_diagnostic_format,
-          /*disableWarningsId=*/llvm::opt::OptSpecifier(), options::OPT_werror))
+          /*disableWarningsId=*/llvm::opt::OptSpecifier(), options::OPT_werror,
+          options::OPT_wno_error))
     return result;
 
   // Handle deprecated --validate-doc-strings flag as an alias for -Werror.
-  if (args.hasArg(options::OPT_validate_doc_strings)) {
+  // Only apply if user hasn't explicitly specified -Werror or -Wno-error.
+  if (args.hasArg(options::OPT_validate_doc_strings) &&
+      !args.hasArg(options::OPT_werror) &&
+      !args.hasArg(options::OPT_wno_error)) {
     state.reportWarning(
         "--validate-doc-strings is deprecated, use -Werror instead");
     state.warningsAsErrors = true;
