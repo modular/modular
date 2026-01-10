@@ -885,20 +885,7 @@ ElaborationState Elaborator::processCallOp(ImplNode *parent,
                                            GeneratorUserOpInterface call) {
   Attribute symbol;
   HANDLE_EVALUATOR_CONC(symbol, parent, call.getLoc(), call.getCallee());
-  // The symbol may not be a SymbolConstantAttr if it contains unevaluated
-  // parameter expressions (e.g., apply/apply_result_slot from constructor calls
-  // in type parameters accessed via struct_field_types).
-  // See https://github.com/modular/modular/issues/5732.
-  auto symbolConstant = dyn_cast<SymbolConstantAttr>(symbol);
-  if (!symbolConstant) {
-    parent->setToError(ErrorTree(
-        call.getLoc(),
-        "callee could not be resolved to a concrete symbol; "
-        "this can occur when using reflection on types with unevaluated "
-        "constructor calls in their parameters"));
-    return ElaborationState::error();
-  }
-  return processGeneratorUser(call, symbolConstant, parent);
+  return processGeneratorUser(call, cast<SymbolConstantAttr>(symbol), parent);
 }
 
 //===----------------------------------------------------------------------===//
