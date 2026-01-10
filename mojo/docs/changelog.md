@@ -642,6 +642,8 @@ what we publish.
   compiler tools (`mojo run`, `mojo build`, `mojo package`, `mojo doc`).
   When used with `--disable-warnings`, warnings are promoted to errors first,
   so the errors are not suppressed.
+  - The counterpart `-Wno-error` flag disables treating warnings as errors.
+    When both flags are specified, the last one wins.
 - The `--validate-doc-strings` flag has been deprecated for `mojo doc` and
   removed from other tools (`mojo build`, `mojo run`, `mojo package`). Use
   `-Werror` instead to treat warnings as errors.
