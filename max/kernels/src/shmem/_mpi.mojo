@@ -11,12 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
 from pathlib import Path
 from os import getenv, abort
 from sys.ffi import (
@@ -82,7 +76,7 @@ fn _get_mpi_function[
 # Types and constants
 # ===-----------------------------------------------------------------------===#
 
-comptime MPIComm = UnsafePointer[OpaquePointer]
+comptime MPIComm = UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin]
 
 comptime MPI_THREAD_SINGLE = 0
 comptime MPI_THREAD_FUNNELED = 1
@@ -99,8 +93,8 @@ fn MPI_Init(mut argc: Int, mut argv: VariadicList[StaticString]) raises:
     var result = _get_mpi_function[
         "MPI_Init",
         fn (
-            UnsafePointer[Int],
-            UnsafePointer[VariadicList[StaticString]],
+            UnsafePointer[Int, MutAnyOrigin],
+            UnsafePointer[VariadicList[StaticString], MutAnyOrigin],
         ) -> c_int,
     ]()(UnsafePointer(to=argc), UnsafePointer(to=argv))
     if result != 0:
@@ -111,16 +105,16 @@ fn MPI_Init_thread(
     mut argc: Int,
     mut argv: VariadicList[StaticString],
     required: c_int,
-    provided: UnsafePointer[c_int],
+    provided: UnsafePointer[c_int, MutAnyOrigin],
 ) raises:
     """Initialize MPI."""
     var result = _get_mpi_function[
         "MPI_Init_thread",
         fn (
-            UnsafePointer[Int],
-            UnsafePointer[VariadicList[StaticString]],
+            UnsafePointer[Int, MutAnyOrigin],
+            UnsafePointer[VariadicList[StaticString], MutAnyOrigin],
             c_int,
-            UnsafePointer[c_int],
+            UnsafePointer[c_int, MutAnyOrigin],
         ) -> c_int,
     ]()(UnsafePointer(to=argc), UnsafePointer(to=argv), required, provided)
     if result != 0:
@@ -141,32 +135,38 @@ fn MPI_Comm_split(
     comm: MPIComm,
     color: c_int,
     key: c_int,
-    newcomm: UnsafePointer[MPIComm],
+    newcomm: UnsafePointer[MPIComm, MutAnyOrigin],
 ) raises:
     """Split a communicator into multiple subcommunicators."""
     var result = _get_mpi_function[
         "MPI_Comm_split",
-        fn (MPIComm, c_int, c_int, UnsafePointer[MPIComm]) -> c_int,
+        fn (
+            MPIComm, c_int, c_int, UnsafePointer[MPIComm, MutAnyOrigin]
+        ) -> c_int,
     ]()(comm, color, key, newcomm)
     if result != 0:
         raise Error("failed to MPI_Comm_split with error code:", result)
 
 
-fn MPI_Comm_rank(comm: MPIComm, rank: UnsafePointer[c_int]) raises:
+fn MPI_Comm_rank(
+    comm: MPIComm, rank: UnsafePointer[c_int, MutAnyOrigin]
+) raises:
     """Get the rank of the current process in the communicator."""
     var result = _get_mpi_function[
         "MPI_Comm_rank",
-        fn (MPIComm, UnsafePointer[c_int]) -> c_int,
+        fn (MPIComm, UnsafePointer[c_int, MutAnyOrigin]) -> c_int,
     ]()(comm, rank)
     if result != 0:
         raise Error("failed to get MPI_Comm_rank with error code:", result)
 
 
-fn MPI_Comm_size(comm: MPIComm, size: UnsafePointer[c_int]) raises:
+fn MPI_Comm_size(
+    comm: MPIComm, size: UnsafePointer[c_int, MutAnyOrigin]
+) raises:
     """Get the size of the communicator."""
     var result = _get_mpi_function[
         "MPI_Comm_size",
-        fn (MPIComm, UnsafePointer[c_int]) -> c_int,
+        fn (MPIComm, UnsafePointer[c_int, MutAnyOrigin]) -> c_int,
     ]()(comm, size)
     if result != 0:
         raise Error("failed to get MPI_Comm_size with error code:", result)
@@ -175,7 +175,7 @@ fn MPI_Comm_size(comm: MPIComm, size: UnsafePointer[c_int]) raises:
 fn get_mpi_comm_world() raises -> MPIComm:
     """Get the MPI_COMM_WORLD communicator."""
     var handle = MPI_LIBRARY.get_or_create_ptr()[].borrow()
-    var comm_world_ptr = handle.get_symbol[OpaquePointer](
+    var comm_world_ptr = handle.get_symbol[OpaquePointer[MutExternalOrigin]](
         cstr_name="ompi_mpi_comm_world".as_c_string_slice().unsafe_ptr()
     )
     return comm_world_ptr

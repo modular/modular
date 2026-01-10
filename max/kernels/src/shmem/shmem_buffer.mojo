@@ -28,7 +28,7 @@ from builtin.device_passable import DevicePassable
 
 
 struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
-    var _data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    var _data: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
     var _ctx_ptr: _DeviceContextPtr
     var _size: Int
 
@@ -63,7 +63,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
             CompilationTarget.unsupported_target_error[
                 operation="SHMEMBuffer.__init__",
             ]()
-            self._data = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]()
+            self._data = {}
             self._ctx_ptr = ctx._handle
             self._size = size
 
@@ -72,7 +72,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
     fn __init__(
         out self,
         ctx: DeviceContext,
-        data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        data: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin],
         size: Int,
     ):
         self._data = data

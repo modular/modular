@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections.string.string_slice import get_static_string
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of
@@ -158,10 +155,10 @@ comptime NVSHMEM_TEAM_INDEX_MAX: nvshmem_team_id_t = nvshmem_team_id_t.MAX
 # Structs
 struct NVSHMEMXInitAttr:
     var version: c_int
-    var mpi_comm: UnsafePointer[MPIComm]
+    var mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]
     var args: NVSHMEMXInitArgs
 
-    fn __init__(out self, mpi_comm: UnsafePointer[MPIComm]):
+    fn __init__(out self, mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]):
         __comptime_assert (
             size_of[Self]() == 144
         ), "NVSHMEMXInitAttr must be 144 bytes"
@@ -186,7 +183,7 @@ struct NVSHMEMXInitArgs:
 
 struct NVSHMEMXUniqueIDArgs:
     var version: c_int
-    var id: UnsafePointer[NVSHMEMXUniqueID]
+    var id: UnsafePointer[NVSHMEMXUniqueID, MutAnyOrigin]
     var myrank: c_int
     var nranks: c_int
 
@@ -195,7 +192,7 @@ struct NVSHMEMXUniqueIDArgs:
             size_of[Self]() == 24
         ), "NVSHMEMXUniqueIDArgs must be 24 bytes"
         self.version = (1 << 16) + size_of[NVSHMEMXUniqueIDArgs]()
-        self.id = UnsafePointer[NVSHMEMXUniqueID]()
+        self.id = UnsafePointer[NVSHMEMXUniqueID, MutAnyOrigin]()
         self.myrank = 0
         self.nranks = 0
 
@@ -364,11 +361,11 @@ fn nvshmemx_init_thread(
 
 fn nvshmemx_hostlib_init_attr(
     flags: UInt32,
-    attr: UnsafePointer[NVSHMEMXInitAttr],
+    attr: UnsafePointer[NVSHMEMXInitAttr, MutAnyOrigin],
 ) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_hostlib_init_attr",
-        fn (UInt32, UnsafePointer[NVSHMEMXInitAttr]) -> c_int,
+        fn (UInt32, UnsafePointer[NVSHMEMXInitAttr, MutAnyOrigin]) -> c_int,
     ]()(flags, attr)
 
 
@@ -428,26 +425,34 @@ fn nvshmem_n_pes() -> c_int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn nvshmem_malloc[dtype: DType](size: c_size_t) -> UnsafePointer[Scalar[dtype]]:
+fn nvshmem_malloc[
+    dtype: DType
+](size: c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     return _get_nvshmem_function[
         "nvshmem_malloc",
-        fn (c_size_t) -> UnsafePointer[Scalar[dtype]],
+        fn (c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(size)
 
 
 fn nvshmem_calloc[
     dtype: DType
-](count: c_size_t, size: c_size_t) -> UnsafePointer[Scalar[dtype]]:
+](count: c_size_t, size: c_size_t) -> UnsafePointer[
+    Scalar[dtype], MutExternalOrigin
+]:
     return _get_nvshmem_function[
         "nvshmem_calloc",
-        fn (c_size_t, c_size_t) -> UnsafePointer[Scalar[dtype]],
+        fn (
+            c_size_t, c_size_t
+        ) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(count, size)
 
 
-fn nvshmem_free[dtype: DType](ptr: UnsafePointer[Scalar[dtype]]):
+fn nvshmem_free[
+    dtype: DType, //
+](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
     _get_nvshmem_function[
         "nvshmem_free",
-        fn (UnsafePointer[Scalar[dtype]]) -> NoneType,
+        fn (type_of(ptr)) -> NoneType,
     ]()(ptr)
 
 
@@ -563,7 +568,7 @@ fn nvshmem_g[
 
 @extern("nvshmemx_signal_op")
 fn nvshmemx_signal_op(
-    sig_addr: UnsafePointer[UInt64],
+    sig_addr: UnsafePointer[UInt64, MutAnyOrigin],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,
@@ -629,7 +634,7 @@ fn nvshmemx_barrier_all_on_stream(stream: CUstream):
 
 @extern("nvshmem_signal_wait_until")
 fn nvshmem_signal_wait_until(
-    sig_addr: UnsafePointer[UInt64], cmp: c_int, cmp_value: UInt64
+    sig_addr: UnsafePointer[UInt64, MutAnyOrigin], cmp: c_int, cmp_value: UInt64
 ):
     ...
 

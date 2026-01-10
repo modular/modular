@@ -20,9 +20,6 @@ The headings below corrosspond to section 9: OpenSHMEM Library API.
 """
 
 from collections.optional import OptionalReg
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import getenv, setenv
 from sys import (
     CompilationTarget,
@@ -310,7 +307,9 @@ fn shmem_n_pes() -> c_int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_malloc[dtype: DType](size: UInt) -> UnsafePointer[Scalar[dtype]]:
+fn shmem_malloc[
+    dtype: DType
+](size: UInt) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     """Collectively allocate symmetric memory.
 
     Parameters:
@@ -351,7 +350,7 @@ fn shmem_malloc[dtype: DType](size: UInt) -> UnsafePointer[Scalar[dtype]]:
 fn shmem_calloc[
     dtype: DType
 ](count: UInt, size: UInt = UInt(size_of[dtype]())) -> UnsafePointer[
-    Scalar[dtype]
+    Scalar[dtype], MutExternalOrigin
 ]:
     """Collectively allocate a zeroed block of symmetric memory.
 
@@ -385,12 +384,14 @@ fn shmem_calloc[
         return nvshmem_calloc[dtype](count, size)
     else:
         return CompilationTarget.unsupported_target_error[
-            UnsafePointer[Scalar[dtype]],
+            UnsafePointer[Scalar[dtype], MutExternalOrigin],
             operation = __get_current_function_name(),
         ]()
 
 
-fn shmem_free[dtype: DType](ptr: UnsafePointer[Scalar[dtype]]):
+fn shmem_free[
+    dtype: DType, //
+](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
     """Collectively deallocate symmetric memory.
 
     Parameters:
@@ -629,7 +630,11 @@ fn shmem_put_nbi[
 
 fn shmem_p[
     dtype: DType
-](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int,):
+](
+    dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    value: Scalar[dtype],
+    pe: c_int,
+):
     """Copies one data item to a remote PE.
 
     Very low latency put capability for single elements. As with shmem_put,
@@ -770,7 +775,7 @@ fn shmem_barrier_all():
 
 
 fn shmem_signal_wait_until(
-    sig_addr: UnsafePointer[UInt64], cmp: c_int, cmp_value: UInt64
+    sig_addr: UnsafePointer[mut=True, UInt64], cmp: c_int, cmp_value: UInt64
 ):
     """Wait for a variable on the local PE to change from a signaling operation.
 
@@ -838,7 +843,7 @@ fn shmem_fence():
 
 
 fn shmem_signal_op(
-    sig_addr: UnsafePointer[UInt64],
+    sig_addr: UnsafePointer[mut=True, UInt64],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,
