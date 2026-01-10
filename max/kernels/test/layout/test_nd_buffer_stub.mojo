@@ -981,18 +981,16 @@ fn test_composed_tile_vectorize_distribute():
             )
             print_tile_mask[BM, BN](tile_mask)
             print("vectorized-access:")
-            var vectoize_mask = _vectorize_mask[sizes = IndexList[2](TM, TN)](
-                tile_mask
-            )
+            var vectorize_mask = _vectorize_mask[sizes= (TM, TN)](tile_mask)
             for i in range(BM // TM):
                 for j in range(BN // TN):
-                    var mask = vectoize_mask.access_mask((i, j))
+                    var mask = vectorize_mask.access_mask((i, j))
                     print(
                         and_all(mask),
                         " : ",
-                        vectoize_mask.access_size((i, j), mask)[0],
+                        vectorize_mask.access_size((i, j), mask)[0],
                         "x",
-                        vectoize_mask.access_size((i, j), mask)[1],
+                        vectorize_mask.access_size((i, j), mask)[1],
                         end=" ",
                     )
                 print("")
@@ -1001,7 +999,7 @@ fn test_composed_tile_vectorize_distribute():
                 print("---thread-[", th_id, "]-mask---")
                 var dist_mask = _distribute_mask[
                     thread_layout = Layout.row_major(2, 2)
-                ](vectoize_mask, th_id)
+                ](vectorize_mask, th_id)
                 print_tile_mask[BM // TM, BN // TN](dist_mask)
 
 
@@ -1149,18 +1147,16 @@ fn test_composed_tile_vectorize_distribute_small():
             )
             print_tile_mask[BM, BN](tile_mask)
             print("vectorized-access:")
-            var vectoize_mask = _vectorize_mask[sizes = IndexList[2](TM, TN)](
-                tile_mask
-            )
+            var vectorize_mask = _vectorize_mask[sizes= (TM, TN)](tile_mask)
             for i in range(BM // TM):
                 for j in range(BN // TN):
-                    var mask = vectoize_mask.access_mask((i, j))
+                    var mask = vectorize_mask.access_mask((i, j))
                     print(
                         and_all(mask),
                         " : ",
-                        vectoize_mask.access_size((i, j), mask)[0],
+                        vectorize_mask.access_size((i, j), mask)[0],
                         "x",
-                        vectoize_mask.access_size((i, j), mask)[1],
+                        vectorize_mask.access_size((i, j), mask)[1],
                         end=" ",
                     )
                 print("")
@@ -1169,7 +1165,7 @@ fn test_composed_tile_vectorize_distribute_small():
                 print("---thread-[", th_id, "]-mask---")
                 var dist_mask = _distribute_mask[
                     thread_layout = Layout.row_major(2, 2)
-                ](vectoize_mask, th_id)
+                ](vectorize_mask, th_id)
                 print_tile_mask_with_size[1, 1](dist_mask)
 
 
