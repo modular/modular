@@ -4379,10 +4379,10 @@ detailed information in the following sections:
     ([PR #3524](https://github.com/modular/modular/pull/3524))
 
   - `Arc` has been renamed to
-    [`ArcPointer`](/mojo/std/memory/arc/ArcPointer), for consistency with
+    [`ArcPointer`](/mojo/std/memory/arc_pointer/ArcPointer), for consistency with
     `OwnedPointer`.
 
-  - [`ArcPointer`](/mojo/std/memory/arc/ArcPointer) now implements
+  - [`ArcPointer`](/mojo/std/memory/arc_pointer/ArcPointer) now implements
     [`Identifiable`](/mojo/std/builtin/identifiable/Identifiable), and can be
     compared for pointer equivalence using `a is b`.
 
