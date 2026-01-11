@@ -818,7 +818,7 @@ static ASTType addImplicitTypeParams(SharedState &shared, StringAttr argName,
   auto declareAndAddParam = [&](Type type, StringRef name,
                                 ArrayRef<ConstraintAttr> paramConstraints) {
     auto boundParamType = evaluator.getReboundType(type);
-    // If we are perpending this as an implicit parameter, make sure its type
+    // If we are prepending this as an implicit parameter, make sure its type
     // doesn't depend on any parameters before it.  Consider something like:
     //   struct T1[mut: Bool, value: TakesBool[mut]]: ...
     //   struct T2[m: Bool, n: T1[m, _]]:
@@ -848,8 +848,12 @@ static ASTType addImplicitTypeParams(SharedState &shared, StringAttr argName,
             }
           }
         }
-        assert(passingKind.has_value() && "didn't find param reference");
-        if (*passingKind != PassingKind::Inferred) {
+        if (!passingKind.has_value()) {
+          shared.emitError(loc, "INTERNAL ERROR: inferred parameter of type ")
+              << boundParamType << " depends on unresolved parameter "
+              << paramUse.getName() << "; please file a compiler bug";
+          boundParamType = TypeCheckErrorType::get(shared.getContext());
+        } else if (*passingKind != PassingKind::Inferred) {
           shared.emitError(loc, "inferred parameter of type ")
               << boundParamType << " cannot depend on non-inferred parameter "
               << paramUse.getName();

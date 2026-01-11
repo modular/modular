@@ -66,8 +66,14 @@ public:
   /// If the IRValue is a concrete type, return it as an ASTType.
   ASTType getIfTypeValue() const;
 
-  llvm::SMLoc getLoc() const { return loc; }
-  ASTDecl *getParentDecl() const { return parentDecl; }
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG llvm::SMLoc
+  getLoc() const {
+    return loc;
+  }
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG ASTDecl *
+  getParentDecl() const {
+    return parentDecl;
+  }
 
   /// Get the nearest decl backed by one of the given operations. This can
   /// return itself, a parent decl, or null if no such decl is found.
