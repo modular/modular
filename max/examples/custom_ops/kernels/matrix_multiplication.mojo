@@ -74,7 +74,6 @@ fn naive_matrix_multiplication_cpu(
 # ===-----------------------------------------------------------------------=== #
 
 
-@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn naive_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -140,9 +139,6 @@ fn naive_matrix_multiplication[
 # ===-----------------------------------------------------------------------=== #
 
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](OPTIMIZED_NUM_THREADS)
-)
 fn coalescing_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -208,9 +204,6 @@ fn coalescing_matrix_multiplication[
 # ===-----------------------------------------------------------------------=== #
 
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](OPTIMIZED_NUM_THREADS)
-)
 fn tiled_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -315,7 +308,6 @@ fn tiled_matrix_multiplication[
 # ===-----------------------------------------------------------------------=== #
 
 
-@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn tiled_register_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -439,7 +431,6 @@ fn tiled_register_matrix_multiplication[
 # ===-----------------------------------------------------------------------=== #
 
 
-@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn block_tiled_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -560,7 +551,6 @@ fn block_tiled_matrix_multiplication[
 # ===-----------------------------------------------------------------------=== #
 
 
-@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn block_tiled_vectorized_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -707,7 +697,6 @@ fn block_tiled_vectorized_matrix_multiplication[
 # ===-----------------------------------------------------------------------=== #
 
 
-@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn tensor_core_matrix_multiplication[
     dtype: DType,
     layout_a: Layout,
