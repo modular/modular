@@ -16,14 +16,11 @@
 from __future__ import annotations
 
 import functools
-import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
-import huggingface_hub
 import numpy as np
 import numpy.typing as npt
 from max.driver import load_devices
@@ -46,14 +43,13 @@ from transformers import (
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
-from transformers.configuration_utils import PretrainedConfig
 
 if TYPE_CHECKING:
     from .audio_generator_pipeline import AudioGeneratorPipeline
     from .config import PipelineConfig
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config_enums import RepoType, RopeType, SupportedEncoding
+from .config_enums import RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo
 from .interfaces import PipelineModel
@@ -455,8 +451,10 @@ class PipelineRegistry:
 
         # Load HuggingFace Config (of the text encoder)
         if pipeline_config.model_config.is_diffusers_model:
-            huggingface_config = pipeline_config.model._diffusers_config.get_component_config(
-                "text_encoder"
+            huggingface_config = (
+                pipeline_config.model._diffusers_config.get_component_config(
+                    "text_encoder"
+                )
             )
         else:
             huggingface_config = pipeline_config.model.huggingface_config

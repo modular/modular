@@ -15,11 +15,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from max.driver import Device
+from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
-from max.driver import CPU
 
 # Note: scipy.stats.beta.ppf is used for beta sigmas but requires scipy
 # For now we keep this optional - use_beta_sigmas defaults to False

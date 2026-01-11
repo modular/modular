@@ -330,7 +330,9 @@ class DiffusersConfig:
         return component.weight_paths
 
     @property
-    def get_component_config(self, component_name: str) -> AutoConfig | dict[str, Any] | None:
+    def get_component_config(
+        self, component_name: str
+    ) -> AutoConfig | dict[str, Any] | None:
         """Convenience property to get AutoConfig for text encoder."""
         return self.components.get(component_name).config_dict
 

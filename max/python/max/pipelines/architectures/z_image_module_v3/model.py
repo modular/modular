@@ -29,7 +29,6 @@ from max.engine.api import InferenceSession
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -42,6 +41,7 @@ from max.nn.module_v3 import Module
 from max.pipelines.architectures.qwen3.qwen3 import Qwen3
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
+    KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,

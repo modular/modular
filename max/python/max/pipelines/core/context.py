@@ -22,7 +22,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from max.interfaces import TokenSlice
 import llguidance
 import numpy as np
 import numpy.typing as npt
@@ -30,13 +29,14 @@ from max.interfaces import (
     GenerationStatus,
     ImageMetadata,
     LogProbabilities,
+    PixelGenerationContext,
     RequestID,
     SamplingParams,
     TextGenerationContext,
     TextGenerationOutput,
     TokenBuffer,
+    TokenSlice,
     VLMTextGenerationContext,
-    PixelGenerationContext,
 )
 
 CHUNK_SIZE = 128
