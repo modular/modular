@@ -1538,15 +1538,14 @@ async def openai_create_image(
             TokenGeneratorPipeline
             | AudioGeneratorPipeline
             | PixelGeneratorPipeline
-        ) = get_pipeline(request, completion_request.model)
+        ) = get_pipeline(request, image_request.model)
         assert isinstance(pipeline, PixelGeneratorPipeline)
 
         logger.debug(
-            "Processing path, %s, req-id,%s%s, for model, %s.",
+            "Processing path, %s, req-id, %s, for model, %s.",
             request.url.path,
             request_id,
-            " (streaming) " if completion_request.stream else "",
-            completion_request.model,
+            image_request.model,
         )
 
         width, height = _parse_image_size(image_request.size)

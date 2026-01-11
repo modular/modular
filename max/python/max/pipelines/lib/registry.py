@@ -450,7 +450,7 @@ class PipelineRegistry:
         devices = load_devices(pipeline_config.model.device_specs)
 
         # Load HuggingFace Config (of the text encoder)
-        if pipeline_config.model_config.is_diffusers_model:
+        if pipeline_config.model.is_diffusers_model:
             huggingface_config = (
                 pipeline_config.model._diffusers_config.get_component_config(
                     "text_encoder"

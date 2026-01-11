@@ -60,7 +60,15 @@ class PixelGenerationRequest(Request):
     """
     image: bytes | None = None
     """
-    The prompt image to use for pixel generation.
+    The conditioning image to use for image-to-image/video generation.
+    """
+    video: bytes | None = None
+    """
+    The conditioning video for video-to-video generation.
+    """
+    mask: bytes | None = None
+    """
+    Mask image for inpainting/outpainting operations.
     """
     guidance_scale: float = 7.5
     """
@@ -74,13 +82,21 @@ class PixelGenerationRequest(Request):
     """
     Width of generated image/frame in pixels. Defaults to model's default (typically 1024).
     """
+    num_frames: int = 1
+    """
+    Number of frames for video generation. 1 = single image, >1 = video.
+    """
+    fps: int = 24
+    """
+    Frames per second for video output.
+    """
     num_inference_steps: int = 50
     """
     Number of denoising steps. More steps = higher quality but slower.
     """
     num_images_per_prompt: int = 1
     """
-    Number of images to generate per prompt.
+    Number of images/videos to generate per prompt.
     """
     chat_template_options: dict[str, Any] | None = None
     """
@@ -94,8 +110,8 @@ class PixelGenerationRequest(Request):
     """
 
     def __post_init__(self) -> None:
-        if self.prompt is None:
-            raise RuntimeError("prompt must be provided.")
+        if self.prompt is None and self.messages is None:
+            raise RuntimeError("Either prompt or messages must be provided.")
 
 
 class PixelGenerationMetadata(
@@ -243,20 +259,20 @@ class PixelGenerationInputs(
 
 
 class PixelGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
-    """Represents a response from the image generation API.
+    """Represents a response from the image/video generation API.
 
-    This class encapsulates the result of an image generation request, including
-    the final status, generated image data, and optional buffered speech tokens.
+    This class encapsulates the result of a pixel generation request, including
+    the final status, generated image/video data, and metadata.
     """
 
     final_status: GenerationStatus
     """The final status of the generation process."""
     steps_executed: int
     """The number of steps previously executed."""
-    image_data: npt.NDArray[np.float32] = msgspec.field(
+    pixel_data: npt.NDArray[np.float32] = msgspec.field(
         default_factory=lambda: np.array([], dtype=np.float32)
     )
-    """The generated image data, if available."""
+    """The generated pixel data (image/video frames), if available."""
     metadata: PixelGenerationMetadata = msgspec.field(
         default_factory=PixelGenerationMetadata
     )

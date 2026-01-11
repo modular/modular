@@ -282,7 +282,7 @@ class ZImageModel(
         )
 
         # Use DiffusersConfig for component configs - already parsed in MAXModelConfig
-        model_config = self.pipeline_config.model_config
+        model_config = self.pipeline_config.model
         diffusers_config = model_config.diffusers_config
 
         if diffusers_config is None:

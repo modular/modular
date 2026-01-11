@@ -594,11 +594,8 @@ if TYPE_CHECKING:
     def _verify_pixel_context_protocol() -> PixelGenerationContext:
         return PixelContext(
             request_id=RequestID(),
-            max_length=5,
-            tokens=np.array([], dtype=np.int32),
-            eos_token_ids=set(),
-            vision_token_ids=[],
-            images=[],
+            prompt="test prompt",
+            max_length=512,
         )
 
 
@@ -648,29 +645,35 @@ def reserve_token_space_for_batch(
 
 @dataclass(kw_only=True)
 class PixelContext:
-    """A context class for pixel/image generation requests.
+    """A context class for image/video generation requests.
 
-    This class manages the state and parameters for image generation,
+    This class manages the state and parameters for image/video generation,
     including prompt tokenization, generation parameters, and request tracking.
 
     Configuration:
         request_id: A unique identifier for this generation request.
-        prompt: Text description of the desired image(s).
+        prompt: Text description of the desired image/video.
         max_length: Maximum sequence length for tokenization.
         tokens: NumPy array containing the tokenized prompt IDs.
         negative_tokens: NumPy array containing the tokenized negative prompt IDs.
-        height: Height of the generated image in pixels.
-        width: Width of the generated image in pixels.
+        height: Height of the generated image/video in pixels.
+        width: Width of the generated image/video in pixels.
         num_inference_steps: Number of denoising steps.
         guidance_scale: Guidance scale for classifier-free guidance.
         negative_prompt: Negative prompt to guide what NOT to generate.
-        num_images_per_prompt: Number of images to generate per prompt.
+        num_images_per_prompt: Number of images/videos to generate per prompt.
         model_name: Name of the model being used.
     """
 
-    # Required fields
-    prompt: str
-    max_length: int
+    # Input: Either prompt OR messages (at least one required)
+    prompt: str | None = field(default=None)
+    """Text prompt for generation. Provide either this OR messages."""
+    messages: list[Any] | None = field(default=None)
+    """Chat messages for generation. Provide either this OR prompt."""
+
+    # Text encoder parameters (optional - has sensible defaults)
+    max_length: int = field(default=512)
+    """Max sequence length for text encoder. Default 512 is sufficient for most prompts."""
 
     # Request identification
     request_id: RequestID = field(default_factory=RequestID)
@@ -692,6 +695,20 @@ class PixelContext:
     negative_prompt: str | None = field(default=None)
     num_images_per_prompt: int = field(default=1)
 
+    # Video generation parameters
+    num_frames: int = field(default=1)
+    """Number of frames for video generation. 1 = image, >1 = video."""
+    fps: int = field(default=24)
+    """Frames per second for video output."""
+
+    # Input conditioning (for image-to-image/video, inpainting, etc.)
+    input_image: Any = field(default=None)
+    """Conditioning image for image-to-image, image-to-video, inpainting, etc."""
+    input_video: Any = field(default=None)
+    """Conditioning video for video-to-video generation."""
+    mask_image: Any = field(default=None)
+    """Mask for inpainting/outpainting operations."""
+
     # Additional parameters
     seed: int | None = field(default=None)
     size: str = field(default="1024x1024")
@@ -699,3 +716,21 @@ class PixelContext:
     style: str = field(default="vivid")
     response_format: str = field(default="url")
     user: str | None = field(default=None)
+
+    # Generation status (for scheduler compatibility)
+    _status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
+
+    @property
+    def status(self) -> GenerationStatus:
+        """Current generation status of the request."""
+        return self._status
+
+    @status.setter
+    def status(self, value: GenerationStatus) -> None:
+        """Update the generation status."""
+        self._status = value
+
+    @property
+    def is_done(self) -> bool:
+        """Whether the request has completed generation."""
+        return self._status.is_done
