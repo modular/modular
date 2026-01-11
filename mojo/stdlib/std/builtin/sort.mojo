@@ -259,6 +259,9 @@ fn _quicksort[
 # ===-----------------------------------------------------------------------===#
 
 
+# This is being passed mutable origins that are taken from the same memory
+# object, so of course they alias.  The caller guarantees they don't overlap.
+@__unsafe_disable_nested_origin_exclusivity
 fn _merge[
     T: Copyable,
     span_origin: MutOrigin,

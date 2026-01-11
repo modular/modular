@@ -480,7 +480,6 @@ struct _VariadicListMemIter[
     """
 
     comptime variadic_list_type = VariadicListMem[
-        elt_is_mutable = Self.elt_is_mutable,
         origin = Self.elt_origin,
         Self.elt_type,
         Self.is_owned,
