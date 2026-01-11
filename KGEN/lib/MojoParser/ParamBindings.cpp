@@ -257,8 +257,7 @@ std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
                                   ArrayRef<Type> expectedParamTypes,
                                   PogListAttr paramListAttr,
-                                  ParamInf &inference, bool partial,
-                                  ASTDecl *declIfDirect) const {
+                                  ParamInf &inference, bool partial) const {
 
   Fitness fitness{{}};
 
@@ -392,34 +391,7 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
   auto emitInferenceFailure = [&](size_t paramIdx) {
     assert(!partial && "parameter deduction failure in a context that "
                        "doesn't allow deduction");
-    MojoInflightDiag &diag = getDiag(getExprLoc());
-    if (declIfDirect && isa<StructDeclOp>(declIfDirect->getIfOperation()))
-      diag << "'" << *declIfDirect->getUserNameIfOperation() << "' ";
-
-    {
-      // The parameter name is scoped to 'declScope'.
-      DeclResolver::DeclScopeChanger x(&declScope);
-      diag << "failed to infer parameter "
-           << ParamDeclRefAttr::get(paramListAttr.getName(paramIdx),
-                                    expectedParamTypes[paramIdx]);
-    }
-
-    // If this is a method on a struct and we couldn't infer something from
-    // its self parameters, complain about the struct.
-    if (declIfDirect && isa<FnOp>(declIfDirect->getIfOperation())) {
-      if (auto structOp = dyn_cast<StructDeclOp>(
-              cast<FnOp>(declIfDirect->getIfOperation())->getParentOp())) {
-        auto structSig = structOp.getSignature();
-        if (paramIdx < structSig.getNumParams()) {
-          diag << " of parent struct '" << structOp.getDeclName().getValue()
-               << "'";
-          inference.inferenceDiags.addExplanation(diag);
-          diag.attachNote(structOp.getLoc()) << " struct declared here";
-          return;
-        }
-      }
-    }
-    inference.inferenceDiags.addExplanation(diag);
+    inference.emitInferenceFailure(paramIdx, getExprLoc());
   };
 
   auto emitTypeMismatch = [&](size_t index, ASTExprAnd<AnyValue> binding,
@@ -428,8 +400,9 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
     DeclResolver::DeclScopeChanger x(&declScope);
 
     MojoInflightDiag &diag = getDiag({});
-    if (declIfDirect) // Why only structs? Seems arbitrary, push higher?
-      diag << "'" << *declIfDirect->getUserNameIfOperation() << "' ";
+    if (inference
+            .declIfKnown) // Why only structs? Seems arbitrary, push higher?
+      diag << "'" << *inference.declIfKnown->getUserNameIfOperation() << "' ";
     diag << "parameter "
          << ParamDeclRefAttr::get(paramListAttr.getName(index),
                                   expectedParamTypes[index])
@@ -747,16 +720,16 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
   if (posBindingIdx != numBindings) {
     // Hide the implicit trait parameter from the diagnostic.
     size_t hidden = 0;
-    if (declIfDirect) {
-      if (auto fn = dyn_cast<FnOp>(declIfDirect->getIfOperation()))
+    if (inference.declIfKnown) {
+      if (auto fn = dyn_cast<FnOp>(inference.declIfKnown->getIfOperation()))
         hidden = isa_and_nonnull<TraitDeclOp>(fn->getParentOp());
     }
     size_t numExpected = expectedParamTypes.size() - hidden -
                          countNumImplicitKinds(paramListAttr) -
                          countNumInferredKinds(paramListAttr);
     auto &diag = getDiag({});
-    if (declIfDirect)
-      diag << "'" << *declIfDirect->getUserNameIfOperation() << "'";
+    if (inference.declIfKnown)
+      diag << "'" << *inference.declIfKnown->getUserNameIfOperation() << "'";
     else
       diag << "parametric value";
     emitWrongArgOrParamCount(diag, /*minRequired=*/numExpected,
@@ -771,11 +744,10 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
 }
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
-ParamBindings::verifyBindings(LITGeneratorType sig, ParamInf &inference,
-                              ASTDecl *declIfKnown) const {
+ParamBindings::verifyBindings(LITGeneratorType sig, ParamInf &inference) const {
   return verifyBindingsImpl(parameters, sig.getInputParamTypes(),
                             sig.getMetadata(), inference,
-                            /*partial=*/false, declIfKnown);
+                            /*partial=*/false);
 }
 
 ParameterExprArrayAttr
@@ -792,10 +764,10 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
   // The inference diagnostics will be unused.
   ParamInf inference(declScope, getParameters(), getNumPreCheckedParams(),
                      paramTypes, paramList,
-                     /*allowImplicitConversions=*/true, getDiag);
+                     /*allowImplicitConversions=*/true, getDiag,
+                     /*declIfDirect=*/nullptr);
   auto [bindings, _] =
-      verifyBindingsImpl(parameters, paramTypes, paramList, inference, partial,
-                         /*declIfDirect=*/nullptr);
+      verifyBindingsImpl(parameters, paramTypes, paramList, inference, partial);
   return bindings;
 }
 
@@ -855,10 +827,9 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
   };
   ParamInf inference(declScope, getParameters(), getNumPreCheckedParams(),
                      expectedParamTypes, paramListAttr,
-                     /*allowImplicitConversions=*/true, getDiags);
-  auto [bindings, fitness] =
-      verifyBindingsImpl(parameters, expectedParamTypes, paramListAttr,
-                         inference, partial, declIfKnown);
+                     /*allowImplicitConversions=*/true, getDiags, declIfKnown);
+  auto [bindings, fitness] = verifyBindingsImpl(
+      parameters, expectedParamTypes, paramListAttr, inference, partial);
   return {bindings, fitness, std::move(diag)};
 }
 

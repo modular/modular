@@ -79,61 +79,6 @@ void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
 }
 
 //===----------------------------------------------------------------------===//
-// ParameterInference
-//===----------------------------------------------------------------------===//
-
-ParamInf::ParamInf(
-    ASTDecl &declScope, const CallOperands &givenBindings,
-    size_t numPreCheckedParam, ArrayRef<Type> declaredParamTypes,
-    PogListAttr declaredParamPogs, bool allowImplicitConversions,
-    llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag)
-    : declScope(declScope), shared(declScope.getShared()),
-      getDiag(std::move(getDiag)), evaluator(declScope.getShared()),
-      givenBindings(givenBindings), declaredParamTypes(declaredParamTypes),
-      declaredParamPogs(declaredParamPogs),
-      allowImplicitConversions(allowImplicitConversions),
-      numPreCheckedParam(numPreCheckedParam) {
-
-  size_t finalSize = declaredParamTypes.size();
-
-  // Pre-install any "prechecked" bindings.  These come from self arguments like
-  // `x: T[1, 2]; x.foo()`: we'll have 1,2 as prechecked bindings due to 'x' as
-  // the self argument of the call.  This is pretty gross, but we need to do
-  // something like this because we have variadics, specified values for
-  // infer-only parameters etc.  We are also dealing with two concatenated
-  // parameter lists: the Self parameters have keywords before the method
-  // parameters etc.
-  if (numPreCheckedParam) {
-    ArrayRef preChecked =
-        ArrayRef(givenBindings.values).take_front(numPreCheckedParam);
-    for (auto &preCheckedOperand : preChecked) {
-      auto preCheckParamVal = preCheckedOperand.ir.getIfPValue().get();
-      if (sugarIsa<UnboundAttr>(preCheckParamVal))
-        evaluator.appendIndexBinding(TypedAttr());
-      else
-        evaluator.appendIndexBinding(preCheckParamVal);
-    }
-  }
-  // Fills in with nullptr.
-  while (evaluator.getNumIndexBindings() < finalSize)
-    evaluator.appendIndexBinding(TypedAttr());
-}
-
-void ParamInf::dump() const {
-  auto &os = llvm::errs() << "ParamInf:\n";
-  for (auto [idx, value] : llvm::enumerate(evaluator.getIndexBindings())) {
-    os << "  *(0," << idx << ") = ";
-    if (value)
-      os << value;
-    else
-      os << "<not yet set> : "
-         << const_cast<ParamInf *>(this)->evaluator.getReboundType(
-                declaredParamTypes[idx]);
-    os << "\n";
-  }
-}
-
-//===----------------------------------------------------------------------===//
 // ParamMatcher
 //===----------------------------------------------------------------------===//
 
@@ -1051,8 +996,94 @@ ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
 }
 
 //===----------------------------------------------------------------------===//
-// ParameterInferenceState
+// ParameterInference
 //===----------------------------------------------------------------------===//
+
+ParamInf::ParamInf(
+    ASTDecl &declScope, const CallOperands &givenBindings,
+    size_t numPreCheckedParam, ArrayRef<Type> declaredParamTypes,
+    PogListAttr declaredParamPogs, bool allowImplicitConversions,
+    llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
+    ASTDecl *declIfKnown)
+    : declScope(declScope), shared(declScope.getShared()),
+      declIfKnown(declIfKnown), getDiag(std::move(getDiag)),
+      evaluator(declScope.getShared()), givenBindings(givenBindings),
+      declaredParamTypes(declaredParamTypes),
+      declaredParamPogs(declaredParamPogs),
+      allowImplicitConversions(allowImplicitConversions),
+      numPreCheckedParam(numPreCheckedParam) {
+
+  size_t finalSize = declaredParamTypes.size();
+
+  // Pre-install any "prechecked" bindings.  These come from self arguments like
+  // `x: T[1, 2]; x.foo()`: we'll have 1,2 as prechecked bindings due to 'x' as
+  // the self argument of the call.  This is pretty gross, but we need to do
+  // something like this because we have variadics, specified values for
+  // infer-only parameters etc.  We are also dealing with two concatenated
+  // parameter lists: the Self parameters have keywords before the method
+  // parameters etc.
+  if (numPreCheckedParam) {
+    ArrayRef preChecked =
+        ArrayRef(givenBindings.values).take_front(numPreCheckedParam);
+    for (auto &preCheckedOperand : preChecked) {
+      auto preCheckParamVal = preCheckedOperand.ir.getIfPValue().get();
+      if (sugarIsa<UnboundAttr>(preCheckParamVal))
+        evaluator.appendIndexBinding(TypedAttr());
+      else
+        evaluator.appendIndexBinding(preCheckParamVal);
+    }
+  }
+  // Fills in with nullptr.
+  while (evaluator.getNumIndexBindings() < finalSize)
+    evaluator.appendIndexBinding(TypedAttr());
+}
+
+void ParamInf::dump() const {
+  auto &os = llvm::errs() << "ParamInf:\n";
+  for (auto [idx, value] : llvm::enumerate(evaluator.getIndexBindings())) {
+    os << "  *(0," << idx << ") = ";
+    if (value)
+      os << value;
+    else
+      os << "<not yet set> : "
+         << const_cast<ParamInf *>(this)->evaluator.getReboundType(
+                declaredParamTypes[idx]);
+    os << "\n";
+  }
+}
+
+/// Emit a diagnostic to the diagnostic handler indicating that we failed to
+/// infer the parameter at `paramIdx`.
+void ParamInf::emitInferenceFailure(size_t paramIdx, SMLoc loc) {
+  MojoInflightDiag &diag = getDiag(loc);
+  if (declIfKnown && isa<StructDeclOp>(declIfKnown->getIfOperation()))
+    diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
+
+  {
+    // The parameter name is scoped to 'declScope'.
+    DeclResolver::DeclScopeChanger x(&declScope);
+    diag << "failed to infer parameter "
+         << ParamDeclRefAttr::get(declaredParamPogs.getName(paramIdx),
+                                  declaredParamTypes[paramIdx]);
+  }
+
+  // If this is a method on a struct and we couldn't infer something from
+  // its self parameters, complain about the struct.
+  if (declIfKnown && isa<FnOp>(declIfKnown->getIfOperation())) {
+    if (auto structOp = dyn_cast<StructDeclOp>(
+            cast<FnOp>(declIfKnown->getIfOperation())->getParentOp())) {
+      auto structSig = structOp.getSignature();
+      if (paramIdx < structSig.getNumParams()) {
+        diag << " of parent struct '" << structOp.getDeclName().getValue()
+             << "'";
+        inferenceDiags.addExplanation(diag);
+        diag.attachNote(structOp.getLoc()) << " struct declared here";
+        return;
+      }
+    }
+  }
+  inferenceDiags.addExplanation(diag);
+}
 
 /// Try to infer parameters of Self from an initializer if specialized.
 ///
@@ -1547,11 +1578,6 @@ static PValue emitSingleParam(ASTDecl &scope, ASTExprAnd<AnyValue> binding,
   PValue bindingVal = binding.ir.getIfPValue();
   assert(bindingVal && "Parameters are always PValue's");
 
-  // Parameters can only be unpacked into a variadic.
-  // FIXME: This results in a poor error message.
-  if (isa<UnpackedAttr>(bindingVal.get()))
-    return {};
-
   // Check the type matches what is expected, and perform an implicit
   // conversion if needed.
   expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
@@ -1658,21 +1684,29 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
   auto inferAndEmitOneParam = [&](ASTExprAnd<AnyValue> binding,
                                   ASTType expectedType,
                                   size_t paramIdx) -> TypedAttr {
-    if (failed(inferOneOperand(binding, expectedType, ArgConvention::ReadReg)))
-      return {};
+    // If the expected type has unresolved bindings, try to infer them from the
+    // argument.  This is a non-trivial operation because we support inferring
+    // from the value directly, but also inferring as a result of implicit
+    // conversions.
+    if (paramFinder.hasReferences(expectedType)) {
+      if (failed(
+              inferOneOperand(binding, expectedType, ArgConvention::ReadReg)))
+        return {};
+
+      expectedType = evaluator.getReboundType(expectedType);
+
+      // Ok, inference was successful, check to see if the expected type is
+      // still unresolved.  If so, we have to defer the binding.
+      if (paramFinder.hasReferences(expectedType)) {
+        hasDeferredGivenParam = true;
+        return {};
+      }
+    }
 
     PValue bindingVal =
         emitSingleParam(declScope, binding, expectedType, evaluator);
     if (bindingVal)
       return bindingVal;
-
-    expectedType = evaluator.getReboundType(expectedType);
-    if (paramFinder.hasReferences(expectedType)) {
-      // We are handling a parameter that has a unresolved dependent type, defer
-      // the binding of it.
-      hasDeferredGivenParam = true;
-      return {};
-    }
 
     // Otherwise, we have an error.
     return {};
@@ -1898,7 +1932,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
       Type elementType = packType.getVariadicElementType();
 
       // It is possible the pack element types are not being inferred - for
-      // exmaple, they could have been explicitly specified.  If this is the
+      // example, they could have been explicitly specified.  If this is the
       // case, then we need to perform an implicit conversion to the element
       // type that was explicitly specified.  Be careful though, it is possible
       // the specified type list is completely wrong in length or content.

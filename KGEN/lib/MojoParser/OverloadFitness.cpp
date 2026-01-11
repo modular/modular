@@ -794,7 +794,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       callable.paramBindings.declScope, callable.paramBindings.getParameters(),
       callable.paramBindings.getNumPreCheckedParams(),
       signature.getInputParamTypes(), signature.getParamListAttrs(),
-      allowImplicitConversions, getDiag);
+      allowImplicitConversions, getDiag, funcIfDirect);
 
   // TODO: inferForCall will eventually be separated. We will eventually blend
   // parameter inference into overload resolution have something like:
@@ -823,7 +823,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     return std::move(*diag);
 
   auto [newBindings, bindingFitness] =
-      callable.paramBindings.verifyBindings(signature, inference, funcIfDirect);
+      callable.paramBindings.verifyBindings(signature, inference);
 
   // If there is an error, we just forward the diagnostics.
   if (diag)
