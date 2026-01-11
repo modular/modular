@@ -13,8 +13,6 @@
 
 from buffer import NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import InitializationType
-from internal_utils._utils import initialize
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import LegacyUnsafePointer
 
@@ -48,13 +46,13 @@ fn test_sliced_add[
 
     # Initialize with known patterns
     # a: all ones
-    initialize(a_host, InitializationType.one)
+    a_host.fill(1)
     # b: all twos
     for i in range(rows):
         for j in range(cols):
             b_host[i, j] = 2.0
     # c: zeros (will be overwritten)
-    initialize(c_host, InitializationType.zero)
+    c_host.zero()
 
     # Create lora_end_idx buffer (kept on host since sliced_add reads it on host)
     var lora_end_idx_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(1)

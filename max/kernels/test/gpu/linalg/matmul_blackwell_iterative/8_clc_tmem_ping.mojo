@@ -47,7 +47,8 @@ from gpu.sync import (
     umma_arrive_leader_cta,
 )
 from gpu.tcgen05 import *
-from internal_utils import assert_almost_equal, ndbuffer_to_str, random, zero
+from internal_utils import assert_almost_equal
+from random import rand
 from layout import (
     UNKNOWN_VALUE,
     IntTuple,

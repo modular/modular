@@ -18,7 +18,8 @@ from sys import align_of
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from internal_utils import assert_almost_equal, assert_with_measure, random
+from internal_utils import assert_almost_equal, assert_with_measure
+from random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from memory import LegacyUnsafePointer
@@ -119,8 +120,8 @@ fn test_matmul_sm90[
     )
 
     # Initialize matmul operands
-    random(a_host)
-    random(b_host)
+    rand(a_host.data, a_host.num_elements())
+    rand(b_host.data, b_host.num_elements())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_dev_buffer, a_host_ptr)
@@ -265,15 +266,17 @@ fn test_matmul_sm90[
     @parameter
     if measure_threshold:
         assert_with_measure[relative_difference](
-            c_host,
-            c_host_ref,
+            c_host.data,
+            c_host_ref.data,
+            c_host.num_elements(),
             threshold=measure_threshold.value(),
         )
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
     )

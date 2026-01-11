@@ -18,7 +18,6 @@ from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
 from internal_utils import InitializationType, Timer, init_vector_launch
-from internal_utils._utils import initialize
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -50,7 +49,13 @@ fn test_vec_init[
         var verification_ptr = UnsafePointer[Scalar[dtype]].alloc(length)
         var verification_data = NDBuffer[dtype, 1](verification_ptr, length)
         seed(0)
-        initialize(verification_data, init_type)
+        if init_type == InitializationType.zero:
+            verification_data.zero()
+        elif init_type == InitializationType.one:
+            verification_data.fill(1)
+        elif init_type == InitializationType.arange:
+            for i in range(length):
+                verification_data.data[i] = i
         for i in range(length):
             assert_equal(verification_ptr[i], out_host[i])
         verification_ptr.free()

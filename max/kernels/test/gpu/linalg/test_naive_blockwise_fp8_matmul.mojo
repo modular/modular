@@ -19,7 +19,8 @@ from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
-from internal_utils import assert_almost_equal, fill, random, zero
+from internal_utils import assert_almost_equal
+from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 
@@ -115,11 +116,11 @@ fn test_naive_blockwise_fp8_matmul[
         c_host_ref_ptr, dynamic_c_shape
     )
 
-    random(a_host)
-    random(b_host)
+    rand(a_host.data, a_host.num_elements())
+    rand(b_host.data, b_host.num_elements())
 
-    zero(c_host)
-    zero(c_host_ref)
+    c_host.zero()
+    c_host_ref.zero()
 
     var a_device = ctx.enqueue_create_buffer[input_type](a_size)
     var b_device = ctx.enqueue_create_buffer[input_type](b_size)
@@ -149,8 +150,8 @@ fn test_naive_blockwise_fp8_matmul[
         b_scale_host_ptr, dynamic_b_scale_shape
     )
 
-    random(a_scale_host)
-    random(b_scale_host)
+    rand(a_scale_host.data, a_scale_host.num_elements())
+    rand(b_scale_host.data, b_scale_host.num_elements())
 
     var a_scale_device = ctx.enqueue_create_buffer[DType.float32](a_scale_size)
     var b_scale_device = ctx.enqueue_create_buffer[DType.float32](b_scale_size)
@@ -228,8 +229,9 @@ fn test_naive_blockwise_fp8_matmul[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=0.0001,
         rtol=0.0001,
     )

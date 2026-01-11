@@ -27,9 +27,8 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
-    random,
-    zero,
 )
+from random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -227,13 +226,13 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
             Index(idx[0], idx[1], idx[2]), rebind[SIMD[c_type, width]](val)
         )
 
-    random(a_host)
-    random(b_host)
-    zero(c_host)
-    zero(c_host_ref)
+    rand(a_host.data, a_host.num_elements())
+    rand(b_host.data, b_host.num_elements())
+    c_host.zero()
+    c_host_ref.zero()
 
-    random(a_scales_host)
-    random(b_scales_host)
+    rand(a_scales_host.data, a_scales_host.num_elements())
+    rand(b_scales_host.data, b_scales_host.num_elements())
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -281,12 +280,13 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host, c_host_ref, threshold=0.001
+        c_host.data, c_host_ref.data, c_host.num_elements(), threshold=0.001
     )
 
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
     )

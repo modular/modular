@@ -19,7 +19,7 @@ from buffer import DimList, NDBuffer
 from comm import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
-from internal_utils._utils import ValOrDim, dynamic, initialize, static
+from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.distributed_matmul import matmul_allreduce
 
 from utils import IndexList, StaticTuple

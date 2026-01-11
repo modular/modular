@@ -21,7 +21,7 @@ from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
-from internal_utils import assert_almost_equal, zero
+from internal_utils import assert_almost_equal
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
@@ -75,8 +75,8 @@ fn test_fp8_multistage_gemm[
         for j in range(static_b_shape.get[1]()):
             b_host[i, j] = i + j
 
-    zero(c_host)
-    zero(c_host_ref)
+    c_host.zero()
+    c_host_ref.zero()
 
     var a_device = ctx.enqueue_create_buffer[dtype](a_size)
     var b_device = ctx.enqueue_create_buffer[dtype](b_size)
@@ -190,8 +190,9 @@ fn test_fp8_multistage_gemm[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=0.0001,
         rtol=0.01,
     )

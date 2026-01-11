@@ -15,7 +15,6 @@ from math import ceildiv
 from sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer import NDBuffer
 from gpu import barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
@@ -424,13 +423,9 @@ def test_multicast_tma_wgmma[
 
     vendor_blas.matmul(
         ctx,
-        rebind[NDBuffer[c_type, 2, MutAnyOrigin]](c_ref.device_buffer()),
-        rebind[NDBuffer[a_type, 2, MutAnyOrigin]](
-            a.device_buffer[update=False]()
-        ),
-        rebind[NDBuffer[b_type, 2, MutAnyOrigin]](
-            b.device_buffer[update=False]()
-        ),
+        c_ref.device_tensor[update=False](),
+        a.device_tensor[update=False](),
+        b.device_tensor[update=False](),
         c_row_major=True,
         transpose_b=transpose_b,
     )

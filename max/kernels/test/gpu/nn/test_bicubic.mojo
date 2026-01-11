@@ -20,7 +20,6 @@ from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
-from internal_utils import fill, ndbuffer_to_str, zero
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic
@@ -70,12 +69,12 @@ fn test_bicubic_kernel[
     print("input_dim: ", input_dim)
     print("output_dim: ", output_dim)
 
-    zero(input_host)
-    zero(output_host)
-    zero(output_ref_host)
+    input_host.zero()
+    output_host.zero()
+    output_ref_host.zero()
 
-    print("input_host (zeroed): ", ndbuffer_to_str(input_host))
-    print("output_host (zeroed): ", ndbuffer_to_str(output_host))
+    print("input_host (zeroed): ", input_host)
+    print("output_host (zeroed): ", output_host)
 
     print(
         "--------------------------------now we want to fill the input tensor"
@@ -144,7 +143,7 @@ fn test_bicubic_kernel[
         "--------------------------------after filling the input tensor"
         " --------------------------------"
     )
-    print("input_host (filled): \n", ndbuffer_to_str(input_host))
+    print("input_host (filled): \n", input_host)
 
     print(
         "--------------------------------now we want to call the bicubic"
@@ -159,7 +158,7 @@ fn test_bicubic_kernel[
         "--------------------------------after calling the bicubic upsampling"
         " kernel--------------------------------"
     )
-    print("output_host (after operation): \n", ndbuffer_to_str(output_host))
+    print("output_host (after operation): \n", output_host)
 
     # Define expected values for each channel
     # i know this also looks weird, but this is the value of the output tensor from pytorch, the resulting upsampled image, translated to numbers by img_tensor = to_tensor(pil_image)
@@ -628,12 +627,12 @@ fn test_bicubic_kernel[
         "--------------------------------device"
         " output--------------------------------"
     )
-    print("output_ref_host: ", ndbuffer_to_str(output_ref_host))
+    print("output_ref_host: ", output_ref_host)
     print(
         "--------------------------------cpu"
         " output--------------------------------"
     )
-    print("output_host: ", ndbuffer_to_str(output_host))
+    print("output_host: ", output_host)
     print(
         "--------------------------------asserting--------------------------------"
     )

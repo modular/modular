@@ -31,7 +31,8 @@ from gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )
-from internal_utils import assert_almost_equal, random, zero
+from internal_utils import assert_almost_equal
+from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -372,8 +373,8 @@ def test_gemv_tma[
 
     rand[dtype](a_host_ptr, M * K)
     rand[dtype](b_host_ptr, K * N)
-    zero(c_host)
-    zero(c_host_ref)
+    c_host.zero()
+    c_host_ref.zero()
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -455,8 +456,9 @@ def test_gemv_tma[
 
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host,
-            c_host_ref,
+            c_host.data,
+            c_host_ref.data,
+            c_host.num_elements(),
             atol=0.0001,
             rtol=rtol,
         )

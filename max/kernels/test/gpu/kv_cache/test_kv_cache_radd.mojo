@@ -17,8 +17,6 @@ from random import random_ui64
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import InitializationType
-from internal_utils._utils import initialize
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import LegacyUnsafePointer
@@ -121,7 +119,7 @@ fn test_kv_cache_radd[
     var kv_block_paged_host = NDBuffer[dtype, 6](
         kv_block_paged_host_ptr, kv_block_paged_shape
     )
-    initialize(kv_block_paged_host, InitializationType.one)
+    kv_block_paged_host.fill(1)
     var paged_lut_shape = IndexList[2](
         batch_size, ceildiv(max_full_context_length, page_size)
     )
@@ -206,7 +204,8 @@ fn test_kv_cache_radd[
     var a_host = NDBuffer[
         dtype, 2, _, DimList(Dim(), num_heads * head_dim * 2)
     ](a_host_ptr, a_shape)
-    initialize(a_host, InitializationType.arange)
+    for i in range(a_host.num_elements()):
+        a_host.data[i] = i
     var a_device = ctx.enqueue_create_buffer[dtype](a_size)
     ctx.enqueue_copy(a_device, a_host_ptr)
     var a_device_nd = NDBuffer[

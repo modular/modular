@@ -36,7 +36,8 @@ from gpu.mma import st_matrix
 from gpu.mma_sm100 import *
 from gpu.sync import named_barrier
 from gpu.tcgen05 import *
-from internal_utils import assert_almost_equal, ndbuffer_to_str, random, zero
+from internal_utils import assert_almost_equal
+from random import rand
 from layout import (
     UNKNOWN_VALUE,
     IntTuple,

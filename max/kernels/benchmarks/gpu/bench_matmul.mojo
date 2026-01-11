@@ -32,14 +32,12 @@ from internal_utils import arg_parse
 from memory import LegacyUnsafePointer, bitcast
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from random import Random
+from random import rand, Random
 from internal_utils._utils import (
     InitializationType,
     ValOrDim,
     dynamic,
     init_vector_launch,
-    initialize,
-    random,
     static,
 )
 from layout import Layout, LayoutTensor
@@ -288,11 +286,23 @@ fn bench_matmul[
 
         @parameter
         if dtype.is_float8():
-            random(a_host)
-            random(b_host)
+            rand(a_host.data, a_host.num_elements())
+            rand(b_host.data, b_host.num_elements())
         else:
-            initialize(a_host, init_type)
-            initialize(b_host, init_type)
+            if init_type == InitializationType.zero:
+                a_host.zero()
+                b_host.zero()
+            elif init_type == InitializationType.one:
+                a_host.fill(1)
+                b_host.fill(1)
+            elif init_type == InitializationType.uniform_distribution:
+                rand(a_host.data, a_host.num_elements())
+                rand(b_host.data, b_host.num_elements())
+            elif init_type == InitializationType.arange:
+                for i in range(a_host.num_elements()):
+                    a_host.data[i] = i
+                for i in range(b_host.num_elements()):
+                    b_host.data[i] = i
 
         ctx.enqueue_copy(buffer_a, a_host_ptr)
         ctx.enqueue_copy(buffer_b, b_host_ptr)
