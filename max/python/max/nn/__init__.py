@@ -21,7 +21,7 @@ from .attention import (
 )
 from .clamp import clamp
 from .comm import Allreduce, Signals
-from .conv import Conv1D, Conv2d, Conv3D
+from .conv import Conv1D, Conv2d, Conv3D, causal_conv1d_fn
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
 from .embedding import Embedding, VocabParallelEmbedding
 from .float8_config import (
@@ -37,15 +37,19 @@ from .linear import (
     MLP,
     ColumnParallelLinear,
     DistributedGemmConfig,
+    GatedMLP,
     GPTQLinear,
     Linear,
 )
 from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
 from .norm import (
     ConstantLayerNorm,
+    FusedRMSNorm,
     GroupNorm,
     LayerNorm,
     RMSNorm,
+    layer_norm_fn,
+    rms_norm_fn,
 )
 from .rotary_embedding import (
     DynamicRotaryEmbedding,
@@ -57,6 +61,12 @@ from .rotary_embedding import (
     RotaryEmbedding,
     YarnRotaryEmbedding,
     YarnScalingParams,
+)
+from .selective_scan import (
+    mamba_inner_fn,
+    mamba_inner_ref,
+    selective_scan_fn,
+    selective_state_update_fn,
 )
 from .sequential import Sequential
 from .transformer import (
@@ -88,9 +98,11 @@ __all__ = [
     "Float8ScaleGranularity",
     "Float8ScaleOrigin",
     "Float8WeightScaleSpec",
+    "FusedRMSNorm",
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "GPTQLinear",
+    "GatedMLP",
     "GroupNorm",
     "Identity",
     "Layer",
@@ -120,5 +132,12 @@ __all__ = [
     "WeightNormConvTranspose1d",
     "YarnRotaryEmbedding",
     "YarnScalingParams",
+    "causal_conv1d_fn",
     "clamp",
+    "layer_norm_fn",
+    "mamba_inner_fn",
+    "mamba_inner_ref",
+    "rms_norm_fn",
+    "selective_scan_fn",
+    "selective_state_update_fn",
 ]
