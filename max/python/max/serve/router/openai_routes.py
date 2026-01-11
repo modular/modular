@@ -37,6 +37,7 @@ from typing import (
 from urllib.parse import unquote, urlparse
 
 import aiofiles
+import numpy as np
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
@@ -47,6 +48,7 @@ from max.interfaces import (
     LoRARequest,
     LoRAStatus,
     PipelineTokenizer,
+    PixelGenerationRequest,
     RequestID,
     SamplingParams,
     SamplingParamsInput,
@@ -66,6 +68,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
 )
+from max.serve.pipelines.pixel import PixelGeneratorPipeline
 from max.serve.schemas.openai import (
     ChatCompletionMessageToolCall,
     ChatCompletionResponseMessage,
@@ -85,10 +88,13 @@ from max.serve.schemas.openai import (
     CreateCompletionResponse,
     CreateEmbeddingRequest,
     CreateEmbeddingResponse,
+    CreateImageRequest,
     Embedding,
     Error,
     ErrorResponse,
     Function1,
+    Image,
+    ImagesResponse,
     InputItem,
     ListModelsResponse,
     LoadLoraRequest,
@@ -176,11 +182,11 @@ class OpenAIResponseGenerator(ABC, Generic[_T]):
 
 def get_pipeline(
     request: Request, model_name: str
-) -> TokenGeneratorPipeline | AudioGeneratorPipeline:
+) -> TokenGeneratorPipeline | AudioGeneratorPipeline | PixelGeneratorPipeline:
     app_state: State = request.app.state
-    pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
-        app_state.pipeline
-    )
+    pipeline: (
+        TokenGeneratorPipeline | AudioGeneratorPipeline | PixelGeneratorPipeline
+    ) = app_state.pipeline
 
     models = [pipeline.model_name]
 
@@ -554,6 +560,79 @@ class OpenAISpeechResponseGenerator:
         return response
 
 
+class OpenAIPixelResponseGenerator:
+    def __init__(self, pipeline: PixelGeneratorPipeline) -> None:
+        self.logger = logging.getLogger(
+            "max.serve.router.OpenAIPixelResponseGenerator"
+        )
+        self.pipeline = pipeline
+
+    async def generate_images(
+        self, requests: list[PixelGenerationRequest]
+    ) -> ImagesResponse:
+        self.logger.debug("Image generation: Start: %s", requests[0])
+        output = await self.pipeline.generate_full_image(requests[0])
+        assert output.pixel_data is not None
+        # Convert numpy image data to base64-encoded PNG
+        images_data: list[Image] = []
+
+        if output.pixel_data.size > 0:
+            image_array = output.pixel_data
+
+            # Handle different number of images (batch dimension)
+            if len(image_array.shape) == 4:
+                # Batch of images: (N, H, W, C)
+                for img_data in image_array:
+                    img_b64 = self._encode_image_to_base64(img_data)
+                    images_data.append(Image(b64_json=img_b64))
+            else:
+                # Single image: (H, W, C)
+                img_b64 = self._encode_image_to_base64(image_array)
+                images_data.append(Image(b64_json=img_b64))
+
+        response = ImagesResponse(
+            created=int(datetime.now().timestamp()),
+            data=images_data,
+        )
+        return response
+
+    def _encode_image_to_base64(self, image_array: np.ndarray) -> str:
+        """Encode a numpy image array to base64 PNG string."""
+        from io import BytesIO
+
+        from PIL import Image as PILImage
+
+        # Denormalize to [0, 255] if needed
+        if image_array.max() <= 1.0:
+            image_array = (image_array * 255).astype(np.uint8)
+        else:
+            image_array = image_array.astype(np.uint8)
+
+        # Create PIL Image and encode to PNG
+        pil_image = PILImage.fromarray(image_array)
+        buffer = BytesIO()
+        pil_image.save(buffer, format="PNG")
+        buffer.seek(0)
+
+        return base64.b64encode(buffer.read()).decode("utf-8")
+
+    async def generate_videos(
+        self, requests: list[VideoGenerationRequest]
+    ) -> VideosResponse:
+        raise NotImplementedError("Not implemented yet!")
+        self.logger.debug("Video generation: Start: %s", requests[0])
+        output = await self.pipeline.generate_full_video(requests[0])
+        assert output.pixel_data is not None
+
+    async def stream_video(
+        self, request: VideoGenerationRequest
+    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
+        raise NotImplementedError("Not implemented yet!")
+        self.logger.debug("Streaming: Start: %s", request)
+        record_request_start()
+        request_timer = StopWatch(start_ns=request.timestamp_ns)
+
+
 async def openai_parse_chat_completion_request(
     completion_request: CreateChatCompletionRequest,
     wrap_content: bool,
@@ -737,9 +816,11 @@ async def openai_create_chat_completion(
         completion_request = CreateChatCompletionRequest.model_validate_json(
             await request.body()
         )
-        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
-            get_pipeline(request, completion_request.model)
-        )
+        pipeline: (
+            TokenGeneratorPipeline
+            | AudioGeneratorPipeline
+            | PixelGeneratorPipeline
+        ) = get_pipeline(request, completion_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
         logger.debug(
@@ -913,9 +994,11 @@ async def openai_create_embeddings(
         embeddings_request = CreateEmbeddingRequest.model_validate_json(
             await request.body()
         )
-        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
-            get_pipeline(request, embeddings_request.model)
-        )
+        pipeline: (
+            TokenGeneratorPipeline
+            | AudioGeneratorPipeline
+            | PixelGeneratorPipeline
+        ) = get_pipeline(request, embeddings_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
         logger.debug(
@@ -1237,9 +1320,11 @@ async def openai_create_completion(
             await request.body()
         )
 
-        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
-            get_pipeline(request, completion_request.model)
-        )
+        pipeline: (
+            TokenGeneratorPipeline
+            | AudioGeneratorPipeline
+            | PixelGeneratorPipeline
+        ) = get_pipeline(request, completion_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
         logger.debug(
@@ -1379,9 +1464,11 @@ async def create_streaming_audio_speech(
                 await request.body()
             )
         )
-        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
-            get_pipeline(request, audio_generation_request.model)
-        )
+        pipeline: (
+            TokenGeneratorPipeline
+            | AudioGeneratorPipeline
+            | PixelGeneratorPipeline
+        ) = get_pipeline(request, audio_generation_request.model)
         assert isinstance(pipeline, AudioGeneratorPipeline)
         sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(
@@ -1404,6 +1491,82 @@ async def create_streaming_audio_speech(
 
         response_generator = OpenAISpeechResponseGenerator(pipeline)
         response = await response_generator.synthesize_speech(audio_request)
+        return response
+
+    except JSONDecodeError as e:
+        logger.exception("JSONDecodeError in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Missing JSON.") from e
+    except (TypeError, ValidationError) as e:
+        logger.exception("TypeError in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Invalid JSON.") from e
+    except InputError as e:
+        logger.warning(
+            "Input validation error in request %s: %s", request_id, str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError as e:
+        logger.exception("ValueError in request %s", request_id)
+        # NOTE(SI-722): These errors need to return more helpful details,
+        # but we don't necessarily want to expose the full error description
+        # to the user. There are many different ValueErrors that can be raised.
+        raise HTTPException(status_code=400, detail="Value error.") from e
+
+
+def _parse_image_size(size: str | None) -> tuple[int, int]:
+    """Parse size string like '1024x1024' into (width, height) tuple."""
+    if size is None:
+        return (1024, 1024)
+    try:
+        parts = size.lower().split("x")
+        if len(parts) != 2:
+            raise ValueError(f"Invalid size format: {size}")
+        return (int(parts[0]), int(parts[1]))
+    except (ValueError, AttributeError) as e:
+        raise ValueError(f"Invalid size format: {size}") from e
+
+
+@router.post("/images/generations", response_model=None)
+async def openai_create_image(
+    request: Request,
+) -> ImagesResponse:
+    request_id = request.state.request_id
+    try:
+        image_request = CreateImageRequest.model_validate_json(
+            await request.body()
+        )
+        pipeline: (
+            TokenGeneratorPipeline
+            | AudioGeneratorPipeline
+            | PixelGeneratorPipeline
+        ) = get_pipeline(request, completion_request.model)
+        assert isinstance(pipeline, PixelGeneratorPipeline)
+
+        logger.debug(
+            "Processing path, %s, req-id,%s%s, for model, %s.",
+            request.url.path,
+            request_id,
+            " (streaming) " if completion_request.stream else "",
+            completion_request.model,
+        )
+
+        width, height = _parse_image_size(image_request.size)
+
+        response_generator = OpenAIPixelResponseGenerator(pipeline)
+
+        image_gen_request = PixelGenerationRequest(
+            request_id=RequestID(request_id),
+            model=image_request.model,
+            prompt=image_request.prompt,
+            messages=image_request.messages,
+            height=height,
+            width=width,
+            num_images_per_prompt=image_request.n,
+            guidance_scale=image_request.guidance_scale,
+            negative_prompt=image_request.negative_prompt,
+            num_inference_steps=image_request.num_inference_steps,
+        )
+
+        response = await response_generator.generate_images(image_gen_request)
         return response
 
     except JSONDecodeError as e:
