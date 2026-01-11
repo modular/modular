@@ -351,7 +351,7 @@ fn param_inference_unrelated_error[T: AnyType](x: T, y: FloatLiteral[_]):
 fn call_param_inference_unrelated_error():
     comptime x = "hello"
     comptime y = "world"
-    # expected-error @below {{failed to infer parameter 'value', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'value'}}
     param_inference_unrelated_error(x, y)
 
 

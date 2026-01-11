@@ -38,11 +38,6 @@ extern bool checkConventionsConvertible(ArgConvention expectedConv,
 //===----------------------------------------------------------------------===//
 
 void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
-  if (isa<NotFound>(info)) {
-    diag << ", it isn't used in any argument";
-    return;
-  }
-
   if (isa<DependsOnUnresolved>(info)) {
     // TODO: Could print which one.
     diag << ", it depends on an unresolved parameter";

@@ -32,11 +32,6 @@ struct InferenceFailure {
     TypedAttr v1, v2;
   };
 
-  /// This failure happens when the parameter isn't found at all.
-  struct NotFound {
-    size_t paramIdx;
-  };
-
   /// This failure happens when merge* is called, but the expected type/value
   /// still has an unresolved dependent type which can't be inferred.
   struct DependsOnUnresolved {
@@ -54,8 +49,7 @@ struct InferenceFailure {
   void addExplanation(MojoInflightDiag &diag) const;
 
 private:
-  SmartVariant<TypeConflict, ValueConflict, NotFound, DependsOnUnresolved,
-               Unclassified>
+  SmartVariant<TypeConflict, ValueConflict, DependsOnUnresolved, Unclassified>
       info;
 };
 
