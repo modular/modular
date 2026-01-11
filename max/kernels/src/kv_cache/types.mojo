@@ -529,6 +529,12 @@ struct PagedKVCache[
     """The PagedKVCache is a wrapper around the KVCache blocks for a given layer.
     It is used to access the KVCache blocks for PagedAttention.
 
+    Note: This struct represents a 4D view of a 6D `PagedKVCacheCollection`
+    tensor. The compile-time layout has `UNKNOWN_VALUE` for stride[0] because
+    the actual stride depends on `num_layers` from the parent tensor, which is
+    only known at runtime. This ensures offset calculations use the correct
+    runtime strides rather than incorrect compile-time values.
+
     Parameters:
         dtype_: The dtype of the kv-cache.
         kv_params_: The kv-cache static parameters.
@@ -540,13 +546,24 @@ struct PagedKVCache[
     comptime page_size_ = Self.page_size
 
     # Shape is [total_num_blocks, page_size, num_heads, head_size].
+    # This tensor is a view of a 6D parent tensor with shape
+    # [num_blocks, 2, num_layers, page_size, num_heads, head_size].
+    # The outer stride depends on num_layers (unknown), so stride[0] must be
+    # UNKNOWN_VALUE to ensure we use runtime strides for offset calculations.
     comptime blocks_shape = IntTuple(
         UNKNOWN_VALUE,
         Self.page_size,
         Int(Self.kv_params.num_heads),
         Int(Self.kv_params.head_size),
     )
-    comptime blocks_layout = Layout.row_major(Self.blocks_shape)
+    comptime blocks_strides = IntTuple(
+        # Runtime value: 2 * num_layers * page_size * num_heads * head_size
+        UNKNOWN_VALUE,
+        Int(Self.kv_params.num_heads) * Int(Self.kv_params.head_size),
+        Int(Self.kv_params.head_size),
+        1,
+    )
+    comptime blocks_layout = Layout(Self.blocks_shape, Self.blocks_strides)
     comptime blocks_type = LayoutTensor[
         Self.dtype, Self.blocks_layout, MutAnyOrigin
     ]
