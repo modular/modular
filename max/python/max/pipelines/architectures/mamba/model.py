@@ -1,14 +1,25 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Qwerky AI Inc. All rights reserved.
+
+# Copyright (c) 2025, Qwerky AI Inc. All rights reserved
+
 #
-# Licensed under the Apache License v2.0 with LLVM Exceptions:
-# https://llvm.org/LICENSE.txt
+
+# Licensed under the Apache License v2.0 with LLVM Exceptions
+
+# <https://llvm.org/LICENSE.txt>
+
 #
+
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
+# distributed under the License is distributed on an "AS IS" BASIS
+
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied
+
 # See the License for the specific language governing permissions and
-# limitations under the License.
+
+# limitations under the License
+
 # ===----------------------------------------------------------------------=== #
 
 from __future__ import annotations
@@ -53,9 +64,9 @@ from .model_config import MambaConfig
 
 logger = logging.getLogger("max.pipelines")
 
-# Environment variable name for Mojo import paths set by the build system.
-_MODULAR_MOJO_MAX_IMPORT_PATH = "MODULAR_MOJO_MAX_IMPORT_PATH"
+# Environment variable name for Mojo import paths set by the build system
 
+_MODULAR_MOJO_MAX_IMPORT_PATH = "MODULAR_MOJO_MAX_IMPORT_PATH"
 
 def _get_kernel_library_paths() -> list[Path]:
     """Returns kernel library paths from the build environment.
@@ -135,7 +146,6 @@ def _get_kernel_library_paths() -> list[Path]:
         )
     return paths
 
-
 class MambaInputs(ModelInputs):
     """A class representing inputs for the Mamba model.
 
@@ -202,7 +212,6 @@ class MambaInputs(ModelInputs):
         self.lora_grouped_offsets_kv = lora_grouped_offsets_kv
         self.data_parallel_splits = data_parallel_splits
         self.accumulated_tokens = accumulated_tokens
-
 
 class MambaModelBase(PipelineModel[TextContext]):
     """Base Mamba pipeline model implementation."""
@@ -362,15 +371,24 @@ class MambaModelBase(PipelineModel[TextContext]):
 
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
+        # For Mamba, use current_position to include all tokens (prompt + generated)
         input_row_offsets = np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
+            [0] + [ctx.tokens.current_position for ctx in context_batch],
             dtype=np.uint32,
         )
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = Tensor.from_numpy(
-            np.concatenate([ctx.tokens.active for ctx in context_batch])
-        ).to(self.devices[0])
+        # For Mamba (no KV cache), we need ALL tokens including generated ones
+        # because the model reprocesses the entire sequence each step.
+        # Use current_position to get all tokens (prompt + generated)
+        tokens_list = []
+        for ctx in context_batch:
+            # Get all tokens up to current position (prompt + generated)
+            all_tokens = ctx.tokens.array[: ctx.tokens.current_position]
+            tokens_list.append(all_tokens)
+
+        tokens_np = np.concatenate(tokens_list)
+        tokens = Tensor.from_numpy(tokens_np).to(self.devices[0])
 
         # Constructs splits for the data parallel execution.
         if dp > 1:
@@ -723,7 +741,6 @@ class MambaModelBase(PipelineModel[TextContext]):
             batch_top_n=batch_top_n,
             batch_echo=batch_echo,
         )
-
 
 class MambaModel(MambaModelBase):
     """Mamba pipeline model implementation."""

@@ -35,8 +35,10 @@ modular_py_test(
     },
     ignore_extra_deps = [
         # transformers is needed at runtime by pipelines.main() for loading
-        # HuggingFace models, but not directly imported in the test file
+        # HuggingFace models, and directly imported in manual comparison tests
         requirement("transformers"),
+        # torch is needed at runtime for manual comparison tests
+        requirement("torch"),
     ],
     imports = [
         "../",  # For hf_repo_lock
@@ -52,6 +54,81 @@ modular_py_test(
     deps = [
         "//max/python/max/entrypoints:pipelines",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mamba_debug",
+    size = "enormous",
+    srcs = [
+        "test_mamba_debug.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "true",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    ignore_extra_deps = [
+        requirement("transformers"),
+        requirement("torch"),
+    ],
+    imports = [
+        "../",  # For hf_repo_lock
+    ],
+    mojo_deps = select({
+        "//:emit_mojo_enabled": MAMBA_MOJOPKGS,
+        "//conditions:default": MAMBA_MOJOPKGS,
+    }),
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mamba_activations",
+    size = "enormous",
+    srcs = [
+        "test_mamba_activations.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "true",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    ignore_extra_deps = [
+        requirement("transformers"),
+        requirement("torch"),
+    ],
+    imports = [
+        "../",  # For hf_repo_lock
+    ],
+    mojo_deps = select({
+        "//:emit_mojo_enabled": MAMBA_MOJOPKGS,
+        "//conditions:default": MAMBA_MOJOPKGS,
+    }),
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/entrypoints:pipelines",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        requirement("numpy"),
+        requirement("torch"),
         requirement("transformers"),
     ],
 )
