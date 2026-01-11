@@ -101,7 +101,7 @@ fn compile[
 
 fn main():
     var thing = compile[device_func]()
-    # expected-error @below {{invalid call to 'call': method argument #1 cannot be converted from 'StringLiteral["hello"]' to 'Bool'}}
+    # expected-error @below {{invalid call to 'call': value passed to 'args' cannot be converted from 'StringLiteral["hello"]' to 'Bool'}}
     var result2 = thing.call(42, "hello")
 
 
@@ -169,7 +169,7 @@ fn compile[
 
 fn main():
     var thing = compile[device_func]()
-    # expected-error @below {{invalid call to 'call': method argument #1 cannot be converted from 'StringLiteral["hello"]' to 'Bool'}}
+    # expected-error @below {{invalid call to 'call': value passed to 'args' cannot be converted from 'StringLiteral["hello"]' to 'Bool'}}
     var result2 = thing.call(42, "hello")
 
 
@@ -295,5 +295,5 @@ fn main():
     var ndb = NDBuffer()
     # This ZBool() is incorrect, not even close to the ZPointer[Int] that's
     # expected.
-    # expected-error @below {{invalid call to 'call': method argument #1 cannot be converted from 'ZBool' to 'ZPointer[Int]'}}
+    # expected-error @below {{invalid call to 'call': value passed to 'args' cannot be converted from 'ZBool' to 'ZPointer[Int]'}}
     var result1 = thing.call(mlt, ZBool(), ndb)

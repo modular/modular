@@ -184,6 +184,6 @@ struct MyBool(AnyRPTrivialType):
 
 fn noIndentError():
   for i in ListValueInt():
-    # expected-error @+1 {{self argument cannot be converted from type value 'MyBool' to an instance of 'MyBool'; did you mean to instantiate 'MyBool'?}}
+    # expected-error @+1 {{value passed to 'self' cannot be converted from type value 'MyBool' to an instance of 'MyBool'; did you mean to instantiate 'MyBool'?}}
     if MyBool: # no error 'statements must start at the beginning of a line' should be printed
       pass

@@ -16,7 +16,7 @@ fn test_bool_context(a: NotBoolConvertible): pass
 
 fn voidReturningFn(): pass
 fn badCall():
-  # expected-error @+1 {{invalid call to 'test_bool_context': argument #0 cannot be converted from 'None' to 'NotBoolConvertible'}}
+  # expected-error @+1 {{invalid call to 'test_bool_context': value passed to 'a' cannot be converted from 'None' to 'NotBoolConvertible'}}
   test_bool_context(voidReturningFn())
 
 
@@ -40,7 +40,7 @@ struct ThingWithStaticMethod:
      pass
 
 fn testThingWithStaticMethod():
-  # expected-error @+1 {{invalid call to 'splat': argument #0 cannot be converted from 'FloatLiteral[4]' to 'Int'}}
+  # expected-error @+1 {{invalid call to 'splat': value passed to 'x' cannot be converted from 'FloatLiteral[4]' to 'Int'}}
   ThingWithStaticMethod.splat(4.0)
 
 
@@ -193,20 +193,20 @@ struct TestTuple[*Ts: AnyTrivialRegType]:
         pass
 
 fn badCalls(arg: Int):
-  # expected-error @+1 {{argument #1 cannot be converted from 'FloatLiteral[1]' to 'Int'}}
+  # expected-error @+1 {{value passed to 'b' cannot be converted from 'FloatLiteral[1]' to 'Int'}}
   exampleVariadic(1.0, 1.0)
-  # expected-error @+1 {{argument #3 cannot be converted from 'FloatLiteral[1]' to 'Int'}}
+  # expected-error @+1 {{value passed to 'b' cannot be converted from 'FloatLiteral[1]' to 'Int'}}
   exampleVariadic(1.0, 1, 2, 1.0)
-  # expected-error @+1 {{argument #3 cannot be converted from 'FloatLiteral[4]' to 'Int'}}
+  # expected-error @+1 {{value passed to 'b' cannot be converted from 'FloatLiteral[4]' to 'Int'}}
   exampleVariadicAndKeyword(1, 2, 3, b=4.0)
 
   var x: Int
   var y : FloatDyn
-  # expected-error @+1 {{invalid call to 'exampleByRefVariadic': argument #2 must be mutable in order to pass to a mutating argument}}
+  # expected-error @+1 {{invalid call to 'exampleByRefVariadic': value passed to mutable argument 'b' must be mutable}}
   exampleByRefVariadic(1.0, x, arg)
   # expected-error-re @+1 {{invalid call to 'exampleByRefVariadic': l-value of type 'FloatDyn' cannot be converted to reference of type 'Int'}}
   exampleByRefVariadic(1.0, x, y)
-  # expected-error @+1 {{argument #2 must be mutable in order to pass to a mutating argument}}
+  # expected-error @+1 {{value passed to mutable argument 'b' must be mutable}}
   exampleByRefVariadic(1.0, x, 1)
 
   # The user hasn't provided any arguments that could be used to infer `T`.
@@ -216,7 +216,7 @@ fn badCalls(arg: Int):
   var z = ParameterizedStruct()
 
   # We can't infer `T` with two arguments of different types.
-  # expected-error @below {{argument #1 cannot be converted from 'FloatLiteral[2]' to 'Int'}}
+  # expected-error @below {{value passed to 'args' cannot be converted from 'FloatLiteral[2]' to 'Int'}}
   parameterizedVariadic(1, 2.0)
 
   # expected-error @below {{invalid call to 'test': failed to infer parameter 'j'}}
@@ -235,7 +235,7 @@ fn overloadedFunc(x: Int, y: Int): pass
 fn takeFuncArgument(f: Int): pass
 
 fn callWithOverloadedArg():
-  # expected-error @below {{invalid call to 'takeFuncArgument': argument #0 cannot be converted from unknown overload to}}
+  # expected-error @below {{invalid call to 'takeFuncArgument': value passed to 'f' cannot be converted from unknown overload to}}
   # expected-error @below {{cannot convert function to non-function type 'Int'}}
   # expected-note @below {{try resolving the overloaded function first}}
   takeFuncArgument(overloadedFunc)
@@ -282,7 +282,7 @@ fn badPackCalls(value: Int):
   examplePack[Int](1, 2)
   # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 2 positional operands, but 1 was specified}}
   examplePack[Int, FloatDyn](1)
-  # expected-error-re @below {{invalid call to 'examplePack': argument #1 cannot be converted from '__mlir_type.index' to 'FloatDyn'}}
+  # expected-error-re @below {{invalid call to 'examplePack': value passed to 'args' cannot be converted from '__mlir_type.index' to 'FloatDyn'}}
   examplePack[Int, FloatDyn](1, Int(2)._mlir_value)
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': failed to infer parameter 'Ts'}}
@@ -428,23 +428,23 @@ def fn_redecl2() -> Int: pass
 def fn_redecl2() -> FloatDyn: pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'Int'}}
+# expected-note @below {{candidate not viable: value passed to 'a' cannot be converted from 'TestOverloading' to 'Int'}}
 # expected-note @below {{candidate not viable: expected at most 1 positional argument, got 2}}
 fn overloadIntFloat32(a: Int): pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note-re @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'FloatDyn'}}
+# expected-note-re @below {{candidate not viable: value passed to 'a' cannot be converted from 'TestOverloading' to 'FloatDyn'}}
 # expected-note @below {{candidate not viable: expected at most 1 positional argument, got 2}}
 fn overloadIntFloat32(a: FloatDyn): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: missing 1 required positional argument: 'b'}}
-# expected-note-re @below {{candidate not viable: argument #1 cannot be converted from 'FloatDyn' to 'Int'}}
+# expected-note-re @below {{candidate not viable: value passed to 'b' cannot be converted from 'FloatDyn' to 'Int'}}
 fn overloadIntFloat32(a: Int, b: Int): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: missing 1 required positional argument: 'b'}}
-# expected-note @below {{argument #1 must be mutable in order to pass to a mutating argument}}
+# expected-note @below {{value passed to mutable argument 'b' must be mutable}}
 fn overloadIntFloat32(a: Int, mut b: FloatDyn): pass
 
 # expected-note @below {{candidate not viable: missing 2 required positional arguments: 'b', 'c'}}
@@ -525,10 +525,10 @@ struct ConvertibleFromInt:
     pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: argument #1 cannot be converted from 'ConvertibleFromInt' to 'Int'}}
+# expected-note @below {{candidate not viable: value passed to 'b' cannot be converted from 'ConvertibleFromInt' to 'Int'}}
 fn ambiguousConversions(a: ConvertibleFromInt, b: Int): pass
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: argument #0 cannot be converted from 'ConvertibleFromInt' to 'Int'}}
+# expected-note @below {{candidate not viable: value passed to 'a' cannot be converted from 'ConvertibleFromInt' to 'Int'}}
 fn ambiguousConversions(a: Int, b: ConvertibleFromInt): pass
 
 fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
@@ -543,7 +543,7 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
   localFn(a, b)
   localFn(a, a)
   localFn(1, b)
-  # expected-error @+1 {{invalid indirect call: argument #0 cannot be converted from 'ConvertibleFromInt' to 'Int'}}
+  # expected-error @+1 {{invalid indirect call: value passed to 'a' cannot be converted from 'ConvertibleFromInt' to 'Int'}}
   localFn(b, b)
 
 # COM: https://github.com/modular/mojo/issues/1530
@@ -570,11 +570,11 @@ fn test_param_deduction_failure[
     func[_](u, v)
 
 struct InitOverloaded:
-  # expected-note @below {{argument #0 cannot be converted from 'StringLiteral["foo"]' to 'Int'}}
-  # expected-note @below {{argument #0 cannot be converted from 'Parametric[1]' to 'Int'}}
+  # expected-note @below {{value passed to 'a' cannot be converted from 'StringLiteral["foo"]' to 'Int'}}
+  # expected-note @below {{value passed to 'a' cannot be converted from 'Parametric[1]' to 'Int'}}
   fn __init__(out self, a: Int): pass
-  # expected-note @below {{argument #0 cannot be converted from 'StringLiteral["foo"]' to '__mlir_type.index'}}
-  # expected-note @below {{argument #0 cannot be converted from 'Parametric[1]' to '__mlir_type.index'}}
+  # expected-note @below {{value passed to 'a' cannot be converted from 'StringLiteral["foo"]' to '__mlir_type.index'}}
+  # expected-note @below {{value passed to 'a' cannot be converted from 'Parametric[1]' to '__mlir_type.index'}}
   fn __init__(out self, a: __mlir_type.index): pass
 
 fn testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
@@ -1134,7 +1134,7 @@ fn implicit_conversions():
     # # returning conversions
     var e = return_foo(42)
 
-    take_foo(24) # expected-error {{invalid call to 'take_foo': argument #0 cannot be converted from 'IntLiteral[24]' to 'Foo'}}
+    take_foo(24) # expected-error {{invalid call to 'take_foo': value passed to 'x' cannot be converted from 'IntLiteral[24]' to 'Foo'}}
 
 ##===----------------------------------------------------------------------===##
 # Top Level Code

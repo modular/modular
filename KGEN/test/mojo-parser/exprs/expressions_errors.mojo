@@ -116,7 +116,7 @@ fn SomethingWithInferredParamCallee(mut v: SomethingWithInferredParam):
   pass
 
 fn SomethingWithInferredParamCaller(v: SomethingWithInferredParam):
-  # expected-error @+1 {{must be mutable in order to pass to a mutating argument}}
+  # expected-error @+1 {{value passed to mutable argument 'v' must be mutable}}
   SomethingWithInferredParamCallee(v)
 
 ##===----------------------------------------------------------------------===##
@@ -168,7 +168,7 @@ fn some_fn_ret_int() -> Int: return 42
 
 # Issue #11288
 fn test_overload_set():
-  # expected-error @+1 {{invalid call to 'some_fn_take_int': argument #0 cannot be converted from 'fn() -> Int' to 'Int'}}
+  # expected-error @+1 {{invalid call to 'some_fn_take_int': value passed to 'a' cannot be converted from 'fn() -> Int' to 'Int'}}
   some_fn_take_int(some_fn_ret_int)
 
 fn overloaded_arg(x: Int): pass # expected-note {{candidate declared here}}
@@ -274,7 +274,7 @@ def testLValuesRvalues() -> None:
   LValuesRvalues().normalMethod()
   LValuesRvalues().mutatingMethod()  # expected-error {{invalid use of mutating method on rvalue of type 'LValuesRvalues'}}
 
-  # expected-error @+1 {{method argument #0 must be mutable in order to pass to a mutating argument}}
+  # expected-error @+1 {{value passed to mutable argument 'x' must be mutable}}
   LValuesRvalues().takesByRef(LValuesRvalues())
 
   # We can not implicitly declare things on the RHS
@@ -602,7 +602,7 @@ struct GetAttrNotString:
 
 fn invalid_getattr():
     var obj = GetAttrNotString()
-    # expected-error @below {{invalid call to '__getattr__': attribute name cannot be converted from 'StringLiteral["attr"]' to 'Int}}
+    # expected-error @below {{invalid call to '__getattr__': value passed to 'idx' cannot be converted from 'StringLiteral["attr"]' to 'Int}}
     obj.attr
 
 
@@ -671,7 +671,7 @@ fn test_bad_ref(a: Int, b: CopyAndInitMemType):
 
   var bref = Pointer(to=b) # ok
 
-  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Pointer[CopyAndInitMemType, origin_of(b)]' to 'CopyAndInitMemType'}}
+  # expected-error @+1 {{invalid call to '__le__': value passed to 'other' cannot be converted from 'Pointer[CopyAndInitMemType, origin_of(b)]' to 'CopyAndInitMemType'}}
   _ = b <= bref
 
 fn transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNonTrivRegPassable, *vararg: String):
@@ -764,7 +764,7 @@ struct Addable:
     fn __add__(self, other: Self): pass # expected-note {{function declared here}}
 fn test(a: Pointer[Addable, _], b: Addable):
     # FIXME: This shouldn't mention mut since it is an implicit parameter.
-    # expected-error @+1 {{invalid call to '__add__': right side cannot be converted from 'Pointer[Addable, a.origin]' to 'Addable'}}
+    # expected-error @+1 {{invalid call to '__add__': value passed to 'other' cannot be converted from 'Pointer[Addable, a.origin]' to 'Addable'}}
     _ = b+a
 
 
@@ -831,9 +831,9 @@ struct HasDependent[x: Int, y: Int = int_fn(x)]: pass
 
 # expected-note @+1 {{function declared here}}
 fn test_dependent[a: Int](arg: HasDependent[a], arg2: HasDependent[a, 4]):
-  # expected-error @+1 {{argument #0 cannot be converted from 'HasDependent[a]' to 'HasDependent[42]'}}
+  # expected-error @+1 {{value passed to 'arg' cannot be converted from 'HasDependent[a]' to 'HasDependent[42]'}}
   test_dependent[42](arg, arg2)
-  # expected-error @below {{argument #1 cannot be converted from 'HasDependent[a]' to 'HasDependent[a, 4]'}}
+  # expected-error @below {{value passed to 'arg2' cannot be converted from 'HasDependent[a]' to 'HasDependent[a, 4]'}}
   # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
   test_dependent(arg, arg)
 
@@ -868,7 +868,7 @@ fn bad_union[ao: MutOrigin](ref [ao] a: String, mut b: String) -> ref [a, b] Str
 
 # https://github.com/modular/mojo/issues/3829
 fn apply_in_memory[o: ImmutOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None, x: SomeNonTrivRegPassable):
-# expected-error @below {{argument #0 cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
+# expected-error @below {{value passed to 'x' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
 # expected-note @below {{operand origin 'x' doesn't match expected origin 'o'}}
     f(x)
 
@@ -880,17 +880,17 @@ fn getSomeNonTrivRegPassable() -> SomeNonTrivRegPassable: pass
 # expected-note @below {{function declared here}}
 fn direct3830(ref a: SomeNonTrivRegPassable, ref[a] b: SomeNonTrivRegPassable): pass
 fn test3830():
-    # expected-error @below {{invalid call to 'direct3830': argument #1 cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
+    # expected-error @below {{invalid call to 'direct3830': value passed to 'b' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'anonymous*'}}
     direct3830(getSomeNonTrivRegPassable(), getSomeNonTrivRegPassable())
 
 fn test3830_1[o: ImmutOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None):
-    # expected-error @below {{invalid indirect call: argument #0 cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
+    # expected-error @below {{invalid indirect call: value passed to 'x' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
     f(getSomeNonTrivRegPassable())
 
 fn test3830_2[o: ImmutOrigin](f: fn(ref[o] x: Int) -> None, x: Int):
-    # expected-error @below {{invalid indirect call: argument #0 cannot be converted from 'Int' to ref 'Int'}}
+    # expected-error @below {{invalid indirect call: value passed to 'x' cannot be converted from 'Int' to ref 'Int'}}
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
     f(x)
 

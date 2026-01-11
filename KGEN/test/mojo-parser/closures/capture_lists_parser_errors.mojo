@@ -61,7 +61,7 @@ fn mutateMe(mut str: String):
 
 fn illegal(mut byRefMut: String):
     fn myclosure() unified {read byRefMut}:
-        # CHECK: error: invalid call to 'mutateMe': argument #0 must be mutable in order to pass to a mutating argument
+        # CHECK: invalid call to 'mutateMe': value passed to mutable argument 'str' must be mutable
         mutateMe(byRefMut)
 
 

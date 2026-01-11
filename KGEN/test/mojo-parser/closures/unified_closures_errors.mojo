@@ -84,7 +84,7 @@ fn changeIt(mut aString: String):
 
 def nestedCaptureAll(mut aString: String):
     fn aFinalThing(x:Int) unified {read}:
-        # expected-error @below {{invalid call to 'changeIt': argument #0 must be mutable in order to pass to a mutating argument}}
+        # expected-error @below {{invalid call to 'changeIt': value passed to mutable argument 'aString' must be mutable}}
         changeIt(aString)
 
         fn aChildThing(x:Int) unified {var}:

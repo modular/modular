@@ -158,8 +158,8 @@ private:
   std::optional<MojoInflightDiag>
   checkOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
                   ArgConvention expectedConvention, ASTType expectedType,
-                  bool allowImplicitConversions, SMLoc loc,
-                  const OverloadSet &callable);
+                  bool allowImplicitConversions, const OverloadSet &callable,
+                  PogListAttr argListAttr);
 };
 
 } // namespace M::KGEN::LIT

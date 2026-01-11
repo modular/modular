@@ -14,7 +14,7 @@ struct WeirdArray:
 
 
 fn test_getitem(var a: WeirdArray, f: float, x: Int):
-    # expected-error @+2 {{invalid call to '__getitem__': index cannot be converted from 'float' to 'Int'}}
+    # expected-error @+2 {{invalid call to '__getitem__': value passed to 'x' cannot be converted from 'float' to 'Int'}}
     # expected-note @+1 {{'float' is aka '__mlir_type.`!pop.scalar<f64>`'}}
     _ = a[f]
 

@@ -32,10 +32,10 @@ fn take_two_int_dep[x: Int](a: TwoIntParamStruct[x, x + 1]):
 
 fn infer_two_param_dep_struct[y: Int]():
     take_two_int_dep(TwoIntParamStruct[1, 2]())
-    # expected-error @+1 {{argument #0 cannot be converted from 'TwoIntParamStruct[2, 2]' to 'TwoIntParamStruct[2, 3]'}}
+    # expected-error @+1 {{value passed to 'a' cannot be converted from 'TwoIntParamStruct[2, 2]' to 'TwoIntParamStruct[2, 3]'}}
     take_two_int_dep(TwoIntParamStruct[2, 2]())
     take_two_int_dep(TwoIntParamStruct[b=2, a=1]())
 
     take_two_int_dep(TwoIntParamStruct[y, y + 1]())
-    # expected-error @+1 {{argument #0 cannot be converted from 'TwoIntParamStruct[y, (y + 2)]' to 'TwoIntParamStruct[y, (y + 1)]'}}
+    # expected-error @+1 {{value passed to 'a' cannot be converted from 'TwoIntParamStruct[y, (y + 2)]' to 'TwoIntParamStruct[y, (y + 1)]'}}
     take_two_int_dep(TwoIntParamStruct[y, y + 2]())

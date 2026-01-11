@@ -59,7 +59,7 @@ struct Parameterized[p1: Int]:
 # of parameters.
 fn testTestParamStruct(a: Parameterized[4]):
     a.method[7](Parameterized[11]())
-    # expected-error-re @below {{invalid call to 'method': method argument #0 cannot be converted from 'Parameterized[{{.*}}12{{.*}}]' to 'Parameterized[{{.*}}11{{.*}}]'}}
+    # expected-error-re @below {{invalid call to 'method': value passed to 'other' cannot be converted from 'Parameterized[{{.*}}12{{.*}}]' to 'Parameterized[{{.*}}11{{.*}}]'}}
     a.method[7](Parameterized[12]())
     a.method[2](Parameterized[6]())
     # expected-error @below {{'method' expects 2 parameters, but 3 were specified}}
@@ -91,7 +91,7 @@ fn testSIMD(
 ):
     var x = a + a
     var y = b + b
-    # expected-error @below {{invalid call to '__add__': right side cannot be converted from 'MySIMD[1, float64]' to 'MySIMD[2, int32]'}}
+    # expected-error @below {{invalid call to '__add__': value passed to 'rhs' cannot be converted from 'MySIMD[1, float64]' to 'MySIMD[2, int32]'}}
     var z = b + a
 
     # expected-error @below {{invalid call to 'twoUses': failed to infer parameter 'dt2'}}
@@ -119,7 +119,7 @@ fn left_to_right_implicit_conversion(
     infer_then_convert(lhs, rhs)
     # This fails because 'a' and 'b' are inferred to '1' and '1', and 'lhs'
     # cannot implicit convert from 'TwoParams[1, 2]' to 'TwoParams[1, 1]'.
-    # expected-error @below {{invalid call to 'infer_then_convert': argument #1 cannot be converted from 'TwoParams[1, 2]' to 'TwoParams[1, 1]'}}
+    # expected-error @below {{invalid call to 'infer_then_convert': value passed to 'rhs' cannot be converted from 'TwoParams[1, 2]' to 'TwoParams[1, 1]'}}
     infer_then_convert(rhs, lhs)
 
 
@@ -486,7 +486,7 @@ fn mem_param_with_ref(a: MemParamType[_], ref [AddressSpace(3)]b: MemParamType[3
 
 fn call_mem_param_with_ref(ref [AddressSpace(2)]b: MemParamType[3]):
     var a = MemParamType[1]()
-    # expected-error @below {{invalid call to 'mem_param_with_ref': argument #1 cannot be converted from 'MemParamType[3]' to ref 'MemParamType[3]'}}
+    # expected-error @below {{invalid call to 'mem_param_with_ref': value passed to 'b' cannot be converted from 'MemParamType[3]' to ref 'MemParamType[3]'}}
     # expected-note @below {{operand address space '2' doesn't match expected address space '3'}}
     mem_param_with_ref(a, b)
 
@@ -509,7 +509,7 @@ fn has_expr_for_elaborator[width: Int](x: HasSize[width + 4]):
     pass
 
 fn use_take_args[width: Int]():
-    # expected-error @below {{argument #0 cannot be converted from 'HasSize[(width + 5)]' to 'HasSize[(width + 4)]'}}
+    # expected-error @below {{value passed to 'x' cannot be converted from 'HasSize[(width + 5)]' to 'HasSize[(width + 4)]'}}
     _ = has_expr_for_elaborator[width](HasSize[size=width + 5]())
 
 

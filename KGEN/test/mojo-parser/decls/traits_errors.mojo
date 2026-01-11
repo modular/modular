@@ -158,7 +158,7 @@ fn take_two_inferred_params[Size: Int](x: TakeInt[Size], y: TakeInt[Size]):
 
 
 fn call_take_two_inferred_params[T: SomeTrait](x: T):
-    # expected-error @below {{invalid call to 'take_two_inferred_params': argument #1 cannot be converted from 'TakeInt[1]' to 'TakeInt[T.A]'}}
+    # expected-error @below {{invalid call to 'take_two_inferred_params': value passed to 'y' cannot be converted from 'TakeInt[1]' to 'TakeInt[T.A]'}}
     take_two_inferred_params(TakeInt[T.A](), TakeInt[1]())
 
 
