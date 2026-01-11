@@ -448,7 +448,7 @@ class MAXModelConfig(MAXModelConfigBase):
             if self.is_diffusers_model:
                 self._huggingface_config = (
                     PIPELINE_REGISTRY.get_active_huggingface_config(
-                        huggingface_repo=self.text_encoder_model_repo
+                        huggingface_repo=self._diffusers_config.text_encoder_model_repo
                     )
                 )
 
