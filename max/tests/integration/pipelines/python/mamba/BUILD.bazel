@@ -88,9 +88,7 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//max/python/max/pipelines",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
-        requirement("numpy"),
         requirement("torch"),
         requirement("transformers"),
     ],
