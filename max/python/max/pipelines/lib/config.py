@@ -37,7 +37,8 @@ from pydantic import (
 )
 from typing_extensions import Self
 
-from .config_enums import PipelineRole
+from .config_enums import PipelineRole, PixelGenerationType
+from .diffusers_config import DiffusersConfig
 from .kv_cache_config import KVCacheConfig
 from .lora_config import LoRAConfig
 from .memory_estimation import MemoryEstimator, to_human_readable_bytes
@@ -1237,6 +1238,15 @@ def _parse_flag_int(value: str, flag_name: str) -> int:
         ) from exc
 
 
+def _parse_flag_float(value: str, flag_name: str) -> float:
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid float value: {value} for flag: {flag_name}"
+        ) from exc
+
+
 class PrependPromptSpeechTokens(str, Enum):
     NEVER = "never"
     """Never prepend the prompt speech tokens sent to the audio decoder."""
@@ -1432,5 +1442,139 @@ class AudioGenerationConfig(PipelineConfig):
             prepend_prompt_speech_tokens_causal=prepend_prompt_speech_tokens_causal,
             run_model_test_mode=run_model_test_mode,
             prometheus_metrics_mode=prometheus_metrics_mode,
+            **config_flags,
+        )
+
+
+class PixelGenerationConfig(PipelineConfig):
+    """Configuration for image and video generation pipelines.
+
+    This config extends PipelineConfig to support diffusers-style pipelines
+    with multi-folder repository structures. Inference parameters like
+    num_inference_steps, guidance_scale, height, and width come from API
+    requests (PixelGenerationRequest), not this server config.
+    """
+
+    # Generation mode - architectural choice set at server startup
+    generation_type: PixelGenerationType = PixelGenerationType.TEXT_TO_IMAGE
+    """The type of pixel generation to perform."""
+
+    # Scheduler override - server-wide setting
+    scheduler_type: str | None = None
+    """Optional scheduler override. Uses model default if not specified."""
+
+    # Parsed diffusers repository config
+    _diffusers_config: DiffusersConfig | None = None
+    """Parsed model_index.json from a diffusers-style repository."""
+
+    def __init__(
+        self,
+        generation_type: PixelGenerationType = PixelGenerationType.TEXT_TO_IMAGE,
+        scheduler_type: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        # Must call the superclass's __init__ first, otherwise PipelineConfig's
+        # init will override values defined in the PixelGenerationConfig.
+        PipelineConfig.__init__(self, **kwargs)
+
+        self.generation_type = generation_type
+        self.scheduler_type = scheduler_type
+
+        # Try to parse diffusers repo config if model_path points to one
+        self._parse_diffusers_repo_if_needed()
+
+    def _parse_diffusers_repo_if_needed(self) -> None:
+        """Parse model_index.json if the model_path is a diffusers-style repo."""
+        if not self._model_config or not self._model_config.model_path:
+            return
+
+        model_path = Path(self._model_config.model_path)
+
+        # Check for local diffusers repo
+        if model_path.exists() and (model_path / "model_index.json").exists():
+            try:
+                self._diffusers_config = DiffusersConfig.from_model_path(
+                    model_path
+                )
+                logger.info(
+                    f"Parsed diffusers repo: {self._diffusers_config.pipeline_class} "
+                    f"with components: {self._diffusers_config.component_names}"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to parse diffusers repo: {e}")
+        # Check if it's a HuggingFace repo ID
+        elif "/" in self._model_config.model_path and not model_path.exists():
+            try:
+                self._diffusers_config = DiffusersConfig.from_huggingface_repo(
+                    self._model_config.model_path
+                )
+                logger.info(
+                    f"Parsed diffusers repo from HF: {self._diffusers_config.pipeline_class} "
+                    f"with components: {self._diffusers_config.component_names}"
+                )
+            except Exception as e:
+                logger.debug(f"Model path is not a diffusers-style repo: {e}")
+
+    @property
+    def is_video(self) -> bool:
+        """Whether this config produces video output."""
+        return self.generation_type.outputs_video
+
+    @property
+    def requires_input_image(self) -> bool:
+        """Whether this config requires an input image."""
+        return self.generation_type.requires_input_image
+
+    @property
+    def diffusers_repo_config(self) -> DiffusersConfig | None:
+        """Get the parsed diffusers repository config."""
+        return self._diffusers_config
+
+    @staticmethod
+    def help() -> dict[str, str]:
+        # Get the parent class help first
+        pixel_help = PipelineConfig.help()
+
+        # Add PixelGenerationConfig-specific fields (server-side only)
+        pixel_specific_help = {
+            "generation_type": "The type of pixel generation: text_to_image, text_to_video, image_to_image, image_to_video, image_editing, video_to_video, inpainting, outpainting, or controlnet.",
+            "scheduler_type": "Optional scheduler override (e.g., 'ddim', 'euler'). Uses model default if not specified.",
+        }
+
+        # Check for conflicts
+        for key in pixel_specific_help:
+            if key in pixel_help:
+                raise ValueError(
+                    f"Duplicate help key '{key}' found in PixelGenerationConfig"
+                )
+
+        # Merge the help dictionaries
+        pixel_help.update(pixel_specific_help)
+        return pixel_help
+
+    @classmethod
+    def from_flags(
+        cls, pixel_flags: dict[str, str], **config_flags: Any
+    ) -> PixelGenerationConfig:
+        """Create a PixelGenerationConfig from CLI flags.
+
+        Only server-side configuration is parsed here. Inference parameters
+        like num_inference_steps, guidance_scale, height, and width come
+        from API requests (PixelGenerationRequest).
+        """
+        generation_type = PixelGenerationType(
+            pixel_flags.pop("generation_type", "text_to_image")
+        )
+
+        scheduler_type = pixel_flags.pop("scheduler_type", None)
+
+        if pixel_flags:
+            raise ValueError(
+                f"Unknown pixel generation option(s): {pixel_flags}"
+            )
+
+        return cls(
+            generation_type=generation_type,
+            scheduler_type=scheduler_type,
             **config_flags,
         )
