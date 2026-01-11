@@ -21,6 +21,55 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
+//===----------------------------------------------------------------------===//
+// CallSyntax
+//===----------------------------------------------------------------------===//
+
+StringRef LIT::stringifyCallSyntax(CallSyntax val) {
+  switch (val) {
+  case CallSyntax::kParamBindings:
+    return "param_bindings";
+  case CallSyntax::kDirectCall:
+    return "direct_call";
+  case CallSyntax::kIndirectCall:
+    return "indirect_call";
+  case CallSyntax::kMethodCall:
+    return "method_call";
+  case CallSyntax::kTypeCall:
+    return "type_call";
+  case CallSyntax::kOperator:
+    return "operator";
+  case CallSyntax::kReversedOperator:
+    return "reversed_operator";
+  case CallSyntax::kSubscript:
+    return "subscript";
+  case CallSyntax::kAttribute:
+    return "attribute";
+  case CallSyntax::kImplicitConvert:
+    return "implicit_convert";
+  case CallSyntax::kImplicitCopyInit:
+    return "implicit_copy";
+  case CallSyntax::kImplicitMoveInit:
+    return "implicit_move";
+  case CallSyntax::kDestructor:
+    return "destructor";
+  case CallSyntax::kTupleGetItem:
+    return "tuple_get_item";
+  case CallSyntax::kMethodCallSynthetic:
+    return "method_call_synthetic";
+  }
+  llvm_unreachable("unknown CallSyntax");
+  return "";
+}
+
+raw_ostream &LIT::operator<<(raw_ostream &os, CallSyntax val) {
+  return os << stringifyCallSyntax(val);
+}
+
+//===----------------------------------------------------------------------===//
+// CallOperands
+//===----------------------------------------------------------------------===//
+
 llvm::SMLoc CallOperands::getExprLoc() const { return callExpr->getLoc(); }
 
 void CallOperands::dump() const { llvm::errs() << *this << '\n'; }

@@ -57,49 +57,6 @@ static bool isDisabledFunction(ASTDecl *decl) {
 }
 
 //===----------------------------------------------------------------------===//
-// CallSyntax
-//===----------------------------------------------------------------------===//
-
-StringRef LIT::stringifyCallSyntax(CallSyntax val) {
-  switch (val) {
-  case CallSyntax::kDirectCall:
-    return "direct_call";
-  case CallSyntax::kIndirectCall:
-    return "indirect_call";
-  case CallSyntax::kMethodCall:
-    return "method_call";
-  case CallSyntax::kTypeCall:
-    return "type_call";
-  case CallSyntax::kOperator:
-    return "operator";
-  case CallSyntax::kReversedOperator:
-    return "reversed_operator";
-  case CallSyntax::kSubscript:
-    return "subscript";
-  case CallSyntax::kAttribute:
-    return "attribute";
-  case CallSyntax::kImplicitConvert:
-    return "implicit_convert";
-  case CallSyntax::kImplicitCopyInit:
-    return "implicit_copy";
-  case CallSyntax::kImplicitMoveInit:
-    return "implicit_move";
-  case CallSyntax::kDestructor:
-    return "destructor";
-  case CallSyntax::kTupleGetItem:
-    return "tuple_get_item";
-  case CallSyntax::kMethodCallSynthetic:
-    return "method_call_synthetic";
-  }
-  llvm_unreachable("unknown CallSyntax");
-  return "";
-}
-
-raw_ostream &LIT::operator<<(raw_ostream &os, CallSyntax val) {
-  return os << stringifyCallSyntax(val);
-}
-
-//===----------------------------------------------------------------------===//
 // OverloadSet Implementation
 //===----------------------------------------------------------------------===//
 
@@ -232,18 +189,17 @@ static bool filterForBestCandidates(
   return hasInconclusiveCandidate;
 }
 
-enum class CallKind { kMethod, kFunction, kIndirect };
-
-static CallKind getCallKind(CallSyntax syntax) {
+static const char *getCalleeKind(CallSyntax syntax) {
   switch (syntax) {
   case CallSyntax::kDirectCall:       //< f()
   case CallSyntax::kTypeCall:         //< T()
   case CallSyntax::kImplicitConvert:  //< Conversion in an argument context
   case CallSyntax::kImplicitCopyInit: //< Implicit __copyinit__ call.
   case CallSyntax::kImplicitMoveInit: //< Implicit __moveinit__ call.
-    return CallKind::kFunction;
-  case CallSyntax::kIndirectCall: //< expr()
-    return CallKind::kIndirect;
+    return "function";
+  case CallSyntax::kParamBindings: //< symbol[x, val=y]
+  case CallSyntax::kIndirectCall:  //< expr()
+    return "value";
   case CallSyntax::kMethodCall:       //< x.f()
   case CallSyntax::kOperator:         //< -x and x + y
   case CallSyntax::kReversedOperator: //< y + x
@@ -252,7 +208,7 @@ static CallKind getCallKind(CallSyntax syntax) {
   case CallSyntax::kDestructor:       //< Destructor due to a value definition.
   case CallSyntax::kTupleGetItem:     //< Call to getitem in a tuple assignment.
   case CallSyntax::kMethodCallSynthetic:
-    return CallKind::kMethod;
+    return "method";
   }
   llvm_unreachable("invalid call syntax");
 }
@@ -547,7 +503,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   // itself an implicit conversion.  We don't want to allow A->B->C conversions.
   bool allowImplicitConversions = syntax != CallSyntax::kImplicitConvert;
 
-  CallOperands scratchOperands(operands.callExpr);
+  CallOperands scratchOperands(operands.syntax, operands.callExpr);
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<std::pair<ASTDecl *, OverloadFitness>> evaluations;
   bool allInvalid = true;
@@ -654,12 +610,8 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
     if (fnDecls.size() == 1)
       diag << "invalid ";
-    else {
-      diag << "no matching ";
-      diag << (getCallKind(syntax) == CallKind::kMethod ? "method"
-                                                        : "function");
-      diag << " in ";
-    }
+    else
+      diag << "no matching " << getCalleeKind(syntax) << " in ";
 
     switch (syntax) {
     default:
@@ -1134,10 +1086,10 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
 /// list.
 PValue OverloadSet::lookupAndResolve(
     ASTType type, StringRef methodName, CallOperands &callOperands,
-    CallSyntax syntax, function_ref<void()> lookupFailureErrorHandler,
+    function_ref<void()> lookupFailureErrorHandler,
     bool shouldPrintOverloadErrors, IREmitter &emitter) {
   auto ovSet = OverloadSet::lookup(emitter.getDeclScope(), type, methodName,
-                                   callOperands.callExpr, syntax,
+                                   callOperands.callExpr, callOperands.syntax,
                                    lookupFailureErrorHandler);
 
   // If the core lookup failed, don't filter.
@@ -1250,7 +1202,7 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
 ///
 /// This emits an error and returns null on failure.
 CValue IREmitter::emitIndirectCallInTryBlock(
-    CValue callee, CallOperands &&operands, ValueDest &dest, CallSyntax syntax,
+    CValue callee, CallOperands &&operands, ValueDest &dest,
     std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
   ValueDest throwDest(dest.getContext());
 
@@ -1296,8 +1248,7 @@ CValue IREmitter::emitIndirectCallInTryBlock(
   // Emit this call into the try region.
   builder->createBlock(&tryOp.getTryRegion());
 
-  CValue result =
-      emitIndirectCall(callee, std::move(operands), throwDest, syntax);
+  CValue result = emitIndirectCall(callee, std::move(operands), throwDest);
   if (!result) {
     throwDest.resetForError(*this);
     dest.resetForError(*this);
@@ -1359,18 +1310,18 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
     return {};
   }
 
-  return emitter.emitCallUnchecked(callee, operands, dest, syntax);
+  return emitter.emitCallUnchecked(callee, operands, dest);
 }
 
 CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
-                                   ValueDest &dest, CallSyntax syntax) {
+                                   ValueDest &dest) {
   auto callExpr = operands.callExpr;
   auto calleeSig = sugarDynCast<FuncTypeGeneratorType>(callee.getRValueType());
   if (!calleeSig) {
     // If we are invoking something other than a FuncTypeGeneratorType, try to
     // invoke its `__call__` method.
     operands.addSelf({callee, callExpr});
-    return emitNamedMethodCall("__call__", std::move(operands), dest, syntax);
+    return emitNamedMethodCall("__call__", std::move(operands), dest);
   }
 
   // If we have a function pointer, resolve it to an RValue.
@@ -1382,7 +1333,8 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
 
   // Check to see if we can apply these operands to the callee signature.
   OverloadSet bindings{"callee", /*fnDecls=*/{},
-                       ParamBindings(getDeclScope(), callExpr), syntax};
+                       ParamBindings(getDeclScope(), callExpr),
+                       operands.syntax};
   auto fitness = OverloadFitness::evaluate(calleeSig, /*indirect*/ nullptr,
                                            bindings, operands,
                                            /*allowImplicitConversions=*/true);
@@ -1437,16 +1389,16 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
     // Now that we mutated the operand list by introducing some new memory
     // types to provide origins, try again.  This will re-evaluate parameter
     // bindings and either succeed or fail based on the new information.
-    return emitIndirectCall(calleeRV, std::move(operands), dest, syntax);
+    return emitIndirectCall(calleeRV, std::move(operands), dest);
   }
 
   // Otherwise, we resolved the callee correctly, emit the call.
-  return emitCallUnchecked(boundCalleeRV, operands, dest, syntax);
+  return emitCallUnchecked(boundCalleeRV, operands, dest);
 }
 
 CValue IREmitter::emitNamedMethodCall(StringRef methodName,
-                                      CallOperands &&operands, ValueDest &dest,
-                                      CallSyntax syntax) {
+                                      CallOperands &&operands,
+                                      ValueDest &dest) {
   assert(!operands.values.empty() &&
          "Cannot emit a method call without a receiver!");
 
@@ -1468,7 +1420,7 @@ CValue IREmitter::emitNamedMethodCall(StringRef methodName,
     auto diag = emitError(operands.getExprLoc(), "")
                 << type << " does not implement the '" << methodName
                 << "' method";
-    switch (syntax) {
+    switch (operands.syntax) {
     case CallSyntax::kMethodCallSynthetic:
     case CallSyntax::kMethodCall:
       [[fallthrough]];
@@ -1484,21 +1436,21 @@ CValue IREmitter::emitNamedMethodCall(StringRef methodName,
   };
 
   // If the type doesn't have the specified method, emit an error.
-  PValue callee = OverloadSet::lookupAndResolve(
-      type, methodName, operands, syntax, emitNoMethodError, true, *this);
+  PValue callee = OverloadSet::lookupAndResolve(type, methodName, operands,
+                                                emitNoMethodError, true, *this);
   if (!callee) {
     dest.resetForError(*this);
     return {};
   }
 
-  return emitIndirectCall(callee, std::move(operands), dest, syntax);
+  return emitIndirectCall(callee, std::move(operands), dest);
 }
 
 /// Emit a call to __init__, returning an instance of the specified type.  If
 /// `allowImplicitConversion` is true, the provided args are allowed to
 /// implicitly convert to the expectations of the constructor signatures.
 CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
-                                      CallSyntax syntax, ValueDest &dest) {
+                                      ValueDest &dest) {
   // If the dest type is invalid, then an error has already been reported.
   if (type.isTypeCheckErrorType()) {
     dest.resetForError(*this);
@@ -1507,10 +1459,10 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
 
   // Check to see if we can invoke an __init__ method to convert it.
   const ExprNode *expr = callOperands.getExpr();
-  OverloadSet callee =
-      OverloadSet::lookup(getDeclScope(), type, "__init__", expr, syntax);
-  shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(), syntax,
-                              callOperands);
+  OverloadSet callee = OverloadSet::lookup(getDeclScope(), type, "__init__",
+                                           expr, callOperands.syntax);
+  shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(),
+                              callOperands.syntax, callOperands);
   if (callee.isErroneous()) {
     dest.resetForError(*this);
     return {};
@@ -1518,7 +1470,8 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
 
   // If there are no candidates at all, diagnose specific errors.
   if (!callee) {
-    if (!type.getDecl(shared) && syntax != CallSyntax::kImplicitConvert) {
+    if (!type.getDecl(shared) &&
+        callOperands.syntax != CallSyntax::kImplicitConvert) {
       emitError(expr->getLoc())
           << "MLIR type " << type
           << " must be created with an MLIR operation, not constructor "
@@ -1527,7 +1480,7 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
     }
 
     // Diagnose implicit conversions with a custom message
-    if (syntax == CallSyntax::kImplicitConvert) {
+    if (callOperands.syntax == CallSyntax::kImplicitConvert) {
       ASTType singleOperandType;
       assert(callOperands.size() == 1 &&
              "implicit conversions have one operand");
@@ -1585,15 +1538,11 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
 /// any error reporting. This does not generate any IR.
 FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
                                                 CallOperands &&operands,
-                                                ASTDecl &declScope,
-                                                bool isImplicitConversion) {
-
+                                                ASTDecl &declScope) {
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
-  auto syntax = isImplicitConversion ? CallSyntax::kImplicitConvert
-                                     : CallSyntax::kTypeCall;
   OverloadSet callee = OverloadSet::lookup(
-      declScope, requiredType, "__init__", operands.getExpr(), syntax,
+      declScope, requiredType, "__init__", operands.getExpr(), operands.syntax,
       /*no error emission on failure */ {});
 
   // If there are no viable candidates for the construction, we fail.

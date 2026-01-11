@@ -544,8 +544,7 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
 
         // Initializer lists are good if we can construct the expected type.
         FailureOr<PValue> initFn = OverloadSet::canConstructType(
-            expectedRVType, std::move(operands), declScope,
-            /*isImplicitConversion=*/false);
+            expectedRVType, std::move(operands), declScope);
         // If there were declaration errors, assume construction is possible
         // to avoid spurious errors.
         bool valid = (bool)failed(initFn) || initFn.value();

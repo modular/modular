@@ -961,8 +961,9 @@ ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
       auto nonParamDRT =
           ASTType(expDRT).getWithUnknownParametersReplaced(shared);
       FailureOr<PValue> pValue = OverloadSet::canConstructType(
-          nonParamDRT, CallOperands(expr, {{actual, expr}}), state.declScope,
-          /*isImplicitConversion=*/true);
+          nonParamDRT,
+          CallOperands(CallSyntax::kImplicitConvert, expr, {{actual, expr}}),
+          state.declScope);
       if (failed(pValue) || !pValue.value())
         return error(InferenceFailure::Unclassified{});
 
@@ -1179,8 +1180,7 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue *init,
   // Infer the parameters of this overload candidate against the computed
   // result type of the initializer.
   FailureOr<PValue> initFn = OverloadSet::canConstructType(
-      inferredType, std::move(operands), declScope,
-      /*isImplicitConversion=*/false);
+      inferredType, std::move(operands), declScope);
   if (failed(initFn) || !initFn.value())
     return {};
   return sugarCast<FnTypeGeneratorType>(initFn.value().getType())
@@ -1518,8 +1518,10 @@ RetryLabel:
   auto nonParamType =
       expectedType.getWithUnknownParametersReplaced(emitter.shared);
   FailureOr<PValue> pValue = OverloadSet::canConstructType(
-      nonParamType, CallOperands(operand.expr, {{argVal, operand.expr}}),
-      emitter.getDeclScope(), /*isImplicitConversion=*/true);
+      nonParamType,
+      CallOperands(CallSyntax::kImplicitConvert, operand.expr,
+                   {{argVal, operand.expr}}),
+      emitter.getDeclScope());
   if (llvm::failed(pValue))
     return success(); // Issue already diagnosed.
 
@@ -1650,7 +1652,7 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
 
   // Notice, but strip out, the ellipsis if present.
   bool hasEllipsis = false;
-  CallOperands tmpOperands(givenBindings.callExpr);
+  CallOperands tmpOperands(givenBindings.syntax, givenBindings.callExpr);
   if (llvm::any_of(givenBindings.values, [](const OperandValue &binding) {
         return isa<EllipsisAttr>(binding.ir.getIfPValue().get());
       })) {

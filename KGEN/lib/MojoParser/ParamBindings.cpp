@@ -81,7 +81,8 @@ FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
 //===----------------------------------------------------------------------===//
 
 ParamBindings::ParamBindings(ASTDecl &declScope, const ExprNode *expr)
-    : declScope(declScope), shared(declScope.getShared()), parameters(expr) {}
+    : declScope(declScope), shared(declScope.getShared()),
+      parameters(CallSyntax::kParamBindings, expr) {}
 
 /// Replace our bindings with another set.  This can't be done with operator=
 /// because we have
@@ -266,7 +267,7 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
 
   // Check to see if we have ... and remove it from the parameter list.
   bool hasEllipsis = false;
-  CallOperands operands(origOperands.callExpr);
+  CallOperands operands(origOperands.syntax, origOperands.callExpr);
   for (auto binding : origOperands.values) {
     if (isa<EllipsisAttr>(binding.ir.getIfPValue().get()))
       hasEllipsis = true;

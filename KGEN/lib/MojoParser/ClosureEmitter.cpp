@@ -1288,8 +1288,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
     if (shared.diBuilder)
       diScopeGuard = shared.diBuilder->pushScopeGuard(initFunc.getLocScope());
-    emitter.emitConstructorCall(clType, CallOperands{&loc},
-                                CallSyntax::kDirectCall, dest);
+    emitter.emitConstructorCall(
+        clType, CallOperands{CallSyntax::kDirectCall, &loc}, dest);
   }
 
   // Populate the body of the call op.
@@ -1315,9 +1315,10 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     Value target = RefStructGEROp::create(builder, selfArg, paramField);
     emitter.builder = builder;
     ValueDest dest(EC_Assignment);
-    emitter.emitNamedMethodCall("expand",
-                                CallOperands{loc, {{MBValue(target), loc}}},
-                                dest, CallSyntax::kMethodCall);
+    emitter.emitNamedMethodCall(
+        "expand",
+        CallOperands(CallSyntax::kMethodCall, loc, {{MBValue(target), loc}}),
+        dest);
   }
   for (auto [capture, fieldOp] :
        llvm::zip(captures, llvm::drop_begin(declOp.getFieldDecls(),
@@ -2547,7 +2548,7 @@ void ClosureEmitter::addConformanceToDevicePassable(
         Type boundStrLitType = strLitDecl.bindReference({closureStr});
         ValueDest litDest(EC_CallArgValue);
         CValue literalValue = emitter.emitConstructorCall(
-            ASTType(boundStrLitType), CallOperands(&loc), CallSyntax::kTypeCall,
+            ASTType(boundStrLitType), CallOperands(CallSyntax::kTypeCall, &loc),
             litDest);
 
         // Call String.__init__(literal) into the byref result slot.
@@ -2555,10 +2556,10 @@ void ClosureEmitter::addConformanceToDevicePassable(
             shared.getBuiltinStringType(structDecl, structDecl.getLoc());
         ValueDest resultDest(MLValue(block.getArguments().back()),
                              EC_ReturnValue);
-        CallOperands ctorOperands(&loc);
+        CallOperands ctorOperands(CallSyntax::kTypeCall, &loc);
         ctorOperands.add(ASTExprAnd<CValue>{literalValue, &loc});
         emitter.emitConstructorCall(stringType, std::move(ctorOperands),
-                                    CallSyntax::kTypeCall, resultDest);
+                                    resultDest);
         auto noneAttr = KGEN::ParamConstantOp::create(
             b, KGEN::NoneAttr::get(b.getContext()));
         IREmitter::emitNormalReturn(b, noneAttr);

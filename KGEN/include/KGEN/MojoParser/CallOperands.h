@@ -17,6 +17,34 @@ namespace M::KGEN::LIT {
 class PogListAttr;
 
 //===----------------------------------------------------------------------===//
+// CallSyntax
+//===----------------------------------------------------------------------===//
+
+/// When emitting a function call, this enum is used to indicate why the call
+/// happened in the first place.  This allows producing better-tuned
+/// diagnostics.
+enum class CallSyntax : uint8_t {
+  kParamBindings,      //< symbol[x, val=y]  (not actually a call).
+  kDirectCall,         //< f()
+  kIndirectCall,       //< expr()
+  kMethodCall,         //< x.f()
+  kTypeCall,           //< T()
+  kOperator,           //< -x and x + y
+  kReversedOperator,   //< y + x          (where the method was looked up on x).
+  kSubscript,          // v[1, 2]
+  kAttribute,          // v.x             (where x is not a static member of v).
+  kImplicitConvert,    //< Conversion in an argument context
+  kImplicitCopyInit,   //< Implicit __copyinit__ call.
+  kImplicitMoveInit,   //< Implicit __moveinit__ call.
+  kDestructor,         //< Destructor due to a value definition.
+  kTupleGetItem,       //< Call to getitem in a tuple assignment.
+  kMethodCallSynthetic //< Call to a method for synthetic checks.
+};
+
+StringRef stringifyCallSyntax(CallSyntax val);
+raw_ostream &operator<<(raw_ostream &os, CallSyntax val);
+
+//===----------------------------------------------------------------------===//
 // CallOperands
 //===----------------------------------------------------------------------===//
 
@@ -37,14 +65,15 @@ using OperandValueList = SmallVector<OperandValue, 4>;
 class CallOperands {
 public:
   /// Initialize with some positional arguments.
-  CallOperands(const ExprNode *callExpr,
+  CallOperands(CallSyntax syntax, const ExprNode *callExpr,
                ArrayRef<ASTExprAnd<AnyValue>> posOperands)
-      : callExpr(callExpr) {
+      : syntax(syntax), callExpr(callExpr) {
     for (const auto &operand : posOperands)
       values.emplace_back(StringAttr(), operand);
   }
 
-  CallOperands(const ExprNode *callExpr) : callExpr(callExpr) {}
+  CallOperands(CallSyntax syntax, const ExprNode *callExpr)
+      : syntax(syntax), callExpr(callExpr) {}
   CallOperands(CallOperands &&) = default;
   explicit CallOperands(const CallOperands &) = default;
   CallOperands &operator=(CallOperands &&) = default;
@@ -70,6 +99,9 @@ public:
 
   /// Return the number of keyword operands.
   size_t getNumKwOperands() const { return values.size() - getNumPositional(); }
+
+  /// This is the syntax the operand list is being used for.
+  CallSyntax syntax;
 
   /// This is the expression representing the overall call.
   const ExprNode *callExpr;

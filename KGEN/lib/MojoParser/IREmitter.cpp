@@ -597,8 +597,9 @@ CValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   // return an rvalue. Use it first which may avoid a copy of a value.
   if (auto knownDestType = dest.getExpectedTypeIfSpecified()) {
     if (!cValue.getRValueType().isEqualCanon(knownDestType)) {
-      return emitConstructorCall(knownDestType, CallOperands(value.expr, value),
-                                 CallSyntax::kImplicitConvert, dest);
+      return emitConstructorCall(
+          knownDestType,
+          CallOperands(CallSyntax::kImplicitConvert, value.expr, value), dest);
     }
   }
 
@@ -1416,8 +1417,9 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   }
 
   // __copyinit__ has signature: `(existing: Self) -> Self`.
-  return emitNamedMethodCall("__copyinit__", CallOperands{value.expr, {value}},
-                             dest, CallSyntax::kImplicitCopyInit);
+  return emitNamedMethodCall(
+      "__copyinit__",
+      CallOperands(CallSyntax::kImplicitCopyInit, value.expr, {value}), dest);
 }
 
 CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
@@ -1430,8 +1432,9 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       // materialize directly into it and return instead of allocating a
       // temporary if the conversion constructor requires one.
       ValueDest nmConversionDest(destLV, context);
-      return emitConstructorCall(nmTarget, CallOperands(value.expr, {value}),
-                                 CallSyntax::kTypeCall, nmConversionDest);
+      return emitConstructorCall(
+          nmTarget, CallOperands(CallSyntax::kTypeCall, value.expr, {value}),
+          nmConversionDest);
     }
   }
 
@@ -1548,8 +1551,10 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   if (shared.typeHasMember(valueType, "__moveinit__", value.expr->getLoc())) {
     // `__moveinit__(owned existing: Self) -> Self`.
     ValueDest moveDest(destRef, context);
-    if (!emitNamedMethodCall("__moveinit__", CallOperands{value.expr, {value}},
-                             moveDest, CallSyntax::kImplicitMoveInit))
+    if (!emitNamedMethodCall(
+            "__moveinit__",
+            CallOperands{CallSyntax::kImplicitMoveInit, value.expr, {value}},
+            moveDest))
       return {};
     return MBValue(destRef);
   }
@@ -1719,16 +1724,20 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __mlir_i1__.
     ValueDest boolDest(context);
-    value.ir = emitNamedMethodCall(
-        "__bool__", CallOperands{value.expr, {{value.ir, value.expr}}},
-        boolDest, CallSyntax::kMethodCall);
+    value.ir = emitNamedMethodCall("__bool__",
+                                   CallOperands{CallSyntax::kMethodCall,
+                                                value.expr,
+                                                {{value.ir, value.expr}}},
+                                   boolDest);
   }
 
   // Then we use __mlir_i1__ to convert to an i1 value.
   ValueDest boolDest(context);
   CValue litBoolCall = emitNamedMethodCall(
-      "__mlir_i1__", CallOperands{value.expr, {{value.ir, value.expr}}},
-      boolDest, CallSyntax::kMethodCall);
+      "__mlir_i1__",
+      CallOperands{
+          CallSyntax::kMethodCall, value.expr, {{value.ir, value.expr}}},
+      boolDest);
 
   // If we got back a sugared PValue call to the method, then drop the sugar.
   // This reduces the size of the printed IR, making it easier to read, and the
@@ -1752,9 +1761,9 @@ CValue IREmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
       return cvalue;
 
   ValueDest dest(context);
-  auto result =
-      emitNamedMethodCall("__mlir_index__", CallOperands{value.expr, {value}},
-                          dest, CallSyntax::kMethodCall);
+  auto result = emitNamedMethodCall(
+      "__mlir_index__",
+      CallOperands{CallSyntax::kMethodCall, value.expr, {value}}, dest);
 
   // If we got back a sugared PValue call to the method, then drop the sugar.
   // This reduces the size of the printed IR, making it easier to read, and the
@@ -1773,8 +1782,9 @@ CValue IREmitter::emitIndex(const ExprNode *expr, ExprContext context) {
 
 CValue IREmitter::emitBool(ASTExprAnd<PValue> value, ValueDest &dest) {
   ASTType boolType = shared.getBuiltinBoolType(declScope, value.expr->getLoc());
-  return emitConstructorCall(boolType, CallOperands(value.expr, {value}),
-                             CallSyntax::kImplicitConvert, dest);
+  return emitConstructorCall(
+      boolType, CallOperands(CallSyntax::kImplicitConvert, value.expr, {value}),
+      dest);
 }
 
 CValue IREmitter::emitBool(ASTExprAnd<PValue> value, ExprContext context) {
@@ -1787,10 +1797,9 @@ CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue, ValueDest &dest) {
                                              indexValue.expr->getLoc());
 
   // Build Int from __mlir_type.index explicitly: Int.__init__(*, mlir_value=…)
-  CallOperands intCtorOperands(indexValue.expr);
+  CallOperands intCtorOperands(CallSyntax::kTypeCall, indexValue.expr);
   intCtorOperands.add(StringAttr::get(getContext(), "mlir_value"), indexValue);
-  return emitConstructorCall(intType, std::move(intCtorOperands),
-                             CallSyntax::kTypeCall, dest);
+  return emitConstructorCall(intType, std::move(intCtorOperands), dest);
 }
 
 CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue,

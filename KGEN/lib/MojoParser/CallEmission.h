@@ -16,33 +16,6 @@
 namespace M::KGEN::LIT {
 
 //===----------------------------------------------------------------------===//
-// CallSyntax
-//===----------------------------------------------------------------------===//
-
-/// When emitting a function call, this enum is used to indicate why the call
-/// happened in the first place.  This allows producing better-tuned
-/// diagnostics.
-enum class CallSyntax : uint8_t {
-  kDirectCall,         //< f()
-  kIndirectCall,       //< expr()
-  kMethodCall,         //< x.f()
-  kTypeCall,           //< T()
-  kOperator,           //< -x and x + y
-  kReversedOperator,   //< y + x          (where the method was looked up on x).
-  kSubscript,          // v[1, 2]
-  kAttribute,          // v.x             (where x is not a static member of v).
-  kImplicitConvert,    //< Conversion in an argument context
-  kImplicitCopyInit,   //< Implicit __copyinit__ call.
-  kImplicitMoveInit,   //< Implicit __moveinit__ call.
-  kDestructor,         //< Destructor due to a value definition.
-  kTupleGetItem,       //< Call to getitem in a tuple assignment.
-  kMethodCallSynthetic //< Call to a method for synthetic checks.
-};
-
-StringRef stringifyCallSyntax(CallSyntax val);
-raw_ostream &operator<<(raw_ostream &os, CallSyntax val);
-
-//===----------------------------------------------------------------------===//
 // OverloadSet
 //===----------------------------------------------------------------------===//
 
@@ -119,17 +92,15 @@ public:
   /// parameter context. The actual emission needs to use the updated argument
   /// list.
   static PValue lookupAndResolve(ASTType type, StringRef methodName,
-                                 CallOperands &operands, CallSyntax syntax,
+                                 CallOperands &operands,
                                  function_ref<void()> lookupFailureErrorHandler,
                                  bool shouldPrintOverloadErrors,
                                  IREmitter &emitter);
 
   /// Same as the above but a convenience when never emitting an error.
   static PValue lookupAndResolve(ASTType type, StringRef methodName,
-                                 CallOperands &operands, CallSyntax syntax,
-                                 IREmitter &emitter) {
-    return lookupAndResolve(type, methodName, operands, syntax, {}, false,
-                            emitter);
+                                 CallOperands &operands, IREmitter &emitter) {
+    return lookupAndResolve(type, methodName, operands, {}, false, emitter);
   }
 
   bool isNull() const { return fnDecls.empty(); }
@@ -212,10 +183,12 @@ public:
   /// If there were erroneous declarations, an error has been raised about a
   /// constructor that likely would have applied, which should be considered in
   /// any error reporting. This does not generate any IR.
+  ///
+  /// This allows implicit conversions of operands so long as "operands" doesn't
+  /// indicate that this is itself an implicit conversion.
   static FailureOr<PValue> canConstructType(ASTType requiredType,
                                             CallOperands &&operands,
-                                            ASTDecl &declScope,
-                                            bool isImplicitConversion);
+                                            ASTDecl &declScope);
 
   LLVM_DUMP_METHOD void dump() const;
 

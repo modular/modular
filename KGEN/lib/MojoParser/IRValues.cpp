@@ -473,19 +473,19 @@ InitializerUValue::getOperandsForInferredType(ASTType type,
     type = type.getWithUnknownParametersReplaced(emitter.shared);
     if (operands.values.empty()) {
       auto getEmptyList = [&]() -> AnyValue {
-        return InitializerUValue::create(InitializerUValue::kListLiteral,
-                                         CallOperands(operands.callExpr));
+        return InitializerUValue::create(
+            InitializerUValue::kListLiteral,
+            CallOperands(CallSyntax::kTypeCall, operands.callExpr));
       };
 
       // Call __init__(keys=[], values=[], __dict_literal__=())
-      CallOperands dictOperands(operands.callExpr);
+      CallOperands dictOperands(CallSyntax::kTypeCall, operands.callExpr);
       dictOperands.add({getEmptyList(), operands.callExpr});
       dictOperands.add({getEmptyList(), operands.callExpr});
       addEmptyTuple(dictOperands, "__dict_literal__", emitter);
       CallOperands dictCopy(dictOperands);
       FailureOr<PValue> pValue = OverloadSet::canConstructType(
-          type, std::move(dictOperands), emitter.declScope,
-          /*isImplicitConversion=*/false);
+          type, std::move(dictOperands), emitter.declScope);
       if (succeeded(pValue) && pValue.value())
         return dictCopy;
     }
@@ -493,11 +493,10 @@ InitializerUValue::getOperandsForInferredType(ASTType type,
     // Otherwise, check to see if we can emit this as a set literal. It will
     // take precedent over initializer list emission, because (e.g.)
     // PythonObject's set literal ctor takes a required keyword argument.
-    CallOperands setOperands(operands.callExpr);
+    CallOperands setOperands(CallSyntax::kTypeCall, operands.callExpr);
     addEmptyTuple(setOperands, "__set_literal__", emitter);
     FailureOr<PValue> pValue = OverloadSet::canConstructType(
-        type, std::move(setOperands), emitter.declScope,
-        /*isImplicitConversion=*/false);
+        type, std::move(setOperands), emitter.declScope);
     if (succeeded(pValue) && pValue.value()) {
       addEmptyTuple(operands, "__set_literal__", emitter);
       break;
@@ -515,8 +514,7 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
   // If we have the inferred contextual type, we can emit the constructor call.
   if (ASTType expectedType = dest.getExpectedTypeIfSpecified()) {
     CallOperands operands = getOperandsForInferredType(expectedType, emitter);
-    return emitter.emitConstructorCall(expectedType, std::move(operands),
-                                       CallSyntax::kTypeCall, dest);
+    return emitter.emitConstructorCall(expectedType, std::move(operands), dest);
   }
 
   // For a list or set literal, we need to unify the elements into a common
@@ -529,7 +527,7 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
     for (const auto &operand : operands) {
       auto value = emitter.emitCValue(operand, EC_CollectionLiteral);
       if (!value)
-        return {operand.expr};
+        return CallOperands(CallSyntax::kTypeCall, operand.expr);
       elements.push_back(value);
     }
 
@@ -540,7 +538,7 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
       if (failed(emitter.coerceTypesToEachOther(lhsExpr->getLoc(), elements[0],
                                                 lhsExpr, elements[i],
                                                 get()[i].expr, {})))
-        return {lhsExpr};
+        return CallOperands(CallSyntax::kTypeCall, lhsExpr);
     }
 
     // If that succeeded, then the final result type of the first element is
@@ -548,7 +546,7 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
     // elements. Form the constructor's operand list with a consistent element
     // type which will be used for the constructor call, allowing it to infer
     // the element type.
-    CallOperands result(get().callExpr);
+    CallOperands result(CallSyntax::kTypeCall, get().callExpr);
     for (auto [i, elt] : llvm::enumerate(elements)) {
       auto *expr = get()[i].expr;
 
@@ -556,7 +554,7 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
       if (failed(emitter.coerceTypesToEachOther(lhsExpr->getLoc(), elements[0],
                                                 lhsExpr, elements[i],
                                                 get()[i].expr, {})))
-        return {expr};
+        return CallOperands(CallSyntax::kTypeCall, expr);
       result.add({elt, expr});
     }
     return result;
@@ -585,8 +583,7 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
         get().callExpr->getLoc(), "List");
     if (!listType)
       return {};
-    return emitter.emitConstructorCall(listType, std::move(operands),
-                                       CallSyntax::kTypeCall, dest);
+    return emitter.emitConstructorCall(listType, std::move(operands), dest);
   }
   case Syntax::kDictLiteral: {
     // Let the nested list literals try to infer their own common element
@@ -597,8 +594,7 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
       return {};
     CallOperands operands(get());
     addEmptyTuple(operands, "__dict_literal__", emitter);
-    return emitter.emitConstructorCall(dictType, std::move(operands),
-                                       CallSyntax::kTypeCall, dest);
+    return emitter.emitConstructorCall(dictType, std::move(operands), dest);
   }
   case Syntax::kSetInitLiteral: {
     // If there are values with no keywords, then this can be emitted as a
@@ -626,8 +622,7 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
         get().callExpr->getLoc(), "Set");
     if (!setType)
       return {};
-    return emitter.emitConstructorCall(setType, std::move(operands),
-                                       CallSyntax::kTypeCall, dest);
+    return emitter.emitConstructorCall(setType, std::move(operands), dest);
   }
   }
   return {};

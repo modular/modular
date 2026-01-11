@@ -2361,6 +2361,7 @@ static bool shouldNotifyListenerForCall(CallSyntax syntax) {
   case CallSyntax::kMethodCall:
   case CallSyntax::kAttribute:
     return true;
+  case CallSyntax::kParamBindings:
   case CallSyntax::kMethodCallSynthetic:
   case CallSyntax::kIndirectCall:
   case CallSyntax::kTypeCall:
