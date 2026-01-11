@@ -87,16 +87,19 @@ void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
 // ParameterInference
 //===----------------------------------------------------------------------===//
 
-ParamInf::ParamInf(ASTDecl &declScope, const CallOperands &givenBindings,
-                   size_t numPreCheckedParam, ArrayRef<Type> declaredParamTypes,
-                   PogListAttr declaredParamPogs, bool allowImplicitConversions)
+ParamInf::ParamInf(
+    ASTDecl &declScope, const CallOperands &givenBindings,
+    size_t numPreCheckedParam, ArrayRef<Type> declaredParamTypes,
+    PogListAttr declaredParamPogs, bool allowImplicitConversions,
+    llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag)
     : declScope(declScope), shared(declScope.getShared()),
-      evaluator(declScope.getShared()), givenBindings(givenBindings),
-      declaredParamTypes(declaredParamTypes),
+      getDiag(std::move(getDiag)), evaluator(declScope.getShared()),
+      givenBindings(givenBindings), declaredParamTypes(declaredParamTypes),
       declaredParamPogs(declaredParamPogs),
       allowImplicitConversions(allowImplicitConversions) {
 
   size_t finalSize = declaredParamTypes.size();
+
   // FIXME: turn the if statement into an assertion, it should be a #parameter
   // mismatch error and we should fail before even constructing a
   // `ParamInfState`.

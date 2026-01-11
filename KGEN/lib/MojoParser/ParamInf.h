@@ -102,13 +102,17 @@ public:
   ASTDecl &declScope;
   SharedState &shared;
 
+  llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag;
+
   // Built up diagnostic state for failures.
   // TODO: Keep removing this.
   ParamInfDiags inferenceDiags;
 
-  ParamInf(ASTDecl &declScope, const CallOperands &givenBindings,
-           size_t numPreCheckedBindings, ArrayRef<Type> declaredParamTypes,
-           PogListAttr declaredParamPogs, bool allowImplicitConversions);
+  ParamInf(
+      ASTDecl &declScope, const CallOperands &givenBindings,
+      size_t numPreCheckedBindings, ArrayRef<Type> declaredParamTypes,
+      PogListAttr declaredParamPogs, bool allowImplicitConversions,
+      llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag);
 
   /// Given an incomplete parameter binding set for a parameter list, try to
   /// infer the value of the next parameter. We only do this if there are any
