@@ -784,11 +784,17 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     hasCTADParams = !fn.getIsStatic() && isa<StructDeclOp>(fn->getParentOp());
   }
 
-  ParamInf inference(callable.paramBindings.declScope,
-                     callable.paramBindings.getParameters(),
-                     callable.paramBindings.getNumPreCheckedParams(),
-                     signature.getInputParamTypes(),
-                     signature.getParamListAttrs(), allowImplicitConversions);
+  std::optional<MojoInflightDiag> diag;
+  auto getDiag = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
+    diag = shared.emitError(loc ? *loc : callLoc);
+    return *diag;
+  };
+
+  ParamInf inference(
+      callable.paramBindings.declScope, callable.paramBindings.getParameters(),
+      callable.paramBindings.getNumPreCheckedParams(),
+      signature.getInputParamTypes(), signature.getParamListAttrs(),
+      allowImplicitConversions, getDiag);
 
   // TODO: inferForCall will eventually be separated. We will eventually blend
   // parameter inference into overload resolution have something like:
@@ -813,14 +819,11 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       inference.evaluator.overwriteIndexBinding(i, nullptr);
   }
 
-  std::optional<MojoInflightDiag> diag;
-  auto getDiag = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
-    diag = shared.emitError(loc ? *loc : callLoc);
-    return *diag;
-  };
+  if (diag)
+    return std::move(*diag);
 
-  auto [newBindings, bindingFitness] = callable.paramBindings.verifyBindings(
-      signature, getDiag, inference, funcIfDirect);
+  auto [newBindings, bindingFitness] =
+      callable.paramBindings.verifyBindings(signature, inference, funcIfDirect);
 
   // If there is an error, we just forward the diagnostics.
   if (diag)

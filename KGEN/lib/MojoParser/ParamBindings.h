@@ -103,10 +103,9 @@ public:
   /// Verify the full parameter bindings for the given generator. If the
   /// signature doesn't match, the provided DiagEmitter will be used to emit
   /// diagnostics. A parameter inference must must be provided.
-  std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
-      LITGeneratorType sig,
-      llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
-      ParamInf &inference, ASTDecl *declIfKnown) const;
+  std::pair<ParameterExprArrayAttr, Fitness>
+  verifyBindings(LITGeneratorType sig, ParamInf &inference,
+                 ASTDecl *declIfKnown) const;
 
   /// Attempt to bind the current set of parameters to the provided parameter
   /// types and list. This applies parameter inference and any default values to
@@ -151,11 +150,11 @@ private:
   /// information on how closely the bindings fit the parameters, or why
   /// they don't. The setEvaluator hook is used to install the parameter value
   /// in the evaluator used by the implementation.
-  std::pair<ParameterExprArrayAttr, Fitness> verifyBindingsImpl(
-      const CallOperands &operands, ArrayRef<Type> expectedParamTypes,
-      PogListAttr paramListAttr, ParamInf &inference,
-      llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
-      bool partial, ASTDecl *declIfDirect) const;
+  std::pair<ParameterExprArrayAttr, Fitness>
+  verifyBindingsImpl(const CallOperands &operands,
+                     ArrayRef<Type> expectedParamTypes,
+                     PogListAttr paramListAttr, ParamInf &inference,
+                     bool partial, ASTDecl *declIfDirect) const;
 
   /// This contains the values that are bound into this parameter list.
   CallOperands parameters;
