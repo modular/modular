@@ -13,7 +13,6 @@
 
 from algorithm import parallelize
 from collections.optional import OptionalReg
-from memory import alloc
 from os import abort, getenv, setenv
 from builtin.variadics import Variadic
 from builtin.device_passable import DevicePassable
