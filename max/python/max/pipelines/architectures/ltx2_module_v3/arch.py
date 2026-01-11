@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
+from max.interfaces import PipelineTask, PixelGenerationContext
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.core import PixelContext
+from max.pipelines.architectures.gemma3.gemma3 import Gemma3
+from max.pipelines.architectures.llama3 import weight_adapters
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
@@ -23,24 +23,33 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
-from . import weight_adapters
+from ..z_image_module_v3.scheduling_flow_match_euler_discrete import (
+    FlowMatchEulerDiscreteScheduler,
+)
 from .model import LTX2Model
+from .nn.autoencoder_kl_ltx2 import AutoencoderKLLTX2Video
+from .nn.autoencoder_kl_ltx2_audio import AutoencoderKLLTX2Audio
+from .nn.transformer_ltx2 import LTX2Transformer3DModel
 
 ltx2_module_v3_arch = SupportedArchitecture(
     name="LTX2Pipeline",
+    task=PipelineTask.PIXEL_GENERATION,
     example_repo_ids=["Lightricks/LTX-2"],
+    default_weights_format=WeightsFormat.safetensors,
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.MODEL_DEFAULT],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.MODEL_DEFAULT]
     },
     pipeline_model=LTX2Model,
-    task=PipelineTask.PIXEL_GENERATION,
+    scheduler=FlowMatchEulerDiscreteScheduler,
+    vae=AutoencoderKLLTX2Video,
+    vae_audio=AutoencoderKLLTX2Audio,
+    text_encoder=Gemma3,
     tokenizer=TextTokenizer,
-    context_type=PixelContext,
-    default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=False,
+    transformer=LTX2Transformer3DModel,
+    context_type=PixelGenerationContext,
     rope_type=RopeType.normal,
     weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict
     },
 )
