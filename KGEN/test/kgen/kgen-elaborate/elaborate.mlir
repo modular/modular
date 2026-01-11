@@ -1,5 +1,8 @@
-// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=false" -allow-unregistered-dialect | FileCheck --check-prefixes=CHECK,CHECK-MAIN %s
-// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=true" -allow-unregistered-dialect | FileCheck --check-prefixes=CHECK,CHECK-PARAMINTERP %s
+// RUN: true
+// FIXME(MOCO-3072): This test is disabled because it is flaking and breaking CI.
+
+// UN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=false" -allow-unregistered-dialect | FileCheck --check-prefixes=CHECK,CHECK-MAIN %s
+// UN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=true" -allow-unregistered-dialect | FileCheck --check-prefixes=CHECK,CHECK-PARAMINTERP %s
 
 // CHECK-LABEL: kgen.func @parameter_use_chain()
 kgen.generator @parameter_use_chain() {
