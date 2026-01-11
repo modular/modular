@@ -252,6 +252,9 @@ what we publish.
   and removing this simplifies the language.  It still supports overloading on
   function arguments of course.
 
+- The Mojo compiler generates more clear error messages when diagnosing invalid
+  calls: it mentions the argument name, instead of "argument #4".
+
 ### Library changes
 
 - `PythonObject` now supports implicit conversion from `None`, allowing more
