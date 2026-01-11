@@ -1,5 +1,17 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
 import math
-from typing import List, Tuple
 
 import torch
 import torch.nn as nn
@@ -15,7 +27,7 @@ class ResBlock(nn.Module):
         channels: int,
         kernel_size: int = 3,
         stride: int = 1,
-        dilations: Tuple[int, ...] = (1, 3, 5),
+        dilations: tuple[int, ...] = (1, 3, 5),
         leaky_relu_negative_slope: float = 0.1,
         padding_mode: str = "same",
     ):
@@ -25,20 +37,34 @@ class ResBlock(nn.Module):
 
         self.convs1 = nn.ModuleList(
             [
-                nn.Conv1d(channels, channels, kernel_size, stride=stride, dilation=dilation, padding=padding_mode)
+                nn.Conv1d(
+                    channels,
+                    channels,
+                    kernel_size,
+                    stride=stride,
+                    dilation=dilation,
+                    padding=padding_mode,
+                )
                 for dilation in dilations
             ]
         )
 
         self.convs2 = nn.ModuleList(
             [
-                nn.Conv1d(channels, channels, kernel_size, stride=stride, dilation=1, padding=padding_mode)
+                nn.Conv1d(
+                    channels,
+                    channels,
+                    kernel_size,
+                    stride=stride,
+                    dilation=1,
+                    padding=padding_mode,
+                )
                 for _ in range(len(dilations))
             ]
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        for conv1, conv2 in zip(self.convs1, self.convs2):
+        for conv1, conv2 in zip(self.convs1, self.convs2, strict=False):
             xt = F.leaky_relu(x, negative_slope=self.negative_slope)
             xt = conv1(xt)
             xt = F.leaky_relu(xt, negative_slope=self.negative_slope)
@@ -58,10 +84,10 @@ class LTX2Vocoder(ModelMixin, ConfigMixin):
         in_channels: int = 128,
         hidden_channels: int = 1024,
         out_channels: int = 2,
-        upsample_kernel_sizes: List[int] = [16, 15, 8, 4, 4],
-        upsample_factors: List[int] = [6, 5, 2, 2, 2],
-        resnet_kernel_sizes: List[int] = [3, 7, 11],
-        resnet_dilations: List[List[int]] = [[1, 3, 5], [1, 3, 5], [1, 3, 5]],
+        upsample_kernel_sizes: list[int] = [16, 15, 8, 4, 4],
+        upsample_factors: list[int] = [6, 5, 2, 2, 2],
+        resnet_kernel_sizes: list[int] = [3, 7, 11],
+        resnet_dilations: list[list[int]] = [[1, 3, 5], [1, 3, 5], [1, 3, 5]],
         leaky_relu_negative_slope: float = 0.1,
         output_sampling_rate: int = 24000,
     ):
@@ -84,12 +110,16 @@ class LTX2Vocoder(ModelMixin, ConfigMixin):
                 f" {len(self.resnets_per_upsample)} and {len(resnet_dilations)}, respectively."
             )
 
-        self.conv_in = nn.Conv1d(in_channels, hidden_channels, kernel_size=7, stride=1, padding=3)
+        self.conv_in = nn.Conv1d(
+            in_channels, hidden_channels, kernel_size=7, stride=1, padding=3
+        )
 
         self.upsamplers = nn.ModuleList()
         self.resnets = nn.ModuleList()
         input_channels = hidden_channels
-        for i, (stride, kernel_size) in enumerate(zip(upsample_factors, upsample_kernel_sizes)):
+        for i, (stride, kernel_size) in enumerate(
+            zip(upsample_factors, upsample_kernel_sizes, strict=False)
+        ):
             output_channels = input_channels // 2
             self.upsamplers.append(
                 nn.ConvTranspose1d(
@@ -101,7 +131,9 @@ class LTX2Vocoder(ModelMixin, ConfigMixin):
                 )
             )
 
-            for kernel_size, dilations in zip(resnet_kernel_sizes, resnet_dilations):
+            for kernel_size, dilations in zip(
+                resnet_kernel_sizes, resnet_dilations, strict=False
+            ):
                 self.resnets.append(
                     ResBlock(
                         output_channels,
@@ -112,9 +144,13 @@ class LTX2Vocoder(ModelMixin, ConfigMixin):
                 )
             input_channels = output_channels
 
-        self.conv_out = nn.Conv1d(output_channels, out_channels, 7, stride=1, padding=3)
+        self.conv_out = nn.Conv1d(
+            output_channels, out_channels, 7, stride=1, padding=3
+        )
 
-    def forward(self, hidden_states: torch.Tensor, time_last: bool = False) -> torch.Tensor:
+    def forward(
+        self, hidden_states: torch.Tensor, time_last: bool = False
+    ) -> torch.Tensor:
         r"""
         Forward pass of the vocoder.
 
@@ -140,13 +176,18 @@ class LTX2Vocoder(ModelMixin, ConfigMixin):
         hidden_states = self.conv_in(hidden_states)
 
         for i in range(self.num_upsample_layers):
-            hidden_states = F.leaky_relu(hidden_states, negative_slope=self.negative_slope)
+            hidden_states = F.leaky_relu(
+                hidden_states, negative_slope=self.negative_slope
+            )
             hidden_states = self.upsamplers[i](hidden_states)
 
             # Run all resnets in parallel on hidden_states
             start = i * self.resnets_per_upsample
             end = (i + 1) * self.resnets_per_upsample
-            resnet_outputs = torch.stack([self.resnets[j](hidden_states) for j in range(start, end)], dim=0)
+            resnet_outputs = torch.stack(
+                [self.resnets[j](hidden_states) for j in range(start, end)],
+                dim=0,
+            )
 
             hidden_states = torch.mean(resnet_outputs, dim=0)
 

@@ -1,15 +1,26 @@
-from typing import Optional, Tuple, Union
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
 
+import max.experimental.functional as F
+import max.nn.module_v3 as nn
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from max.experimental.tensor import Tensor
 
 from ...configuration_utils import ConfigMixin, register_to_config
 from ...utils.accelerate_utils import apply_forward_hook
 from ..modeling_outputs import AutoencoderKLOutput
 from ..modeling_utils import ModelMixin
 from .vae import AutoencoderMixin, DecoderOutput, DiagonalGaussianDistribution
-
 
 LATENT_DOWNSAMPLE_FACTOR = 4
 
@@ -23,24 +34,33 @@ class LTX2AudioCausalConv2d(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        kernel_size: Union[int, Tuple[int, int]],
+        kernel_size: int | tuple[int, int],
         stride: int = 1,
-        dilation: Union[int, Tuple[int, int]] = 1,
+        dilation: int | tuple[int, int] = 1,
         groups: int = 1,
         bias: bool = True,
         causality_axis: str = "height",
     ) -> None:
-        super().__init__()
-
         self.causality_axis = causality_axis
-        kernel_size = (kernel_size, kernel_size) if isinstance(kernel_size, int) else kernel_size
-        dilation = (dilation, dilation) if isinstance(dilation, int) else dilation
+        kernel_size = (
+            (kernel_size, kernel_size)
+            if isinstance(kernel_size, int)
+            else kernel_size
+        )
+        dilation = (
+            (dilation, dilation) if isinstance(dilation, int) else dilation
+        )
 
         pad_h = (kernel_size[0] - 1) * dilation[0]
         pad_w = (kernel_size[1] - 1) * dilation[1]
 
         if self.causality_axis == "none":
-            padding = (pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2)
+            padding = (
+                pad_w // 2,
+                pad_w - pad_w // 2,
+                pad_h // 2,
+                pad_h - pad_h // 2,
+            )
         elif self.causality_axis in {"width", "width-compatibility"}:
             padding = (pad_w, 0, pad_h // 2, pad_h - pad_h // 2)
         elif self.causality_axis == "height":
@@ -60,7 +80,7 @@ class LTX2AudioCausalConv2d(nn.Module):
             bias=bias,
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def __call__(self, x: Tensor) -> Tensor:
         x = F.pad(x, self.padding)
         return self.conv(x)
 
@@ -71,11 +91,10 @@ class LTX2AudioPixelNorm(nn.Module):
     """
 
     def __init__(self, dim: int = 1, eps: float = 1e-8) -> None:
-        super().__init__()
         self.dim = dim
         self.eps = eps
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def __call__(self, x: Tensor) -> Tensor:
         mean_sq = torch.mean(x**2, dim=self.dim, keepdim=True)
         rms = torch.sqrt(mean_sq + self.eps)
         return x / rms
@@ -87,28 +106,41 @@ class LTX2AudioAttnBlock(nn.Module):
         in_channels: int,
         norm_type: str = "group",
     ) -> None:
-        super().__init__()
         self.in_channels = in_channels
 
         if norm_type == "group":
-            self.norm = nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
+            self.norm = nn.GroupNorm(
+                num_groups=32, num_channels=in_channels, eps=1e-6, affine=True
+            )
         elif norm_type == "pixel":
             self.norm = LTX2AudioPixelNorm(dim=1, eps=1e-6)
         else:
             raise ValueError(f"Invalid normalization type: {norm_type}")
-        self.q = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
-        self.k = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
-        self.v = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
-        self.proj_out = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
+        self.q = nn.Conv2d(
+            in_channels, in_channels, kernel_size=1, stride=1, padding=0
+        )
+        self.k = nn.Conv2d(
+            in_channels, in_channels, kernel_size=1, stride=1, padding=0
+        )
+        self.v = nn.Conv2d(
+            in_channels, in_channels, kernel_size=1, stride=1, padding=0
+        )
+        self.proj_out = nn.Conv2d(
+            in_channels, in_channels, kernel_size=1, stride=1, padding=0
+        )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def __call__(self, x: Tensor) -> Tensor:
         h_ = self.norm(x)
         q = self.q(h_)
         k = self.k(h_)
         v = self.v(h_)
 
         batch, channels, height, width = q.shape
-        q = q.reshape(batch, channels, height * width).permute(0, 2, 1).contiguous()
+        q = (
+            q.reshape(batch, channels, height * width)
+            .permute(0, 2, 1)
+            .contiguous()
+        )
         k = k.reshape(batch, channels, height * width).contiguous()
         attn = torch.bmm(q, k) * (int(channels) ** (-0.5))
         attn = torch.nn.functional.softmax(attn, dim=2)
@@ -125,25 +157,32 @@ class LTX2AudioResnetBlock(nn.Module):
     def __init__(
         self,
         in_channels: int,
-        out_channels: Optional[int] = None,
+        out_channels: int | None = None,
         conv_shortcut: bool = False,
         dropout: float = 0.0,
         temb_channels: int = 512,
         norm_type: str = "group",
         causality_axis: str = "height",
     ) -> None:
-        super().__init__()
         self.causality_axis = causality_axis
 
-        if self.causality_axis is not None and self.causality_axis != "none" and norm_type == "group":
-            raise ValueError("Causal ResnetBlock with GroupNorm is not supported.")
+        if (
+            self.causality_axis is not None
+            and self.causality_axis != "none"
+            and norm_type == "group"
+        ):
+            raise ValueError(
+                "Causal ResnetBlock with GroupNorm is not supported."
+            )
         self.in_channels = in_channels
         out_channels = in_channels if out_channels is None else out_channels
         self.out_channels = out_channels
         self.use_conv_shortcut = conv_shortcut
 
         if norm_type == "group":
-            self.norm1 = nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
+            self.norm1 = nn.GroupNorm(
+                num_groups=32, num_channels=in_channels, eps=1e-6, affine=True
+            )
         elif norm_type == "pixel":
             self.norm1 = LTX2AudioPixelNorm(dim=1, eps=1e-6)
         else:
@@ -151,14 +190,22 @@ class LTX2AudioResnetBlock(nn.Module):
         self.non_linearity = nn.SiLU()
         if causality_axis is not None:
             self.conv1 = LTX2AudioCausalConv2d(
-                in_channels, out_channels, kernel_size=3, stride=1, causality_axis=causality_axis
+                in_channels,
+                out_channels,
+                kernel_size=3,
+                stride=1,
+                causality_axis=causality_axis,
             )
         else:
-            self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
+            self.conv1 = nn.Conv2d(
+                in_channels, out_channels, kernel_size=3, stride=1, padding=1
+            )
         if temb_channels > 0:
             self.temb_proj = nn.Linear(temb_channels, out_channels)
         if norm_type == "group":
-            self.norm2 = nn.GroupNorm(num_groups=32, num_channels=out_channels, eps=1e-6, affine=True)
+            self.norm2 = nn.GroupNorm(
+                num_groups=32, num_channels=out_channels, eps=1e-6, affine=True
+            )
         elif norm_type == "pixel":
             self.norm2 = LTX2AudioPixelNorm(dim=1, eps=1e-6)
         else:
@@ -166,27 +213,53 @@ class LTX2AudioResnetBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
         if causality_axis is not None:
             self.conv2 = LTX2AudioCausalConv2d(
-                out_channels, out_channels, kernel_size=3, stride=1, causality_axis=causality_axis
+                out_channels,
+                out_channels,
+                kernel_size=3,
+                stride=1,
+                causality_axis=causality_axis,
             )
         else:
-            self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
+            self.conv2 = nn.Conv2d(
+                out_channels, out_channels, kernel_size=3, stride=1, padding=1
+            )
         if self.in_channels != self.out_channels:
             if self.use_conv_shortcut:
                 if causality_axis is not None:
                     self.conv_shortcut = LTX2AudioCausalConv2d(
-                        in_channels, out_channels, kernel_size=3, stride=1, causality_axis=causality_axis
+                        in_channels,
+                        out_channels,
+                        kernel_size=3,
+                        stride=1,
+                        causality_axis=causality_axis,
                     )
                 else:
-                    self.conv_shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
+                    self.conv_shortcut = nn.Conv2d(
+                        in_channels,
+                        out_channels,
+                        kernel_size=3,
+                        stride=1,
+                        padding=1,
+                    )
             else:
                 if causality_axis is not None:
                     self.nin_shortcut = LTX2AudioCausalConv2d(
-                        in_channels, out_channels, kernel_size=1, stride=1, causality_axis=causality_axis
+                        in_channels,
+                        out_channels,
+                        kernel_size=1,
+                        stride=1,
+                        causality_axis=causality_axis,
                     )
                 else:
-                    self.nin_shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0)
+                    self.nin_shortcut = nn.Conv2d(
+                        in_channels,
+                        out_channels,
+                        kernel_size=1,
+                        stride=1,
+                        padding=0,
+                    )
 
-    def forward(self, x: torch.Tensor, temb: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def __call__(self, x: Tensor, temb: Tensor | None = None) -> Tensor:
         h = self.norm1(x)
         h = self.non_linearity(h)
         h = self.conv1(h)
@@ -200,21 +273,31 @@ class LTX2AudioResnetBlock(nn.Module):
         h = self.conv2(h)
 
         if self.in_channels != self.out_channels:
-            x = self.conv_shortcut(x) if self.use_conv_shortcut else self.nin_shortcut(x)
+            x = (
+                self.conv_shortcut(x)
+                if self.use_conv_shortcut
+                else self.nin_shortcut(x)
+            )
 
         return x + h
 
 
 class LTX2AudioDownsample(nn.Module):
-    def __init__(self, in_channels: int, with_conv: bool, causality_axis: Optional[str] = "height") -> None:
-        super().__init__()
+    def __init__(
+        self,
+        in_channels: int,
+        with_conv: bool,
+        causality_axis: str | None = "height",
+    ) -> None:
         self.with_conv = with_conv
         self.causality_axis = causality_axis
 
         if self.with_conv:
-            self.conv = torch.nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=2, padding=0)
+            self.conv = torch.nn.Conv2d(
+                in_channels, in_channels, kernel_size=3, stride=2, padding=0
+            )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def __call__(self, x: Tensor) -> Tensor:
         if self.with_conv:
             # Padding tuple is in the order: (left, right, top, bottom).
             if self.causality_axis == "none":
@@ -240,19 +323,29 @@ class LTX2AudioDownsample(nn.Module):
 
 
 class LTX2AudioUpsample(nn.Module):
-    def __init__(self, in_channels: int, with_conv: bool, causality_axis: Optional[str] = "height") -> None:
-        super().__init__()
+    def __init__(
+        self,
+        in_channels: int,
+        with_conv: bool,
+        causality_axis: str | None = "height",
+    ) -> None:
         self.with_conv = with_conv
         self.causality_axis = causality_axis
         if self.with_conv:
             if causality_axis is not None:
                 self.conv = LTX2AudioCausalConv2d(
-                    in_channels, in_channels, kernel_size=3, stride=1, causality_axis=causality_axis
+                    in_channels,
+                    in_channels,
+                    kernel_size=3,
+                    stride=1,
+                    causality_axis=causality_axis,
                 )
             else:
-                self.conv = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1)
+                self.conv = nn.Conv2d(
+                    in_channels, in_channels, kernel_size=3, stride=1, padding=1
+                )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def __call__(self, x: Tensor) -> Tensor:
         x = torch.nn.functional.interpolate(x, scale_factor=2.0, mode="nearest")
         if self.with_conv:
             x = self.conv(x)
@@ -265,7 +358,9 @@ class LTX2AudioUpsample(nn.Module):
             elif self.causality_axis == "width-compatibility":
                 pass
             else:
-                raise ValueError(f"Invalid causality_axis: {self.causality_axis}")
+                raise ValueError(
+                    f"Invalid causality_axis: {self.causality_axis}"
+                )
 
         return x
 
@@ -289,16 +384,22 @@ class LTX2AudioAudioPatchifier:
         self.is_causal = is_causal
         self._patch_size = (1, patch_size, patch_size)
 
-    def patchify(self, audio_latents: torch.Tensor) -> torch.Tensor:
+    def patchify(self, audio_latents: Tensor) -> Tensor:
         batch, channels, time, freq = audio_latents.shape
-        return audio_latents.permute(0, 2, 1, 3).reshape(batch, time, channels * freq)
+        return audio_latents.permute(0, 2, 1, 3).reshape(
+            batch, time, channels * freq
+        )
 
-    def unpatchify(self, audio_latents: torch.Tensor, channels: int, mel_bins: int) -> torch.Tensor:
+    def unpatchify(
+        self, audio_latents: Tensor, channels: int, mel_bins: int
+    ) -> Tensor:
         batch, time, _ = audio_latents.shape
-        return audio_latents.view(batch, time, channels, mel_bins).permute(0, 2, 1, 3)
+        return audio_latents.view(batch, time, channels, mel_bins).permute(
+            0, 2, 1, 3
+        )
 
     @property
-    def patch_size(self) -> Tuple[int, int, int]:
+    def patch_size(self) -> tuple[int, int, int]:
         return self._patch_size
 
 
@@ -308,23 +409,21 @@ class LTX2AudioEncoder(nn.Module):
         base_channels: int = 128,
         output_channels: int = 1,
         num_res_blocks: int = 2,
-        attn_resolutions: Optional[Tuple[int, ...]] = None,
+        attn_resolutions: tuple[int, ...] | None = None,
         in_channels: int = 2,
         resolution: int = 256,
         latent_channels: int = 8,
-        ch_mult: Tuple[int, ...] = (1, 2, 4),
+        ch_mult: tuple[int, ...] = (1, 2, 4),
         norm_type: str = "group",
-        causality_axis: Optional[str] = "width",
+        causality_axis: str | None = "width",
         dropout: float = 0.0,
         mid_block_add_attention: bool = False,
         sample_rate: int = 16000,
         mel_hop_length: int = 160,
         is_causal: bool = True,
-        mel_bins: Optional[int] = 64,
+        mel_bins: int | None = 64,
         double_z: bool = True,
     ):
-        super().__init__()
-
         self.sample_rate = sample_rate
         self.mel_hop_length = mel_hop_length
         self.is_causal = is_causal
@@ -351,10 +450,20 @@ class LTX2AudioEncoder(nn.Module):
 
         if self.causality_axis is not None:
             self.conv_in = LTX2AudioCausalConv2d(
-                in_channels, base_block_channels, kernel_size=3, stride=1, causality_axis=self.causality_axis
+                in_channels,
+                base_block_channels,
+                kernel_size=3,
+                stride=1,
+                causality_axis=self.causality_axis,
             )
         else:
-            self.conv_in = nn.Conv2d(in_channels, base_block_channels, kernel_size=3, stride=1, padding=1)
+            self.conv_in = nn.Conv2d(
+                in_channels,
+                base_block_channels,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+            )
 
         self.down = nn.ModuleList()
         block_in = base_block_channels
@@ -380,10 +489,16 @@ class LTX2AudioEncoder(nn.Module):
                 block_in = block_out
                 if self.attn_resolutions:
                     if curr_res in self.attn_resolutions:
-                        stage.attn.append(LTX2AudioAttnBlock(block_in, norm_type=self.norm_type))
+                        stage.attn.append(
+                            LTX2AudioAttnBlock(
+                                block_in, norm_type=self.norm_type
+                            )
+                        )
 
             if level != self.num_resolutions - 1:
-                stage.downsample = LTX2AudioDownsample(block_in, True, causality_axis=self.causality_axis)
+                stage.downsample = LTX2AudioDownsample(
+                    block_in, True, causality_axis=self.causality_axis
+                )
                 curr_res = curr_res // 2
 
             self.down.append(stage)
@@ -398,7 +513,9 @@ class LTX2AudioEncoder(nn.Module):
             causality_axis=self.causality_axis,
         )
         if mid_block_add_attention:
-            self.mid.attn_1 = LTX2AudioAttnBlock(block_in, norm_type=self.norm_type)
+            self.mid.attn_1 = LTX2AudioAttnBlock(
+                block_in, norm_type=self.norm_type
+            )
         else:
             self.mid.attn_1 = nn.Identity()
         self.mid.block_2 = LTX2AudioResnetBlock(
@@ -413,7 +530,12 @@ class LTX2AudioEncoder(nn.Module):
         final_block_channels = block_in
         z_channels = 2 * latent_channels if double_z else latent_channels
         if self.norm_type == "group":
-            self.norm_out = nn.GroupNorm(num_groups=32, num_channels=final_block_channels, eps=1e-6, affine=True)
+            self.norm_out = nn.GroupNorm(
+                num_groups=32,
+                num_channels=final_block_channels,
+                eps=1e-6,
+                affine=True,
+            )
         elif self.norm_type == "pixel":
             self.norm_out = LTX2AudioPixelNorm(dim=1, eps=1e-6)
         else:
@@ -422,12 +544,22 @@ class LTX2AudioEncoder(nn.Module):
 
         if self.causality_axis is not None:
             self.conv_out = LTX2AudioCausalConv2d(
-                final_block_channels, z_channels, kernel_size=3, stride=1, causality_axis=self.causality_axis
+                final_block_channels,
+                z_channels,
+                kernel_size=3,
+                stride=1,
+                causality_axis=self.causality_axis,
             )
         else:
-            self.conv_out = nn.Conv2d(final_block_channels, z_channels, kernel_size=3, stride=1, padding=1)
+            self.conv_out = nn.Conv2d(
+                final_block_channels,
+                z_channels,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+            )
 
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+    def __call__(self, hidden_states: Tensor) -> Tensor:
         # hidden_states expected shape: (batch_size, channels, time, num_mel_bins)
         hidden_states = self.conv_in(hidden_states)
 
@@ -438,7 +570,9 @@ class LTX2AudioEncoder(nn.Module):
                 if stage.attn:
                     hidden_states = stage.attn[block_idx](hidden_states)
 
-            if level != self.num_resolutions - 1 and hasattr(stage, "downsample"):
+            if level != self.num_resolutions - 1 and hasattr(
+                stage, "downsample"
+            ):
                 hidden_states = stage.downsample(hidden_states)
 
         hidden_states = self.mid.block_1(hidden_states, temb=None)
@@ -465,22 +599,20 @@ class LTX2AudioDecoder(nn.Module):
         base_channels: int = 128,
         output_channels: int = 1,
         num_res_blocks: int = 2,
-        attn_resolutions: Optional[Tuple[int, ...]] = None,
+        attn_resolutions: tuple[int, ...] | None = None,
         in_channels: int = 2,
         resolution: int = 256,
         latent_channels: int = 8,
-        ch_mult: Tuple[int, ...] = (1, 2, 4),
+        ch_mult: tuple[int, ...] = (1, 2, 4),
         norm_type: str = "group",
-        causality_axis: Optional[str] = "width",
+        causality_axis: str | None = "width",
         dropout: float = 0.0,
         mid_block_add_attention: bool = False,
         sample_rate: int = 16000,
         mel_hop_length: int = 160,
         is_causal: bool = True,
-        mel_bins: Optional[int] = 64,
+        mel_bins: int | None = 64,
     ) -> None:
-        super().__init__()
-
         self.sample_rate = sample_rate
         self.mel_hop_length = mel_hop_length
         self.is_causal = is_causal
@@ -514,10 +646,20 @@ class LTX2AudioDecoder(nn.Module):
 
         if self.causality_axis is not None:
             self.conv_in = LTX2AudioCausalConv2d(
-                latent_channels, base_block_channels, kernel_size=3, stride=1, causality_axis=self.causality_axis
+                latent_channels,
+                base_block_channels,
+                kernel_size=3,
+                stride=1,
+                causality_axis=self.causality_axis,
             )
         else:
-            self.conv_in = nn.Conv2d(latent_channels, base_block_channels, kernel_size=3, stride=1, padding=1)
+            self.conv_in = nn.Conv2d(
+                latent_channels,
+                base_block_channels,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+            )
         self.non_linearity = nn.SiLU()
         self.mid = nn.Module()
         self.mid.block_1 = LTX2AudioResnetBlock(
@@ -529,7 +671,9 @@ class LTX2AudioDecoder(nn.Module):
             causality_axis=self.causality_axis,
         )
         if mid_block_add_attention:
-            self.mid.attn_1 = LTX2AudioAttnBlock(base_block_channels, norm_type=self.norm_type)
+            self.mid.attn_1 = LTX2AudioAttnBlock(
+                base_block_channels, norm_type=self.norm_type
+            )
         else:
             self.mid.attn_1 = nn.Identity()
         self.mid.block_2 = LTX2AudioResnetBlock(
@@ -565,10 +709,16 @@ class LTX2AudioDecoder(nn.Module):
                 block_in = block_out
                 if self.attn_resolutions:
                     if curr_res in self.attn_resolutions:
-                        stage.attn.append(LTX2AudioAttnBlock(block_in, norm_type=self.norm_type))
+                        stage.attn.append(
+                            LTX2AudioAttnBlock(
+                                block_in, norm_type=self.norm_type
+                            )
+                        )
 
             if level != 0:
-                stage.upsample = LTX2AudioUpsample(block_in, True, causality_axis=self.causality_axis)
+                stage.upsample = LTX2AudioUpsample(
+                    block_in, True, causality_axis=self.causality_axis
+                )
                 curr_res *= 2
 
             self.up.insert(0, stage)
@@ -576,7 +726,12 @@ class LTX2AudioDecoder(nn.Module):
         final_block_channels = block_in
 
         if self.norm_type == "group":
-            self.norm_out = nn.GroupNorm(num_groups=32, num_channels=final_block_channels, eps=1e-6, affine=True)
+            self.norm_out = nn.GroupNorm(
+                num_groups=32,
+                num_channels=final_block_channels,
+                eps=1e-6,
+                affine=True,
+            )
         elif self.norm_type == "pixel":
             self.norm_out = LTX2AudioPixelNorm(dim=1, eps=1e-6)
         else:
@@ -584,24 +739,38 @@ class LTX2AudioDecoder(nn.Module):
 
         if self.causality_axis is not None:
             self.conv_out = LTX2AudioCausalConv2d(
-                final_block_channels, output_channels, kernel_size=3, stride=1, causality_axis=self.causality_axis
+                final_block_channels,
+                output_channels,
+                kernel_size=3,
+                stride=1,
+                causality_axis=self.causality_axis,
             )
         else:
-            self.conv_out = nn.Conv2d(final_block_channels, output_channels, kernel_size=3, stride=1, padding=1)
+            self.conv_out = nn.Conv2d(
+                final_block_channels,
+                output_channels,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+            )
 
-    def forward(
+    def __call__(
         self,
-        sample: torch.Tensor,
-    ) -> torch.Tensor:
+        sample: Tensor,
+    ) -> Tensor:
         _, _, frames, mel_bins = sample.shape
 
         target_frames = frames * LATENT_DOWNSAMPLE_FACTOR
 
         if self.causality_axis is not None:
-            target_frames = max(target_frames - (LATENT_DOWNSAMPLE_FACTOR - 1), 1)
+            target_frames = max(
+                target_frames - (LATENT_DOWNSAMPLE_FACTOR - 1), 1
+            )
 
         target_channels = self.out_ch
-        target_mel_bins = self.mel_bins if self.mel_bins is not None else mel_bins
+        target_mel_bins = (
+            self.mel_bins if self.mel_bins is not None else mel_bins
+        )
 
         hidden_features = self.conv_in(sample)
         hidden_features = self.mid.block_1(hidden_features, temb=None)
@@ -624,14 +793,19 @@ class LTX2AudioDecoder(nn.Module):
         hidden = self.norm_out(hidden_features)
         hidden = self.non_linearity(hidden)
         decoded_output = self.conv_out(hidden)
-        decoded_output = torch.tanh(decoded_output) if self.tanh_out else decoded_output
+        decoded_output = (
+            torch.tanh(decoded_output) if self.tanh_out else decoded_output
+        )
 
         _, _, current_time, current_freq = decoded_output.shape
         target_time = target_frames
         target_freq = target_mel_bins
 
         decoded_output = decoded_output[
-            :, :target_channels, : min(current_time, target_time), : min(current_freq, target_freq)
+            :,
+            :target_channels,
+            : min(current_time, target_time),
+            : min(current_freq, target_freq),
         ]
 
         time_padding_needed = target_time - decoded_output.shape[2]
@@ -646,7 +820,9 @@ class LTX2AudioDecoder(nn.Module):
             )
             decoded_output = F.pad(decoded_output, padding)
 
-        decoded_output = decoded_output[:, :target_channels, :target_time, :target_freq]
+        decoded_output = decoded_output[
+            :, :target_channels, :target_time, :target_freq
+        ]
 
         return decoded_output
 
@@ -663,29 +839,36 @@ class AutoencoderKLLTX2Audio(ModelMixin, AutoencoderMixin, ConfigMixin):
         self,
         base_channels: int = 128,
         output_channels: int = 2,
-        ch_mult: Tuple[int, ...] = (1, 2, 4),
+        ch_mult: tuple[int, ...] = (1, 2, 4),
         num_res_blocks: int = 2,
-        attn_resolutions: Optional[Tuple[int, ...]] = None,
+        attn_resolutions: tuple[int, ...] | None = None,
         in_channels: int = 2,
         resolution: int = 256,
         latent_channels: int = 8,
         norm_type: str = "pixel",
-        causality_axis: Optional[str] = "height",
+        causality_axis: str | None = "height",
         dropout: float = 0.0,
         mid_block_add_attention: bool = False,
         sample_rate: int = 16000,
         mel_hop_length: int = 160,
         is_causal: bool = True,
-        mel_bins: Optional[int] = 64,
+        mel_bins: int | None = 64,
         double_z: bool = True,
     ) -> None:
-        super().__init__()
-
-        supported_causality_axes = {"none", "width", "height", "width-compatibility"}
+        supported_causality_axes = {
+            "none",
+            "width",
+            "height",
+            "width-compatibility",
+        }
         if causality_axis not in supported_causality_axes:
-            raise ValueError(f"{causality_axis=} is not valid. Supported values: {supported_causality_axes}")
+            raise ValueError(
+                f"{causality_axis=} is not valid. Supported values: {supported_causality_axes}"
+            )
 
-        attn_resolution_set = set(attn_resolutions) if attn_resolutions else attn_resolutions
+        attn_resolution_set = (
+            set(attn_resolutions) if attn_resolutions else attn_resolutions
+        )
 
         self.encoder = LTX2AudioEncoder(
             base_channels=base_channels,
@@ -739,11 +922,11 @@ class AutoencoderKLLTX2Audio(ModelMixin, AutoencoderMixin, ConfigMixin):
         self.mel_compression_ratio = LATENT_DOWNSAMPLE_FACTOR
         self.use_slicing = False
 
-    def _encode(self, x: torch.Tensor) -> torch.Tensor:
+    def _encode(self, x: Tensor) -> Tensor:
         return self.encoder(x)
 
     @apply_forward_hook
-    def encode(self, x: torch.Tensor, return_dict: bool = True):
+    def encode(self, x: Tensor, return_dict: bool = True):
         if self.use_slicing and x.shape[0] > 1:
             encoded_slices = [self._encode(x_slice) for x_slice in x.split(1)]
             h = torch.cat(encoded_slices)
@@ -755,11 +938,13 @@ class AutoencoderKLLTX2Audio(ModelMixin, AutoencoderMixin, ConfigMixin):
             return (posterior,)
         return AutoencoderKLOutput(latent_dist=posterior)
 
-    def _decode(self, z: torch.Tensor) -> torch.Tensor:
+    def _decode(self, z: Tensor) -> Tensor:
         return self.decoder(z)
 
     @apply_forward_hook
-    def decode(self, z: torch.Tensor, return_dict: bool = True) -> Union[DecoderOutput, torch.Tensor]:
+    def decode(
+        self, z: Tensor, return_dict: bool = True
+    ) -> Union[DecoderOutput, Tensor]:
         if self.use_slicing and z.shape[0] > 1:
             decoded_slices = [self._decode(z_slice) for z_slice in z.split(1)]
             decoded = torch.cat(decoded_slices)
@@ -771,13 +956,13 @@ class AutoencoderKLLTX2Audio(ModelMixin, AutoencoderMixin, ConfigMixin):
 
         return DecoderOutput(sample=decoded)
 
-    def forward(
+    def __call__(
         self,
-        sample: torch.Tensor,
+        sample: Tensor,
         sample_posterior: bool = False,
         return_dict: bool = True,
-        generator: Optional[torch.Generator] = None,
-    ) -> Union[DecoderOutput, torch.Tensor]:
+        generator: torch.Generator | None = None,
+    ) -> Union[DecoderOutput, Tensor]:
         posterior = self.encode(sample).latent_dist
         if sample_posterior:
             z = posterior.sample(generator=generator)

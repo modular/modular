@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
 from .arch import ltx2_module_v3_arch
+from .model_config import LTX2Config
 
-__all__ = ["ltx2_module_v3_arch"]
+ARCHITECTURES = [ltx2_module_v3_arch]
+
+__all__ = ["ARCHITECTURES", "LTX2Config", "ltx2_module_v3_arch"]

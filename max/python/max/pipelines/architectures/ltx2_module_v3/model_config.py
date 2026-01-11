@@ -10,367 +10,449 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Config for LTX2 model."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 from max.dtype import DType
-from max.graph import DeviceRef
-from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn import ReturnLogits, YarnScalingParams
+from max.graph.weights import WeightData
+from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import (
-    KVCacheConfig,
-    MAXModelConfig,
-    MAXModelConfigBase,
-    PipelineConfig,
-    RopeType,
-)
-from transformers import AutoConfig
+from max.pipelines.architectures.gemma3.model_config import Gemma3Config
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from transformers.models.auto.configuration_auto import AutoConfig
 
 
 @dataclass
-class LTX2ConfigBase(MAXModelConfigBase):
-    """Base configuration for LTX2 models.
+class SchedulerConfig:
+    """Base configuration for scheduler model with required fields."""
 
-    Contains parameters specific to the LTX2 architecture, typically
-    extracted from a HuggingFace configuration object's text config.
-    """
+    base_image_seq_len: int | None = 256
+    """Base image sequence length."""
 
-    # GPT OSS specific parameters
-    vocab_size: int
-    """Vocabulary size of the GPT OSS model."""
+    base_shift: float | None = 0.5
+    """Base shift value."""
 
-    hidden_size: int
-    """Dimension of the hidden representations."""
+    invert_sigmas: bool = False
+    """Invert sigmas flag."""
 
-    intermediate_size: int
-    """Dimension of the MLP representations."""
+    max_image_seq_len: int | None = 4096
+    """Max image sequence length."""
 
-    num_hidden_layers: int
-    """Number of hidden layers in the Transformer decoder."""
+    max_shift: float | None = 1.15
+    """Max shift value."""
 
-    num_attention_heads: int
-    """Number of attention heads for each attention layer in the Transformer
-    decoder."""
+    num_train_timesteps: int = 1000
+    """Number of training timesteps."""
 
-    num_key_value_heads: int
-    """Number of key_value heads that should be used to implement Grouped Query
-    Attention."""
+    shift: float = 1.0
+    """Shift value."""
 
-    head_dim: int
-    """The attention head dimension."""
+    shift_terminal: float | None = None
+    """Shift terminal value."""
 
-    hidden_activation: str
-    """The non-linear activation function (function or string) in the decoder.
-    Will default to `"gelu_tanh"` if not specified. `"gelu_tanh"`
-    uses an approximation of the `"gelu"` activation function."""
+    stochastic_sampling: bool = False
+    """Stochastic sampling flag."""
 
-    max_position_embeddings: int
-    """The maximum sequence length that this model might ever be used with."""
+    time_shift_type: str = "exponential"
+    """Time shift type."""
 
-    rms_norm_eps: float
-    """The epsilon used by the rms normalization layers."""
+    use_beta_sigmas: bool = False
+    """Use beta sigmas flag."""
 
-    tie_word_embeddings: bool
-    """Whether to tie weight embeddings. When true, the output linear layer
-    uses the same
-    weight as the embedding layer."""
+    use_dynamic_shifting: bool = False
+    """Use dynamic shifting flag."""
 
-    rope_theta: float
-    """The base period of the RoPE embeddings."""
+    use_exponential_sigmas: bool | None = False
+    """Use exponential sigmas flag."""
 
-    attention_bias: bool
-    """Whether to use a bias in the query, key, value and output projection
-    layers during self-attention."""
+    use_karras_sigmas: bool | None = False
+    """Use karras sigmas flag."""
 
-    sliding_window: int
-    """In the GPT OSS language model, specific layers use sliding window
-    attention. This is the size of the sliding window."""
+    @staticmethod
+    def generate(
+        scheduler_config: SimpleNamespace,
+    ) -> SchedulerConfig:
+        """Generate SchedulerConfig from HuggingFace scheduler config.
 
-    num_local_experts: int
-    """Number of experts in each MoE layer."""
+        Args:
+            scheduler_config: HuggingFace scheduler configuration object.
 
-    num_experts_per_tok: int
-    """Number of experts selected per token in MoE layers."""
-
-    router_aux_loss_coef: float
-    """Coefficient for the auxiliary load balancing loss in MoE layers."""
-
-    layer_types: list[str]
-    """Type of attention for each layer ('full_attention' or 'sliding_attention')."""
-
-    attention_dropout: float
-    """Dropout probability for attention weights."""
-
-    rope_scaling: YarnScalingParams
-    """Scaling configuration for the RoPE embeddings used in global attention."""
-
-    query_pre_attn_scalar: float | None
-    """Scalar applied to queries before attention computation."""
-
-    final_logit_softcapping: float | None
-    """Softcapping value for final logits."""
-
-    attn_logit_softcapping: float | None
-    """Softcapping value for attention logits."""
-
-    swiglu_limit: float
-    """Clamping limit for SwiGLU activation in MoE layers."""
-
-    # Max-specific config parameters.
-    dtype: DType
-    """DType of the model weights and input."""
-
-    devices: list[DeviceRef]
-    """Devices to run the model with."""
-
-    interleaved_rope_weights: bool
-    """True if the rope weights are in interleaved complex format."""
-
-    return_logits: ReturnLogits
-    """Whether to return the last token, all logits, or a variable number of logits."""
-
-    kv_params: KVCacheParams
-    """KV cache parameters."""
+        Returns:
+            Configured SchedulerConfig instance.
+        """
+        return SchedulerConfig(
+            base_image_seq_len=getattr(
+                scheduler_config, "base_image_seq_len", 256
+            ),
+            base_shift=getattr(scheduler_config, "base_shift", 0.5),
+            invert_sigmas=getattr(scheduler_config, "invert_sigmas", False),
+            max_image_seq_len=getattr(
+                scheduler_config, "max_image_seq_len", 4096
+            ),
+            max_shift=getattr(scheduler_config, "max_shift", 1.15),
+            num_train_timesteps=getattr(
+                scheduler_config, "num_train_timesteps", 1000
+            ),
+            shift=getattr(scheduler_config, "shift", 1.0),
+            shift_terminal=getattr(scheduler_config, "shift_terminal", None),
+            stochastic_sampling=getattr(
+                scheduler_config, "stochastic_sampling", False
+            ),
+            time_shift_type=getattr(
+                scheduler_config, "time_shift_type", "exponential"
+            ),
+            use_beta_sigmas=getattr(scheduler_config, "use_beta_sigmas", False),
+            use_dynamic_shifting=getattr(
+                scheduler_config, "use_dynamic_shifting", False
+            ),
+            use_exponential_sigmas=getattr(
+                scheduler_config, "use_exponential_sigmas", False
+            ),
+            use_karras_sigmas=getattr(
+                scheduler_config, "use_karras_sigmas", False
+            ),
+        )
 
 
 @dataclass
-class GptOssConfig(MAXModelConfig, GptOssConfigBase):
-    """Represents the complete MAX Engine configuration for GPT OSS models.
+class VAEConfig:
+    """Base configuration for VAE model with required fields."""
 
-    Combines the base GPT OSS parameters with MAX-specific settings and
-    provides methods to derive necessary pipeline components like KV cache parameters.
-    """
+    act_fn: str | None = None
+    """Activation function."""
+
+    block_out_channels: list[int] | None = None
+    """List of block output channels."""
+
+    down_block_types: list[str] | None = None
+    """List of downsample block types."""
+
+    force_upcast: bool | None = None
+    """If enabled it will force the VAE to run in float32 for high image resolution pipelines, such as SD-XL. VAE
+    can be fine-tuned / trained to a lower range without losing too much precision in which case `force_upcast`
+    can be set to `False` - see: https://huggingface.co/madebyollin/sdxl-vae-fp16-fix"""
+
+    in_channels: int | None = None
+    """Number of channels in the input image."""
+
+    latent_channels: int | None = None
+    """Number of channels in the latent space."""
+
+    latents_mean: list[float] | None = None
+    """Latents mean."""
+
+    latents_std: list[float] | None = None
+    """Latents standard deviation."""
+
+    layers_per_block: int | None = None
+    """Number of layers per block."""
+
+    mid_block_add_attention: bool | None = None
+    """If enabled, the mid_block of the Encoder and Decoder will have attention blocks. If set to false, the
+    mid_block will only have resnet blocks"""
+
+    norm_num_groups: int | None = None
+    """Number of normalization groups."""
+
+    out_channels: int | None = None
+    """Number of output channels."""
+
+    sample_size: int | None = None
+    """Sample size."""
+
+    shift_factor: float | None = None
+    """Shift factor."""
+
+    up_block_types: list[str] | None = None
+    """List of upsample block types."""
+
+    use_post_quant_conv: bool | None = None
+    """Use post quantization convolution flag."""
+
+    use_quant_conv: bool | None = None
+    """Use quantization convolution flag."""
+
+    scaling_factor: float | None = None
+    """The component-wise standard deviation of the trained latent space computed using the first batch of the
+    training set. This is used to scale the latent space to have unit variance when training the diffusion
+    model. The latents are scaled with the formula `z = z * scaling_factor` before being passed to the
+    diffusion model. When decoding, the latents are scaled back to the original scale with the formula: `z = 1
+    / scaling_factor * z`. For more details, refer to sections 4.3.2 and D.1 of the [High-Resolution Image
+    Synthesis with Latent Diffusion Models](https://huggingface.co/papers/2112.10752) paper."""
+
+    @staticmethod
+    def generate(
+        vae_config: SimpleNamespace,
+        dtype: DType,
+        pipeline_config: PipelineConfig,
+    ) -> VAEConfig:
+        """Generate VAEConfig from HuggingFace VAE config.
+
+        Args:
+            vae_config: HuggingFace VAE configuration object.
+
+        Returns:
+            Configured VAEConfig instance.
+        """
+        return VAEConfig(
+            act_fn=vae_config.act_fn,
+            block_out_channels=vae_config.block_out_channels,
+            down_block_types=vae_config.down_block_types,
+            force_upcast=vae_config.force_upcast,
+            in_channels=vae_config.in_channels,
+            latent_channels=vae_config.latent_channels,
+            latents_mean=vae_config.latents_mean,
+            latents_std=vae_config.latents_std,
+            layers_per_block=vae_config.layers_per_block,
+            mid_block_add_attention=vae_config.mid_block_add_attention,
+            norm_num_groups=vae_config.norm_num_groups,
+            out_channels=vae_config.out_channels,
+            sample_size=vae_config.sample_size,
+            scaling_factor=vae_config.scaling_factor,
+            shift_factor=vae_config.shift_factor,
+            up_block_types=vae_config.up_block_types,
+            use_post_quant_conv=vae_config.use_post_quant_conv,
+            use_quant_conv=vae_config.use_quant_conv,
+        )
+
+
+@dataclass
+class TransformerConfig:
+    """Base configuration for transformer model with required fields."""
+
+    all_f_patch_size: list[int] | None = None
+    """All f patch size."""
+
+    all_patch_size: list[int] | None = None
+    """All patch size."""
+
+    axes_dims: list[int] | None = None
+    """Axes dimensions."""
+
+    axes_lens: list[int] | None = None
+    """Axes lengths."""
+
+    cap_feat_dim: int | None = None
+    """Capacity feature dimension."""
+
+    dim: int | None = None
+    """Dimension."""
+
+    in_channels: int | None = None
+    """Number of input channels."""
+
+    n_heads: int | None = None
+    """Number of heads."""
+
+    n_kv_heads: int | None = None
+    """Number of KV heads."""
+
+    n_layers: int | None = None
+    """Number of layers."""
+
+    n_refiner_layers: int | None = None
+    """Number of refiner layers."""
+
+    norm_eps: float | None = None
+    """Normalization epsilon."""
+
+    qk_norm: bool | None = None
+    """Query-Key normalization flag."""
+
+    rope_theta: float | None = None
+    """RoPE theta."""
+
+    t_scale: float | None = None
+    """Time scale."""
+
+    @staticmethod
+    def generate(
+        transformer_config: SimpleNamespace,
+        dtype: DType,
+        pipeline_config: PipelineConfig,
+    ) -> TransformerConfig:
+        """Generate TransformerConfig from HuggingFace transformer config.
+
+        Args:
+            transformer_config: HuggingFace transformer configuration object.
+
+        Returns:
+            Configured TransformerConfig instance.
+        """
+        return TransformerConfig(
+            all_f_patch_size=transformer_config.all_f_patch_size,
+            all_patch_size=transformer_config.all_patch_size,
+            axes_dims=transformer_config.axes_dims,
+            axes_lens=transformer_config.axes_lens,
+            cap_feat_dim=transformer_config.cap_feat_dim,
+            dim=transformer_config.dim,
+            in_channels=transformer_config.in_channels,
+            n_heads=transformer_config.n_heads,
+            n_kv_heads=transformer_config.n_kv_heads,
+            n_layers=transformer_config.n_layers,
+            n_refiner_layers=transformer_config.n_refiner_layers,
+            norm_eps=transformer_config.norm_eps,
+            qk_norm=transformer_config.qk_norm,
+            rope_theta=transformer_config.rope_theta,
+            t_scale=transformer_config.t_scale,
+        )
+
+
+@dataclass
+class LTX2ConfigBase:
+    """Base configuration for LTX2 models with required fields."""
+
+    scheduler_config: SchedulerConfig
+    """Scheduler configuration."""
+
+    vae_config: VAEConfig
+    """VAE configuration."""
+
+    text_encoder_config: Gemma3Config
+    """Text encoder configuration."""
+
+    transformer_config: TransformerConfig
+    """Transformer configuration."""
+
+
+@dataclass
+class LTX2Config(MAXModelConfig, LTX2ConfigBase):
+    """Implementation of MAXModelConfig for LTX2 models."""
+
+    @staticmethod
+    def help() -> dict[str, str]:
+        """Returns a dictionary describing the configuration parameters."""
+        # TODO: Populate this with helpful descriptions based on Args above.
+        return {}
 
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
+        n_devices: int,
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        """Constructs the KV cache parameters from configuration objects.
-
-        Args:
-            huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-            devices: The list of devices the model will run on.
-            kv_cache_config: The MAX Engine KV cache configuration settings (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            cache_dtype: The desired data type for the KV cache (:obj:`max.dtype.DType`).
-
-        Returns:
-            The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
-        """
-        return KVCacheParams(
-            dtype=cache_dtype,
-            num_layers=GptOssConfig.get_num_layers(huggingface_config),
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=huggingface_config.head_dim,
-            page_size=kv_cache_config.kv_cache_page_size,
-            cache_strategy=kv_cache_config.cache_strategy,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
-            devices=devices,
-            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
+        # Delegate to Gemma3Config for language model parameters.
+        llm_config = getattr(
+            huggingface_config, "text_config", huggingface_config
+        )
+        return Gemma3Config.get_kv_params(
+            huggingface_config=llm_config,
+            n_devices=n_devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
         )
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
-        """Retrieves the number of hidden layers from the HuggingFace configuration.
-
-        Args:
-            huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The number of hidden layers specified in the configuration.
-        """
-        return huggingface_config.num_hidden_layers
+        # Delegate to Gemma3Config for language model parameters.
+        llm_config = getattr(
+            huggingface_config, "text_config", huggingface_config
+        )
+        return Gemma3Config.get_num_layers(llm_config)
 
     @staticmethod
     def calculate_max_seq_len(
         pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
-        """Calculates the maximum sequence length for the model.
-
-        Uses the `max_length` from the :obj:`max.pipelines.config.PipelineConfig` if provided,
-        otherwise falls back to the `max_position_embeddings` from the HuggingFace
-        configuration's text config.
-
-        Args:
-            pipeline_config: The MAX Engine pipeline configuration.
-            huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The calculated maximum sequence length.
-        """
-        max_seq_len = pipeline_config.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.max_position_embeddings
+        """Calculate maximum sequence length for LTX2."""
+        # Delegate to Gemma3Config for language model parameters.
+        llm_config = getattr(
+            huggingface_config, "text_config", huggingface_config
+        )
+        return Gemma3Config.calculate_max_seq_len(
+            pipeline_config=pipeline_config,
+            huggingface_config=llm_config,
+        )
 
     @staticmethod
     def generate(
         pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
+        scheduler_config: SchedulerConfig,
+        vae_config: VAEConfig,
+        text_encoder_config: AutoConfig,
+        transformer_config: SimpleNamespace,
+        vae_state_dict: dict[str, WeightData],
+        text_encoder_state_dict: dict[str, dict[str, WeightData]],
+        transformer_state_dict: dict[str, WeightData],
         dtype: DType,
         n_devices: int,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
-    ) -> GptOssConfig:
-        """Generates a GptOssConfig instance from various configuration sources.
-
-        This factory method takes pipeline settings, HuggingFace configuration,
-        model state dictionary, and other parameters to construct a fully initialized
-        :obj:`GptOssConfig` object for use within the MAX Engine pipeline.
+    ) -> LTX2Config:
+        """Generate LTX2Config from pipeline and HuggingFace configs.
 
         Args:
-            pipeline_config: The MAX Engine pipeline configuration (:obj:`max.pipelines.config.PipelineConfig`).
-            huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-            state_dict: The model's state dictionary containing weights (:obj:`max.graph.weights.WeightData`).
-            dtype: The primary data type for model parameters (:obj:`max.dtype.DType`).
-            n_devices: The number of devices the model will run on.
-            cache_dtype: The data type for the KV cache (:obj:`max.dtype.DType`).
-            kv_cache_config: Configuration settings for the KV cache (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            return_logits: Whether to return the last token, all tokens or a variable number of logits.
-            norm_method: The normalization method to use (currently only "rms_norm").
-            attention_bias: Whether to include bias in attention projections. Defaults
-              to `True` based on GPT-OSS HuggingFace implementation.
+            pipeline_config: Pipeline configuration.
+            scheduler_config: Scheduler configuration.
+            vae_config: VAE configuration.
+            text_encoder_config: Text encoder configuration.
+            transformer_config: Transformer configuration.
+            vae_state_dict: VAE weights dictionary.
+            text_encoder_state_dict: Text encoder weights dictionary.
+            transformer_state_dict: Transformer weights dictionary.
+            dtype: Data type for model parameters.
+            n_devices: Number of devices.
+            cache_dtype: KV cache data type.
+            kv_cache_config: KV cache configuration.
+            return_logits: Return logits configuration.
+            norm_method: Normalization method.
 
         Returns:
-            An initialized :obj:`GptOssConfig` instance.
+            Configured LTX2Config instance.
         """
-        _weights_format = weights_format(
-            pipeline_config.model_config.weight_path
-        )
-        interleaved_rope_weights = (
-            _weights_format == WeightsFormat.gguf
-            and pipeline_config.model_config.rope_type == RopeType.normal
-        )
-        device_refs = [
-            DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model_config.device_specs
-        ]
+        # Create SchedulerConfig from the scheduler_config
+        scheduler_config = SchedulerConfig.generate(scheduler_config)
 
-        # When tie_word_embeddings=True, the embedding weights are shared with
-        # the output weights.
-        tie_word_embeddings = (
-            getattr(huggingface_config, "tie_word_embeddings", False)
-            or "language_model.lm_head.weight" not in state_dict
+        # Create VAEConfig from the vae_config
+        vae_config = VAEConfig.generate(
+            vae_config,
+            vae_state_dict["encoder.conv_in.weight"].dtype,
+            pipeline_config,
         )
 
-        rope_scaling_params: YarnScalingParams
-        rope_scaling = huggingface_config.rope_scaling
+        # Create Gemma3Config for the text encoder
+        # Use ReturnHiddenStates.SECOND_TO_LAST to get hidden_states[-2]
+        # (second-to-last layer) for LTX2 conditioning - matching diffusers behavior
+        # Disable prefix caching for diffusion model text encoders
+        # since they don't use autoregressive KV caching
+        from dataclasses import replace
 
-        if rope_scaling is not None:
-            # Since "rope_type" huggingface config is not standardized, we need
-            # to check for both "type" and "rope_type" keys.
-            rope_type = rope_scaling.get("type")
-            rope_type_alt = rope_scaling.get("rope_type")
-            if rope_type is None and rope_type_alt is None:
-                raise ValueError(
-                    "Neither 'type' nor 'rope_type' found in rope_scaling huggingface config"
-                )
-            if rope_type == "linear" or rope_type_alt == "linear":
-                raise ValueError(
-                    "Linear scaling is not supported for GPT-OSS models"
-                )
-            elif (
-                rope_type == "yarn" or rope_type_alt == "yarn"
-            ):  # GPT-OSS uses YARN scaling
-                rope_scaling_params = YarnScalingParams(
-                    factor=rope_scaling.get("factor", 32.0),
-                    beta_fast=rope_scaling.get("beta_fast", 32.0),
-                    beta_slow=rope_scaling.get("beta_slow", 1.0),
-                    original_max_position_embeddings=rope_scaling.get(
-                        "original_max_position_embeddings", 4096
-                    ),
-                    truncate=rope_scaling.get("truncate", False),
-                )
-            else:
-                raise ValueError(
-                    f"Unknown rope scaling type: {rope_type} or {rope_type_alt}"
-                )
-        else:
-            raise ValueError("RoPE scaling is required for GPT-OSS models")
+        from max.nn import ReturnHiddenStates
 
-        hidden_activation = _HIDDEN_ACTIVATION_MAP.get(
-            huggingface_config.hidden_act,
-            huggingface_config.hidden_act,
+        text_encoder_kv_cache_config = replace(
+            kv_cache_config,
+            enable_prefix_caching=False,
         )
 
-        # Get layer types from HuggingFace config if available
-        layer_types = getattr(
-            huggingface_config,
-            "layer_types",
-            ["sliding_attention", "full_attention"]
-            * (huggingface_config.num_hidden_layers // 2),
+        text_encoder_config = Gemma3Config.generate(
+            pipeline_config,
+            text_encoder_config,
+            text_encoder_state_dict["llm_state_dict"],
+            dtype,
+            n_devices,
+            cache_dtype,
+            text_encoder_kv_cache_config,  # Use modified config without prefix caching
+            return_logits,
+            return_hidden_states=ReturnHiddenStates.SECOND_TO_LAST,
         )
 
-        # Get additional parameters from HuggingFace config
-        query_pre_attn_scalar = getattr(
-            huggingface_config, "query_pre_attn_scalar", None
-        )
-        final_logit_softcapping = getattr(
-            huggingface_config, "final_logit_softcapping", None
-        )
-        attn_logit_softcapping = getattr(
-            huggingface_config, "attn_logit_softcapping", None
-        )
-        swiglu_limit = getattr(huggingface_config, "swiglu_limit", 7.0)
-
-        return GptOssConfig(
-            vocab_size=huggingface_config.vocab_size,
-            hidden_size=huggingface_config.hidden_size,
-            intermediate_size=huggingface_config.intermediate_size,
-            num_hidden_layers=huggingface_config.num_hidden_layers,
-            num_attention_heads=huggingface_config.num_attention_heads,
-            num_key_value_heads=huggingface_config.num_key_value_heads,
-            head_dim=huggingface_config.head_dim,
-            hidden_activation=hidden_activation,
-            max_position_embeddings=huggingface_config.max_position_embeddings,
-            rms_norm_eps=huggingface_config.rms_norm_eps,
-            tie_word_embeddings=tie_word_embeddings,
-            rope_theta=huggingface_config.rope_theta,
-            attention_bias=huggingface_config.attention_bias,
-            sliding_window=huggingface_config.sliding_window,
-            rope_scaling=rope_scaling_params,
-            num_local_experts=getattr(
-                huggingface_config, "num_local_experts", 32
-            ),
-            num_experts_per_tok=getattr(
-                huggingface_config, "num_experts_per_tok", 4
-            ),
-            router_aux_loss_coef=getattr(
-                huggingface_config, "router_aux_loss_coef", 0.9
-            ),
-            layer_types=layer_types,
-            attention_dropout=getattr(
-                huggingface_config, "attention_dropout", 0.0
-            ),
-            query_pre_attn_scalar=query_pre_attn_scalar,
-            final_logit_softcapping=final_logit_softcapping,
-            attn_logit_softcapping=attn_logit_softcapping,
-            swiglu_limit=swiglu_limit,
-            dtype=dtype,
-            devices=device_refs,
-            interleaved_rope_weights=interleaved_rope_weights,
-            return_logits=return_logits,
-            kv_params=GptOssConfig.get_kv_params(
-                huggingface_config=huggingface_config,
-                pipeline_config=pipeline_config,
-                devices=device_refs,
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
+        # Create TransformerConfig for the backbone of the pipeline
+        transformer_config = TransformerConfig.generate(
+            transformer_config,
+            transformer_state_dict["layers.0.feed_forward.w1.weight"],
+            pipeline_config,
         )
 
-
-_HIDDEN_ACTIVATION_MAP = {
-    "gelu_pytorch_tanh": "gelu_tanh",
-    "swish": "silu",
-}
+        # Return a new LTX2Config with the corrected parameters
+        return LTX2Config(
+            scheduler_config=scheduler_config,
+            vae_config=vae_config,
+            text_encoder_config=text_encoder_config,
+            transformer_config=transformer_config,
+        )
