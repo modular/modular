@@ -224,9 +224,6 @@ private:
   /// The number "givenBindings" that are pre-checked and just need to be
   /// installed, instead of treated as things specified in the [] list.
   const size_t numPreCheckedParam;
-
-  /// The expression of the current argument being used for parameter inference.
-  const ExprNode *curArgExpr = nullptr;
 };
 
 } // namespace M::KGEN::LIT
