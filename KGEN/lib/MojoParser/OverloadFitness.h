@@ -101,13 +101,6 @@ public:
   static OverloadFitness
   evaluate(ASTDecl *candidate, const OverloadSet &callable, PValue selfPValue);
 
-  enum ArgTypeMismatchKind {
-    kValidType,   //< No argument type mismatch.
-    kNotLValue,   //< By-ref argument requires an lvalue, but got an rvalue.
-    kWrongLVType, //< By-ref argument and provided l-value types mismatch.
-    kWrongType,   //< An argument value not convertible to the expected type.
-  };
-
   /// Return the set of args that need to be emitted to MValues to select this
   /// candidate.
   const llvm::SmallBitVector &getArgsNeedingOrigins() const {
@@ -160,13 +153,13 @@ private:
   OverloadFitness(ParameterExprArrayAttr paramBindings)
       : paramBindings(paramBindings) {}
 
-  /// Check the expected type against the provided operand. This identifies any
-  /// problems with the operand type and also returns the type to be used for
-  /// error propagation.
-  std::pair<ArgTypeMismatchKind, ASTType>
+  /// Check the expected type against the provided operand, returning a
+  /// diagnostic if there is an error.
+  std::optional<MojoInflightDiag>
   checkOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
                   ArgConvention expectedConvention, ASTType expectedType,
-                  bool allowImplicitConversions, SMLoc loc, ASTDecl &declScope);
+                  bool allowImplicitConversions, SMLoc loc,
+                  const OverloadSet &callable);
 };
 
 } // namespace M::KGEN::LIT
