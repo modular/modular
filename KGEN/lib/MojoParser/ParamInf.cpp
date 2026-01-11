@@ -1212,45 +1212,6 @@ RetryLabel:
   AnyValue value = operand.ir;
   ParamMatcher matcher(operand.expr, *this);
 
-  auto resolveOperandCValue = [&](ASTType expectedTypeOfOperand) -> CValue {
-    if (auto argVal = value.getIfCValue())
-      return argVal;
-
-    // Handle collection literals.
-    if (auto init = value.getIfInitializer()) {
-      // If we have a type like List[$0] replace it with List[?] so we can
-      // infer the unbound parameter.
-      auto unbound =
-          expectedTypeOfOperand.getWithUnknownParametersReplaced(shared);
-      Type initType =
-          inferInitializerType(declScope, &(*init), operand, unbound);
-      // If we could not infer the type from the inferred type (in the case
-      // where the inferred type is a parameter with trait metatype and no
-      // initializer, try the default type.)
-      if (!initType)
-        initType =
-            inferInitializerType(declScope, &(*init), operand,
-                                 init->getDefaultType(declScope.getShared()));
-      return PValue(initType);
-    }
-
-    OverloadSetUValue orValue = value.getIfOverloadSet();
-    if (!orValue)
-      return {};
-
-    // Try to refine the OverloadSetUValue into a PValue.
-    CValue argVal = orValue->getDirectSymbol(expectedType, declScope);
-    if (!argVal)
-      return {};
-    // If we have a reference to an overloaded method like foo(a.method),
-    // then we can't resolve it.
-    // TODO(partial application => closures): Given we just resolved argVal,
-    // we could form the "a.method" expression with a closure.
-    if (orValue->baseValue) // Cannot merge base value.
-      return {};
-    return argVal;
-  };
-
   // We'll bind the next provided value.
   switch (expectedConvention) {
   case ArgConvention::OwnedReg:
@@ -1278,19 +1239,15 @@ RetryLabel:
   case ArgConvention::Ref:
   case ArgConvention::MutRef: {
     auto expectedRef = sugarCast<RefType>(expectedType);
-    // Infer the origin and address space before inferring the element type.
-    CValue argVal = resolveOperandCValue(expectedRef.getElementType());
-    if (!argVal)
-      return failure();
 
     // If we are binding the reference to a value in memory directly, check for
     // reference compatibility directly.
-    if (argVal.isMValue()) {
+    if (operand.ir.isMValue()) {
       RefType valueRefType = value.getMValueType();
       // If the IRValue type is MBValue or MRValue then we need infer an
       // immutable ref, to match behavior where we don't allow passing an
       // MBValue or MRValue as 'mut'.
-      if (!argVal.getIfMLValue() && !argVal.getIfMBPValue() &&
+      if (!operand.ir.getIfMLValue() && !operand.ir.getIfMBPValue() &&
           !valueRefType.isMutableKnown(false))
         valueRefType = valueRefType.getWithMutability(false);
 
@@ -1319,21 +1276,24 @@ RetryLabel:
     // Otherwise, we'll need to drop this value into a temporary.  For now, we
     // infer it as AnyOrigin.  We bind the origin directly and then handle
     // it like any other argument because we can support implicit conversions.
-    RefType valueRefType =
-        RefType::getAnyOrigin(argVal.getRValueType(), /*isMut=*/false);
-
-    switch (matcher.matchSingleEltStruct(valueRefType.getOrigin(),
-                                         expectedRef.getOrigin())) {
+    auto anyOrigin =
+        AnyOriginAttr::get(expectedRef.getContext(), /*isMut=*/false);
+    switch (matcher.matchSingleEltStruct(anyOrigin, expectedRef.getOrigin())) {
     case ParamMatcher::Retry:
       goto RetryLabel;
     case ParamMatcher::Match:
       break;
     case ParamMatcher::Error:
+      // Ignore failures because we only want to set a value if none is already
+      // known so things aren't ambiguous.
       matcher.resetError();
       break;
     }
 
-    switch (matcher.matchSingleEltStruct(valueRefType.getAddressSpace(),
+    // The address space of the temp will be the default.
+    auto addrSpace =
+        IntegerAttr::get(IndexType::get(expectedRef.getContext()), 0);
+    switch (matcher.matchSingleEltStruct(addrSpace,
                                          expectedRef.getAddressSpace())) {
     case ParamMatcher::Retry:
       goto RetryLabel;
@@ -1360,44 +1320,59 @@ RetryLabel:
     break;
   }
 
+  // Okay, we got a normal value argument convention and stripped off any
+  // ArgConvention-related !lit.ref from the expected type.  See if we can
+  // resolve the argument to a CValue.
+  CValue argVal = operand.ir.getIfCValue();
+
   // Check to see if the expected type has an initializer with the
   // specified operands.  Remove any parameters from the expected type
   // since those are what we're inferring from the arguments.  The result
   // 'actualType' will have those newly inferred parameters.
-  if (auto initValue = operand.ir.getIfInitializer()) {
-    // If we have a type like List[$0] replace it with List[?] so we can
-    // infer the unbound parameter.
-    auto unbound = expectedType.getWithUnknownParametersReplaced(shared);
-    Type initType =
-        inferInitializerType(declScope, &(*initValue), operand, unbound);
-    // If the literal cannot bind to the inferred type, try binding it to the
-    // default literal type and matching the inferred type against that.
-    if (!initType)
-      initType = inferInitializerType(declScope, &(*initValue), operand,
-                                      initValue->getDefaultType(shared));
+  if (!argVal) {
+    if (auto initValue = operand.ir.getIfInitializer()) {
+      // If we have a type like List[$0] replace it with List[?] so we can
+      // infer the unbound parameter.
+      auto unbound = expectedType.getWithUnknownParametersReplaced(shared);
+      Type initType =
+          inferInitializerType(declScope, &(*initValue), operand, unbound);
+      // If the literal cannot bind to the inferred type, try binding it to the
+      // default literal type and matching the inferred type against that.
+      if (!initType)
+        initType = inferInitializerType(declScope, &(*initValue), operand,
+                                        initValue->getDefaultType(shared));
 
-    // If there were declaration errors, assume success to not raise
-    // spurious errors due to not resolving to those erroneous
-    // declarations.
-    if (!initType)
-      return failure();
-    // If we found one, we resolve our value to the inferred type.
-    switch (matcher.matchTypes(initType, expectedType)) {
-    case ParamMatcher::Retry:
-      goto RetryLabel;
-    case ParamMatcher::Match:
-      return success();
-    case ParamMatcher::Error:
-      return failure();
+      // If there were declaration errors, assume success to not raise
+      // spurious errors due to not resolving to those erroneous
+      // declarations.
+      if (!initType)
+        return failure();
+      // If we found one, we resolve our value to the inferred type.
+      switch (matcher.matchTypes(initType, expectedType)) {
+      case ParamMatcher::Retry:
+        goto RetryLabel;
+      case ParamMatcher::Match:
+        return success();
+      case ParamMatcher::Error:
+        return failure();
+      }
     }
-  }
 
-  // Okay, we got a normal value argument convention and stripped off any
-  // ArgConvention-related !lit.ref from the expected type.  See if we can
-  // resolve the argument to a CValue.
-  CValue argVal = resolveOperandCValue(expectedType);
-  if (!argVal)
-    return failure();
+    auto orValue = operand.ir.getIfOverloadSet();
+    assert(orValue && "Unknown UValue!");
+
+    // Try to refine the OverloadSetUValue into a PValue.
+    argVal = orValue->getDirectSymbol(expectedType, declScope);
+    if (!argVal)
+      return failure();
+    // If we have a reference to an overloaded method like foo(a.method),
+    // then we can't resolve it.
+    // TODO(partial application => closures): Given we just resolved argVal,
+    // we could form the "a.method" expression with a closure.
+    if (orValue->baseValue) // Cannot merge base value.
+      return failure();
+    // Otherwise, success, fallthrough.
+  }
 
   // If the argument types exactly match, then they are good.
   ASTType argType = argVal.getRValueType();
@@ -1415,10 +1390,6 @@ RetryLabel:
   case ParamMatcher::Match:
     return success();
   case ParamMatcher::Error:
-    // FIXME: We should instead make sure that `OverloadSet::canConstructType`
-    // returns `false` when constructing one meta type from other meta type.
-    if (isa<StructMetaType>(argType) && isa<StructMetaType>(argType))
-      return failure();
     matcher.resetError();
     break;
   }
