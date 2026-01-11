@@ -94,7 +94,7 @@ fn testSIMD(
     # expected-error @below {{invalid call to '__add__': right side cannot be converted from 'MySIMD[1, float64]' to 'MySIMD[2, int32]'}}
     var z = b + a
 
-    # expected-error @below {{invalid call to 'twoUses': failed to infer parameter 'dt2', it isn't used in any argument}}
+    # expected-error @below {{invalid call to 'twoUses': failed to infer parameter 'dt2'}}
     twoUses(a, b)
 
 
@@ -291,7 +291,7 @@ fn test_pos_only():
     # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
     has_pos_only[b=1, a=3, c=2]()
 
-    # expected-error @below {{invalid call to 'has_pos_only': failed to infer parameter 'b', it isn't used in any argument}}
+    # expected-error @below {{invalid call to 'has_pos_only': failed to infer parameter 'b'}}
     has_pos_only[1, c=9]()
 
 
@@ -360,7 +360,7 @@ fn test_pos_only_struct():
     _ = PosOnlyStruct[0, b=1, c=2]
     # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
     _ = PosOnlyStruct[b=1, a=3, c=2]
-    # expected-error @below {{failed to infer parameter 'b' of parent struct 'PosOnlyStruct', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'b' of parent struct 'PosOnlyStruct'}}
     _ = PosOnlyStruct[1, c=9]()
 
 
@@ -378,7 +378,7 @@ struct CtadStruct[a: Int]:
 
 
 fn test_implicitly_parametric_static_methods_fails():
-    # expected-error @below {{failed to infer parameter 'a' of parent struct 'CtadStruct', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'a' of parent struct 'CtadStruct'}}
     CtadStruct.foo[5]()
 
 
@@ -453,7 +453,7 @@ struct MultiInferred[p: Int, q: Int, //, uP: ParamType[p], uQ: ParamType[q]]:
 
 
 struct BindStructField:
-    # expected-error @below {{failed to infer parameter 'p', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'p'}}
     var value: InferredParam[Int]
     # expected-error @below {{'InferredParam' failed to infer parameter 'T'}}
     var infer_keyword: InferredParam[p=1]
@@ -464,18 +464,18 @@ struct BindStructField:
 
 
 fn invalid_params[f: fn (ParamType) -> None]():
-    # expected-error @below {{failed to infer parameter 'a', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'a'}}
     autoparams[](ParamType[1]())
     # expected-error @below {{callee expects at most 1 positional parameter, but 2 were specified}}
     autoparams[1, 2](ParamType[2]())
-    # expected-error @below {{failed to infer parameter 'p', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'p'}}
     autoparams[1](1)
-    # expected-error @below {{failed to infer parameter 'p', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'p'}}
     autoparams_mem(1)
-    # expected-error @below {{failed to infer parameter 'p', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'p'}}
     autoparams_variadic(1)
 
-    # expected-error @below {{failed to infer parameter 'p', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'p'}}
     f(1)
 
 
@@ -521,7 +521,7 @@ struct UnusedInitSelfParam[A: Int]:
         pass
 
 fn unused_init_self_param():
-    # expected-error @below {{failed to infer parameter 'A' of parent struct 'UnusedInitSelfParam', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'A' of parent struct 'UnusedInitSelfParam'}}
     var slice = UnusedInitSelfParam()
 
 

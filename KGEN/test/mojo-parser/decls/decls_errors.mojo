@@ -210,16 +210,16 @@ fn badCalls(arg: Int):
   exampleByRefVariadic(1.0, x, 1)
 
   # The user hasn't provided any arguments that could be used to infer `T`.
-  # expected-error @below {{failed to infer parameter 'T', it isn't used in any argument}}
+  # expected-error @below {{failed to infer parameter 'T'}}
   parameterizedVariadic()
-  # expected-error @below {{failed to infer parameter 'T' of parent struct 'ParameterizedStruct', it isn't used in any argument}}
+  # expected-error @below {{failed to infer parameter 'T' of parent struct 'ParameterizedStruct'}}
   var z = ParameterizedStruct()
 
   # We can't infer `T` with two arguments of different types.
   # expected-error @below {{argument #1 cannot be converted from 'FloatLiteral[2]' to 'Int'}}
   parameterizedVariadic(1, 2.0)
 
-  # expected-error @below {{invalid call to 'test': failed to infer parameter 'j', it isn't used in any argument}}
+  # expected-error @below {{invalid call to 'test': failed to infer parameter 'j'}}
   TestTuple[Int, FloatLiteral]().test[1]()
 
 fn badError(a: ParameterizedStruct[Int]):
@@ -287,7 +287,7 @@ fn badPackCalls(value: Int):
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': failed to infer parameter 'Ts'}}
   examplePack(packArgOverload)
-  # expected-error @below {{invalid call to 'first_and_rest': failed to infer parameter 'T', it isn't used in any argument}}
+  # expected-error @below {{invalid call to 'first_and_rest': failed to infer parameter 'T'}}
   first_and_rest(value)
 
 struct TestPackErrorMessage[*Ts: AnyType]:
@@ -559,14 +559,14 @@ fn test_param_deduction_failure[
     # expected-error @+1 {{missing 1 required positional argument: 'b'}}
     takes_same_arg_types[_](u)
 
-    # expected-error @below {{invalid call to 'takes_same_arg_types': failed to infer parameter 'x', it isn't used in any argument}}
+    # expected-error @below {{invalid call to 'takes_same_arg_types': failed to infer parameter 'x'}}
     takes_same_arg_types[_](u, v)
 
     # expected-error @+1 {{missing 1 required positional argument: 'd'}}
     func[_](u)
 
     # TODO: This is because we're not inferring signatures correctly
-    # expected-error @below {{invalid indirect call: failed to infer parameter 'y', it isn't used in any argument}}
+    # expected-error @below {{invalid indirect call: failed to infer parameter 'y'}}
     func[_](u, v)
 
 struct InitOverloaded:
@@ -931,7 +931,7 @@ trait TraitWithParams[T: AnyTrivialRegType]: # expected-error {{TODO: trait decl
     ...
 
 fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
-  # expected-error @below {{invalid call to 'parametric': failed to infer parameter 'x', it isn't used in any argument}}
+  # expected-error @below {{invalid call to 'parametric': failed to infer parameter 'x'}}
   x.parametric()
 
 trait Shape(ImplicitlyCopyable):

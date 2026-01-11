@@ -362,19 +362,12 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
   size_t numBindings = operands.size();
 
   auto inferParameter = [&](Type requestedType) {
-    size_t paramIdx = newBindings.size();
-
-    TypedAttr inferred = inference.getInferredValue(paramIdx);
-    if (inferred) {
-      assert(ASTType(inferred.getType()).isEqualCanon(requestedType) &&
-             "inferred a parameter value of wrong type");
-      return PValue(inferred);
-    }
-
-    // If we succeeded inference but didn't get a value for this parameter,
-    // then the parameter must not be present: complain.
-    inference.inferenceDiags.addFailure(InferenceFailure::NotFound{paramIdx});
-    return PValue();
+    TypedAttr inferred = inference.getInferredValue(newBindings.size());
+    if (!inferred)
+      return PValue();
+    assert(ASTType(inferred.getType()).isEqualCanon(requestedType) &&
+           "inferred a parameter value of wrong type");
+    return PValue(inferred);
   };
 
   DefaultValueHandler defaultHandler(paramListAttr);
