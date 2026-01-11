@@ -80,22 +80,6 @@ fn repr[T: Representable](value: T) -> String:
     return value.__repr__()
 
 
-fn repr[U: Copyable & Writable](value: LinkedList[U]) -> String:
-    """Returns the string representation of an `LinkedList[U]`.
-
-    Args:
-        value: A `LinkedList` of element type `U`.
-
-    Parameters:
-        U: A type that implements `Copyable` and `Writable`.
-
-    Returns:
-        The string representation of `LinkedList[U]`.
-    """
-    # TODO: remove when `LinkedList` can conform conditionally to `Representable`.
-    return value.__repr__()
-
-
 fn repr(value: None) -> String:
     """Returns the string representation of `None`.
 
