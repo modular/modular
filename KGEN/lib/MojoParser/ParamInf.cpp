@@ -91,14 +91,19 @@ ParamInf::ParamInf(
       getDiag(std::move(getDiag)), evaluator(declScope.getShared()),
       givenBindings(givenBindings), declaredParamTypes(declaredParamTypes),
       declaredParamPogs(declaredParamPogs),
-      allowImplicitConversions(allowImplicitConversions) {
+      allowImplicitConversions(allowImplicitConversions),
+      numPreCheckedParam(numPreCheckedParam) {
 
   size_t finalSize = declaredParamTypes.size();
 
-  // FIXME: turn the if statement into an assertion, it should be a #parameter
-  // mismatch error and we should fail before even constructing a
-  // `ParamInfState`.
-  if (numPreCheckedParam <= finalSize) {
+  // Pre-install any "prechecked" bindings.  These come from self arguments like
+  // `x: T[1, 2]; x.foo()`: we'll have 1,2 as prechecked bindings due to 'x' as
+  // the self argument of the call.  This is pretty gross, but we need to do
+  // something like this because we have variadics, specified values for
+  // infer-only parameters etc.  We are also dealing with two concatenated
+  // parameter lists: the Self parameters have keywords before the method
+  // parameters etc.
+  if (numPreCheckedParam) {
     ArrayRef preChecked =
         ArrayRef(givenBindings.values).take_front(numPreCheckedParam);
     for (auto &preCheckedOperand : preChecked) {
@@ -1673,40 +1678,39 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
     return {};
   };
 
+  // We may have pre-checked and out-of-order inferred parameters.  Avoid
+  // stomping on them.
+  auto applyBinding = [&](size_t idx, TypedAttr paramVal) {
+    auto existing = evaluator.getIndexBindings()[idx];
+    if (!existing) {
+      evaluator.overwriteIndexBinding(idx, paramVal);
+      return;
+    }
+
+    assert(isEqualCanon(existing, paramVal) &&
+           "inferred to different values but didn't notice");
+  };
+
   size_t posIdx = 0, numParams = givenBindings.size();
   DefaultValueHandler defaultHandler(declaredParamPogs);
   for (auto [idx, pog] : llvm::enumerate(declaredParamPogs.getPogs())) {
+    if (idx < numPreCheckedParam) {
+      ++posIdx; // Prechecked, already installed (or not, if _).
+      continue;
+    }
+
     // Note that 'signature' changes the type as we go, so don't use
     // llvm::enumerate on the argument type list!
     Type expectedType = evaluator.getReboundType(declaredParamTypes[idx]);
 
     // Skip over any provided keyword parameters when matching things up, we
     // handle them separately below.
-    // Also skips EllipsisAttr, from which we can infer nothing.
-    while (
-        posIdx < numParams &&
-        (givenBindings[posIdx].keyword ||
-         sugarIsa<EllipsisAttr>(givenBindings[posIdx].ir.getIfPValue().get())))
+    while (posIdx < numParams && givenBindings[posIdx].keyword)
       ++posIdx;
 
     // If we have a varargs parameters, then it will eat the rest of the
     // parameters, but we have to check each of them.
     if (declaredParamPogs.isPosVarArg(idx)) {
-      if (evaluator.getIndexBindings()[idx]) {
-        // HACK: this is installed by precheck parameter, which (seems to)
-        // handles PosVarArgs in struct. That is,
-        // struct Tuple[*elt_types]:
-        //    fn tuple_method[a : Int]():
-        //        pass
-        //
-        // lit.tuple_method[*elt_types : pos_vararg, a : Int]
-        // in which `pos_vararg` appears at the first of the parameter list
-        // instead of the last, we can not consume all the following parameter
-        // in this case...
-        ++posIdx;
-        continue;
-      }
-
       // If there are no parameter values, nothing to do.
       if (posIdx == numParams)
         continue;
@@ -1721,8 +1725,8 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
         TypedAttr paramVal = inferAndEmitOneParam(
             {unpacked.getValue(), givenBindings[posIdx].expr}, expectedVariadic,
             idx);
-        if (paramVal && !evaluator.getIndexBindings()[idx])
-          evaluator.overwriteIndexBinding(idx, paramVal);
+        if (paramVal)
+          applyBinding(idx, paramVal);
         ++posIdx;
         continue;
       }
@@ -1753,9 +1757,8 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
         elements.push_back(paramVal);
       }
 
-      if (!isBroken && !evaluator.getIndexBindings()[idx])
-        evaluator.overwriteIndexBinding(
-            idx, VariadicAttr::get(elements, expectedVariadic));
+      if (!isBroken)
+        applyBinding(idx, VariadicAttr::get(elements, expectedVariadic));
       continue;
     }
 
@@ -1765,8 +1768,11 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
                                pog.getPassingKind() == PassingKind::PosOnly)) {
       TypedAttr paramVal =
           inferAndEmitOneParam(givenBindings[posIdx], expectedType, idx);
-      if (paramVal && !evaluator.getIndexBindings()[idx])
-        evaluator.overwriteIndexBinding(idx, paramVal);
+      if (paramVal) {
+        applyBinding(idx, paramVal);
+
+        inferAndEmitOneParam(givenBindings[posIdx], expectedType, idx);
+      }
 
       ++posIdx;
       continue;
@@ -1780,8 +1786,8 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
               givenBindings.findKwArg(declaredParamPogs.getName(idx))) {
 
         TypedAttr paramVal = inferAndEmitOneParam(*param, expectedType, idx);
-        if (paramVal && !evaluator.getIndexBindings()[idx])
-          evaluator.overwriteIndexBinding(idx, paramVal);
+        if (paramVal)
+          applyBinding(idx, paramVal);
 
         continue;
       }
