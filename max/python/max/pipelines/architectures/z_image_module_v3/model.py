@@ -876,9 +876,9 @@ class ZImageModel(
                     prompt_embeds_model_input = prompt_embeds
                     timestep_model_input = timestep
 
-                latent_model_input = F.unsqueeze(latent_model_input, 2)
+                latent_model_input = latent_model_input.unsqueeze(2)
 
-                x_in = F.squeeze(latent_model_input, 0)
+                x_in = latent_model_input.squeeze(0)
 
                 model_out = self.model.transformer(
                     x_in,
@@ -892,9 +892,9 @@ class ZImageModel(
                     )
                 else:
                     # model_out is a single tensor [C, F, H, W], add batch dim
-                    noise_pred = F.unsqueeze(model_out.cast(DType.float32), 0)
+                    noise_pred = model_out.cast(DType.float32).unsqueeze(0)
 
-                noise_pred = -F.squeeze(noise_pred, 2)
+                noise_pred = -noise_pred.squeeze(2)
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.model.scheduler.step(

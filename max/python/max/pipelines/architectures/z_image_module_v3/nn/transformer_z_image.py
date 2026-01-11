@@ -67,7 +67,7 @@ class TimestepEmbedder(nn.Module):
             * F.range(0, half, 1, dtype=DType.float32, device=t.device)
             / half
         )
-        args = F.unsqueeze(t, -1).cast(DType.float32) * F.unsqueeze(freqs, 0)
+        args = t.unsqueeze(-1).cast(DType.float32) * freqs.unsqueeze(0)
         embedding = F.concat([F.cos(args), F.sin(args)], axis=-1)
 
         if dim % 2:
@@ -139,7 +139,7 @@ class ZImageSingleStreamAttention(nn.Module):
             # Reshape for complex interpretation: (B, S, H, D) -> (B, S, H, D/2, 2)
             x_complex = x_in.cast(DType.float32).reshape((b, s, h, d // 2, 2))
             # Expand freqs_cis at dim 2 (heads) to broadcast: (B, S, 1, D/2, 2)
-            freqs_cis_expanded = F.unsqueeze(freqs_cis, 2)
+            freqs_cis_expanded = freqs_cis.unsqueeze(2)
             # Apply complex multiplication
             x_rotated = F.complex_mul(x_complex, freqs_cis_expanded)
             # Reshape back to (B, S, H, D)
@@ -230,7 +230,7 @@ class ZImageTransformerBlock(nn.Module):
             if adaln_input is None:
                 raise ValueError("adaln_input must not be None")
             scale_msa, gate_msa, scale_mlp, gate_mlp = F.chunk(
-                F.unsqueeze(self.adaLN_modulation(adaln_input), 1), 4, axis=2
+                self.adaLN_modulation(adaln_input).unsqueeze(1), 4, axis=2
             )
             gate_msa, gate_mlp = F.tanh(gate_msa), F.tanh(gate_mlp)
             scale_msa, scale_mlp = 1.0 + scale_msa, 1.0 + scale_mlp
@@ -276,7 +276,7 @@ class FinalLayer(nn.Module):
 
     def __call__(self, x: Tensor, c: Tensor) -> Tensor:
         scale = 1.0 + self.adaLN_modulation(c)
-        x = self.norm_final(x) * F.unsqueeze(scale, 1)
+        x = self.norm_final(x) * scale.unsqueeze(1)
         x = self.linear(x)
         return x
 
@@ -589,10 +589,10 @@ class ZImageTransformer2DModel(nn.Module):
         cap_freqs_cis = self.rope_embedder(cap_pos_ids)
 
         # Add batch dimension: (seq_len, dim) -> (1, seq_len, dim)
-        x = F.unsqueeze(x, 0)
-        x_freqs_cis = F.unsqueeze(x_freqs_cis, 0)
-        cap_feats = F.unsqueeze(cap_feats, 0)
-        cap_freqs_cis = F.unsqueeze(cap_freqs_cis, 0)
+        x = x.unsqueeze(0)
+        x_freqs_cis = x_freqs_cis.unsqueeze(0)
+        cap_feats = cap_feats.unsqueeze(0)
+        cap_freqs_cis = cap_freqs_cis.unsqueeze(0)
 
         # Noise refiner layers (process image patches)
         for layer in self.noise_refiner:
@@ -617,7 +617,7 @@ class ZImageTransformer2DModel(nn.Module):
         )
 
         # Remove batch dimension and split: take only image portion
-        unified = F.squeeze(unified, 0)  # (total_seq_len, hidden_dim)
+        unified = unified.squeeze(0)  # (total_seq_len, hidden_dim)
         x = unified[:image_seq_len]  # (image_seq_len, hidden_dim)
 
         # Unpatchify: (image_seq_len, hidden_dim) -> (out_channels, F, H, W)

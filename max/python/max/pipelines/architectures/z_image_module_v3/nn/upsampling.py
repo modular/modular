@@ -168,12 +168,12 @@ class Upsample2D(nn.Module):
                 )
 
                 # Expand H: (N, C, H, W) -> (N, C, H, 1, W) -> (N, C, H, 2, W) -> (N, C, 2*H, W)
-                hs = F.unsqueeze(hidden_states, 3)
+                hs = hidden_states.unsqueeze(3)
                 hs = F.broadcast_to(hs, (N, C, H, 2, W))
                 hs = hs.reshape([N, C, H * 2, W])
 
                 # Expand W: (N, C, 2*H, W) -> (N, C, 2*H, W, 1) -> (N, C, 2*H, W, 2) -> (N, C, 2*H, 2*W)
-                hs = F.unsqueeze(hs, 4)
+                hs = hs.unsqueeze(4)
                 hs = F.broadcast_to(hs, (N, C, H * 2, W, 2))
                 hidden_states = hs.reshape([N, C, H * 2, W * 2])
             else:
