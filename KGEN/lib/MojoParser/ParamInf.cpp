@@ -1572,29 +1572,83 @@ static PValue emitSingleParam(ASTDecl &scope, ASTExprAnd<AnyValue> binding,
   return {};
 }
 
-/// Given an incomplete parameter binding set for a parameter list, try to
-/// infer the value of the next parameter. We only do this if there are any
-/// inferred parameters present.  The 'hasArguments' field specifies whether
-/// there are arguments that can be used to infer parameters from (which are
-/// not handled by this call). When `installParam` is set, the parameter will
-/// be installed into evaluator.
+/// Infer all of the parameters we can from 'givenBindings'.
 ///
-/// TODO: remove `installParam` and make it always true.
-void ParamInf::inferFromParamList(bool hasArguments) {
+/// The 'partial' field specifies this is
+/// performing a partial binding - e.g. because this is not a full type
+/// binding, or because more params can be inferred from arguments to the
+/// call.
+///
+/// On failure, this will emit a diagnostic through the 'getDiag' callback.
+LogicalResult ParamInf::inferFromParamList(bool partial) {
+  // NOTE: This is due to weirdness in OverloadFitness where we call
+  // inferForCall (which calls this function and infers params for arguments)
+  // but then also calls verifyBiddings.  When this subsumes verifyBindings,
+  // this should be able to go away.
   if (hasInferredForCall)
-    return;
+    return success();
 
-  if (declaredParamTypes.empty())
-    return;
+  // Notice, but strip out, the ellipsis if present.
+  bool hasEllipsis = false;
+  CallOperands tmpOperands(givenBindings.callExpr);
+  if (llvm::any_of(givenBindings.values, [](const OperandValue &binding) {
+        return isa<EllipsisAttr>(binding.ir.getIfPValue().get());
+      })) {
+    hasEllipsis = true;
+    // Rebuild the operands list without it.  We only do this if present as a
+    // microoptimization.
+    for (auto binding : givenBindings.values) {
+      if (!isa<EllipsisAttr>(binding.ir.getIfPValue().get()))
+        tmpOperands.values.push_back(binding);
+      else if (!partial) {
+        getDiag(binding.expr->getLoc())
+            << "'...' is not allowed in concrete parameter bindings";
+        return failure();
+      }
+    }
+  }
 
-  // // TODO: re-enable below and make it a failure.
-  // if (givenBindings.size() > declaredParamTypes.size())
-  //   return;
+  // Use the temporary operands list if we had to remove an ellipsis, otherwise
+  // use the original operands list.
+  auto &givenBindings = hasEllipsis ? tmpOperands : this->givenBindings;
 
-  // Partially specialize the pogs so any default values are specialized to
-  // include any already-inferred values.
-  declaredParamPogs =
-      cast<PogListAttr>(evaluator.getReboundAttribute(declaredParamPogs));
+  // Do basic validation of the argument list using shared logic.
+  // TODO: Integrate this into the logic below.
+  OperandValueList variadicKwOperands;
+  auto [kwDiagRes, kwDiagNames] = givenBindings.diagnoseKeywordOperands(
+      declaredParamPogs, variadicKwOperands, /*allowMissingKwOnly=*/true);
+  if (kwDiagRes != CallOperands::KwDiagResult::kValid) {
+    MojoInflightDiag &diag = getDiag({});
+    switch (kwDiagRes) {
+    case CallOperands::KwDiagResult::kMissingKwOnly:
+      emitMissing(diag, kwDiagNames, "keyword-only parameter");
+      break;
+    case CallOperands::KwDiagResult::kOutOfOrderInferredKw:
+      emitOutOfOrderInferredKw(diag, kwDiagNames);
+      break;
+    case CallOperands::KwDiagResult::kPosOnlyPassedByKw:
+      emitPosOnlyPassedByKw(diag, kwDiagNames, "parameter");
+      break;
+    case CallOperands::KwDiagResult::kUnknownKeywords:
+      emitUnknownKeywords(diag, kwDiagNames, "parameter");
+      break;
+    default:
+      llvm_unreachable("unknown KwDiagResult");
+    }
+    return failure();
+  }
+
+  auto [posDiagRes, posDiagNames] = givenBindings.diagnosePosOperands(
+      declaredParamPogs, /*allowCountMismatch=*/true);
+  if (posDiagRes == CallOperands::PosDiagResult::kByPosAndKw) {
+    emitByPosAndKw(getDiag({}), posDiagNames, "parameter");
+    return failure();
+  }
+
+  // Parameter inference and call emission rely on this function not failing
+  // early due to missing or too many positional parameters.
+  assert(posDiagRes == CallOperands::PosDiagResult::kValid &&
+         "positional parameter operand check failed unexpectedly");
 
   auto inferAndEmitOneParam = [&](ASTExprAnd<AnyValue> binding,
                                   ASTType expectedType,
@@ -1733,20 +1787,17 @@ void ParamInf::inferFromParamList(bool hasArguments) {
       }
     }
 
-    // If not, and this parameter has a default value, then just skip it. We
-    // can't infer from default values.
-    //
-    // TODO: handle default parameters as a part of parameter inference too.
-    if (defaultHandler.getDefault(idx))
+    // If this parameter is unspecified but we have a ... in the parameter list,
+    // leave it unbound even if it has a default.
+    if (hasEllipsis)
       continue;
 
-    // Otherwise, this is a missing parameter. Just skip it.
-    // TODO: Seems like we should reject??
+    // TODO: Handle default parameters etc when not "partial".
   }
 
   // If we had a variadic parameter that is unspecified, and no arguments to
   // infer it from, it must be because of an empty variadic list.
-  if (!hasArguments) {
+  if (!partial) {
     for (size_t i = 0, e = declaredParamTypes.size(); i != e; ++i) {
       if (declaredParamPogs.isPosVarArg(i) &&
           !evaluator.getIndexBindings()[i]) {
@@ -1756,6 +1807,7 @@ void ParamInf::inferFromParamList(bool hasArguments) {
       }
     }
   }
+  return success();
 }
 
 LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
@@ -1763,7 +1815,8 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
                                      const OperandValueList &variadicKwOperands,
                                      bool returnsSelf, bool hasCTADParams) {
   // First try to infer parameters from the already provided bindings.
-  inferFromParamList(/*hasArguments*/ true);
+  if (failed(inferFromParamList(/*hasArguments*/ true)))
+    return failure();
   hasInferredForCall = true;
 
   // Match up the operands provided by the call to the input arguments.  Keep in

@@ -108,15 +108,15 @@ public:
       PogListAttr declaredParamPogs, bool allowImplicitConversions,
       llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag);
 
-  /// Given an incomplete parameter binding set for a parameter list, try to
-  /// infer the value of the next parameter. We only do this if there are any
-  /// inferred parameters present.  The 'hasArguments' field specifies whether
-  /// there are arguments that can be used to infer parameters from (which are
-  /// not handled by this call). When `installParam` is set, the parameter will
-  /// be installed into evaluator.
+  /// Infer all of the parameters we can from 'givenBindings'.
   ///
-  /// TODO: shouldn't this return a `LogicalResult`?
-  void inferFromParamList(bool hasArguments);
+  /// The 'partial' field specifies this is
+  /// performing a partial binding - e.g. because this is not a full type
+  /// binding, or because more params can be inferred from arguments to the
+  /// call.
+  ///
+  /// On failure, this will emit a diagnostic through the 'getDiag' callback.
+  LogicalResult inferFromParamList(bool partial);
 
   /// Given an incomplete parameter binding set and the arguments for a call to
   /// the specified signature, try to infer the value of the next 'decl'

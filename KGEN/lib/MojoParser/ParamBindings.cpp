@@ -268,56 +268,21 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
   // Check to see if we have ... and remove it from the parameter list.
   bool hasEllipsis = false;
   CallOperands operands(origOperands.callExpr);
-  for (auto [idx, binding] : llvm::enumerate(origOperands.values)) {
+  for (auto binding : origOperands.values) {
     if (isa<EllipsisAttr>(binding.ir.getIfPValue().get()))
       hasEllipsis = true;
     else
       operands.values.push_back(binding);
   }
 
+  if (failed(inference.inferFromParamList(partial)))
+    return {{}, fitness};
+
   // With that out of the way, we can now get onto normal type checking of
-  // 'operands'.
-  size_t numParams = expectedParamTypes.size();
-
-  OperandValueList variadicKwOperands;
-  auto [kwDiagRes, kwDiagNames] = operands.diagnoseKeywordOperands(
-      paramListAttr, variadicKwOperands, /*allowMissingKwOnly=*/true);
-  if (kwDiagRes != CallOperands::KwDiagResult::kValid) {
-    MojoInflightDiag &diag = getDiag({});
-    switch (kwDiagRes) {
-    case CallOperands::KwDiagResult::kMissingKwOnly:
-      emitMissing(diag, kwDiagNames, "keyword-only parameter");
-      break;
-    case CallOperands::KwDiagResult::kOutOfOrderInferredKw:
-      emitOutOfOrderInferredKw(diag, kwDiagNames);
-      break;
-    case CallOperands::KwDiagResult::kPosOnlyPassedByKw:
-      emitPosOnlyPassedByKw(diag, kwDiagNames, "parameter");
-      break;
-    case CallOperands::KwDiagResult::kUnknownKeywords:
-      emitUnknownKeywords(diag, kwDiagNames, "parameter");
-      break;
-    default:
-      llvm_unreachable("unknown KwDiagResult");
-    }
-    return {{}, fitness};
-  }
-
-  auto [posDiagRes, posDiagNames] =
-      operands.diagnosePosOperands(paramListAttr, /*allowCountMismatch=*/true);
-  if (posDiagRes == CallOperands::PosDiagResult::kByPosAndKw) {
-    emitByPosAndKw(getDiag({}), posDiagNames, "parameter");
-    return {{}, fitness};
-  }
-
-  // Parameter inference and call emission rely on this function not failing
-  // early due to missing or too many positional parameters.
-  assert(posDiagRes == CallOperands::PosDiagResult::kValid &&
-         "positional parameter operand check failed unexpectedly");
 
   /// We will attempt to find a binding for every expected parameter.
   SmallVector<TypedAttr> newBindings;
-  newBindings.reserve(numParams);
+  newBindings.reserve(expectedParamTypes.size());
 
   // Parameters defined at the beginning of the parameter list may be used by
   // the types of other parameters defined later in the list, e.g. in:
@@ -472,10 +437,10 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
          << paramVal.getType() << binding.expr->getRange();
   };
 
+  SmallVector<StringAttr> kwDiagNames;
+
   // The next positional (or explicitly-specified inferred) binding index.
   size_t posBindingIdx = 0;
-  inference.inferFromParamList(partial);
-
   for (auto [idx, sigType, pog] : llvm::enumerate(expectedParamTypes, pogs)) {
     // This is the refined type expected by the signature.
     Type requestedType = evaluator.getReboundType(sigType);
