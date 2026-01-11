@@ -101,7 +101,7 @@ characteristics:
   pointer that points to a single value, and maintains exclusive ownership of
   that value.
 
-- [`ArcPointer`](/mojo/std/memory/arc/ArcPointer) is a reference-counted
+- [`ArcPointer`](/mojo/std/memory/arc_pointer/ArcPointer) is a reference-counted
   smart pointer that points to an owned value with ownership potentially shared
   with other instances of `ArcPointer`.
 
@@ -197,7 +197,7 @@ to use `ArcPointer` where you need a smart pointer that can be `Optional`.)
 
 ## `ArcPointer`
 
-An [`ArcPointer`](/mojo/std/memory/arc/ArcPointer) is a reference-counted
+An [`ArcPointer`](/mojo/std/memory/arc_pointer/ArcPointer) is a reference-counted
 smart pointer, ideal for shared resources where the last owner for a given value
 may not be clear. Like an `OwnedPointer`, it points to a single value, and it
 allocates memory when you initialize the `ArcPointer` with a value:
