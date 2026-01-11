@@ -372,20 +372,23 @@ class HuggingFaceRepo:
 
     @cached_property
     def weight_files(self) -> dict[WeightsFormat, list[str]]:
-        safetensor_search_pattern = "*.safetensors"
-        gguf_search_pattern = "*.gguf"
-        pytorch_search_pattern = "*.bin"
+        safetensor_search_pattern = "**/*.safetensors"
+        gguf_search_pattern = "**/*.gguf"
+        pytorch_search_pattern = "**/*.bin"
 
         weight_files = {}
         if self.repo_type == RepoType.local:
             safetensor_paths = glob.glob(
-                os.path.join(self.repo_id, safetensor_search_pattern)
+                os.path.join(self.repo_id, safetensor_search_pattern),
+                recursive=True,
             )
             gguf_paths = glob.glob(
-                os.path.join(self.repo_id, gguf_search_pattern)
+                os.path.join(self.repo_id, gguf_search_pattern),
+                recursive=True,
             )
             pytorch_paths = glob.glob(
-                os.path.join(self.repo_id, pytorch_search_pattern)
+                os.path.join(self.repo_id, pytorch_search_pattern),
+                recursive=True,
             )
         elif self.repo_type == RepoType.online:
             fs = huggingface_hub.HfFileSystem()
@@ -399,6 +402,19 @@ class HuggingFaceRepo:
             pytorch_paths = cast(
                 list[str], fs.glob(f"{self.repo_id}/{pytorch_search_pattern}")
             )
+
+            # Some filesystem backends don't support globstar (**). If the glob
+            # returns empty, fall back to a recursive find.
+            if not safetensor_paths and not gguf_paths and not pytorch_paths:
+                try:
+                    all_paths = cast(list[str], fs.find(self.repo_id))
+                    safetensor_paths = [
+                        p for p in all_paths if p.endswith(".safetensors")
+                    ]
+                    gguf_paths = [p for p in all_paths if p.endswith(".gguf")]
+                    pytorch_paths = [p for p in all_paths if p.endswith(".bin")]
+                except Exception:
+                    pass
         else:
             raise ValueError(f"Unsupported repo type: {self.repo_type}")
 
@@ -493,6 +509,57 @@ class HuggingFaceRepo:
                 ):
                     supported_encodings.add(SupportedEncoding.float8_e4m3fn)
 
+                if safetensors_info is None:
+                    try:
+                        fs = huggingface_hub.HfFileSystem()
+                        safetensors_files = self.weight_files[
+                            WeightsFormat.safetensors
+                        ]
+
+                        # Some repos (e.g. Diffusers pipelines) store different
+                        # components in different dtypes across multiple shards.
+                        # Scan a few files to detect the union of dtypes.
+                        for safetensor_file in safetensors_files[:10]:
+                            with fs.open(
+                                f"{self.repo_id}/{safetensor_file}", "rb"
+                            ) as f:
+                                length_bytes = f.read(8)
+                                if len(length_bytes) != 8:
+                                    continue
+                                length_of_header = struct.unpack(
+                                    "<Q", length_bytes
+                                )[0]
+                                header_bytes = f.read(length_of_header)
+                                header = json.loads(header_bytes)
+
+                            for weight_value in header.values():
+                                if not isinstance(weight_value, dict):
+                                    continue
+                                if weight_dtype := weight_value.get(
+                                    "dtype", None
+                                ):
+                                    if weight_dtype == "F32":
+                                        supported_encodings.add(
+                                            SupportedEncoding.float32
+                                        )
+                                    elif weight_dtype == "BF16":
+                                        supported_encodings.add(
+                                            SupportedEncoding.bfloat16
+                                        )
+                                    elif weight_dtype == "F8_E4M3":
+                                        supported_encodings.add(
+                                            SupportedEncoding.float8_e4m3fn
+                                        )
+
+                            if (
+                                SupportedEncoding.float32 in supported_encodings
+                                and SupportedEncoding.bfloat16
+                                in supported_encodings
+                            ):
+                                break
+                    except Exception:
+                        pass
+
                 if safetensors_info:
                     for params in safetensors_info.parameters:
                         if "F8_E4M3" in params:
@@ -531,9 +598,8 @@ class HuggingFaceRepo:
     def _get_safetensor_files_for_encoding(
         self, encoding: SupportedEncoding
     ) -> dict[WeightsFormat, list[Path]]:
-        if (
-            WeightsFormat.safetensors in self.weight_files
-            and encoding in self.supported_encodings
+        if WeightsFormat.safetensors in self.weight_files and (
+            encoding in self.supported_encodings or not self.supported_encodings
         ):
             return {
                 WeightsFormat.safetensors: [
