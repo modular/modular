@@ -33,38 +33,11 @@ using namespace LIT;
 // Diagnostic emission implementation
 //===----------------------------------------------------------------------===//
 
-static void describeArgumentNo(MojoInflightDiag &diag, size_t argIdx,
-                               CallSyntax syntax) {
-  // If this is a method syntax call, don't count the receiver.
-  if (syntax == CallSyntax::kMethodCall ||
-      syntax == CallSyntax::kMethodCallSynthetic) {
-    // It is probably possible for this assert to fire, if it does we should
-    // tailor the error message.
-    if (argIdx != 0)
-      diag << "method argument #" << (argIdx - 1);
-    else
-      diag << "self argument";
-  } else if (syntax == CallSyntax::kOperator && argIdx == 1) {
-    diag << "right side";
-  } else if (syntax == CallSyntax::kReversedOperator && argIdx == 0) {
-    diag << "left side";
-  } else if (syntax == CallSyntax::kSubscript && argIdx != 0) {
-    if (argIdx == 1)
-      diag << "index";
-    else
-      diag << "index #" << (argIdx - 1);
-  } else if (syntax == CallSyntax::kAttribute && argIdx != 0) {
-    diag << "attribute name";
-  } else {
-    diag << "argument #" << argIdx;
-  }
-}
-
 namespace {
 /// Helper class to emit errors without cluttering the evaluation logic.
 struct DiagEmitter : public SharedStateUser {
-  DiagEmitter(SharedState &shared, SMLoc callLoc, CallSyntax callSyntax)
-      : SharedStateUser(shared), callLoc(callLoc), callSyntax(callSyntax) {}
+  DiagEmitter(SharedState &shared, SMLoc callLoc)
+      : SharedStateUser(shared), callLoc(callLoc) {}
 
   MojoInflightDiag
   unexpectedKwArgs(ArrayRef<StringAttr> unknownKwOperands) const;
@@ -78,8 +51,8 @@ struct DiagEmitter : public SharedStateUser {
                                      size_t maxAllowedArgs, size_t numOperands,
                                      const Twine &argOrParam) const;
   MojoInflightDiag resultGenericMemType(Type outputType) const;
-  MojoInflightDiag argGenericMemType(size_t expectedArgIdx,
-                                     Type expectedType) const;
+  MojoInflightDiag argGenericMemType(size_t expectedArgIdx, Type expectedType,
+                                     PogListAttr argListAttr) const;
   MojoInflightDiag missingArgs(ArrayRef<StringAttr> missingArgs,
                                const Twine &kindStr) const;
   MojoInflightDiag
@@ -92,12 +65,6 @@ struct DiagEmitter : public SharedStateUser {
 
 private:
   SMLoc callLoc;
-  CallSyntax callSyntax;
-
-  /// Wrapper around pretty printing logic for an argument given by index.
-  void describeArgumentNo(MojoInflightDiag &diag, size_t argIdx) const {
-    ::describeArgumentNo(diag, argIdx, callSyntax);
-  }
 
   MojoInflightDiag initDiag() const { return shared.emitError(callLoc); }
 };
@@ -150,13 +117,12 @@ MojoInflightDiag DiagEmitter::resultGenericMemType(Type outputType) const {
          << ASTType(outputType);
 }
 
-MojoInflightDiag DiagEmitter::argGenericMemType(size_t expectedArgIdx,
-                                                Type expectedType) const {
-  MojoInflightDiag diag = initDiag();
-  describeArgumentNo(diag, expectedArgIdx);
-  return std::move(diag)
-         << " cannot bind AnyTrivialRegType type to memory-only type "
-         << ASTType(expectedType);
+MojoInflightDiag DiagEmitter::argGenericMemType(size_t argIdx,
+                                                Type expectedType,
+                                                PogListAttr argListAttr) const {
+  return initDiag() << "cannot bind AnyTrivialRegType type to memory-only type "
+                    << ASTType(expectedType) << " expected by argument "
+                    << argListAttr.getPogs()[argIdx].getName();
 }
 
 /// Attach extra type conversion error detail or hints to the user when
@@ -245,7 +211,8 @@ static void diagnoseFailedRefTypeConversion(MojoInflightDiag &diag,
   }
 }
 
-static void printUValueTypeInfo(const AnyValue &value, MojoInflightDiag &diag) {
+namespace M::KGEN::LIT {
+void printUValueTypeInfo(const AnyValue &value, MojoInflightDiag &diag) {
   if (auto initList = value.getIfInitializer()) {
     switch (initList->syntax) {
     case InitializerUValue::kSlice:
@@ -264,6 +231,46 @@ static void printUValueTypeInfo(const AnyValue &value, MojoInflightDiag &diag) {
   } else
     diag << "unknown overload";
 }
+
+void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
+                       ASTType expectedType, size_t argIdx,
+                       PogListAttr argListAttr, CallSyntax syntax,
+                       SharedState &shared) {
+  // Special case implicit conversions with a custom message.
+  if (syntax == CallSyntax::kImplicitConvert) {
+    if (ASTType type = operand.ir.getRValueTypeIfResolvable())
+      diag << type;
+    else
+      printUValueTypeInfo(operand.ir, diag);
+    diag << " value to " << expectedType;
+    return;
+  }
+
+  diag << "value passed to " << argListAttr.getPogs()[argIdx].getName()
+       << " cannot be converted from " << operand.expr->getRange();
+  ASTType rValueType = operand.ir.getRValueTypeIfResolvable();
+  bool isConvertingTypeValue = expectedType.getMetaType() == rValueType;
+  if (rValueType) {
+    if (isConvertingTypeValue)
+      diag << "type value " << expectedType;
+    else
+      diag << rValueType;
+  } else {
+    printUValueTypeInfo(operand.ir, diag);
+  }
+  diag << " to ";
+
+  if (auto refType = sugarDynCast<RefType>(expectedType)) {
+    diagnoseFailedRefTypeConversion(diag, operand, refType, shared);
+    return;
+  }
+
+  diag << (isConvertingTypeValue ? "an instance of " : "") << expectedType;
+  if (isConvertingTypeValue)
+    diag << "; did you mean to instantiate " << expectedType << "?";
+  addTypeConversionDetail(diag, operand, expectedType, shared);
+}
+} // namespace M::KGEN::LIT
 
 MojoInflightDiag DiagEmitter::missingArgs(ArrayRef<StringAttr> missingArgs,
                                           const Twine &kindStr) const {
@@ -356,18 +363,14 @@ calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature) {
 }
 
 /// Check the expected type against the provided operand. This identifies any
-/// problems with the operand type and also returns the type to be used for
-/// error propagation.
-///
-/// This ties into parameter inference, but is only called on the top level
-/// function operands being matched up, not anything in recursive functiontype
-/// positions.
+/// problems with the operand type.
 std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
-    ASTExprAnd<AnyValue> operand, size_t operandIdx,
+    ASTExprAnd<AnyValue> operand, size_t argIdx,
     ArgConvention expectedConvention, ASTType expectedType,
-    bool allowImplicitConversions, SMLoc loc, const OverloadSet &callable) {
+    bool allowImplicitConversions, const OverloadSet &callable,
+    PogListAttr argListAttr) {
 
-  ASTDecl &declScope = callable.paramBindings.declScope;
+  auto loc = operand.expr->getLoc();
 
   ASTType expectedRVType =
       RefType::stripRefConvention(expectedType, expectedConvention);
@@ -379,40 +382,8 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
 
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag {
     auto diag = getDiag();
-    // Special case implicit conversions with a custom message.
-    if (callable.syntax == CallSyntax::kImplicitConvert) {
-      if (ASTType type = operand.ir.getRValueTypeIfResolvable())
-        diag << type;
-      else
-        printUValueTypeInfo(operand.ir, diag);
-      diag << " value to " << expectedType;
-      return diag;
-    }
-
-    describeArgumentNo(diag, operandIdx, callable.syntax);
-    diag << " cannot be converted from " << operand.expr->getRange();
-    ASTType rValueType = operand.ir.getRValueTypeIfResolvable();
-    bool isConvertingTypeValue = expectedType.getMetaType() == rValueType;
-    if (rValueType) {
-      if (isConvertingTypeValue)
-        diag << "type value " << expectedType;
-      else
-        diag << rValueType;
-    } else {
-      printUValueTypeInfo(operand.ir, diag);
-    }
-    diag << " to ";
-
-    if (auto refType = sugarDynCast<RefType>(expectedType)) {
-      diagnoseFailedRefTypeConversion(diag, operand, refType,
-                                      callable.getShared());
-      return diag;
-    }
-
-    diag << (isConvertingTypeValue ? "an instance of " : "") << expectedType;
-    if (isConvertingTypeValue)
-      diag << "; did you mean to instantiate " << expectedType << "?";
-    addTypeConversionDetail(diag, operand, expectedType, callable.getShared());
+    ::emitWrongTypeDiag(diag, operand, expectedType, argIdx, argListAttr,
+                        callable.syntax, callable.getShared());
     return diag;
   };
 
@@ -443,6 +414,7 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
     }
   }
 
+  ASTDecl &declScope = callable.paramBindings.declScope;
   SharedState &shared = declScope.getShared();
   switch (expectedConvention) {
   case ArgConvention::OwnedReg:
@@ -456,15 +428,15 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
       auto diag = getDiag();
       if ((callable.syntax == CallSyntax::kMethodCall ||
            callable.syntax == CallSyntax::kMethodCallSynthetic) &&
-          operandIdx == 0) {
+          argIdx == 0) {
         diag << "invalid use of mutating method on rvalue of type ";
         if (ASTType type = operand.ir.getRValueTypeIfResolvable())
           diag << type;
         else
           printUValueTypeInfo(operand.ir, diag);
       } else {
-        describeArgumentNo(diag, operandIdx, callable.syntax);
-        diag << " must be mutable in order to pass to a mutating argument";
+        diag << "value passed to mutable argument "
+             << argListAttr.getPogs()[argIdx].getName() << " must be mutable";
       }
       diag << operand.expr->getRange();
       return std::move(diag);
@@ -516,8 +488,8 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
       return emitWrongTypeDiag(expectedType);
 
     // Remember that this argument needs to be emitted.
-    argsNeedingOrigins.resize(operandIdx + 1);
-    argsNeedingOrigins[operandIdx] = true;
+    argsNeedingOrigins.resize(argIdx + 1);
+    argsNeedingOrigins[argIdx] = true;
 
     // Handle this like a normal memory argument, since the value can undergo
     // implicit conversions etc.
@@ -709,7 +681,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   SMLoc callLoc = callable.getExpr()->getLoc();
   SharedState &shared = callable.getShared();
-  DiagEmitter emitDiagFor(shared, callLoc, callable.syntax);
+  DiagEmitter emitDiagFor(shared, callLoc);
 
   if (!operands.empty()) {
     if (auto selfCValue = operands[0].ir.getIfCValue()) {
@@ -853,38 +825,12 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
                                              numPosOperands);
   }
 
-  SMLoc loc = callable.getExpr()->getLoc();
-
   // As we walk through the values provided as part of the argument list, we
   // match them up against arguments expected by the signature of the callee,
   // take note if variadic arguments are passed, and accumulate implicit
   // conversions required for a match.  This value indicates the next operand
   // to consider as a positional argument.
   size_t posOperandIdx = 0;
-
-  // Type check a single argument.  When operandIdx is -1, the operand number is
-  // looked up from the operand list by name, and the operandIdx is assigned.
-  auto checkAnOperand =
-      [&](const OperandValue &operand, ssize_t operandIdx,
-          ArgConvention expectedConvention,
-          ASTType expectedType) -> std::optional<MojoInflightDiag> {
-    // If the caller didn't know the operand index, recompute it.  The operand
-    // must be a keyword argument.
-    if (operandIdx < 0) {
-      assert(operand.keyword && "must have index for positional args");
-      for (auto [idx, operandToCheck] : llvm::enumerate(operands.values)) {
-        if (operandToCheck.keyword == operand.keyword) {
-          operandIdx = idx;
-          break;
-        }
-      }
-      assert(operandIdx >= 0 && "Must have found the keyword argument");
-    }
-
-    return result.checkOneOperand(operand, size_t(operandIdx),
-                                  expectedConvention, expectedType,
-                                  allowImplicitConversions, loc, callable);
-  };
 
   argListAttr = signature.getArgListAttrs();
   DefaultValueHandler defaultHandler(argListAttr);
@@ -902,7 +848,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       result.payload.numMismatchedConventions +=
           ASTType(expectedType)
               .getReferenceElementType()
-              .isRegisterPassable(loc, shared);
+              .isRegisterPassable(callLoc, shared);
       continue;
     }
 
@@ -916,8 +862,9 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
         // happens to just work, until we rectify this. Right now the reason the
         // value type cannot be a reference type is because `Reference` does not
         // (and in fact cannot) conform to `Copyable & Movable`.
-        if (auto diag = checkAnOperand(operand, -1, ArgConvention::OwnedMem,
-                                       refExpType))
+        if (auto diag = result.checkOneOperand(
+                operand, expectedArgIdx, ArgConvention::OwnedMem, refExpType,
+                allowImplicitConversions, callable, argListAttr))
           return std::move(diag).value();
       }
       // This comes after all the positionals.
@@ -930,7 +877,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     // proper type traits.
     // TODO: Don't let memory types bind to AnyTrivialRegType.
     if (!ASTType(expectedType).isRegisterPassable(callLoc, shared))
-      return emitDiagFor.argGenericMemType(expectedArgIdx, expectedType);
+      return emitDiagFor.argGenericMemType(expectedArgIdx, expectedType,
+                                           argListAttr);
 
     // Figure out the next positional argument to process.
     while (posOperandIdx < numOperands && operands[posOperandIdx].keyword)
@@ -952,8 +900,9 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       // Check if the argument was passed as a keyword operand.
       if (const OperandValue *kwOperandOr = operands.findKwArg(argName)) {
         // If we found a keyword argument, we check it normally.
-        if (auto diag = checkAnOperand(*kwOperandOr, -1, expectedConvention,
-                                       expectedType))
+        if (auto diag = result.checkOneOperand(
+                *kwOperandOr, expectedArgIdx, expectedConvention, expectedType,
+                allowImplicitConversions, callable, argListAttr))
           return std::move(diag).value();
         continue;
       }
@@ -970,8 +919,9 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     auto processPositionalOperand =
         [&](ASTType expectedType,
             ArgConvention conv) -> std::optional<MojoInflightDiag> {
-      if (auto diag = checkAnOperand(operands[posOperandIdx], posOperandIdx,
-                                     conv, expectedType))
+      if (auto diag = result.checkOneOperand(
+              operands[posOperandIdx], expectedArgIdx, conv, expectedType,
+              allowImplicitConversions, callable, argListAttr))
         return std::move(diag).value();
       ++posOperandIdx;
       return {};
