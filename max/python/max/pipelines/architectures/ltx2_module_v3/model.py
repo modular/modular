@@ -1,122 +1,213 @@
-import copy
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from __future__ import annotations
+
 import inspect
-from typing import Any, Callable, Dict, List, Optional, Union
+import logging
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
-import numpy as np
-import torch
-from transformers import Gemma3ForConditionalGeneration, GemmaTokenizer, GemmaTokenizerFast
+# from max._core.engine import Model
+from max.driver import Device
+from max.driver import Tensor as DriverTensor
+from max.dtype import DType
+from max.engine.api import InferenceSession
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
+from max.graph import DeviceRef, Graph, TensorType
+from max.graph.weights import (
+    SafetensorWeights,
+    WeightData,
+    Weights,
+    WeightsAdapter,
+)
+from max.nn import ReturnLogits
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.module_v3 import Module
+from max.pipelines.core import TextContext
+from max.pipelines.lib import (
+    KVCacheConfig,
+    ModelInputs,
+    ModelOutputs,
+    PipelineConfig,
+    PipelineModel,
+    SupportedEncoding,
+)
+from tqdm.auto import tqdm
+from transformers import AutoConfig
 
-from ...callbacks import MultiPipelineCallbacks, PipelineCallback
-from ...loaders import FromSingleFileMixin, LTXVideoLoraLoaderMixin
-from ...models.autoencoders import AutoencoderKLLTX2Audio, AutoencoderKLLTX2Video
-from ...models.transformers import LTX2VideoTransformer3DModel
-from ...schedulers import FlowMatchEulerDiscreteScheduler
-from ...utils import is_torch_xla_available, logging, replace_example_docstring
-from ...utils.torch_utils import randn_tensor
-from ...video_processor import VideoProcessor
-from ..pipeline_utils import DiffusionPipeline
-from .connectors import LTX2TextConnectors
-from .pipeline_output import LTX2PipelineOutput
-from .vocoder import LTX2Vocoder
+from ..z_image_module_v3.scheduling_flow_match_euler_discrete import (
+    FlowMatchEulerDiscreteScheduler,
+)
+from .ltx2 import LTX2
+from .model_config import LTX2Config
+from .nn.autoencoder_kl_ltx2 import AutoencoderKLLTX2Video
+from .nn.autoencoder_kl_ltx2_audio import AutoencoderKLLTX2Audio
+from .nn.transformer_ltx2 import LTX2VideoTransformer3DModel
 
-
-if is_torch_xla_available():
-    import torch_xla.core.xla_model as xm
-
-    XLA_AVAILABLE = True
-else:
-    XLA_AVAILABLE = False
-
-logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
-
-EXAMPLE_DOC_STRING = """
-    Examples:
-        ```py
-        >>> import torch
-        >>> from diffusers import LTX2Pipeline
-        >>> from diffusers.pipelines.ltx2.export_utils import encode_video
-
-        >>> pipe = LTX2Pipeline.from_pretrained("Lightricks/LTX-2", torch_dtype=torch.bfloat16)
-        >>> pipe.enable_model_cpu_offload()
-
-        >>> prompt = "A woman with long brown hair and light skin smiles at another woman with long blonde hair. The woman with brown hair wears a black jacket and has a small, barely noticeable mole on her right cheek. The camera angle is a close-up, focused on the woman with brown hair's face. The lighting is warm and natural, likely from the setting sun, casting a soft glow on the scene. The scene appears to be real-life footage"
-        >>> negative_prompt = "worst quality, inconsistent motion, blurry, jittery, distorted"
-
-        >>> frame_rate = 24.0
-        >>> video, audio = pipe(
-        ...     prompt=prompt,
-        ...     negative_prompt=negative_prompt,
-        ...     width=768,
-        ...     height=512,
-        ...     frame_rate=frame_rate,
-        ...     num_frames=121,
-        ...     output_type="np",
-        ...     return_dict=False,
-        ... )
-        >>> video = (video * 255).round().astype("uint8")
-        >>> video = torch.from_numpy(video)
-
-        >>> encode_video(
-        ...     video[0],
-        ...     fps=frame_rate,
-        ...     audio=audio[0].float().cpu(),
-        ...     audio_sample_rate=pipe.vocoder.config.output_sampling_rate,  # should be 24000
-        ...     output_path="video.mp4",
-        ... )
-        ```
-"""
+logger = logging.getLogger("max.pipelines")
 
 
-# Copied from diffusers.pipelines.flux.pipeline_flux.calculate_shift
+@dataclass(eq=False)
+class LTX2Inputs(ModelInputs):
+    """A class representing inputs for the LTX2 model.
+
+    This class encapsulates the input tensors required for the LTX2 model execution,
+    including both text and vision inputs. Vision inputs are optional and can be None
+    for text-only processing."""
+
+    prompt: str | list[str] = None
+    """ The prompt or prompts to guide the image generation. If not defined, one has to pass `prompt_embeds` instead."""
+
+    height: int | None = None
+    """ The height in pixels of the generated image."""
+
+    width: int | None = None
+    """ The width in pixels of the generated image."""
+
+    num_inference_steps: int = 50
+    """ The number of denoising steps. More denoising steps usually lead to a higher quality image at the
+    expense of slower inference."""
+
+    sigmas: list[float] | None = None
+    """ Custom sigmas to use for the denoising process with schedulers which support a `sigmas` argument in
+    their `set_timesteps` method. If not defined, the default behavior when `num_inference_steps` is passed
+    will be used."""
+
+    guidance_scale: float = 0.0
+    """ Guidance scale as defined in Classifier-Free Diffusion Guidance.
+    Higher values encourage images closely linked to the prompt, usually at the expense of lower image quality."""
+
+    cfg_normalization: bool = False
+    """ Whether to apply configuration normalization."""
+
+    cfg_truncation: float = 1.0
+    """ The truncation value for configuration."""
+
+    negative_prompt: str | list[str] | None = None
+    """ The prompt or prompts not to guide the image generation. If not defined, one has to pass
+    `negative_prompt_embeds` instead. Ignored when not using guidance (i.e., ignored if `guidance_scale` is
+    less than `1`)."""
+
+    token_ids: list[int] | None = None
+    """ Tokenized prompt IDs from TextTokenizer. Used for text encoder input."""
+
+    num_images_per_prompt: int | None = 1
+    """ The number of images to generate per prompt."""
+
+    seed: int | None = 0
+    """ Seed for the random number generator to make generation deterministic.
+    If None, random seed is used. Equivalent to torch.Generator().manual_seed(seed).
+    """
+
+    latents: Tensor | None = None
+    """ Pre-generated noisy latents, sampled from a Gaussian distribution, to be used as inputs for image
+    generation. Can be used to tweak the same generation with different prompts. If not provided, a latents
+    tensor will be generated by sampling using the supplied random `generator`."""
+
+    prompt_embeds: list[Tensor] | None = None
+    """ Pre-generated text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt weighting. If not
+    provided, text embeddings will be generated from `prompt` input argument."""
+
+    negative_prompt_embeds: list[Tensor] | None = None
+    """ Pre-generated negative text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt
+    weighting. If not provided, negative_prompt_embeds will be generated from `negative_prompt` input argument."""
+
+    output_type: str | None = "pil"
+    """ The output format of the generate image. Choose between
+    [PIL](https://pillow.readthedocs.io/en/stable/): `PIL.Image.Image` or `np.array`."""
+    joint_attention_kwargs: dict[str, Any] | None = None
+    """ A kwargs dictionary that if specified is passed along to the `AttentionProcessor` as defined under
+    `self.processor` in [diffusers.models.attention_processor](https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py)."""
+
+    callback_on_step_end: Callable[[int, int, dict], None] | None = None
+    """ A function that calls at the end of each denoising steps during the inference. The function is called
+    with the following arguments: `callback_on_step_end(self: DiffusionPipeline, step: int, timestep: int,
+    callback_kwargs: Dict)`. `callback_kwargs` will include a list of all tensors as specified by
+    `callback_on_step_end_tensor_inputs`."""
+
+    callback_on_step_end_tensor_inputs: tuple[str] = "latents"
+    """ Tuple of tensors to be included in the `callback_kwargs` dictionary."""
+
+    max_sequence_length: int = 512
+    """ The maximum sequence length for the input sequence."""
+
+    # signal_buffers: list[Tensor]
+    """Device buffers used for synchronization in communication collectives."""
+
+    cu_seqlens: list[Tensor] | None = None
+    """Cumulative sequence lengths for full attention."""
+
+    max_seqlen: list[Tensor] | None = None
+    """Maximum sequence length for full attention for vision inputs."""
+
+
 def calculate_shift(
-    image_seq_len,
+    image_seq_len: int,
     base_seq_len: int = 256,
     max_seq_len: int = 4096,
     base_shift: float = 0.5,
     max_shift: float = 1.15,
-):
+) -> float:
     m = (max_shift - base_shift) / (max_seq_len - base_seq_len)
     b = base_shift - m * base_seq_len
     mu = image_seq_len * m + b
     return mu
 
 
-# Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.retrieve_timesteps
 def retrieve_timesteps(
-    scheduler,
-    num_inference_steps: Optional[int] = None,
-    device: Optional[Union[str, torch.device]] = None,
-    timesteps: Optional[List[int]] = None,
-    sigmas: Optional[List[float]] = None,
+    scheduler: FlowMatchEulerDiscreteScheduler,
+    num_inference_steps: int | None = None,
+    device: str | Device | None = None,
+    timesteps: list[int] | None = None,
+    sigmas: list[float] | None = None,
     **kwargs,
-):
+) -> tuple[Tensor, int]:
     r"""
     Calls the scheduler's `set_timesteps` method and retrieves timesteps from the scheduler after the call. Handles
     custom timesteps. Any kwargs will be supplied to `scheduler.set_timesteps`.
 
     Args:
-        scheduler (`SchedulerMixin`):
+        scheduler (`FlowMatchEulerDiscreteScheduler`):
             The scheduler to get timesteps from.
         num_inference_steps (`int`):
             The number of diffusion steps used when generating samples with a pre-trained model. If used, `timesteps`
             must be `None`.
-        device (`str` or `torch.device`, *optional*):
+        device (`str` or `Device`, *optional*):
             The device to which the timesteps should be moved to. If `None`, the timesteps are not moved.
-        timesteps (`List[int]`, *optional*):
+        timesteps (`list[int]`, *optional*):
             Custom timesteps used to override the timestep spacing strategy of the scheduler. If `timesteps` is passed,
             `num_inference_steps` and `sigmas` must be `None`.
-        sigmas (`List[float]`, *optional*):
+        sigmas (`list[float]`, *optional*):
             Custom sigmas used to override the timestep spacing strategy of the scheduler. If `sigmas` is passed,
             `num_inference_steps` and `timesteps` must be `None`.
 
     Returns:
-        `Tuple[torch.Tensor, int]`: A tuple where the first element is the timestep schedule from the scheduler and the
+        `Tuple[Tensor, int]`: A tuple where the first element is the timestep schedule from the scheduler and the
         second element is the number of inference steps.
     """
     if timesteps is not None and sigmas is not None:
-        raise ValueError("Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values")
+        raise ValueError(
+            "Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values"
+        )
     if timesteps is not None:
-        accepts_timesteps = "timesteps" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
+        accepts_timesteps = "timesteps" in set(
+            inspect.signature(scheduler.set_timesteps).parameters.keys()
+        )
         if not accepts_timesteps:
             raise ValueError(
                 f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
@@ -126,7 +217,9 @@ def retrieve_timesteps(
         timesteps = scheduler.timesteps
         num_inference_steps = len(timesteps)
     elif sigmas is not None:
-        accept_sigmas = "sigmas" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
+        accept_sigmas = "sigmas" in set(
+            inspect.signature(scheduler.set_timesteps).parameters.keys()
+        )
         if not accept_sigmas:
             raise ValueError(
                 f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
@@ -141,983 +234,735 @@ def retrieve_timesteps(
     return timesteps, num_inference_steps
 
 
-# Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.rescale_noise_cfg
-def rescale_noise_cfg(noise_cfg, noise_pred_text, guidance_rescale=0.0):
-    r"""
-    Rescales `noise_cfg` tensor based on `guidance_rescale` to improve image quality and fix overexposure. Based on
-    Section 3.4 from [Common Diffusion Noise Schedules and Sample Steps are
-    Flawed](https://huggingface.co/papers/2305.08891).
+class LTX2Model(
+    PipelineModel[TextContext],
+):
+    """A LTX2 model for text-to-image generation."""
 
-    Args:
-        noise_cfg (`torch.Tensor`):
-            The predicted noise tensor for the guided diffusion process.
-        noise_pred_text (`torch.Tensor`):
-            The predicted noise tensor for the text-guided diffusion process.
-        guidance_rescale (`float`, *optional*, defaults to 0.0):
-            A rescale factor applied to the noise predictions.
+    scheduler: FlowMatchEulerDiscreteScheduler
+    """The scheduler to be used for image generation."""
 
-    Returns:
-        noise_cfg (`torch.Tensor`): The rescaled noise prediction tensor.
-    """
-    std_text = noise_pred_text.std(dim=list(range(1, noise_pred_text.ndim)), keepdim=True)
-    std_cfg = noise_cfg.std(dim=list(range(1, noise_cfg.ndim)), keepdim=True)
-    # rescale the results from guidance (fixes overexposure)
-    noise_pred_rescaled = noise_cfg * (std_text / std_cfg)
-    # mix with the original results from guidance by factor guidance_rescale to avoid "plain looking" images
-    noise_cfg = guidance_rescale * noise_pred_rescaled + (1 - guidance_rescale) * noise_cfg
-    return noise_cfg
+    vae: AutoencoderKLLTX2Video
+    """The VAE to be used for video generation."""
 
+    vae_audio: AutoencoderKLLTX2Audio
+    """The VAE to be used for audio generation."""
 
-class LTX2Pipeline(DiffusionPipeline, FromSingleFileMixin, LTXVideoLoraLoaderMixin):
-    r"""
-    Pipeline for text-to-video generation.
+    text_encoder: Gemma3
+    """The text encoder to be used for video generation."""
 
-    Reference: https://github.com/Lightricks/LTX-Video
+    transformer: LTX2VideoTransformer3DModel
+    """The transformer to be used for video generation."""
 
-    Args:
-        transformer ([`LTXVideoTransformer3DModel`]):
-            Conditional Transformer architecture to denoise the encoded video latents.
-        scheduler ([`FlowMatchEulerDiscreteScheduler`]):
-            A scheduler to be used in combination with `transformer` to denoise the encoded image latents.
-        vae ([`AutoencoderKLLTXVideo`]):
-            Variational Auto-Encoder (VAE) Model to encode and decode images to and from latent representations.
-        text_encoder ([`T5EncoderModel`]):
-            [T5](https://huggingface.co/docs/transformers/en/model_doc/t5#transformers.T5EncoderModel), specifically
-            the [google/t5-v1_1-xxl](https://huggingface.co/google/t5-v1_1-xxl) variant.
-        tokenizer (`CLIPTokenizer`):
-            Tokenizer of class
-            [CLIPTokenizer](https://huggingface.co/docs/transformers/en/model_doc/clip#transformers.CLIPTokenizer).
-        tokenizer (`T5TokenizerFast`):
-            Second Tokenizer of class
-            [T5TokenizerFast](https://huggingface.co/docs/transformers/en/model_doc/t5#transformers.T5TokenizerFast).
-        connectors ([`LTX2TextConnectors`]):
-            Text connector stack used to adapt text encoder hidden states for the video and audio branches.
-    """
+    model_config: LTX2Config | None
+    """The LTX2 model configuration."""
 
-    model_cpu_offload_seq = "text_encoder->connectors->transformer->vae->audio_vae->vocoder"
-    _optional_components = []
-    _callback_tensor_inputs = ["latents", "prompt_embeds", "negative_prompt_embeds"]
+    _input_row_offsets_prealloc: list[Tensor]
+    """Pre-allocated per-device tensors for input row offsets in multi-step execution."""
 
     def __init__(
         self,
-        scheduler: FlowMatchEulerDiscreteScheduler,
-        vae: AutoencoderKLLTX2Video,
-        audio_vae: AutoencoderKLLTX2Audio,
-        text_encoder: Gemma3ForConditionalGeneration,
-        tokenizer: Union[GemmaTokenizer, GemmaTokenizerFast],
-        connectors: LTX2TextConnectors,
-        transformer: LTX2VideoTransformer3DModel,
-        vocoder: LTX2Vocoder,
-    ):
-        super().__init__()
-
-        self.register_modules(
-            vae=vae,
-            audio_vae=audio_vae,
-            text_encoder=text_encoder,
-            tokenizer=tokenizer,
-            connectors=connectors,
-            transformer=transformer,
-            vocoder=vocoder,
-            scheduler=scheduler,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: WeightsAdapter | None = None,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+    ) -> None:
+        super().__init__(
+            pipeline_config,
+            session,
+            huggingface_config,
+            encoding,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter,
+            return_logits,
         )
 
-        self.vae_spatial_compression_ratio = (
-            self.vae.spatial_compression_ratio if getattr(self, "vae", None) is not None else 32
+        # Use DiffusersConfig for component configs - already parsed in MAXModelConfig
+        model_config = self.pipeline_config.model
+        diffusers_config = model_config.diffusers_config
+
+        if diffusers_config is None:
+            raise ValueError(
+                f"Model '{model_config.model_path}' does not appear to be a diffusers-style model. "
+                "Expected model_index.json in the repository."
+            )
+
+        # Get component configs from DiffusersConfig
+        # These are already parsed from the component config.json files
+        scheduler_component = diffusers_config.get_component("scheduler")
+        vae_component = diffusers_config.get_component("vae")
+        transformer_component = diffusers_config.get_component("transformer")
+
+        if scheduler_component is None:
+            raise ValueError(
+                "Scheduler component not found in diffusers config"
+            )
+        if vae_component is None:
+            raise ValueError("VAE component not found in diffusers config")
+        if transformer_component is None:
+            raise ValueError(
+                "Transformer component not found in diffusers config"
+            )
+
+        # Wrap config dicts in SimpleNamespace for attribute access
+        self.scheduler_config = SimpleNamespace(
+            **scheduler_component.config_dict
         )
-        self.vae_temporal_compression_ratio = (
-            self.vae.temporal_compression_ratio if getattr(self, "vae", None) is not None else 8
-        )
-        # TODO: check whether the MEL compression ratio logic here is corrct
-        self.audio_vae_mel_compression_ratio = (
-            self.audio_vae.mel_compression_ratio if getattr(self, "audio_vae", None) is not None else 4
-        )
-        self.audio_vae_temporal_compression_ratio = (
-            self.audio_vae.temporal_compression_ratio if getattr(self, "audio_vae", None) is not None else 4
-        )
-        self.transformer_spatial_patch_size = (
-            self.transformer.config.patch_size if getattr(self, "transformer", None) is not None else 1
-        )
-        self.transformer_temporal_patch_size = (
-            self.transformer.config.patch_size_t if getattr(self, "transformer") is not None else 1
+        self.vae_config = SimpleNamespace(**vae_component.config_dict)
+        self.transformer_config = SimpleNamespace(
+            **transformer_component.config_dict
         )
 
-        self.audio_sampling_rate = (
-            self.audio_vae.config.sample_rate if getattr(self, "audio_vae", None) is not None else 16000
-        )
-        self.audio_hop_length = (
-            self.audio_vae.config.mel_hop_length if getattr(self, "audio_vae", None) is not None else 160
+        # Text encoder config uses standard HuggingFace AutoConfig
+        # Already available via model_config.huggingface_config (which returns text_encoder config for diffusers)
+        self.text_encoder_config = model_config.huggingface_config
+
+        self.model_config = None
+        self._session = session  # Reuse for on-device casts
+
+        self.model = self.load_model(session)
+
+        self.vae_scale_factor = 2 ** (
+            len(self.model_config.vae_config.block_out_channels) - 1
         )
 
-        self.video_processor = VideoProcessor(vae_scale_factor=self.vae_spatial_compression_ratio)
-        self.tokenizer_max_length = (
-            self.tokenizer.model_max_length if getattr(self, "tokenizer", None) is not None else 1024
-        )
+        # Serving interface: image_pipeline is self
+        self._active_requests: dict[str, Any] = {}
 
-    @staticmethod
-    def _pack_text_embeds(
-        text_hidden_states: torch.Tensor,
-        sequence_lengths: torch.Tensor,
-        device: Union[str, torch.device],
-        padding_side: str = "left",
-        scale_factor: int = 8,
-        eps: float = 1e-6,
-    ) -> torch.Tensor:
-        """
-        Packs and normalizes text encoder hidden states, respecting padding. Normalization is performed per-batch and
-        per-layer in a masked fashion (only over non-padded positions).
+    @property
+    def image_pipeline(self) -> ZImageModel:
+        """Returns self for PixelGeneratorPipeline compatibility."""
+        return self
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        """Calculate the optimal max sequence length for the model."""
+        # For Z-Image, this might be fixed or configurable.
+        # Returning a safe default for now, similar to other vision models.
+        return 4096
+
+    @classmethod
+    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        """Gets the number of hidden layers from the HuggingFace configuration."""
+        if huggingface_config is None:
+            # If config is None (e.g. from PipelineModel init), return a safe default or 0
+            # This might be used for batch size inference.
+            return 0
+        return LTX2Config.get_num_layers(huggingface_config)
+
+    def load_model(self, session: InferenceSession) -> Module:
+        """Loads the compiled LTX2 model into the MAX Engine session.
 
         Args:
-            text_hidden_states (`torch.Tensor` of shape `(batch_size, seq_len, hidden_dim, num_layers)`):
-                Per-layer hidden_states from a text encoder (e.g. `Gemma3ForConditionalGeneration`).
-            sequence_lengths (`torch.Tensor of shape `(batch_size,)`):
-                The number of valid (non-padded) tokens for each batch instance.
-            device: (`str` or `torch.device`, *optional*):
-                torch device to place the resulting embeddings on
-            padding_side: (`str`, *optional*, defaults to `"left"`):
-                Whether the text tokenizer performs padding on the `"left"` or `"right"`.
-            scale_factor (`int`, *optional*, defaults to `8`):
-                Scaling factor to multiply the normalized hidden states by.
-            eps (`float`, *optional*, defaults to `1e-6`):
-                A small positive value for numerical stability when performing normalization.
+            session: The MAX Engine inference session.
 
         Returns:
-            `torch.Tensor` of shape `(batch_size, seq_len, hidden_dim * num_layers)`:
-                Normed and flattened text encoder hidden states.
+            The loaded MAX Engine model object.
         """
-        batch_size, seq_len, hidden_dim, num_layers = text_hidden_states.shape
-        original_dtype = text_hidden_states.dtype
+        if self.pipeline_config.max_batch_size is None:
+            raise ValueError("Expected max_batch_size to be set")
+        self._input_row_offsets_prealloc = F.range(
+            0,
+            self.pipeline_config.max_batch_size + 1,
+            dtype=DType.uint32,
+            device=self.devices[0],
+        )
 
-        # Create padding mask
-        token_indices = torch.arange(seq_len, device=device).unsqueeze(0)
-        if padding_side == "right":
-            # For right padding, valid tokens are from 0 to sequence_length-1
-            mask = token_indices < sequence_lengths[:, None]  # [batch_size, seq_len]
-        elif padding_side == "left":
-            # For left padding, valid tokens are from (T - sequence_length) to T-1
-            start_indices = seq_len - sequence_lengths[:, None]  # [batch_size, 1]
-            mask = token_indices >= start_indices  # [B, T]
+        logger.info("Building and compiling the whole pipeline...")
+        before = time.perf_counter()
+
+        if not isinstance(self.weights, SafetensorWeights):
+            raise ValueError("LTX2 currently only supports safetensors weights")
+
+        # Partition raw safetensor weights by their originating file path.
+        # This lets us treat diffusers-style folders (vae/, text_encoder/, transformer/)
+        # as separate components without relying on key-name heuristics.
+        st_weights: SafetensorWeights = self.weights
+        filepaths = [Path(p) for p in st_weights._filepaths]
+
+        vae_weights: dict[str, Weights] = {}
+        vae_audio_weights: dict[str, Weights] = {}
+        text_encoder_weights: dict[str, Weights] = {}
+        transformer_weights: dict[str, Weights] = {}
+
+        for key, weight in st_weights.items():
+            file_idx = st_weights._tensors_to_file_idx[key]
+            filepath = filepaths[file_idx]
+            parts = set(filepath.parts)
+
+            if "vae" in parts:
+                vae_weights[key] = weight
+            elif "vae_audio" in parts:
+                vae_audio_weights[key] = weight
+            elif "text_encoder" in parts:
+                text_encoder_weights[key] = weight
+            elif "transformer" in parts:
+                transformer_weights[key] = weight
+            else:
+                logger.debug(
+                    "Unrecognized LTX2 weight file '%s' for key '%s', assigning to transformer",
+                    filepath,
+                    key,
+                )
+                transformer_weights[key] = weight
+
+        # Materialize VAE and transformer weights directly.
+        vae_state_dict: dict[str, WeightData] = {
+            key: weight.data() for key, weight in vae_weights.items()
+        }
+        vae_audio_state_dict: dict[str, WeightData] = {
+            key: weight.data() for key, weight in vae_audio_weights.items()
+        }
+        transformer_state_dict: dict[str, WeightData] = {
+            key: weight.data() for key, weight in transformer_weights.items()
+        }
+
+        # Apply the architecture weight adapter (if any) only to the text encoder
+        # subset. For LTX2 this maps Gemma3 style names to the expected
+        # ? format.
+        if self.adapter:
+            text_encoder_llm_state_dict: dict[str, WeightData] = self.adapter(
+                text_encoder_weights,
+                huggingface_config=self.huggingface_config,
+                pipeline_config=self.pipeline_config,
+            )
         else:
-            raise ValueError(f"padding_side must be 'left' or 'right', got {padding_side}")
-        mask = mask[:, :, None, None]  # [batch_size, seq_len] --> [batch_size, seq_len, 1, 1]
+            text_encoder_llm_state_dict = {
+                key: weight.data()
+                for key, weight in text_encoder_weights.items()
+            }
 
-        # Compute masked mean over non-padding positions of shape (batch_size, 1, 1, seq_len)
-        masked_text_hidden_states = text_hidden_states.masked_fill(~mask, 0.0)
-        num_valid_positions = (sequence_lengths * hidden_dim).view(batch_size, 1, 1, 1)
-        masked_mean = masked_text_hidden_states.sum(dim=(1, 2), keepdim=True) / (num_valid_positions + eps)
+        text_encoder_state_dict: dict[str, dict[str, WeightData]] = {
+            "llm_state_dict": text_encoder_llm_state_dict,
+        }
 
-        # Compute min/max over non-padding positions of shape (batch_size, 1, 1 seq_len)
-        x_min = text_hidden_states.masked_fill(~mask, float("inf")).amin(dim=(1, 2), keepdim=True)
-        x_max = text_hidden_states.masked_fill(~mask, float("-inf")).amax(dim=(1, 2), keepdim=True)
+        # Generate LTX2 config from HuggingFace config
+        ltx2_config = LTX2Config.generate(
+            pipeline_config=self.pipeline_config,
+            scheduler_config=self.scheduler_config,
+            vae_config=self.vae_config,
+            text_encoder_config=self.text_encoder_config,
+            transformer_config=self.transformer_config,
+            vae_state_dict=vae_state_dict,
+            vae_audio_state_dict=vae_audio_state_dict,
+            text_encoder_state_dict=text_encoder_state_dict,
+            transformer_state_dict=transformer_state_dict,
+            dtype=self.dtype,
+            n_devices=len(self.devices),
+            cache_dtype=self.encoding.cache_dtype,
+            kv_cache_config=self.kv_cache_config,
+            return_logits=self.return_logits,
+        )
+        self.model_config = ltx2_config
 
-        # Normalization
-        normalized_hidden_states = (text_hidden_states - masked_mean) / (x_max - x_min + eps)
-        normalized_hidden_states = normalized_hidden_states * scale_factor
+        if self.model_config is None:
+            raise ValueError("Model config must be initialized")
 
-        # Pack the hidden states to a 3D tensor (batch_size, seq_len, hidden_dim * num_layers)
-        normalized_hidden_states = normalized_hidden_states.flatten(2)
-        mask_flat = mask.squeeze(-1).expand(-1, -1, hidden_dim * num_layers)
-        normalized_hidden_states = normalized_hidden_states.masked_fill(~mask_flat, 0.0)
-        normalized_hidden_states = normalized_hidden_states.to(dtype=original_dtype)
-        return normalized_hidden_states
+        # Instantiate LTX2 container to build sub-models
+        device0 = self.devices[0]
+        with F.lazy():
+            nn_model: Module = LTX2(self.model_config, device=device0)
 
-    def _get_gemma_prompt_embeds(
-        self,
-        prompt: Union[str, List[str]],
-        num_videos_per_prompt: int = 1,
-        max_sequence_length: int = 1024,
-        scale_factor: int = 8,
-        device: Optional[torch.device] = None,
-        dtype: Optional[torch.dtype] = None,
-    ):
-        r"""
-        Encodes the prompt into text encoder hidden states.
+        # graph_inputs = nn_model.text_encoder.input_types(
+        #     nn_model.text_encoder.kv_params
+        # )
+        # nn_model.text_encoder.load_state_dict(
+        #     text_encoder_llm_state_dict,
+        #     override_quantization_encoding=True,
+        #     weight_alignment=1,
+        #     # Stops strict from raising error when sharing LM head weights
+        #     # (as LM head is never technically loaded from the state dict)
+        #     strict=(
+        #         not getattr(
+        #             self.huggingface_config, "tie_word_embeddings", False
+        #         )
+        #     ),
+        # )
+        device0 = self.devices[0]
+
+        nn_model.to(device0)
+        device_ref = DeviceRef(device0.label, device0.id)
+        sample_type = TensorType(
+            DType.bfloat16, shape=(1, 16, 128, 128), device=device_ref
+        )
+
+        # Strip 'decoder.' prefix from VAE weights for the Decoder module.
+        # The safetensors file has keys like 'decoder.conv_in.weight' but the
+        # Decoder module's parameters are named 'conv_in.weight'.
+        decoder_weights: dict[str, WeightData] = {
+            key.removeprefix("decoder."): value
+            for key, value in vae_state_dict.items()
+            if key.startswith("decoder.")
+        }
+        decoder_audio_weights: dict[str, WeightData] = {
+            key.removeprefix("decoder."): value
+            for key, value in vae_audio_state_dict.items()
+            if key.startswith("decoder.")
+        }
+
+        # Load weights into the models before compiling
+        # (This works around an issue where compile(weights=...) doesn't load correctly)
+        nn_model.transformer.load_state_dict(transformer_state_dict)
+        nn_model.vae.decoder.load_state_dict(decoder_weights)
+        nn_model.vae_audio.decoder.load_state_dict(decoder_audio_weights)
+
+        # Move to device for compilation
+        nn_model.transformer.to(self.devices[0])
+        nn_model.vae.to(self.devices[0])
+        nn_model.vae_audio.to(self.devices[0])
+
+        logger.info("Building and compiling video VAE's decoder...")
+        before_vae_decode_build = time.perf_counter()
+        compiled_vae_decoder_model = nn_model.vae.decoder.compile(sample_type)
+        after_vae_decode_build = time.perf_counter()
+        logger.info(
+            f"Building and compiling video VAE's decoder took {after_vae_decode_build - before_vae_decode_build:.6f} seconds"
+        )
+        nn_model.vae.decoder = compiled_vae_decoder_model
+
+        logger.info("Building and compiling audio VAE's decoder...")
+        before_vae_decode_build = time.perf_counter()
+        compiled_vae_decoder_model = nn_model.vae_audio.decoder.compile(
+            sample_type
+        )
+        after_vae_decode_build = time.perf_counter()
+        logger.info(
+            f"Building and compiling audio VAE's decoder took {after_vae_decode_build - before_vae_decode_build:.6f} seconds"
+        )
+        nn_model.vae_audio.decoder = compiled_vae_decoder_model
+
+        C, F_dim, H_dim, W_dim = 16, 1, 128, 128
+        cap_seq_len = 75
+
+        hidden_states_type = TensorType(
+            DType.bfloat16, shape=(C, F_dim, H_dim, W_dim), device=device_ref
+        )
+        t_type = TensorType(DType.float32, shape=(1,), device=device_ref)
+        cap_feats_type = TensorType(
+            DType.bfloat16, shape=(cap_seq_len, 2560), device=device_ref
+        )
+
+        logger.info("Building and compiling the backbone transformer...")
+        before_transformer_build = time.perf_counter()
+        compiled_transformer_model = nn_model.transformer.compile(
+            hidden_states_type,
+            t_type,
+            cap_feats_type,
+        )
+        after_transformer_build = time.perf_counter()
+        logger.info(
+            f"Building and compiling the backbone transformer took {after_transformer_build - before_transformer_build:.6f} seconds"
+        )
+        nn_model.transformer = compiled_transformer_model
+
+        # logger.info("Building and compiling text encoder...")
+        # before_text_encoder_build = time.perf_counter()
+        # text_encoder_graph = self._build_text_encoder_graph(graph_inputs)
+        # after_text_encoder_build = time.perf_counter()
+
+        # logger.info(
+        #     f"Building text encoder's graph took {after_text_encoder_build - before_text_encoder_build:.6f} seconds"
+        # )
+
+        # before_text_encoder_compile = time.perf_counter()
+        # compiled_text_encoder_model = session.load(
+        #     text_encoder_graph,
+        #     weights_registry=text_encoder_llm_state_dict,
+        # )
+        # nn_model.text_encoder = compiled_text_encoder_model
+        after = time.perf_counter()
+
+        # logger.info(
+        #     f"Compiling text encoder's model took {after - before_text_encoder_compile:.6f} seconds"
+        # )
+        logger.info(
+            f"Building and compiling the whole pipeline took {after - before:.6f} seconds"
+        )
+        return nn_model
+
+    def _build_text_encoder_graph(
+        self, graph_inputs: tuple[TensorType, ...]
+    ) -> Graph:
+        """Build the MAX graph for the text encoder.
+
+        Uses native Qwen3 with return_hidden_states=SECOND_TO_LAST configured in
+        model_config.py. SECOND_TO_LAST returns the second-to-last layer's hidden
+        states directly (matching diffusers' hidden_states[-2] pattern).
 
         Args:
-            prompt (`str` or `List[str]`, *optional*):
-                prompt to be encoded
-            device: (`str` or `torch.device`):
-                torch device to place the resulting embeddings on
-            dtype: (`torch.dtype`):
-                torch dtype to cast the prompt embeds to
-            max_sequence_length (`int`, defaults to 1024): Maximum sequence length to use for the prompt.
+            graph_inputs: Tuple of TensorType defining the graph inputs.
+
+        Returns:
+            Compiled MAX graph that outputs hidden states of shape
+            (seq_len, hidden_size) from the second-to-last layer.
         """
-        device = device or self._execution_device
-        dtype = dtype or self.text_encoder.dtype
-
-        prompt = [prompt] if isinstance(prompt, str) else prompt
-        batch_size = len(prompt)
-
-        if getattr(self, "tokenizer", None) is not None:
-            # Gemma expects left padding for chat-style prompts
-            self.tokenizer.padding_side = "left"
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
-
-        prompt = [p.strip() for p in prompt]
-        text_inputs = self.tokenizer(
-            prompt,
-            padding="max_length",
-            max_length=max_sequence_length,
-            truncation=True,
-            add_special_tokens=True,
-            return_tensors="pt",
-        )
-        text_input_ids = text_inputs.input_ids
-        prompt_attention_mask = text_inputs.attention_mask
-        text_input_ids = text_input_ids.to(device)
-        prompt_attention_mask = prompt_attention_mask.to(device)
-
-        text_encoder_outputs = self.text_encoder(
-            input_ids=text_input_ids, attention_mask=prompt_attention_mask, output_hidden_states=True
-        )
-        text_encoder_hidden_states = text_encoder_outputs.hidden_states
-        text_encoder_hidden_states = torch.stack(text_encoder_hidden_states, dim=-1)
-        sequence_lengths = prompt_attention_mask.sum(dim=-1)
-
-        prompt_embeds = self._pack_text_embeds(
-            text_encoder_hidden_states,
-            sequence_lengths,
-            device=device,
-            padding_side=self.tokenizer.padding_side,
-            scale_factor=scale_factor,
-        )
-        prompt_embeds = prompt_embeds.to(dtype=dtype)
-
-        # duplicate text embeddings for each generation per prompt, using mps friendly method
-        _, seq_len, _ = prompt_embeds.shape
-        prompt_embeds = prompt_embeds.repeat(1, num_videos_per_prompt, 1)
-        prompt_embeds = prompt_embeds.view(batch_size * num_videos_per_prompt, seq_len, -1)
-
-        prompt_attention_mask = prompt_attention_mask.view(batch_size, -1)
-        prompt_attention_mask = prompt_attention_mask.repeat(num_videos_per_prompt, 1)
-
-        return prompt_embeds, prompt_attention_mask
-
-    def encode_prompt(
-        self,
-        prompt: Union[str, List[str]],
-        negative_prompt: Optional[Union[str, List[str]]] = None,
-        do_classifier_free_guidance: bool = True,
-        num_videos_per_prompt: int = 1,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
-        prompt_attention_mask: Optional[torch.Tensor] = None,
-        negative_prompt_attention_mask: Optional[torch.Tensor] = None,
-        max_sequence_length: int = 1024,
-        scale_factor: int = 8,
-        device: Optional[torch.device] = None,
-        dtype: Optional[torch.dtype] = None,
-    ):
-        r"""
-        Encodes the prompt into text encoder hidden states.
-
-        Args:
-            prompt (`str` or `List[str]`, *optional*):
-                prompt to be encoded
-            negative_prompt (`str` or `List[str]`, *optional*):
-                The prompt or prompts not to guide the image generation. If not defined, one has to pass
-                `negative_prompt_embeds` instead. Ignored when not using guidance (i.e., ignored if `guidance_scale` is
-                less than `1`).
-            do_classifier_free_guidance (`bool`, *optional*, defaults to `True`):
-                Whether to use classifier free guidance or not.
-            num_videos_per_prompt (`int`, *optional*, defaults to 1):
-                Number of videos that should be generated per prompt. torch device to place the resulting embeddings on
-            prompt_embeds (`torch.Tensor`, *optional*):
-                Pre-generated text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt weighting. If not
-                provided, text embeddings will be generated from `prompt` input argument.
-            negative_prompt_embeds (`torch.Tensor`, *optional*):
-                Pre-generated negative text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt
-                weighting. If not provided, negative_prompt_embeds will be generated from `negative_prompt` input
-                argument.
-            device: (`torch.device`, *optional*):
-                torch device
-            dtype: (`torch.dtype`, *optional*):
-                torch dtype
-        """
-        device = device or self._execution_device
-
-        prompt = [prompt] if isinstance(prompt, str) else prompt
-        if prompt is not None:
-            batch_size = len(prompt)
-        else:
-            batch_size = prompt_embeds.shape[0]
-
-        if prompt_embeds is None:
-            prompt_embeds, prompt_attention_mask = self._get_gemma_prompt_embeds(
-                prompt=prompt,
-                num_videos_per_prompt=num_videos_per_prompt,
-                max_sequence_length=max_sequence_length,
-                scale_factor=scale_factor,
-                device=device,
-                dtype=dtype,
+        with Graph("qwen3_text_encoder", input_types=graph_inputs) as graph:
+            tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
+                graph.inputs
             )
-
-        if do_classifier_free_guidance and negative_prompt_embeds is None:
-            negative_prompt = negative_prompt or ""
-            negative_prompt = batch_size * [negative_prompt] if isinstance(negative_prompt, str) else negative_prompt
-
-            if prompt is not None and type(prompt) is not type(negative_prompt):
-                raise TypeError(
-                    f"`negative_prompt` should be the same type to `prompt`, but got {type(negative_prompt)} !="
-                    f" {type(prompt)}."
-                )
-            elif batch_size != len(negative_prompt):
-                raise ValueError(
-                    f"`negative_prompt`: {negative_prompt} has batch size {len(negative_prompt)}, but `prompt`:"
-                    f" {prompt} has batch size {batch_size}. Please make sure that passed `negative_prompt` matches"
-                    " the batch size of `prompt`."
-                )
-
-            negative_prompt_embeds, negative_prompt_attention_mask = self._get_gemma_prompt_embeds(
-                prompt=negative_prompt,
-                num_videos_per_prompt=num_videos_per_prompt,
-                max_sequence_length=max_sequence_length,
-                scale_factor=scale_factor,
-                device=device,
-                dtype=dtype,
+            kv_collection = PagedCacheValues(
+                kv_blocks=kv_cache_inputs[0].buffer,
+                cache_lengths=kv_cache_inputs[1].tensor,
+                lookup_table=kv_cache_inputs[2].tensor,
+                max_lengths=kv_cache_inputs[3].tensor,
             )
-
-        return prompt_embeds, prompt_attention_mask, negative_prompt_embeds, negative_prompt_attention_mask
-
-    def check_inputs(
-        self,
-        prompt,
-        height,
-        width,
-        callback_on_step_end_tensor_inputs=None,
-        prompt_embeds=None,
-        negative_prompt_embeds=None,
-        prompt_attention_mask=None,
-        negative_prompt_attention_mask=None,
-    ):
-        if height % 32 != 0 or width % 32 != 0:
-            raise ValueError(f"`height` and `width` have to be divisible by 32 but are {height} and {width}.")
-
-        if callback_on_step_end_tensor_inputs is not None and not all(
-            k in self._callback_tensor_inputs for k in callback_on_step_end_tensor_inputs
-        ):
-            raise ValueError(
-                f"`callback_on_step_end_tensor_inputs` has to be in {self._callback_tensor_inputs}, but found {[k for k in callback_on_step_end_tensor_inputs if k not in self._callback_tensor_inputs]}"
+            # Qwen3 with ReturnHiddenStates.SECOND_TO_LAST returns
+            # (logits, second_to_last_hidden_states) directly
+            outputs = self.model.text_encoder(
+                tokens.tensor,
+                kv_collection,
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
             )
-
-        if prompt is not None and prompt_embeds is not None:
-            raise ValueError(
-                f"Cannot forward both `prompt`: {prompt} and `prompt_embeds`: {prompt_embeds}. Please make sure to"
-                " only forward one of the two."
-            )
-        elif prompt is None and prompt_embeds is None:
-            raise ValueError(
-                "Provide either `prompt` or `prompt_embeds`. Cannot leave both `prompt` and `prompt_embeds` undefined."
-            )
-        elif prompt is not None and (not isinstance(prompt, str) and not isinstance(prompt, list)):
-            raise ValueError(f"`prompt` has to be of type `str` or `list` but is {type(prompt)}")
-
-        if prompt_embeds is not None and prompt_attention_mask is None:
-            raise ValueError("Must provide `prompt_attention_mask` when specifying `prompt_embeds`.")
-
-        if negative_prompt_embeds is not None and negative_prompt_attention_mask is None:
-            raise ValueError("Must provide `negative_prompt_attention_mask` when specifying `negative_prompt_embeds`.")
-
-        if prompt_embeds is not None and negative_prompt_embeds is not None:
-            if prompt_embeds.shape != negative_prompt_embeds.shape:
-                raise ValueError(
-                    "`prompt_embeds` and `negative_prompt_embeds` must have the same shape when passed directly, but"
-                    f" got: `prompt_embeds` {prompt_embeds.shape} != `negative_prompt_embeds`"
-                    f" {negative_prompt_embeds.shape}."
-                )
-            if prompt_attention_mask.shape != negative_prompt_attention_mask.shape:
-                raise ValueError(
-                    "`prompt_attention_mask` and `negative_prompt_attention_mask` must have the same shape when passed directly, but"
-                    f" got: `prompt_attention_mask` {prompt_attention_mask.shape} != `negative_prompt_attention_mask`"
-                    f" {negative_prompt_attention_mask.shape}."
-                )
-
-    @staticmethod
-    def _pack_latents(latents: torch.Tensor, patch_size: int = 1, patch_size_t: int = 1) -> torch.Tensor:
-        # Unpacked latents of shape are [B, C, F, H, W] are patched into tokens of shape [B, C, F // p_t, p_t, H // p, p, W // p, p].
-        # The patch dimensions are then permuted and collapsed into the channel dimension of shape:
-        # [B, F // p_t * H // p * W // p, C * p_t * p * p] (an ndim=3 tensor).
-        # dim=0 is the batch size, dim=1 is the effective video sequence length, dim=2 is the effective number of input features
-        batch_size, num_channels, num_frames, height, width = latents.shape
-        post_patch_num_frames = num_frames // patch_size_t
-        post_patch_height = height // patch_size
-        post_patch_width = width // patch_size
-        latents = latents.reshape(
-            batch_size,
-            -1,
-            post_patch_num_frames,
-            patch_size_t,
-            post_patch_height,
-            patch_size,
-            post_patch_width,
-            patch_size,
-        )
-        latents = latents.permute(0, 2, 4, 6, 1, 3, 5, 7).flatten(4, 7).flatten(1, 3)
-        return latents
-
-    @staticmethod
-    def _unpack_latents(
-        latents: torch.Tensor, num_frames: int, height: int, width: int, patch_size: int = 1, patch_size_t: int = 1
-    ) -> torch.Tensor:
-        # Packed latents of shape [B, S, D] (S is the effective video sequence length, D is the effective feature dimensions)
-        # are unpacked and reshaped into a video tensor of shape [B, C, F, H, W]. This is the inverse operation of
-        # what happens in the `_pack_latents` method.
-        batch_size = latents.size(0)
-        latents = latents.reshape(batch_size, num_frames, height, width, -1, patch_size_t, patch_size, patch_size)
-        latents = latents.permute(0, 4, 1, 5, 2, 6, 3, 7).flatten(6, 7).flatten(4, 5).flatten(2, 3)
-        return latents
-
-    @staticmethod
-    def _denormalize_latents(
-        latents: torch.Tensor, latents_mean: torch.Tensor, latents_std: torch.Tensor, scaling_factor: float = 1.0
-    ) -> torch.Tensor:
-        # Denormalize latents across the channel dimension [B, C, F, H, W]
-        latents_mean = latents_mean.view(1, -1, 1, 1, 1).to(latents.device, latents.dtype)
-        latents_std = latents_std.view(1, -1, 1, 1, 1).to(latents.device, latents.dtype)
-        latents = latents * latents_std / scaling_factor + latents_mean
-        return latents
-
-    @staticmethod
-    def _denormalize_audio_latents(latents: torch.Tensor, latents_mean: torch.Tensor, latents_std: torch.Tensor):
-        latents_mean = latents_mean.to(latents.device, latents.dtype)
-        latents_std = latents_std.to(latents.device, latents.dtype)
-        return (latents * latents_std) + latents_mean
-
-    @staticmethod
-    def _pack_audio_latents(
-        latents: torch.Tensor, patch_size: Optional[int] = None, patch_size_t: Optional[int] = None
-    ) -> torch.Tensor:
-        # Audio latents shape: [B, C, L, M], where L is the latent audio length and M is the number of mel bins
-        if patch_size is not None and patch_size_t is not None:
-            # Packs the latents into a patch sequence of shape [B, L // p_t * M // p, C * p_t * p] (a ndim=3 tnesor).
-            # dim=1 is the effective audio sequence length and dim=2 is the effective audio input feature size.
-            batch_size, num_channels, latent_length, latent_mel_bins = latents.shape
-            post_patch_latent_length = latent_length / patch_size_t
-            post_patch_mel_bins = latent_mel_bins / patch_size
-            latents = latents.reshape(
-                batch_size, -1, post_patch_latent_length, patch_size_t, post_patch_mel_bins, patch_size
-            )
-            latents = latents.permute(0, 2, 4, 1, 3, 5).flatten(3, 5).flatten(1, 2)
-        else:
-            # Packs the latents into a patch sequence of shape [B, L, C * M]. This implicitly assumes a (mel)
-            # patch_size of M (all mel bins constitutes a single patch) and a patch_size_t of 1.
-            latents = latents.transpose(1, 2).flatten(2, 3)  # [B, C, L, M] --> [B, L, C * M]
-        return latents
-
-    @staticmethod
-    def _unpack_audio_latents(
-        latents: torch.Tensor,
-        latent_length: int,
-        num_mel_bins: int,
-        patch_size: Optional[int] = None,
-        patch_size_t: Optional[int] = None,
-    ) -> torch.Tensor:
-        # Unpacks an audio patch sequence of shape [B, S, D] into a latent spectrogram tensor of shape [B, C, L, M],
-        # where L is the latent audio length and M is the number of mel bins.
-        if patch_size is not None and patch_size_t is not None:
-            batch_size = latents.size(0)
-            latents = latents.reshape(batch_size, latent_length, num_mel_bins, -1, patch_size_t, patch_size)
-            latents = latents.permute(0, 3, 1, 4, 2, 5).flatten(4, 5).flatten(2, 3)
-        else:
-            # Assume [B, S, D] = [B, L, C * M], which implies that patch_size = M and patch_size_t = 1.
-            latents = latents.unflatten(2, (-1, num_mel_bins)).transpose(1, 2)
-        return latents
+            # Extract second-to-last hidden states (last element of output tuple)
+            # Shape: (seq_len, hidden_size)
+            hidden_states = outputs[-1]
+            graph.output(hidden_states)
+            return graph
 
     def prepare_latents(
         self,
-        batch_size: int = 1,
-        num_channels_latents: int = 128,
-        height: int = 512,
-        width: int = 768,
-        num_frames: int = 121,
-        dtype: Optional[torch.dtype] = None,
-        device: Optional[torch.device] = None,
-        generator: Optional[torch.Generator] = None,
-        latents: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        if latents is not None:
-            return latents.to(device=device, dtype=dtype)
+        batch_size: int,
+        num_channels_latents: int,
+        height: int,
+        width: int,
+        dtype: DType,
+        device: Device,
+        seed: int | None = None,
+        latents: Tensor | None = None,
+    ) -> Tensor:
+        """Prepare latents for the diffusion process.
 
-        height = height // self.vae_spatial_compression_ratio
-        width = width // self.vae_spatial_compression_ratio
-        num_frames = (num_frames - 1) // self.vae_temporal_compression_ratio + 1
+        Args:
+            batch_size: Number of images to generate.
+            num_channels_latents: Number of channels in the latent space.
+            height: Target image height.
+            width: Target image width.
+            dtype: Data type for the latents.
+            device: Device to place the latents on.
+            seed: Optional seed for reproducible random generation.
+                If None, uses random seed (non-deterministic).
+            latents: Optional pre-generated latents to use instead.
 
-        shape = (batch_size, num_channels_latents, num_frames, height, width)
+        Returns:
+            Latent tensor of shape (batch_size, num_channels_latents, height, width).
+        """
+        import torch
 
-        if isinstance(generator, list) and len(generator) != batch_size:
-            raise ValueError(
-                f"You have passed a list of generators of length {len(generator)}, but requested an effective batch"
-                f" size of {batch_size}. Make sure the batch size matches the length of the generators."
-            )
+        height = 2 * (int(height) // (self.vae_scale_factor * 2))
+        width = 2 * (int(width) // (self.vae_scale_factor * 2))
 
-        latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
-        latents = self._pack_latents(
-            latents, self.transformer_spatial_patch_size, self.transformer_temporal_patch_size
-        )
+        shape = (batch_size, num_channels_latents, height, width)
+
+        if latents is None:
+            # Use PyTorch for random generation to match diffusers exactly
+            # This ensures identical results when using the same seed
+            generator = torch.Generator("cpu")
+            if seed is not None:
+                generator.manual_seed(seed)
+            latents_torch = torch.randn(shape, generator=generator, dtype=dtype)
+            # Convert to MAX tensor and move to device
+            latents = Tensor.from_dlpack(latents_torch.numpy()).to(device)
+        else:
+            if latents.shape != shape:
+                raise ValueError(
+                    f"Unexpected latents shape, got {latents.shape}, expected {shape}"
+                )
+            latents = latents.to(device)
         return latents
 
-    def prepare_audio_latents(
-        self,
-        batch_size: int = 1,
-        num_channels_latents: int = 8,
-        num_mel_bins: int = 64,
-        num_frames: int = 121,
-        frame_rate: float = 25.0,
-        sampling_rate: int = 16000,
-        hop_length: int = 160,
-        dtype: Optional[torch.dtype] = None,
-        device: Optional[torch.device] = None,
-        generator: Optional[torch.Generator] = None,
-        latents: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        duration_s = num_frames / frame_rate
-        latents_per_second = (
-            float(sampling_rate) / float(hop_length) / float(self.audio_vae_temporal_compression_ratio)
-        )
-        latent_length = round(duration_s * latents_per_second)
-
-        if latents is not None:
-            return latents.to(device=device, dtype=dtype), latent_length
-
-        # TODO: confirm whether this logic is correct
-        latent_mel_bins = num_mel_bins // self.audio_vae_mel_compression_ratio
-
-        shape = (batch_size, num_channels_latents, latent_length, latent_mel_bins)
-
-        if isinstance(generator, list) and len(generator) != batch_size:
-            raise ValueError(
-                f"You have passed a list of generators of length {len(generator)}, but requested an effective batch"
-                f" size of {batch_size}. Make sure the batch size matches the length of the generators."
-            )
-
-        latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
-        latents = self._pack_audio_latents(latents)
-        return latents, latent_length
-
     @property
-    def guidance_scale(self):
+    def guidance_scale(self) -> float:
         return self._guidance_scale
 
     @property
-    def guidance_rescale(self):
-        return self._guidance_rescale
+    def do_classifier_free_guidance(self) -> bool:
+        return self._guidance_scale > 1
 
     @property
-    def do_classifier_free_guidance(self):
-        return self._guidance_scale > 1.0
+    def joint_attention_kwargs(self) -> dict[str, Any] | None:
+        return self._joint_attention_kwargs
 
     @property
-    def num_timesteps(self):
+    def num_timesteps(self) -> int:
         return self._num_timesteps
 
     @property
-    def current_timestep(self):
-        return self._current_timestep
-
-    @property
-    def attention_kwargs(self):
-        return self._attention_kwargs
-
-    @property
-    def interrupt(self):
+    def interrupt(self) -> Callable[[Tensor], bool] | None:
         return self._interrupt
 
-    @torch.no_grad()
-    @replace_example_docstring(EXAMPLE_DOC_STRING)
-    def __call__(
+    def progress_bar(self, total: int) -> tqdm:
+        return tqdm(total=total)
+
+    def execute(
         self,
-        prompt: Union[str, List[str]] = None,
-        negative_prompt: Optional[Union[str, List[str]]] = None,
-        height: int = 512,
-        width: int = 768,
-        num_frames: int = 121,
-        frame_rate: float = 25.0,
-        num_inference_steps: int = 40,
-        timesteps: List[int] = None,
-        guidance_scale: float = 3.0,
-        guidance_rescale: float = 0.0,
-        num_videos_per_prompt: Optional[int] = 1,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        latents: Optional[torch.Tensor] = None,
-        audio_latents: Optional[torch.Tensor] = None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        prompt_attention_mask: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_attention_mask: Optional[torch.Tensor] = None,
-        decode_timestep: Union[float, List[float]] = 0.0,
-        decode_noise_scale: Optional[Union[float, List[float]]] = None,
-        output_type: Optional[str] = "pil",
-        return_dict: bool = True,
-        attention_kwargs: Optional[Dict[str, Any]] = None,
-        callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
-        callback_on_step_end_tensor_inputs: List[str] = ["latents"],
-        max_sequence_length: int = 1024,
-    ):
+        model_inputs: ModelInputs,
+    ) -> ModelOutputs:
         r"""
-        Function invoked when calling the pipeline for generation.
+        Executes the LTX2 model with the prepared inputs.
 
         Args:
-            prompt (`str` or `List[str]`, *optional*):
-                The prompt or prompts to guide the image generation. If not defined, one has to pass `prompt_embeds`.
-                instead.
-            height (`int`, *optional*, defaults to `512`):
-                The height in pixels of the generated image. This is set to 480 by default for the best results.
-            width (`int`, *optional*, defaults to `768`):
-                The width in pixels of the generated image. This is set to 848 by default for the best results.
-            num_frames (`int`, *optional*, defaults to `121`):
-                The number of video frames to generate
-            frame_rate (`float`, *optional*, defaults to `25.0`):
-                The frames per second (FPS) of the generated video.
-            num_inference_steps (`int`, *optional*, defaults to 40):
-                The number of denoising steps. More denoising steps usually lead to a higher quality image at the
-                expense of slower inference.
-            timesteps (`List[int]`, *optional*):
-                Custom timesteps to use for the denoising process with schedulers which support a `timesteps` argument
-                in their `set_timesteps` method. If not defined, the default behavior when `num_inference_steps` is
-                passed will be used. Must be in descending order.
-            guidance_scale (`float`, *optional*, defaults to `3.0`):
-                Guidance scale as defined in [Classifier-Free Diffusion
-                Guidance](https://huggingface.co/papers/2207.12598). `guidance_scale` is defined as `w` of equation 2.
-                of [Imagen Paper](https://huggingface.co/papers/2205.11487). Guidance scale is enabled by setting
-                `guidance_scale > 1`. Higher guidance scale encourages to generate images that are closely linked to
-                the text `prompt`, usually at the expense of lower image quality.
-            guidance_rescale (`float`, *optional*, defaults to 0.0):
-                Guidance rescale factor proposed by [Common Diffusion Noise Schedules and Sample Steps are
-                Flawed](https://huggingface.co/papers/2305.08891) `guidance_scale` is defined as `φ` in equation 16. of
-                [Common Diffusion Noise Schedules and Sample Steps are
-                Flawed](https://huggingface.co/papers/2305.08891). Guidance rescale factor should fix overexposure when
-                using zero terminal SNR.
-            num_videos_per_prompt (`int`, *optional*, defaults to 1):
-                The number of videos to generate per prompt.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
-                One or a list of [torch generator(s)](https://pytorch.org/docs/stable/generated/torch.Generator.html)
-                to make generation deterministic.
-            latents (`torch.Tensor`, *optional*):
-                Pre-generated noisy latents, sampled from a Gaussian distribution, to be used as inputs for video
-                generation. Can be used to tweak the same generation with different prompts. If not provided, a latents
-                tensor will be generated by sampling using the supplied random `generator`.
-            audio_latents (`torch.Tensor`, *optional*):
-                Pre-generated noisy latents, sampled from a Gaussian distribution, to be used as inputs for audio
-                generation. Can be used to tweak the same generation with different prompts. If not provided, a latents
-                tensor will be generated by sampling using the supplied random `generator`.
-            prompt_embeds (`torch.Tensor`, *optional*):
-                Pre-generated text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt weighting. If not
-                provided, text embeddings will be generated from `prompt` input argument.
-            prompt_attention_mask (`torch.Tensor`, *optional*):
-                Pre-generated attention mask for text embeddings.
-            negative_prompt_embeds (`torch.FloatTensor`, *optional*):
-                Pre-generated negative text embeddings. For PixArt-Sigma this negative prompt should be "". If not
-                provided, negative_prompt_embeds will be generated from `negative_prompt` input argument.
-            negative_prompt_attention_mask (`torch.FloatTensor`, *optional*):
-                Pre-generated attention mask for negative text embeddings.
-            decode_timestep (`float`, defaults to `0.0`):
-                The timestep at which generated video is decoded.
-            decode_noise_scale (`float`, defaults to `None`):
-                The interpolation factor between random noise and denoised latents at the decode timestep.
-            output_type (`str`, *optional*, defaults to `"pil"`):
-                The output format of the generate image. Choose between
-                [PIL](https://pillow.readthedocs.io/en/stable/): `PIL.Image.Image` or `np.array`.
-            return_dict (`bool`, *optional*, defaults to `True`):
-                Whether or not to return a [`~pipelines.ltx.LTX2PipelineOutput`] instead of a plain tuple.
-            attention_kwargs (`dict`, *optional*):
-                A kwargs dictionary that if specified is passed along to the `AttentionProcessor` as defined under
-                `self.processor` in
-                [diffusers.models.attention_processor](https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py).
-            callback_on_step_end (`Callable`, *optional*):
-                A function that calls at the end of each denoising steps during the inference. The function is called
-                with the following arguments: `callback_on_step_end(self: DiffusionPipeline, step: int, timestep: int,
-                callback_kwargs: Dict)`. `callback_kwargs` will include a list of all tensors as specified by
-                `callback_on_step_end_tensor_inputs`.
-            callback_on_step_end_tensor_inputs (`List`, *optional*, defaults to `["latents"]`):
-                The list of tensor inputs for the `callback_on_step_end` function. The tensors specified in the list
-                will be passed as `callback_kwargs` argument. You will only be able to include variables listed in the
-                `._callback_tensor_inputs` attribute of your pipeline class.
-            max_sequence_length (`int`, *optional*, defaults to `1024`):
-                Maximum sequence length to use with the `prompt`.
-
-        Examples:
+            model_inputs: A LTX2Inputs instance containing all LTX2 generation parameters
+                including prompt, dimensions, guidance scale, etc.
 
         Returns:
-            [`~pipelines.ltx.LTX2PipelineOutput`] or `tuple`:
-                If `return_dict` is `True`, [`~pipelines.ltx.LTX2PipelineOutput`] is returned, otherwise a `tuple` is
-                returned where the first element is a list with the generated images.
+            ModelOutputs containing the generated images.
         """
+        # Use cast for type safety (same pattern as GptOssModel)
+        model_inputs = cast(LTX2Inputs, model_inputs)
 
-        if isinstance(callback_on_step_end, (PipelineCallback, MultiPipelineCallbacks)):
-            callback_on_step_end_tensor_inputs = callback_on_step_end.tensor_inputs
-
-        # 1. Check inputs. Raise error if not correct
-        self.check_inputs(
-            prompt=prompt,
-            height=height,
-            width=width,
-            callback_on_step_end_tensor_inputs=callback_on_step_end_tensor_inputs,
-            prompt_embeds=prompt_embeds,
-            negative_prompt_embeds=negative_prompt_embeds,
-            prompt_attention_mask=prompt_attention_mask,
-            negative_prompt_attention_mask=negative_prompt_attention_mask,
+        # Extract parameters from model_inputs
+        prompt = model_inputs.prompt
+        height = model_inputs.height or 1024
+        width = model_inputs.width or 1024
+        num_inference_steps = model_inputs.num_inference_steps
+        sigmas = model_inputs.sigmas
+        guidance_scale = model_inputs.guidance_scale
+        cfg_normalization = model_inputs.cfg_normalization
+        cfg_truncation = model_inputs.cfg_truncation
+        negative_prompt = model_inputs.negative_prompt
+        num_images_per_prompt = model_inputs.num_images_per_prompt or 1
+        latents = model_inputs.latents
+        prompt_embeds = model_inputs.prompt_embeds
+        negative_prompt_embeds = model_inputs.negative_prompt_embeds
+        output_type = model_inputs.output_type
+        joint_attention_kwargs = model_inputs.joint_attention_kwargs
+        callback_on_step_end = model_inputs.callback_on_step_end
+        callback_on_step_end_tensor_inputs = (
+            model_inputs.callback_on_step_end_tensor_inputs
         )
+        max_sequence_length = model_inputs.max_sequence_length
+        cu_seqlens = model_inputs.cu_seqlens
+        max_seqlen = model_inputs.max_seqlen
+
+        vae_scale = self.vae_scale_factor * 2
+        if height % vae_scale != 0:
+            raise ValueError(
+                f"Height must be divisible by {vae_scale} (got {height}). "
+                f"Please adjust the height to a multiple of {vae_scale}."
+            )
+        if width % vae_scale != 0:
+            raise ValueError(
+                f"Width must be divisible by {vae_scale} (got {width}). "
+                f"Please adjust the width to a multiple of {vae_scale}."
+            )
+
+        device = self.devices[0]
 
         self._guidance_scale = guidance_scale
-        self._guidance_rescale = guidance_rescale
-        self._attention_kwargs = attention_kwargs
+        self._joint_attention_kwargs = joint_attention_kwargs
         self._interrupt = False
-        self._current_timestep = None
-
+        self._cfg_normalization = cfg_normalization
+        self._cfg_truncation = cfg_truncation
         # 2. Define call parameters
         if prompt is not None and isinstance(prompt, str):
             batch_size = 1
         elif prompt is not None and isinstance(prompt, list):
             batch_size = len(prompt)
         else:
-            batch_size = prompt_embeds.shape[0]
+            batch_size = len(prompt_embeds)
 
-        device = self._execution_device
+        # If prompt_embeds is provided and prompt is None, skip encoding
+        if prompt_embeds is not None and prompt is None:
+            if (
+                self.do_classifier_free_guidance
+                and negative_prompt_embeds is None
+            ):
+                raise ValueError(
+                    "When `prompt_embeds` is provided without `prompt`, "
+                    "`negative_prompt_embeds` must also be provided for classifier-free guidance."
+                )
 
-        # 3. Prepare text embeddings
-        (
-            prompt_embeds,
-            prompt_attention_mask,
-            negative_prompt_embeds,
-            negative_prompt_attention_mask,
-        ) = self.encode_prompt(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            do_classifier_free_guidance=self.do_classifier_free_guidance,
-            num_videos_per_prompt=num_videos_per_prompt,
-            prompt_embeds=prompt_embeds,
-            negative_prompt_embeds=negative_prompt_embeds,
-            prompt_attention_mask=prompt_attention_mask,
-            negative_prompt_attention_mask=negative_prompt_attention_mask,
-            max_sequence_length=max_sequence_length,
-            device=device,
-        )
-        if self.do_classifier_free_guidance:
-            prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
-            prompt_attention_mask = torch.cat([negative_prompt_attention_mask, prompt_attention_mask], dim=0)
+        from safetensors.torch import load_file
 
-        additive_attention_mask = (1 - prompt_attention_mask.to(prompt_embeds.dtype)) * -1000000.0
-        connector_prompt_embeds, connector_audio_prompt_embeds, connector_attention_mask = self.connectors(
-            prompt_embeds, additive_attention_mask, additive_mask=True
+        # Load prompt embeddings from safetensors file
+        # Note: This is temporary! The text encoder should be used instead.
+        data = load_file("/root/prompt_embeds.safetensors")
+        prompt_embeds_torch = data["prompt_embeds"]
+        prompt_embeds_np = (
+            prompt_embeds_torch.float().numpy()
+        )  # bfloat16 -> float32 -> numpy
+        prompt_embeds = (
+            Tensor.from_dlpack(prompt_embeds_np).to(device).cast(DType.bfloat16)
         )
 
         # 4. Prepare latent variables
-        latent_num_frames = (num_frames - 1) // self.vae_temporal_compression_ratio + 1
-        latent_height = height // self.vae_spatial_compression_ratio
-        latent_width = width // self.vae_spatial_compression_ratio
-        video_sequence_length = latent_num_frames * latent_height * latent_width
+        num_channels_latents = self.model.transformer.in_channels
 
-        num_channels_latents = self.transformer.config.in_channels
+        # Extract seed for reproducible latent generation
+        seed = model_inputs.seed
+
         latents = self.prepare_latents(
-            batch_size * num_videos_per_prompt,
+            batch_size * num_images_per_prompt,
             num_channels_latents,
             height,
             width,
-            num_frames,
-            torch.float32,
+            DType.float32,
             device,
-            generator,
-            latents,
+            seed=seed,
+            latents=latents,
         )
 
-        num_mel_bins = self.audio_vae.config.mel_bins if getattr(self, "audio_vae", None) is not None else 64
-        latent_mel_bins = num_mel_bins // self.audio_vae_mel_compression_ratio
+        # Repeat prompt_embeds for num_images_per_prompt
+        if num_images_per_prompt > 1:
+            prompt_embeds = [
+                pe for pe in prompt_embeds for _ in range(num_images_per_prompt)
+            ]
+            if self.do_classifier_free_guidance and negative_prompt_embeds:
+                negative_prompt_embeds = [
+                    npe
+                    for npe in negative_prompt_embeds
+                    for _ in range(num_images_per_prompt)
+                ]
 
-        num_channels_latents_audio = (
-            self.audio_vae.config.latent_channels if getattr(self, "audio_vae", None) is not None else 8
-        )
-        audio_latents, audio_num_frames = self.prepare_audio_latents(
-            batch_size * num_videos_per_prompt,
-            num_channels_latents=num_channels_latents_audio,
-            num_mel_bins=num_mel_bins,
-            num_frames=num_frames,  # Video frames, audio frames will be calculated from this
-            frame_rate=frame_rate,
-            sampling_rate=self.audio_sampling_rate,
-            hop_length=self.audio_hop_length,
-            dtype=torch.float32,
-            device=device,
-            generator=generator,
-            latents=audio_latents,
-        )
+        actual_batch_size = batch_size * num_images_per_prompt
+        # Compute image_seq_len from height/width Python ints to avoid GPU sync
+        latent_h = height // self.vae_scale_factor
+        latent_w = width // self.vae_scale_factor
+        image_seq_len = (latent_h // 2) * (latent_w // 2)
 
         # 5. Prepare timesteps
-        sigmas = np.linspace(1.0, 1 / num_inference_steps, num_inference_steps)
         mu = calculate_shift(
-            video_sequence_length,
-            self.scheduler.config.get("base_image_seq_len", 1024),
-            self.scheduler.config.get("max_image_seq_len", 4096),
-            self.scheduler.config.get("base_shift", 0.95),
-            self.scheduler.config.get("max_shift", 2.05),
+            image_seq_len,
+            self.model.scheduler.base_image_seq_len,
+            self.model.scheduler.max_image_seq_len,
+            self.model.scheduler.base_shift,
+            self.model.scheduler.max_shift,
         )
-        # For now, duplicate the scheduler for use with the audio latents
-        audio_scheduler = copy.deepcopy(self.scheduler)
-        _, _ = retrieve_timesteps(
-            audio_scheduler,
-            num_inference_steps,
-            device,
-            timesteps,
-            sigmas=sigmas,
-            mu=mu,
-        )
+        self.model.scheduler.sigma_min = 0.0
+        scheduler_kwargs = {"mu": mu}
         timesteps, num_inference_steps = retrieve_timesteps(
-            self.scheduler,
+            self.model.scheduler,
             num_inference_steps,
             device,
-            timesteps,
             sigmas=sigmas,
-            mu=mu,
+            **scheduler_kwargs,
         )
-        num_warmup_steps = max(len(timesteps) - num_inference_steps * self.scheduler.order, 0)
-        self._num_timesteps = len(timesteps)
+        # Use Python int from retrieve_timesteps instead of tensor.shape to avoid sync
+        num_warmup_steps = max(
+            num_inference_steps
+            - num_inference_steps * self.model.scheduler.order,
+            0,
+        )
+        self._num_timesteps = num_inference_steps
 
-        # 6. Prepare micro-conditions
-        rope_interpolation_scale = (
-            self.vae_temporal_compression_ratio / frame_rate,
-            self.vae_spatial_compression_ratio,
-            self.vae_spatial_compression_ratio,
-        )
-        # Pre-compute video and audio positional ids as they will be the same at each step of the denoising loop
-        video_coords = self.transformer.rope.prepare_video_coords(
-            latents.shape[0], latent_num_frames, latent_height, latent_width, latents.device, fps=frame_rate
-        )
-        audio_coords = self.transformer.audio_rope.prepare_audio_coords(
-            audio_latents.shape[0], audio_num_frames, audio_latents.device, fps=frame_rate
-        )
+        # Pre-set step index to avoid expensive lookup on each step
+        self.model.scheduler._step_index = 0
 
-        # 7. Denoising loop
+        # 6. Denoising loop
         with self.progress_bar(total=num_inference_steps) as progress_bar:
-            for i, t in enumerate(timesteps):
+            for i in range(self._num_timesteps):
+                t = timesteps[i]
                 if self.interrupt:
                     continue
 
-                self._current_timestep = t
+                # broadcast to batch dimension - use batch_size to avoid GPU sync
+                timestep = F.broadcast_to(t, (batch_size,))
+                timestep = (1000 - timestep) / 1000
+                # Normalized time for time-aware config (0 at start, 1 at end)
+                # Use loop index to avoid GPU sync from .item()
+                t_norm = i / max(1, self._num_timesteps - 1)
 
-                latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
-                latent_model_input = latent_model_input.to(prompt_embeds.dtype)
-                audio_latent_model_input = (
-                    torch.cat([audio_latents] * 2) if self.do_classifier_free_guidance else audio_latents
+                # Handle cfg truncation
+                current_guidance_scale = self.guidance_scale
+                if (
+                    self.do_classifier_free_guidance
+                    and self._cfg_truncation is not None
+                    and float(self._cfg_truncation) <= 1
+                ):
+                    if t_norm > self._cfg_truncation:
+                        current_guidance_scale = 0.0
+
+                # Run CFG only if configured AND scale is non-zero
+                apply_cfg = (
+                    self.do_classifier_free_guidance
+                    and current_guidance_scale > 0
                 )
-                audio_latent_model_input = audio_latent_model_input.to(prompt_embeds.dtype)
 
-                # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
-                timestep = t.expand(latent_model_input.shape[0])
-
-                with self.transformer.cache_context("cond_uncond"):
-                    noise_pred_video, noise_pred_audio = self.transformer(
-                        hidden_states=latent_model_input,
-                        audio_hidden_states=audio_latent_model_input,
-                        encoder_hidden_states=connector_prompt_embeds,
-                        audio_encoder_hidden_states=connector_audio_prompt_embeds,
-                        timestep=timestep,
-                        encoder_attention_mask=connector_attention_mask,
-                        audio_encoder_attention_mask=connector_attention_mask,
-                        num_frames=latent_num_frames,
-                        height=latent_height,
-                        width=latent_width,
-                        fps=frame_rate,
-                        audio_num_frames=audio_num_frames,
-                        video_coords=video_coords,
-                        audio_coords=audio_coords,
-                        # rope_interpolation_scale=rope_interpolation_scale,
-                        attention_kwargs=attention_kwargs,
-                        return_dict=False,
+                if apply_cfg:
+                    latents_typed = latents.cast(DType.bfloat16)
+                    latent_model_input = latents_typed.repeat(2, 1, 1, 1)
+                    prompt_embeds_model_input = (
+                        prompt_embeds + negative_prompt_embeds
                     )
-                noise_pred_video = noise_pred_video.float()
-                noise_pred_audio = noise_pred_audio.float()
+                    timestep_model_input = timestep.repeat(2)
+                else:
+                    latent_model_input = latents.cast(DType.bfloat16)
+                    prompt_embeds_model_input = prompt_embeds
+                    timestep_model_input = timestep
 
-                if self.do_classifier_free_guidance:
-                    noise_pred_video_uncond, noise_pred_video_text = noise_pred_video.chunk(2)
-                    noise_pred_video = noise_pred_video_uncond + self.guidance_scale * (
-                        noise_pred_video_text - noise_pred_video_uncond
+                latent_model_input = latent_model_input.unsqueeze(2)
+
+                x_in = latent_model_input.squeeze(0)
+
+                model_out = self.model.transformer(
+                    x_in,
+                    timestep_model_input,
+                    prompt_embeds_model_input,
+                )
+
+                if apply_cfg:
+                    raise NotImplementedError(
+                        "Classifier-free guidance not yet implemented for Z-Image"
                     )
+                else:
+                    # model_out is a single tensor [C, F, H, W], add batch dim
+                    noise_pred = model_out.cast(DType.float32).unsqueeze(0)
 
-                    noise_pred_audio_uncond, noise_pred_audio_text = noise_pred_audio.chunk(2)
-                    noise_pred_audio = noise_pred_audio_uncond + self.guidance_scale * (
-                        noise_pred_audio_text - noise_pred_audio_uncond
-                    )
-
-                    if self.guidance_rescale > 0:
-                        # Based on 3.4. in https://huggingface.co/papers/2305.08891
-                        noise_pred_video = rescale_noise_cfg(
-                            noise_pred_video, noise_pred_video_text, guidance_rescale=self.guidance_rescale
-                        )
-                        noise_pred_audio = rescale_noise_cfg(
-                            noise_pred_audio, noise_pred_audio_text, guidance_rescale=self.guidance_rescale
-                        )
+                noise_pred = -noise_pred.squeeze(2)
 
                 # compute the previous noisy sample x_t -> x_t-1
-                latents = self.scheduler.step(noise_pred_video, t, latents, return_dict=False)[0]
-                # NOTE: for now duplicate scheduler for audio latents in case self.scheduler sets internal state in
-                # the step method (such as _step_index)
-                audio_latents = audio_scheduler.step(noise_pred_audio, t, audio_latents, return_dict=False)[0]
+                latents = self.model.scheduler.step(
+                    noise_pred.cast(DType.float32),
+                    t,
+                    latents,
+                ).prev_sample
 
                 if callback_on_step_end is not None:
                     callback_kwargs = {}
                     for k in callback_on_step_end_tensor_inputs:
                         callback_kwargs[k] = locals()[k]
-                    callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
+                    callback_outputs = callback_on_step_end(
+                        self, i, t, callback_kwargs
+                    )
 
                     latents = callback_outputs.pop("latents", latents)
-                    prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
+                    prompt_embeds = callback_outputs.pop(
+                        "prompt_embeds", prompt_embeds
+                    )
+                    negative_prompt_embeds = callback_outputs.pop(
+                        "negative_prompt_embeds", negative_prompt_embeds
+                    )
 
                 # call the callback, if provided
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
+                if i == self._num_timesteps - 1 or (
+                    (i + 1) > num_warmup_steps
+                    and (i + 1) % self.model.scheduler.order == 0
+                ):
                     progress_bar.update()
 
-                if XLA_AVAILABLE:
-                    xm.mark_step()
-
         if output_type == "latent":
-            video = latents
-            audio = audio_latents
+            image = latents
         else:
-            latents = self._unpack_latents(
-                latents,
-                latent_num_frames,
-                latent_height,
-                latent_width,
-                self.transformer_spatial_patch_size,
-                self.transformer_temporal_patch_size,
-            )
-            latents = self._denormalize_latents(
-                latents, self.vae.latents_mean, self.vae.latents_std, self.vae.config.scaling_factor
-            )
-            latents = latents.to(prompt_embeds.dtype)
+            latents = latents.cast(DType.bfloat16)
+            latents = (
+                latents / self.model.vae.scaling_factor
+            ) + self.model.vae.shift_factor
 
-            if not self.vae.config.timestep_conditioning:
-                timestep = None
-            else:
-                noise = randn_tensor(latents.shape, generator=generator, device=device, dtype=latents.dtype)
-                if not isinstance(decode_timestep, list):
-                    decode_timestep = [decode_timestep] * batch_size
-                if decode_noise_scale is None:
-                    decode_noise_scale = decode_timestep
-                elif not isinstance(decode_noise_scale, list):
-                    decode_noise_scale = [decode_noise_scale] * batch_size
-
-                timestep = torch.tensor(decode_timestep, device=device, dtype=latents.dtype)
-                decode_noise_scale = torch.tensor(decode_noise_scale, device=device, dtype=latents.dtype)[
-                    :, None, None, None, None
-                ]
-                latents = (1 - decode_noise_scale) * latents + decode_noise_scale * noise
-
-            latents = latents.to(self.vae.dtype)
-            video = self.vae.decode(latents, timestep, return_dict=False)[0]
-            video = self.video_processor.postprocess_video(video, output_type=output_type)
-
-            audio_latents = audio_latents.to(self.audio_vae.dtype)
-            audio_latents = self._denormalize_audio_latents(
-                audio_latents, self.audio_vae.latents_mean, self.audio_vae.latents_std
-            )
-            audio_latents = self._unpack_audio_latents(audio_latents, audio_num_frames, num_mel_bins=latent_mel_bins)
-            generated_mel_spectrograms = self.audio_vae.decode(audio_latents, return_dict=False)[0]
-            audio = self.vocoder(generated_mel_spectrograms)
+            image = self.model.vae.decoder(latents)  # .sample
 
         # Offload all models
-        self.maybe_free_model_hooks()
+        # self.maybe_free_model_hooks()
 
-        if not return_dict:
-            return (video, audio)
-
-        return LTX2PipelineOutput(frames=video, audio=audio)
+        return ModelOutputs(
+            hidden_states=cast(DriverTensor, image.driver_tensor), logits=None
+        )
