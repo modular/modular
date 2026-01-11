@@ -20,7 +20,13 @@ import gpu.block
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, block_idx, global_idx, thread_idx
+from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    block_idx,
+    global_idx,
+    thread_idx,
+)
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import B200, H100
@@ -33,7 +39,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from std.bit import log2_floor
 from algorithm import elementwise
-from utils.index import Index, IndexList
+from utils.index import Index, IndexList, StaticTuple
 from utils.numerics import get_accum_type, max_finite, min_finite
 
 from .matmul import matmul
@@ -43,11 +49,13 @@ from .matmul.gpu.sm100.warp_specialized_blockwise_fp8 import (
 from .utils import elementwise_epilogue_type
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 
-########################################################
-# Static scaled fp8 quantization
-########################################################
 
 comptime logger = Logger()
+
+
+########################################################
+# static scaled fp8 quantization
+########################################################
 
 
 @always_inline
@@ -145,6 +153,8 @@ fn quantize_dynamic_scaled_fp8[
     comptime warps_per_block = min(
         ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block
     )
+    comptime num_threads = warps_per_block * WARP_SIZE
+
     with Trace[TraceLevel.OP, target = StaticString("gpu")](
         "quantize_dynamic_scaled_fp8",
         task_id=Int(ctx.id()),
@@ -157,7 +167,7 @@ fn quantize_dynamic_scaled_fp8[
             scales_dtype,
             in_dtype,
             input_fn,
-            warps_per_block,
+            num_threads,
             group_size,
         ]
 
@@ -166,11 +176,14 @@ fn quantize_dynamic_scaled_fp8[
             scales,
             scale_ub.cast[scales_dtype](),
             grid_dim=(num_rows, num_cols // group_size, 1),
-            block_dim=warps_per_block * WARP_SIZE,
+            block_dim=num_threads,
             attributes=pdl_launch_attributes(),
         )
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+)
 fn quantize_fp8_kernel[
     out_type: DType,
     scales_type: DType,
@@ -178,7 +191,7 @@ fn quantize_fp8_kernel[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         in_type, width
     ],
-    warps_per_block: Int,
+    num_threads: Int,
     group_size: Int,
 ](
     output: NDBuffer[mut=True, out_type, 2, MutAnyOrigin],
@@ -186,7 +199,6 @@ fn quantize_fp8_kernel[
     scale_ub: Scalar[scales_type],
 ):
     comptime simd_width = simd_width_of[in_type]()
-    comptime num_threads = warps_per_block * WARP_SIZE
     comptime use_warp_tiling = group_size <= num_threads * simd_width
     comptime fp8_max = Scalar[out_type].MAX_FINITE
     comptime accum_type = get_accum_type[in_type]()
@@ -216,7 +228,14 @@ fn quantize_fp8_kernel[
         )
 
         if tid == 0:
-            scales.store[width=1](IndexList[2](group_idx, row), scale_factor)
+            scales.store(Index(group_idx, row), scale_factor)
+
+        # Don't use `math.recip` here to avoid using an reciprocal approximation
+        # that gives up too much precision.
+        var scale_factor_recip = (
+            0.0 if scale_factor
+            == 0.0 else 1.0 / scale_factor.cast[accum_type]()
+        )
 
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
@@ -229,15 +248,9 @@ fn quantize_fp8_kernel[
                     accum_type
                 ]()
 
-            var output_vec = input_vec.cast[scales_type]() / scale_factor
+            var output_vec = input_vec * scale_factor_recip
 
-            output_vec = max(
-                SIMD[scales_type, simd_width](-fp8_max),
-                min(SIMD[scales_type, simd_width](fp8_max), output_vec),
-            )
-            output.store[width=simd_width](
-                IndexList[2](row, idx), output_vec.cast[out_type]()
-            )
+            output.store(Index(row, idx), output_vec.cast[out_type]())
 
 
 @always_inline
@@ -276,6 +289,7 @@ fn batched_quantize_dynamic_scaled_fp8[
     comptime warps_per_block = min(
         ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block
     )
+    comptime num_threads = warps_per_block * WARP_SIZE
 
     if batch_size == 0 or num_rows == 0:
         return
@@ -285,7 +299,7 @@ fn batched_quantize_dynamic_scaled_fp8[
         scales_dtype,
         in_dtype,
         input_fn,
-        warps_per_block,
+        num_threads,
         group_size,
     ]
 
@@ -294,11 +308,14 @@ fn batched_quantize_dynamic_scaled_fp8[
         scales,
         scale_ub.cast[scales_dtype](),
         grid_dim=(num_rows, n_groups, batch_size),
-        block_dim=warps_per_block * WARP_SIZE,
+        block_dim=num_threads,
         attributes=pdl_launch_attributes(),
     )
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+)
 fn batched_quantize_fp8_kernel[
     out_type: DType,
     scales_type: DType,
@@ -306,7 +323,7 @@ fn batched_quantize_fp8_kernel[
     input_fn: fn[width: Int] (batch: Int, row: Int, col: Int) capturing -> SIMD[
         in_type, width
     ],
-    warps_per_block: Int,
+    num_threads: Int,
     group_size: Int,
 ](
     output: NDBuffer[mut=True, out_type, 3, MutAnyOrigin],
@@ -314,7 +331,6 @@ fn batched_quantize_fp8_kernel[
     scale_ub: Scalar[scales_type],
 ):
     comptime simd_width = simd_width_of[in_type]()
-    comptime num_threads = warps_per_block * WARP_SIZE
     comptime use_warp_tiling = group_size <= num_threads * simd_width
     comptime fp8_max = Scalar[out_type].MAX_FINITE
     comptime accum_type = get_accum_type[in_type]()
@@ -345,9 +361,14 @@ fn batched_quantize_fp8_kernel[
         )
 
         if tid == 0:
-            scales.store[width=1](
-                IndexList[3](batch_idx, group_idx, row), scale_factor
-            )
+            scales.store(Index(batch_idx, group_idx, row), scale_factor)
+
+        # Don't use `math.recip` here to avoid using an reciprocal approximation
+        # that gives up too much precision.
+        var scale_factor_recip = (
+            0.0 if scale_factor
+            == 0.0 else 1.0 / scale_factor.cast[accum_type]()
+        )
 
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
@@ -360,14 +381,10 @@ fn batched_quantize_fp8_kernel[
                     accum_type
                 ]()
 
-            var output_vec = input_vec.cast[scales_type]() / scale_factor
+            var output_vec = input_vec * scale_factor_recip
 
-            output_vec = max(
-                SIMD[scales_type, simd_width](-fp8_max),
-                min(SIMD[scales_type, simd_width](fp8_max), output_vec),
-            )
-            output.store[width=simd_width](
-                IndexList[3](batch_idx, row, idx), output_vec.cast[out_type]()
+            output.store(
+                Index(batch_idx, row, idx), output_vec.cast[out_type]()
             )
 
 

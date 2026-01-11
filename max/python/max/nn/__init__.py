@@ -23,7 +23,7 @@ from .clamp import clamp
 from .comm import Allreduce, Signals
 from .conv import Conv1D, Conv2d, Conv3D
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
-from .embedding import Embedding, EmbeddingV1, VocabParallelEmbedding
+from .embedding import Embedding, VocabParallelEmbedding
 from .float8_config import (
     Float8Config,
     Float8InputScaleSpec,
@@ -35,21 +35,17 @@ from .identity import Identity
 from .layer import Layer, LayerList, Module, Shardable
 from .linear import (
     MLP,
-    MLPV1,
     ColumnParallelLinear,
     DistributedGemmConfig,
     GPTQLinear,
     Linear,
-    LinearV1,
 )
 from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
 from .norm import (
     ConstantLayerNorm,
     GroupNorm,
     LayerNorm,
-    LayerNormV1,
     RMSNorm,
-    RMSNormV1,
 )
 from .rotary_embedding import (
     DynamicRotaryEmbedding,
@@ -74,7 +70,6 @@ from .transformer import (
 
 __all__ = [
     "MLP",
-    "MLPV1",
     "Allreduce",
     "AttentionWithRope",
     "AttentionWithRopeAndLoRA",
@@ -88,7 +83,6 @@ __all__ = [
     "DistributedTransformer",
     "DistributedTransformerBlock",
     "Embedding",
-    "EmbeddingV1",
     "Float8Config",
     "Float8InputScaleSpec",
     "Float8ScaleGranularity",
@@ -102,18 +96,15 @@ __all__ = [
     "Layer",
     "LayerList",
     "LayerNorm",
-    "LayerNormV1",
     "Linear",
     "LinearLoRA",
     "LinearScalingParams",
-    "LinearV1",
     "Llama3RopeScalingParams",
     "Llama3RotaryEmbedding",
     "LongRoPERotaryEmbedding",
     "LongRoPEScalingParams",
     "Module",
     "RMSNorm",
-    "RMSNormV1",
     "RaggedAttention",
     "ReturnHiddenStates",
     "ReturnLogits",

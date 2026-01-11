@@ -880,6 +880,8 @@ struct List[T: Copyable](
         Examples:
 
         ```mojo
+        from collections import List
+
         numbers: List[Int64] = [1, 2]
         more = SIMD[DType.int64, 2](3, 4)
         numbers.extend(more)
@@ -916,6 +918,8 @@ struct List[T: Copyable](
         Examples:
 
         ```mojo
+        from collections import List
+
         numbers: List[Int64] = [1, 2]
         more = SIMD[DType.int64, 4](3, 4, 5, 6)
         numbers.extend(more, count=2)
@@ -950,11 +954,11 @@ struct List[T: Copyable](
         value = numbers.pop(-2); print(value) # 2, negative index
         ```
         """
-        debug_assert(-self._len <= i < self._len, "pop index out of range")
+        var normalized_idx = normalize_index["List", assert_always=False](
+            i, UInt(len(self))
+        )
 
-        var normalized_idx = i
-        if i < 0:
-            normalized_idx += self._len
+        debug_assert(Int(normalized_idx) < self._len, "pop index out of range")
 
         var ret_val = (self._data + normalized_idx).take_pointee()
         for j in range(normalized_idx + 1, self._len):
@@ -1208,7 +1212,8 @@ struct List[T: Copyable](
         Examples:
 
         ```mojo
-        from sys.info import size_of
+        from collections import List
+
         list: List[Int64] = [1, 2, 3, 4]
         ptr = list.steal_data() # list is no longer available
         for idx in range(4):

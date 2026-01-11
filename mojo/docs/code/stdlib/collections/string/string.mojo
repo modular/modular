@@ -22,7 +22,7 @@ struct Person(Stringable):
 
 
 def string_summary():
-    from testing import assert_equal
+    from testing import assert_equal, assert_raises
 
     var person = Person("Alice", 30)
     print(String(person))  # => Alice (30)

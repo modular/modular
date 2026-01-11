@@ -28,7 +28,7 @@ from collections.string._utf8 import (
 )
 from collections.string.format import _CurlyEntryFormattable, _FormatUtils
 from hashlib.hasher import Hasher
-from fmt._utils import _TotalWritableBytes, _WriteBufferStack
+from format._utils import _TotalWritableBytes, _WriteBufferStack
 from math import align_down
 from os import PathLike, abort
 from sys import is_compile_time, simd_width_of
@@ -1490,7 +1490,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
 
-        from testing import assert_equal
+        from testing import assert_equal, assert_raises
 
         var s = StringSlice("abc")
         var iter = s.codepoints()
@@ -1506,7 +1506,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
 
-        from testing import assert_equal
+        from testing import assert_equal, assert_raises
 
         # A visual character composed of a combining sequence of 2 codepoints.
         var s = StringSlice("á")

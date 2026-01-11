@@ -436,7 +436,7 @@ permute = functional(ops.permute)
 pow = functional(ops.pow)
 #: Creates a tensor with evenly spaced values.
 #: See :func:`max.graph.ops.range` for details.
-range = functional(ops.range)
+arange = functional(ops.range)
 #: Applies the ReLU activation function.
 #: See :func:`max.graph.ops.relu` for details.
 relu = functional(ops.relu)
@@ -473,9 +473,61 @@ slice_tensor = functional(ops.slice_tensor)
 #: Applies the softmax function.
 #: See :func:`max.graph.ops.softmax` for details.
 softmax = functional(ops.softmax)
-#: Splits a tensor into multiple tensors.
-#: See :func:`max.graph.ops.split` for details.
-split = functional(ops.split)
+
+
+def split(
+    x: tensor.Tensor | TensorValue,
+    split_size_or_sections: int | list[int],
+    axis: int = 0,
+) -> list[tensor.Tensor] | list[TensorValue]:
+    """Splits a tensor into multiple tensors along a given dimension.
+
+    This function supports two modes, matching PyTorch's behavior:
+
+    - If ``split_size_or_sections`` is an **int**, splits into chunks of that
+      size (the last chunk may be smaller if the dimension is not evenly
+      divisible).
+    - If ``split_size_or_sections`` is a **list of ints**, splits into chunks
+      with exactly those sizes (must sum to the dimension size).
+
+    .. code-block:: python
+
+        from max.experimental import functional as F, Tensor
+
+        x = Tensor.ones([10, 4])
+
+        # Split into chunks of size 3 (last chunk is size 1)
+        chunks = F.split(x, 3, axis=0)  # shapes: [3,4], [3,4], [3,4], [1,4]
+
+        # Split into exact sizes
+        chunks = F.split(x, [2, 3, 5], axis=0)  # shapes: [2,4], [3,4], [5,4]
+
+    Args:
+        x: The input tensor to split.
+        split_size_or_sections: Either an int (chunk size) or a list of ints
+            (exact sizes for each output tensor).
+        axis: The dimension along which to split. Defaults to 0.
+
+    Returns:
+        A list of tensors resulting from the split.
+    """
+    # Get the dimension size along the split axis
+    shape = x.shape
+    dim_size = int(shape[axis])
+
+    # Convert int split_size to list of sizes
+    if isinstance(split_size_or_sections, int):
+        chunk_size = split_size_or_sections
+        num_full_chunks, remainder = divmod(dim_size, chunk_size)
+        split_sizes = [chunk_size] * num_full_chunks
+        if remainder > 0:
+            split_sizes.append(remainder)
+    else:
+        split_sizes = list(split_size_or_sections)
+
+    return functional(ops.split)(x, split_sizes, axis)
+
+
 #: Computes the square root element-wise.
 #: See :func:`max.graph.ops.sqrt` for details.
 sqrt = functional(ops.sqrt)

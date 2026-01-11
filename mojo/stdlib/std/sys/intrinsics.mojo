@@ -502,6 +502,9 @@ fn prefetch[
             constraints="l,~{memory}",
             has_side_effect=True,
         ](addr.bitcast[NoneType]())
+    elif is_apple_gpu():
+        # Apple GPU officially does not support prefetch intrinsic
+        pass
     else:
         llvm_intrinsic["llvm.prefetch", NoneType](
             addr.bitcast[NoneType](),

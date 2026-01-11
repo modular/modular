@@ -194,7 +194,7 @@ def test_ep_comm(n_devices: int) -> None:
             )
             .to(torch.float32)
             .sum(dim=1)
-        )
+        ).to(torch.bfloat16)
         max_output = results[dev_i]
         torch.testing.assert_close(
             ref_output, torch.from_dlpack(max_output).to("cpu")

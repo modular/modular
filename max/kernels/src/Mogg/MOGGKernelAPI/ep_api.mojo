@@ -23,6 +23,7 @@ from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from gpu.host.info import is_gpu
 from layout import Layout, LayoutTensor, RuntimeLayout
 from memory import LegacyUnsafePointer
+from utils.index import IndexList
 
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
@@ -34,6 +35,9 @@ from sys.ffi import external_call
 from tensor import InputTensor, OutputTensor
 from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
+)
+from tensor.managed_tensor_slice import (
+    _FusedOutputTensor as FusedOutputTensor,
 )
 
 from shmem import (
@@ -49,6 +53,7 @@ from shmem.ep_comm import (
     dispatch_cb_kernel,
     combine_kernel,
     combine_cb_kernel,
+    elementwise_epilogue_type,
     fused_silu_kernel,
     fused_silu_fp8_kernel,
 )
@@ -275,8 +280,9 @@ struct Struct_ep_dispatch:
         """Execute the Expert Parallelism dispatch kernel.
 
         This function launches the dispatch_kernel from ep_comm.mojo to
-        initiate token distribution across expert devices. The kernel uses
-        SHMEM for efficient GPU-to-GPU communication without CPU involvement.
+        initiate token distribution across expert devices. In multi-node
+        scenarios, all the communication buffers need to be allocated using
+        `shmem_malloc`.
 
         Parameters:
             input_dtype: Data type of the input tokens.
@@ -293,10 +299,9 @@ struct Struct_ep_dispatch:
                 Used to coordinate between different thread blocks.
             input_tokens: Tokens to dispatch to experts.
             topk_ids: Expert assignments from router.
-            send_ptrs: SHMEM send buffer pointers for each local GPU.
-            recv_ptrs: SHMEM receive buffer pointers for each local GPU.
-            recv_count_ptrs: SHMEM receive count buffer pointers for each local
-                GPU.
+            send_ptrs: Send buffer pointers for each local GPU.
+            recv_ptrs: Receive buffer pointers for each local GPU.
+            recv_count_ptrs: Receive count buffer pointers for each local GPU.
             context: Device context pointer
         """
         # Ensure this kernel only runs on GPU targets
@@ -447,9 +452,9 @@ struct Struct_ep_dispatch_cb:
         """Execute the Expert Parallelism dispatch completion kernel.
 
         This function launches the dispatch_cb_kernel from ep_comm.mojo to
-        complete the token dispatch phase. It waits for all local SHMEM
-        transfers to finish, then organizes the received tokens for grouped
-        matmul computation.
+        complete the token dispatch phase. It waits for all inter-device
+        communication to complete, then organizes the received tokens into a
+        format suitable for grouped matmul computation.
 
         Parameters:
             dispatch_dtype: Data type for tokens during dispatch phase.
@@ -469,9 +474,8 @@ struct Struct_ep_dispatch_cb:
             expert_usage_stats_host: Statistics for grouped matmul kernel.
             src_info: Source routing information for combine phase.
             atomic_counters_0: Synchronization counters from dispatch phase.
-            recv_ptrs: SHMEM receive buffer pointers for each local GPU.
-            recv_count_ptrs: SHMEM receive count buffer pointers for each local
-                GPU.
+            recv_ptrs: Receive buffer pointers for each local GPU.
+            recv_count_ptrs: Receive count buffer pointers for each local GPU.
             context: Device context pointer
         """
         # Ensure this kernel only runs on GPU targets
@@ -608,11 +612,10 @@ struct Struct_ep_dispatch_cb_fused_shared_expert:
         """Execute the Expert Parallelism dispatch completion kernel.
 
         This function launches the dispatch_cb_kernel from ep_comm.mojo to
-        complete the token dispatch phase. It waits for all local SHMEM
-        transfers to finish, then organizes the received tokens for grouped
-        matmul computation. This kernel also packs the shared expert's inputs
-        with the routed experts' inputs, which will pass to the grouped matmul
-        kernel later.
+        complete the token dispatch phase. It waits for all inter-device
+        communication to complete, then organizes the received tokens into a
+        format suitable for grouped matmul computation. This kernel also packs
+        the shared expert's inputs with the routed experts' inputs.
 
         Parameters:
             dispatch_dtype: Data type for tokens during dispatch phase.
@@ -633,9 +636,8 @@ struct Struct_ep_dispatch_cb_fused_shared_expert:
             expert_usage_stats_host: Statistics for grouped matmul kernel.
             src_info: Source routing information for combine phase.
             atomic_counters_0: Synchronization counters from dispatch phase.
-            recv_ptrs: SHMEM receive buffer pointers for each local GPU.
-            recv_count_ptrs: SHMEM receive count buffer pointers for each local
-                GPU.
+            recv_ptrs: Receive buffer pointers for each local GPU.
+            recv_count_ptrs: Receive count buffer pointers for each local GPU.
             input_tokens: Input tokens for the shared experts.
             context: Device context pointer"""
         # Ensure this kernel only runs on GPU targets
@@ -782,8 +784,9 @@ struct Struct_ep_dispatch_fp8:
         """Execute the Expert Parallelism dispatch kernel.
 
         This function launches the dispatch_kernel from ep_comm.mojo to
-        initiate token distribution across expert devices. The kernel uses
-        SHMEM for efficient GPU-to-GPU communication without CPU involvement.
+        initiate token distribution across expert devices. In multi-node
+        scenarios, all the communication buffers need to be allocated using
+        `shmem_malloc`.
 
         Parameters:
             input_dtype: Data type of the input tokens.
@@ -803,10 +806,9 @@ struct Struct_ep_dispatch_fp8:
                 Used to coordinate between different thread blocks.
             input_tokens: Tokens to dispatch to experts.
             topk_ids: Expert assignments from router.
-            send_ptrs: SHMEM send buffer pointers for each local GPU.
-            recv_ptrs: SHMEM receive buffer pointers for each local GPU.
-            recv_count_ptrs: SHMEM receive count buffer pointers for each local
-                GPU.
+            send_ptrs: Send buffer pointers for each local GPU.
+            recv_ptrs: Receive buffer pointers for each local GPU.
+            recv_count_ptrs: Receive count buffer pointers for each local GPU.
             context: Device context pointer
         """
         # Ensure this kernel only runs on GPU targets
@@ -972,9 +974,9 @@ struct Struct_ep_dispatch_cb_fp8:
         """Execute the Expert Parallelism dispatch completion kernel.
 
         This function launches the dispatch_cb_kernel from ep_comm.mojo to
-        complete the token dispatch phase. It waits for all local SHMEM
-        transfers to finish, then organizes the received tokens for grouped
-        matmul computation.
+        complete the token dispatch phase. It waits for all inter-device
+        communication to complete, then organizes the received tokens into a
+        format suitable for grouped matmul computation.
 
         Parameters:
             dispatch_dtype: Data type for tokens during dispatch phase.
@@ -997,9 +999,8 @@ struct Struct_ep_dispatch_cb_fp8:
             expert_usage_stats_host: Statistics for grouped matmul kernel.
             src_info: Source routing information for combine phase.
             atomic_counters_0: Synchronization counters from dispatch phase.
-            recv_ptrs: SHMEM receive buffer pointers for each local GPU.
-            recv_count_ptrs: SHMEM receive count buffer pointers for each local
-                GPU.
+            recv_ptrs: Receive buffer pointers for each local GPU.
+            recv_count_ptrs: Receive count buffer pointers for each local GPU.
             context: Device context pointer
         """
         # Ensure this kernel only runs on GPU targets
@@ -1149,11 +1150,10 @@ struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
         """Execute the Expert Parallelism dispatch completion kernel.
 
         This function launches the dispatch_cb_kernel from ep_comm.mojo to
-        complete the token dispatch phase. It waits for all local SHMEM
-        transfers to finish, then organizes the received tokens for grouped
-        matmul computation. This kernel also packs the shared expert's inputs
-        with the routed experts' inputs, which will pass to the grouped matmul
-        kernel later.
+        complete the token dispatch phase. It waits for all inter-device
+        communication to complete, then organizes the received tokens into a
+        format suitable for grouped matmul computation. This kernel also packs
+        the shared expert's inputs with the routed experts' inputs.
 
         Parameters:
             dispatch_dtype: Data type for tokens during dispatch phase.
@@ -1177,9 +1177,8 @@ struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
             expert_usage_stats_host: Statistics for grouped matmul kernel.
             src_info: Source routing information for combine phase.
             atomic_counters_0: Synchronization counters from dispatch phase.
-            recv_ptrs: SHMEM receive buffer pointers for each local GPU.
-            recv_count_ptrs: SHMEM receive count buffer pointers for each local
-                GPU.
+            recv_ptrs: Receive buffer pointers for each local GPU.
+            recv_count_ptrs: Receive count buffer pointers for each local GPU.
             input_tokens: Input tokens for the shared experts.
             context: Device context pointer
         """
@@ -1340,7 +1339,9 @@ struct Struct_ep_combine:
 
         This function launches the combine_kernel from ep_comm.mojo to initiate
         sending expert outputs back to their original devices. The kernel uses
-        source routing information to determine destinations.
+        source routing information to determine destinations. In multi-node
+        scenarios, all the communication buffers need to be allocated using
+        `shmem_malloc`.
 
         Parameters:
             combine_dtype: Data type for tokens during combine phase.
@@ -1357,10 +1358,9 @@ struct Struct_ep_combine:
                 Used to coordinate between different thread blocks.
             input_tokens: Expert output tokens to send back to original devices.
             src_info: Source routing information from dispatch phase.
-            send_ptrs: SHMEM send buffer pointers for each local GPU.
-            recv_ptrs: SHMEM receive buffer pointers for each local GPU.
-            recv_count_ptrs: SHMEM receive count buffer pointers for each local
-                GPU.
+            send_ptrs: Send buffer pointers for each local GPU.
+            recv_ptrs: Receive buffer pointers for each local GPU.
+            recv_count_ptrs: Receive count buffer pointers for each local GPU.
             context: Device context pointer.
         """
         # Ensure this kernel only runs on GPU targets
@@ -1504,7 +1504,8 @@ struct Struct_ep_combine_fused_shared_expert:
         sending expert outputs back to their original devices. The kernel uses
         source routing information to determine destinations. This kernel will
         also filter out the shared expert's outputs and store them in a separate
-        tensor.
+        tensor. In multi-node scenarios, all the communication buffers need to
+        be allocated using `shmem_malloc`.
 
         Parameters:
             combine_dtype: Data type for tokens during combine phase.
@@ -1522,10 +1523,9 @@ struct Struct_ep_combine_fused_shared_expert:
                 Used to coordinate between different thread blocks.
             input_tokens: Expert output tokens to send back to original devices.
             src_info: Source routing information from dispatch phase.
-            send_ptrs: SHMEM send buffer pointers for each local GPU.
-            recv_ptrs: SHMEM receive buffer pointers for each local GPU.
-            recv_count_ptrs: SHMEM receive count buffer pointers for each local
-                GPU.
+            send_ptrs: Send buffer pointers for each local GPU.
+            recv_ptrs: Receive buffer pointers for each local GPU.
+            recv_count_ptrs: Receive count buffer pointers for each local GPU.
             context: Device context pointer.
         """
         # Ensure this kernel only runs on GPU targets
@@ -1652,57 +1652,73 @@ struct Struct_ep_combine_fused_shared_expert:
 
 @compiler.register("ep.combine_cb")
 struct Struct_ep_combine_cb:
+    @parameter
     @always_inline
     @staticmethod
     fn execute[
         combine_dtype: DType,
+        router_weights_dtype: DType,
+        //,
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
         n_nodes: Int,
-        //,
+        lambdas_have_fusion: Bool,
         target: StaticString,
     ](
-        output_tokens: OutputTensor[dtype=combine_dtype, rank=3],
+        output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2],
         atomic_counters_1: MutableInputTensor[dtype = DType.int32, rank=1],
         recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
         recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        router_weights: InputTensor[dtype=router_weights_dtype, rank=2],
         context: DeviceContextPtr,
     ) raises:
         """Execute the Expert Parallelism combine completion kernel.
 
-        This function launches the combine_cb_kernel from ep_comm.mojo to complete
-        the expert output gathering phase. It waits for all SHMEM transfers to
-        finish, then organizes tokens back to their original format.
+        This function launches the combine_cb_kernel from ep_comm.mojo to
+        complete the token combine phase. It waits for all inter-device
+        communication to complete, then computes the weighted sum of routed
+        expert outputs for each token.
 
         Parameters:
             combine_dtype: Data type for tokens during combine phase.
+            router_weights_dtype: Data type for router weights.
             hidden_size: Model hidden dimension size.
             top_k: Number of experts each token was routed to.
             n_experts: Total experts across all devices.
             max_token_per_rank: Maximum tokens any device can receive.
             n_gpus_per_node: GPUs per physical node.
             n_nodes: Number of physical nodes.
+            lambdas_have_fusion: Whether we need to use fused output lambda.
             target: Target.
 
         Arguments:
             output_tokens: Final output tensor with expert results.
             atomic_counters_1: Synchronization counters from combine phase.
-            recv_ptrs: SHMEM receive buffer pointers for each local GPU.
-            recv_count_ptrs: SHMEM receive count buffer pointers for each local
-                GPU.
+            recv_ptrs: Receive buffer pointers for each local GPU.
+            recv_count_ptrs: Receive count buffer pointers for each local GPU.
+            router_weights: Router weights for the current device.
             context: Device context pointer.
         """
         # Ensure this kernel only runs on GPU targets
         __comptime_assert is_gpu[target](), "EP is only supported on GPU."
 
         var output_tokens_tensor = output_tokens.to_layout_tensor()
+        var router_weights_tensor = router_weights.to_layout_tensor()
+
+        @parameter
+        @always_inline
+        @__copy_capture(router_weights_tensor)
+        fn router_weights_fn(token_idx: Int, topk_id: Int) -> Float32:
+            return router_weights_tensor.load[width=1](token_idx, topk_id).cast[
+                DType.float32
+            ]()
 
         # Ensure the shape for the output tensor is correct
         __comptime_assert (
-            output_tokens_tensor.shape[2]() == hidden_size
+            output_tokens_tensor.shape[1]() == hidden_size
         ), "EP combine: output tokens shape doesn't match hidden size."
 
         var gpu_ctx = context.get_device_context()
@@ -1710,8 +1726,19 @@ struct Struct_ep_combine_cb:
         var my_rank = Int32(shmem_my_pe())
         comptime hw_info = gpu_ctx.default_device_info
         comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
-
         comptime n_ranks = n_gpus_per_node * n_nodes
+
+        @parameter
+        @always_inline
+        fn output_fn[
+            dtype: DType, width: Int, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[dtype, width]):
+            output_tokens._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                coords,
+                rebind[SIMD[combine_dtype, width]](val),
+            )
 
         comptime combine_cb = combine_cb_kernel[
             combine_dtype,
@@ -1724,6 +1751,12 @@ struct Struct_ep_combine_cb:
             n_ranks,
             combine_msg_size,
             max_token_per_rank,
+            router_weights_wrapper = OptionalReg[
+                fn (Int, Int) capturing -> Float32
+            ](router_weights_fn),
+            elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+                output_fn
+            ) if lambdas_have_fusion else None,
         ]
 
         @always_inline

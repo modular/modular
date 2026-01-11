@@ -274,7 +274,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
         var denom = rhs.squared_norm()
         return Self(
             self.re.fma(rhs.re, self.im * rhs.im) / denom,
-            self.re.fma(rhs.im, -self.im * rhs.re) / denom,
+            self.im.fma(rhs.re, -(self.re * rhs.im)) / denom,
         )
 
     @always_inline

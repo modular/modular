@@ -69,7 +69,11 @@ def test_math():
 
     var u = x / y
     assert_almost_equal(u.re, 0.44)
-    assert_almost_equal(u.im, -0.08)
+    assert_almost_equal(u.im, 0.08)
+
+    var t = ComplexFloat32(1.0, 1.0) / ComplexFloat32(1.0, -1.0)
+    assert_almost_equal(t.re, 0)
+    assert_almost_equal(t.im, 1)
 
 
 def test_abs():

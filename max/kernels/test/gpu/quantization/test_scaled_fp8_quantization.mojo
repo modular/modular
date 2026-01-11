@@ -26,7 +26,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 from utils import IndexList
-from utils.numerics import max_finite, min_finite
+from utils.numerics import get_accum_type, max_finite, min_finite
 
 
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
@@ -120,6 +120,7 @@ fn test_dynamic_fp8_quant[
     comptime group_size = N.or_else(
         UNKNOWN_VALUE
     ) if group_size_or_per_token == -1 else group_size_or_per_token
+    comptime accum_dtype = get_accum_type[in_dtype]()
 
     comptime static_shape = DimList(to_dim[M], to_dim[N])
     comptime static_scales_shape = DimList(to_dim[N] // group_size, to_dim[M])
@@ -156,7 +157,7 @@ fn test_dynamic_fp8_quant[
     var out_device = ctx.enqueue_create_buffer[out_dtype](total_size)
     var scales_device = ctx.enqueue_create_buffer[in_dtype](scales_size)
 
-    random(in_host)
+    random(in_host, -1.0, 1.0)
 
     ctx.enqueue_copy(in_device, in_host_ptr)
 
@@ -206,6 +207,7 @@ fn test_dynamic_fp8_quant[
                 min(group_max, 1200.0)
                 / Scalar[out_dtype].MAX_FINITE.cast[in_dtype]()
             )
+            var scale_factor_recip = 1.0 / scale_factor.cast[accum_dtype]()
 
             assert_equal(
                 scales_host[group_idx, i].cast[DType.float64](),
@@ -217,7 +219,7 @@ fn test_dynamic_fp8_quant[
                 var out_val = out_host[i, j + group_idx * Int(group_size)]
                 assert_equal(
                     out_val.cast[DType.float32](),
-                    (in_val / scale_factor)
+                    (in_val.cast[accum_dtype]() * scale_factor_recip)
                     .cast[out_dtype]()
                     .cast[DType.float32](),
                     msg="At ["
@@ -246,6 +248,7 @@ fn test_batched_dynamic_fp8_quant[
     comptime group_size = K.or_else(
         UNKNOWN_VALUE
     ) if group_size_or_per_token == -1 else group_size_or_per_token
+    comptime accum_dtype = get_accum_type[in_dtype]()
 
     comptime static_shape = DimList(to_dim[BS], to_dim[M], to_dim[K])
     comptime static_scales_shape = DimList(
@@ -290,7 +293,7 @@ fn test_batched_dynamic_fp8_quant[
     var out_device = ctx.enqueue_create_buffer[out_dtype](total_size)
     var scales_device = ctx.enqueue_create_buffer[in_dtype](scales_size)
 
-    random(in_host)
+    random(in_host, -1.0, 1.0)
 
     ctx.enqueue_copy(in_device, in_host_ptr)
 
@@ -343,6 +346,7 @@ fn test_batched_dynamic_fp8_quant[
                     min(group_max, 1200.0)
                     / Scalar[out_dtype].MAX_FINITE.cast[in_dtype]()
                 )
+                var scale_factor_recip = 1.0 / scale_factor.cast[accum_dtype]()
 
                 assert_equal(
                     scales_host[batch_idx, group_idx, i].cast[DType.float64](),
@@ -359,7 +363,7 @@ fn test_batched_dynamic_fp8_quant[
 
                     assert_equal(
                         out_val.cast[DType.float32](),
-                        (in_val / scale_factor)
+                        (in_val.cast[accum_dtype]() * scale_factor_recip)
                         .cast[out_dtype]()
                         .cast[DType.float32](),
                         msg="At ["

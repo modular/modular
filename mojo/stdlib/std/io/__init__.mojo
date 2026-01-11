@@ -24,7 +24,7 @@ use `print()` and file operations from this package, while library authors
 implement `Writable` to enable their types to work with any `Writer`.
 """
 
-from fmt import Writable, Writer
+from format import Writable, Writer
 from .file import FileHandle
 from .file_descriptor import FileDescriptor
 from .io import input, print

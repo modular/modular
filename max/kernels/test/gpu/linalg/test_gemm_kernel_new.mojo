@@ -88,12 +88,12 @@ fn gemm_kernel[
         MutExternalOrigin,
     ],
 ) where (
-    (mat_a.rank == 2)
-    & (mat_b.rank == 2)
-    & (mat_c.rank == 2)
-    & mat_a.ALL_DIMS_KNOWN
-    & mat_b.ALL_DIMS_KNOWN
-    & mat_c.ALL_DIMS_KNOWN
+    mat_a.rank == 2
+    and mat_b.rank == 2
+    and mat_c.rank == 2
+    and mat_a.ALL_DIMS_KNOWN
+    and mat_b.ALL_DIMS_KNOWN
+    and mat_c.ALL_DIMS_KNOWN
 ):
     var K = mat_a.dim[1]()
 
@@ -562,7 +562,7 @@ fn matmul_kernel_naive[
     m: Int,
     n: Int,
     k: Int,
-) where ((c.rank == 2) & (a.rank == 2) & (b.rank == 2)):
+) where (c.rank == 2 and a.rank == 2 and b.rank == 2):
     var x = Int(global_idx.x)
     var y = Int(global_idx.y)
 
@@ -600,7 +600,7 @@ fn outer_product_acc[
     ],
     lhs: TileTensor,
     rhs: TileTensor,
-) where (lhs.rank == 1) & (rhs.rank == 1):
+) where (lhs.rank == 1 and rhs.rank == 1):
     """Updates result tensor with the outer product of two vectors.
 
     Computes `res += outer(lhs, rhs)` where `lhs` and `rhs` are vectors and

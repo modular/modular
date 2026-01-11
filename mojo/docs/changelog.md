@@ -417,8 +417,7 @@ what we publish.
   no longer allocates memory.
 
 - `Dict` now raises a custom `DictKeyError` type on failure, making lookup
-  failures more efficient to handle. The error message now includes the missing
-  key when the key type implements `Writable`:
+  failures more efficient to handle.
 
   ```mojo
   var d = Dict[String, Int]()
@@ -426,7 +425,7 @@ what we publish.
   try:
       _ = d[key]
   except e:
-      print(e)  # Prints: DictKeyError(key=missing_key)
+      print(e)  # Prints: DictKeyError
   ```
 
 - Remove `List` variadic initializer.
@@ -602,7 +601,7 @@ what we publish.
   wait on processes. These use `posix_spawn` and do not go through the
   system shell.
 
-- `Writer` and `Writable` have been moved into a new `fmt` module and out of
+- `Writer` and `Writable` have been moved into a new `format` module and out of
   `io`. These traits are not directly related to binary i/o, but are rather
   closely tied to type/value string formatting.
 
@@ -644,6 +643,8 @@ what we publish.
   compiler tools (`mojo run`, `mojo build`, `mojo package`, `mojo doc`).
   When used with `--disable-warnings`, warnings are promoted to errors first,
   so the errors are not suppressed.
+  - The counterpart `-Wno-error` flag disables treating warnings as errors.
+    When both flags are specified, the last one wins.
 - The `--validate-doc-strings` flag has been deprecated for `mojo doc` and
   removed from other tools (`mojo build`, `mojo run`, `mojo package`). Use
   `-Werror` instead to treat warnings as errors.
@@ -688,6 +689,12 @@ what we publish.
   rapid typing. Previously, every keystroke triggered a full document parse;
   now updates are coalesced with a 150ms delay, reducing parse frequency by
   10-50x during active editing.
+- The Mojo compiler now supports the `--experimental-export-fixit` flag for
+  `mojo build`, `mojo run`, and `mojo package`. This flag exports fix-its to a
+  YAML file compatible with `clang-apply-replacements`, instead of applying them
+  directly. This is useful for integrating Mojo's fix-it suggestions into
+  external tooling workflows. The flag is mutually exclusive with
+  `--experimental-fixit` (which applies fix-its directly).
 
 ### Experimental changes
 
