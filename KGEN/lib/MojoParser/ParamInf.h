@@ -96,6 +96,12 @@ public:
   ASTDecl &declScope;
   SharedState &shared;
 
+  /// If we're inferring the parameters for a declaration like a fn or struct,
+  /// maintain a pointer to it so we can emit better diagnostics.  This will be
+  /// null when binding a parametric value, like a parametric alias.
+  ASTDecl *const declIfKnown;
+
+  /// This is the callback to report diagnostics through.
   llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag;
 
   // Built up diagnostic state for failures.
@@ -106,7 +112,8 @@ public:
       ASTDecl &declScope, const CallOperands &givenBindings,
       size_t numPreCheckedBindings, ArrayRef<Type> declaredParamTypes,
       PogListAttr declaredParamPogs, bool allowImplicitConversions,
-      llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag);
+      llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
+      ASTDecl *declIfDirect);
 
   /// Infer all of the parameters we can from 'givenBindings'.
   ///
@@ -150,6 +157,10 @@ public:
   void addFailure(InferenceFailure &&info) {
     inferenceDiags.addFailure(std::move(info));
   }
+
+  /// Emit a diagnostic to the diagnostic handler indicating that we failed to
+  /// infer the parameter at `paramIdx`.
+  void emitInferenceFailure(size_t paramIdx, SMLoc loc);
 
   /// This is the evaluator instance parameter inference uses to progressively
   /// refine dependent types as we infer parameters.

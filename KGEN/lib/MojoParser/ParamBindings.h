@@ -104,8 +104,7 @@ public:
   /// signature doesn't match, the provided DiagEmitter will be used to emit
   /// diagnostics. A parameter inference must must be provided.
   std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(LITGeneratorType sig, ParamInf &inference,
-                 ASTDecl *declIfKnown) const;
+  verifyBindings(LITGeneratorType sig, ParamInf &inference) const;
 
   /// Attempt to bind the current set of parameters to the provided parameter
   /// types and list. This applies parameter inference and any default values to
@@ -148,13 +147,10 @@ private:
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
   /// information on how closely the bindings fit the parameters, or why
-  /// they don't. The setEvaluator hook is used to install the parameter value
-  /// in the evaluator used by the implementation.
-  std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindingsImpl(const CallOperands &operands,
-                     ArrayRef<Type> expectedParamTypes,
-                     PogListAttr paramListAttr, ParamInf &inference,
-                     bool partial, ASTDecl *declIfDirect) const;
+  /// they don't.
+  std::pair<ParameterExprArrayAttr, Fitness> verifyBindingsImpl(
+      const CallOperands &operands, ArrayRef<Type> expectedParamTypes,
+      PogListAttr paramListAttr, ParamInf &inference, bool partial) const;
 
   /// This contains the values that are bound into this parameter list.
   CallOperands parameters;
