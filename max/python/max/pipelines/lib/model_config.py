@@ -39,6 +39,7 @@ from transformers.generation import GenerationConfig
 from typing_extensions import Self
 
 from .config_enums import RepoType, RopeType, SupportedEncoding
+from .diffusers_config import DiffusersConfig
 from .hf_utils import (
     HuggingFaceRepo,
     try_to_load_from_cache,
@@ -153,6 +154,9 @@ class MAXModelConfig(MAXModelConfigBase):
 
     _huggingface_config: AutoConfig | None = PrivateAttr(default=None)
     """Hugging Face config. This should only be set by internal code."""
+
+    _diffusers_config: DiffusersConfig | None = PrivateAttr(default=None)
+    """Diffusers repo config (parsed from model_index.json). This should only be set by internal code."""
 
     _weights_repo_id: str | None = PrivateAttr(default=None)
     """Hugging Face repo id to load weights from only. This should only be set by internal code."""
@@ -434,16 +438,65 @@ class MAXModelConfig(MAXModelConfigBase):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_config(self) -> AutoConfig:
+        # Get HuggingFace config - for diffusers models, returns text encoder's config.
+
         # Note: For multiprocessing, __getstate__ clears _huggingface_config
         # before pickling. Each worker process will reload the config fresh,
         # which properly handles trust_remote_code dynamic class loading.
         if self._huggingface_config is None:
-            self._huggingface_config = (
-                PIPELINE_REGISTRY.get_active_huggingface_config(
-                    huggingface_repo=self.huggingface_model_repo
+            # For diffusers models, use text encoder's config via PIPELINE_REGISTRY
+            if self.is_diffusers_model:
+                self._huggingface_config = (
+                    PIPELINE_REGISTRY.get_active_huggingface_config(
+                        huggingface_repo=self.text_encoder_model_repo
+                    )
                 )
-            )
+
+            # Fallback to standard model repo
+            if self._huggingface_config is None:
+                self._huggingface_config = (
+                    PIPELINE_REGISTRY.get_active_huggingface_config(
+                        huggingface_repo=self.huggingface_model_repo
+                    )
+                )
         return self._huggingface_config
+
+    @property
+    def diffusers_config(self) -> Any:
+        """Lazy-load diffusers config from model_index.json.
+
+        Returns:
+            DiffusersConfig if this is a diffusers-style model, else None.
+        """
+        if self._diffusers_config is None:
+            from .diffusers_config import DiffusersConfig
+
+            # Try local path
+            model_path = Path(self.model_path)
+            if (model_path / "model_index.json").exists():
+                try:
+                    self._diffusers_config = DiffusersConfig.from_model_path(
+                        model_path
+                    )
+                except Exception:
+                    pass
+            # Try HuggingFace
+            elif "/" in self.model_path:
+                try:
+                    self._diffusers_config = (
+                        DiffusersConfig.from_huggingface_repo(
+                            self.model_path,
+                            revision=self.huggingface_model_revision,
+                        )
+                    )
+                except Exception:
+                    pass
+        return self._diffusers_config
+
+    @property
+    def is_diffusers_model(self) -> bool:
+        """Check if this is a diffusers-style model (has model_index.json)."""
+        return self.diffusers_config is not None
 
     @computed_field  # type: ignore[prop-decorator]
     @cached_property
