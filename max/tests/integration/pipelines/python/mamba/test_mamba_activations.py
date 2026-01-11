@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Qwerky AI Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -30,7 +30,7 @@ MAMBA_130M_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
 logger = logging.getLogger("max.pipelines")
 
 
-def test_mamba_first_token_logits_comparison():
+def test_mamba_first_token_logits_comparison() -> None:
     """Compare logits for the first token generation between MAX and PyTorch.
 
     This test focuses on the first token generated after the prompt to identify
@@ -87,7 +87,9 @@ def test_mamba_first_token_logits_comparison():
         print(f"  [{token_id:5d}] {token_str!r:20s} logit={logit_val:8.3f}")
 
     torch_predicted_token = int(np.argmax(torch_logits))
-    print(f"\nPyTorch predicted token: [{torch_predicted_token}] {tokenizer.decode([torch_predicted_token])!r}")
+    print(
+        f"\nPyTorch predicted token: [{torch_predicted_token}] {tokenizer.decode([torch_predicted_token])!r}"
+    )
 
     # =================================================================
     # MAX: Get logits for first token
@@ -97,22 +99,28 @@ def test_mamba_first_token_logits_comparison():
     print("=" * 70)
 
     import sys
+
     old_stdout = sys.stdout
     sys.stdout = StringIO()
 
     try:
         # Run MAX pipeline but capture output
         with pytest.raises(SystemExit):
-            pipelines.main([
-                "generate",
-                "--model-path", MAMBA_130M_HF_REPO_ID,
-                "--prompt", prompt,
-                "--trust-remote-code",
-                "--devices=gpu:0",
-                "--huggingface-model-revision", MAMBA_130M_HF_REVISION,
-                "--max-new-tokens=1",
-                "--top-k=1",
-            ])
+            pipelines.main(
+                [
+                    "generate",
+                    "--model-path",
+                    MAMBA_130M_HF_REPO_ID,
+                    "--prompt",
+                    prompt,
+                    "--trust-remote-code",
+                    "--devices=gpu:0",
+                    "--huggingface-model-revision",
+                    MAMBA_130M_HF_REVISION,
+                    "--max-new-tokens=1",
+                    "--top-k=1",
+                ]
+            )
     finally:
         max_output = sys.stdout.getvalue()
         sys.stdout = old_stdout
@@ -126,7 +134,11 @@ def test_mamba_first_token_logits_comparison():
 
     # Try to extract just the generated token
     # MAX output should be: prompt + 1 new token
-    max_generated = max_output_clean[len(prompt):] if len(max_output_clean) > len(prompt) else ""
+    max_generated = (
+        max_output_clean[len(prompt) :]
+        if len(max_output_clean) > len(prompt)
+        else ""
+    )
     print(f"\nMAX generated text: {max_generated!r}")
 
     # For a more precise comparison, we need to extract the actual token ID
@@ -141,11 +153,16 @@ def test_mamba_first_token_logits_comparison():
     print(f"MAX first token: {max_generated!r}")
 
     # Check if they match
-    if max_generated.strip() == tokenizer.decode([torch_predicted_token]).strip():
+    if (
+        max_generated.strip()
+        == tokenizer.decode([torch_predicted_token]).strip()
+    ):
         print("✅ First tokens MATCH!")
     else:
         print("❌ First tokens DIFFER!")
-        print("\nThis suggests the divergence starts from the very first token.")
+        print(
+            "\nThis suggests the divergence starts from the very first token."
+        )
         print("Possible causes:")
         print("1. Different tokenization")
         print("2. Different model initialization")
@@ -158,7 +175,7 @@ def test_mamba_first_token_logits_comparison():
         )
 
 
-def test_mamba_prompt_only_forward_pass():
+def test_mamba_prompt_only_forward_pass() -> None:
     """Test just the forward pass with the prompt (no generation).
 
     This isolates whether the model can correctly process the prompt
@@ -207,24 +224,32 @@ def test_mamba_prompt_only_forward_pass():
     print("\nLogits statistics for each token position:")
     for pos in range(logits.shape[1]):
         pos_logits = logits[0, pos, :].cpu().numpy()
-        print(f"  Position {pos}: min={pos_logits.min():.2f}, max={pos_logits.max():.2f}, "
-              f"mean={pos_logits.mean():.2f}, std={pos_logits.std():.2f}")
+        print(
+            f"  Position {pos}: min={pos_logits.min():.2f}, max={pos_logits.max():.2f}, "
+            f"mean={pos_logits.mean():.2f}, std={pos_logits.std():.2f}"
+        )
 
         # Show top predicted token at this position
         top_token = int(np.argmax(pos_logits))
         top_logit = pos_logits[top_token]
-        print(f"    Top prediction: [{top_token}] {tokenizer.decode([top_token])!r} (logit={top_logit:.2f})")
+        print(
+            f"    Top prediction: [{top_token}] {tokenizer.decode([top_token])!r} (logit={top_logit:.2f})"
+        )
 
     # Focus on the last position (what matters for generation)
     last_logits = logits[0, -1, :].cpu().numpy()
     top5_indices = np.argsort(last_logits)[-10:][::-1]
 
-    print(f"\nTop 10 predictions for next token (position {logits.shape[1]-1}):")
+    print(
+        f"\nTop 10 predictions for next token (position {logits.shape[1] - 1}):"
+    )
     for i in range(10):
         token_id = top5_indices[i]
         token_str = tokenizer.decode([token_id])
         logit_val = last_logits[token_id]
-        print(f"  {i+1}. [{token_id:5d}] {token_str!r:20s} logit={logit_val:8.3f}")
+        print(
+            f"  {i + 1}. [{token_id:5d}] {token_str!r:20s} logit={logit_val:8.3f}"
+        )
 
     print("\n✅ PyTorch forward pass completed successfully")
     print("\nTo compare with MAX, run:")

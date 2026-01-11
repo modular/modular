@@ -1,25 +1,14 @@
 # ===----------------------------------------------------------------------=== #
-
-# Copyright (c) 2025, Qwerky AI Inc. All rights reserved
-
+# Copyright (c) 2025, Qwerky AI Inc. All rights reserved.
 #
-
-# Licensed under the Apache License v2.0 with LLVM Exceptions
-
-# <https://llvm.org/LICENSE.txt>
-
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
-
 # Unless required by applicable law or agreed to in writing, software
-
-# distributed under the License is distributed on an "AS IS" BASIS
-
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied
-
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
-
-# limitations under the License
-
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 from __future__ import annotations
@@ -67,6 +56,7 @@ logger = logging.getLogger("max.pipelines")
 # Environment variable name for Mojo import paths set by the build system
 
 _MODULAR_MOJO_MAX_IMPORT_PATH = "MODULAR_MOJO_MAX_IMPORT_PATH"
+
 
 def _get_kernel_library_paths() -> list[Path]:
     """Returns kernel library paths from the build environment.
@@ -146,6 +136,7 @@ def _get_kernel_library_paths() -> list[Path]:
         )
     return paths
 
+
 class MambaInputs(ModelInputs):
     """A class representing inputs for the Mamba model.
 
@@ -212,6 +203,7 @@ class MambaInputs(ModelInputs):
         self.lora_grouped_offsets_kv = lora_grouped_offsets_kv
         self.data_parallel_splits = data_parallel_splits
         self.accumulated_tokens = accumulated_tokens
+
 
 class MambaModelBase(PipelineModel[TextContext]):
     """Base Mamba pipeline model implementation."""
@@ -741,6 +733,7 @@ class MambaModelBase(PipelineModel[TextContext]):
             batch_top_n=batch_top_n,
             batch_echo=batch_echo,
         )
+
 
 class MambaModel(MambaModelBase):
     """Mamba pipeline model implementation."""

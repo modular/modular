@@ -1,4 +1,17 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+# ===----------------------------------------------------------------------=== #
 
 # Copyright (c) 2025, Modular Inc. All rights reserved
 
@@ -36,6 +49,7 @@ MAMBA_130M_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
 
 logger = logging.getLogger("max.pipelines")
 
+
 def test_mamba_130m_hf_generation(capsys: pytest.CaptureFixture[str]) -> None:
     """Test running state-spaces/mamba-130m-hf using the mamba pipeline."""
     assert isinstance(MAMBA_130M_HF_REVISION, str), (
@@ -60,6 +74,7 @@ def test_mamba_130m_hf_generation(capsys: pytest.CaptureFixture[str]) -> None:
         )
     captured = capsys.readouterr()
     assert len(captured.out) > 0, "Expected output from model generation"
+
 
 def test_mamba_130m_hf_generation_gpu(
     capsys: pytest.CaptureFixture[str],
@@ -89,6 +104,7 @@ def test_mamba_130m_hf_generation_gpu(
         )
     captured = capsys.readouterr()
     assert len(captured.out) > 0, "Expected output from model generation"
+
 
 @pytest.mark.skip(
     reason="Manual test - compares MAX vs PyTorch output. Run with: pytest -k test_mamba_130m_compare_with_torch_cpu --override-ini='-m='"
@@ -232,6 +248,7 @@ def test_mamba_130m_compare_with_torch_cpu(
         pytest.fail(
             f"Generated outputs differ!\nMAX: {max_output_clean[:200]}...\nPyTorch: {torch_generated[:200]}..."
         )
+
 
 @pytest.mark.skip(
     reason="Manual test - compares MAX vs PyTorch output on GPU. Run with: pytest -k test_mamba_130m_compare_with_torch_gpu"

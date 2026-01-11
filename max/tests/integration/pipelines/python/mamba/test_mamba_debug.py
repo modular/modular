@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Qwerky AI Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,8 +15,6 @@
 import logging
 
 import hf_repo_lock
-import numpy as np
-import pytest
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -28,7 +26,7 @@ MAMBA_130M_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
 logger = logging.getLogger("max.pipelines")
 
 
-def test_mamba_token_by_token_comparison():
+def test_mamba_token_by_token_comparison() -> None:
     """Compare MAX vs PyTorch token-by-token generation with detailed logging.
 
     This test generates tokens one at a time and compares:
@@ -69,7 +67,9 @@ def test_mamba_token_by_token_comparison():
     input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
     print(f"\nPrompt: {prompt!r}")
     print(f"Prompt tokens: {input_ids[0].tolist()}")
-    print(f"Prompt token strings: {[tokenizer.decode([t]) for t in input_ids[0]]}")
+    print(
+        f"Prompt token strings: {[tokenizer.decode([t]) for t in input_ids[0]]}"
+    )
 
     # Generate tokens step by step
     torch_tokens = []
@@ -93,14 +93,20 @@ def test_mamba_token_by_token_comparison():
         top5_values, top5_indices = torch.topk(logits[0, -1, :], 5)
 
         print(f"\nPyTorch Step {step}:")
-        print(f"  Sequence so far ({len(current_ids[0])} tokens): {tokenizer.decode(current_ids[0])!r}")
-        print(f"  Top 5 predictions:")
+        print(
+            f"  Sequence so far ({len(current_ids[0])} tokens): {tokenizer.decode(current_ids[0])!r}"
+        )
+        print("  Top 5 predictions:")
         for i in range(5):
             token_id = top5_indices[i].item()
             token_str = tokenizer.decode([token_id])
             logit_val = top5_values[i].item()
-            print(f"    [{token_id:5d}] {token_str!r:20s} logit={logit_val:8.3f}")
-        print(f"  ✓ Chosen: [{next_token_id:5d}] {tokenizer.decode([next_token_id])!r}")
+            print(
+                f"    [{token_id:5d}] {token_str!r:20s} logit={logit_val:8.3f}"
+            )
+        print(
+            f"  ✓ Chosen: [{next_token_id:5d}] {tokenizer.decode([next_token_id])!r}"
+        )
 
         # Append to sequence
         next_token = torch.tensor([[next_token_id]]).to(device)
@@ -117,8 +123,8 @@ def test_mamba_token_by_token_comparison():
     print("=" * 70)
     print(f"PyTorch generated {num_tokens} tokens successfully")
     print(f"Expected token sequence: {torch_tokens}")
-    print(f"Now run MAX pipeline and compare token-by-token...")
+    print("Now run MAX pipeline and compare token-by-token...")
     print("\nTo test MAX, you can run the pipeline manually and compare:")
-    print(f"  ./bazelw run //max/python/max/entrypoints:pipelines -- \\")
+    print("  ./bazelw run //max/python/max/entrypoints:pipelines -- \\")
     print(f"    generate --model {MAMBA_130M_HF_REPO_ID} \\")
     print(f"    --prompt '{prompt}' --top-k=1 --max-new-tokens={num_tokens}")
