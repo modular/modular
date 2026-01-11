@@ -178,8 +178,7 @@ CValue SubscriptDLValue::emitLoad(ValueDest &dest, IREmitter &emitter) const {
     return {};
   }
 
-  return emitter.emitIndirectCall(getter, CallOperands(operands), dest,
-                                  CallSyntax::kMethodCall);
+  return emitter.emitIndirectCall(getter, CallOperands(operands), dest);
 }
 
 CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
@@ -197,7 +196,7 @@ CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   // if (!setter) {
   StringRef setterName = isSubscript() ? "__setitem__" : "__setattr__";
   return emitter.emitNamedMethodCall(setterName, std::move(operandsWithValue),
-                                     storeDest, CallSyntax::kMethodCall);
+                                     storeDest);
 }
 
 //===----------------------------------------------------------------------===//
@@ -220,7 +219,7 @@ void TupleDLValue::print(raw_ostream &os) const {
 CValue TupleDLValue::emitLoad(ValueDest &dest, IREmitter &emitter) const {
   // Emit a call to the tuple type constructor as an explicit construction.
   return emitter.emitConstructorCall(
-      elementType, CallOperands(expr, eltLValues), CallSyntax::kTypeCall, dest);
+      elementType, CallOperands(CallSyntax::kTypeCall, expr, eltLValues), dest);
 }
 
 // TODO: Move this somewhere common like IREmitter

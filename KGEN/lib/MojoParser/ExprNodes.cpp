@@ -619,8 +619,8 @@ static CValue handleIntFPStringLiteral(TypedAttr value, ASTType type,
   type = litStruct.bindReference({value});
 
   // Create an instance of IntLiteral[val]()
-  return emitter.emitConstructorCall(type, CallOperands(expr),
-                                     CallSyntax::kTypeCall, dest);
+  return emitter.emitConstructorCall(
+      type, CallOperands(CallSyntax::kTypeCall, expr, {}), dest);
 }
 
 AnyValue IntLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
@@ -1636,7 +1636,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   // Otherwise we'll be calling the getter and/or setter.  Let's emit any index
   // operands and determine whether they are arguments or parameters (e.g. for
   // indexing into Tuple with parameter for the index).
-  CallOperands operands(node);
+  CallOperands operands(CallSyntax::kMethodCall, node);
   operands.addSelf(base);
 
   // We look at one of the sets so we can detect whether we're emitting the
@@ -2569,11 +2569,10 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   // Construct the Tuple type without parameters so we infer them.
   tupleType = tupleType.getWithoutParameters(emitter.shared);
 
-  CallOperands operands(&call);
+  CallOperands operands(CallSyntax::kTypeCall, &call);
   for (OpResult opResult : resultOp->getResults())
     operands.add({SRValue(opResult), &call});
-  return emitter.emitConstructorCall(tupleType, std::move(operands),
-                                     CallSyntax::kTypeCall, dest);
+  return emitter.emitConstructorCall(tupleType, std::move(operands), dest);
 }
 
 AnyValue CallNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
@@ -2589,7 +2588,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   }
 
   /// Emit all the operands that we'll need.
-  CallOperands operandsList(this);
+  CallOperands operandsList(CallSyntax::kDirectCall, this);
   for (const Operand &operand : operands) {
     if (operand.isUnpacked()) {
       auto diag = emitter.emitError(operand.getLoc());
@@ -2627,21 +2626,24 @@ AnyValue CallNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     }
 
     // Check to see if we can invoke an __init__ method to convert it.
+    operandsList.syntax = CallSyntax::kTypeCall;
     return emitter.emitConstructorCall(calledType, std::move(operandsList),
-                                       CallSyntax::kTypeCall, dest);
+                                       dest);
   }
 
   // If this is an overloaded operand, resolve it and call the result.
   if (auto overloads = calleeVal.getIfOverloadSet()) {
     emitter.shared.notifyListenerOnCall(overloads->fnDecls, rparenLoc,
                                         overloads->syntax, operandsList);
+    operandsList.syntax = overloads->syntax;
     return overloads->emitCall(std::move(operandsList), dest, emitter);
   }
 
   // Otherwise, we must have a concrete RValue, emit an indirect call.
-  if (auto crVal = calleeVal.getIfCValue())
-    return emitter.emitIndirectCall(crVal, std::move(operandsList), dest,
-                                    CallSyntax::kIndirectCall);
+  if (auto crVal = calleeVal.getIfCValue()) {
+    operandsList.syntax = CallSyntax::kIndirectCall;
+    return emitter.emitIndirectCall(crVal, std::move(operandsList), dest);
+  }
 
   emitter.emitError(getLoc(), "cannot call this unresolved expression");
   return {};
@@ -2658,7 +2660,7 @@ AnyValue SliceNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 
   // TODO: Generalize to more than 3 operands.  We might also want to turn this
   // into a well-known static method instead of overloading onto constructor.
-  CallOperands operands(this);
+  CallOperands operands(CallSyntax::kTypeCall, this);
   operands.add(getOperand(lower));
   operands.add(getOperand(upper));
   operands.add(getOperand(stride));
@@ -2865,7 +2867,7 @@ AnyValue ParenNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 static AnyValue emitListLiteral(const ExprNode *expr,
                                 ArrayRef<ExprNode *> elements,
                                 IREmitter &emitter) {
-  CallOperands operands(expr);
+  CallOperands operands(CallSyntax::kTypeCall, expr);
   for (ExprNode *expr : elements) {
     auto value = emitter.emitExpr(expr, EC_CollectionLiteral);
     if (!value)
@@ -2907,7 +2909,7 @@ AnyValue DictLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     return {};
 
   // Form the initializer list for the dictionary literal.
-  CallOperands operands(this);
+  CallOperands operands(CallSyntax::kTypeCall, this);
   operands.add({keysListValue, this});
   operands.add({valuesListValue, this});
   auto result = InitializerUValue::create(InitializerUValue::kDictLiteral,
@@ -2918,7 +2920,7 @@ AnyValue DictLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 AnyValue SetInitLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // We emit this as a simple initializer list directly, but resolution of the
   // UValue detects when this should be a set initializer and handles that.
-  CallOperands operands(this);
+  CallOperands operands(CallSyntax::kTypeCall, this);
   for (auto [keyExpr, valueExpr] : values) {
     StringAttr keyName;
     // The key needs to be an identifier, which gets parsed as a DeclRefNode.
@@ -2994,7 +2996,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   // and forth.  Resolving a set can mutate the argument list (e.g. emitting
   // PValues to dynamic values) even if the lookup fails and we don't want to
   // materialize them multiple times
-  CallOperands operands(callExpr, {lhs, rhs});
+  CallOperands operands(CallSyntax::kOperator, callExpr, {lhs, rhs});
 
   // `a in b` => `b.__contains__(a)` and there is no reversed form.
   if (kind == ExprNode::Kind::kCmpIn)
@@ -3004,10 +3006,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   // receiver.
   if (auto lhsCV = lhs.ir.getIfCValue()) {
     if (PValue callee = OverloadSet::lookupAndResolve(
-            lhsCV.getRValueType(), specialFnInfo.name, operands,
-            CallSyntax::kOperator, emitter))
-      return emitter.emitIndirectCall(callee, std::move(operands), dest,
-                                      CallSyntax::kOperator);
+            lhsCV.getRValueType(), specialFnInfo.name, operands, emitter))
+      return emitter.emitIndirectCall(callee, std::move(operands), dest);
   }
 
   // Check to see if we have the reverse version of this operator.
@@ -3015,21 +3015,21 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   if (reversedFnInfo.kind != SpecialFunctionKind::kNormal) {
     // Swap the operand order.
     std::swap(operands[0], operands[1]);
+    operands.syntax = CallSyntax::kReversedOperator;
     if (auto rhsCV = rhs.ir.getIfCValue()) {
       if (PValue callee = OverloadSet::lookupAndResolve(
-              rhsCV.getRValueType(), reversedFnInfo.name, operands,
-              CallSyntax::kReversedOperator, emitter))
-        return emitter.emitIndirectCall(callee, std::move(operands), dest,
-                                        CallSyntax::kOperator);
+              rhsCV.getRValueType(), reversedFnInfo.name, operands, emitter))
+        return emitter.emitIndirectCall(callee, std::move(operands), dest);
     }
 
     // Swap these back so we emit the right error.
     std::swap(operands[0], operands[1]);
+    operands.syntax = CallSyntax::kOperator;
   }
 
   // Emit an error complaining about the forward version of the operator.
   return emitter.emitNamedMethodCall(specialFnInfo.name, std::move(operands),
-                                     dest, CallSyntax::kOperator);
+                                     dest);
 }
 
 /// Emit a simple assignment statement.
@@ -3579,9 +3579,9 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
   if (kind == kBoolNot) {
     // Turn this into a call to __bool__.
     ValueDest subDest(EC_OperatorOperandValue);
-    argValue.ir =
-        emitter.emitNamedMethodCall("__bool__", CallOperands(expr, argValue),
-                                    subDest, CallSyntax::kMethodCall);
+    argValue.ir = emitter.emitNamedMethodCall(
+        "__bool__", CallOperands(CallSyntax::kMethodCall, expr, argValue),
+        subDest);
     if (!argValue.ir)
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
@@ -3593,9 +3593,9 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
   assert(specialFnInfo.kind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
-  return emitter.emitNamedMethodCall(specialFnInfo.name,
-                                     CallOperands(expr, argValue), dest,
-                                     CallSyntax::kOperator);
+  return emitter.emitNamedMethodCall(
+      specialFnInfo.name, CallOperands(CallSyntax::kOperator, expr, argValue),
+      dest);
 }
 
 AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
@@ -4245,7 +4245,7 @@ AnyValue MagicFunctionNode::emitOriginOf(ValueDest &dest,
   if (sugarIsa<TypeCheckErrorType>(type))
     return {}; // Sanity check the returned declaration.
   return emitter.emitConstructorCall(
-      type, CallOperands(this, {{PValue(result), this}}), CallSyntax::kTypeCall,
+      type, CallOperands(CallSyntax::kTypeCall, this, {{PValue(result), this}}),
       dest);
 }
 
@@ -4976,6 +4976,6 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
-  return emitter.emitConstructorCall(tupleType, CallOperands(this, elements),
-                                     CallSyntax::kTypeCall, dest);
+  return emitter.emitConstructorCall(
+      tupleType, CallOperands(CallSyntax::kTypeCall, this, elements), dest);
 }

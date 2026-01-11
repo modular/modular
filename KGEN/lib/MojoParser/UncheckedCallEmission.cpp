@@ -552,8 +552,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       // If this is a variadic keyword argument, we initialize a dictionary.
       ValueDest dictDest(ExprContext::EC_KWArgsArgument);
       auto dict = emitter.emitConstructorCall(
-          sugarCast<RefType>(expectedType).getElementType(), {callExpr},
-          CallSyntax::kTypeCall, dictDest);
+          sugarCast<RefType>(expectedType).getElementType(),
+          CallOperands(CallSyntax::kTypeCall, callExpr), dictDest);
       kwargsDict = emitter.emitMRValue({dict, callExpr}, EC_CallArgValue);
       argumentValues.push_back({kwargsDict, callExpr});
       continue;
@@ -603,10 +603,10 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
     // Then we set the element with the given key and the operand as value.
     CallOperands insertOperands(
-        callExpr,
+        CallSyntax::kMethodCall, callExpr,
         {{MLValue(kwargsDict), callExpr}, {literalKey, operand.expr}, operand});
     emitter.emitNamedMethodCall("_insert", std::move(insertOperands),
-                                kwargsDest, CallSyntax::kMethodCall);
+                                kwargsDest);
   }
 
   return std::make_pair(std::move(argumentValues), std::move(isDefaultMask));
@@ -1707,7 +1707,7 @@ static TypedAttr computeArgumentsOrigin(AsyncCallOp call,
 
 CValue IREmitter::emitCallUnchecked(RValue callee,
                                     const CallOperands &callOperands,
-                                    ValueDest &dest, CallSyntax syntax) {
+                                    ValueDest &dest) {
   const ExprNode *callExpr = callOperands.callExpr;
   CallEmitter callEmitter(callee, callExpr, *this, dest);
   auto calleeSig = callEmitter.calleeSig;
@@ -1748,8 +1748,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
                                    errSlot.getRValueType(), getDeclScope())) {
 
       return emitIndirectCallInTryBlock(
-          callee, CallOperands(callOperands), dest, syntax,
-          [&](VarDeclOp errDecl) {
+          callee, CallOperands(callOperands), dest, [&](VarDeclOp errDecl) {
             // Move the error out of the temporary and into the overall error
             // slot, performing the implicit conversion.
             ValueDest moveDest(errSlot, EC_RaiseValue);
@@ -1870,7 +1869,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
 
   // As we emit the arguments, we check to see if there are any exclusivity
   // violations provided by the argument.
-  ExclusivityChecker exclusivityChecker(callee, callExpr, syntax,
+  ExclusivityChecker exclusivityChecker(callee, callExpr, callOperands.syntax,
                                         argumentValues, *this);
 
   SmallVector<Value> callArgs;
@@ -2006,8 +2005,10 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       // Emit the implicit conversion to Coroutine[T].  We emit into the call's
       // destination to avoid an extra copy/move of the Coroutine object.
       callResult = emitConstructorCall(
-          coroType, CallOperands{callExpr, {{SRValue(call), callExpr}}},
-          CallSyntax::kImplicitConvert, dest);
+          coroType,
+          CallOperands(CallSyntax::kImplicitConvert, callExpr,
+                       {{SRValue(call), callExpr}}),
+          dest);
       if (!callResult) {
         dest.resetForError(*this);
         return {};
