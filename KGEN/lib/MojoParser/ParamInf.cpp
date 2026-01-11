@@ -28,7 +28,7 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-#define DEBUG_TYPE "LITEXPRCALLS"
+#define DEBUG_TYPE "PARAMINF"
 
 extern bool checkConventionsConvertible(ArgConvention expectedConv,
                                         ArgConvention actualConv);
@@ -1601,7 +1601,7 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
       })) {
     hasEllipsis = true;
     // Rebuild the operands list without it.  We only do this if present as a
-    // microoptimization.
+    // micro-optimization.
     for (auto binding : givenBindings.values) {
       if (!isa<EllipsisAttr>(binding.ir.getIfPValue().get()))
         tmpOperands.values.push_back(binding);
@@ -1670,7 +1670,7 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
     if (paramFinder.hasReferences(expectedType)) {
       // We are handling a parameter that has a unresolved dependent type, defer
       // the binding of it.
-      deferredGivenParam.push_back({binding, paramIdx});
+      hasDeferredGivenParam = true;
       return {};
     }
 
@@ -1711,7 +1711,9 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
     // If we have a varargs parameters, then it will eat the rest of the
     // parameters, but we have to check each of them.
     if (declaredParamPogs.isPosVarArg(idx)) {
-      // If there are no parameter values, nothing to do.
+      // If there are no parameter values, then leave the parameter uninferred
+      // for now.  It could be inferred from an call-argument or be left
+      // unbound.
       if (posIdx == numParams)
         continue;
 
@@ -2044,22 +2046,11 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
     }
   }
 
-  for (auto [paramVal, paramIdx] : deferredGivenParam) {
-    ASTType expectedType =
-        evaluator.getReboundType(declaredParamTypes[paramIdx]);
-
-    PValue bindingVal =
-        emitSingleParam(declScope, paramVal, expectedType, evaluator);
-
-    if (bindingVal) {
-      // This is a user provided parameter, we must not overwrite it with a
-      // inferred value.
-      // TODO: we should implement a more correct algorithm to handle deferred
-      // parameter correctly: anything that depends on a deferred parameter must
-      // be deferred too.
-      assert(!getInferredValue(paramIdx));
-      evaluator.overwriteIndexBinding(paramIdx, bindingVal);
-    }
+  if (hasDeferredGivenParam) {
+    hasInferredForCall = false;
+    if (failed(inferFromParamList(/*hasArguments*/ true)))
+      return failure();
+    hasInferredForCall = true;
   }
 
   // Check to see if this is a CTAD parameter - a parameter on the struct
