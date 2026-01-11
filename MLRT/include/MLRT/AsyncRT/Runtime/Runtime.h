@@ -161,8 +161,9 @@ struct RuntimeOptions {
 
   ProfilerDebuginfo profilerDebuginfo = ProfilerDebuginfo::kNoProfiler;
   const RuntimeOptions::WorkQueueType defaultWorkQueue;
-  RuntimeOptions(AsyncRT::RuntimeOptions::WorkQueueType wq =
-                     AsyncRT::RuntimeOptions::WorkQueueType::kThreadPool)
+  explicit RuntimeOptions(
+      AsyncRT::RuntimeOptions::WorkQueueType wq =
+          AsyncRT::RuntimeOptions::WorkQueueType::kThreadPool)
       : defaultWorkQueue(wq) {}
   /// Explicitly tell runtime to use single threaded workqueue. This is useful
   /// in situations where computation is performed by some other runtime
