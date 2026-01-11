@@ -22,7 +22,8 @@ public:
     return *this;
   }
 
-  Options &withRuntimeOptions(const AsyncRT::RuntimeOptions &v = {}) {
+  Options &withRuntimeOptions(
+      const AsyncRT::RuntimeOptions &v = AsyncRT::RuntimeOptions()) {
     runtimeOptions.emplace(v);
     return *this;
   }
