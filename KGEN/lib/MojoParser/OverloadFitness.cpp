@@ -484,8 +484,13 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
     // One detail is how we do this: we bind these arguments to immutable
     // temporaries, because we specifically do NOT want 'ref' arguments with
     // parametric mutability to treat these things as mutable.
-    if (sugarCast<RefType>(expectedType).isMutableKnown(true))
-      return emitWrongTypeDiag(expectedType);
+    if (sugarCast<RefType>(expectedType).isMutableKnown(true)) {
+      auto diag = getDiag();
+      diag << "mutable reference argument "
+           << argListAttr.getPogs()[argIdx].getName()
+           << "cannot bind to temporary value";
+      return diag;
+    }
 
     // Remember that this argument needs to be emitted.
     argsNeedingOrigins.resize(argIdx + 1);
@@ -502,90 +507,89 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
     payload.numMismatchedConventions +=
         expectedRVType.isRegisterPassable(loc, shared);
     [[fallthrough]];
-  case ArgConvention::ReadReg: {
-    // Get the argument if it has a concrete type.
-    CValue argVal = operand.ir.getIfCValue();
+  case ArgConvention::ReadReg:
+    break;
+  }
 
-    // If the argument is unresolved, see if we can resolve it with the expected
-    // type.
-    if (!argVal) {
-      if (auto initValue = operand.ir.getIfInitializer()) {
-        IREmitter emitter(declScope, ExprContext::EC_CallArgValue);
-        CallOperands operands =
-            initValue->getOperandsForInferredType(expectedRVType, emitter);
+  // Get the argument if it has a concrete type.
+  CValue argVal = operand.ir.getIfCValue();
 
-        // Initializer lists are good if we can construct the expected type.
-        FailureOr<PValue> initFn = OverloadSet::canConstructType(
-            expectedRVType, std::move(operands), declScope);
-        // If there were declaration errors, assume construction is possible
-        // to avoid spurious errors.
-        bool valid = (bool)failed(initFn) || initFn.value();
-        // If so, all is good, if not, we fail.
-        if (valid)
-          return {}; // Success.
-        return emitWrongTypeDiag(expectedRVType);
-      }
+  // If the argument is unresolved, see if we can resolve it with the expected
+  // type.
+  if (!argVal) {
+    if (auto initValue = operand.ir.getIfInitializer()) {
+      IREmitter emitter(declScope, ExprContext::EC_CallArgValue);
+      CallOperands operands =
+          initValue->getOperandsForInferredType(expectedRVType, emitter);
 
-      auto orValue = operand.ir.getIfOverloadSet();
-      assert(orValue && "Unknown UValue!");
-
-      // Try to refine the OverloadSetUValue into a PValue.
-      argVal = orValue->getDirectSymbol(expectedRVType, declScope);
-      if (!argVal)
-        return emitWrongTypeDiag(expectedRVType);
-
-      // If we have a reference to an overloaded method like foo(a.method),
-      // then we can't resolve it.
-      // TODO(partial application => closures): Given we just resolved argVal,
-      // we could form the "a.method" expression with a closure.
-      if (orValue->baseValue) // Cannot merge base value.
-        return emitWrongTypeDiag(expectedRVType);
-    }
-
-    ASTType argType = argVal.getRValueType();
-
-    // If this is a wildcard type, we can match any operand.
-    if (sugarIsa<NameLookupArgWildcardType>(argType))
-      return {}; // Success.
-
-    // Otherwise, we pass as an r-value.  If the argument types match, then
-    // they are good.
-    if (argType.isEqualCanon(expectedRVType))
-      return {}; // Success.
-
-    if (auto nonmaterializableTarget =
-            argType.getNonmaterializableTarget(shared)) {
-      if (nonmaterializableTarget.isEqualCanon(expectedRVType)) {
-        // Implicit conversion for nonmaterializable types to their target
-        // type is allowed even if !allowImplicitConversions and count as half
-        // as much of a mismatch as a normal implicit conversion.  This enables
-        // exact matches to be more specific, and literals to be more compatible
-        // than an actual conversion.
-        ++payload.numImplicitConversions;
+      // Initializer lists are good if we can construct the expected type.
+      FailureOr<PValue> initFn = OverloadSet::canConstructType(
+          expectedRVType, std::move(operands), declScope);
+      // If there were declaration errors, assume construction is possible
+      // to avoid spurious errors.
+      bool valid = (bool)failed(initFn) || initFn.value();
+      // If so, all is good, if not, we fail.
+      if (valid)
         return {}; // Success.
-      }
+      return emitWrongTypeDiag(expectedRVType);
     }
 
-    // Argument name mismatches don't count as implicit conversions.
-    if (IREmitter::canZeroCostConvert(argType, expectedRVType, shared))
-      return {}; // Success.
+    auto orValue = operand.ir.getIfOverloadSet();
+    assert(orValue && "Unknown UValue!");
 
-    // If implicit conversions are possible and one will work, then we succeed
-    // with that conversion.
-    if (allowImplicitConversions &&
-        IREmitter::canImplicitlyConvertToType({argVal, operand.expr},
-                                              expectedRVType, declScope)) {
-      // If we had one, this bumps our # implicit conversions.
-      payload.numImplicitConversions += 2;
+    // Try to refine the OverloadSetUValue into a PValue.
+    argVal = orValue->getDirectSymbol(expectedRVType, declScope);
+    if (!argVal)
+      return emitWrongTypeDiag(expectedRVType);
+
+    // If we have a reference to an overloaded method like foo(a.method),
+    // then we can't resolve it.
+    // TODO(partial application => closures): Given we just resolved argVal,
+    // we could form the "a.method" expression with a closure.
+    if (orValue->baseValue) // Cannot merge base value.
+      return emitWrongTypeDiag(expectedRVType);
+  }
+
+  ASTType argType = argVal.getRValueType();
+
+  // If this is a wildcard type, we can match any operand.
+  if (sugarIsa<NameLookupArgWildcardType>(argType))
+    return {}; // Success.
+
+  // Otherwise, we pass as an r-value.  If the argument types match, then
+  // they are good.
+  if (argType.isEqualCanon(expectedRVType))
+    return {}; // Success.
+
+  // Argument name mismatches don't count as implicit conversions.
+  if (IREmitter::canZeroCostConvert(argType, expectedRVType, shared))
+    return {}; // Success.
+
+  if (auto nonmaterializableTarget =
+          argType.getNonmaterializableTarget(shared)) {
+    if (nonmaterializableTarget.isEqualCanon(expectedRVType)) {
+      // Implicit conversion for nonmaterializable types to their target
+      // type is allowed even if !allowImplicitConversions and count as half
+      // as much of a mismatch as a normal implicit conversion.  This enables
+      // exact matches to be more specific, and literals to be more compatible
+      // than an actual conversion.
+      ++payload.numImplicitConversions;
       return {}; // Success.
     }
-
-    // Otherwise this is the wrong type for the argument.
-    return emitWrongTypeDiag(expectedRVType);
-  }
   }
 
-  llvm_unreachable("unknown case");
+  // If implicit conversions are possible and one will work, then we succeed
+  // with that conversion.
+  if (allowImplicitConversions &&
+      IREmitter::canImplicitlyConvertToType({argVal, operand.expr},
+                                            expectedRVType, declScope)) {
+    // If we had one, this bumps our # implicit conversions.
+    payload.numImplicitConversions += 2;
+    return {}; // Success.
+  }
+
+  // Otherwise this is the wrong type for the argument.
+  return emitWrongTypeDiag(expectedRVType);
 }
 
 bool OverloadFitness::isBetter(const OverloadFitness &other) const {
