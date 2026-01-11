@@ -1105,10 +1105,6 @@ void ParamInf::emitInferenceFailure(size_t paramIdx, SMLoc loc) {
 /// will have UnboundAttr parameters, instead of fully bound ones like a normal
 /// argument.
 LogicalResult ParamInf::inferSelfFromInitResult(FnTypeGeneratorType signature) {
-  // We don't not have a expr for init self result, use the call expression
-  // location to report parameter match error.
-  curArgExpr = givenBindings.callExpr;
-
   ASTType returnedType;
   // When a parameter gets bound, we re-evaluate the result type to see the
   // fully concretized parameters that the parameter may be computing.
@@ -1214,7 +1210,6 @@ RetryLabel:
     return success();
 
   AnyValue value = operand.ir;
-  curArgExpr = operand.expr;
   ParamMatcher matcher(operand.expr, *this);
 
   auto resolveOperandCValue = [&](ASTType expectedTypeOfOperand) -> CValue {
@@ -1523,7 +1518,7 @@ RetryLabel:
   auto nonParamType =
       expectedType.getWithUnknownParametersReplaced(emitter.shared);
   FailureOr<PValue> pValue = OverloadSet::canConstructType(
-      nonParamType, CallOperands(curArgExpr, {{argVal, curArgExpr}}),
+      nonParamType, CallOperands(operand.expr, {{argVal, operand.expr}}),
       emitter.getDeclScope(), /*isImplicitConversion=*/true);
   if (llvm::failed(pValue))
     return success(); // Issue already diagnosed.
@@ -1949,11 +1944,15 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
 
       SmallVector<TypedAttr> types;
       IREmitter emitter(declScope, EC_TypeParamValue);
+      const ExprNode *packArgExpr = nullptr;
       while (posOperandIdx != numOperands) {
         const auto &operand = operands[posOperandIdx++];
         if (operand.keyword) // Ignore keyword operands.
           continue;
-        curArgExpr = operand.expr;
+
+        // Remember the first argument expression for the pack.
+        if (packArgExpr == nullptr)
+          packArgExpr = operand.expr;
 
         // If the element types for the pack were specified, convert the value
         // to that type.
@@ -2014,7 +2013,10 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
       auto variadicType =
           sugarCast<VariadicType>(packType.getVariadic().getType());
 
-      ParamMatcher matcher(curArgExpr, *this);
+      // If there are no arguments for the pack, use the location of the call.
+      if (packArgExpr)
+        packArgExpr = givenBindings.getExpr();
+      ParamMatcher matcher(packArgExpr, *this);
       switch (matcher.matchParams(VariadicAttr::get(types, variadicType),
                                   packType.getVariadic())) {
       case ParamMatcher::Retry:
@@ -2142,7 +2144,6 @@ LogicalResult ParamInf::inferCTADParams(FnTypeGeneratorType signature,
   // We can only do this if we have an argument.
   assert(!operands.empty() && !operands[0].keyword &&
          "init should have positional self argument");
-  curArgExpr = operands[0].expr;
 
   auto selfConvention = signature.getArgConventions()[0];
   ASTType declaredSelfType =
