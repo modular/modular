@@ -200,6 +200,13 @@ private:
                                 ASTType expectedType,
                                 ArgConvention expectedConvention);
 
+  /// Infer and emit a single value for a parameter binding. This returns
+  /// failure if it emits a diagnostic, otherwise is returns a parameter value
+  /// if resolved, or null if deferred.
+  FailureOr<TypedAttr> inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
+                                            ASTType expectedType,
+                                            size_t paramIdx);
+
   /// These are the bindings originally provided to the callable. These are used
   /// to infer parameters from other parameter values.
   const CallOperands &givenBindings;

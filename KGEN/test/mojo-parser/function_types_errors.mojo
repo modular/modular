@@ -40,7 +40,7 @@ fn device_func(i: Int):
 
 
 fn test_infer_variadic():
-    # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'ArgTypes'}}
+    # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'func'}}
     infer_variadic[device_func]()
 
 
@@ -74,7 +74,7 @@ fn device_func(i: ZInt, j: ZInt):
 
 fn test_infer_variadic():
     # expected-error @below {{cannot bind type 'ZInt' to trait 'Sprongling'}}
-    # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'ArgTypes'}}
+    # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'func'}}
     infer_variadic[device_func]()
 
 
@@ -135,14 +135,14 @@ fn compile[
 
 fn test_reject_generic_device_func_unusedT():
     # TODO(MOCO-1828): Better error message.
-    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'ArgTypes'}}
+    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'func'}}
     var thing = compile[device_func_unusedT]()
 
 
 # Slightly different case, for no particular reason
 fn test_reject_generic_device_func_usedT():
     # TODO(MOCO-1828): Better error message.
-    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'ArgTypes'}}
+    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'func'}}
     var thing = compile[device_func_usedT]()
 
 
@@ -192,7 +192,7 @@ fn compile[
 
 
 fn main():
-    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'ArgTypes'}}
+    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'func'}}
     compile[device_func]()
 
 

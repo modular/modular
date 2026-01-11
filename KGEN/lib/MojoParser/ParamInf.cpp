@@ -1570,28 +1570,50 @@ RetryLabel:
   return failure();
 }
 
-static PValue emitSingleParam(ASTDecl &scope, ASTExprAnd<AnyValue> binding,
-                              ASTType expectedType,
-                              ParserParameterEvaluator &evaluator) {
-
-  IREmitter emitter(scope, EC_TypeParamValue);
-  PValue bindingVal = binding.ir.getIfPValue();
+/// Infer and emit a single value for a parameter binding. This returns
+/// failure if it emits a diagnostic, otherwise is returns a parameter value
+/// if resolved, or null if deferred.
+FailureOr<TypedAttr>
+ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
+                               ASTType expectedType, size_t paramIdx) {
+  TypedAttr bindingVal = binding.ir.getIfPValue();
   assert(bindingVal && "Parameters are always PValue's");
+
+  // We don't typecheck the '_' magic parameter, we propagate it.
+  if (isa<UnboundAttr>(bindingVal))
+    return TypedAttr(); // Defer.
+
+  // If the expected type has unresolved bindings, try to infer them from the
+  // argument.  This is a non-trivial operation because we support inferring
+  // from the value directly, but also inferring as a result of implicit
+  // conversions.
+  if (paramFinder.hasReferences(expectedType)) {
+    if (failed(
+            inferOneOperand(binding, expectedType, ArgConvention::ReadReg))) {
+      // If inference failed, emit a diagnostic.
+      // TODO: Sink this into 'inferOneOperand' to make it more specific.
+      emitInferenceFailure(paramIdx, binding.expr->getLoc());
+      return failure();
+    }
+
+    expectedType = evaluator.getReboundType(expectedType);
+
+    // Ok, inference was successful, check to see if the expected type is
+    // still unresolved.  If so, we have to defer the binding.
+    if (paramFinder.hasReferences(expectedType)) {
+      hasDeferredGivenParam = true;
+      return TypedAttr(); // Deferred.
+    }
+  }
 
   // Check the type matches what is expected, and perform an implicit
   // conversion if needed.
-  expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
-
-  // We don't typecheck the '_' magic parameter, we propagate it.
-  if (isa<UnboundAttr>(bindingVal.get()))
-    return {};
-
-  // If the parameter already has the right type, then we're good.
   if (expectedType.isEqualCanon(bindingVal.getType()))
     // Align sugar if necessary.
     return ParamOperatorAttr::getRebind(bindingVal, expectedType);
 
   // If the parameter can be implicitly converted, do so.
+  IREmitter emitter(declScope, EC_TypeParamValue);
   if (IREmitter::canImplicitlyConvertToType(
           {bindingVal, binding.expr}, expectedType, emitter.getDeclScope())) {
     ValueDest tmpDest(EC_CallParamValue);
@@ -1600,7 +1622,19 @@ static PValue emitSingleParam(ASTDecl &scope, ASTExprAnd<AnyValue> binding,
     return converted.getIfPValue().get();
   }
 
-  return {};
+  // Otherwise, the parameter is simply the wrong type, emit an error about this
+  // problem.
+  DeclResolver::DeclScopeChanger x(&declScope);
+  MojoInflightDiag &diag = getDiag({});
+  if (declIfKnown) // Why only structs? Seems arbitrary, push higher?
+    diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
+  diag << "parameter "
+       << ParamDeclRefAttr::get(declaredParamPogs.getName(paramIdx),
+                                declaredParamTypes[paramIdx])
+       << " has " << expectedType << " type, but value has type "
+       << bindingVal.getType() << binding.expr->getRange();
+
+  return failure();
 }
 
 /// Infer all of the parameters we can from 'givenBindings'.
@@ -1681,40 +1715,13 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
   assert(posDiagRes == CallOperands::PosDiagResult::kValid &&
          "positional parameter operand check failed unexpectedly");
 
-  auto inferAndEmitOneParam = [&](ASTExprAnd<AnyValue> binding,
-                                  ASTType expectedType,
-                                  size_t paramIdx) -> TypedAttr {
-    // If the expected type has unresolved bindings, try to infer them from the
-    // argument.  This is a non-trivial operation because we support inferring
-    // from the value directly, but also inferring as a result of implicit
-    // conversions.
-    if (paramFinder.hasReferences(expectedType)) {
-      if (failed(
-              inferOneOperand(binding, expectedType, ArgConvention::ReadReg)))
-        return {};
-
-      expectedType = evaluator.getReboundType(expectedType);
-
-      // Ok, inference was successful, check to see if the expected type is
-      // still unresolved.  If so, we have to defer the binding.
-      if (paramFinder.hasReferences(expectedType)) {
-        hasDeferredGivenParam = true;
-        return {};
-      }
-    }
-
-    PValue bindingVal =
-        emitSingleParam(declScope, binding, expectedType, evaluator);
-    if (bindingVal)
-      return bindingVal;
-
-    // Otherwise, we have an error.
-    return {};
-  };
-
   // We may have pre-checked and out-of-order inferred parameters.  Avoid
   // stomping on them.
   auto applyBinding = [&](size_t idx, TypedAttr paramVal) {
+    // Ignore this if the parameter value is deferred.
+    if (!paramVal)
+      return;
+
     auto existing = evaluator.getIndexBindings()[idx];
     if (!existing) {
       evaluator.overwriteIndexBinding(idx, paramVal);
@@ -1758,11 +1765,12 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
               givenBindings[posIdx].ir.getIfPValue().get())) {
         // FIXME: Make sure to only unpack *x in pos varargs and **x in kw
         // varargs.
-        TypedAttr paramVal = inferAndEmitOneParam(
+        FailureOr<TypedAttr> paramVal = inferAndEmitOneParam(
             {unpacked.getValue(), givenBindings[posIdx].expr}, expectedVariadic,
             idx);
-        if (paramVal)
-          applyBinding(idx, paramVal);
+        if (failed(paramVal)) // Exit if an error was already emitted.
+          return failure();
+        applyBinding(idx, *paramVal);
         ++posIdx;
         continue;
       }
@@ -1771,8 +1779,7 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
       // list being passed in.
       Type varArgsEltType = expectedVariadic.getElementType();
       SmallVector<TypedAttr> elements;
-      bool isBroken = false; // FIXME: Error handling here is a mess.
-
+      bool isDeferred = false;
       while (posIdx != numParams) {
         // This pass just skips keyword parameters, they are handled later.
         if (givenBindings[posIdx].keyword) {
@@ -1780,20 +1787,23 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
           continue;
         }
         // FIXME: pack and install variadics parameter correctly.
-        TypedAttr paramVal =
+        FailureOr<TypedAttr> paramVal =
             inferAndEmitOneParam(givenBindings[posIdx], varArgsEltType, idx);
+        if (failed(paramVal)) // Exit if an error was already emitted.
+          return failure();
+
         ++posIdx;
-        if (!paramVal) {
-          isBroken = true;
+        if (!*paramVal) {
+          isDeferred = true;
           continue;
         }
         // Realign sugar.
-        if (paramVal.getType() != varArgsEltType)
-          paramVal = ParamOperatorAttr::getRebind(paramVal, varArgsEltType);
-        elements.push_back(paramVal);
+        if (paramVal->getType() != varArgsEltType)
+          paramVal = ParamOperatorAttr::getRebind(*paramVal, varArgsEltType);
+        elements.push_back(*paramVal);
       }
 
-      if (!isBroken)
+      if (!isDeferred)
         applyBinding(idx, VariadicAttr::get(elements, expectedVariadic));
       continue;
     }
@@ -1802,14 +1812,12 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
     // it.
     if (posIdx < numParams && (pog.getPassingKind() == PassingKind::PosOrKw ||
                                pog.getPassingKind() == PassingKind::PosOnly)) {
-      TypedAttr paramVal =
+      FailureOr<TypedAttr> paramVal =
           inferAndEmitOneParam(givenBindings[posIdx], expectedType, idx);
-      if (paramVal) {
-        applyBinding(idx, paramVal);
+      if (failed(paramVal)) // Exit if an error was already emitted.
+        return failure();
 
-        inferAndEmitOneParam(givenBindings[posIdx], expectedType, idx);
-      }
-
+      applyBinding(idx, *paramVal);
       ++posIdx;
       continue;
     }
@@ -1821,10 +1829,11 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
       if (const OperandValue *param =
               givenBindings.findKwArg(declaredParamPogs.getName(idx))) {
 
-        TypedAttr paramVal = inferAndEmitOneParam(*param, expectedType, idx);
-        if (paramVal)
-          applyBinding(idx, paramVal);
-
+        FailureOr<TypedAttr> paramVal =
+            inferAndEmitOneParam(*param, expectedType, idx);
+        if (failed(paramVal)) // Exit if an error was already emitted.
+          return failure();
+        applyBinding(idx, *paramVal);
         continue;
       }
     }
@@ -1844,8 +1853,7 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
       if (declaredParamPogs.isPosVarArg(i) &&
           !evaluator.getIndexBindings()[i]) {
         auto type = evaluator.getReboundType(declaredParamTypes[i]);
-        auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
-        evaluator.overwriteIndexBinding(i, empty);
+        applyBinding(i, VariadicAttr::get({}, sugarCast<VariadicType>(type)));
       }
     }
   }
