@@ -392,7 +392,37 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
   auto emitInferenceFailure = [&](size_t paramIdx) {
     assert(!partial && "parameter deduction failure in a context that "
                        "doesn't allow deduction");
-    inference.emitInferenceFailure(paramIdx, getExprLoc());
+    MojoInflightDiag &diag = getDiag(getExprLoc());
+    if (inference.declIfKnown &&
+        isa<StructDeclOp>(inference.declIfKnown->getIfOperation()))
+      diag << "'" << *inference.declIfKnown->getUserNameIfOperation() << "' ";
+
+    {
+      // The parameter name is scoped to 'declScope'.
+      DeclResolver::DeclScopeChanger x(&declScope);
+      diag << "failed to infer parameter "
+           << ParamDeclRefAttr::get(paramListAttr.getName(paramIdx),
+                                    expectedParamTypes[paramIdx]);
+    }
+
+    // If this is a method on a struct and we couldn't infer something from
+    // its self parameters, complain about the struct.
+    if (inference.declIfKnown &&
+        isa<FnOp>(inference.declIfKnown->getIfOperation())) {
+      if (auto structOp = dyn_cast<StructDeclOp>(
+              cast<FnOp>(inference.declIfKnown->getIfOperation())
+                  ->getParentOp())) {
+        auto structSig = structOp.getSignature();
+        if (paramIdx < structSig.getNumParams()) {
+          diag << " of parent struct '" << structOp.getDeclName().getValue()
+               << "'";
+          inference.inferenceDiags.addExplanation(diag);
+          diag.attachNote(structOp.getLoc()) << " struct declared here";
+          return;
+        }
+      }
+    }
+    inference.inferenceDiags.addExplanation(diag);
   };
 
   auto emitTypeMismatch = [&](size_t index, ASTExprAnd<AnyValue> binding,
