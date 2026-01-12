@@ -22,10 +22,11 @@ from builtin.variadics import (
     _ReduceValueAndIdxToVariadic,
     _ReduceVariadicAndIdxToValue,
 )
+from buffer.dimlist import Dim, DimList
 from sys.intrinsics import _type_is_eq_parse_time
 
 
-trait CoordLike(ImplicitlyCopyable, Representable):
+trait CoordLike(Defaultable, ImplicitlyCopyable, Representable):
     """Trait for unified layout handling of compile-time and runtime indices."""
 
     comptime VariadicType: Variadic.TypesOfTrait[CoordLike]
@@ -137,8 +138,11 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike):
     comptime STATIC_VALUE: Int = -1
     comptime DTYPE = Self.dtype
 
-    var val: Scalar[Self.dtype]
+    var _value: Scalar[Self.dtype]
     """The runtime scalar value."""
+
+    fn __init__(out self):
+        self._value = 0
 
     fn __init__(out self, value: Scalar[Self.dtype]):
         """Initialize a runtime integer with the given value.
@@ -146,7 +150,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike):
         Args:
             value: The scalar value to store.
         """
-        self.val = value
+        self._value = value
 
     @staticmethod
     @always_inline("nodebug")
@@ -167,7 +171,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike):
 
     @always_inline("nodebug")
     fn value(self) -> Int:
-        return Int(self.val)
+        return Int(self._value)
 
     @always_inline("nodebug")
     fn tuple(var self) -> Coord[*Self.VariadicType]:
@@ -221,11 +225,15 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized):
     var _storage: Tuple[*Self.element_types]
     """The underlying MLIR storage for the tuple elements."""
 
-    fn __init__(out self) where Self.ALL_DIMS_KNOWN:
+    fn __init__(out self):
         """
         Empty initialize a tensor with static dims.
         """
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+        @parameter
+        for i in range(self.rank):
+            self[i] = Self.element_types[i]()
 
     fn __init__[
         rank: Int, dtype: DType
@@ -233,7 +241,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized):
         out self: Coord[*_Splatted[RuntimeInt[dtype], rank]],
         index_list: std.utils.IndexList[rank, element_type=dtype],
     ):
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+        self = type_of(self)()
 
         @parameter
         for i in range(rank):
@@ -685,8 +693,7 @@ fn idx2crd[
     )
 
     comptime Result = Coord[*_Splatted[RuntimeInt[out_dtype], shape_len]]
-    var result: Result
-    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(result))
+    var result = Result()
 
     @parameter
     if Shape.IS_TUPLE and Stride.IS_TUPLE and shape_len == stride_len:
@@ -829,8 +836,9 @@ fn coord[
         A `Coord` instance containing `ComptimeInt` elements for each value.
     Usage: coord[5, 3, 2]() creates Coord(ComptimeInt[5](), ComptimeInt[3](), ComptimeInt[2]()).
     """
-    var tuple: Coord[*_Splatted[RuntimeInt[dtype], type_of(values).__len__()]]
-    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(tuple))
+    var tuple = Coord[
+        *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
+    ]()
 
     @parameter
     for i in range(type_of(values).__len__()):
@@ -851,8 +859,7 @@ fn coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
     Usage: coord[5, 3, 2]() creates Coord(ComptimeInt[5](), ComptimeInt[3](), ComptimeInt[2]()).
     """
     # values is a ZST since all elements are comptime
-    var tuple: Coord[*_IntToComptimeInt[*values]]
-    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(tuple))
+    var tuple = Coord[*_IntToComptimeInt[*values]]()
     return tuple^
 
 
@@ -1049,3 +1056,62 @@ comptime _Splatted[T: CoordLike, count: Int] = __mlir_attr[
     `> : `,
     Variadic.TypesOfTrait[type_of(T)],
 ]
+
+
+# ===-----------------------------------------------------------------------===#
+# Dim to CoordLike conversion
+# ===-----------------------------------------------------------------------===#
+
+
+comptime _DimToCoordLikeMapper[
+    dtype: DType,
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.ValuesOfType[Dim],
+    idx: Int,
+] = Variadic.concat[
+    Prev,
+    Variadic.types[
+        T=CoordLike, ComptimeInt[From[idx]._value_or_missing]
+    ] if From[idx]._value_or_missing
+    != Dim._sentinel else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
+]
+"""Maps a single Dim value to a CoordLike type.
+
+If the Dim has a static value, produces ComptimeInt[value].
+If the Dim is dynamic, produces RuntimeInt.
+
+Uses direct field access rather than methods for compile-time evaluation.
+"""
+
+
+comptime _DimsToCoordLike[
+    dtype: DType, dims: DimList
+] = _ReduceValueAndIdxToVariadic[
+    BaseVal = Variadic.empty_of_trait[CoordLike],
+    VariadicType = dims.value.value,
+    Reducer = _DimToCoordLikeMapper[dtype],
+]
+"""Converts a variadic of Dim values to a variadic of CoordLike types.
+
+Note:
+    This transformation is a value-to-type mapper that is meant to be
+    used in the parameter domain,.
+
+For each Dim in the input:
+- If the dim has a static value, produces `ComptimeInt[value]`
+- If the dim is dynamic, produces `RuntimeInt`
+
+Example:
+    ```mojo
+    from buffer import Dim, DimList
+    from layout._coord import _DimToCoordLike, Coord
+
+    # Static dims become ComptimeInt, dynamic dims become RuntimeInt
+    comptime dims = DimList(Dim(3), Dim(), Dim(5))
+    comptime coord_types = _DimToCoordLike[DType.int32, dims]
+    # dims is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
+
+    # Can be used to create a Coord type
+    comptime my_coords = Coord[*coord_types]
+    ```
+"""

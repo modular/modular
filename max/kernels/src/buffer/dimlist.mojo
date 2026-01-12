@@ -93,7 +93,7 @@ struct Dim(
         """
         return self._value_or_missing != Self._sentinel
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn has_value(self) -> Bool:
         """Returns True if the dimension has a static value.
 
@@ -102,7 +102,7 @@ struct Dim(
         """
         return self.__bool__()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_dynamic(self) -> Bool:
         """Returns True if the dimension has a dynamic value.
 
@@ -111,7 +111,7 @@ struct Dim(
         """
         return not self.has_value()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn get(self) -> Int:
         """Gets the static dimension value.
 
