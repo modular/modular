@@ -196,9 +196,10 @@ private:
   /// Infer parameters from an operand being passed into this function. This is
   /// only called on the top level function operands being matched up, not
   /// anything in recursive functiontype positions.
-  LogicalResult inferOneOperand(ASTExprAnd<AnyValue> operand,
+  LogicalResult inferOneOperand(ASTExprAnd<AnyValue> operand, size_t argIdx,
                                 ASTType expectedType,
-                                ArgConvention expectedConvention);
+                                ArgConvention expectedConvention,
+                                PogListAttr argPogs, CallSyntax syntax);
 
   /// Infer and emit a single value for a parameter binding. This returns
   /// failure if it emits a diagnostic, otherwise is returns a parameter value

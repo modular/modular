@@ -38,6 +38,9 @@ extern bool checkConventionsConvertible(ArgConvention expectedConv,
 //===----------------------------------------------------------------------===//
 
 void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
+  if (isa<Unclassified>(info))
+    return;
+
   if (isa<DependsOnUnresolved>(info)) {
     // TODO: Could print which one.
     diag << ", it depends on an unresolved parameter";
@@ -1191,8 +1194,10 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue *init,
 /// only called on the top level function operands being matched up, not
 /// anything in recursive functiontype positions.
 LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
-                                        ASTType origExpectedType,
-                                        ArgConvention expectedConvention) {
+                                        size_t argIdx, ASTType origExpectedType,
+                                        ArgConvention expectedConvention,
+                                        PogListAttr argPogs,
+                                        CallSyntax syntax) {
   // Whenever a parameter is bound, we need to re-evaluate the expected type and
   // try again.
 RetryLabel:
@@ -1209,7 +1214,6 @@ RetryLabel:
   if (!paramFinder.hasReferences(expectedType))
     return success();
 
-  AnyValue value = operand.ir;
   ParamMatcher matcher(operand.expr, *this);
 
   // We'll bind the next provided value.
@@ -1222,7 +1226,7 @@ RetryLabel:
     // The actual value must be an lvalue if callee takes things by-ref, but we
     // don't want to force this - we want parameter inference to infer argument
     // types etc instead of producing a "failed to infer" message.
-    CValue argVal = value.getIfCValue();
+    CValue argVal = operand.ir.getIfCValue();
     if (!argVal)
       return failure();
     switch (matcher.matchTypes(argVal.getRValueType(),
@@ -1243,7 +1247,7 @@ RetryLabel:
     // If we are binding the reference to a value in memory directly, check for
     // reference compatibility directly.
     if (operand.ir.isMValue()) {
-      RefType valueRefType = value.getMValueType();
+      RefType valueRefType = operand.ir.getMValueType();
       // If the IRValue type is MBValue or MRValue then we need infer an
       // immutable ref, to match behavior where we don't allow passing an
       // MBValue or MRValue as 'mut'.
@@ -1306,8 +1310,7 @@ RetryLabel:
 
     // Handle the element type compatibility check below to allow implicit
     // conversions etc.
-    expectedType = expectedType.getReferenceElementType();
-    break;
+    [[fallthrough]];
   }
   case ArgConvention::OwnedMem:
   case ArgConvention::DeinitMem:
@@ -1376,7 +1379,9 @@ RetryLabel:
 
   // If the argument types exactly match, then they are good.
   ASTType argType = argVal.getRValueType();
-  if (argType.isEqualCanon(expectedType))
+  if (argType.isEqualCanon(expectedType) ||
+      // If this is a wildcard type, we can match any operand.
+      sugarIsa<NameLookupArgWildcardType>(argType))
     return success();
 
   // We're speculatively trying different options.  If we have errors on one
@@ -1556,8 +1561,9 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   // from the value directly, but also inferring as a result of implicit
   // conversions.
   if (paramFinder.hasReferences(expectedType)) {
-    if (failed(
-            inferOneOperand(binding, expectedType, ArgConvention::ReadReg))) {
+    if (failed(inferOneOperand(binding, paramIdx, expectedType,
+                               ArgConvention::ReadReg, declaredParamPogs,
+                               CallSyntax::kParamBindings))) {
       // If inference failed, emit a diagnostic.
       // TODO: Sink this into 'inferOneOperand' to make it more specific.
       emitInferenceFailure(paramIdx, binding.expr->getLoc());
@@ -1568,6 +1574,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
 
     // Ok, inference was successful, check to see if the expected type is
     // still unresolved.  If so, we have to defer the binding.
+    // FIXME: Move this logic into inferOneOperand.
     if (paramFinder.hasReferences(expectedType)) {
       hasDeferredGivenParam = true;
       return TypedAttr(); // Deferred.
@@ -1842,7 +1849,8 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
   // careful here!
   size_t posOperandIdx = 0;
   size_t numOperands = operands.size();
-  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
+  PogListAttr argPogs = signature.getArgListAttrs();
+  DefaultValueHandler defaultHandler(argPogs);
   for (auto [expectedArgIdx, expectedConvention] :
        llvm::enumerate(signature.getArgConventions())) {
 
@@ -1864,8 +1872,9 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
         // happens to just work, until we rectify this. Right now the reason the
         // value type cannot be a reference type is because `Pointer` does not
         // (and in fact cannot) conform to `Copyable & Movable`.
-        if (failed(
-                inferOneOperand(operand, refValType, ArgConvention::OwnedMem)))
+        if (failed(inferOneOperand(operand, expectedArgIdx, refValType,
+                                   ArgConvention::OwnedMem, argPogs,
+                                   operands.syntax)))
           return failure();
       }
       // This is always last in the operand list.
@@ -1883,8 +1892,9 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
         auto &operand = operands[posOperandIdx];
         if (!operand.keyword &&
             failed(inferOneOperand(
-                operand, varArgsEltType,
-                signature.getPosVarArgConvention(expectedArgIdx))))
+                operand, expectedArgIdx, varArgsEltType,
+                signature.getPosVarArgConvention(expectedArgIdx), argPogs,
+                operands.syntax)))
           return failure();
         ++posOperandIdx;
       }
@@ -1937,11 +1947,10 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
           // Otherwise, infer the variadic element type from the value's type.
           ASTType toPush = operand.ir.getRValueTypeIfResolvable();
           if (!toPush) {
-            // FIXME: We shouldn't be direct emitting warnings here! This needs
-            // to end up in overload set reasons etc.
-            shared.emitWarning(operand.expr->getLoc(),
-                               "could not infer parameter type for this value, "
-                               "because it is not concrete");
+            getDiag(operand.expr->getLoc())
+                << "could not infer type of parameter pack "
+                << argPogs.getName(expectedArgIdx)
+                << " given value with unresolved type";
             return failure();
           }
 
@@ -1957,17 +1966,10 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
           if (!IREmitter::canImplicitlyConvertToType(
                   {attrForElementType, operand.expr}, elementType,
                   emitter.getDeclScope())) {
-
-            // If that didn't work, then we fail due to the type mismatch.  If
-            // the variadic type is due to a parameter mismatch, record it.
-            if (auto ire =
-                    sugarDynCast<ParamIndexRefAttr>(packType.getVariadic());
-                ire && ire.getDepth() == 0) {
-              // Otherwise, we failed to infer the parameter. Record this
-              // failure.
-              addFailure(InferenceFailure::TypeConflict{
-                  ire.getIndex(), elementType, attrForElementType.getType()});
-            }
+            getDiag(operand.expr->getLoc())
+                << "could not convert element of "
+                << argPogs.getName(expectedArgIdx) << " with type " << toPush
+                << " to expected type " << elementType;
             return failure();
           }
 
@@ -1976,8 +1978,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
           attrForElementType =
               emitter.emitPValue({attrForElementType, operand.expr},
                                  EC_TypeParamValue, elementType);
-          if (!attrForElementType)
-            return failure();
+          assert(attrForElementType && "just checked this failure");
         }
         types.push_back(attrForElementType);
       }
@@ -2007,8 +2008,9 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
 
     // Handle positional arguments.
     if (posOperandIdx < numOperands) {
-      if (failed(inferOneOperand(operands[posOperandIdx++], expectedType,
-                                 expectedConvention)))
+      if (failed(inferOneOperand(operands[posOperandIdx++], expectedArgIdx,
+                                 expectedType, expectedConvention, argPogs,
+                                 operands.syntax)))
         return failure();
       continue;
     }
@@ -2017,8 +2019,8 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
     // Check if a keyword operand was provided for this argument
     if (const OperandValue *kwOperandOr =
             operands.findKwArg(signature.getArgName(expectedArgIdx))) {
-      if (failed(
-              inferOneOperand(*kwOperandOr, expectedType, expectedConvention)))
+      if (failed(inferOneOperand(*kwOperandOr, expectedArgIdx, expectedType,
+                                 expectedConvention, argPogs, operands.syntax)))
         return failure();
       continue;
     }
@@ -2148,5 +2150,7 @@ LogicalResult ParamInf::inferCTADParams(FnTypeGeneratorType signature,
 
   // Infer the first operand against this type - it was presumably already
   // inferred against the methods declared type of 'self' as well.
-  return inferOneOperand(operands[0], selfType, selfConvention);
+  auto argPogs = signature.getArgListAttrs();
+  return inferOneOperand(operands[0], /*argIdx*/ 0, selfType, selfConvention,
+                         argPogs, operands.syntax);
 }
