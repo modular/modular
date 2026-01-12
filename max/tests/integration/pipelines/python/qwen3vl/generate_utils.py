@@ -36,8 +36,8 @@ INSTRUCT_REQUESTS = [
                 "role": "user",
                 "content": [
                     {
-                        "type": "image",
-                        "image": "s3://modular-bazel-artifacts-public/artifacts/model_testdata/qwen2_5vl_instruct_image.jpg",
+                        "type": "image_url",
+                        "image_url": "s3://modular-bazel-artifacts-public/artifacts/model_testdata/qwen2_5vl_instruct_image.jpg",
                     },
                     {"type": "text", "text": "Describe this image."},
                 ],
@@ -52,12 +52,12 @@ INSTRUCT_REQUESTS = [
                 "role": "user",
                 "content": [
                     {
-                        "type": "image",
-                        "image": "s3://modular-bazel-artifacts-public/artifacts/model_testdata/qwen2_5vl_instruct_image_a.jpg",
+                        "type": "image_url",
+                        "image_url": "s3://modular-bazel-artifacts-public/artifacts/model_testdata/qwen2_5vl_instruct_image_a.jpg",
                     },
                     {
-                        "type": "image",
-                        "image": "s3://modular-bazel-artifacts-public/artifacts/model_testdata/qwen2_5vl_instruct_image_b.jpg",
+                        "type": "image_url",
+                        "image_url": "s3://modular-bazel-artifacts-public/artifacts/model_testdata/qwen2_5vl_instruct_image_b.jpg",
                     },
                     {
                         "type": "text",

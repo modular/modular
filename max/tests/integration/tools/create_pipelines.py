@@ -385,9 +385,10 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
         # Download images from s3 and update the messages.
         for request in multi_modal_requests:
             for message in request.messages:
-                for content in message["content"]:
-                    if content["type"] == "image":
-                        content["image"] = load_image(content["image"])
+                if isinstance(message["content"], list):
+                    for content in message["content"]:
+                        if content["type"] == "image":
+                            content["image"] = load_image(content["image"])
 
         # Torch model tries to return EOT for the default long text prompt,
         # so add another bullet point to get it to generate more tokens.
@@ -491,9 +492,10 @@ class Qwen3VLPipelineOracle(PipelineOracle):
         # Download images from s3 and update the messages.
         for request in multi_modal_requests:
             for message in request.messages:
-                for content in message["content"]:
-                    if content["type"] == "image":
-                        content["image"] = load_image(content["image"])
+                if isinstance(message["content"], list):
+                    for content in message["content"]:
+                        if content["type"] == "image":
+                            content["image"] = load_image(content["image"])
 
         # Torch model tries to return EOT for the default long text prompt,
         # so add another bullet point to get it to generate more tokens.

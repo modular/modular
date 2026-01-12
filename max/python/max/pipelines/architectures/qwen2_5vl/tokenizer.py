@@ -409,18 +409,15 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
     ) -> tuple[
         npt.NDArray[Any], npt.NDArray[Any], list[npt.NDArray[np.uint16]]
     ]:
-        if request.messages:
+        image_inputs = None
+        if request.images:
+            image_inputs = [
+                fetch_image({"image": image_data})
+                for image_data in request.images
+            ]
+        elif request.messages:
             image_inputs, _, _ = process_vision_info(
                 [dict(msg) for msg in request.messages]
-            )
-        else:
-            image_inputs = (
-                [
-                    fetch_image({"image": image_data})
-                    for image_data in request.images
-                ]
-                if request.images
-                else None
             )
 
         if image_inputs is None:
@@ -525,9 +522,9 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                 content = msg.get("content", [])
                 if isinstance(content, list):
                     for item in content:
-                        if (
-                            isinstance(item, dict)
-                            and item.get("type") == "image_url"
+                        if isinstance(item, dict) and (
+                            item.get("type") == "image_url"
+                            or item.get("type") == "image"
                         ):
                             return True
         return False
