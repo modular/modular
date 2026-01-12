@@ -28,7 +28,7 @@ fn kernel(
     var global_tid = global_idx.x
     if global_tid >= UInt(size):
         return
-    output[global_tid] = lane_id()
+    output[global_tid] = Float32(lane_id())
 
 
 fn test_grid_dim(ctx: DeviceContext) raises:

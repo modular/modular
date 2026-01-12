@@ -30,7 +30,7 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
         var dynamic_sram = external_memory[
             Float32, address_space = AddressSpace.SHARED, alignment=4
         ]()
-        dynamic_sram[thread_idx.x] = thread_idx.x
+        dynamic_sram[thread_idx.x] = Float32(thread_idx.x)
         barrier()
         data[thread_idx.x] = dynamic_sram[thread_idx.x]
 

@@ -28,12 +28,12 @@ fn test_named_barrier_semaphore_equal_kernel(
         locks_ptr, Int(thread_idx.x)
     )
 
-    sema.wait_eq(0, block_idx.x)
+    sema.wait_eq(0, Int32(block_idx.x))
 
     if thread_idx.x == 0:
         shared_ptr[block_idx.x] = locks_ptr[0]
 
-    sema.arrive_set(0, block_idx.x + 1)
+    sema.arrive_set(0, Int32(block_idx.x + 1))
 
 
 fn test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
@@ -72,12 +72,12 @@ fn test_named_barrier_semaphore_less_than_kernel(
         locks_ptr, Int(thread_idx.x)
     )
 
-    sema.wait_lt(0, block_idx.x)
+    sema.wait_lt(0, Int32(block_idx.x))
 
     if thread_idx.x == 0:
         shared_ptr[block_idx.x] = locks_ptr[0]
 
-    sema.arrive_set(0, block_idx.x + 1)
+    sema.arrive_set(0, Int32(block_idx.x + 1))
 
 
 fn test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:

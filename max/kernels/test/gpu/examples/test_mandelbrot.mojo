@@ -74,7 +74,7 @@ fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
         if col >= width:
             return
         var cx = min_x + (col + iota[float_type, simd_width]()) * scale_x
-        var cy = min_y + row * SIMD[float_type, simd_width](scale_y)
+        var cy = min_y + Float64(row) * SIMD[float_type, simd_width](scale_y)
         var c = ComplexSIMD[float_type, simd_width](cx, cy)
         out.store[width=simd_width](
             Index(row, col), mandelbrot_kernel[simd_width](c)

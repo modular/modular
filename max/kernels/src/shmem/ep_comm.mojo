@@ -614,7 +614,7 @@ fn dispatch_kernel[
     # that need to be sent to each expert. It also monitors the completion of
     # the communication for each expert.
     if block_idx.x < UInt(n_aux_sms):
-        var expert_idx: Int32 = block_idx.x * UInt(n_warps) + warp_id()
+        var expert_idx = Int32(block_idx.x * UInt(n_warps) + warp_id())
         var expert_count: Int32 = 0
 
         if expert_idx < n_experts:
@@ -749,9 +749,10 @@ fn dispatch_kernel[
             # for each expert by using the correct warp.
             @parameter
             if use_shmem:
-                var rc_map_offset: Int32 = (
-                    block_idx.x * UInt(n_warps) + warp_id()
-                ) % UInt(n_local_experts)
+                var rc_map_offset = Int32(
+                    (block_idx.x * UInt(n_warps) + warp_id())
+                    % UInt(n_local_experts)
+                )
 
                 var topk_idx = lane_id()
                 if topk_idx < UInt(top_k) and warp_id() < UInt(n_local_experts):
@@ -1112,8 +1113,8 @@ fn dispatch_cb_kernel[
                         + Int(lane_id() * UInt(size_of[UInt16]())),
                     )
                 )
-                var global_expert_idx = (
-                    my_rank * n_local_experts + local_expert_id
+                var global_expert_idx = my_rank * n_local_experts + Int32(
+                    local_expert_id
                 )
                 if global_expert_idx == Int32(src_topk_idx):
                     # Store the source token index and the top-k id.
@@ -1124,7 +1125,7 @@ fn dispatch_cb_kernel[
                     )
 
                     src_info[token_pos, 0] = src_idx
-                    src_info[token_pos, 1] = lane_id()
+                    src_info[token_pos, 1] = Int32(lane_id())
 
         barrier()
         if lane_id() == 0 and warp_id_in_wg == 0:
@@ -1309,7 +1310,9 @@ fn combine_kernel[
 
                 var n_rounds = ceildiv(token_end - token_start, n_warps)
                 for round_i in range(n_rounds):
-                    var token_idx = token_start + round_i * n_warps + warp_id()
+                    var token_idx = (
+                        token_start + round_i * n_warps + Int32(warp_id())
+                    )
                     if token_idx < token_end:
                         var curr_send_buf_ptr = send_buf_p + send_buf_layout(
                             RtTuple_2(Int(token_idx), 0)
@@ -1334,7 +1337,7 @@ fn combine_kernel[
                         and local_expert_id == rc_map_offset
                     ):
                         var token_idx = (
-                            token_start + round_i * n_warps + lane_id()
+                            token_start + round_i * n_warps + Int32(lane_id())
                         )
                         if token_idx < token_end:
                             var src_token_info = src_info.aligned_load[2](
