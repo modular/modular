@@ -1747,9 +1747,10 @@ fn fused_silu_fp8_kernel[
     ), "Each warp must process a multiple of quantization groups"
     comptime fp8_max_t = Scalar[fp8_dtype].MAX_FINITE.cast[accum_dtype]()
 
-    var tid = Int(thread_idx.x)
-    var bid = Int(block_idx.x)
-    var gid = tid + bid * num_threads
+    # Scatter processing of a single token across different thread blocks
+    # to improve the memory access performance.
+    var global_warp_id = block_idx.x + warp_id() * UInt(num_sms)
+    var gid = lane_id() + global_warp_id * UInt(WARP_SIZE)
 
     with PDL():
         var num_tokens = row_offsets[row_offsets.size() - 1]
