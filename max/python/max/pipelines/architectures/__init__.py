@@ -273,6 +273,7 @@ def register_all_models() -> None:
         _LazyArch(
             "OlmoForCausalLM_ModuleV3", ".olmo_modulev3", "olmo_modulev3_arch"
         ),
+        _LazyArch("OrionForCausalLM", ".orion", "orion_arch"),
         _LazyArch("Phi3ForCausalLM", ".phi3", "phi3_arch"),
         _LazyArch(
             "Phi3ForCausalLM_ModuleV3", ".phi3_modulev3", "phi3_modulev3_arch"
