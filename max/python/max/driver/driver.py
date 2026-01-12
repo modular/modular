@@ -74,25 +74,27 @@ class DeviceSpec:
         return DeviceSpec(id, "gpu")
 
 
+def load_device(device_spec: DeviceSpec) -> Device:
+    """Load a device from a device specification."""
+    if device_spec.device_type == "cpu":
+        return CPU(device_spec.id)
+
+    num_devices_available = accelerator_count()
+    if device_spec.id >= num_devices_available:
+        if num_devices_available == 0:
+            reason = "no devices were found."
+        else:
+            reason = f"only found {num_devices_available} devices."
+        raise ValueError(f"Device {device_spec.id} was requested but {reason}")
+
+    return Accelerator(device_spec.id)
+
+
 def load_devices(device_specs: Sequence[DeviceSpec]) -> list[Device]:
     """Initialize and return a list of devices, given a list of device specs."""
-    num_devices_available = accelerator_count()
     devices: list[Device] = []
     for device_spec in device_specs:
-        if device_spec.device_type == "cpu":
-            devices.append(CPU(device_spec.id))
-        else:
-            if device_spec.id >= num_devices_available:
-                if num_devices_available == 0:
-                    reason = "no devices were found."
-                else:
-                    reason = f"only found {num_devices_available} devices."
-                raise ValueError(
-                    f"Device {device_spec.id} was requested but {reason}"
-                )
-
-            devices.append(Accelerator(device_spec.id))
-
+        devices.append(load_device(device_spec))
     return devices
 
 

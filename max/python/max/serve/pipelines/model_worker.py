@@ -22,6 +22,9 @@ from multiprocessing.synchronize import Event
 from typing import Any
 
 import uvloop
+from max.driver import Device, Tensor
+from max.driver.driver import load_device
+from max.dtype import DType
 from max.interfaces import (
     Pipeline,
     PipelineInputsType,
@@ -34,10 +37,7 @@ from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.exceptions import detect_and_wrap_oom
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from max.serve.pipelines.telemetry_worker import MetricClient
-from max.serve.process_control import (
-    ProcessManager,
-    subprocess_manager,
-)
+from max.serve.process_control import ProcessManager, subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress, sleep_with_backoff
 from max.serve.scheduler.queues import SchedulerZmqConfigs
@@ -46,6 +46,33 @@ from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 
 logger = logging.getLogger("max.serve")
+
+GiB = 1024 * 1024 * 1024
+
+
+def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
+    """Prime the pinned memory manager cache for the given device.
+
+    Populate the host memory manager by allocating and immediately freeing a
+    large pinned tensor. If the host memory manager is activated, future allocations
+    and frees will likely hit the cache and be much faster. By priming the cache,
+    we ensure that the slow call to the driver allocator occurs during bootup
+    and not during the first inference request. Note that calls to the driver's
+    pinned memory allocator can be pretty slow (>1s in some cases).
+
+    Since pinned memory is only supported on accelerators, calling this method
+    on a CPU device is a no-op.
+
+    Args:
+        device: The device to prime the cache for.
+        bytes: The number of bytes to allocate.
+    """
+    if device.is_host:
+        return
+    pinned = Tensor(
+        shape=(bytes,), dtype=DType.int8, device=device, pinned=True
+    )
+    del pinned
 
 
 def get_pipeline_model(
@@ -122,6 +149,12 @@ class ModelWorker:
         # Configure Metrics
         async with metric_client_factory() as metric_client:
             ModelWorker._configure_metrics(settings, metric_client)
+
+            # Prime the pinned memory cache in the model worker process.
+            # Since we only alloc pinned memory on gpu0, we only try to prime it
+            # for the first device.
+            device = load_device(pipeline_config.model.device_specs[0])
+            _prime_pinned_memory_cache(device)
 
             # Initialize token generator.
             with record_ms(METRICS.model_load_time), Tracer("model_factory"):
