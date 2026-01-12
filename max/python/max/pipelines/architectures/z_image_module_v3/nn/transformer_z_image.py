@@ -64,7 +64,7 @@ class TimestepEmbedder(nn.Module):
         half = dim // 2
         freqs = F.exp(
             -math.log(max_period)
-            * F.range(0, half, 1, dtype=DType.float32, device=t.device)
+            * F.arange(0, half, 1, dtype=DType.float32, device=t.device)
             / half
         )
         args = t.unsqueeze(-1).cast(DType.float32) * freqs.unsqueeze(0)
@@ -282,12 +282,6 @@ class FinalLayer(nn.Module):
 
 
 class RopeEmbedder(nn.Module):
-    """Graph-compilable RoPE embedder.
-
-    Computes RoPE embeddings directly from position IDs.
-    Avoids F.gather by computing cos/sin directly from positions.
-    """
-
     def __init__(
         self,
         theta: float = 256.0,
@@ -320,7 +314,7 @@ class RopeEmbedder(nn.Module):
             Tensor of shape (seq_len, dim // 2, 2) containing [cos, sin]
         """
         # Compute inverse frequencies for this axis
-        iota = F.range(0, dim, step=2, dtype=DType.float64, device=self.device)
+        iota = F.arange(0, dim, step=2, dtype=DType.float64, device=self.device)
         inv_freq = F.cast(1.0 / (self.theta ** (iota / dim)), DType.float32)
 
         # Compute angles: positions * inv_freq using outer product
@@ -488,13 +482,13 @@ class ZImageTransformer2DModel(nn.Module):
         f_start, h_start, w_start = start[0], start[1], start[2]
 
         # Create ranges for each axis
-        f_axis = F.range(
+        f_axis = F.arange(
             f_start, f_start + f_size, dtype=DType.int32, device=device
         )
-        h_axis = F.range(
+        h_axis = F.arange(
             h_start, h_start + h_size, dtype=DType.int32, device=device
         )
-        w_axis = F.range(
+        w_axis = F.arange(
             w_start, w_start + w_size, dtype=DType.int32, device=device
         )
 

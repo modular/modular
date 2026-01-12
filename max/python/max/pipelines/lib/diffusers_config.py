@@ -155,11 +155,6 @@ class DiffusersConfig:
     pipeline components with their configurations and weight paths.
     """
 
-    _repo_id: str | None = None
-    _revision: str | None = None
-    _cache_dir: str | Path | None = None
-    _token: str | None = None
-
     pipeline_class: str
     """The diffusers pipeline class name (e.g., 'ZImagePipeline')."""
 
@@ -174,6 +169,11 @@ class DiffusersConfig:
 
     raw_config: dict[str, Any] = field(default_factory=dict)
     """Raw contents of model_index.json."""
+
+    _repo_id: str | None = None
+    _revision: str | None = None
+    _cache_dir: str | Path | None = None
+    _token: str | None = None
 
     @classmethod
     def from_model_path(cls, model_path: str | Path) -> DiffusersConfig:

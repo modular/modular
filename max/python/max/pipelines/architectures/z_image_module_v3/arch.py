@@ -15,7 +15,6 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask, PixelGenerationContext
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.architectures.llama3 import weight_adapters
-from max.pipelines.architectures.qwen3.qwen3 import Qwen3
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
@@ -24,11 +23,6 @@ from max.pipelines.lib import (
 )
 
 from .model import ZImageModel
-from .nn.autoencoder_kl import AutoencoderKL
-from .nn.transformer_z_image import ZImageTransformer2DModel
-from .scheduling_flow_match_euler_discrete import (
-    FlowMatchEulerDiscreteScheduler,
-)
 
 z_image_module_v3_arch = SupportedArchitecture(
     name="ZImagePipeline",
@@ -40,11 +34,11 @@ z_image_module_v3_arch = SupportedArchitecture(
         SupportedEncoding.bfloat16: [KVCacheStrategy.MODEL_DEFAULT]
     },  # No KV Caching for image-gen pipelines.
     pipeline_model=ZImageModel,
-    scheduler=FlowMatchEulerDiscreteScheduler,
-    vae=AutoencoderKL,
-    text_encoder=Qwen3,
+    # scheduler=FlowMatchEulerDiscreteScheduler,
+    # vae=AutoencoderKL,
+    # text_encoder=Qwen3,
     tokenizer=TextTokenizer,
-    transformer=ZImageTransformer2DModel,
+    # transformer=ZImageTransformer2DModel,
     context_type=PixelGenerationContext,
     rope_type=RopeType.normal,
     weight_adapters={

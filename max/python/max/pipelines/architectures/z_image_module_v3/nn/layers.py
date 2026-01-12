@@ -348,7 +348,7 @@ class Attention(nn.Module):
         self.to_out = ModuleList(
             [
                 nn.Linear(self.inner_dim, query_dim, bias=bias),
-                Dropout(p=0.0),  # Dropout is typically 0 for inference
+                Dropout(p=0.0),
             ]
         )
 

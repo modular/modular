@@ -369,7 +369,7 @@ class ZImageModel(
         """
         if self.pipeline_config.max_batch_size is None:
             raise ValueError("Expected max_batch_size to be set")
-        self._input_row_offsets_prealloc = F.range(
+        self._input_row_offsets_prealloc = F.arange(
             0,
             self.pipeline_config.max_batch_size + 1,
             dtype=DType.uint32,
@@ -465,6 +465,7 @@ class ZImageModel(
         device0 = self.devices[0]
         with F.lazy():
             nn_model: Module = ZImage(self.model_config, device=device0)
+            nn_model.to(device0)
 
         # graph_inputs = nn_model.text_encoder.input_types(
         #     nn_model.text_encoder.kv_params
@@ -481,9 +482,7 @@ class ZImageModel(
         #         )
         #     ),
         # )
-        device0 = self.devices[0]
 
-        nn_model.to(device0)
         device_ref = DeviceRef(device0.label, device0.id)
         sample_type = TensorType(
             DType.bfloat16, shape=(1, 16, 128, 128), device=device_ref
@@ -499,13 +498,12 @@ class ZImageModel(
         }
 
         # Load weights into the models before compiling
-        # (This works around an issue where compile(weights=...) doesn't load correctly)
         nn_model.transformer.load_state_dict(transformer_state_dict)
         nn_model.vae.decoder.load_state_dict(decoder_weights)
 
-        # Move to device for compilation
-        nn_model.transformer.to(self.devices[0])
-        nn_model.vae.to(self.devices[0])
+        with F.lazy():
+            nn_model.transformer.to(device0)
+            nn_model.vae.to(device0)
 
         logger.info("Building and compiling VAE's decoder...")
         before_vae_decode_build = time.perf_counter()
