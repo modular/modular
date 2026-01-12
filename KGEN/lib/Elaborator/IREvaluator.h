@@ -82,7 +82,18 @@ private:
                                          bool withResultSlot);
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
   FailureOr<TypedAttr> evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry);
+  FailureOr<TypedAttr> evaluateStructFieldTypesAttr(StructFieldTypesAttr attr);
+  FailureOr<TypedAttr> evaluateStructFieldNamesAttr(StructFieldNamesAttr attr);
+  FailureOr<TypedAttr>
+  evaluateStructFieldIndexByNameAttr(StructFieldIndexByNameAttr attr);
+  FailureOr<TypedAttr>
+  evaluateStructFieldTypeByNameAttr(StructFieldTypeByNameAttr attr);
   FailureOr<TypedAttr> evaluateVariadicSizeAttr(VariadicSizeAttr attr);
+
+  /// Helper to resolve a type reference to a StructInstanceType.
+  /// Emits an error with the given function name context on failure.
+  FailureOr<StructInstanceType> resolveStructInstanceType(TypedAttr typeRef,
+                                                          StringRef funcName);
 
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);
@@ -112,10 +123,6 @@ private:
   void addDeferredFunction(OwningOpRef<FuncOp> func) override;
 
   ImplNodeBase *getParentNode() override;
-
-  ErrorTreeOr<StructInstanceOp>
-  getConcreteStructTypeInstanceInternal(Location loc,
-                                        TypeInstanceRefAttr instref) override;
 
   /// A reference to the elaborator instance. The elaborator is invoked to
   /// concretize symbol constants prior to interpreting them.
