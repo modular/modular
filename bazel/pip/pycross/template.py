@@ -32,7 +32,7 @@ _TESTONLY_DEPS = [
     "lm-eval",
     "mteb",
     "peft",
-    "pygame",
+    "pygame-ce",
     "reference_residual_fsq",
     "sentence-transformers",
     "soxr",

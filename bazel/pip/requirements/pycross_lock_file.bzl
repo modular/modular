@@ -18,7 +18,7 @@ _TESTONLY_DEPS = [
     "lm-eval",
     "mteb",
     "peft",
-    "pygame",
+    "pygame-ce",
     "reference_residual_fsq",
     "sentence-transformers",
     "soxr",
@@ -111,7 +111,7 @@ PINS = {
     "pyarrow": "pyarrow@22.0.0",
     "pydantic": "pydantic@2.12.5",
     "pydantic-settings": "pydantic-settings@2.3.4",
-    "pygame": "pygame@2.6.1",
+    "pygame-ce": "pygame-ce@2.5.6",
     "pygments": "pygments@2.18.0",
     "pyinstrument": "pyinstrument@5.1.1",
     "pytest": "pytest@8.2.2",
@@ -6825,53 +6825,53 @@ def targets():
         testonly = "pydantic-settings" in _TESTONLY_DEPS,
     )
 
-    _pygame_2_6_1_build_deps = [
+    _pygame_ce_2_5_6_build_deps = [
         ":setuptools",
         ":wheel",
     ]
 
     native.alias(
-        name = "_sdist_pygame@2.6.1",
-        actual = "@pycross_lock_file_sdist_pygame_2.6.1//file",
+        name = "_sdist_pygame-ce@2.5.6",
+        actual = "@pycross_lock_file_sdist_pygame_ce_2.5.6//file",
     )
 
     pycross_wheel_build(
-        name = "_build_pygame@2.6.1",
-        sdist = ":_sdist_pygame@2.6.1",
+        name = "_build_pygame-ce@2.5.6",
+        sdist = ":_sdist_pygame-ce@2.5.6",
         target_environment = _target,
-        deps = _pygame_2_6_1_build_deps,
-        testonly = "pygame" in _TESTONLY_DEPS,
+        deps = _pygame_ce_2_5_6_build_deps,
+        testonly = "pygame-ce" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
     native.alias(
-        name = "_wheel_pygame@2.6.1",
+        name = "_wheel_pygame-ce@2.5.6",
         actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_pygame_2.6.1_cp310_cp310_macosx_11_0_arm64//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_2.6.1_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_2.6.1_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_pygame_2.6.1_cp311_cp311_macosx_11_0_arm64//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_2.6.1_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_2.6.1_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_pygame_2.6.1_cp312_cp312_macosx_11_0_arm64//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_2.6.1_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_2.6.1_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_pygame_2.6.1_cp313_cp313_macosx_11_0_arm64//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_2.6.1_cp313_cp313_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_2.6.1_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.14_aarch64-apple-darwin": ":_build_pygame@2.6.1",
-            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": ":_build_pygame@2.6.1",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu": ":_build_pygame@2.6.1",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": ":_build_pygame@2.6.1",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": ":_build_pygame@2.6.1",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": ":_build_pygame@2.6.1",
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp310_cp310_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp310_cp310_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp311_cp311_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp311_cp311_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp312_cp312_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp312_cp312_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp313_cp313_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp313_cp313_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp314_cp314_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": ":_build_pygame-ce@2.5.6",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp314_cp314_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": ":_build_pygame-ce@2.5.6",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pygame_ce_2.5.6_cp314_cp314_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": ":_build_pygame-ce@2.5.6",
         }),
     )
 
     pycross_wheel_library(
-        name = "pygame@2.6.1",
-        wheel = ":_wheel_pygame@2.6.1",
-        testonly = "pygame" in _TESTONLY_DEPS,
+        name = "pygame-ce@2.5.6",
+        wheel = ":_wheel_pygame-ce@2.5.6",
+        testonly = "pygame-ce" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -11067,12 +11067,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_sdist_pygame_2.6.1",
+        name = "pycross_lock_file_sdist_pygame_ce_2.5.6",
         urls = [
-            "https://files.pythonhosted.org/packages/49/cc/08bba60f00541f62aaa252ce0cfbd60aebd04616c0b9574f755b583e45ae/pygame-2.6.1.tar.gz",
+            "https://files.pythonhosted.org/packages/f1/a0/8199f0e96f43d94b79a74116a20b4937648bd26117e11d8994b1169a9120/pygame_ce-2.5.6.tar.gz",
         ],
-        sha256 = "56fb02ead529cee00d415c3e007f75e0780c655909aaa8e8bf616ee09c9feb1f",
-        downloaded_file_path = "pygame-2.6.1.tar.gz",
+        sha256 = "d3d019309d1e76fd19978b01753e8576bd76c66411ac7a4885785f95e68dc261",
+        downloaded_file_path = "pygame_ce-2.5.6.tar.gz",
     )
 
     maybe(
@@ -20907,122 +20907,152 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pygame_2.6.1_cp310_cp310_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp310_cp310_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/dc/48/f8b1069788d1bd42e63a960d74d3355242480b750173a42b2749687578ca/pygame-2.6.1-cp310-cp310-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/23/65/95a6f958c21314cd48bb3d9c837f41b404a118377ff930c3ca474fc11d28/pygame_ce-2.5.6-cp310-cp310-macosx_11_0_arm64.whl",
         ],
-        sha256 = "10e3d2a55f001f6c0a6eb44aa79ea7607091c9352b946692acedb2ac1482f1c9",
-        downloaded_file_path = "pygame-2.6.1-cp310-cp310-macosx_11_0_arm64.whl",
+        sha256 = "86d5c64edda242edd6291f6a1c8e2fde0fb15440f30e1d7535423a2a7f3bc38c",
+        downloaded_file_path = "pygame_ce-2.5.6-cp310-cp310-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pygame_2.6.1_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/bc/33/a1310386b8913ce1bdb90c33fa536970e299ad57eb35785f1d71ea1e2ad3/pygame-2.6.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/84/26/5183502ceca2744217644b5cb8c92d16afa5f8f5936fce269d724208198e/pygame_ce-2.5.6-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
         ],
-        sha256 = "816e85000c5d8b02a42b9834f761a5925ef3377d2924e3a7c4c143d2990ce5b8",
-        downloaded_file_path = "pygame-2.6.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "7eefa45f2c31d0db8808a853678c24a58355e643c840f8c607ed355cc2de0153",
+        downloaded_file_path = "pygame_ce-2.5.6-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pygame_2.6.1_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp310_cp310_manylinux2014_x86_64.manylinux_2_17_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/11/b3/de6ed93ae483cf3bac8f950a955e83f7ffe59651fd804d100fff65d66d6c/pygame-2.6.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/3a/e6/3d56705bf9da932f4ec70498600f42b77b5a0664650fc0dbe64ef80315c6/pygame_ce-2.5.6-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         ],
-        sha256 = "da3ad64d685f84a34ebe5daacb39fff14f1251acb34c098d760d63fee768f50c",
-        downloaded_file_path = "pygame-2.6.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "d05a2d36c4bcbf37f0a129d65979c2baac2da67cbfa32d83b9587a1c014d00ba",
+        downloaded_file_path = "pygame_ce-2.5.6-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pygame_2.6.1_cp311_cp311_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp311_cp311_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/83/47/6edf2f890139616b3219be9cfcc8f0cb8f42eb15efd59597927e390538cb/pygame-2.6.1-cp311-cp311-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/16/11/37fda5d2c6bb562cd130a281bfd8db574742b3d556834513fc048cde1e8b/pygame_ce-2.5.6-cp311-cp311-macosx_11_0_arm64.whl",
         ],
-        sha256 = "f3935459109da4bb0b3901da9904f0a3e52028a3332a355d298b1673a334cf21",
-        downloaded_file_path = "pygame-2.6.1-cp311-cp311-macosx_11_0_arm64.whl",
+        sha256 = "f24e49d0a26a5b0ccd61b5e03828c0a16ca14423db03f3ea8d5e7565d3ab36e2",
+        downloaded_file_path = "pygame_ce-2.5.6-cp311-cp311-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pygame_2.6.1_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/00/9e/0d8aa8cf93db2d2ee38ebaf1c7b61d0df36ded27eb726221719c150c673d/pygame-2.6.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/ff/ee/5328f9e0a767eb263cb973b13dd327fa388e16adc2b7b331b7e30e802e39/pygame_ce-2.5.6-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
         ],
-        sha256 = "c31dbdb5d0217f32764797d21c2752e258e5fb7e895326538d82b5f75a0cd856",
-        downloaded_file_path = "pygame-2.6.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "cdfecaf03c4d2342501b1ec5d1d03e0381ac21199cfa1c51bb39ee2e8a7409ba",
+        downloaded_file_path = "pygame_ce-2.5.6-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pygame_2.6.1_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp311_cp311_manylinux2014_x86_64.manylinux_2_17_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/7a/a1/9ae2852ebd3a7cc7d9ae7ff7919ab983e4a5c1b7a14e840732f23b2b48f6/pygame-2.6.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/cb/9e/b7cf042f22035837e1d895a389f20e87c849cca3bb56460ed4141878c6b8/pygame_ce-2.5.6-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         ],
-        sha256 = "ce8cc108b92de9b149b344ad2e25eedbe773af0dc41dfb24d1f07f679b558c60",
-        downloaded_file_path = "pygame-2.6.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "06afd21e9513064bd9f77f909bbcc4fa2af4083dea301dce81b17c9b7ec96651",
+        downloaded_file_path = "pygame_ce-2.5.6-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pygame_2.6.1_cp312_cp312_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp312_cp312_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/cd/53/77ccbc384b251c6e34bfd2e734c638233922449a7844e3c7a11ef91cee39/pygame-2.6.1-cp312-cp312-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/aa/59/e3146af051400d81046cd33e01e5c150086607fc4112f5a63531331e2e34/pygame_ce-2.5.6-cp312-cp312-macosx_11_0_arm64.whl",
         ],
-        sha256 = "c8040ea2ab18c6b255af706ec01355c8a6b08dc48d77fd4ee783f8fc46a843bf",
-        downloaded_file_path = "pygame-2.6.1-cp312-cp312-macosx_11_0_arm64.whl",
+        sha256 = "5bb66ac4025d6abb60929bf742d287c5fdc58918847a599d12ba0747fee7d882",
+        downloaded_file_path = "pygame_ce-2.5.6-cp312-cp312-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pygame_2.6.1_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/06/be/3ed337583f010696c3b3435e89a74fb29d0c74d0931e8f33c0a4246307a9/pygame-2.6.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/5b/d3/43702534989aca67704a1c333216891b248f102266eb8a7be001bb32f8dc/pygame_ce-2.5.6-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
         ],
-        sha256 = "c47a6938de93fa610accd4969e638c2aebcb29b2fca518a84c3a39d91ab47116",
-        downloaded_file_path = "pygame-2.6.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "133279f5724431fd0de74b29060b08e655d24d8b3c09481f226182ac0cb32927",
+        downloaded_file_path = "pygame_ce-2.5.6-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pygame_2.6.1_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp312_cp312_manylinux2014_x86_64.manylinux_2_17_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/b9/f2/d31e6ad42d657af07be2ffd779190353f759a07b51232b9e1d724f2cda46/pygame-2.6.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/c1/83/0236e258d9f9b40fcef4f14eb5cf461df569a6022f9c052a73b3c28a8422/pygame_ce-2.5.6-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         ],
-        sha256 = "1206125f14cae22c44565c9d333607f1d9f59487b1f1432945dfc809aeaa3e88",
-        downloaded_file_path = "pygame-2.6.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "6ed8163e389d5dfcf7817458792c4eaeb96a50393d63a9c4d3384eb2b8944123",
+        downloaded_file_path = "pygame_ce-2.5.6-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pygame_2.6.1_cp313_cp313_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp313_cp313_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/0e/c6/9cb315de851a7682d9c7568a41ea042ee98d668cb8deadc1dafcab6116f0/pygame-2.6.1-cp313-cp313-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/33/1d/8c14e5789fb0b4a7a8b6817b46690362f072da6c8307140de10f70fbf588/pygame_ce-2.5.6-cp313-cp313-macosx_11_0_arm64.whl",
         ],
-        sha256 = "2a3a1288e2e9b1e5834e425bedd5ba01a3cd4902b5c2bff8ed4a740ccfe98171",
-        downloaded_file_path = "pygame-2.6.1-cp313-cp313-macosx_11_0_arm64.whl",
+        sha256 = "971b86e48acdf37aaf9782560088c0949ca7ec3aea33827c74f4d4c4bc04c367",
+        downloaded_file_path = "pygame_ce-2.5.6-cp313-cp313-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pygame_2.6.1_cp313_cp313_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/9f/8f/617a1196e31ae3b46be6949fbaa95b8c93ce15e0544266198c2266cc1b4d/pygame-2.6.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/2e/fd/255b8233c690a68d3b68d299868fd51b5f6f509ae67453b6c21c3e27330a/pygame_ce-2.5.6-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
         ],
-        sha256 = "27eb17e3dc9640e4b4683074f1890e2e879827447770470c2aba9f125f74510b",
-        downloaded_file_path = "pygame-2.6.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "92050fd16b62b20779b6ec2fb867bc8261e5499be967ed2aa7ff6a76b7735791",
+        downloaded_file_path = "pygame_ce-2.5.6-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pygame_2.6.1_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp313_cp313_manylinux2014_x86_64.manylinux_2_17_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/85/b5/aa23aa2e70bcba42c989c02e7228273c30f3b44b9b264abb93eaeff43ad7/pygame-2.6.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/61/28/b13cc306693e917b9a4b746ccad2615fa43d8f4f2373e28104edc33f6f8f/pygame_ce-2.5.6-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         ],
-        sha256 = "ef07c0103d79492c21fced9ad68c11c32efa6801ca1920ebfd0f15fb46c78b1c",
-        downloaded_file_path = "pygame-2.6.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "d811bba090fbb10d6a1c4d6917350da5a6a585630605833fa91499480b72bfcf",
+        downloaded_file_path = "pygame_ce-2.5.6-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp314_cp314_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/2c/c6/662f002804c5cd87384e7ffc5c9cbf9cc480b5e81ff18a6b98b454067abb/pygame_ce-2.5.6-cp314-cp314-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "fda10bdba288386850b0a4c4cc22c5073efe667cd6a7426fb9f54203219f84dd",
+        downloaded_file_path = "pygame_ce-2.5.6-cp314-cp314-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp314_cp314_manylinux2014_aarch64.manylinux_2_17_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/bd/c7/147bfaa1be052c1a6db7f1d062296e23ce03c8ea8d136bf478fccaed456c/pygame_ce-2.5.6-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+        ],
+        sha256 = "6889bb8a38f5d80c3f45c58480fa069cc94c07cf679b20a23e925e27f129ce2e",
+        downloaded_file_path = "pygame_ce-2.5.6-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pygame_ce_2.5.6_cp314_cp314_manylinux2014_x86_64.manylinux_2_17_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/3a/98/e5cd3053eac63d6a2622c654d4b09977375939beda34d203f064dac5dfd9/pygame_ce-2.5.6-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        ],
+        sha256 = "266f976feb1a61bf19163416897189e6e7a8f78c362576a0afa214ffb7f1d18e",
+        downloaded_file_path = "pygame_ce-2.5.6-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
