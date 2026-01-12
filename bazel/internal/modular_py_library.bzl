@@ -15,7 +15,6 @@ def modular_py_library(
         ignore_unresolved_imports = [],
         imports = [],
         tags = [],
-        target_compatible_with = [],
         **kwargs):
     """Creates a py_library target
 
@@ -27,7 +26,6 @@ def modular_py_library(
         imports: The imports path. For max/python/max packages, this is
             automatically computed and should not be passed.
         tags: Tags to add to the target
-        target_compatible_with: See upstream docs
         **kwargs: Extra arguments passed through to py_library
     """
     package_name = native.package_name()
@@ -54,7 +52,6 @@ def modular_py_library(
         visibility = visibility,
         imports = imports,
         tags = tags,
-        target_compatible_with = target_compatible_with,
         **kwargs
     )
 
@@ -67,6 +64,5 @@ def modular_py_library(
             ignore_unresolved_imports = ignore_unresolved_imports,
             imports = imports if imports != None else [],
             srcs = kwargs.get("srcs", []) + kwargs.get("pyi_srcs", []),
-            tags = ["pydeps"] + (["gpu"] if "gpu" in tags else []),
-            target_compatible_with = target_compatible_with,
+            tags = ["pydeps"],
         )
