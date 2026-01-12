@@ -76,10 +76,6 @@ common --zip_undeclared_test_outputs=false
 # https://github.com/bazelbuild/rules_python/issues/2445
 common --@rules_python//python/config_settings:exec_tools_toolchain=disabled
 
-# Not normally set, but useful for testing
-common --experimental_propagate_custom_flag=@rules_python//python/config_settings:python_version
-common --experimental_propagate_custom_flag=@rules_python//python/config_settings:py_freethreaded
-
 # Make flag easier to write on the command line
 build --flag_alias=mojocopt=@rules_mojo//:mojo_copt
 
