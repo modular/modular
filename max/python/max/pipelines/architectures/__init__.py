@@ -47,6 +47,7 @@ def register_all_models() -> None:
     from .qwen2_5vl import qwen2_5_vl_arch
     from .qwen3 import qwen3_arch
     from .qwen3vl_moe import qwen3vl_moe_arch
+    from .z_image_module_v3 import z_image_module_v3_arch
 
     architectures = [
         exaone_arch,
@@ -73,6 +74,7 @@ def register_all_models() -> None:
         qwen2_5_vl_arch,
         qwen3_arch,
         qwen3vl_moe_arch,
+        z_image_module_v3_arch,
     ]
 
     for arch in architectures:

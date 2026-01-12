@@ -86,6 +86,72 @@ class PipelineRole(str, Enum):
         )
 
 
+class PixelGenerationType(str, Enum):
+    """Specifies the type of pixel-based generation for image/video pipelines.
+
+    This determines the input/output modalities and conditioning requirements
+    for diffusion-based generation pipelines.
+    """
+
+    # Text-only input
+    TEXT_TO_IMAGE = "text_to_image"
+    """Generate an image from a text prompt."""
+
+    TEXT_TO_VIDEO = "text_to_video"
+    """Generate a video from a text prompt."""
+
+    # Image + text input (conditioning)
+    IMAGE_TO_IMAGE = "image_to_image"
+    """Transform an image using a text prompt; e.g., style transfer."""
+
+    IMAGE_TO_VIDEO = "image_to_video"
+    """Animate a static image using a text prompt."""
+
+    FIRST_LAST_FRAME_TO_VIDEO = "first_last_frame_to_video"
+    """Animate two static images by interpolating them using a text prompt."""
+
+    # Video input
+    VIDEO_TO_VIDEO = "video_to_video"
+    """Transform a video; e.g., style transfer, frame interpolation."""
+
+    # Specialized modes
+    INPAINTING = "inpainting"
+    """Fill masked regions of an image using a text prompt."""
+
+    OUTPAINTING = "outpainting"
+    """Extend image boundaries using a text prompt."""
+
+    CONTROLNET = "controlnet"
+    """Guided generation with control signals; e.g., depth, pose, edges."""
+
+    @property
+    def requires_input_image(self) -> bool:
+        """Whether this generation type requires a conditioning image."""
+        return self in (
+            PixelGenerationType.IMAGE_TO_IMAGE,
+            PixelGenerationType.IMAGE_TO_VIDEO,
+            PixelGenerationType.FIRST_LAST_FRAME_TO_VIDEO,
+            PixelGenerationType.INPAINTING,
+            PixelGenerationType.OUTPAINTING,
+            PixelGenerationType.CONTROLNET,
+        )
+
+    @property
+    def requires_input_video(self) -> bool:
+        """Whether this generation type requires a conditioning video."""
+        return self == PixelGenerationType.VIDEO_TO_VIDEO
+
+    @property
+    def outputs_video(self) -> bool:
+        """Whether this generation type produces video output."""
+        return self in (
+            PixelGenerationType.TEXT_TO_VIDEO,
+            PixelGenerationType.IMAGE_TO_VIDEO,
+            PixelGenerationType.VIDEO_TO_VIDEO,
+            PixelGenerationType.FIRST_LAST_FRAME_TO_VIDEO,
+        )
+
+
 class SupportedEncoding(str, Enum):
     """All possible encodings which may be supported by a particular model."""
 

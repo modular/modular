@@ -10,6 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Tests for PixelGenerationConfig."""
 
-from .pixel_generation import PixelGenerationPipeline
-from .text_generation import TextGenerationPipeline
+from max.pipelines.lib import PixelGenerationConfig
+
+
+def test_pixel_generation_config_missing_help_method() -> None:
+    """Test that PixelGenerationConfig is missing a help() method and should have one."""
+
+    # Check if PixelGenerationConfig has its own help method or inherits from PipelineConfig
+    assert "help" in PixelGenerationConfig.__dict__, (
+        "PixelGenerationConfig should have its own help() method"
+    )

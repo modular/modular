@@ -485,6 +485,22 @@ class CreateImageRequest(BaseModel):
         description='A text description of the desired image(s). The maximum length is 1000 characters for `dall-e-2` and 4000 characters for `dall-e-3`.',
         examples=['A cute baby sea otter'],
     )
+    messages: str = Field(
+        ...,
+        description='A text description of the desired image(s). The maximum length is 1000 characters for `dall-e-2` and 4000 characters for `dall-e-3`.',
+        examples=[{
+                  "role": "user",
+                  "content": "A cute baby sea otter"
+                  }],
+    )
+    chat_template_options: str = Field(
+        ...,
+        description='',
+        examples=[{
+                  "add_generation_prompt": True,
+                  "enable_thinking": True
+                  }],
+    )
     model: Optional[Union[str, Literal['dall-e-2', 'dall-e-3']]] = Field(
         'dall-e-2',
         description='The model to use for image generation.',
@@ -521,6 +537,21 @@ class CreateImageRequest(BaseModel):
         None,
         description='A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse. [Learn more](/docs/guides/safety-best-practices/end-user-ids).\n',
         examples=['user-1234'],
+    )
+    guidance_scale: Optional[float] = Field(
+        7.5,
+        description='Guidance scale for classifier-free guidance. Set to 0 to disable CFG. Typical values: 5.0-7.5. If not set, uses model default.',
+        examples=[5.0, 0.0],
+    )
+    negative_prompt: Optional[str] = Field(
+        None,
+        description='Negative prompt to guide what NOT to generate.',
+        examples=['blurry, low quality'],
+    )
+    num_inference_steps: Optional[int] = Field(
+        50,
+        description='Number of denoising steps. More steps = higher quality but slower. If not set, uses model default.',
+        examples=[9, 50],
     )
 
 

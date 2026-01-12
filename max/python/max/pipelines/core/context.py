@@ -29,11 +29,14 @@ from max.interfaces import (
     GenerationStatus,
     ImageMetadata,
     LogProbabilities,
+    PixelGenerationContext,
     RequestID,
     SamplingParams,
     TextGenerationContext,
     TextGenerationOutput,
+    TextGenerationRequestMessage,
     TokenBuffer,
+    TokenSlice,
     VLMTextGenerationContext,
 )
 
@@ -589,6 +592,13 @@ if TYPE_CHECKING:
             images=[],
         )
 
+    def _verify_pixel_context_protocol() -> PixelGenerationContext:
+        return PixelContext(
+            request_id=RequestID(),
+            prompt="test prompt",
+            max_length=512,
+        )
+
 
 @contextmanager
 def reserve_token_space_for_batch(
@@ -632,3 +642,130 @@ def reserve_token_space_for_batch(
             proc_end, cur_len = saved_state[ctx.request_id]
             ctx.tokens._processing_range.end = proc_end
             ctx.tokens._current_length = cur_len
+
+
+@dataclass(kw_only=True)
+class PixelContext:
+    """A context class for image/video generation requests.
+
+    This class manages the state and parameters for image/video generation,
+    including prompt tokenization, generation parameters, and request tracking.
+
+    Configuration:
+        request_id: A unique identifier for this generation request.
+        prompt: Text description of the desired image/video.
+        max_length: Maximum sequence length for tokenization.
+        tokens: NumPy array containing the tokenized prompt IDs.
+        negative_tokens: NumPy array containing the tokenized negative prompt IDs.
+        height: Height of the generated image/video in pixels.
+        width: Width of the generated image/video in pixels.
+        num_inference_steps: Number of denoising steps.
+        guidance_scale: Guidance scale for classifier-free guidance.
+        negative_prompt: Negative prompt to guide what NOT to generate.
+        num_images_per_prompt: Number of images/videos to generate per prompt.
+        model_name: Name of the model being used.
+    """
+
+    # Request identification (required)
+    request_id: RequestID
+
+    # Input: Either prompt OR messages (at least one required)
+    prompt: str | None = field(default=None)
+    """Text prompt for generation. Provide either this OR messages."""
+    negative_prompt: str | None = field(default=None)
+    """Negative prompt to guide what NOT to generate."""
+    messages: list[TextGenerationRequestMessage] | None = field(default=None)
+    """Chat messages for generation. Provide either this OR prompt."""
+
+    # Text encoder parameters (optional - has sensible defaults)
+    max_length: int = field(default=512)
+    """Max sequence length for text encoder. Default 512 is sufficient for most prompts."""
+
+    model_name: str = field(default="")
+
+    # Tokenized prompts (populated by TextTokenizer)
+    tokens: TokenSlice = field(
+        default_factory=lambda: np.array([], dtype=np.int64)
+    )
+    negative_tokens: TokenSlice = field(
+        default_factory=lambda: np.array([], dtype=np.int64)
+    )
+
+    # Image generation parameters
+    height: int = field(default=1024)
+    width: int = field(default=1024)
+    num_inference_steps: int = field(default=50)
+    guidance_scale: float = field(default=0.0)
+    num_images_per_prompt: int = field(default=1)
+    num_videos_per_prompt: int = field(default=1)
+
+    # Video generation parameters
+    num_frames: int = field(default=1)
+    """Number of frames for video generation. 1 = image, >1 = video."""
+    fps: int = field(default=24)
+    """Frames per second for video output."""
+
+    # Input conditioning (for image-to-image/video, inpainting, etc.)
+    input_image: Any = field(default=None)
+    """Conditioning image for image-to-image, image-to-video, inpainting, etc."""
+    input_video: Any = field(default=None)
+    """Conditioning video for video-to-video generation."""
+    mask_image: Any = field(default=None)
+    """Mask for inpainting/outpainting operations."""
+
+    # Additional parameters
+    seed: int | None = field(default=None)
+    size: str = field(default="1024x1024")
+    quality: str = field(default="standard")
+    style: str = field(default="vivid")
+    response_format: str = field(default="url")
+    user: str | None = field(default=None)
+
+    # Generation status (for scheduler compatibility)
+    _status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
+
+    @property
+    def status(self) -> GenerationStatus:
+        """Current generation status of the request."""
+        return self._status
+
+    @status.setter
+    def status(self, value: GenerationStatus) -> None:
+        """Update the generation status."""
+        self._status = value
+
+    @property
+    def is_done(self) -> bool:
+        """Whether the request has completed generation."""
+        return self._status.is_done
+
+    @property
+    def needs_ce(self) -> bool:
+        """Whether this context needs context encoding.
+
+        For image generation, we never need context encoding since
+        we process the full prompt at once through the text encoder.
+        """
+        return False
+
+    @property
+    def active_length(self) -> int:
+        """Current sequence length for batch constructor compatibility."""
+        return 1
+
+    @property
+    def current_length(self) -> int:
+        """Current length for batch constructor compatibility."""
+        return 1
+
+    @property
+    def processed_length(self) -> int:
+        """Processed length for batch constructor compatibility."""
+        return 0
+
+    def compute_num_available_steps(self, max_seq_len: int) -> int:
+        """Compute number of available steps for scheduler compatibility.
+
+        For image generation, this returns the number of inference steps.
+        """
+        return self.num_inference_steps

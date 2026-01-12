@@ -30,11 +30,13 @@ from max.interfaces import (
     Pipeline,
     PipelineTask,
     PipelineTokenizer,
+    PixelGenerationContext,
+    PixelGenerationRequest,
     TextGenerationContext,
     TextGenerationRequest,
 )
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -48,10 +50,11 @@ if TYPE_CHECKING:
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
 from .config_enums import RopeType, SupportedEncoding
+from .diffusers_config import DiffusersConfig
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo
 from .interfaces import PipelineModel
-from .pipeline_variants.text_generation import TextGenerationPipeline
+from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
 from .speculative_decoding import (
     EAGLESpeculativeDecodingPipeline,
     SpeculativeMethod,
@@ -74,6 +77,7 @@ def get_pipeline_for_task(
     | type[StandaloneSpeculativeDecodingPipeline]
     | type[SpeechTokenGenerationPipeline]
     | type[EAGLESpeculativeDecodingPipeline]
+    | type[PixelGenerationPipeline]
 ):
     if task == PipelineTask.TEXT_GENERATION:
         if pipeline_config._speculative is not None:
@@ -100,6 +104,8 @@ def get_pipeline_for_task(
         return AudioGeneratorPipeline
     elif task == PipelineTask.SPEECH_TOKEN_GENERATION:
         return SpeechTokenGenerationPipeline
+    elif task == PipelineTask.PIXEL_GENERATION:
+        return PixelGenerationPipeline
 
 
 @dataclass(frozen=False)
@@ -167,11 +173,15 @@ class SupportedArchitecture:
     default_weights_format: WeightsFormat
     """The weights format expected by the `pipeline_model`."""
 
-    context_type: type[TextGenerationContext] | type[EmbeddingsContext]
+    context_type: (
+        type[TextGenerationContext]
+        | type[EmbeddingsContext]
+        | type[PixelGenerationContext]
+    )
     """The context class type that this architecture uses for managing request state and inputs.
 
-    This should be a class (not an instance) that implements either the `TextGenerationContext`
-    or `EmbeddingsContext` protocol, defining how the pipeline processes and tracks requests.
+    This should be a class (not an instance) that implements either the `TextGenerationContext`,
+    `EmbeddingsContext`, or `PixelGenerationContext` protocol, defining how the pipeline processes and tracks requests.
     """
 
     rope_type: RopeType = RopeType.none
@@ -191,7 +201,7 @@ class SupportedArchitecture:
     """A dictionary specifying required values for PipelineConfig options."""
 
     context_validators: list[
-        Callable[[TextContext | TextAndVisionContext], None]
+        Callable[[TextContext | TextAndVisionContext | PixelContext], None]
     ] = field(default_factory=list)
     """A list of callable validators that verify context inputs before model execution.
 
@@ -201,7 +211,7 @@ class SupportedArchitecture:
 
     .. code-block:: python
 
-        def validate_single_image(context: TextContext | TextAndVisionContext) -> None:
+        def validate_single_image(context: TextContext | TextAndVisionContext | PixelContext) -> None:
             if isinstance(context, TextAndVisionContext):
                 if context.pixel_values and len(context.pixel_values) > 1:
                     raise InputError(f"Model supports only 1 image, got {len(context.pixel_values)}")
@@ -264,11 +274,21 @@ class PipelineRegistry:
     def retrieve_architecture(
         self, huggingface_repo: HuggingFaceRepo, use_module_v3: bool = False
     ) -> SupportedArchitecture | None:
-        # Retrieve model architecture names
-        hf_config = self.get_active_huggingface_config(
-            huggingface_repo=huggingface_repo
-        )
-        architecture_names = getattr(hf_config, "architectures", [])
+        # Check if this is a diffusers-style model (has model_index.json)
+        if huggingface_repo.file_exists("model_index.json"):
+            # Diffusers-style lookup: parse model_index.json for _class_name
+            diffusers_config = DiffusersConfig.from_huggingface_repo(
+                huggingface_repo.repo_id,
+                huggingface_repo.revision,
+                trust_remote_code=huggingface_repo.trust_remote_code,
+            )
+            architecture_names = [diffusers_config.pipeline_class]
+        else:
+            # Transformers-style lookup: use architectures from config.json
+            hf_config = self.get_active_huggingface_config(
+                huggingface_repo=huggingface_repo
+            )
+            architecture_names = getattr(hf_config, "architectures", [])
 
         if not architecture_names:
             logger.debug(
@@ -315,6 +335,7 @@ class PipelineRegistry:
             self._cached_huggingface_configs[huggingface_repo] = (
                 AutoConfig.from_pretrained(
                     huggingface_repo.repo_id,
+                    subfolder=huggingface_repo.subfolder,
                     trust_remote_code=huggingface_repo.trust_remote_code,
                     revision=huggingface_repo.revision,
                 )
@@ -437,12 +458,19 @@ class PipelineRegistry:
                 use_module_v3=pipeline_config.use_module_v3,
             )
 
-        # Load HuggingFace Config
-        huggingface_config = pipeline_config.model.huggingface_config
-
         # Architecture should not be None here, as the engine is MAX.
         assert arch is not None
         devices = load_devices(pipeline_config.model.device_specs)
+
+        # Load HuggingFace Config (of the text encoder)
+        if pipeline_config.model.is_diffusers_model:
+            huggingface_config = (
+                pipeline_config.model._diffusers_config.get_component_config(
+                    "text_encoder"
+                )
+            )
+        else:
+            huggingface_config = pipeline_config.model.huggingface_config
 
         max_length = arch.pipeline_model.calculate_max_seq_len(
             pipeline_config, huggingface_config=huggingface_config
@@ -480,11 +508,16 @@ class PipelineRegistry:
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 chat_template=pipeline_config.retrieve_chat_template(),
                 context_validators=arch.context_validators,
+                subfolder="tokenizer",
             )
         # Cast tokenizer to the proper type for text generation pipeline compatibility
         typed_tokenizer = cast(
             PipelineTokenizer[
-                Any, npt.NDArray[np.integer[Any]], TextGenerationRequest
+                Any,
+                npt.NDArray[np.integer[Any]],
+                TextGenerationRequest
+                if not pipeline_config.model.is_diffusers_model
+                else PixelGenerationRequest,
             ],
             tokenizer,
         )
@@ -528,23 +561,30 @@ class PipelineRegistry:
 
     def retrieve_context_type(
         self, pipeline_config: PipelineConfig
-    ) -> type[TextGenerationContext] | type[EmbeddingsContext]:
+    ) -> (
+        type[TextGenerationContext]
+        | type[EmbeddingsContext]
+        | type[PixelGenerationContext]
+    ):
         """Retrieve the context class type associated with the architecture for the given pipeline configuration.
 
         The context type defines how the pipeline manages request state and inputs during
         model execution. Different architectures may use different context implementations
-        that adhere to either the TextGenerationContext or EmbeddingsContext protocol.
+        that adhere to either the TextGenerationContext, EmbeddingsContext, or PixelGenerationContext protocol.
 
         Args:
             pipeline_config: The configuration for the pipeline.
 
         Returns:
             The context class type associated with the architecture, which implements
-            either the TextGenerationContext or EmbeddingsContext protocol.
+            either the TextGenerationContext or EmbeddingsContext or PixelGenerationContext protocol.
 
         Raises:
             ValueError: If no supported architecture is found for the given model repository.
         """
+        if pipeline_config.model.is_diffusers_model:
+            return PixelGenerationContext
+
         if arch := self.retrieve_architecture(
             huggingface_repo=pipeline_config.model.huggingface_model_repo,
             use_module_v3=pipeline_config.use_module_v3,
