@@ -58,7 +58,7 @@ struct _WriteBufferHeap(Writable, Writer):
     # We should consider uses _WriteBufferStack on AMD instead.
     @always_inline
     fn write_string(mut self, string: StringSlice):
-        var len_bytes = len(string)
+        var len_bytes = string.byte_length()
         if len_bytes + self._pos > HEAP_BUFFER_BYTES:
             _printf[
                 "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
@@ -137,7 +137,7 @@ struct _WriteBufferStack[
         self.pos = 0
 
     fn write_string(mut self, string: StringSlice):
-        len_bytes = len(string)
+        len_bytes = string.byte_length()
         # If span is too large to fit in buffer, write directly and return
         if len_bytes > Int(Self.stack_buffer_bytes):
             self.flush()
@@ -180,7 +180,7 @@ struct _TotalWritableBytes(Writer):
                 self.write(sep, values[i])
 
     fn write_string(mut self, string: StringSlice):
-        self.size += len(string)
+        self.size += string.byte_length()
 
 
 # fmt: off

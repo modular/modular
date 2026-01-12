@@ -161,7 +161,9 @@ fn debug_assert[
         message.nul_terminate()
 
         var slice = message.as_string_slice()
-        _debug_assert_msg(slice.unsafe_ptr(), len(slice), __call_location())
+        _debug_assert_msg(
+            slice.unsafe_ptr(), slice.byte_length(), __call_location()
+        )
 
 
 @always_inline
@@ -270,7 +272,9 @@ fn debug_assert[
         message.nul_terminate()
 
         var slice = message.as_string_slice()
-        _debug_assert_msg(slice.unsafe_ptr(), len(slice), __call_location())
+        _debug_assert_msg(
+            slice.unsafe_ptr(), slice.byte_length(), __call_location()
+        )
 
     elif _use_compiler_assume:
         assume(cond)
