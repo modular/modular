@@ -254,8 +254,8 @@ struct PythonVersion(ImplicitlyCopyable):
         var next_idx = 0
         var i = 0
         while next_idx < len(version) and i < 3:
-            if version[byte=next_idx] == "." or (
-                version[byte=next_idx] == " " and i == 2
+            if version[next_idx] == "." or (
+                version[next_idx] == " " and i == 2
             ):
                 var c = version[start:next_idx]
                 try:

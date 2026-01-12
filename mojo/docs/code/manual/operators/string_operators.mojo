@@ -90,7 +90,7 @@ def main():
 
     # String indexing and slicing
     var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # String type value
-    print(alphabet[byte=0], alphabet[byte= -1])
+    print(alphabet[0], alphabet[-1])
 
     # The following would produce a run-time error
     # print(alphabet[45])

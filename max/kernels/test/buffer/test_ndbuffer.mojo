@@ -316,7 +316,7 @@ def test_ndbuffer_tofile():
                     print(buf[i, j] - buf_read[i, j])
 
             # Ensure string is not destroyed before the above check.
-            _ = str[byte=0]
+            _ = str[0]
 
 
 # CHECK-LABEL: test_ndbuffer_tile

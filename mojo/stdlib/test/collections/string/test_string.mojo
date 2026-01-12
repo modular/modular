@@ -275,9 +275,9 @@ def test_chr():
 def test_string_indexing():
     var str = "Hello Mojo!!"
 
-    assert_equal("H", str[byte=0])
-    assert_equal("!", str[byte= -1])
-    assert_equal("H", str[byte = -len(str)])
+    assert_equal("H", str[0])
+    assert_equal("!", str[-1])
+    assert_equal("H", str[-len(str)])
     assert_equal("llo Mojo!!", str[2:])
     assert_equal("lo Mojo!", str[3:-1])
     assert_equal("lo Moj", str[3:-3])
@@ -1080,9 +1080,9 @@ def test_string_mul():
 
 def test_indexing():
     a = "abc"
-    assert_equal(a[byte=False], "a")
-    assert_equal(a[byte = Int(1)], "b")
-    assert_equal(a[byte=2], "c")
+    assert_equal(a[False], "a")
+    assert_equal(a[Int(1)], "b")
+    assert_equal(a[2], "c")
 
 
 def test_string_codepoints_iter():
@@ -1556,7 +1556,7 @@ def test_copyinit():
         comptime current_size = sizes[sizes_index]
         x = ""
         for i in range(current_size):
-            x += String(i)[byte=0]
+            x += String(i)[0]
         y = x
         assert_equal(test_current_size, current_size)
         assert_equal(len(y), current_size)
