@@ -15,4 +15,4 @@ from .arch import orion_arch
 
 ARCHITECTURES = [orion_arch]
 
-__all__ = [ "ARCHITECTURES", "orion_arch"]
+__all__ = ["ARCHITECTURES", "orion_arch"]
