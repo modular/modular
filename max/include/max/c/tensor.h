@@ -111,7 +111,7 @@ M_newAsyncTensorMap(const M_RuntimeContext *context);
 /// tensorSpec need not exist through the lifetime of the tensor map.
 /// @param status The status object for reporting errors.
 MODULAR_API_EXPORT void M_borrowTensorInto(M_AsyncTensorMap *tensors,
-                                           const void *input,
+                                           void *input,
                                            const M_TensorSpec *tensorSpec,
                                            M_Status *status);
 
