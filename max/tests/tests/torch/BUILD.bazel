@@ -26,7 +26,6 @@ modular_py_test(
     tags = [
         "gpu",
         "no-pydeps",  # TODO: Fix and re-enable
-        "resources:memory:35000",  # 35 GB
     ],
     target_compatible_with = select({
         "//:apple_gpu": ["@platforms//:incompatible"],
