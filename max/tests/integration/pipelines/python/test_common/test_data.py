@@ -135,9 +135,9 @@ class MockTextGenerationRequest:
             request_id=request_id,
             model_name=self.model_name,
             sampling_params=sampling_params,
-            messages=self.messages,
+            messages=self.messages or None,
             images=None,
-            prompt=self.prompt,
+            prompt=self.prompt if not self.messages else None,
         )
 
 
