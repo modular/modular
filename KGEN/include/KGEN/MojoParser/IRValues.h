@@ -83,11 +83,26 @@ struct ASTExprAnd {
   ASTExprAnd(DerivedValueType &&ir, const ExprNode *expr)
       : ir(std::move(ir)), expr(expr) {}
 
-  bool isNull() const { return ir.isNull(); }
-  bool operator!() const { return !ir; }
-  explicit operator bool() const { return bool(ir); }
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG
+  ASTExprAnd(const ASTExprAnd &other) = default;
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG ASTExprAnd &
+  operator=(const ASTExprAnd &other) = default;
+
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG bool isNull() const {
+    return ir.isNull();
+  }
+
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG bool operator!() const {
+    return !ir;
+  }
+
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG explicit
+  operator bool() const {
+    return bool(ir);
+  }
 
   template <typename OtherValueType>
+  LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG
   operator ASTExprAnd<OtherValueType>() const {
     return {OtherValueType(ir), expr};
   }

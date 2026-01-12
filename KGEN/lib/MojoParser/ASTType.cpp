@@ -44,9 +44,10 @@ MojoInflightDiag &MojoInflightDiag::attachNote(llvm::SMLoc loc) & {
 }
 
 void MojoInflightDiag::addEmittedParam(TypedAttr param,
-                                       std::optional<Location> loc) {
+                                       std::optional<Location> loc,
+                                       ASTDecl *ctxDecl) {
   // Remember that we emitted this type.
-  emittedParams.push_back({loc.value_or(getLastLoc()), param});
+  emittedParams.push_back({loc.value_or(getLastLoc()), param, ctxDecl});
 }
 
 void M::addToDiagnostic(TypedAttr paramValue, InflightDiag &diag) {
@@ -59,9 +60,15 @@ void M::addToDiagnostic(TypedAttr paramValue, InflightDiag &diag) {
   diag << ASTType::getParamAsString(paramValue, /*forDiag=*/shared);
   diag << '\'';
 
+  // Remember the context decl for when this type was emitted - it could change
+  // before the diagnostic is emitted.  This happens (e.g.) in overload
+  // resolution where lots of diagnostics are producted (with different callees)
+  // and then are emitted in a deferred way.
+  ASTDecl *ctxDecl = shared->declResolver->getDeclCurrentlyProcessing();
+
   // Remember we emitted this parameter so we can post-process the diagnostic.
   auto &mdiag = static_cast<MojoInflightDiag &>(diag);
-  mdiag.addEmittedParam(paramValue);
+  mdiag.addEmittedParam(paramValue, {}, ctxDecl);
 }
 
 void M::addToDiagnostic(ASTType type, InflightDiag &diag) {
@@ -77,8 +84,8 @@ void M::addToDiagnostic(ASTType type, InflightDiag &diag) {
 void M::addToDiagnostic(MojoInflightDiag &&otherDiag, InflightDiag &diag) {
   auto &mdiag = static_cast<MojoInflightDiag &>(diag);
 
-  for (auto [loc, param] : otherDiag.getEmittedParams())
-    mdiag.addEmittedParam(param, loc);
+  for (auto [loc, param, ctxDecl] : otherDiag.getEmittedParams())
+    mdiag.addEmittedParam(param, loc, ctxDecl);
 
   diag.addDiag(std::move(otherDiag));
 }
@@ -223,27 +230,35 @@ MojoInflightDiag::~MojoInflightDiag() {
   // at long type names.
   auto *shared = static_cast<SharedState *>(getDiags()->extraContext);
   if (emittedParams.size() > 1 &&
-      !isEqualCanon(emittedParams[0].second, emittedParams[1].second)) {
+      !isEqualCanon(emittedParams[0].value, emittedParams[1].value)) {
     ParamDiffer differ{*shared, "", {}, {}};
-    differ.diff(emittedParams[0].second, emittedParams[1].second);
+    differ.diff(emittedParams[0].value, emittedParams[1].value);
     if (!differ.accessPath.empty()) {
       assert(differ.leftNested && differ.rightNested && "differ broken");
 
       // Only do this for very long type names. Don't clutter things up for
       // SIMD types that disagree obviously.
-      auto first = ASTType::getParamAsString(emittedParams[0].second, shared);
+      auto first = ASTType::getParamAsString(emittedParams[0].value, shared);
       if (first.size() > 30) {
         const char *kind =
             LIT::isTypeExpr(differ.leftNested) ? "type" : "value";
-        attachNote(emittedParams[0].first)
-            << differ.accessPath << " of left " << kind << " is "
-            << differ.leftNested << " but the right " << kind << " is "
-            << differ.rightNested;
+        attachNote(emittedParams[0].loc)
+            << differ.accessPath << " of left " << kind << " is ";
+        {
+          DeclResolver::DeclScopeChanger x(emittedParams[0].ctxDecl);
+          *this << differ.leftNested;
+        }
+        {
+          DeclResolver::DeclScopeChanger x(emittedParams[1].ctxDecl);
+          *this << " but the right " << kind << " is " << differ.rightNested;
+        }
       }
 
       // Keep track of these as printed so we can unpack sugar if needed.
-      emitted.push_back({emittedParams[0].first, differ.leftNested});
-      emitted.push_back({emittedParams[1].first, differ.rightNested});
+      emitted.push_back(
+          {emittedParams[0].loc, differ.leftNested, emittedParams[0].ctxDecl});
+      emitted.push_back(
+          {emittedParams[1].loc, differ.rightNested, emittedParams[1].ctxDecl});
 
       // If the nested values differ as the result of a parameter operator, emit
       // a note suggesting a rebind.  It is plausible we cannot prove equality.
@@ -263,13 +278,17 @@ MojoInflightDiag::~MojoInflightDiag() {
   // Finally, take a look at any of the parameters we've printed to see if they
   // have top-level sugar.  If so, unpack them so the user has a better chance
   // of understanding what is going on.
-  for (auto [loc, attrValue] : emitted) {
+  for (auto [loc, attrValue, ctxDecl] : emitted) {
     // See if anything has alias sugar on it, and if so, unpack it so the user
     // has a better chance of understanding what is going on.  We don't want to
     // look into the body of an always_inline("builtin") calls though!
     TypedAttr desugared = SugarAttr::strip(attrValue, /*keepApplies=*/true);
     if (desugared == attrValue || !unpackedAttr.insert(attrValue).second)
       continue;
+
+    // Make sure to unpack this in the right context so any parameter references
+    // are referring to the right declaration.
+    DeclResolver::DeclScopeChanger x(ctxDecl);
 
     // Ensure the strings are textually different.
     auto attrString = ASTType::getParamAsString(attrValue, /*forDiag=*/shared);

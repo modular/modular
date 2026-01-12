@@ -386,6 +386,38 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, SharedState &shared,
   os << demangledName;
 }
 
+/// Attempt to pretty print the specified ParamIndexRefAttr, returning failure
+/// if it didn't work out.
+static LogicalResult prettyPrintParamName(ParamIndexRefAttr idxRef,
+                                          SharedState &shared,
+                                          raw_ostream &os) {
+  ASTDecl *ctxDecl = shared.declResolver->getDeclCurrentlyProcessing();
+  if (!ctxDecl)
+    return failure();
+
+  // FIXME: The ASTPrinter needs a notion of current de Bruijn depth. For now we
+  // just allow anything, assuming it lines up with the decl we're working on.
+  // Need to check `idxRef.getDepth() == 0` here.
+
+  for (; ctxDecl; ctxDecl = ctxDecl->getParentDecl()) {
+    if (auto op = ctxDecl->getIfOperation()) {
+      if (auto declIntf = dyn_cast<DeclInterface>(op)) {
+        auto params = declIntf.getInputParams();
+        if (idxRef.getIndex() < params.size()) {
+          // Find the named param decl from the param list and print a reference
+          // to it instead.
+          prettyPrintParamName(ParamDeclRefAttr::get(params[idxRef.getIndex()]),
+                               shared, os);
+          return success();
+        }
+      }
+    }
+  }
+
+  // Couldn't find it.
+  return failure();
+}
+
 /// Pretty print a parameter value.
 void ASTType::printParam(raw_ostream &os, TypedAttr param,
                          SharedState *diagShared) {
@@ -647,13 +679,6 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     });
     return;
   }
-  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(param)) {
-    os << '$';
-    if (size_t depth = indexRef.getDepth())
-      os << depth << '|';
-    os << indexRef.getIndex();
-    return;
-  }
   if (auto memAttr = dyn_cast<StoreToMemAttr>(param))
     return printParam(os, memAttr.getValue(), diagShared);
 
@@ -829,12 +854,22 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
   // Print ParamDeclRefAttr as the name of the parameter.
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(param)) {
-    if (!diagShared)
-      // Escape any weird characters in the parameter name that might have
-      // been introduced with backticks.
-      return printAsMojoStringLiteral(declRef.getName(), os);
+    if (diagShared)
+      return prettyPrintParamName(declRef, *diagShared, os);
+    // Escape any weird characters in the parameter name that might have
+    // been introduced with backticks.
+    return printAsMojoStringLiteral(declRef.getName(), os);
+  }
+  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(param)) {
+    if (diagShared &&
+        succeeded(prettyPrintParamName(indexRef, *diagShared, os)))
+      return;
 
-    return prettyPrintParamName(declRef, *diagShared, os);
+    os << '$';
+    if (size_t depth = indexRef.getDepth())
+      os << depth << '|';
+    os << indexRef.getIndex();
+    return;
   }
 
   // These are origins but don't need `origin_of(...)` around them.

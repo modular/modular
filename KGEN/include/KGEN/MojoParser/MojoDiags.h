@@ -20,8 +20,14 @@ namespace M::KGEN::LIT {
 /// functionality.
 class MojoInflightDiag : public InflightDiag {
 public:
+  struct EmittedParamInfo {
+    Location loc;
+    TypedAttr value;
+    ASTDecl *ctxDecl;
+  };
+
   MojoInflightDiag(InflightDiag &&diag,
-                   ArrayRef<std::pair<Location, TypedAttr>> emittedParams)
+                   ArrayRef<EmittedParamInfo> emittedParams)
       : InflightDiag(std::move(diag)), emittedParams(emittedParams) {}
   ~MojoInflightDiag();
 
@@ -51,14 +57,13 @@ public:
     return std::move(*this);
   }
 
-  void addEmittedParam(TypedAttr param, std::optional<Location> loc = {});
+  void addEmittedParam(TypedAttr param, std::optional<Location> loc,
+                       ASTDecl *ctxDecl);
 
-  ArrayRef<std::pair<Location, TypedAttr>> getEmittedParams() const {
-    return emittedParams;
-  }
+  ArrayRef<EmittedParamInfo> getEmittedParams() const { return emittedParams; }
 
 private:
-  SmallVector<std::pair<Location, TypedAttr>, 2> emittedParams;
+  SmallVector<EmittedParamInfo, 2> emittedParams;
 };
 
 // A wrapper around Diags that adds Mojo-specific functionality.
