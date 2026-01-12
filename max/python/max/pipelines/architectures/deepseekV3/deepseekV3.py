@@ -41,6 +41,7 @@ from max.nn import (
 )
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
+    MLAPrefillMetadata,
     TensorParallelLatentAttentionWithRope,
 )
 from max.nn.attention.multi_latent_attention_fp8 import (
@@ -262,7 +263,7 @@ class DeepseekV3DecoderLayer(Module):
         kv_lookup_table: list[TensorValue],
         kv_max_lengths: list[TensorValue],
         freqs_cis: list[TensorValue],
-        mla_inputs: list[TensorValue],
+        mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
@@ -279,6 +280,18 @@ class DeepseekV3DecoderLayer(Module):
             for i in range(len(kv_blocks))
         ]
 
+        # Re-pack flat MLA inputs into MLAPrefillMetadata dataclasses
+        num_devices = len(kv_blocks)
+        mla_prefill_metadata: list[MLAPrefillMetadata] = []
+        for i in range(num_devices):
+            mla_prefill_metadata.append(
+                MLAPrefillMetadata(
+                    buffer_row_offsets=mla_prefill_metadata_flat[3 * i],
+                    cache_offsets=mla_prefill_metadata_flat[3 * i + 1],
+                    buffer_lengths=mla_prefill_metadata_flat[3 * i + 2],
+                )
+            )
+
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
@@ -289,7 +302,7 @@ class DeepseekV3DecoderLayer(Module):
             kv_collections,
             freqs_cis=freqs_cis,
             input_row_offsets=input_row_offsets,
-            mla_inputs=mla_inputs,
+            mla_prefill_metadata=mla_prefill_metadata,
         )
 
         hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
@@ -424,6 +437,7 @@ class DeepseekV3(Module):
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
         data_parallel_splits: TensorValue,
+        batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
     ) -> tuple[TensorValue, ...]:
         if not input_row_offsets.device == DeviceRef.CPU():
@@ -434,7 +448,7 @@ class DeepseekV3(Module):
         devices = self.config.devices
         h = self.embed_tokens(tokens, signal_buffers)
 
-        mla_inputs: list[TensorValue] = []
+        mla_prefill_metadata: list[MLAPrefillMetadata] = []
         freqs_cis = distribute_value(self.rope.freqs_cis, devices)
         input_row_offsets_ = distribute_value(input_row_offsets, devices)
 
@@ -447,10 +461,30 @@ class DeepseekV3(Module):
                 data_parallel_splits,
             )
 
-        # Create MLA prefill inputs if not in decode mode
+        # Create MLA prefill metadata if not in decode mode
         if self.config.graph_mode != "decode":
-            mla_inputs = self.layers[0].self_attn.create_mla_inputs(  # type: ignore
+            mla_prefill_metadata = self.layers[
+                0
+            ].self_attn.create_mla_prefill_metadata(  # type: ignore
                 input_row_offsets_, kv_collections
+            )
+
+            # replace each device's buffer_lengths with the batch context length
+            assert len(mla_prefill_metadata) == len(batch_context_lengths)
+            for i in range(len(batch_context_lengths)):
+                mla_prefill_metadata[i].buffer_lengths = batch_context_lengths[
+                    i
+                ]
+
+        # Flatten MLAPrefillMetadata to list of TensorValues for subgraph calls
+        mla_prefill_metadata_flat: list[TensorValue] = []
+        for metadata in mla_prefill_metadata:
+            mla_prefill_metadata_flat.extend(
+                [
+                    metadata.buffer_row_offsets,
+                    metadata.cache_offsets,
+                    metadata.buffer_lengths,
+                ]
             )
 
         subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
@@ -462,7 +496,7 @@ class DeepseekV3(Module):
             [kv_collection[2].type for kv_collection in kv_collections],
             [kv_collection[3].type for kv_collection in kv_collections],
             [freq.type for freq in freqs_cis],
-            [val.type for val in mla_inputs],
+            [val.type for val in mla_prefill_metadata_flat],
             [offset.type for offset in input_row_offsets_],
         ]
 
@@ -517,7 +551,7 @@ class DeepseekV3(Module):
                                 for kv_collection in kv_collections
                             ],
                             *freqs_cis,
-                            *mla_inputs,
+                            *mla_prefill_metadata_flat,
                             *input_row_offsets_,
                             *(ep_inputs if ep_inputs is not None else ()),
                             prefix=f"layers.{idx}.",
@@ -534,7 +568,7 @@ class DeepseekV3(Module):
                     [kv_collection[2] for kv_collection in kv_collections],
                     [kv_collection[3] for kv_collection in kv_collections],
                     freqs_cis=freqs_cis,
-                    mla_inputs=mla_inputs,
+                    mla_prefill_metadata_flat=mla_prefill_metadata_flat,
                     input_row_offsets=input_row_offsets_,
                     ep_inputs=ep_inputs,
                 )
@@ -664,6 +698,14 @@ class DeepseekV3(Module):
         ]
         all_input_types.extend(signal_buffer_types)
         all_input_types.extend(flattened_kv_types)
+
+        # Add batch context lengths
+        batch_context_length_type = TensorType(
+            DType.int32, shape=[1], device=DeviceRef.CPU()
+        )
+        all_input_types.extend(
+            [batch_context_length_type for _ in range(len(self.config.devices))]
+        )
 
         if self.ep_manager is not None:
             all_input_types.extend(self.ep_manager.input_types())
