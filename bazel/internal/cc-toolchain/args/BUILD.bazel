@@ -184,7 +184,6 @@ cc_args(
             "-headerpad_max_install_names",
             "-lc++",
             "-Wl,-framework,Foundation",
-            "-Wl,-framework,Metal",
             "-Wl,-no_warn_duplicate_libraries",
             "-Wl,-oso_prefix,.",  # Strip absolute paths from debug info file references
         ],
