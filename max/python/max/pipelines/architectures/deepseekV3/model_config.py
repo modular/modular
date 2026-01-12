@@ -37,6 +37,8 @@ class DeepseekV3Config(MAXModelConfigBase):
     correction_bias_dtype: DType | None
     kv_params: KVCacheParams
     devices: list[DeviceRef]
+    use_subgraphs: bool = True
+    data_parallel_degree: int = 1
 
     vocab_size: int = 129280
     hidden_size: int = 7168

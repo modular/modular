@@ -129,6 +129,8 @@ class Llama3Config(MAXModelConfigBase):
     longrope_scaling_params: LongRoPEScalingParams | None = None
     logits_scaling: float = 1.0
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    use_subgraphs: bool = True
+    data_parallel_degree: int = 1
 
     @staticmethod
     def help() -> dict[str, str]:
