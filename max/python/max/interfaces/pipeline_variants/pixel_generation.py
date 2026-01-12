@@ -181,14 +181,16 @@ class PixelGenerationContext:
     """
 
     request_id: RequestID
-    prompt: str
+    prompt: str | None = None
+    negative_prompt: str | None = None
+    messages: list[TextGenerationRequestMessage] | None = None
     max_length: int = 4096  # Default max sequence length for text encoder
     height: int = 1024
     width: int = 1024
     num_inference_steps: int = 50
     guidance_scale: float = 0.0
-    negative_prompt: str | None = None
     num_images_per_prompt: int = 1
+    num_videos_per_prompt: int = 1
     model_name: str = ""  # For scheduler compatibility
     _status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
