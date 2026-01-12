@@ -1109,11 +1109,22 @@ void ParamInf::emitInferenceFailure(size_t paramIdx, SMLoc loc) {
 /// will have UnboundAttr parameters, instead of fully bound ones like a normal
 /// argument.
 LogicalResult ParamInf::inferSelfFromInitResult(FnTypeGeneratorType signature) {
-  ASTType returnedType;
+  DeclResolver::DeclScopeChanger x(declIfKnown);
+
   // When a parameter gets bound, we re-evaluate the result type to see the
   // fully concretized parameters that the parameter may be computing.
 RetryLabel:
-  returnedType = evaluator.getReboundType(signature.getUserResultType());
+  ASTType returnedType =
+      evaluator.getReboundType(signature.getUserResultType());
+
+  auto reportConflict = [&](size_t paramIdx, TypedAttr actual,
+                            TypedAttr expected) -> LogicalResult {
+    getDiag(givenBindings.callExpr->getLoc())
+        << "return type " << returnedType << " parameter "
+        << ParamIndexRefAttr::get(/*depth*/ 0, paramIdx, actual.getType())
+        << " value " << actual << " doesn't match expected value " << expected;
+    return failure();
+  };
 
   // Match up the parameter bindings if the 'actual' param is an UnboundAttr and
   // the expected has something more specific than a reference to the contextual
@@ -1142,8 +1153,7 @@ RetryLabel:
       case ParamMatcher::Match:
         break;
       case ParamMatcher::Error:
-        addFailure(InferenceFailure::ValueConflict{idx, selfParam, retParam});
-        return failure();
+        return reportConflict(idx, retParam, selfParam);
       }
     } else if (!paramFinder.hasReferences(retParam)) {
       // Otherwise if the the returned parameter has no unbound parameter
@@ -1159,8 +1169,7 @@ RetryLabel:
       case ParamMatcher::Match:
         break;
       case ParamMatcher::Error:
-        addFailure(InferenceFailure::ValueConflict{idx, retParam, selfParam});
-        return failure();
+        return reportConflict(idx, selfParam, retParam);
       }
     }
   }

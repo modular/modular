@@ -895,7 +895,7 @@ struct StructWithSpecificInit[X: Int]:
     fn __init__(out self: StructWithSpecificInit[4]): # expected-note {{function declared here}}
         pass
 def testStructWithSpecificInit():
-    # expected-error @+1 {{return type 'StructWithSpecificInit[4]' parameter 'X' has value '4' that doesn't match expected '1'}}
+    # expected-error @+1 {{invalid initialization: return type 'StructWithSpecificInit[4]' parameter 'X' value '4' doesn't match expected value '1'}}
     var a = StructWithSpecificInit[1]()  # Infers to A[4]
 
     # This is ok.
