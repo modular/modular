@@ -34,6 +34,7 @@ from max.interfaces import (
     SamplingParams,
     TextGenerationContext,
     TextGenerationOutput,
+    TextGenerationRequestMessage,
     TokenBuffer,
     TokenSlice,
     VLMTextGenerationContext,
@@ -673,7 +674,7 @@ class PixelContext:
     """Text prompt for generation. Provide either this OR messages."""
     negative_prompt: str | None = field(default=None)
     """Negative prompt to guide what NOT to generate."""
-    messages: list[Any] | None = field(default=None)
+    messages: list[TextGenerationRequestMessage] | None = field(default=None)
     """Chat messages for generation. Provide either this OR prompt."""
 
     # Text encoder parameters (optional - has sensible defaults)
