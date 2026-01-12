@@ -686,7 +686,7 @@ struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
             elif q_chunk_idx == k_end_chunk_idx:
                 mask_val = k_indices.lt(boundary)
 
-            return mask_val.select(MASK_VALUE, retval)
+            return mask_val.select(SIMD[dtype, width](MASK_VALUE), retval)
 
         # fully masked
         return SIMD[dtype, width](MASK_VALUE)

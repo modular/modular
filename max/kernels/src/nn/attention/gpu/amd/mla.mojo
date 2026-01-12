@@ -116,7 +116,9 @@ __extension Attention:
             ):
                 return
 
-            var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
+            var kv_tile_num_rows = min(
+                UInt32(tile_size), end - kv_tile_start_row
+            )
 
             var k_tile = self.gmem_manager.get_kv_tensor(
                 self.k.block_paged_ptr[Int(Self.BN)](

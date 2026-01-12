@@ -404,7 +404,7 @@ fn _copy_tokens_smem_to_gmem[
         expected_count, bg_params.reads_per_iteration
     )
     var rounded_smem_reads = min(total_smem_reads, total_reads_rounded)
-    var smem_writes = min(expected_count, total_writes)
+    var smem_writes = min(UInt64(expected_count), total_writes)
 
     for smem_idx in range(
         bg_params.start_idx, rounded_smem_reads, bg_params.reads_per_iteration

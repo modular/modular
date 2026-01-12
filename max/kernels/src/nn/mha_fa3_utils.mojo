@@ -282,7 +282,7 @@ struct MHAPosition[
         if Self.decoding:
             return Self.group
         else:
-            return min(Self.BM, self.seq_len - self.prompt_offset)
+            return min(self.seq_len - self.prompt_offset, Self.BM)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:

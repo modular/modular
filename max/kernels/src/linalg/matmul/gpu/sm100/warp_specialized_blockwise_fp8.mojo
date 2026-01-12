@@ -521,8 +521,8 @@ fn promote_accumulators[
         ]()
 
         var global_bn_start = bn * UInt(MMA_N)
-        var begin_n = min(MMA_N, BK - Int32(global_bn_start % UInt(BK)))
-        var end_n = min(MMA_N, N - Int32(global_bn_start))
+        var begin_n = min(BK - Int32(global_bn_start % UInt(BK)), MMA_N)
+        var end_n = min(N - Int32(global_bn_start), MMA_N)
 
         # find the first b_scale index just by dividing by block size (128)
         # we use `b_scale_next_n` to find the second b_scale index later

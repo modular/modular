@@ -839,10 +839,10 @@ struct SM100MLA[
         # while waiting, offset output
         comptime splitBM = Self.BM // 2
         var num_output_rows = min(
-            splitBM,
             Int32(seq_info.seq_len)
             - Int32(seq_info.prompt_offset)
             - Int32(warp_group_idx) * splitBM,
+            splitBM,
         )
 
         gmem_row = Self.PositionType.get_q_gmem_row[ragged = Self.ragged](
