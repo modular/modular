@@ -34,7 +34,7 @@ from max.pipelines.lib import TextAndVisionTokenizer
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from PIL.Image import Image as ImageType
-from transformers import AutoConfig, AutoProcessor, AutoTokenizer
+from transformers import AutoProcessor, AutoTokenizer
 
 if TYPE_CHECKING:
     from max.pipelines.lib import PipelineConfig
@@ -50,12 +50,12 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
     def __init__(
         self,
         model_path: str,
+        pipeline_config: PipelineConfig,
         *,
         revision: str | None = None,
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
-        pipeline_config: PipelineConfig | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -79,15 +79,11 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             self.delegate.encode, add_special_tokens=False
         )
 
-        # Load config for image processing
-        config = AutoConfig.from_pretrained(
-            model_path, revision=revision, trust_remote_code=trust_remote_code
-        )
+        # Use the pre-loaded HuggingFace config from pipeline_config
+        config = pipeline_config.model.huggingface_config
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache_config.enable_prefix_caching
-            if pipeline_config is not None
-            else False
         )
 
         if vision_token_id := getattr(config, "image_token_id", None):

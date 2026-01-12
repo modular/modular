@@ -536,12 +536,12 @@ class InternVLTokenizer(TextAndVisionTokenizer):
     def __init__(
         self,
         model_path: str,
+        pipeline_config: PipelineConfig,
         *,
         revision: str | None = None,
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
-        pipeline_config: PipelineConfig | None = None,
         context_validators: list[Callable[[TextAndVisionContext], None]]
         | None = None,
         **unused_kwargs,
@@ -567,25 +567,17 @@ class InternVLTokenizer(TextAndVisionTokenizer):
             self.delegate.encode, add_special_tokens=False
         )
 
-        # Load config for image processing
-        config: Any = AutoConfig.from_pretrained(
-            model_path, revision=revision, trust_remote_code=trust_remote_code
-        )
+        # Use the pre-loaded HuggingFace config from pipeline_config
+        config: Any = pipeline_config.model.huggingface_config
 
         # Set the vision_token_id for use in super's new_context method
         self.vision_token_ids = [_get_image_context_token_id(config)]
 
         # Get vision config overrides from pipeline config.
-        vision_overrides = (
-            pipeline_config.model.vision_config_overrides
-            if pipeline_config
-            else {}
-        )
+        vision_overrides = pipeline_config.model.vision_config_overrides
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache_config.enable_prefix_caching
-            if pipeline_config
-            else False
         )
 
         # Create custom processor instead of AutoProcessor (which doesn't exist for InternVL)

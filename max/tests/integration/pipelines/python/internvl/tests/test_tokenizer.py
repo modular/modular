@@ -28,9 +28,34 @@ from PIL import Image
 from pytest_mock import MockerFixture
 
 
+@pytest.fixture
+def mock_pipeline_config() -> MagicMock:
+    """Create a mock PipelineConfig for InternVL tests."""
+    # Create mock huggingface config
+    hf_config = MagicMock()
+    hf_config.img_context_token_id = 151667
+    hf_config.eos_token_id = 2
+
+    # Create mock KV cache config
+    kv_cache_config = MagicMock()
+    kv_cache_config.enable_prefix_caching = False
+
+    # Create mock model config
+    model_config = MagicMock()
+    model_config.huggingface_config = hf_config
+    model_config.kv_cache_config = kv_cache_config
+    model_config.vision_config_overrides = {}
+
+    # Create mock pipeline config
+    pipeline_config = MagicMock()
+    pipeline_config.model = model_config
+    return pipeline_config
+
+
 @pytest.mark.asyncio
 async def test_internvl_tokenizer_new_context_smoke(
     mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
 ) -> None:
     """Smoke test to ensure new_context() doesn't raise"""
     # Create minimal mocks
@@ -44,12 +69,8 @@ async def test_internvl_tokenizer_new_context_smoke(
         "max.pipelines.architectures.internvl.tokenizer.AutoTokenizer.from_pretrained",
         return_value=mock_tokenizer,
     )
-    mocker.patch(
-        "max.pipelines.architectures.internvl.tokenizer.AutoConfig.from_pretrained",
-        return_value=MagicMock(),
-    )
 
-    tokenizer = InternVLTokenizer("test-model")
+    tokenizer = InternVLTokenizer("test-model", mock_pipeline_config)
 
     # Mock the processor to return expected format
     # InternVL processor returns Python lists for input_ids, not numpy arrays
@@ -71,6 +92,7 @@ async def test_internvl_tokenizer_new_context_smoke(
 @pytest.mark.asyncio
 async def test_super_long(
     mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
 ) -> None:
     """Test to ensure new_context() raises if prompt is too long"""
     # Create minimal mocks
@@ -86,12 +108,8 @@ async def test_super_long(
         "max.pipelines.architectures.internvl.tokenizer.AutoTokenizer.from_pretrained",
         return_value=mock_tokenizer,
     )
-    mocker.patch(
-        "max.pipelines.architectures.internvl.tokenizer.AutoConfig.from_pretrained",
-        return_value=MagicMock(),
-    )
 
-    tokenizer = InternVLTokenizer("test-model")
+    tokenizer = InternVLTokenizer("test-model", mock_pipeline_config)
 
     # Mock the processor to return expected format
     # InternVL processor returns Python lists for input_ids, not numpy arrays
@@ -117,6 +135,7 @@ async def test_super_long(
 @pytest.mark.asyncio
 async def test_internvl_tokenizer_image_token_indices(
     mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
 ) -> None:
     """Test that the tokenizer correctly computes image token indices."""
     # Create minimal mocks
@@ -131,18 +150,14 @@ async def test_internvl_tokenizer_image_token_indices(
         return_value=mock_tokenizer,
     )
 
-    # Mock config with vision config using realistic values from internvl-2B
-    mock_config = MagicMock()
-    mock_config.vision_config.image_size = 448
-    mock_config.vision_config.patch_size = 14
-    mock_config.max_dynamic_patch = 12
-    mock_config.downsample_ratio = 0.5
-    mocker.patch(
-        "max.pipelines.architectures.internvl.tokenizer.AutoConfig.from_pretrained",
-        return_value=mock_config,
-    )
+    # Add vision config to mock pipeline config
+    mock_pipeline_config.model.huggingface_config.vision_config = MagicMock()
+    mock_pipeline_config.model.huggingface_config.vision_config.image_size = 448
+    mock_pipeline_config.model.huggingface_config.vision_config.patch_size = 14
+    mock_pipeline_config.model.huggingface_config.max_dynamic_patch = 12
+    mock_pipeline_config.model.huggingface_config.downsample_ratio = 0.5
 
-    tokenizer = InternVLTokenizer("test-model")
+    tokenizer = InternVLTokenizer("test-model", mock_pipeline_config)
 
     # Mock the processor to return input_ids with image token
     # IMAGE_CONTEXT_TOKEN_ID = 151667
@@ -192,6 +207,7 @@ async def test_internvl_tokenizer_image_token_indices(
 @pytest.mark.asyncio
 async def test_internvl_tokenizer_image_placement(
     mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
 ) -> None:
     """Test that image tokens are correctly placed in a multi-turn conversation."""
     # Create minimal mocks
@@ -217,19 +233,15 @@ async def test_internvl_tokenizer_image_placement(
         return_value=mock_tokenizer,
     )
 
-    # Mock config with vision config
-    mock_config = MagicMock()
-    mock_config.vision_config.image_size = 448
-    mock_config.vision_config.patch_size = 14
-    mock_config.max_dynamic_patch = 1
-    mock_config.downsample_ratio = 0.5
-    mocker.patch(
-        "max.pipelines.architectures.internvl.tokenizer.AutoConfig.from_pretrained",
-        return_value=mock_config,
-    )
+    # Add vision config to mock pipeline config
+    mock_pipeline_config.model.huggingface_config.vision_config = MagicMock()
+    mock_pipeline_config.model.huggingface_config.vision_config.image_size = 448
+    mock_pipeline_config.model.huggingface_config.vision_config.patch_size = 14
+    mock_pipeline_config.model.huggingface_config.max_dynamic_patch = 1
+    mock_pipeline_config.model.huggingface_config.downsample_ratio = 0.5
 
     # Use the real tokenizer to exercise the processor logic, but with a mocked delegate.
-    tokenizer = InternVLTokenizer("test-model")
+    tokenizer = InternVLTokenizer("test-model", mock_pipeline_config)
 
     # Create a real image for the test
     img_buffer = io.BytesIO()

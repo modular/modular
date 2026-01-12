@@ -46,7 +46,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.config import PipelineConfig
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoTokenizer
 
 from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
 
@@ -254,12 +254,12 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
     def __init__(
         self,
         model_path: str,
+        pipeline_config: PipelineConfig,
         *,
         revision: str | None = None,
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
-        pipeline_config: PipelineConfig | None = None,
         **unused_kwargs,
     ):
         """Initialize the tokenizer with custom image processor instead of AutoProcessor."""
@@ -282,12 +282,8 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             self.delegate.encode, add_special_tokens=False
         )
 
-        # Load config to get image processing parameters
-        config = AutoConfig.from_pretrained(
-            model_path,
-            revision=revision,
-            trust_remote_code=trust_remote_code,
-        )
+        # Use the pre-loaded HuggingFace config from pipeline_config
+        config = pipeline_config.model.huggingface_config
 
         # Extract vision config parameters
         vision_config = config.vision_config
@@ -311,56 +307,43 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         # Initialize EOS token IDs
         self._default_eos_token_ids = set([self.eos])
 
-        if pipeline_config:
-            huggingface_config = pipeline_config.model.huggingface_config
-            if eos_token_id := getattr(
-                huggingface_config, "eos_token_id", None
-            ):
-                if isinstance(eos_token_id, int):
-                    self._default_eos_token_ids.add(eos_token_id)
-                elif isinstance(eos_token_id, list):
-                    self._default_eos_token_ids.update(eos_token_id)
+        huggingface_config = pipeline_config.model.huggingface_config
+        if eos_token_id := getattr(huggingface_config, "eos_token_id", None):
+            if isinstance(eos_token_id, int):
+                self._default_eos_token_ids.add(eos_token_id)
+            elif isinstance(eos_token_id, list):
+                self._default_eos_token_ids.update(eos_token_id)
 
-            if image_token_id := getattr(
-                pipeline_config.model.huggingface_config,
-                "image_token_id",
-                None,
-            ):
-                self.image_token_id = image_token_id
-            else:
-                raise ValueError(
-                    "image_token_id not found in HuggingFace config"
-                )
+        if image_token_id := getattr(
+            huggingface_config, "image_token_id", None
+        ):
+            self.image_token_id = image_token_id
+        else:
+            raise ValueError("image_token_id not found in HuggingFace config")
 
-            if video_token_id := getattr(
-                pipeline_config.model.huggingface_config,
-                "video_token_id",
-                None,
-            ):
-                self.video_token_id = video_token_id
+        if video_token_id := getattr(
+            huggingface_config, "video_token_id", None
+        ):
+            self.video_token_id = video_token_id
 
-            self.enable_prefix_caching = (
-                pipeline_config.model.kv_cache_config.enable_prefix_caching
-                if pipeline_config
-                else False
+        self.enable_prefix_caching = (
+            pipeline_config.model.kv_cache_config.enable_prefix_caching
+        )
+
+        if vision_start_token_id := getattr(
+            huggingface_config, "vision_start_token_id", None
+        ):
+            self.vision_start_token_id = vision_start_token_id
+
+        # Extract the vision config from the HuggingFace config.
+        vision_cfg = getattr(huggingface_config, "vision_config", None)
+        if vision_cfg is not None:
+            self.tokens_per_second = vision_cfg.tokens_per_second
+        else:
+            raise ValueError(
+                "vision_config must be provided in HuggingFace config"
             )
 
-            if vision_start_token_id := getattr(
-                pipeline_config.model.huggingface_config,
-                "vision_start_token_id",
-                None,
-            ):
-                self.vision_start_token_id = vision_start_token_id
-
-            # Extract the vision config from the HuggingFace config.
-            if vision_config := getattr(
-                huggingface_config, "vision_config", None
-            ):
-                self.tokens_per_second = vision_config.tokens_per_second
-            else:
-                raise ValueError(
-                    "vision_config must be provided in HuggingFace config"
-                )
         self.executor: ThreadPoolExecutor | None = None
 
     def apply_chat_template(

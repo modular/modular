@@ -90,20 +90,8 @@ async def test_qwen2_5vl_tokenizer_new_context_smoke(
         return_value=mock_tok,
     )
 
-    cfg = MagicMock()
-    cfg.vision_config = MagicMock()
-    mocker.patch(
-        "max.pipelines.architectures.qwen2_5vl.tokenizer.AutoConfig.from_pretrained",
-        return_value=cfg,
-    )
-
-    tokenizer = Qwen2_5VLTokenizer("test-model")
-
-    # Attributes normally injected via PipelineConfig; set minimally for the smoke test.
-    tokenizer.image_token_id = 99999
-    tokenizer.video_token_id = -1
-    tokenizer.vision_start_token_id = -2
-    tokenizer.tokens_per_second = 50
+    pipeline_config = MockPipelineConfig()
+    tokenizer = Qwen2_5VLTokenizer("test-model", pipeline_config)
 
     request = TextGenerationRequest(
         messages=[TextGenerationRequestMessage(role="user", content="test")],
