@@ -42,11 +42,11 @@ def test_block_hasher() -> None:
         seen.add(h)
 
 
-def mojo_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:  # type: ignore
+def mojo_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:
     return block_hasher(tokens, block_size, hash("None"))
 
 
-def tensor_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:  # type: ignore
+def tensor_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:
     num_elts = tokens.size
     num_hashes = num_elts // block_size
 
@@ -65,7 +65,7 @@ def tensor_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:  # ty
     return results
 
 
-def naive_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:  # type: ignore
+def naive_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:
     num_elts = tokens.size
     num_hashes = num_elts // block_size
 

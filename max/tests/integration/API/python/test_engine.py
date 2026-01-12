@@ -672,7 +672,7 @@ def call_inputs() -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
 
 
 @pytest.fixture
-def call_output() -> np.ndarray:  # type: ignore
+def call_output() -> np.ndarray:
     # Expected output for __call__ tests.
     return np.array([50, 55, 60, 65, 70], dtype=np.int32)
 
@@ -685,7 +685,7 @@ def call_model(session: InferenceSession, named_inputs_path: Path) -> Model:
 
 def test_positional_call(
     call_inputs: tuple,  # type: ignore
-    call_output: np.ndarray,  # type: ignore
+    call_output: np.ndarray,
     call_model: Model,
 ) -> None:
     # Calling a model with strictly positional inputs should work.
@@ -703,7 +703,7 @@ def test_positional_call(
 
 def test_named_call(
     call_inputs: tuple,  # type: ignore
-    call_output: np.ndarray,  # type: ignore
+    call_output: np.ndarray,
     call_model: Model,
 ) -> None:
     # Calling a model with strictly named inputs should work.
@@ -721,7 +721,7 @@ def test_named_call(
 
 def test_mixed_positional_named_call(
     call_inputs: tuple,  # type: ignore
-    call_output: np.ndarray,  # type: ignore
+    call_output: np.ndarray,
     call_model: Model,
 ) -> None:
     # Calling a model with a mixture of named and positional inputs should also work (even if named

@@ -143,7 +143,7 @@ class Dim:
         return AlgebraicDim.apply(kgen.POC.add, self, rhs)
 
     # hitting https://github.com/python/mypy/issues/11595 which causes mypy to fail to typecheck.
-    def __radd__(self, lhs: DimLike) -> Dim:  # type: ignore
+    def __radd__(self, lhs: DimLike) -> Dim:
         return Dim(lhs) + self
 
     def __mul__(self, rhs: DimLike) -> Dim:

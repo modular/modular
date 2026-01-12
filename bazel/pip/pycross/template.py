@@ -101,6 +101,32 @@ def targets():
         }}),
     )
 
+    native.alias(
+        name = "numpy@multiple",
+        testonly = True,
+        actual = select({{
+            ":_env_python_3.10_aarch64-apple-darwin": ":numpy@2.2.6",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": ":numpy@2.2.6",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": ":numpy@2.2.6",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": ":numpy@2.2.6",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": ":numpy@2.2.6",
+            "//conditions:default": ":numpy@2.3.5",
+        }}),
+    )
+
+    native.alias(
+        name = "scipy@multiple",
+        testonly = True,
+        actual = select({{
+            ":_env_python_3.10_aarch64-apple-darwin": ":scipy@1.14.1",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": ":scipy@1.14.1",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": ":scipy@1.14.1",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": ":scipy@1.14.1",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": ":scipy@1.14.1",
+            "//conditions:default": ":scipy@1.16.3",
+        }}),
+    )
+
     extra_build_args = {{
         "copts": ["-fvisibility=default", "-w"],
         "linkopts": select({{

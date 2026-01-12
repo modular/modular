@@ -96,7 +96,7 @@ class EmbeddingModel:
                 training_datasets=None,
             )
 
-    def encode(self, sentences: Sequence[str], **kwargs) -> np.ndarray:  # type: ignore
+    def encode(self, sentences: Sequence[str], **kwargs) -> np.ndarray:
         """Encodes the given sentences using the encoder.
 
         Args:
@@ -123,7 +123,7 @@ class EmbeddingModel:
             start += batch_size
         return np.array(results)
 
-    async def batch_encode(self, sentences: Sequence[str]) -> list[np.ndarray]:  # type: ignore
+    async def batch_encode(self, sentences: Sequence[str]) -> list[np.ndarray]:
         pipeline_request = {}
         for n, sentence in enumerate(sentences):
             pipeline_request[RequestID()] = await self.tokenizer.new_context(

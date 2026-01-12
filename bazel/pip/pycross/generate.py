@@ -21,11 +21,16 @@ import tomllib  # type: ignore
 from package import Package
 from template import TEMPLATE
 
-_ALLOWED_DUPLICATE_PACKAGES = {
+_TORCH_PACKAGES = {
     "torch",
     "torchaudio",
     "torchvision",
     "triton",  # pytorch-triton-rocm was renamed to triton
+}
+
+_ALLOWED_DUPLICATE_PACKAGES = _TORCH_PACKAGES | {
+    "numpy",
+    "scipy",
 }
 
 
@@ -33,7 +38,7 @@ def _should_ignore(package: dict[str, Any]) -> bool:
     # Ignores pypi torch versions because uv is too aggressive about pulling
     # those in even though a group will always be specified.
     return package["name"] == "bazel-pyproject" or (
-        package["name"] in _ALLOWED_DUPLICATE_PACKAGES
+        package["name"] in _TORCH_PACKAGES
         and (
             # Ignore torch versions from pypi that should not be in the lockfile
             "https://pypi.org/simple" in package["source"].get("registry", "")

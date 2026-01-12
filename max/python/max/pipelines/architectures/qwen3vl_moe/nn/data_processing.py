@@ -178,7 +178,7 @@ def get_rope_index(
         base[attention_mask == 0] = 1
         position_ids = np.tile(base[np.newaxis, ...], (3, 1, 1)).astype(
             np.int64
-        )  # type: ignore
+        )
         max_position_ids = position_ids.max(axis=(0, -1))
         mrope_position_deltas_array = (
             (max_position_ids + 1 - attention_mask.shape[-1])
