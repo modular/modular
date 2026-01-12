@@ -31,8 +31,9 @@ from dataclasses import dataclass
 
 import max.experimental.functional as F
 import max.nn.module_v3 as nn
-import torch
 from max.dtype import DType
+from max.experimental import random
+from max.experimental.realization_context import set_seed
 from max.experimental.tensor import Tensor
 from max.nn.module_v3.sequential import ModuleList
 
@@ -360,19 +361,30 @@ class DiagonalGaussianDistribution:
         Returns:
             A sample from the Gaussian distribution.
         """
-        # Use PyTorch for random generation to match diffusers exactly
-        generator = torch.Generator("cpu")
+
+        # Use Modular's native seeded random generation
         if seed is not None:
-            generator.manual_seed(seed)
+            set_seed(seed)
         shape = tuple(int(d) for d in self.mean.shape)
-        sample_torch = torch.randn(
-            shape, generator=generator, dtype=torch.float32
+        sample = random.gaussian(
+            shape,
+            mean=0.0,
+            std=1.0,
+            dtype=self.parameters.dtype,
+            device=self.parameters.device.to_device(),
         )
-        sample = (
-            Tensor.from_dlpack(sample_torch.numpy())
-            .to(self.parameters.device)
-            .cast(self.parameters.dtype)
-        )
+
+        # import torch
+        # generator = torch.Generator("cpu")
+        # if seed is not None:
+        #     generator.manual_seed(seed)
+        # sample_torch = torch.randn(shape, generator=generator, dtype=torch.float32)
+        # sample = (
+        #     Tensor.from_dlpack(sample_torch.numpy())
+        #     .to(self.parameters.device)
+        #     .cast(self.parameters.dtype)
+        # )
+
         x = self.mean + self.std * sample
         return x
 

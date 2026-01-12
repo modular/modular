@@ -27,6 +27,8 @@ from max.driver import Tensor as DriverTensor
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.experimental import functional as F
+from max.experimental import random
+from max.experimental.realization_context import set_seed
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import (
@@ -48,7 +50,8 @@ from max.pipelines.lib import (
     PipelineModel,
     SupportedEncoding,
 )
-from tqdm.auto import tqdm
+
+# from tqdm.auto import tqdm  # TODO: Re-enable when tqdm is added to deps
 from transformers import AutoConfig
 
 from .model_config import ZImageConfig
@@ -154,6 +157,29 @@ class ZImageInputs(ModelInputs):
 
     max_seqlen: list[Tensor] | None = None
     """Maximum sequence length for full attention for vision inputs."""
+
+
+class _SimpleProgressBar:
+    """Simple progress bar replacement for tqdm."""
+
+    def __init__(self, total: int) -> None:
+        self.total = total
+        self.current = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def update(self, n: int = 1) -> None:
+        self.current += n
+        # Log progress periodically to avoid spamming
+        if (
+            self.current % max(1, self.total // 10) == 0
+            or self.current == self.total
+        ):
+            logger.info(f"Progress: {self.current}/{self.total}")
 
 
 def calculate_shift(
@@ -630,7 +656,6 @@ class ZImageModel(
         Returns:
             Latent tensor of shape (batch_size, num_channels_latents, height, width).
         """
-        import torch
 
         height = 2 * (int(height) // (self.vae_scale_factor * 2))
         width = 2 * (int(width) // (self.vae_scale_factor * 2))
@@ -638,14 +663,21 @@ class ZImageModel(
         shape = (batch_size, num_channels_latents, height, width)
 
         if latents is None:
-            # Use PyTorch for random generation to match diffusers exactly
-            # This ensures identical results when using the same seed
-            generator = torch.Generator("cpu")
+            # Use Modular's native seeded random generation
             if seed is not None:
-                generator.manual_seed(seed)
-            latents_torch = torch.randn(shape, generator=generator, dtype=dtype)
-            # Convert to MAX tensor and move to device
-            latents = Tensor.from_dlpack(latents_torch.numpy()).to(device)
+                set_seed(seed)
+            # Generate standard normal random tensor using native Modular API
+            latents = random.gaussian(
+                shape, mean=0.0, std=1.0, dtype=DType.float32, device=device
+            )
+
+            # Uncomment for exact diffusers parity
+            # import torch
+            # generator = torch.Generator("cpu")
+            # if seed is not None:
+            #     generator.manual_seed(seed)
+            # latents_torch = torch.randn(shape, generator=generator, dtype=torch.float32)
+            # latents = Tensor.from_dlpack(latents_torch.numpy()).to(device)
         else:
             if latents.shape != shape:
                 raise ValueError(
@@ -674,8 +706,11 @@ class ZImageModel(
     def interrupt(self) -> Callable[[Tensor], bool] | None:
         return self._interrupt
 
-    def progress_bar(self, total: int) -> tqdm:
-        return tqdm(total=total)
+    def progress_bar(self, total: int) -> Any:
+        """Simple progress bar replacement using range with logging."""
+        # TODO: Re-enable tqdm when it's added to deps
+        # return tqdm(total=total)
+        return _SimpleProgressBar(total)
 
     def execute(
         self,
@@ -756,18 +791,18 @@ class ZImageModel(
                     "`negative_prompt_embeds` must also be provided for classifier-free guidance."
                 )
 
-        from safetensors.torch import load_file
-
-        # Load prompt embeddings from safetensors file
-        # Note: This is temporary! The text encoder should be used instead.
-        data = load_file("/root/prompt_embeds.safetensors")
-        prompt_embeds_torch = data["prompt_embeds"]
-        prompt_embeds_np = (
-            prompt_embeds_torch.float().numpy()
-        )  # bfloat16 -> float32 -> numpy
-        prompt_embeds = (
-            Tensor.from_dlpack(prompt_embeds_np).to(device).cast(DType.bfloat16)
-        )
+        # TODO: Implement proper text encoding. Currently using pre-computed embeddings.
+        # from safetensors.torch import load_file
+        # # Load prompt embeddings from safetensors file
+        # # Note: This is temporary! The text encoder should be used instead.
+        # data = load_file("/root/prompt_embeds.safetensors")
+        # prompt_embeds_torch = data["prompt_embeds"]
+        # prompt_embeds_np = (
+        #     prompt_embeds_torch.float().numpy()
+        # )  # bfloat16 -> float32 -> numpy
+        # prompt_embeds = (
+        #     Tensor.from_dlpack(prompt_embeds_np).to(device).cast(DType.bfloat16)
+        # )
 
         # 4. Prepare latent variables
         num_channels_latents = self.model.transformer.in_channels

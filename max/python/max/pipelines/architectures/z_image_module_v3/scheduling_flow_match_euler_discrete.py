@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental import random
+from max.experimental.realization_context import set_seed
 from max.experimental.tensor import Tensor
 
 # Note: scipy.stats.beta.ppf is used for beta sigmas but requires scipy
@@ -525,18 +527,26 @@ class FlowMatchEulerDiscreteScheduler:
             dt = sigma_next - sigma
 
         if self.stochastic_sampling:
-            import torch
-
             x0 = sample - current_sigma * model_output
-            # Use PyTorch for random generation to match diffusers exactly
-            generator = torch.Generator("cpu")
+            # Use Modular's native seeded random generation
             if seed is not None:
-                generator.manual_seed(seed)
+                set_seed(seed)
             shape = tuple(int(d) for d in sample.shape)
-            noise_torch = torch.randn(
-                shape, generator=generator, dtype=torch.float32
+            noise = random.gaussian(
+                shape,
+                mean=0.0,
+                std=1.0,
+                dtype=sample.dtype,
+                device=sample.device,
             )
-            noise = Tensor.from_dlpack(noise_torch.numpy()).to(sample.device)
+
+            # import torch
+            # generator = torch.Generator("cpu")
+            # if seed is not None:
+            #     generator.manual_seed(seed)
+            # noise_torch = torch.randn(shape, generator=generator, dtype=torch.float32)
+            # noise = Tensor.from_dlpack(noise_torch.numpy()).to(sample.device)
+
             prev_sample = (1.0 - next_sigma) * x0 + next_sigma * noise
         else:
             prev_sample = sample + dt * model_output
