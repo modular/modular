@@ -554,7 +554,10 @@ void FunctionTypeNode::print(raw_indented_ostream &os) const {
 
   os << "effects: " << stringifyFnEffects(effects.getImpl()) << "\n";
   os << "originExpr: ";
-  originExpr->print(os);
+  if (originExpr)
+    originExpr->print(os);
+  else
+    os << "<none>\n";
 
   os.unindent() << "}\n";
 }
