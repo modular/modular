@@ -18,7 +18,7 @@ import functools
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -46,7 +46,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.config import PipelineConfig
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, Qwen2_5_VLConfig
 
 from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
 
@@ -284,65 +284,42 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
 
         # Use the pre-loaded HuggingFace config from pipeline_config
         config = pipeline_config.model.huggingface_config
+        config = cast(Qwen2_5_VLConfig, config)
 
         # Extract vision config parameters
         vision_config = config.vision_config
-        patch_size = getattr(vision_config, "patch_size", 14)
-        temporal_patch_size = getattr(vision_config, "temporal_patch_size", 2)
-        self.spatial_merge_size = getattr(
-            vision_config, "spatial_merge_size", 2
-        )
-
-        # NEW: Add these for window index calculation
-        self.patch_size = patch_size
-        self.window_size = getattr(vision_config, "window_size", 448)
+        self.patch_size = vision_config.patch_size
+        self.window_size = vision_config.window_size
+        self.temporal_patch_size = vision_config.temporal_patch_size
+        self.spatial_merge_size = vision_config.spatial_merge_size
 
         # Create custom image processor instead of AutoImageProcessor
         self.img_processor = Qwen2_5VLImageProcessor(
-            patch_size=patch_size,
-            temporal_patch_size=temporal_patch_size,
+            patch_size=self.patch_size,
+            temporal_patch_size=self.temporal_patch_size,
             merge_size=self.spatial_merge_size,
         )
 
         # Initialize EOS token IDs
         self._default_eos_token_ids = set([self.eos])
 
-        huggingface_config = pipeline_config.model.huggingface_config
-        if eos_token_id := getattr(huggingface_config, "eos_token_id", None):
-            if isinstance(eos_token_id, int):
-                self._default_eos_token_ids.add(eos_token_id)
-            elif isinstance(eos_token_id, list):
-                self._default_eos_token_ids.update(eos_token_id)
+        eos_token_id = config.eos_token_id
+        if isinstance(eos_token_id, int):
+            self._default_eos_token_ids.add(eos_token_id)
+        elif isinstance(eos_token_id, list):
+            self._default_eos_token_ids.update(eos_token_id)
 
-        if image_token_id := getattr(
-            huggingface_config, "image_token_id", None
-        ):
-            self.image_token_id = image_token_id
-        else:
-            raise ValueError("image_token_id not found in HuggingFace config")
-
-        if video_token_id := getattr(
-            huggingface_config, "video_token_id", None
-        ):
-            self.video_token_id = video_token_id
-
+        self.image_token_id = config.image_token_id
+        self.video_token_id = config.video_token_id
         self.enable_prefix_caching = (
-            pipeline_config.model.kv_cache_config.enable_prefix_caching
+            config.kv_cache_config.enable_prefix_caching
         )
 
-        if vision_start_token_id := getattr(
-            huggingface_config, "vision_start_token_id", None
-        ):
-            self.vision_start_token_id = vision_start_token_id
+        self.vision_start_token_id = config.vision_start_token_id
 
         # Extract the vision config from the HuggingFace config.
-        vision_cfg = getattr(huggingface_config, "vision_config", None)
-        if vision_cfg is not None:
-            self.tokens_per_second = vision_cfg.tokens_per_second
-        else:
-            raise ValueError(
-                "vision_config must be provided in HuggingFace config"
-            )
+        vision_cfg = config.vision_config
+        self.tokens_per_second = vision_cfg.tokens_per_second
 
         self.executor: ThreadPoolExecutor | None = None
 
