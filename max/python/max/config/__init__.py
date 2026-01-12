@@ -27,6 +27,7 @@ from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
 import yaml
 from pydantic import BaseModel, model_validator
 
+from .base_model import MAXBaseModel
 from .config_file_model import ConfigFileModel
 
 logger = logging.getLogger("max.pipelines")
@@ -1071,5 +1072,6 @@ class MAXConfig:
 
 
 all = [
+    "MAXBaseModel",
     "ConfigFileModel",
 ]
