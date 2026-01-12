@@ -19,7 +19,7 @@ from math import ceildiv, exp2, recip
 from math.constants import log2e
 from nn.mha_operand import MHAOperand
 from nn.mha_score_mod import ScoreModTrait
-from nn.mha_mask import MHAMask, TileMaskStatus, MASK_VALUE
+from nn.mha_mask import MHAMask, TileMaskStatus, MASK_VALUE, MaskStrategy
 from nn.mha_tile_scheduler import (
     MHASchedulerSynchronization,
     MHATileScheduler,
@@ -816,16 +816,13 @@ struct SM100MLA[
         @parameter
         @always_inline
         fn mask_row[
-            BN: Int, //, masked: Bool, last_iter: Bool
+            BN: Int, //, mask_strategy: MaskStrategy
         ](
             s: LocalTensor[Self.accum_type, Layout.row_major(BN)],
             kv_row: UInt32,
         ):
             apply_mask[
-                decoding=False,
-                use_score_mod = Self.use_score_mod,
-                masked=masked,
-                last_iter=last_iter,
+                use_score_mod = Self.use_score_mod, mask_strategy=mask_strategy
             ](
                 s,
                 mask,
@@ -833,10 +830,10 @@ struct SM100MLA[
                 scale_log2e,
                 prompt_idx=seq_info.prompt_idx,
                 q_head_idx=q_head_idx,
-                kv_tile_start_row=kv_row,
+                kv_tile_start_row=Int32(kv_row),
                 max_seq_len=max_seq_len,
-                num_keys=num_keys,
-                score_row=score_row + tid,
+                num_keys=Int32(num_keys),
+                score_row=Int32(score_row + tid),
             )
 
         # while waiting, offset output
@@ -861,7 +858,7 @@ struct SM100MLA[
         @parameter
         @always_inline
         fn load_mask_max[
-            *, masked: Bool, last_iter: Bool
+            *, mask_strategy: MaskStrategy
         ](kv_row: UInt32) -> Scalar[Self.accum_type]:
             # break up into sets of 32
             # minimize wait time by using smallest first
@@ -878,7 +875,7 @@ struct SM100MLA[
             s1 = TMemTile[Self.accum_type, BM, batch_size](
                 s_tmem + first_cols
             ).load_async()
-            mask_row[masked=masked, last_iter=last_iter](s0, kv_row)
+            mask_row[mask_strategy=mask_strategy](s0, kv_row)
             vrow_max = maximum[width = Self.simd_size](s0)
 
             s.ptr.store(s0.ptr.load[width=first_cols]())
@@ -894,18 +891,14 @@ struct SM100MLA[
 
                 @parameter
                 if offset1 >= Self.config.BN:
-                    mask_row[masked=masked, last_iter=last_iter](
-                        s1, kv_row + offset0
-                    )
+                    mask_row[mask_strategy=mask_strategy](s1, kv_row + offset0)
                     vrow_max = maximum(s1, vrow_max)
                     s.ptr.store(offset0, s1.ptr.load[width=batch_size]())
                 else:
                     s2 = TMemTile[Self.accum_type, BM, batch_size](
                         s_tmem + offset1
                     ).load_async()
-                    mask_row[masked=masked, last_iter=last_iter](
-                        s1, kv_row + offset0
-                    )
+                    mask_row[mask_strategy=mask_strategy](s1, kv_row + offset0)
                     vrow_max = maximum(s1, vrow_max)
                     s.ptr.store(offset0, s1.ptr.load[width=batch_size]())
                     tcgen05_load_wait()
@@ -915,9 +908,7 @@ struct SM100MLA[
                         s1 = TMemTile[Self.accum_type, BM, batch_size](
                             s_tmem + offset2
                         ).load_async()
-                    mask_row[masked=masked, last_iter=last_iter](
-                        s2, kv_row + offset1
-                    )
+                    mask_row[mask_strategy=mask_strategy](s2, kv_row + offset1)
                     vrow_max = maximum(s2, vrow_max)
                     s.ptr.store(offset1, s2.ptr.load[width=batch_size]())
 
@@ -927,10 +918,61 @@ struct SM100MLA[
             Self.BM, Self.BN, Self.page_size
         ](score_row)
         comptime mask_sets = Self.MaskType.nonfull_sets[Self.BM, Self.BN]()
+        comptime mask_strategies = Self.MaskType.mask_strategies[
+            Self.BM, Self.BN
+        ]()
         comptime num_sets = len(mask_sets)
         var row_max: Scalar[Self.accum_type] = load_mask_max[
-            masked=True, last_iter=True
+            mask_strategy = mask_strategies[num_sets - 1]
         ](kv_row)
+        var mask_iters: StaticTuple[UInt32, num_sets] = {}
+
+        @parameter
+        if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
+            mask_ends = mask.masked_set_ends[
+                BM = Self.BM, BN = Self.BN, page_size = Self.page_size
+            ](score_row, num_keys)
+            mask_iters[0] = mask_ends[0]
+
+            @parameter
+            for i in range(1, num_sets):
+                mask_iters[i] = mask_ends[i] - mask_ends[i - 1]
+
+        __comptime_assert num_sets >= 1 and num_sets <= 3
+        __comptime_assert (
+            num_sets == 1 or mask_sets[0] != TileMaskStatus.UNKNOWN_MASK
+        )
+
+        @parameter
+        if num_sets == 1:
+            row_max = load_mask_max[mask_strategy = mask_strategies[0]](kv_row)
+            mask_iters[0] -= 1
+        else:
+            # find out which strategy to apply
+            if mask_iters[0] > 0:
+                row_max = load_mask_max[mask_strategy = mask_strategies[0]](
+                    kv_row
+                )
+                mask_iters[0] -= 1
+            else:
+
+                @parameter
+                if num_sets == 2:
+                    row_max = load_mask_max[mask_strategy = mask_strategies[1]](
+                        kv_row
+                    )
+                    mask_iters[1] -= 1
+                else:
+                    if mask_iters[1] > 1:
+                        row_max = load_mask_max[
+                            mask_strategy = mask_strategies[1]
+                        ](kv_row)
+                        mask_iters[1] -= 1
+                    else:
+                        row_max = load_mask_max[
+                            mask_strategy = mask_strategies[2]
+                        ](kv_row)
+                        mask_iters[2] -= 1
         var sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
         var sink_weight: Scalar[Self.accum_type]
 
@@ -1067,24 +1109,14 @@ struct SM100MLA[
         # between the two softmax warpgroups
         @parameter
         if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
-            mask_ends = mask.masked_set_ends[
-                BM = Self.BM, BN = Self.BN, page_size = Self.page_size
-            ](score_row, num_keys)
-            var decrement: Bool = True
 
             @parameter
             for i in range(num_sets):
                 comptime mask_status = mask_sets[i]
+                comptime mask_strategy = mask_strategies[i]
                 var iters: UInt32
 
-                @parameter
-                if i == 0:
-                    iters = mask_ends[i]
-                else:
-                    iters = mask_ends[i] - mask_ends[i - 1]
-                if decrement and iters > 0:
-                    iters -= 1
-                    decrement = False
+                iters = mask_iters[i]
                 while iters != 0:
                     iters -= 1
                     kv_row += Self.config.BN
@@ -1098,9 +1130,9 @@ struct SM100MLA[
                     # as this number of iterations is small
                     comptime last_iter: Bool = i + 1 == num_sets
                     comptime masked: Bool = mask_status == TileMaskStatus.PARTIAL_MASK
-                    new_row_max = load_mask_max[
-                        masked=masked, last_iter=last_iter
-                    ](kv_row)
+                    new_row_max = load_mask_max[mask_strategy=mask_strategy](
+                        kv_row
+                    )
                     row_max = max(old_max, new_row_max)
                     correction = exp2(old_max - row_max)
                     pipeline_c.acquire()
@@ -1128,13 +1160,14 @@ struct SM100MLA[
                 old_max = row_max
                 var new_row_max: Scalar[Self.accum_type]
                 if mask_status == TileMaskStatus.PARTIAL_MASK:
-                    new_row_max = load_mask_max[masked=True, last_iter=True](
-                        kv_row
-                    )
+                    new_row_max = load_mask_max[
+                        mask_strategy = MaskStrategy.COMPUTED
+                        | MaskStrategy.OUT_OF_BOUNDS
+                    ](kv_row)
                 else:
-                    new_row_max = load_mask_max[masked=False, last_iter=True](
-                        kv_row
-                    )
+                    new_row_max = load_mask_max[
+                        mask_strategy = MaskStrategy.OUT_OF_BOUNDS
+                    ](kv_row)
                 row_max = max(old_max, new_row_max)
                 correction = exp2(old_max - row_max)
                 pipeline_c.acquire()

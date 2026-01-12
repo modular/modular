@@ -98,7 +98,7 @@ from nn.mha_fa3_utils import (
     q_tma,
     QTMATile,
 )
-from nn.mha_mask import MHAMask, TileMaskStatus, MASK_VALUE
+from nn.mha_mask import MHAMask, TileMaskStatus, MASK_VALUE, MaskStrategy
 from nn.mha_operand import MHAOperand, LayoutTensorMHAOperand
 from nn.mha_score_mod import ScoreModTrait
 from nn.mha_tile_scheduler import (
@@ -2388,6 +2388,59 @@ struct MBarPipeline[number_of_stages: Int]:
 
 
 @always_inline
+fn apply_oob_mask[
+    dtype: DType,
+    ScoreModType: ScoreModTrait,
+    simd_width: Int,
+    //,
+    *,
+    use_score_mod: Bool,
+    mask_strategy: MaskStrategy,
+    apply_log2e_after_mask: Bool,
+](
+    s_arg: SIMD[dtype, simd_width],
+    score_mod: ScoreModType,
+    *,
+    prompt_idx: UInt32,
+    q_head_idx: UInt32,
+    kv_tile_start_row: Int32,
+    max_seq_len: UInt32,
+    num_keys: Int32,
+    score_row: Int32,
+    score_col: Int32,
+) -> SIMD[dtype, simd_width]:
+    s: SIMD[dtype, simd_width] = s_arg
+
+    @parameter
+    if use_score_mod:
+        s = (
+            score_mod.score_mod(
+                IndexList[4, element_type = DType.uint32](
+                    Int(prompt_idx),
+                    Int(q_head_idx),
+                    Int(score_row),
+                    Int(score_col),
+                ),
+                s,
+                Int(max_seq_len),
+            )
+            * log2e
+        )
+    elif apply_log2e_after_mask:
+        s *= log2e
+
+    @parameter
+    if MaskStrategy.OUT_OF_BOUNDS in mask_strategy:
+        s = (
+            iota[DType.int32, simd_width](score_col)
+            .lt(num_keys)
+            .select(s, MASK_VALUE)
+        )
+
+    return s
+
+
+@always_inline
 fn apply_mask[
     dtype: DType,
     BN: Int,
@@ -2396,9 +2449,7 @@ fn apply_mask[
     //,
     *,
     use_score_mod: Bool,
-    masked: Bool,
-    last_iter: Bool,
-    decoding: Bool = False,
+    mask_strategy: MaskStrategy,
 ](
     srow: LocalTensor[dtype, Layout.row_major(BN)],
     mask: MaskType,
@@ -2407,39 +2458,104 @@ fn apply_mask[
     *,
     prompt_idx: UInt32,
     q_head_idx: UInt32,
-    kv_tile_start_row: UInt32,
+    kv_tile_start_row: Int32,
     max_seq_len: UInt32,
-    num_keys: UInt32,
-    score_row: UInt32,
+    num_keys: Int32,
+    score_row: Int32,
 ):
     comptime simd_size = simd_width_of[dtype]()
     vs = srow.vectorize[simd_size]()
 
     @parameter
-    for n in range(BN // simd_size):
-        # score_col = mask_frag_col + j * 8
-        s = vs[n]
-        comptime frag_col = simd_size * n
-        var score_col: UInt32 = kv_tile_start_row + frag_col
+    if (
+        MaskStrategy.LOWER_TRIANGULAR in mask_strategy
+        or MaskStrategy.UPPER_TRIANGULAR in mask_strategy
+    ):
+        comptime num_batches = BN // 32
+        __comptime_assert (BN % 32) == 0
+
+        # when score_row == kv_tile_start_row, 1 is valid
+        var n_valid: Int32 = max(1 + score_row - kv_tile_start_row, 0)
 
         @parameter
-        if masked:
-            s = mask.mask(
-                IndexList[4, element_type = DType.uint32](
-                    Int(prompt_idx),
-                    Int(q_head_idx),
-                    Int(score_row),
-                    Int(score_col),
-                ),
-                s * scale_log2e,
-            )
-        else:  # if MaskType.apply_log2e_after_mask, this is scale only
-            s *= scale_log2e
+        for batch in range(num_batches):
+            var mask_bits: UInt32 = 0xFFFF_FFFF
+
+            @parameter
+            if MaskStrategy.LOWER_TRIANGULAR in mask_strategy:
+                # Causal Mask
+                # score_row >= kv_tile_start_row
+                # 1 + score_row - kv_tile_start_row > 0
+                # n_valid > 0
+                mask_bits = (UInt32(1) << UInt32(n_valid)) - UInt32(
+                    1
+                ) if n_valid < 32 else mask_bits
+
+            @parameter
+            if MaskStrategy.UPPER_TRIANGULAR in mask_strategy:
+                # SlidingWindowCausalMask sliding window part
+                # score_row - kv_tile_start_row < window_size
+                # window_size + kv_tile_start_row - score_row > 0
+                # window_size + 1 - (1 + score_row - kv_tile_start_row) > 0
+                # window_size + 1 - n_valid > 0
+                # window is number to turn off
+                var window: Int32 = n_valid - (
+                    mask_strategy._upper_triangular_window_size - 31
+                )
+                # we want window `1`s
+                mask_bits = (
+                    mask_bits & (0xFFFF_FFFF << UInt32(window)) if window
+                    < 32 else 0
+                ) if window > 0 else mask_bits
+
+            @parameter
+            for n in range(32 // simd_size):
+                comptime frag_col_simd = n + 32 * batch // simd_size
+                comptime frag_col = frag_col_simd * simd_size
+                var s = vs[frag_col_simd] * scale_log2e
+
+                @parameter
+                for i in range(simd_size):
+                    comptime midx = n * simd_size + i
+                    var bit: UInt32 = (mask_bits >> UInt32(midx)) & UInt32(1)
+                    var in_bound: Bool = bit != UInt32(0)
+                    # masked_val = s_row[i]      if in_bound
+                    #            = -inf          otherwise
+                    var val: Scalar[dtype] = s[i]
+                    s[i] = val if in_bound else MASK_VALUE
+                    # s[i] = val if in_bound else min_or_neg_inf[dtype]()
+
+                var score_col: Int32 = kv_tile_start_row + frag_col
+                vs[frag_col_simd] = apply_oob_mask[
+                    use_score_mod=use_score_mod,
+                    mask_strategy=mask_strategy,
+                    apply_log2e_after_mask = MaskType.apply_log2e_after_mask,
+                ](
+                    s,
+                    score_mod,
+                    prompt_idx=prompt_idx,
+                    q_head_idx=q_head_idx,
+                    kv_tile_start_row=kv_tile_start_row,
+                    max_seq_len=max_seq_len,
+                    num_keys=num_keys,
+                    score_row=score_row,
+                    score_col=score_col,
+                )
+            n_valid = max(0, n_valid - 32)
+
+    else:
+        comptime block_size = BN // simd_size
 
         @parameter
-        if use_score_mod:
-            s = (
-                score_mod.score_mod(
+        for n in range(block_size):
+            # score_col = mask_frag_col + j * 8
+            var s = vs[n] * scale_log2e
+            comptime frag_col = simd_size * n
+            var score_col: Int32 = kv_tile_start_row + frag_col
+
+            @parameter
+            if MaskStrategy.COMPUTED in mask_strategy:
+                s = mask.mask(
                     IndexList[4, element_type = DType.uint32](
                         Int(prompt_idx),
                         Int(q_head_idx),
@@ -2447,31 +2563,23 @@ fn apply_mask[
                         Int(score_col),
                     ),
                     s,
-                    Int(max_seq_len),
                 )
-                * log2e
-            )
-        elif MaskType.apply_log2e_after_mask:
-            s *= log2e
 
-        var bound: IndexList[2, element_type = DType.uint32]
-
-        @parameter
-        if decoding:
-            var coord: UInt32 = min(BN + kv_tile_start_row, num_keys)
-            s = (
-                iota[DType.uint32, vs.element_size](coord)
-                .lt(score_col)
-                .select(s, MASK_VALUE)
+            vs[n] = apply_oob_mask[
+                use_score_mod=use_score_mod,
+                mask_strategy=mask_strategy,
+                apply_log2e_after_mask = MaskType.apply_log2e_after_mask,
+            ](
+                s,
+                score_mod,
+                prompt_idx=prompt_idx,
+                q_head_idx=q_head_idx,
+                kv_tile_start_row=kv_tile_start_row,
+                max_seq_len=max_seq_len,
+                num_keys=num_keys,
+                score_row=score_row,
+                score_col=score_col,
             )
-        elif last_iter:
-            s = (
-                iota[DType.uint32, vs.element_size](score_col)
-                .lt(num_keys)
-                .select(s, MASK_VALUE)
-            )
-
-        vs[n] = s
 
 
 @register_passable("trivial")
@@ -3111,16 +3219,13 @@ struct SM100MHA2Q[
         @parameter
         @always_inline
         fn mask_row[
-            BN: Int, //, masked: Bool, last_iter: Bool
+            BN: Int, //, mask_strategy: MaskStrategy
         ](
             s: LocalTensor[Self.accum_type, Layout.row_major(BN)],
             kv_row: UInt32,
         ):
             apply_mask[
-                decoding=False,
-                use_score_mod = Self.use_score_mod,
-                masked=masked,
-                last_iter=last_iter,
+                use_score_mod = Self.use_score_mod, mask_strategy=mask_strategy
             ](
                 s,
                 mask,
@@ -3128,10 +3233,10 @@ struct SM100MHA2Q[
                 scale_log2e,
                 prompt_idx=seq_info.prompt_idx,
                 q_head_idx=q_head_idx,
-                kv_tile_start_row=kv_row,
+                kv_tile_start_row=Int32(kv_row),
                 max_seq_len=max_seq_len,
-                num_keys=num_keys,
-                score_row=score_row + tid,
+                num_keys=Int32(num_keys),
+                score_row=Int32(score_row + tid),
             )
 
         # while waiting, offset output
@@ -3146,9 +3251,6 @@ struct SM100MHA2Q[
         gmem_row = Self.PositionType.get_q_gmem_row[ragged = Self.ragged](
             seq_info, max_seq_len
         )
-
-        pipeline_s.wait()
-        tcgen05_fence_after()
         s = LocalTensor[
             Self.accum_type, Layout.row_major(Self.config.BN)
         ].stack_allocation()
@@ -3156,7 +3258,7 @@ struct SM100MHA2Q[
         @parameter
         @always_inline
         fn load_mask_max[
-            *, masked: Bool, last_iter: Bool
+            *, mask_strategy: MaskStrategy
         ](kv_row: UInt32) -> Scalar[Self.accum_type]:
             # break up into sets of 32
             # minimize wait time by using smallest first
@@ -3171,7 +3273,7 @@ struct SM100MHA2Q[
             s1 = TMemTile[Self.accum_type, BM, batch_size](
                 s_tmem + first_cols
             ).load_async()
-            mask_row[masked=masked, last_iter=last_iter](s0, kv_row)
+            mask_row[mask_strategy=mask_strategy](s0, kv_row)
             vrow_max = maximum[width = Self.simd_size](s0)
 
             s.ptr.store(s0.ptr.load[width=first_cols]())
@@ -3246,18 +3348,14 @@ struct SM100MHA2Q[
 
                 @parameter
                 if offset1 >= Self.config.BN:
-                    mask_row[masked=masked, last_iter=last_iter](
-                        s1, kv_row + offset0
-                    )
+                    mask_row[mask_strategy=mask_strategy](s1, kv_row + offset0)
                     vrow_max = maximum(s1, vrow_max)
                     s.ptr.store(offset0, s1.ptr.load[width=batch_size]())
                 else:
                     s2 = TMemTile[Self.accum_type, BM, batch_size](
                         s_tmem + offset1
                     ).load_async()
-                    mask_row[masked=masked, last_iter=last_iter](
-                        s1, kv_row + offset0
-                    )
+                    mask_row[mask_strategy=mask_strategy](s1, kv_row + offset0)
                     vrow_max = maximum(s1, vrow_max)
                     s.ptr.store(offset0, s1.ptr.load[width=batch_size]())
                     tcgen05_load_wait()  # s2
@@ -3267,38 +3365,11 @@ struct SM100MHA2Q[
                         s1 = TMemTile[Self.accum_type, BM, batch_size](
                             s_tmem + offset2
                         ).load_async()
-                    mask_row[masked=masked, last_iter=last_iter](
-                        s2, kv_row + offset1
-                    )
+                    mask_row[mask_strategy=mask_strategy](s2, kv_row + offset1)
                     vrow_max = maximum(s2, vrow_max)
                     s.ptr.store(offset1, s2.ptr.load[width=batch_size]())
 
             return vrow_max.reduce_max()
-
-        var kv_row: UInt32 = mask.start_column[
-            Self.BM, Self.BN, Self.page_size
-        ](score_row)
-        comptime mask_sets = Self.MaskType.nonfull_sets[Self.BM, Self.BN]()
-        comptime num_sets = len(mask_sets)
-        var row_max: Scalar[Self.accum_type] = load_mask_max[
-            masked=True, last_iter=True
-        ](kv_row)
-        var sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
-        var sink_weight: Scalar[Self.accum_type]
-
-        @parameter
-        if not Self.SinkType.is_null:
-            sink_weights_ptr = rebind[UnsafePointer[Scalar[Self.qkv_type]]](
-                sink_weights.value()
-            )
-            var head_idx: UInt32 = seq_info.head_idx
-            sink_weight = (
-                sink_weights_ptr[head_idx].cast[Self.accum_type]() * log2e
-            )
-            row_max = max(row_max, sink_weight)
-        else:
-            sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
-            sink_weight = 0.0
 
         @parameter
         @always_inline
@@ -3407,6 +3478,83 @@ struct SM100MHA2Q[
                 acc2 += vs[i + 3]
             return (acc + rebind[AccType](acc0)) + rebind[AccType](acc1 + acc2)
 
+        var kv_row: UInt32 = mask.start_column[
+            Self.BM, Self.BN, Self.page_size
+        ](score_row)
+        comptime mask_sets = Self.MaskType.nonfull_sets[Self.BM, Self.BN]()
+        comptime mask_strategies = Self.MaskType.mask_strategies[
+            Self.BM, Self.BN
+        ]()
+        comptime num_sets = len(mask_sets)
+
+        pipeline_s.wait()
+        tcgen05_fence_after()
+        var row_max: Scalar[Self.accum_type]
+        var mask_iters: StaticTuple[UInt32, num_sets] = {}
+
+        @parameter
+        if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
+            mask_ends = mask.masked_set_ends[
+                BM = Self.BM, BN = Self.BN, page_size = Self.page_size
+            ](score_row, num_keys)
+            mask_iters[0] = mask_ends[0]
+
+            @parameter
+            for i in range(1, num_sets):
+                mask_iters[i] = mask_ends[i] - mask_ends[i - 1]
+
+        __comptime_assert num_sets >= 1 and num_sets <= 3
+        __comptime_assert (
+            num_sets == 1 or mask_sets[0] != TileMaskStatus.UNKNOWN_MASK
+        )
+
+        @parameter
+        if num_sets == 1:
+            row_max = load_mask_max[mask_strategy = mask_strategies[0]](kv_row)
+            mask_iters[0] -= 1
+        else:
+            # find out which strategy to apply
+            if mask_iters[0] > 0:
+                row_max = load_mask_max[mask_strategy = mask_strategies[0]](
+                    kv_row
+                )
+                mask_iters[0] -= 1
+            else:
+
+                @parameter
+                if num_sets == 2:
+                    row_max = load_mask_max[mask_strategy = mask_strategies[1]](
+                        kv_row
+                    )
+                    mask_iters[1] -= 1
+                else:
+                    if mask_iters[1] > 1:
+                        row_max = load_mask_max[
+                            mask_strategy = mask_strategies[1]
+                        ](kv_row)
+                        mask_iters[1] -= 1
+                    else:
+                        row_max = load_mask_max[
+                            mask_strategy = mask_strategies[2]
+                        ](kv_row)
+                        mask_iters[2] -= 1
+        var sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
+        var sink_weight: Scalar[Self.accum_type]
+
+        @parameter
+        if not Self.SinkType.is_null:
+            sink_weights_ptr = rebind[UnsafePointer[Scalar[Self.qkv_type]]](
+                sink_weights.value()
+            )
+            var head_idx: UInt32 = seq_info.head_idx
+            sink_weight = (
+                sink_weights_ptr[head_idx].cast[Self.accum_type]() * log2e
+            )
+            row_max = max(row_max, sink_weight)
+        else:
+            sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
+            sink_weight = 0.0
+
         var row_sum: SIMD[Self.accum_type, 2] = store_exp(row_max)
 
         var o_phase: UInt32 = 0  # initial wait is phase 0
@@ -3419,40 +3567,26 @@ struct SM100MHA2Q[
         # between the two softmax warpgroups
         @parameter
         if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
-            mask_ends = mask.masked_set_ends[
-                BM = Self.BM, BN = Self.BN, page_size = Self.page_size
-            ](score_row, num_keys)
-            var decrement: Bool = True
 
             @parameter
             for i in range(num_sets):
                 comptime mask_status = mask_sets[i]
+                comptime mask_strategy = mask_strategies[i]
                 var iters: UInt32
 
-                @parameter
-                if i == 0:
-                    iters = mask_ends[i]
-                else:
-                    iters = mask_ends[i] - mask_ends[i - 1]
-                if decrement and iters > 0:
-                    iters -= 1
-                    decrement = False
+                iters = mask_iters[i]
                 while iters != 0:
                     iters -= 1
                     kv_row += Self.config.BN
                     pipeline_s.wait()
+                    tcgen05_fence_after()
                     # calculate rowmax
                     old_max = row_max
                     var new_row_max: Scalar[Self.accum_type]
 
-                    # last_iter == (i + 1 == num_sets) and (i == 0)
-                    # `i == 0` is runtime; for now, we set to `True`
-                    # as this number of iterations is small
-                    comptime last_iter: Bool = i + 1 == num_sets
-                    comptime masked: Bool = mask_status == TileMaskStatus.PARTIAL_MASK
-                    new_row_max = load_mask_max[
-                        masked=masked, last_iter=last_iter
-                    ](kv_row)
+                    new_row_max = load_mask_max[mask_strategy=mask_strategy](
+                        kv_row
+                    )
                     row_max = max(old_max, new_row_max)
                     correction = exp2(old_max - row_max)
                     pipeline_c.acquire()
@@ -3480,13 +3614,14 @@ struct SM100MHA2Q[
                 old_max = row_max
                 var new_row_max: Scalar[Self.accum_type]
                 if mask_status == TileMaskStatus.PARTIAL_MASK:
-                    new_row_max = load_mask_max[masked=True, last_iter=True](
-                        kv_row
-                    )
+                    new_row_max = load_mask_max[
+                        mask_strategy = MaskStrategy.COMPUTED
+                        | MaskStrategy.OUT_OF_BOUNDS
+                    ](kv_row)
                 else:
-                    new_row_max = load_mask_max[masked=False, last_iter=True](
-                        kv_row
-                    )
+                    new_row_max = load_mask_max[
+                        mask_strategy = MaskStrategy.OUT_OF_BOUNDS
+                    ](kv_row)
                 row_max = max(old_max, new_row_max)
                 correction = exp2(old_max - row_max)
                 pipeline_c.acquire()
