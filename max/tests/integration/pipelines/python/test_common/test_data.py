@@ -116,7 +116,7 @@ class MockTextGenerationRequest:
                     break
 
         if has_images:
-            if self.messages is None:
+            if not self.messages:
                 raise ValueError(
                     "messages must be provided if images are provided."
                 )
@@ -134,7 +134,7 @@ class MockTextGenerationRequest:
             request_id=request_id,
             model_name=self.model_name,
             sampling_params=sampling_params,
-            messages=self.messages or None,
+            messages=self.messages if self.messages else [],
             prompt=self.prompt if not self.messages else None,
         )
 

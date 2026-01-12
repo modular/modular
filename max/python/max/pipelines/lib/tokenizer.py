@@ -447,13 +447,10 @@ class TextTokenizer(
     async def _generate_prompt_and_token_ids(
         self,
         prompt: Sequence[int] | str | None,
-        messages: list[TextGenerationRequestMessage] | None,
+        messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None = None,
         chat_template_options: dict[str, Any] | None = None,
     ) -> tuple[str | list[int], npt.NDArray[np.integer[Any]]]:
-        if prompt is not None and messages is not None:
-            raise ValueError("both prompt and messages cannot be provided.")
-
         if isinstance(prompt, str):
             return prompt, await self.encode(prompt, add_special_tokens=True)
         elif isinstance(prompt, list):
@@ -730,7 +727,7 @@ class TextAndVisionTokenizer(
         add_special_tokens = True
         if request.prompt is not None:
             prompt = request.prompt
-        elif request.messages is not None:
+        elif request.messages:
             prompt = self.apply_chat_template(request.messages)
             add_special_tokens = False
         else:

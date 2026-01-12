@@ -102,7 +102,7 @@ class EchoPipelineTokenizer(
         prompt: str | Sequence[int]
         if request.prompt is not None:
             prompt = request.prompt
-        elif request.messages is not None:
+        elif request.messages:
             prompt = "\n".join(
                 [
                     str(message["content"])

@@ -486,9 +486,9 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                     model_name=request.model_name,
                     messages=messages,
                 )
-                assert new_request.messages is not None
+                assert new_request.messages
                 prompt = self.apply_chat_template(new_request.messages)
-        elif request.messages is not None:
+        elif request.messages:
             prompt = self.apply_chat_template(request.messages)
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")

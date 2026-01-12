@@ -359,7 +359,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                 )
             return request.prompt
 
-        if request.messages is not None:
+        if request.messages:
             return self.apply_chat_template(request.messages)
 
         raise ValueError(f"{request} does not provide messages or prompt.")

@@ -131,7 +131,7 @@ class TextGenerationRequest(Request):
     representing token IDs. If not provided, the model may generate output
     based on the messages field.
     """
-    messages: list[TextGenerationRequestMessage] | None = None
+    messages: list[TextGenerationRequestMessage] = field(default_factory=list)
     """
     A list of messages for chat-based interactions. This is used in chat
     completion APIs, where each message represents a turn in the conversation.

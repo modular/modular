@@ -66,11 +66,11 @@ class MockTextTokenizer(
     async def new_context(self, request: TextGenerationRequest) -> TextContext:
         self.i += 1
 
-        if request.prompt is None and request.messages is None:
+        if request.prompt is None and not request.messages:
             raise ValueError("either prompt or messages must be provided.")
 
         prompt: str | Sequence[int]
-        if request.prompt is None and request.messages is not None:
+        if request.prompt is None and request.messages:
             prompt = ".".join(
                 [str(message.get("content")) for message in request.messages]
             )

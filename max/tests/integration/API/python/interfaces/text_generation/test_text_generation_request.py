@@ -34,7 +34,6 @@ def test_text_generation_request_init() -> None:
         request_id=RequestID(),
         model_name="test",
         prompt="hello world",
-        messages=None,
     )
 
     _ = TextGenerationRequest(

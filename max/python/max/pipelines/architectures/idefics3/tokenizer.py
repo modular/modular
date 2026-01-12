@@ -165,7 +165,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         add_special_tokens = True
         if request.prompt is not None:
             prompt = request.prompt
-        elif request.messages is not None:
+        elif request.messages:
             prompt = self.apply_chat_template(request.messages)
             add_special_tokens = False
         else:
