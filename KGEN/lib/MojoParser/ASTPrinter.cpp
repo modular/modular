@@ -399,16 +399,26 @@ static LogicalResult prettyPrintParamName(ParamIndexRefAttr idxRef,
   // just allow anything, assuming it lines up with the decl we're working on.
   // Need to check `idxRef.getDepth() == 0` here.
 
+  // Find the named param decl from the param list and print a reference
+  // to it instead.
   for (; ctxDecl; ctxDecl = ctxDecl->getParentDecl()) {
     if (auto op = ctxDecl->getIfOperation()) {
-      if (auto declIntf = dyn_cast<DeclInterface>(op)) {
-        auto params = declIntf.getInputParams();
-        if (idxRef.getIndex() < params.size()) {
-          // Find the named param decl from the param list and print a reference
-          // to it instead.
-          prettyPrintParamName(ParamDeclRefAttr::get(params[idxRef.getIndex()]),
-                               shared, os);
+      if (auto fn = dyn_cast<LIT::FnOp>(op)) {
+        auto paramDecls = fn.collectAllParams(/*implicitOrigins*/ false);
+        if (idxRef.getIndex() < paramDecls.size()) {
+          prettyPrintParamName(
+              ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]), shared, os);
           return success();
+        }
+
+        if (auto declIntf = dyn_cast<DeclInterface>(op)) {
+          ArrayRef<ParamDeclAttr> paramDecls = declIntf.getInputParams();
+          if (idxRef.getIndex() < paramDecls.size()) {
+            prettyPrintParamName(
+                ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]), shared,
+                os);
+            return success();
+          }
         }
       }
     }

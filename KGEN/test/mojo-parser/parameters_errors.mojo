@@ -531,9 +531,7 @@ struct SimpleSIMD[arg1: Int, size: Int]:
     fn __init__[T: AnyType](out self: SimpleSIMD[Self.arg1, 1], value: T): pass
 
 fn dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
-    # xpected-error @below {{return type 'SimpleSIMD[50, 1]' parameter 'size' has value '1' that doesn't match expected '4'}}
-    # expected-error @below {{invalid initialization: failed to infer parameter 'T'}}
-    # expected-note @below {{try `rebind` them to one type}}
+    # expected-error @below {{invalid initialization: return type 'SimpleSIMD[50, 1]' parameter 'size' value '1' doesn't match expected value '4'}}
     x = SimpleSIMD[50, 4](b)
 
 # expected-note @below {{function declared here}}
