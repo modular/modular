@@ -436,11 +436,12 @@ class DeepseekV3(Module):
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
+        host_input_row_offsets: TensorValue,
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
     ) -> tuple[TensorValue, ...]:
-        if not input_row_offsets.device == DeviceRef.CPU():
+        if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("input_row_offsets must be located on CPU")
         if not data_parallel_splits.device == DeviceRef.CPU():
             raise ValueError("data_parallel_splits must be located on CPU")
@@ -457,7 +458,7 @@ class DeepseekV3(Module):
                 devices,
                 h,
                 input_row_offsets_,
-                input_row_offsets.cast(DType.int64),
+                host_input_row_offsets.cast(DType.int64),
                 data_parallel_splits,
             )
 
@@ -666,7 +667,15 @@ class DeepseekV3(Module):
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
         )
-        input_row_offsets_type = TensorType(
+        device_input_row_offsets_type = TensorType(
+            DType.uint32,
+            shape=["input_row_offsets_len"],
+            device=device_ref,
+        )
+
+        # Add host input row offsets type, this is used to split the
+        # concatenated DP inputs.
+        host_input_row_offsets_type = TensorType(
             DType.uint32,
             shape=["input_row_offsets_len"],
             device=DeviceRef.CPU(),
@@ -692,7 +701,8 @@ class DeepseekV3(Module):
 
         all_input_types: list[TensorType | BufferType] = [
             tokens_type,
-            input_row_offsets_type,
+            device_input_row_offsets_type,
+            host_input_row_offsets_type,
             return_n_logits_type,
             data_parallel_splits_type,
         ]

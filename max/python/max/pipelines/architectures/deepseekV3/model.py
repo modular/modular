@@ -59,16 +59,21 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
     batch_context_lengths: list[Tensor]
     """List of tensors containing the context length of each batch."""
 
+    host_input_row_offsets: Tensor
+    """Tensor containing the host input row offsets."""
+
     def __init__(
         self,
         tokens: Tensor,
         input_row_offsets: Tensor,
+        host_input_row_offsets: Tensor,
         batch_context_lengths: list[Tensor],
         signal_buffers: list[Tensor],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: Tensor | None = None,
         data_parallel_splits: Tensor | None = None,
     ) -> None:
+        self.host_input_row_offsets = host_input_row_offsets
         self.batch_context_lengths = batch_context_lengths
         if data_parallel_splits is None:
             raise ValueError("data_parallel_splits must be provided")
@@ -419,13 +424,16 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         max_batch_size = self.pipeline_config.max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
 
-        # `_input_row_offsets_prealloc_cpu` tensor needs to reserve space for
+        # `_host_input_row_offsets_prealloc` tensor needs to reserve space for
         # `max_batch_size` of requests on each DP rank.
         dp_size = self.pipeline_config.model.data_parallel_degree
         max_batch_size *= dp_size
 
-        self._input_row_offsets_prealloc_cpu = Tensor.from_numpy(
+        self._host_input_row_offsets_prealloc = Tensor.from_numpy(
             np.arange(max_batch_size + 1, dtype=np.uint32)
+        )
+        self._device_input_row_offsets_prealloc = (
+            self._host_input_row_offsets_prealloc.to(self.devices[0])
         )
 
         # create batch context lengths tensor for each device
@@ -469,7 +477,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         ) as graph:
             (
                 tokens,
-                input_row_offsets,
+                devices_input_row_offsets,
+                host_input_row_offsets,
                 return_n_logits,
                 data_parallel_splits,
                 *variadic_args,
@@ -503,7 +512,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 signal_buffers,
                 kv_caches_per_dev,
                 return_n_logits.tensor,
-                input_row_offsets.tensor,
+                devices_input_row_offsets.tensor,
+                host_input_row_offsets.tensor,
                 data_parallel_splits.tensor,
                 batch_context_lengths,
                 ep_model_inputs,
@@ -544,6 +554,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets,
+            model_inputs.host_input_row_offsets,
             model_inputs.return_n_logits,
             model_inputs.data_parallel_splits,
             *model_inputs.signal_buffers,
@@ -601,7 +612,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # Create tokens
         if len(context_batch) == 0:
             tokens = Tensor(shape=[0], dtype=DType.int64).to(self.devices[0])
-            input_row_offsets = Tensor.zeros(shape=[1], dtype=DType.uint32)
+            host_input_row_offsets = Tensor.zeros(shape=[1], dtype=DType.uint32)
         else:
             # Create a ragged token vector of length: sum(len(t) for t in tokens).
             tokens = Tensor.from_numpy(
@@ -611,18 +622,21 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             # Create a ragged token vector of length: sum(len(t) for t in tokens).
             # Get input_row_offsets: start and end position of each batch in the
             # combined total_seq_len dimension.
-            input_row_offsets = Tensor.from_numpy(
+            host_input_row_offsets = Tensor.from_numpy(
                 np.cumsum(
                     [0] + [ctx.tokens.active_length for ctx in context_batch],
                     dtype=np.uint32,
                 )
             )
 
+        device_input_row_offsets = host_input_row_offsets.to(self.devices[0])
+
         data_parallel_splits = compute_data_parallel_splits(replica_batches)
 
         return DeepseekV3Inputs(
             tokens=tokens,
-            input_row_offsets=input_row_offsets,
+            input_row_offsets=device_input_row_offsets,
+            host_input_row_offsets=host_input_row_offsets,
             batch_context_lengths=self._batch_context_lengths_prealloc_cpu,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
@@ -639,12 +653,16 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     ) -> DeepseekV3Inputs:
         assert isinstance(prev_model_inputs, DeepseekV3Inputs)
         row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-        next_row_offsets = self._input_row_offsets_prealloc_cpu[
+        next_row_offsets = self._device_input_row_offsets_prealloc[
+            :row_offsets_size
+        ]
+        next_host_input_row_offsets = self._host_input_row_offsets_prealloc[
             :row_offsets_size
         ]
         return DeepseekV3Inputs(
             tokens=next_tokens,
             input_row_offsets=next_row_offsets,
+            host_input_row_offsets=next_host_input_row_offsets,
             batch_context_lengths=self._batch_context_lengths_prealloc_cpu,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
