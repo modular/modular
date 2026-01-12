@@ -665,9 +665,14 @@ class PixelContext:
         model_name: Name of the model being used.
     """
 
+    # Request identification (required)
+    request_id: RequestID
+
     # Input: Either prompt OR messages (at least one required)
     prompt: str | None = field(default=None)
     """Text prompt for generation. Provide either this OR messages."""
+    negative_prompt: str | None = field(default=None)
+    """Negative prompt to guide what NOT to generate."""
     messages: list[Any] | None = field(default=None)
     """Chat messages for generation. Provide either this OR prompt."""
 
@@ -675,8 +680,6 @@ class PixelContext:
     max_length: int = field(default=512)
     """Max sequence length for text encoder. Default 512 is sufficient for most prompts."""
 
-    # Request identification
-    request_id: RequestID = field(default_factory=RequestID)
     model_name: str = field(default="")
 
     # Tokenized prompts (populated by TextTokenizer)
@@ -692,8 +695,8 @@ class PixelContext:
     width: int = field(default=1024)
     num_inference_steps: int = field(default=50)
     guidance_scale: float = field(default=0.0)
-    negative_prompt: str | None = field(default=None)
     num_images_per_prompt: int = field(default=1)
+    num_videos_per_prompt: int = field(default=1)
 
     # Video generation parameters
     num_frames: int = field(default=1)
@@ -734,3 +737,34 @@ class PixelContext:
     def is_done(self) -> bool:
         """Whether the request has completed generation."""
         return self._status.is_done
+
+    @property
+    def needs_ce(self) -> bool:
+        """Whether this context needs context encoding.
+
+        For image generation, we never need context encoding since
+        we process the full prompt at once through the text encoder.
+        """
+        return False
+
+    @property
+    def active_length(self) -> int:
+        """Current sequence length for batch constructor compatibility."""
+        return 1
+
+    @property
+    def current_length(self) -> int:
+        """Current length for batch constructor compatibility."""
+        return 1
+
+    @property
+    def processed_length(self) -> int:
+        """Processed length for batch constructor compatibility."""
+        return 0
+
+    def compute_num_available_steps(self, max_seq_len: int) -> int:
+        """Compute number of available steps for scheduler compatibility.
+
+        For image generation, this returns the number of inference steps.
+        """
+        return self.num_inference_steps
