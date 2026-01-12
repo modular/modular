@@ -38,7 +38,7 @@ from .text_generation import (
 
 @dataclass(frozen=True)
 class PixelGenerationRequest(Request):
-    model_name: str = field()
+    model: str = field()
     """The name of the model to be used for generating pixels. This should match
     the available models on the server and determines the behavior and
     capabilities of the response generation.

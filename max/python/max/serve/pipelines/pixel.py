@@ -79,6 +79,7 @@ class PixelGeneratorPipeline(
                     guidance_scale=request.guidance_scale,
                     negative_prompt=request.negative_prompt,
                     num_images_per_prompt=request.num_images_per_prompt,
+                    model_name=request.model,
                 )
 
             with record_ms(METRICS.output_time):
