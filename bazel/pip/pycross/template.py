@@ -159,6 +159,24 @@ def targets():
                 ],
             )
 
+    for version in [v for v in PYTHON_VERSIONS_DOTTED if v >= "3.14"]:
+        for platform in ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]:
+            alias_name = "_env_python_{{}}_{{}}-freethreaded".format(version, platform)
+            build_targets[":" + alias_name] = "@@rules_pycross++environments+rules_pycross_all_environments//:python_{{}}_{{}}-freethreaded.json".format(version, platform)
+            native.alias(
+                name = alias_name,
+                actual = "@@rules_pycross++environments+rules_pycross_all_environments//:python_{{}}_{{}}-freethreaded_config".format(version, platform),
+            )
+
+        for gpu in ["nvidia", "amd"]:
+            selects.config_setting_group(
+                name = "_env_python_{{}}_x86_64-unknown-linux-gnu-freethreaded_{{}}_gpu".format(version, gpu),
+                match_all = [
+                    "@@//:{{}}_gpu".format(gpu),
+                    "_env_python_{{}}_x86_64-unknown-linux-gnu-freethreaded".format(version),
+                ],
+            )
+
     # buildifier: disable=unused-variable
     _target = select(build_targets)
 
