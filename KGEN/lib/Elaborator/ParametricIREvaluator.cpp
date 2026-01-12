@@ -497,16 +497,6 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateExpression(
     return evaluateGetSourceNameAttr(getSourceNameAttr);
   if (auto getTypeNameAttr = dyn_cast<GetTypeNameAttr>(attr))
     return evaluateGetTypeNameAttr(getTypeNameAttr);
-  if (auto structFieldTypesAttr = dyn_cast<StructFieldTypesAttr>(attr))
-    return evaluateStructFieldTypesAttr(structFieldTypesAttr);
-  if (auto structFieldNamesAttr = dyn_cast<StructFieldNamesAttr>(attr))
-    return evaluateStructFieldNamesAttr(structFieldNamesAttr);
-  if (auto structFieldIndexByNameAttr =
-          dyn_cast<StructFieldIndexByNameAttr>(attr))
-    return evaluateStructFieldIndexByNameAttr(structFieldIndexByNameAttr);
-  if (auto structFieldTypeByNameAttr =
-          dyn_cast<StructFieldTypeByNameAttr>(attr))
-    return evaluateStructFieldTypeByNameAttr(structFieldTypeByNameAttr);
   if (auto typeConformToTraitAttr = dyn_cast<TypeConformsToTraitAttr>(attr))
     return evaluateTypeConformToTraitAttr(typeConformToTraitAttr);
 
@@ -773,12 +763,6 @@ void ParametricIREvaluator::addDeferredFunction(OwningOpRef<FuncOp> func) {
 }
 
 ImplNodeBase *ParametricIREvaluator::getParentNode() { return parent; }
-
-ErrorTreeOr<StructInstanceOp>
-ParametricIREvaluator::getConcreteStructTypeInstanceInternal(
-    Location loc, TypeInstanceRefAttr instref) {
-  return elaborator->getConcreteStructTypeInstance(parent, loc, instref);
-}
 
 //===----------------------------------------------------------------------===//
 // ParametricIREvaluator

@@ -147,13 +147,6 @@ public:
   getConcreteStructTypeReference(PImplNode *parent, Location loc,
                                  TypeGeneratorRefAttr genref);
 
-  /// Look up the StructInstanceOp for a given TypeInstanceRefAttr. If
-  /// elaboration is not yet done for the struct instance, set the parent node
-  /// as a waiter on the struct instance node and return null.
-  ErrorTreeOr<StructInstanceOp>
-  getConcreteStructTypeInstance(PImplNode *parent, Location loc,
-                                TypeInstanceRefAttr instref);
-
   /// Add an owned function operation that should be appended to the module at
   /// the end of elaboration. This is where generated functions during
   /// elaboration should go.

@@ -358,10 +358,159 @@ IREvaluator::evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry) {
   return simplified;
 }
 
-ErrorTreeOr<StructInstanceOp>
-IREvaluator::getConcreteStructTypeInstanceInternal(
-    Location loc, TypeInstanceRefAttr instref) {
-  return elaborator->getConcreteStructTypeInstance(parent, loc, instref);
+//===----------------------------------------------------------------------===//
+// Struct Field Reflection Helpers
+//===----------------------------------------------------------------------===//
+
+FailureOr<StructInstanceType>
+IREvaluator::resolveStructInstanceType(TypedAttr typeRef, StringRef funcName) {
+  // Unwrap the type reference to get to the underlying TypeInstanceRefAttr.
+  typeRef = getTypeRefForTypeValueIfResolved(typeRef);
+  auto instanceRef = dyn_cast_if_present<TypeInstanceRefAttr>(typeRef);
+  if (!instanceRef) {
+    emitError({*errorLoc, Twine(funcName) + " requires a struct type"});
+    return failure();
+  }
+
+  // Look up the impl node and get the StructInstanceOp.
+  ErrorTreeOr<StructInstanceOp> structInstanceOr =
+      elaborator->getConcreteStructTypeInstance(parent, *errorLoc, instanceRef);
+  if (structInstanceOr.isError()) {
+    emitError(structInstanceOr.takeError());
+    return failure();
+  }
+
+  StructInstanceOp structInstance = structInstanceOr.takeValue();
+  // If the struct instance is not yet done concretizing, return null to retry
+  // later.
+  if (!structInstance)
+    return StructInstanceType();
+
+  auto structType =
+      cast<StructInstanceType>(structInstance.getValueDomainType());
+  return structType;
+}
+
+//===----------------------------------------------------------------------===//
+// Struct Field Reflection Evaluators
+//===----------------------------------------------------------------------===//
+
+FailureOr<TypedAttr>
+IREvaluator::evaluateStructFieldTypesAttr(StructFieldTypesAttr attr) {
+  FailureOr<StructInstanceType> structTypeOr =
+      resolveStructInstanceType(attr.getTypeValue(), "struct_field_types");
+  if (failed(structTypeOr))
+    return failure();
+  StructInstanceType structType = *structTypeOr;
+  if (!structType)
+    return TypedAttr();
+
+  // Build variadic of field types
+  MLIRContext *ctx = attr.getContext();
+  SmallVector<TypedAttr> fieldTypes;
+  for (StructDefFieldAttr field : structType.getFields()) {
+    // Wrap field type as a TypeParamAttr
+    fieldTypes.push_back(TypeParamAttr::get(field.getType(), field.getType(),
+                                            TypeType::get(ctx)));
+  }
+
+  return {cast<TypedAttr>(VariadicAttr::get(fieldTypes, attr.getType()))};
+}
+
+FailureOr<TypedAttr>
+IREvaluator::evaluateStructFieldNamesAttr(StructFieldNamesAttr attr) {
+  FailureOr<StructInstanceType> structTypeOr =
+      resolveStructInstanceType(attr.getTypeValue(), "struct_field_names");
+  if (failed(structTypeOr))
+    return failure();
+  StructInstanceType structType = *structTypeOr;
+  if (!structType)
+    return TypedAttr();
+
+  // Build variadic of field names as StringAttrs
+  MLIRContext *ctx = attr.getContext();
+  SmallVector<TypedAttr> fieldNames;
+  for (StructDefFieldAttr field : structType.getFields()) {
+    // StringAttr with StringType wrapping
+    fieldNames.push_back(
+        StringAttr::get(field.getName().getValue(), StringType::get(ctx)));
+  }
+
+  return {cast<TypedAttr>(VariadicAttr::get(fieldNames, attr.getType()))};
+}
+
+FailureOr<TypedAttr> IREvaluator::evaluateStructFieldIndexByNameAttr(
+    StructFieldIndexByNameAttr attr) {
+  FailureOr<StructInstanceType> structTypeOr = resolveStructInstanceType(
+      attr.getTypeValue(), "struct_field_index_by_name");
+  if (failed(structTypeOr))
+    return failure();
+  StructInstanceType structType = *structTypeOr;
+  if (!structType)
+    return TypedAttr();
+
+  // The field name should be a StringAttr after parameter evaluation
+  auto fieldNameAttr = dyn_cast<StringAttr>(attr.getFieldName());
+  if (!fieldNameAttr) {
+    emitError({*errorLoc,
+               "struct_field_index_by_name requires a string literal for field "
+               "name, got " +
+                   mlir::debugString(attr.getFieldName())});
+    return failure();
+  }
+  StringRef fieldName = fieldNameAttr.getValue();
+
+  // Find field by name
+  size_t index = 0;
+  for (StructDefFieldAttr field : structType.getFields()) {
+    if (field.getName().getValue() == fieldName) {
+      // Return the index as an IntegerAttr with index type
+      return {cast<TypedAttr>(Builder(attr.getContext()).getIndexAttr(index))};
+    }
+    ++index;
+  }
+
+  // Field not found - emit compile error
+  emitError({*errorLoc, "struct '" + mlir::debugString(structType) +
+                            "' has no field named '" + fieldName + "'"});
+  return failure();
+}
+
+FailureOr<TypedAttr>
+IREvaluator::evaluateStructFieldTypeByNameAttr(StructFieldTypeByNameAttr attr) {
+  FailureOr<StructInstanceType> structTypeOr = resolveStructInstanceType(
+      attr.getTypeValue(), "struct_field_type_by_name");
+  if (failed(structTypeOr))
+    return failure();
+  StructInstanceType structType = *structTypeOr;
+  if (!structType)
+    return TypedAttr();
+
+  // The field name should be a StringAttr after parameter evaluation
+  auto fieldNameAttr = dyn_cast<StringAttr>(attr.getFieldName());
+  if (!fieldNameAttr) {
+    emitError({*errorLoc,
+               "struct_field_type_by_name requires a string literal for field "
+               "name, got " +
+                   mlir::debugString(attr.getFieldName())});
+    return failure();
+  }
+  StringRef fieldName = fieldNameAttr.getValue();
+
+  // Find field by name
+  MLIRContext *ctx = attr.getContext();
+  for (StructDefFieldAttr field : structType.getFields()) {
+    if (field.getName().getValue() == fieldName) {
+      // Return the field type wrapped in TypeParamAttr
+      return {cast<TypedAttr>(TypeParamAttr::get(
+          field.getType(), field.getType(), TypeType::get(ctx)))};
+    }
+  }
+
+  // Field not found - emit compile error
+  emitError({*errorLoc, "struct '" + mlir::debugString(structType) +
+                            "' has no field named '" + fieldName + "'"});
+  return failure();
 }
 
 FailureOr<TypedAttr>

@@ -480,22 +480,6 @@ ParametricElaborator::getConcreteStructTypeReference(
       genref.getType());
 }
 
-ErrorTreeOr<StructInstanceOp>
-ParametricElaborator::getConcreteStructTypeInstance(
-    PImplNode *parent, Location loc, TypeInstanceRefAttr instref) {
-  PImplNode *implNode = lookupImplNode(instref.getSymbol());
-  assert(implNode && "the existence of an instance reference implies the "
-                     "struct instance must have been created already");
-
-  ElaborationState result =
-      specializeGenerator(parent, implNode->parent, loc, true);
-  if (result.shouldSkipNode())
-    return StructInstanceOp();
-  if (result.isError())
-    return ErrorTree(loc, "failed to concretize struct type");
-  return cast<StructInstanceOp>(implNode->inst);
-}
-
 StringAttr ParametricElaborator::getExpectedMangledName(
     GeneratorOp func, ArrayRef<TypedAttr> params, bool sanitize,
     function_ref<std::string(StringRef)> getPrefix) {
