@@ -206,7 +206,7 @@ def PrintIRPass(label: str = "") -> max._core.Pass:
     """
 
 def PrintOpStats(print_as_json: bool = False) -> max._core.Pass: ...
-def RemoveDeadValues() -> max._core.Pass:
+def RemoveDeadValues(canonicalize: bool = True) -> max._core.Pass:
     """
     The goal of this pass is optimization (reducing runtime) by removing
     unnecessary instructions. Unlike other passes that rely on local information
@@ -358,6 +358,11 @@ def RemoveDeadValues() -> max._core.Pass:
     do = square_and_double_of_y(5)
     print(do)
     ```
+
+    Note: If `canonicalize` is set to "false", this pass does not remove any
+    block arguments / op results from ops that implement the
+    RegionBranchOpInterface. Instead, it just sets dead operands to
+    "ub.poison".
     """
 
 def SCCP() -> max._core.Pass:
