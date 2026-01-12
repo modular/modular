@@ -137,7 +137,7 @@ class TextGenerationRequest(Request):
     completion APIs, where each message represents a turn in the conversation.
     If provided, the model will generate responses based on these messages.
     """
-    images: list[bytes] | None = None
+    images: list[bytes] = field(default_factory=list)
     """
     A list of image byte arrays that can be included as part of the request.
     This field is optional and may be used for multimodal inputs where images

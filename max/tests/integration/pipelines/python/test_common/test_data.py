@@ -127,7 +127,6 @@ class MockTextGenerationRequest:
                 model_name=self.model_name,
                 sampling_params=sampling_params,
                 messages=self.messages,
-                images=None,
                 prompt=None,
             )
 
@@ -136,7 +135,6 @@ class MockTextGenerationRequest:
             model_name=self.model_name,
             sampling_params=sampling_params,
             messages=self.messages or None,
-            images=None,
             prompt=self.prompt if not self.messages else None,
         )
 

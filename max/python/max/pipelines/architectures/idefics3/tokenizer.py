@@ -172,7 +172,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             raise ValueError(f"{request} does not provide messages or prompt.")
 
         # Convert image bytes to PIL Image objects.
-        if request.images is not None and len(request.images) > 0:
+        if request.images:
             images = []
             for image_bytes in request.images:
                 try:
