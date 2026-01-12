@@ -362,7 +362,7 @@ fn _unsafe_str_to_int_tuple[str_slice: StaticString]() -> IntTuple:
 
         @parameter
         for pos in range(str_len):
-            result = result * 10 + (ord(sub_string[pos]) - ord("0"))
+            result = result * 10 + (ord(sub_string[byte=pos]) - ord("0"))
         int_tuple.append(result)
 
     return int_tuple^

@@ -36,8 +36,8 @@ def string_summary():
 
     # String properties and indexing
     print(len(text))  # 5
-    print(text[1])  # e
-    print(text[-1])  # o
+    print(text[byte=1])  # e
+    print(text[byte= -1])  # o
 
     # In-place concatenation
     text += " World"

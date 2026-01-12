@@ -903,20 +903,20 @@ struct String(
 
     fn __getitem__[
         I: Indexer, //
-    ](self, idx: I) -> StringSlice[origin_of(self)]:
+    ](self, *, byte: I) -> StringSlice[origin_of(self)]:
         """Gets the character at the specified position.
 
         Parameters:
             I: A type that can be used as an index.
 
         Args:
-            idx: The index value.
+            byte: The byte index.
 
         Returns:
             A StringSlice view containing the character at the specified position.
         """
         # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
-        var normalized_idx = normalize_index["String"](idx, len(self))
+        var normalized_idx = normalize_index["String"](byte, len(self))
         return StringSlice(ptr=self.unsafe_ptr() + normalized_idx, length=1)
 
     fn __getitem__(self, span: ContiguousSlice) -> StringSlice[origin_of(self)]:
@@ -2485,8 +2485,8 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
     # just 1 digit, assume base 10
     if start == (length - 1):
         return 10, start
-    if str_slice[start] == "0":
-        var second_digit = str_slice[start + 1]
+    if str_slice[byte=start] == "0":
+        var second_digit = str_slice[byte = start + 1]
         if second_digit == "b" or second_digit == "B":
             return 2, start + 2
         if second_digit == "o" or second_digit == "O":
@@ -2496,7 +2496,7 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
         # checking for special case of all "0", "_" are also allowed
         var was_last_character_underscore = False
         for i in range(start + 1, length):
-            if str_slice[i] == "_":
+            if str_slice[byte=i] == "_":
                 if was_last_character_underscore:
                     return -1, -1
                 else:
@@ -2504,9 +2504,9 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
                     continue
             else:
                 was_last_character_underscore = False
-            if str_slice[i] != "0":
+            if str_slice[byte=i] != "0":
                 return -1, -1
-    elif ord("1") <= ord(str_slice[start]) <= ord("9"):
+    elif ord("1") <= ord(str_slice[byte=start]) <= ord("9"):
         return 10, start
     else:
         return -1, -1
