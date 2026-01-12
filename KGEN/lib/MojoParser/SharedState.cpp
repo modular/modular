@@ -563,7 +563,7 @@ SharedState::uniquifyNameAndAddToParentSymbolTable(Operation *declOp) {
   Block::iterator prevPos = std::next(declOp->getIterator());
   declOp->remove();
   auto resetPos =
-      llvm::make_scope_exit([&] { declOp->moveBefore(prevBlock, prevPos); });
+      llvm::scope_exit([&] { declOp->moveBefore(prevBlock, prevPos); });
 
   StringAttr origName = SymbolTable::getSymbolName(declOp);
   Operation *existingOp = symTab.lookup(origName);

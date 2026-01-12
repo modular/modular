@@ -342,7 +342,7 @@ createInstanceFromDebugger(Debugger &debugger, const char *replOptions) {
   debugger.StartEventHandlerThread();
 
   // Destroy the process and the event handler thread after a fatal error.
-  auto cleanupOnError = llvm::make_scope_exit([&]() {
+  auto cleanupOnError = llvm::scope_exit([&]() {
     if (lldb::ProcessSP process = (**target).GetProcessSP())
       process->Destroy(/*force_kill=*/false);
     debugger.StopEventHandlerThread();

@@ -56,7 +56,7 @@ static void executeAsREPL(MojoKernel &kernel, StringRef currentCell = "") {
       break;
 
     // Print the prompt at the end.
-    auto scope = llvm::make_scope_exit([&]() { std::cout << cellPrefix; });
+    auto scope = llvm::scope_exit([&]() { std::cout << cellPrefix; });
 
     // Allow the user control over which cell is executing. This is useful for
     // things like executing an expression, and then dumping the logs.

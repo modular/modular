@@ -1663,7 +1663,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
        llvm::zip(fnSignature.parsedArgs, funcOp.getBody()->getArguments()))
     bbArg.setLoc(shared.diags.translateLocation(parsedArg.loc));
 
-  auto notify = llvm::make_scope_exit(
+  auto notify = llvm::scope_exit(
       [&] { shared.notifyListenerOnFunctionDecl(decl, identifierLoc); });
 
   // Upon fully resolving a nonparametric closure, immediately materialize it as

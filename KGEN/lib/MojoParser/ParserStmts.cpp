@@ -1369,7 +1369,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // loop VarDecl to the lookup path.  Otherwise, we will get spurious “use of
   // unknown declaration” errors on it besides whatever error is raised while
   // processing the loop header.
-  auto skipBodyOnFailure = llvm::make_scope_exit([&]() {
+  auto skipBodyOnFailure = llvm::scope_exit([&]() {
     if (errorFn)
       errorFn();
   });
@@ -1547,7 +1547,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
 
   // On any semantic failure, skip the body for better error recovery.
   auto skipBodyOnFailure =
-      llvm::make_scope_exit([&]() { skipUntilIndentation(curIndent); });
+      llvm::scope_exit([&]() { skipUntilIndentation(curIndent); });
 
   // For loops generally desugar into:
   //   var it = iterable.__iter__()

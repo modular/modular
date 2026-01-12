@@ -73,7 +73,7 @@ TEST(Configuration, EnvOverride) {
   setenv("MODULAR_AKEY", "foo", 0);
   setenv("MODULAR_SECTION_SUBSECTION_KEY3", "bar", 0);
 
-  auto unsetEnv = llvm::make_scope_exit([]() {
+  auto unsetEnv = llvm::scope_exit([]() {
     unsetenv("MODULAR_KEY");
     unsetenv("MODULAR_SECTION_SUBSECTION_KEY");
   });

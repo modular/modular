@@ -277,7 +277,7 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   auto *exeScope = process ? (ExecutionContextScope *)process : &impl->target;
 
   // On exit, log all of the diagnostics that were collected.
-  auto broadcastDiagnostics = llvm::make_scope_exit([&] {
+  auto broadcastDiagnostics = llvm::scope_exit([&] {
     impl->expressionLogger.broadcastDiagnostics(diagnosticManager);
     diagnosticManager.Clear();
   });
@@ -404,7 +404,7 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
 
   // Disable the crash recovery context for the next time around.
   auto scopeExit =
-      llvm::make_scope_exit([]() { llvm::CrashRecoveryContext::Disable(); });
+      llvm::scope_exit([]() { llvm::CrashRecoveryContext::Disable(); });
   llvm::CrashRecoveryContext crc;
 
   // Signal handlers don't fire unless this flag is set.

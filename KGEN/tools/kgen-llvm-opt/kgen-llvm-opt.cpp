@@ -35,7 +35,7 @@
 #include "llvm/LinkAllPasses.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/PassPlugin.h"
+#include "llvm/Plugins/PassPlugin.h"
 #include "llvm/Remarks/HotnessThresholdParser.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/CommandLine.h"
