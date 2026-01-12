@@ -185,6 +185,7 @@ cc_args(
             "-lc++",
             "-Wl,-framework,Foundation",
             "-Wl,-framework,Metal",
+            "-Wl,-framework,IOKit",
             "-Wl,-no_warn_duplicate_libraries",
             "-Wl,-oso_prefix,.",  # Strip absolute paths from debug info file references
         ],
