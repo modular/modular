@@ -15,5 +15,10 @@ from .human_readable_formatter import (
     to_human_readable_bytes,
     to_human_readable_latency,
 )
+from .networked_data import fetch_bytes_from_s3
 
-__all__ = ["to_human_readable_bytes", "to_human_readable_latency"]
+__all__ = [
+    "fetch_bytes_from_s3",
+    "to_human_readable_bytes",
+    "to_human_readable_latency",
+]

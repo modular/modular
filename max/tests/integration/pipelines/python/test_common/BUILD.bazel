@@ -73,6 +73,7 @@ modular_py_library(
     imports = [".."],
     deps = [
         "//max/python/max/interfaces",
+        "//max/python/max/support",
     ],
 )
 

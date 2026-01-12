@@ -26,12 +26,13 @@ from max.interfaces import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
+from max.support import fetch_bytes_from_s3
 
 
 def message_has_images(request_message: TextGenerationRequestMessage) -> bool:
     if isinstance(request_message["content"], list):
         for message in request_message["content"]:
-            if message["type"] == "image_url" or message["type"] == "image":
+            if message["type"] == "image":
                 return True
 
     return False
@@ -74,7 +75,7 @@ class MockTextGenerationRequest:
             TextGenerationRequestMessage(
                 role="user",
                 content=[{"type": "text", "text": prompt}]
-                + [{"type": "image_url", "image_url": img} for img in images],
+                + [{"type": "image"} for _ in images],
             )
         ]
         return cls(
@@ -108,35 +109,21 @@ class MockTextGenerationRequest:
     def to_text_generation_request(
         self, request_id: RequestID, sampling_params: SamplingParams
     ) -> TextGenerationRequest:
-        has_images = len(self.images) > 0
-        if not has_images:
-            for message in self.messages:
-                if message_has_images(message):
-                    has_images = True
-                    break
-
-        if has_images:
-            if not self.messages:
-                raise ValueError(
-                    "messages must be provided if images are provided."
-                )
-
-            # Ignore prompt, if images are provided.
+        if self.messages:
             return TextGenerationRequest(
                 request_id=request_id,
                 model_name=self.model_name,
                 sampling_params=sampling_params,
                 messages=self.messages,
-                prompt=None,
+                images=[fetch_bytes_from_s3(img) for img in self.images],
             )
-
-        return TextGenerationRequest(
-            request_id=request_id,
-            model_name=self.model_name,
-            sampling_params=sampling_params,
-            messages=self.messages if self.messages else [],
-            prompt=self.prompt if not self.messages else None,
-        )
+        else:
+            return TextGenerationRequest(
+                request_id=request_id,
+                model_name=self.model_name,
+                sampling_params=sampling_params,
+                prompt=self.prompt,
+            )
 
 
 # Existing test data extracted from evaluate.py
