@@ -354,6 +354,14 @@ def test_filter_types_chained():
     assert_true(_type_is_eq[step2[1], Float64]())
 
 
+def test_filter_types_empty_result():
+    comptime AlwaysFalse[Type: Movable] = False
+    comptime empty = Variadic.filter_types[
+        *Tuple[Int, String, Float64, Bool].element_types, predicate=AlwaysFalse
+    ]
+    assert_equal(Variadic.size(empty), 0)
+
+
 def test_variadic_list_linear_type():
     """Test owned variadics with a linear type (ExplicitDelOnly)."""
 
