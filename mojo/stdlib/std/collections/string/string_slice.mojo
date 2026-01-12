@@ -25,6 +25,7 @@ from collections.string._utf8 import (
     _is_valid_utf8,
     _utf8_byte_type,
     _utf8_first_byte_sequence_length,
+    _is_utf8_continuation_byte,
 )
 from collections.string.format import _CurlyEntryFormattable, _FormatUtils
 from hashlib.hasher import Hasher
@@ -259,7 +260,7 @@ struct CodepointSliceIter[
             #   Guaranteed not to go out of bounds because UTF-8
             #   guarantees there is always a "start" byte eventually before any
             #   continuation bytes.
-            while _utf8_byte_type(back_ptr[]) == 1:
+            while _is_utf8_continuation_byte(back_ptr[]):
                 byte_len += 1
                 back_ptr -= 1
 
@@ -1709,7 +1710,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         var byte = self.as_bytes()[index]
         # If this is not a continuation byte, then it must be a start byte.
-        return _utf8_byte_type(byte) != 1
+        return not _is_utf8_continuation_byte(byte)
 
     fn startswith(
         self, prefix: StringSlice, start: Int = 0, end: Int = -1
