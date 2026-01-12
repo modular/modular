@@ -48,6 +48,15 @@ struct InferenceFailure {
   // Describe what went wrong.
   void addExplanation(MojoInflightDiag &diag) const;
 
+  /// If this failure is due to an unresolved parameter, return the index of the
+  /// parameter.
+  std::optional<size_t> getIfDependentOnUnresolved() const {
+    if (isa<DependsOnUnresolved>(info)) {
+      return cast<DependsOnUnresolved>(info).paramIdx;
+    }
+    return std::nullopt;
+  }
+
 private:
   SmartVariant<TypeConflict, ValueConflict, DependsOnUnresolved, Unclassified>
       info;

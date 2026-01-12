@@ -29,7 +29,8 @@ comptime read_ship_fn_alias: fn (read MemType) -> None = mut_ship_function
 
 # expected-note @below {{function declared here}}
 fn infer_variadic[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyType, `>`],
+    //,
     func: fn (x: Int, y: Int, * args: * ArgTypes) -> None,
 ]():
     pass
@@ -40,7 +41,7 @@ fn device_func(i: Int):
 
 
 fn test_infer_variadic():
-    # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'func'}}
+    # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'ArgTypes'}}
     infer_variadic[device_func]()
 
 
@@ -62,7 +63,8 @@ trait Sprongling:
 
 # expected-note @below {{function declared here}}
 fn infer_variadic[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, Sprongling, `>`], //,
+    ArgTypes: __mlir_type[`!kgen.variadic<`, Sprongling, `>`],
+    //,
     func: fn (* args: * ArgTypes) -> None,
 ]():
     pass
@@ -74,7 +76,7 @@ fn device_func(i: ZInt, j: ZInt):
 
 fn test_infer_variadic():
     # expected-error @below {{cannot bind type 'ZInt' to trait 'Sprongling'}}
-    # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'func'}}
+    # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'ArgTypes'}}
     infer_variadic[device_func]()
 
 
@@ -88,12 +90,13 @@ fn device_func(a: Int, b: Bool) -> Int:
 @fieldwise_init
 struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
     # expected-note @below {{function declared here}}
-    fn call(self, *args: *Self.ArgTypes) -> Int:
+    fn call(self, *args: * Self.ArgTypes) -> Int:
         return 91
 
 
 fn compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`], //,
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`],
+    //,
     func: fn (* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
@@ -127,7 +130,8 @@ struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
 
 # expected-note @below {{function declared here}}
 fn compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`], //,
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`],
+    //,
     func: fn (* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
@@ -135,14 +139,14 @@ fn compile[
 
 fn test_reject_generic_device_func_unusedT():
     # TODO(MOCO-1828): Better error message.
-    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'func'}}
+    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'ArgTypes'}}
     var thing = compile[device_func_unusedT]()
 
 
 # Slightly different case, for no particular reason
 fn test_reject_generic_device_func_usedT():
     # TODO(MOCO-1828): Better error message.
-    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'func'}}
+    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'ArgTypes'}}
     var thing = compile[device_func_usedT]()
 
 
@@ -156,12 +160,13 @@ fn device_func(a: Int, b: Bool) -> Int:
 @fieldwise_init
 struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
     # expected-note @below {{function declared here}}
-    fn call(self, *args: *Self.ArgTypes) -> Int:
+    fn call(self, *args: * Self.ArgTypes) -> Int:
         return 91
 
 
 fn compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`], //,
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`],
+    //,
     func: fn (* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
@@ -185,14 +190,15 @@ fn device_func(a: Int, b: Bool) raises -> Int:
 
 # expected-note @below {{function declared here}}
 fn compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`], //,
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`],
+    //,
     func: fn (* args: * ArgTypes) -> Int,
 ]():
     pass
 
 
 fn main():
-    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'func'}}
+    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'ArgTypes'}}
     compile[device_func]()
 
 
@@ -215,7 +221,8 @@ struct ZBool:
 # Copied from stdlib
 @always_inline("nodebug")
 fn rebind[
-    src_type: AnyTrivialRegType, //,
+    src_type: AnyTrivialRegType,
+    //,
     dest_type: AnyTrivialRegType,
 ](src: src_type) -> dest_type:
     return __mlir_op.`kgen.rebind`[_type=dest_type](src)
@@ -261,7 +268,7 @@ struct ZLayoutTensor(AnyRPTrivialType):
 @fieldwise_init
 struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
     # expected-note @below {{function declared here}}
-    fn call(self, *args: *Self.ArgTypes) -> Int:
+    fn call(self, *args: * Self.ArgTypes) -> Int:
         return 91
 
 
@@ -283,7 +290,8 @@ fn kernel(t: ZLayoutTensor, p: ZPointer[Int], n: NDBuffer) -> Int:
 
 
 fn compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`], //,
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`],
+    //,
     func: fn (* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()

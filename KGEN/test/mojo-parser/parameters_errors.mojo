@@ -94,7 +94,7 @@ fn testSIMD(
     # expected-error @below {{invalid call to '__add__': value passed to 'rhs' cannot be converted from 'MySIMD[1, float64]' to 'MySIMD[2, int32]'}}
     var z = b + a
 
-    # expected-error @below {{invalid call to 'twoUses': failed to infer parameter 'dt2'}}
+    # expected-error @below {{invalid call to 'twoUses': failed to infer parameter 'dt1'}}
     twoUses(a, b)
 
 
@@ -468,7 +468,7 @@ fn invalid_params[f: fn (ParamType) -> None]():
     autoparams[](ParamType[1]())
     # expected-error @below {{callee expects at most 1 positional parameter, but 2 were specified}}
     autoparams[1, 2](ParamType[2]())
-    # expected-error @below {{failed to infer parameter 'p'}}
+    # expected-error @below {{'autoparams' parameter 'a' has 'Int' type, but value has type 'Int'}}
     autoparams[1](1)
     # expected-error @below {{failed to infer parameter 'p'}}
     autoparams_mem(1)
@@ -493,7 +493,7 @@ fn call_mem_param_with_ref(ref [AddressSpace(2)]b: MemParamType[3]):
 
 # expected-note @below {{declared here}}
 fn substitution_edge_case[p: Int, //, f: fn[a: Int] () [_] -> ParamType[a]]():
-    # expected-error @below {{failed to infer parameter 'f'}}
+    # expected-error @below {{'substitution_edge_case' parameter 'f' has 'fn[a: Int]() -> ParamType[a]' type, but value has type 'IntLiteral[0]'}}
     substitution_edge_case[0]
 
 
