@@ -605,7 +605,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 # Duplicate the batch context lengths for each device.
                 for dev_idx in range(1, len(self.devices)):
                     self._batch_context_lengths_prealloc_cpu[dev_idx][0] = (
-                        self._batch_context_lengths_prealloc_cpu[0][0]
+                        self._batch_context_lengths_prealloc_cpu[0][0].item()
                     )
 
         context_batch = flatten2d(replica_batches)
