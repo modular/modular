@@ -255,7 +255,7 @@ fn interpolate_point_1d[
     )
     var filter_scale = 1 / scale if antialias and scale < 1 else 1
     var support = interpolator.filter_length() * filter_scale
-    var xmin = max(0, Int(center - support + 0.5))
+    var xmin = max(Int(center - support + 0.5), 0)
     var xmax = min(input.dim(dim), Int(center + support + 0.5))
     var in_coords = out_coords
     var sum = Scalar[dtype](0)

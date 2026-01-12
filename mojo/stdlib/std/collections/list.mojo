@@ -769,7 +769,7 @@ struct List[T: Copyable](
 
         var normalized_idx = i
         if i < 0:
-            normalized_idx = max(0, len(self) + i)
+            normalized_idx = max(len(self) + i, 0)
 
         var earlier_idx = len(self)
         var later_idx = len(self) - 1

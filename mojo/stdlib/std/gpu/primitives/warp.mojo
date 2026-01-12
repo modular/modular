@@ -489,7 +489,7 @@ fn _shuffle_down_amd[
     # FIXME: Set the EXECute mask register to the mask
     var lane = UInt32(lane_id())
     # set the offset to 0 if lane + offset >= WARP_SIZE
-    var dst_lane = (lane + offset).gt(_WIDTH_MASK).select(0, offset) + lane
+    var dst_lane = (lane + offset).le(_WIDTH_MASK).select(offset, 0) + lane
     return _shuffle_amd_helper(dst_lane, val)
 
 

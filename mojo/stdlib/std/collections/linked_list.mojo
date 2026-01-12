@@ -464,7 +464,7 @@ struct LinkedList[
 
         # TODO: use normalize_index
         var i = index(idx)
-        i = max(0, i if i >= 0 else i + len(self))
+        i = max(i if i >= 0 else i + len(self), 0)
 
         if i == 0:
             var node = alloc[Node[Self.ElementType]](1)

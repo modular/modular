@@ -94,7 +94,7 @@ struct TileMask[
                     self.offset[i]
                     + point[i] * Self.element_size[i] * Self.element_stride[i]
                 )
-                size[i] = max(0, self.max_dim[i] - start_index)
+                size[i] = max(self.max_dim[i] - start_index, 0)
 
         return size
 

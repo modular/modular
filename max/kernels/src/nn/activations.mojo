@@ -103,7 +103,7 @@ fn elu[
 fn relu[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    """Compute the Relu Op using the equation $max(0, x)$.
+    """Compute the Relu Op using the equation $max(x, 0)$.
 
     Parameters:
         dtype: DType used for the computation.
@@ -154,7 +154,7 @@ fn leaky_relu[
     dtype, simd_width
 ]:
     """Compute the Leaky ReLU using the equation
-    $max(0, x) + negative_slope * min(0, x)$.
+    $max(x, 0) + negative_slope * min(x, 0)$.
 
     Parameters:
         dtype: DType used for the computation.

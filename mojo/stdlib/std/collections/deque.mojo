@@ -635,8 +635,8 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         if stop_normalized < 0:
             stop_normalized += len(self)
 
-        start_normalized = max(0, min(start_normalized, len(self)))
-        stop_normalized = max(0, min(stop_normalized, len(self)))
+        start_normalized = max(min(start_normalized, len(self)), 0)
+        stop_normalized = max(min(stop_normalized, len(self)), 0)
 
         for idx in range(start_normalized, stop_normalized):
             offset = self._physical_index(self._head + idx)

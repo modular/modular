@@ -317,9 +317,9 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
     Given index `i`, and Swizzle[bits, base, shift]:
 
     1. Extract `bits` number of bits from `i` starting from position
-       `base + max(0, shift)`. Let's call this `YYY`.
+       `base + max(shift, 0)`. Let's call this `YYY`.
     2. Extract `bits` number of bits from `i` starting from position
-       `base - min(0, shift)`. Let's call this `ZZZ`.
+       `base - min(shift, 0)`. Let's call this `ZZZ`.
     3. Result is `i ^ (YYY shifted by 'shift' positions)`.
 
     Example (Swizzle[2, 0, 3]):
@@ -373,10 +373,10 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
         self.base = base
         self.shift = shift
         self.yyy_mask = ((1 << self.bits) - 1) << (
-            self.base + max(0, self.shift)
+            self.base + max(self.shift, 0)
         )
         self.zzz_mask = ((1 << self.bits) - 1) << (
-            self.base - min(0, self.shift)
+            self.base - min(self.shift, 0)
         )
 
     @always_inline
