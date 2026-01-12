@@ -325,6 +325,9 @@ class HuggingFaceRepo:
     trust_remote_code: bool = False
     """Whether to trust remote code."""
 
+    subfolder: str | None = None
+    """Optional subfolder within the repo (e.g., 'text_encoder' for diffusers)."""
+
     repo_type: RepoType | None = None
     """The type of repo. This is inferred from the repo_id."""
 
@@ -353,6 +356,7 @@ class HuggingFaceRepo:
                 self.repo_id,
                 self.revision,
                 self.trust_remote_code,
+                self.subfolder,
                 self.repo_type,
             )
         )

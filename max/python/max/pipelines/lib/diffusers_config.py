@@ -171,9 +171,10 @@ class DiffusersConfig:
     """Raw contents of model_index.json."""
 
     _repo_id: str | None = None
-    _revision: str | None = None
+    _revision: str | None = huggingface_hub.constants.DEFAULT_REVISION
     _cache_dir: str | Path | None = None
     _token: str | None = None
+    _trust_remote_code: bool = False
 
     @classmethod
     def from_model_path(cls, model_path: str | Path) -> DiffusersConfig:
@@ -215,6 +216,7 @@ class DiffusersConfig:
         revision: str | None = None,
         cache_dir: str | Path | None = None,
         token: str | None = None,
+        trust_remote_code: bool = False,
     ) -> DiffusersConfig:
         """Download and parse model_index.json from a HuggingFace repository.
 
@@ -223,6 +225,7 @@ class DiffusersConfig:
             revision: Git revision (branch, tag, or commit hash). Defaults to 'main'.
             cache_dir: Directory to cache downloaded files.
             token: HuggingFace API token for private repos.
+            trust_remote_code: Whether to trust remote code in component configs.
 
         Returns:
             A populated DiffusersConfig.
@@ -259,6 +262,7 @@ class DiffusersConfig:
         config._revision = revision
         config._cache_dir = cache_dir
         config._token = token
+        config._trust_remote_code = trust_remote_code
 
         return config
 
@@ -341,9 +345,9 @@ class DiffusersConfig:
         """Convenience property to get text encoder model repo."""
         return HuggingFaceRepo(
             repo_id=self._repo_id,
-            subfolder=self.components.get("text_encoder").subfolder,
+            subfolder=str(self.components.get("text_encoder").subfolder),
             revision=self._revision,
-            trust_remote_code=self.trust_remote_code,
+            trust_remote_code=self._trust_remote_code,
         )
 
     def __repr__(self) -> str:

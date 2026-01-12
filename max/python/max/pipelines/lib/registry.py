@@ -50,6 +50,7 @@ if TYPE_CHECKING:
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
 from .config_enums import RopeType, SupportedEncoding
+from .diffusers_config import DiffusersConfig
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo
 from .interfaces import PipelineModel
@@ -273,11 +274,21 @@ class PipelineRegistry:
     def retrieve_architecture(
         self, huggingface_repo: HuggingFaceRepo, use_module_v3: bool = False
     ) -> SupportedArchitecture | None:
-        # Retrieve model architecture names
-        hf_config = self.get_active_huggingface_config(
-            huggingface_repo=huggingface_repo
-        )
-        architecture_names = getattr(hf_config, "architectures", [])
+        # Check if this is a diffusers-style model (has model_index.json)
+        if huggingface_repo.file_exists("model_index.json"):
+            # Diffusers-style lookup: parse model_index.json for _class_name
+            diffusers_config = DiffusersConfig.from_huggingface_repo(
+                huggingface_repo.repo_id,
+                huggingface_repo.revision,
+                trust_remote_code=huggingface_repo.trust_remote_code,
+            )
+            architecture_names = [diffusers_config.pipeline_class]
+        else:
+            # Transformers-style lookup: use architectures from config.json
+            hf_config = self.get_active_huggingface_config(
+                huggingface_repo=huggingface_repo
+            )
+            architecture_names = getattr(hf_config, "architectures", [])
 
         if not architecture_names:
             logger.debug(
@@ -324,6 +335,7 @@ class PipelineRegistry:
             self._cached_huggingface_configs[huggingface_repo] = (
                 AutoConfig.from_pretrained(
                     huggingface_repo.repo_id,
+                    subfolder=huggingface_repo.subfolder,
                     trust_remote_code=huggingface_repo.trust_remote_code,
                     revision=huggingface_repo.revision,
                 )
