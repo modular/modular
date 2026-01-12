@@ -22,7 +22,7 @@ from max.graph.weights import WeightData
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 
 
@@ -302,8 +302,7 @@ class TransformerConfig:
         )
 
 
-@dataclass
-class ZImageConfigBase:
+class ZImageConfig(MAXModelConfigBase):
     """Base configuration for ZImage models with required fields."""
 
     scheduler_config: SchedulerConfig
@@ -317,11 +316,6 @@ class ZImageConfigBase:
 
     transformer_config: TransformerConfig
     """Transformer configuration."""
-
-
-@dataclass
-class ZImageConfig(MAXModelConfig, ZImageConfigBase):
-    """Implementation of MAXModelConfig for ZImage models."""
 
     @staticmethod
     def help() -> dict[str, str]:
