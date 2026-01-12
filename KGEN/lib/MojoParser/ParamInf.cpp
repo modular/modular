@@ -887,11 +887,7 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
           state.paramFinder.findOneReference(adjustedExpectedAttr)) {
     assert(!isa<ParamIndexRefAttr>(adjustedExpectedAttr) &&
            "should have inferred this above");
-#if 0 // FIXME: Enable this when out-of-order binding is ready.
-    state.addFailure(InferenceFailure::DependsOnUnresolved{*paramIdx});
     return error(InferenceFailure::DependsOnUnresolved{*paramIdx});
-#endif
-    return Match;
   }
 
   // Otherwise we have a generalized mismatch.
@@ -1396,6 +1392,7 @@ RetryLabel:
   // We're speculatively trying different options.  If we have errors on one
   // path we need to roll them back.
   auto savedDiags = inferenceDiags.saveDiags();
+  std::optional<InferenceFailure> savedFailureReason;
 
   // See if the types match with inference, if not, remember why.
   switch (matcher.matchTypes(argType, expectedType)) {
@@ -1404,6 +1401,7 @@ RetryLabel:
   case ParamMatcher::Match:
     return success();
   case ParamMatcher::Error:
+    savedFailureReason = matcher.failureReason;
     matcher.resetError();
     break;
   }
@@ -1510,40 +1508,49 @@ RetryLabel:
   if (llvm::failed(pValue))
     return success(); // Issue already diagnosed.
 
-  if (!pValue.value()) {
-    // If we had a fully formed type that we were inferring into, then this is
-    // a failure.
-    if (noImplicitConversionDiags.has_value() ||
-        nonParamType.mlirType == expectedType.mlirType) {
-      inferenceDiags.resetDiags(std::move(noImplicitConversionDiags));
-      return failure();
-    }
-
-    // Otherwise, it could be because it is using a later parameter that we
-    // haven't bound or that is defaulting.  We aren't currently inferring the
-    // entire set of parameters all at once, so we just treat that as "not a
-    // failure" and assume it will work out.
-    //
-    // FIXME: this should be a failure after we fully migrate to the linear
-    // algorithm.
-    return success();
-  }
-
   // If we found one, we recursively call inferOneOperand (but with implicit
   // conversions disabled of course) to resolve our value as the init
   // methods argument.  This allows us to infer parameters from it.
-  auto initSig = sugarCast<FnTypeGeneratorType>(pValue.value().getType());
-  // We expect the initializer to return the constructed type.
-  // Infer the parameters of this overload candidate against the computed
-  // result type of the initializer.
-  switch (matcher.matchTypes(initSig.getUserResultType(), expectedType)) {
-  case ParamMatcher::Retry:
-    goto RetryLabel;
-  case ParamMatcher::Match:
-    return success();
-  case ParamMatcher::Error:
-    matcher.resetError();
-    break;
+  if (auto callee = pValue.value()) {
+    auto initSig = sugarCast<FnTypeGeneratorType>(callee.getType());
+    // We expect the initializer to return the constructed type.
+    // Infer the parameters of this overload candidate against the computed
+    // result type of the initializer.
+    switch (matcher.matchTypes(initSig.getUserResultType(), expectedType)) {
+    case ParamMatcher::Retry:
+      goto RetryLabel;
+    case ParamMatcher::Match:
+      return success();
+    case ParamMatcher::Error:
+      matcher.resetError();
+      break;
+    }
+  }
+
+  if (nonParamType.mlirType != expectedType.mlirType) {
+    // If we're in the parameter binding list for a call then we can re-evaluate
+    // this binding after the arguments of the call are resolved.
+    if (syntax == CallSyntax::kParamBindings) {
+      hasDeferredGivenParam = true;
+      return success();
+    }
+
+    // Otherwise, check to see if this is due to an uninferred param with a
+    // default value.  If so, bind the default and try again.
+    if (savedFailureReason &&
+        savedFailureReason->getIfDependentOnUnresolved()) {
+      size_t paramIdx =
+          savedFailureReason->getIfDependentOnUnresolved().value();
+
+      DefaultValueHandler defaultHandler(declaredParamPogs);
+      if (auto value = defaultHandler.getDefault(paramIdx)) {
+        assert(!evaluator.getIndexBindings()[paramIdx] &&
+               "shouldn't have inferred this if we failed because of it");
+        evaluator.overwriteIndexBinding(paramIdx,
+                                        evaluator.getReboundAttribute(value));
+        goto RetryLabel;
+      }
+    }
   }
 
   // Otherwise restore the diags from the non-implicit conversion path,
@@ -1570,23 +1577,26 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   // from the value directly, but also inferring as a result of implicit
   // conversions.
   if (paramFinder.hasReferences(expectedType)) {
-    if (failed(inferOneOperand(binding, paramIdx, expectedType,
-                               ArgConvention::ReadReg, declaredParamPogs,
-                               CallSyntax::kParamBindings))) {
+    LogicalResult ret =
+        inferOneOperand(binding, paramIdx, expectedType, ArgConvention::ReadReg,
+                        declaredParamPogs, CallSyntax::kParamBindings);
+
+    expectedType = evaluator.getReboundType(expectedType);
+    // If inference failed, check to see if this is due to unresolved dependent
+    // type.  If so, we have to defer the binding.
+    // FIXME: Move this logic into inferOneOperand
+    if (paramFinder.hasReferences(expectedType)) {
+      hasDeferredGivenParam = true;
+      return TypedAttr(); // Deferred.
+    }
+
+    // If this is not failed due to deferred param, propagate the error;
+    // FIXME: maybe propagate error code to `inferOneOperand`.
+    if (failed(ret)) {
       // If inference failed, emit a diagnostic.
       // TODO: Sink this into 'inferOneOperand' to make it more specific.
       emitInferenceFailure(paramIdx, binding.expr->getLoc());
       return failure();
-    }
-
-    expectedType = evaluator.getReboundType(expectedType);
-
-    // Ok, inference was successful, check to see if the expected type is
-    // still unresolved.  If so, we have to defer the binding.
-    // FIXME: Move this logic into inferOneOperand.
-    if (paramFinder.hasReferences(expectedType)) {
-      hasDeferredGivenParam = true;
-      return TypedAttr(); // Deferred.
     }
   }
 
