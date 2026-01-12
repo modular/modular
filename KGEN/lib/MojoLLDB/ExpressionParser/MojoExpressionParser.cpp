@@ -337,7 +337,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   mlir::SourceMgrDiagnosticHandler handler(sourceMgr, ctx, errStream);
 
   // On scope exit, if we've printed any errors make sure to log them.
-  auto printOnError = llvm::make_scope_exit([&]() {
+  auto printOnError = llvm::scope_exit([&]() {
     if (errs.empty())
       return;
     impl->expressionLogger->errorLog("{0}", errs);

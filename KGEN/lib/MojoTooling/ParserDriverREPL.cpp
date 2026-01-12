@@ -813,7 +813,7 @@ MojoParserContext::ParsedREPLExpr MojoParserContext::parseREPLExpression(
   // Set up a diagnostic handler to process diagnostics emitted during parsing.
   auto oldDiagHandler = sourceMgr.getDiagHandler();
   auto oldDiagContext = sourceMgr.getDiagContext();
-  auto resetHandlerOnExit = llvm::make_scope_exit(
+  auto resetHandlerOnExit = llvm::scope_exit(
       [&] { sourceMgr.setDiagHandler(oldDiagHandler, oldDiagContext); });
   REPLDiagnosticHandler diagHandler(listener, impl->replLocMapper, exprText,
                                     sourceMgr);

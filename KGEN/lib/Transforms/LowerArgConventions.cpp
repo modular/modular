@@ -316,8 +316,7 @@ void FuncTransform::applyOneToOneTransform(
     unsigned operandIndex, Type newType,
     llvm::function_ref<Value(Location, Value)> apply) {
   auto point = b.saveInsertionPoint();
-  auto resetState =
-      llvm::make_scope_exit([&] { b.restoreInsertionPoint(point); });
+  auto resetState = llvm::scope_exit([&] { b.restoreInsertionPoint(point); });
   b.setInsertionPointToStart(&block);
   Location originalLocation = block.getArgument(operandIndex).getLoc();
   BlockArgument arg =
@@ -348,8 +347,7 @@ void FuncTransform::applyValueTransform(unsigned operandIndex, Type ptrType) {
 void FuncTransform::applyPackTransform(unsigned operandIndex,
                                        ArrayRef<Type> types, PackType type) {
   auto point = b.saveInsertionPoint();
-  auto resetState =
-      llvm::make_scope_exit([&] { b.restoreInsertionPoint(point); });
+  auto resetState = llvm::scope_exit([&] { b.restoreInsertionPoint(point); });
   Location originalLocation = block.getArgument(operandIndex).getLoc();
   b.setInsertionPointToStart(&block);
   SmallVector<Value> newArgs;

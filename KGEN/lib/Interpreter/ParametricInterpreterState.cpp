@@ -46,7 +46,7 @@ ErrorTreeOr<TypedAttr> ParametricInterpreterState::executeRegionWithResultSlot(
     return ErrorTree(region.getLoc(), err.takeError());
 
   // Reset the interpret to a clean state.
-  auto resetState = llvm::make_scope_exit([&] { reset(); });
+  auto resetState = llvm::scope_exit([&] { reset(); });
 
   // Run the interpreter.
   ErrorTreeOr<SmallVector<Attribute>> result =

@@ -766,7 +766,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
 ErrorOr<TypedAttr> InterpreterState::loadAttributeFromMemRef(MemRefAttr memref,
                                                              Type type) {
   // Reset memory upon exit.
-  auto resetState = llvm::make_scope_exit([&] { reset(); });
+  auto resetState = llvm::scope_exit([&] { reset(); });
   Attribute attr = memref;
   if (ErrorOrSuccess err = internalizeMemory(attr))
     return err.takeError();
@@ -811,7 +811,7 @@ InterpreterState::executeRegion(Region &region, ArrayRef<Attribute> arguments) {
     return ErrorTree(region.getLoc(), err.takeError());
 
   // Reset the interpret to a clean state.
-  auto resetState = llvm::make_scope_exit([&] { reset(); });
+  auto resetState = llvm::scope_exit([&] { reset(); });
 
   // Run the interpreter.
   ErrorTreeOr<SmallVector<Attribute>> result = interpretFunction(region, args);
@@ -853,7 +853,7 @@ ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
     return ErrorTree(region.getLoc(), err.takeError());
 
   // Reset the interpret to a clean state.
-  auto resetState = llvm::make_scope_exit([&] { reset(); });
+  auto resetState = llvm::scope_exit([&] { reset(); });
 
   // Run the interpreter.
   ErrorTreeOr<SmallVector<Attribute>> result =

@@ -164,7 +164,7 @@ void ParamNode::andThenAsync(AsyncValue::Waiter &&waiter) {
 }
 
 ExpansionGraph::~ExpansionGraph() {
-  auto resetState = llvm::make_scope_exit([&] {
+  auto resetState = llvm::scope_exit([&] {
     if (eraseNodeInst) {
       for (auto &[_, node] : nodes.get())
         node->impl.inst.erase();

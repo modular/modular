@@ -169,7 +169,7 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
 
   // Handle the headers. This will format them as "key: value".
   curl_slist *list = nullptr;
-  auto freeList = llvm::make_scope_exit([&] { curl_slist_free_all(list); });
+  auto freeList = llvm::scope_exit([&] { curl_slist_free_all(list); });
   for (const auto &h : request.headers) {
     list = curl_slist_append(
         list, llvm::formatv("{0}: {1}", h.first(), h.second).str().c_str());

@@ -780,7 +780,7 @@ static ASTType addImplicitTypeParams(SharedState &shared, StringAttr argName,
     dst.insert(dst.begin() + insertPt, src.begin(), src.end());
   };
 
-  auto commitChanges = llvm::make_scope_exit([&]() {
+  auto commitChanges = llvm::scope_exit([&]() {
     // All lists guaranteed to have the same length.
     if (paramDeclAttrs.empty())
       return;

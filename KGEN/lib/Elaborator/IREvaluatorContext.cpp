@@ -519,7 +519,7 @@ FailureOr<StringAttr> IREvaluatorContext::evaluateStringPart(TypedAttr part,
   }
 
   // Reset memory upon exit.
-  auto resetState = llvm::make_scope_exit([&] {
+  auto resetState = llvm::scope_exit([&] {
     if (reset)
       state->reset();
   });
