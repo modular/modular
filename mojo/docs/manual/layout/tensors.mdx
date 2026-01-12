@@ -659,6 +659,7 @@ fn copy_from_async_example():
         for i in range(rows * cols):
             host_buf[i] = i
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
+
         ctx.enqueue_copy(dev_buf, host_buf)
         ctx.enqueue_function[kernel, kernel](
             tensor,

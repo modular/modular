@@ -125,7 +125,7 @@ def shared_memory_alloc_example():
 
         # Put some data into the shared tile that we can verify on the host.
         if global_idx.x < in_size and global_idx.y < in_size:
-            shared_tile[thread_idx.y, thread_idx.x] = (
+            shared_tile[thread_idx.y, thread_idx.x] = Float32(
                 global_idx.y * in_size + global_idx.x
             )
 
