@@ -77,6 +77,45 @@ def test_broadcast_to() -> None:
     assert result.real
 
 
+def test_broadcast_to_expand() -> None:
+    """Test broadcast_to expanding a dimension of size 1."""
+    tensor = Tensor.ones([3, 1], dtype=DType.float32, device=DEVICE)
+    result = F.broadcast_to(tensor, [3, 4])
+    result._sync_realize()
+    assert result.real
+    assert result.shape == [3, 4]
+
+
+def test_broadcast_to_add_leading_dim() -> None:
+    """Test broadcast_to adding a new leading dimension."""
+    tensor = Tensor.ones([3, 4], dtype=DType.float32, device=DEVICE)
+    result = F.broadcast_to(tensor, [2, 3, 4])
+    result._sync_realize()
+    assert result.real
+    assert result.shape == [2, 3, 4]
+
+
+def test_broadcast_to_incompatible_shapes_error() -> None:
+    """Test broadcast_to raises error for incompatible shapes."""
+    # Trying to broadcast [4, 6] to [3, 6] should fail because 4 != 3 and 4 != 1
+    tensor = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
+    with pytest.raises(
+        ValueError,
+        match=r"input dimension.*must be either 1 or equal",
+    ):
+        result = F.broadcast_to(tensor, [3, 6])
+        result._sync_realize()
+
+
+def test_tensor_broadcast_to_method() -> None:
+    """Test the Tensor.broadcast_to() method."""
+    tensor = Tensor.ones([3, 1], dtype=DType.float32, device=DEVICE)
+    result = tensor.broadcast_to([3, 4])
+    result._sync_realize()
+    assert result.real
+    assert result.shape == [3, 4]
+
+
 def test_cast() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = F.cast(tensor_2d, DType.int64)
