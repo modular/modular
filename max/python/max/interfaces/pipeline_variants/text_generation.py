@@ -196,6 +196,12 @@ class TextGenerationRequest(Request):
     If not specified, the request will be routed to the default endpoint.
     """
 
+    def __post_init__(self) -> None:
+        if self.prompt and self.messages:
+            raise ValueError(
+                "both prompt and messages cannot be provided to TextGenerationRequest"
+            )
+
 
 def _check_text_generation_output_implements_pipeline_output(
     x: TextGenerationOutput,
