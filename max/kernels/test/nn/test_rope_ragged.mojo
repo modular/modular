@@ -128,10 +128,10 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
 
     # Create output tensor using ManagedLayoutTensor
     var q_out_managed = ManagedLayoutTensor[dtype, q_layout](ctx)
-    var q_out_tensor = q_out_managed.buffer()
+    var q_out_tensor = q_out_managed.tensor()
     # Initialize to zero
     for i in range(q_tensor.layout.size()):
-        q_out_tensor.data[i] = 0
+        q_out_tensor.ptr[i] = 0
 
     # Create start_pos tensor using ManagedLayoutTensor
     var start_pos_managed = ManagedLayoutTensor[DType.uint32, start_pos_layout](
@@ -146,7 +146,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
         width: Int, alignment: Int
     ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
         q_out_tensor.store[width=width](
-            rebind[IndexList[q_out_tensor.rank]](idx), val
+            rebind[IndexList[q_out_tensor.layout.rank()]](idx), val
         )
 
     rope_ragged[
@@ -179,7 +179,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
                 )
                 # Verify unroped region: First (head_dim - rope_dim) elements should remain unchanged
                 assert_almost_equal(
-                    q_out_tensor.data + base_offset,
+                    q_out_tensor.ptr + base_offset,
                     q_tensor.ptr + base_offset,
                     head_dim - rope_dim,
                 )
@@ -187,7 +187,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
                 # Verify roped region: Last rope_dim elements should match expected output
                 roped_offset = base_offset + (head_dim - rope_dim)
                 assert_almost_equal(
-                    q_out_tensor.data + roped_offset,
+                    q_out_tensor.ptr + roped_offset,
                     expected_q_out_tensor.ptr + roped_offset,
                     rope_dim,
                 )
