@@ -1820,6 +1820,16 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
           ++posIdx;
           continue;
         }
+
+        // Passing `_` to a variadic is not allowed. Users should pass `*_` to
+        // unbind a variadic parameter.
+        if (isa<UnboundAttr>(givenBindings[posIdx].ir.getIfPValue().get())) {
+          auto &diag = getDiag(givenBindings[posIdx].expr->getLoc());
+          diag << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
+                  "parameter";
+          return failure();
+        }
+
         // FIXME: pack and install variadics parameter correctly.
         FailureOr<TypedAttr> paramVal =
             inferAndEmitOneParam(givenBindings[posIdx], varArgsEltType, idx);
@@ -1831,14 +1841,19 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
           isDeferred = true;
           continue;
         }
+
+        varArgsEltType = evaluator.getReboundType(varArgsEltType);
         // Realign sugar.
         if (paramVal->getType() != varArgsEltType)
           paramVal = ParamOperatorAttr::getRebind(*paramVal, varArgsEltType);
         elements.push_back(*paramVal);
       }
 
-      if (!isDeferred)
+      if (!isDeferred) {
+        expectedVariadic =
+            cast<VariadicType>(evaluator.getReboundType(expectedVariadic));
         applyBinding(idx, VariadicAttr::get(elements, expectedVariadic));
+      }
       continue;
     }
 

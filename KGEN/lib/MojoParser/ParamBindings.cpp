@@ -216,44 +216,6 @@ emitUnprovableConstraintsFromFitness(const ParamBindings::Fitness &fitness,
     LIT::emitConstraintInconclusive(shared.getDeclResolver(), diag, constraint);
 }
 
-/// Check a single binding and emit a parameter value if possible. If an
-/// implicit conversion is required, the provided counter is incremented.
-static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
-                                       ASTType expectedType, IREmitter &emitter,
-                                       ParserParameterEvaluator &evaluator) {
-
-  PValue bindingVal = binding.ir.getIfPValue();
-  assert(bindingVal && "Parameters are always PValue's");
-
-  // Parameters can only be unpacked into a variadic.
-  // FIXME: This results in a poor error message.
-  if (isa<UnpackedAttr>(bindingVal.get()))
-    return {};
-
-  // Check the type matches what is expected, and perform an implicit
-  // conversion if needed.
-  expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
-
-  // We don't typecheck the '_' magic parameter, we propagate it.
-  if (isa<UnboundAttr>(bindingVal.get()))
-    return PValue(UnboundAttr::get(expectedType));
-
-  // If the parameter already has the right type, then we're good.
-  if (expectedType.isEqualCanon(bindingVal.getType()))
-    // Align sugar if necessary.
-    return ParamOperatorAttr::getRebind(bindingVal, expectedType);
-
-  // If the parameter can be implicitly converted, do so.
-  if (IREmitter::canImplicitlyConvertToType(
-          {bindingVal, binding.expr}, expectedType, emitter.getDeclScope())) {
-    bindingVal = emitter.emitPValue(binding, EC_CallParamValue, expectedType);
-    return bindingVal;
-  }
-
-  // Otherwise, we have an error.
-  return {};
-}
-
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
                                   ArrayRef<Type> expectedParamTypes,
@@ -660,30 +622,6 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
       return pValue;
     };
 
-    // This lambda hides the diagnostic and error handling logic for checking a
-    // single positional parameter binding.
-    auto handlePosBinding = [&](size_t index, ASTExprAnd<AnyValue> binding,
-                                ASTType expectedType) -> PValue {
-      // If the parameter list expected a keyword only parameter, we have too
-      // many positional parameters.
-      if (passingKind == PassingKind::KwOnly) {
-        auto &diag = getDiag({});
-        diag << "callee";
-        emitWrongArgOrParamCount(diag, countNumPosOnly(paramListAttr),
-                                 countNumPositional(paramListAttr),
-                                 operands.getNumPositional(),
-                                 "positional parameter");
-        return {};
-      }
-
-      PValue pValue =
-          emitSingleParameterValue(binding, expectedType, emitter, evaluator);
-
-      if (!pValue)
-        emitTypeMismatch(index, binding, expectedType);
-      return pValue;
-    };
-
     // Scalar parameter values are installed directly.
     if (!paramListAttr.isPosVarArg(idx)) {
       PValue paramValue = handlePosBindingMigrated(idx, binding, expectedType);
@@ -708,34 +646,20 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
       continue;
     }
 
-    SmallVector<TypedAttr> elements;
-    do {
-      auto &binding = operands[posBindingIdx++];
-      if (binding.keyword)
-        continue;
+    // Consumes all parameter. The remaining parameter can only either be part
+    // of the variadic or keyword parameter.
+    posBindingIdx = numBindings;
+    auto vaType = VariadicType::get(evaluator.getReboundType(expectedType));
+    TypedAttr newVA = inference.getInferredValue(newBindings.size());
 
-      PValue pValue = handlePosBinding(idx, binding, expectedType);
-      if (!pValue)
-        return {{}, fitness};
+    // ParamInfState does not install `UnboundAttr`: we should not do it
+    // here either now that evaluator support a sparse set of parameter
+    // being bound.
+    if (!newVA)
+      newVA = UnboundAttr::get(vaType);
 
-      // Realign sugar.
-      if (pValue.getType().mlirType != expectedType)
-        pValue = ParamOperatorAttr::getRebind(pValue, expectedType);
-
-      elements.emplace_back(pValue);
-      // Passing `_` to a variadic is not allowed. Users should pass `*_` to
-      // unbind a variadic parameter.
-      if (isa<UnboundAttr>(elements.back())) {
-        auto &diag = getDiag(binding.expr->getLoc());
-        diag << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
-                "parameter";
-        return {{}, fitness};
-      }
-    } while (posBindingIdx != numBindings);
-
-    auto varType = VariadicType::get(evaluator.getReboundType(expectedType));
-    if (failed(setParamValueAndVerify(VariadicAttr::get(elements, varType),
-                                      varType)))
+    if (failed(setParamValueAndVerify(
+            newVA, VariadicType::get(evaluator.getReboundType(expectedType)))))
       return {{}, fitness};
   }
 
