@@ -36,6 +36,7 @@ import tarfile
 import tempfile
 
 import boto3
+from botocore.exceptions import NoCredentialsError, UnauthorizedSSOTokenError
 from PIL import Image
 
 _DEFAULT_CACHE_DIR = "~/.cache/modular/testdata"
@@ -53,12 +54,18 @@ def load_from_s3(s3_path: str, cache_dir: str | None = None) -> str:
     local_path = os.path.join(cache_dir, s3_path)
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
     if not os.path.exists(local_path):
-        s3 = boto3.client("s3")
-        s3.download_file(
-            _S3_BUCKET,
-            s3_path,
-            local_path,
-        )
+        try:
+            s3 = boto3.client("s3")
+            s3.download_file(
+                _S3_BUCKET,
+                s3_path,
+                local_path,
+            )
+        except (UnauthorizedSSOTokenError, NoCredentialsError) as e:
+            raise RuntimeError(
+                "AWS authentication failed. Please run 'aws sso login' to "
+                "refresh your credentials."
+            ) from e
     return local_path
 
 
