@@ -637,6 +637,9 @@ what we publish.
   `{Mut,Immut,}ExternalOrigin` aliases instead of being spelled like
   `Origin[True].external`, improving consistency with other origin types.
 
+- `StringableRaising` has been deprecated and its usages in the stdlib have
+  been removed.
+
 ### Tooling changes
 
 - The Mojo compiler now supports the `-Werror` flag, which treats all warnings
