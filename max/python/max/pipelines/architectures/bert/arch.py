@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Architecture registration for MiniLM sentence transformer."""
+"""Architecture registration for Bert sentence transformer."""
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
@@ -21,10 +21,10 @@ from max.pipelines.lib import (
 )
 
 from . import weight_adapters
-from .model import MiniLMPipelineModel
-from .tokenizer import MiniLMTokenizer
+from .model import BertPipelineModel
+from .tokenizer import BertTokenizer
 
-minilm_arch = SupportedArchitecture(
+bert_arch = SupportedArchitecture(
     name="BertModel",
     task=PipelineTask.EMBEDDINGS_GENERATION,
     example_repo_ids=[
@@ -36,8 +36,8 @@ minilm_arch = SupportedArchitecture(
         SupportedEncoding.float32: [],
         SupportedEncoding.bfloat16: [],
     },
-    pipeline_model=MiniLMPipelineModel,
-    tokenizer=MiniLMTokenizer,
+    pipeline_model=BertPipelineModel,
+    tokenizer=BertTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={

@@ -10,14 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MiniLM sentence transformer architecture for MAX.
+"""Bert sentence transformer architecture for MAX.
 
-This module implements the all-MiniLM-L6-v2 architecture, a BERT-based sentence transformer model
-that maps sentences to 384-dimensional dense vectors
+This module implements BERT-based sentence transformer models
+that map sentences to dense vectors for embeddings tasks.
 """
 
-from .arch import minilm_arch
+from .arch import bert_arch
 
-ARCHITECTURES = [minilm_arch]
-
-__all__ = ["minilm_arch", "ARCHITECTURES"]
+__all__ = ["bert_arch"]

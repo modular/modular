@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Weight adapters for MiniLM/BERT models.
+"""Weight adapters for Bert models.
 
 This module converts HuggingFace BERT weight names to MAX weight names.
 
-HuggingFace BERT/MiniLM naming convention:
+HuggingFace Bert naming convention:
 - embeddings.word_embeddings.weight
 - embeddings.LayerNorm.weight
 - encoder.layer.0.attention.self.query.weight

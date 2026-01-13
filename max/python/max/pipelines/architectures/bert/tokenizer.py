@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Custom tokenizer for MiniLM/BERT models.
+"""Custom tokenizer for Bert models.
 
 BERT-based models don't have an explicit EOS token, so this tokenizer
 uses the SEP token as the EOS token for compatibility with MAX pipelines.
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
 
 
-class MiniLMTokenizer(TextTokenizer):
+class BertTokenizer(TextTokenizer):
     def __init__(
         self,
         model_path: str,

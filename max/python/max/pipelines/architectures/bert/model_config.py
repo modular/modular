@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Configuration for MiniLM models."""
+"""Configuration for Bert models."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from transformers import AutoConfig
 
 
 @dataclass
-class MiniLMConfig(MAXModelConfig):
+class BertModelConfig(MAXModelConfig):
     @staticmethod
     def help() -> dict[str, str]:
         return {}
@@ -41,16 +41,15 @@ class MiniLMConfig(MAXModelConfig):
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_attention_heads,
             head_dim=(
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
+                huggingface_config.hidden_size // huggingface_config.num_attention_heads
             ),
-            num_layers=MiniLMConfig.get_num_layers(huggingface_config),
+            num_layers=BertModelConfig.get_num_layers(huggingface_config),
             cache_strategy=kv_cache_config.cache_strategy,
             devices=devices,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
-            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
     @staticmethod

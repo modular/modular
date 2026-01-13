@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Graph construction for MiniLM (BERT-based) sentence transformer.
+"""Graph construction for Bert-based sentence transformer.
 
-This module builds the computation graph for the all-MiniLM-L6-v2 model,
-which is a distilled BERT model for sentence embeddings. Unlike MPNet,
-MiniLM/BERT uses:
+This module builds the computation graph for Bert-based models,
+which are BERT models for sentence embeddings. Unlike MPNet,
+Bert uses:
 - Absolute position embeddings (not relative)
 - Token type embeddings (typically all zeros for sentence transformers)
 - Standard scaled dot-product attention without position bias
@@ -118,9 +118,7 @@ class BertSelfAttention(Module):
     ) -> None:
         config = huggingface_config
         self.num_attention_heads = config.num_attention_heads
-        self.attention_head_size = int(
-            config.hidden_size / config.num_attention_heads
-        )
+        self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
         self.query = Linear(
@@ -225,9 +223,7 @@ class BertAttention(Module):
         self.self = BertSelfAttention(
             pipeline_config, huggingface_config, dtype, device
         )
-        self.output = BertSelfOutput(
-            pipeline_config, huggingface_config, dtype, device
-        )
+        self.output = BertSelfOutput(pipeline_config, huggingface_config, dtype, device)
 
     def __call__(
         self,
@@ -320,9 +316,7 @@ class BertLayer(Module):
         self.intermediate = BertIntermediate(
             pipeline_config, huggingface_config, dtype, device
         )
-        self.output = BertOutput(
-            pipeline_config, huggingface_config, dtype, device
-        )
+        self.output = BertOutput(pipeline_config, huggingface_config, dtype, device)
 
     def __call__(
         self,
@@ -360,7 +354,7 @@ class BertEncoder(Module):
         return hidden_states
 
 
-class MiniLMModel(Module):
+class BertModel(Module):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -413,9 +407,7 @@ class MiniLMModel(Module):
             )
             input_lengths = ops.max(
                 ops.sum(input_mask_expanded),
-                ops.constant(
-                    1e-9, DType.float32, device=input_mask_expanded.device
-                ),
+                ops.constant(1e-9, DType.float32, device=input_mask_expanded.device),
             )
             pooled_output = (
                 ops.sum(encoded_results * input_mask_expanded) / input_lengths
@@ -439,10 +431,8 @@ def build_graph(
         DType.float32, shape=["batch_size", "seq_len"], device=input_device
     )
 
-    with Graph(
-        "minilm", input_types=[input_ids_type, attention_mask_type]
-    ) as graph:
-        model = MiniLMModel(
+    with Graph("bert", input_types=[input_ids_type, attention_mask_type]) as graph:
+        model = BertModel(
             pipeline_config,
             huggingface_config,
             dtype,
