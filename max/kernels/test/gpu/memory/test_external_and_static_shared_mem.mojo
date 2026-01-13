@@ -35,8 +35,8 @@ def test_external_shared_mem(ctx: DeviceContext):
             address_space = AddressSpace.SHARED,
             alignment = align_of[Float32](),
         ]()
-        dynamic_sram[thread_idx.x] = thread_idx.x
-        sram[thread_idx.x] = thread_idx.x
+        dynamic_sram[thread_idx.x] = Float32(thread_idx.x)
+        sram[thread_idx.x] = Float32(thread_idx.x)
         barrier()
         data[thread_idx.x] = dynamic_sram[thread_idx.x] + sram[thread_idx.x]
 

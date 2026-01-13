@@ -389,7 +389,9 @@ async def all_tokens(
     """Generate all tokens for a request."""
     prompt = request_payload.prompt
     output_len = request_payload.output_len
-    image = request_payload.image
+    images = []
+    if request_payload.image:
+        images.append(request_payload.image)
 
     params = SamplingParamsInput(
         max_new_tokens=output_len,
@@ -404,7 +406,7 @@ async def all_tokens(
         request_id=RequestID(str(request_id)),
         model_name=model_name,
         prompt=prompt,
-        images=[image] if image is not None else None,
+        images=images,
         sampling_params=sampling_params,
     )
 

@@ -286,12 +286,12 @@ struct ContiguousSlice(ImplicitlyCopyable):
         var start = self.start.or_else(0)
         var end = self.end.or_else(length)
         if start < 0:
-            start = max(0, start + length)
+            start = max(start + length, 0)
         elif start >= length:
             start = length
 
         if end < 0:
-            end = max(0, end + length)
+            end = max(end + length, 0)
         elif end >= length:
             end = length
 

@@ -259,6 +259,9 @@ fn _quicksort[
 # ===-----------------------------------------------------------------------===#
 
 
+# This is being passed mutable origins that are taken from the same memory
+# object, so of course they alias.  The caller guarantees they don't overlap.
+@__unsafe_disable_nested_origin_exclusivity
 fn _merge[
     T: Copyable,
     span_origin: MutOrigin,
@@ -345,7 +348,7 @@ fn _stable_sort_impl[
             var span1 = span.unsafe_subspan(offset=j, length=merge_size)
             var span2 = span.unsafe_subspan(
                 offset=j + merge_size,
-                length=min(merge_size, max(0, size - (j + merge_size))),
+                length=min(merge_size, max(size - (j + merge_size), 0)),
             )
             _merge[cmp_fn](span1, span2, temp_buff)
             for i in range(merge_size + len(span2)):

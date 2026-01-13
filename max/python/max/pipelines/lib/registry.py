@@ -397,6 +397,7 @@ class PipelineRegistry:
             text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
             tokenizer = text_tokenizer(
                 pipeline_config.model.model_path,
+                pipeline_config=pipeline_config,
                 revision=pipeline_config.model.huggingface_model_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
@@ -406,10 +407,10 @@ class PipelineRegistry:
         else:
             tokenizer = arch.tokenizer(
                 model_path=pipeline_config.model.model_path,
+                pipeline_config=pipeline_config,
                 revision=pipeline_config.model.huggingface_model_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
-                pipeline_config=pipeline_config,
                 chat_template=pipeline_config.retrieve_chat_template(),
             )
 
@@ -462,6 +463,7 @@ class PipelineRegistry:
             text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
             tokenizer = text_tokenizer(
                 pipeline_config.model.model_path,
+                pipeline_config=pipeline_config,
                 revision=pipeline_config.model.huggingface_model_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
@@ -472,10 +474,10 @@ class PipelineRegistry:
         else:
             tokenizer = arch.tokenizer(
                 model_path=pipeline_config.model.model_path,
+                pipeline_config=pipeline_config,
                 revision=pipeline_config.model.huggingface_model_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
-                pipeline_config=pipeline_config,
                 chat_template=pipeline_config.retrieve_chat_template(),
                 context_validators=arch.context_validators,
             )

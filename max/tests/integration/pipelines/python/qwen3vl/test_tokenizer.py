@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from unittest.mock import MagicMock
 
 import numpy as np
 from max.interfaces import (
@@ -25,8 +26,24 @@ from max.interfaces import (
     TextGenerationRequestMessage,
 )
 from max.pipelines.architectures.qwen3vl_moe.tokenizer import Qwen3VLTokenizer
-from transformers import AutoProcessor
-from utils.config_loader import ConfigNames, get_config_loader
+from transformers import AutoConfig, AutoProcessor
+
+
+def _create_mock_pipeline_config(model_path: str) -> MagicMock:
+    """Create a mock PipelineConfig with real HuggingFace config."""
+    # Load real HuggingFace config for proper vision config values
+    hf_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+
+    mock_kv_cache_config = MagicMock()
+    mock_kv_cache_config.enable_prefix_caching = False
+
+    mock_model_config = MagicMock()
+    mock_model_config.huggingface_config = hf_config
+    mock_model_config.kv_cache_config = mock_kv_cache_config
+
+    pipeline_config = MagicMock()
+    pipeline_config.model = mock_model_config
+    return pipeline_config
 
 
 def _build_messages(image_url: str) -> list[dict[str, Any]]:
@@ -62,21 +79,14 @@ def test_qwen3vl_tokenizer() -> None:
     hf_image_grid_thw = hf_inputs["image_grid_thw"].cpu().numpy()
 
     # SDK tokenizer under test
-    # Configure required vision token ids and settings from bundled config
-    loader = get_config_loader()
-    cfg = loader.load_config(ConfigNames.QWEN3VL_30B)
+    model_path = "Qwen/Qwen3-VL-30B-A3B-Instruct"
+    pipeline_config = _create_mock_pipeline_config(model_path)
 
     tokenizer = Qwen3VLTokenizer(
-        model_path="Qwen/Qwen3-VL-30B-A3B-Instruct", trust_remote_code=True
+        model_path=model_path,
+        pipeline_config=pipeline_config,
+        trust_remote_code=True,
     )
-    tokenizer.image_token_id = cfg["image_token_id"]
-    tokenizer.video_token_id = cfg["video_token_id"]
-    tokenizer.vision_start_token_id = cfg["vision_start_token_id"]
-    tokenizer.vision_end_token_id = cfg["vision_end_token_id"]
-    tokenizer.spatial_merge_size = cfg["vision_config"]["spatial_merge_size"]
-    tokenizer.num_position_embeddings = cfg["vision_config"][
-        "num_position_embeddings"
-    ]
 
     # Build MAX request mirroring the HF messages
     request = TextGenerationRequest(
@@ -90,7 +100,7 @@ def test_qwen3vl_tokenizer() -> None:
             )
         ],
         request_id=RequestID("test-id"),
-        model_name="Qwen/Qwen3-VL-30B-A3B-Instruct",
+        model_name=model_path,
     )
 
     context = asyncio.run(tokenizer.new_context(request))
@@ -155,21 +165,14 @@ def test_qwen3vl_tokenizer_no_images() -> None:
     hf_attention_mask = hf_inputs["attention_mask"].cpu().numpy()
 
     # SDK tokenizer under test
-    # Configure required vision token ids and settings from bundled config
-    loader = get_config_loader()
-    cfg = loader.load_config(ConfigNames.QWEN3VL_30B)
+    model_path = "Qwen/Qwen3-VL-30B-A3B-Instruct"
+    pipeline_config = _create_mock_pipeline_config(model_path)
 
     tokenizer = Qwen3VLTokenizer(
-        model_path="Qwen/Qwen3-VL-30B-A3B-Instruct", trust_remote_code=True
+        model_path=model_path,
+        pipeline_config=pipeline_config,
+        trust_remote_code=True,
     )
-    tokenizer.image_token_id = cfg["image_token_id"]
-    tokenizer.video_token_id = cfg["video_token_id"]
-    tokenizer.vision_start_token_id = cfg["vision_start_token_id"]
-    tokenizer.vision_end_token_id = cfg["vision_end_token_id"]
-    tokenizer.spatial_merge_size = cfg["vision_config"]["spatial_merge_size"]
-    tokenizer.num_position_embeddings = cfg["vision_config"][
-        "num_position_embeddings"
-    ]
 
     # Build MAX request mirroring the HF messages
     request = TextGenerationRequest(
@@ -182,7 +185,7 @@ def test_qwen3vl_tokenizer_no_images() -> None:
             )
         ],
         request_id=RequestID("test-id"),
-        model_name="Qwen/Qwen3-VL-30B-A3B-Instruct",
+        model_name=model_path,
     )
 
     context = asyncio.run(tokenizer.new_context(request))

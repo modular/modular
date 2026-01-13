@@ -722,6 +722,9 @@ struct List[T: Copyable](
         self.capacity = new_capacity
         self._annotate_new()
 
+    # FIXME: This annotation is needed to support List[Span[x, o]] types with
+    # mutable origins.
+    @__unsafe_disable_nested_origin_exclusivity
     fn append(mut self, var value: Self.T):
         """Appends a value to this list.
 
@@ -766,7 +769,7 @@ struct List[T: Copyable](
 
         var normalized_idx = i
         if i < 0:
-            normalized_idx = max(0, len(self) + i)
+            normalized_idx = max(len(self) + i, 0)
 
         var earlier_idx = len(self)
         var later_idx = len(self) - 1

@@ -137,7 +137,7 @@ class TextGenerationRequest(Request):
     completion APIs, where each message represents a turn in the conversation.
     If provided, the model will generate responses based on these messages.
     """
-    images: list[bytes] | None = None
+    images: list[bytes] = field(default_factory=list)
     """
     A list of image byte arrays that can be included as part of the request.
     This field is optional and may be used for multimodal inputs where images
@@ -195,6 +195,12 @@ class TextGenerationRequest(Request):
     scenarios, when you want to dynamically route to a specific instance.
     If not specified, the request will be routed to the default endpoint.
     """
+
+    def __post_init__(self) -> None:
+        if self.prompt and self.messages:
+            raise ValueError(
+                "both prompt and messages cannot be provided to TextGenerationRequest"
+            )
 
 
 def _check_text_generation_output_implements_pipeline_output(

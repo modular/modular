@@ -2584,7 +2584,7 @@ struct MLA_SM100_Decode[
         # TODO: per-row + causal for seq_len > 1.
         # clamp num_keys - col_base into [0, half_load]
         var keys_remaining: Int = num_keys - col_base
-        var n_valid: Int = max(0, min(keys_remaining, half_load))  # 0..32
+        var n_valid: Int = max(min(keys_remaining, half_load), 0)  # 0..32
 
         # Build mask_bits with lowest n_valid bits = 1
         var mask_bits_64: UInt64 = (UInt64(1) << UInt64(n_valid)) - UInt64(1)

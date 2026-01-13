@@ -1,0 +1,248 @@
+---
+title: Mojo quickstart
+description: Get up and running fast with the Mojo programming language
+sidebar_label: Mojo quickstart
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+Verify your installation and learn basic Mojo syntax.
+
+**Prerequisites:** [Install Mojo](/mojo/manual/install)
+
+## Setup
+
+Get your command line ready for a new Mojo project.
+
+<Tabs groupId="install">
+
+<TabItem value="uv" label="uv" default>
+```bash
+uv init temperature-analyzer && cd temperature-analyzer
+uv venv && source .venv/bin/activate
+uv pip install mojo \
+  --extra-index-url https://modular.gateway.scarf.sh/simple/
+```
+</TabItem>
+
+<TabItem value="pixi" label="pixi">
+```bash
+pixi init temperature-analyzer \
+  -c https://conda.modular.com/max-nightly/ -c conda-forge
+cd temperature-analyzer
+pixi add mojo
+pixi shell
+```
+</TabItem>
+
+</Tabs>
+
+Create `analyzer.mojo`. Use your favorite IDE or editor for edits.
+
+## Hello Mojo
+
+Add this to `analyzer.mojo`:
+
+```mojo
+fn main():
+    print("Temperature Analyzer")
+```
+
+Run it:
+```bash
+mojo analyzer.mojo
+```
+
+Insights:
+
+- If you see "Temperature Analyzer", your setup works.
+- All Mojo executables use `main()` as their entry point.
+
+## Variables and data
+
+Update your file to add temperature data:
+
+```mojo
+fn main():
+    print("Temperature Analyzer")
+
+    # At compile time, the square brackets tell Mojo the list type
+    temps: List[Float64] = [20.5, 22.3, 19.8, 25.1]
+
+    print("Recorded", len(temps), "temperatures")
+```
+
+## Loops
+
+Print each temperature. Add to `main()` under the print statement:
+
+```mojo
+fn main():
+    # ... existing code ...
+
+    for index in range(len(temps)):  # The range is [0, len(temps))
+        print("  Day {}: {}°C".format(index + 1, temps[index]))
+```
+
+Insights:
+
+- The day is offset by 1 because the range uses zero-based indexing.
+
+## Functions
+
+Add this function above `main()` to calculate the average temperature:
+
+```mojo
+fn calculate_average(temps: List[Float64]) -> Float64:
+    total: Float64 = 0.0
+    for index in range(len(temps)):
+        total += temps[index]
+    return total / len(temps)
+
+fn main():
+    # ... existing code ...
+```
+
+Add to the end of `main()` to call the function:
+
+```mojo
+    avg = calculate_average(temps)
+    print("Average: {}°C".format(avg))
+```
+
+## Conditionals
+
+Classify the average temperature. Add to the end of `main()`:
+
+```mojo
+    if avg > 25.0:
+        print("Status: Hot week")
+    elif avg > 20.0:
+        print("Status: Comfortable week")
+    else:
+        print("Status: Cool week")
+```
+
+## Raise errors
+
+Handle empty data by updating `calculate_average`. Now the function
+can raise an error.
+
+```mojo
+# Square brackets tell Mojo the list type at compile time
+fn calculate_average(temps: List[Float64]) raises -> Float64:
+    if len(temps) == 0:  # Empty list of temperatures
+        raise Error("No temperature data")
+
+    total: Float64 = 0
+    for index in range(len(temps)):
+        total += temps[index]
+    return total / len(temps)
+```
+
+## Handle errors
+
+In `main()`, wrap your code in `try-except` for error handling:
+
+```mojo
+    try:
+        avg = calculate_average(temps)
+        print("Average: {}°C".format(avg))
+
+        if avg > 25:
+            print("Status: Hot week")
+        elif avg > 20:
+            print("Status: Comfortable week")
+        else:
+            print("Status: Cool week")
+    except e:
+        print("Error:", e)
+```
+
+To test the error, replace `temps` with `List[Float64]()`.
+Confirm that your app errors with "No temperature data".
+
+## Python integration
+
+Add statistics with Python's numpy. First, install it:
+
+<Tabs groupId="install">
+
+<TabItem value="uv" label="uv" default>
+```bash
+uv pip install numpy
+```
+</TabItem>
+
+<TabItem value="pixi" label="pixi">
+```bash
+pixi add numpy
+```
+</TabItem>
+
+</Tabs>
+
+Then, add the following imports at the top of your file:
+
+```mojo
+from python import Python, PythonObject
+```
+
+Now, calculate Python stats at the end of the `try` block in `main()`:
+
+```mojo
+        np = Python.import_module("numpy")
+        pytemps: PythonObject = [20.5, 22.3, 19.8, 25.1]
+        print("Temperature standard deviation:", np.std(pytemps))
+```
+
+## Final code
+
+Your complete `analyzer.mojo`:
+
+```mojo
+from python import Python, PythonObject
+
+fn calculate_average(temps: List[Float64]) raises -> Float64:
+    if len(temps) == 0.0:
+        raise Error("No temperature data")
+
+    total: Float64 = 0.0
+    for index in range(len(temps)):
+        total += temps[index]
+    return total / len(temps)
+
+fn main():
+    print("Temperature Analyzer")
+    temps: List[Float64] = [20.5, 22.3, 19.8, 25.1]
+    print("Recorded", len(temps), "temperatures")
+
+    for index in range(len(temps)):
+        print("  Day {}: {}°C".format(index + 1, temps[index]))
+
+    try:
+        avg = calculate_average(temps)
+        print("Average: {}°C".format(avg))
+
+        if avg > 25.0:
+            print("Status: Hot week")
+        elif avg > 20.0:
+            print("Status: Comfortable week")
+        else:
+            print("Status: Cool week")
+
+        np = Python.import_module("numpy")
+        pytemps: PythonObject = [20.5, 22.3, 19.8, 25.1]
+        print("Temperature standard deviation:", np.std(pytemps))
+        _ = pytemps^ # Allow the Python object to deallocate
+    except e:
+        print("Error:", e)
+```
+
+## What you touched
+
+Mojo variables, lists, loops, functions, conditionals, error handling, and Python integration, all in one working program.
+
+**Build something bigger:** [Tutorial: Game of Life](/mojo/manual/get-started)
+**Language guide:** [Mojo Manual](/mojo/manual)
+**API docs:** [Standard Library](/mojo/lib)

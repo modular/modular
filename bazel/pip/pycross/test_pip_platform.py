@@ -79,6 +79,17 @@ from pip_platform import Platform
                 ),
             ],
         ),
+        (
+            "https://files.pythonhosted.org/packages/aiohttp-3.13.2-cp314-cp314t-manylinux2014_x86_64.whl",
+            [
+                Platform(
+                    python_version="3.14",
+                    operating_system="linux",
+                    arch="x86_64",
+                    is_freethreaded=True,
+                ),
+            ],
+        ),
     ],
 )
 def test_platform_tags_match(platforms: list[Platform], url: str) -> None:
@@ -87,3 +98,73 @@ def test_platform_tags_match(platforms: list[Platform], url: str) -> None:
         assert platform.is_compatible_with(download), (
             f"Expected {platform.tags} to be compatible with {download.tags}"
         )
+
+
+def test_freethreaded_does_not_match_non_freethreaded() -> None:
+    download = Download(
+        {
+            "url": "https://files.pythonhosted.org/packages/aiohttp-3.13.2-cp314-cp314-manylinux2014_x86_64.whl",
+            "hash": "sha256:deadbeef",
+        }
+    )
+    freethreaded_platform = Platform(
+        python_version="3.14",
+        operating_system="linux",
+        arch="x86_64",
+        is_freethreaded=True,
+    )
+    assert not freethreaded_platform.is_compatible_with(download), (
+        "Freethreaded platform should not match non-freethreaded wheel"
+    )
+
+
+def test_non_freethreaded_does_not_match_freethreaded() -> None:
+    download = Download(
+        {
+            "url": "https://files.pythonhosted.org/packages/aiohttp-3.13.2-cp314-cp314t-manylinux2014_x86_64.whl",
+            "hash": "sha256:deadbeef",
+        }
+    )
+    non_freethreaded_platform = Platform(
+        python_version="3.14",
+        operating_system="linux",
+        arch="x86_64",
+        is_freethreaded=False,
+    )
+    assert not non_freethreaded_platform.is_compatible_with(download), (
+        "Non-freethreaded platform should not match freethreaded wheel"
+    )
+
+
+def test_freethreaded_constraint() -> None:
+    platform = Platform(
+        python_version="3.14",
+        operating_system="linux",
+        arch="x86_64",
+        is_freethreaded=True,
+    )
+    assert (
+        platform.constraint
+        == ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded"
+    )
+
+    platform_darwin = Platform(
+        python_version="3.14",
+        operating_system="darwin",
+        arch="arm64",
+        is_freethreaded=True,
+    )
+    assert (
+        platform_darwin.constraint
+        == ":_env_python_3.14_aarch64-apple-darwin-freethreaded"
+    )
+
+
+def test_non_freethreaded_constraint() -> None:
+    platform = Platform(
+        python_version="3.14",
+        operating_system="linux",
+        arch="x86_64",
+        is_freethreaded=False,
+    )
+    assert platform.constraint == ":_env_python_3.14_x86_64-unknown-linux-gnu"

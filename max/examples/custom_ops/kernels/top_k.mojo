@@ -96,7 +96,7 @@ struct TopK:
             ]()
 
             # Threads put their corresponding index and value into shared memory
-            top_k_sram[tid] = TopKElement(tid, in_vals[bid, tid][0])
+            top_k_sram[tid] = TopKElement(Int32(tid), in_vals[bid, tid][0])
             # Finish packing the values across threads in this block
             barrier()
 
@@ -128,7 +128,7 @@ struct TopK:
                     out_idxs[bid, i] = reduced.idx
 
                     # Remove found maximum from consideration in the next iter
-                    var index = reduced.idx % block_dim.x
+                    var index = reduced.idx % Int32(block_dim.x)
                     top_k_sram[index].val = min_or_neg_inf[dtype]()
 
         @parameter

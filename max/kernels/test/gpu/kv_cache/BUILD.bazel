@@ -7,10 +7,6 @@ _GPU_MEMORY = {
 }
 
 _EXTRA_CONSTRAINTS = {
-    "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
     "test_batch_kv_cache_flash_attention.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -23,15 +19,7 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
-    "test_mha_mixed_ce_tg.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2366
     "test_batch_kv_cache_flash_attention_causal_mask.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506

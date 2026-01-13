@@ -145,8 +145,14 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         BN <= BK or gcd(BN, BK) == BN - BK
     ), "BN <= BK or gcd(BN, BK) == BN - BK"
 
-    a_start_row = a_offsets[expert_idx]
-    expert = expert_ids[expert_idx]
+    a_start_row_vec = a_offsets[expert_idx]
+    __comptime_assert a_start_row_vec.size == 1
+    var a_start_row = a_start_row_vec[0]
+
+    expert_vec = expert_ids[expert_idx]
+    __comptime_assert expert_vec.size == 1
+    var expert = expert_vec[0]
+
     b_start_row = expert * N
 
     m_start = block_idx.y * UInt(BM)
@@ -783,7 +789,7 @@ fn load_AB[
         peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0]
     )
     var expert_id = expert_ids[Int(scheduler.current_group_idx)]
-    var b_gmem_slice_coord = (
+    var b_gmem_slice_coord_vec = (
         type_of(expert_id)(
             peer_cta_coord[1] * UInt(b_tma_rows)
             + peer_cta_coord[0] * UInt(BN)
@@ -791,6 +797,8 @@ fn load_AB[
         )
         + expert_id * scheduler.static_MN
     )
+    __comptime_assert b_gmem_slice_coord_vec.size == 1
+    var b_gmem_slice_coord = b_gmem_slice_coord_vec[0]
 
     var a_smem_tile = a_smem.next(stage)[]
     var b_smem_tile = b_smem.next(stage)[]

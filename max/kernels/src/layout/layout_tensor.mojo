@@ -3225,7 +3225,7 @@ struct LayoutTensor[
                 @parameter
                 for i in range(tile_type.layout.rank()):
                     cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
-                    shape_i = max(0, min(tile_sizes[i], cur_dim))
+                    shape_i = max(min(tile_sizes[i], cur_dim), 0)
                     runtime_layout.shape.value[i] = shape_i
 
             return tile_type(self.ptr + offset, runtime_layout)
@@ -3247,7 +3247,7 @@ struct LayoutTensor[
             @parameter
             for i in range(tile_type.layout.rank()):
                 cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
-                shape_i = max(0, min(tile_sizes[i], cur_dim))
+                shape_i = max(min(tile_sizes[i], cur_dim), 0)
                 runtime_layout.shape.value[i] = shape_i
 
             return tile_type(self.ptr + offset, runtime_layout)
@@ -3352,7 +3352,7 @@ struct LayoutTensor[
                 @parameter
                 for i in range(tile_type.layout.rank()):
                     cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
-                    shape_i = max(0, min(tile_sizes[i], cur_dim))
+                    shape_i = max(min(tile_sizes[i], cur_dim), 0)
                     runtime_layout.shape.value[i] = shape_i
 
             return (
@@ -3378,7 +3378,7 @@ struct LayoutTensor[
             @parameter
             for i in range(tile_type.layout.rank()):
                 cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
-                shape_i = max(0, min(tile_sizes[i], cur_dim))
+                shape_i = max(min(tile_sizes[i], cur_dim), 0)
                 runtime_layout.shape.value[i] = shape_i
 
             return (
@@ -3519,7 +3519,7 @@ struct LayoutTensor[
                 @parameter
                 for i in range(tiled_iterator_type.layout.rank()):
                     cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
-                    shape_i = max(0, min(tile_sizes[i], cur_dim))
+                    shape_i = max(min(tile_sizes[i], cur_dim), 0)
                     runtime_shape.value[i] = shape_i
 
                 return tiled_iterator_type(
@@ -3563,7 +3563,7 @@ struct LayoutTensor[
             @parameter
             for i in range(tiled_iterator_type.layout.rank()):
                 cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
-                shape_i = max(0, min(tile_sizes[i], cur_dim))
+                shape_i = max(min(tile_sizes[i], cur_dim), 0)
                 runtime_shape.value[i] = shape_i
 
             return tiled_iterator_type(
