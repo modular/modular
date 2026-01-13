@@ -371,6 +371,10 @@ static std::optional<size_t> findFirstReferenceImpl(
     if (isa<ParameterScopeTypeInterface>(value))
       ++depth;
 
+  if constexpr (std::is_base_of_v<Attribute, T>)
+    if (isa<ParameterScopeAttrInterface>(value))
+      ++depth;
+
   ssize_t hasReference = -1;
   // Check to see if this is locally an index with the right depth.
   if constexpr (std::is_base_of_v<Attribute, T>)
