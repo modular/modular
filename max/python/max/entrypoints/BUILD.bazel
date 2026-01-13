@@ -13,26 +13,33 @@ modular_py_library(
             "replay_recording.py",
         ],
     ),
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    ignore_extra_deps = [
+        # Leaving these two alone for now, occasionally they are silently used by things.
+        # TODO: Likely these should be pushed closer to where they specifically are used.
+        requirement("gguf"),  # Needed for loading gguf files
+        requirement("sentencepiece"),  # Very few select models use this
+    ],
     deps = [
-        "//max/python/max/diagnostics",
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/profiler",
         "//max/python/max/serve",
-        "//max/python/max/serve/kvcache_agent",
+        "//max/python/max/serve:config",
         "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/queue",
+        "//max/python/max/serve/scheduler",
+        "//max/python/max/serve/telemetry",
         requirement("click"),
         requirement("gguf"),
-        requirement("huggingface-hub"),
-        requirement("numpy"),
-        requirement("opentelemetry-api"),
-        requirement("opentelemetry-sdk"),
-        requirement("pillow"),
         requirement("psutil"),
+        requirement("pydantic"),
+        requirement("pydantic-core"),
         requirement("requests"),
         requirement("sentencepiece"),
-        requirement("tokenizers"),
+        requirement("typing-extensions"),
         requirement("tqdm"),
-        requirement("transformers"),
         requirement("uvicorn"),
         requirement("uvloop"),
     ],
@@ -43,26 +50,17 @@ modular_py_library(
     srcs = [
         "pipelines.py",
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/entrypoints",
+        "//max/python/max:_core",
+        "//max/python/max/serve/telemetry",
+        "//max/python/max/serve:config",
         "//max/python/max/interfaces",
-        "//max/python/max/nn",
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/architectures",
-        "//max/python/max/serve",
         # These all point to the symlinked version of the benchmark directory.
         "//max/python/max/benchmark:benchmark_serving_lib",
-        requirement("aiohttp"),
         requirement("click"),
-        requirement("datasets"),
-        requirement("huggingface-hub"),
-        requirement("jinja2"),
-        requirement("numpy"),
-        requirement("pillow"),
-        requirement("tqdm"),
-        requirement("transformers"),
-        requirement("uvicorn"),
+        requirement("typing-extensions"),
     ],
 )
 
@@ -82,9 +80,15 @@ modular_py_binary(
         "//:emit_mojo_enabled": PROD_MOJOPKGS,
         "//conditions:default": [],
     }),
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
-        ":_pipelines",
+        ":entrypoints",
+        "//max/python/max:_core",
+        "//max/python/max/benchmark:benchmark_serving_lib",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/telemetry",
+        requirement("typing-extensions"),
         requirement("click"),
     ],
 )

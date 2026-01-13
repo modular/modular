@@ -14,13 +14,11 @@ modular_py_library(
         "support.py",
         "tensor.py",
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
+        "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/graph",
-        requirement("numpy"),
         requirement("rich"),
         requirement("typing-extensions"),
     ],
