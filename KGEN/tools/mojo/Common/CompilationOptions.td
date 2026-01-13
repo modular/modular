@@ -118,6 +118,15 @@ defm elaboration_max_depth: CommandOptionHidden<["--", "-"],
       "std::numeric_limits<unsigned>::max(). Elaborator errors out if "
       "the depth of compile time recursion exceeds this value.">>;
 
+//===----------------------------------------------------------------------===//
+// Linker Options
+//===----------------------------------------------------------------------===//
+
+def LinkOptionGroup : OptionGroup<"Linker options">, Index<15>;
+
+defm Xlinker : CommandOption<["-"], "Xlinker",
+  LinkOptionGroup, Index<1>, MetaVarName<"ARG">,
+  HelpText<"Pass ARG to the linker.">>;
 
 //===----------------------------------------------------------------------===//
 // Experimental Compilation Options
