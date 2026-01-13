@@ -441,6 +441,9 @@ static int linkOutput(OutputType outputType, const State &state,
   StringRef outputName =
       args.getLastArgValue(options::OPT_o, defaultOutputName);
 
+  std::vector<std::string> extraLinkerArgs =
+      args.getAllArgValues(options::OPT_Xlinker);
+
   // Assert that we've parsed all command line arguments.
   state.assertNoUnusedArguments(args);
 
@@ -565,6 +568,13 @@ static int linkOutput(OutputType outputType, const State &state,
 
   // Add any necessary system libraries.
   config.appendSystemLibraryLinkArgs(linkerArgs);
+
+  // Propagate any user-supplied linker flags. Add these last so they take
+  // precedence.
+  for (const auto &extraArg : extraLinkerArgs) {
+    linkerArgs.emplace_back("-Xlinker");
+    linkerArgs.emplace_back(extraArg.c_str());
+  }
 
   // Print linker arguments for debugging
   LLVM_DEBUG({

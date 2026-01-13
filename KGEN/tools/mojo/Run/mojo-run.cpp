@@ -380,6 +380,10 @@ static int run(const State &subcommandState) {
     return EXIT_SUCCESS;
   }
 
+  // Warn that -Xlinker arguments are unused by mojo-run
+  for (auto xlinkerArg : args.getAllArgValues(options::OPT_Xlinker))
+    state.reportWarning("-Xlinker argument unused: '" + xlinkerArg + "'");
+
   // Assert that we've parsed all command line arguments.
   state.assertNoUnusedArguments(args);
 
