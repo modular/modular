@@ -78,7 +78,12 @@ class Settings(BaseSettings):
     #   2. Environment variables can only use the alias (MAX_SERVE_...)
     #   3. Both name and alias can be used for direct initialization, but alias is preferred. Both Settings(MAX_SERVE_HOST=...) and Settings(host=...) work.
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="MAX_SERVE_", extra="allow", populate_by_name=True)
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="MAX_SERVE_",
+        extra="allow",
+        populate_by_name=True,
+    )
 
     # Server configuration
     api_types: list[APIType] = Field(
