@@ -206,6 +206,12 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
                StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user))
         return false;
 
+      // If the user is an unresolved index struct gep, we cannot yet perform
+      // the optimization.
+      if (auto gep = dyn_cast<StructGEPOp>(user))
+        if (!isa<IntegerAttr>(gep.getIndex()))
+          return false;
+
       // If the user is the argument of the store, then we cannot elide.
       if (auto store = dyn_cast<POP::StoreOp>(user))
         if (store.getArg() == alloc)
