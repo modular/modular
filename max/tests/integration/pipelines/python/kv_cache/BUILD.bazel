@@ -71,7 +71,7 @@ modular_py_test(
         ["*_gpu.py"],
         exclude = [
             "*_distributed_gpu.py",
-            "test_lora_kv_cache_gpu.py",
+            "test_lora_*.py",
         ],
     ) + ["conftest.py"],
     exec_properties = {
@@ -119,12 +119,23 @@ modular_py_test(
     ],
 )
 
+_LORA_TEST_DEPS = [
+    "//max/python/max/engine",
+    "//max/python/max/kv_cache",
+    "//max/python/max/nn",
+    "//max/python/max/pipelines",
+    "//max/tests/integration/pipelines/python/test_common",
+    requirement("hypothesis"),
+    requirement("numpy"),
+    requirement("torch"),
+]
+
 modular_py_test(
-    name = "lora_tests",
+    name = "lora_kv_cache_2m_iadd_tests",
     size = "large",
     srcs = [
         "conftest.py",
-        "test_lora_kv_cache_gpu.py",
+        "test_lora_kv_cache_2m_iadd_gpu.py",
     ],
     exec_properties = {
         "test.resources:gpu-memory": "2",
@@ -135,14 +146,24 @@ modular_py_test(
         "no-pydeps",  # TODO: Fix and re-enable
     ],
     target_compatible_with = ["//:b200_gpu"],
-    deps = [
-        "//max/python/max/engine",
-        "//max/python/max/kv_cache",
-        "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/tests/integration/pipelines/python/test_common",
-        requirement("hypothesis"),
-        requirement("numpy"),
-        requirement("torch"),
+    deps = _LORA_TEST_DEPS,
+)
+
+modular_py_test(
+    name = "lora_sgmv_qkv_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_lora_sgmv_qkv_gpu.py",
     ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "b200",
+        "gpu",
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = _LORA_TEST_DEPS,
 )
