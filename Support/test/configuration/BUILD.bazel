@@ -21,5 +21,4 @@ modular_py_test(
     name = "env_test",
     srcs = ["test_config_with_env.py"],
     data = [":env_test_cpp"],
-    python_version = "PY3",
 )
