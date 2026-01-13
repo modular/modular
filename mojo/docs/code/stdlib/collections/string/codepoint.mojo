@@ -14,7 +14,7 @@
 
 def summary():
     from collections.string import Codepoint
-    from testing import assert_true
+    from testing import assert_true, assert_equal
 
     # Create a codepoint from a character
     var c = Codepoint.ord("A")
@@ -25,6 +25,7 @@ def summary():
 
     # Convert to string
     var s = String(c)  # "A"
+    assert_equal(s, "A")
 
 
 def run_is_python_space():

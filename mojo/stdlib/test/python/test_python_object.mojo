@@ -394,6 +394,7 @@ fn test_none_implicit_conversion() raises:
 
     # Reassignment.
     var b = PythonObject(42)
+    assert_equal(String(b), "42")
     b = None
     assert_equal(String(b), "None")
 

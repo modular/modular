@@ -164,7 +164,6 @@ def execute_ragged_flash_attention(
 
     var head_stride = num_q_heads * Int(kv_params.head_size)
     for bs_idx in range(batch_size):
-        true_ce_prompt_len = true_ce_prompt_lens[bs_idx]
         mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
 
         true_ce_row_offset = Int(true_ce_row_offsets_host_ptr[bs_idx])

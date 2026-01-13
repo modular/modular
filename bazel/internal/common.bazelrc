@@ -78,6 +78,7 @@ common --@rules_python//python/config_settings:exec_tools_toolchain=disabled
 
 # Make flag easier to write on the command line
 build --flag_alias=mojocopt=@rules_mojo//:mojo_copt
+build --flag_alias=mojopackagecopt=@rules_mojo//:mojo_package_copt
 
 # Disable cc_library's underlying shared library because of circular dependency linking issues
 build --dynamic_mode=off

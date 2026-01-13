@@ -99,9 +99,7 @@ def do_test[page_size: Int, layout_block_size: Int]():
     )
 
     var cache = collection.get_key_cache(1)
-    var layout_tensor = cache.block_paged_ptr[layout_block_size](
-        1, layout_block_size, 0
-    )
+    _ = cache.block_paged_ptr[layout_block_size](1, layout_block_size, 0)
 
     # Clean up heap allocations
     blocks_ptr.free()

@@ -530,10 +530,6 @@ fn test_advanced_indexing_getitem() raises:
     for i in range(index_shape.flattened_length()):
         index_a.ptr[i] = i % 5
         index_b.ptr[i] = (i + 1) % 5
-    var indices = StaticTuple[
-        LayoutTensor[index_type, index_layout, MutAnyOrigin], 2
-    ](index_a, index_b)
-
     # Create output tensor
     comptime output_rank = input_rank + index_rank - num_index_tensors
     comptime ref_shape = IndexList[output_rank](2, 3, 2, 3)
@@ -562,6 +558,10 @@ fn test_advanced_indexing_getitem() raises:
     fn indices_fn[
         indices_index: Int,
     ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
+        var indices = StaticTuple[
+            LayoutTensor[index_type, index_layout, MutAnyOrigin], 2
+        ](index_a, index_b)
+
         return indices[indices_index].load[width=1](coordinates)
 
     advanced_indexing_getitem[

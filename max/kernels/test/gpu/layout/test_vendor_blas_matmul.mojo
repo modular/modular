@@ -32,14 +32,13 @@ fn test_matmul[
 ](ctx: DeviceContext) raises:
     print("== test_vendor_blas", input_type, "x", M, "x", N, "x", K)
 
-    comptime transpose_b = True
     comptime static_a_shape = DimList(M, K)
-    comptime static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
+    comptime static_b_shape = DimList(N, K)
     comptime static_c_shape = DimList(M, N)
 
     var a_host_ptr = UnsafePointer[Scalar[input_type]].alloc(M * K)
     var a_host = NDBuffer[input_type, 2, _, static_a_shape](a_host_ptr)
-    var b_size = N * K if transpose_b else K * N
+    var b_size = N * K
     var b_host_ptr = UnsafePointer[Scalar[input_type]].alloc(b_size)
     var b_host = NDBuffer[input_type, 2, _, static_b_shape](b_host_ptr)
     var c_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(M * N)

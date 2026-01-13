@@ -39,7 +39,7 @@ fn empty_kernel_many_params[
 
 
 fn small_kernel(ptr: UnsafePointer[UInt64, MutAnyOrigin]):
-    var value = ptr[]
+    _ = ptr[]
 
 
 fn bench_empty_launch_caller(mut m: Bench, ctx: DeviceContext) raises:
