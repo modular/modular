@@ -238,15 +238,11 @@ fn row_major(
                 )
             else:
                 # At least one is runtime, compute at runtime
-                var stride_val_peiming_checkpoint = (
+                var stride_val = (
                     shape[idx + 1].value() * strides[idx + 1].value()
                 )
                 stride_ptr.init_pointee_copy(
-                    rebind[StrideType](
-                        RuntimeInt[StrideType.DTYPE](
-                            stride_val_peiming_checkpoint
-                        )
-                    )
+                    rebind[StrideType](RuntimeInt[StrideType.DTYPE](stride_val))
                 )
 
     return Layout(shape^, Coord(strides^))
