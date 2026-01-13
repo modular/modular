@@ -93,7 +93,6 @@ class PixelGenerationRequest(Request):
             raise RuntimeError("Either prompt or messages must be provided.")
 
 
-
 @runtime_checkable
 class PixelGenerationContext(BaseContext, Protocol):
     """Protocol for pixel generation contexts.
