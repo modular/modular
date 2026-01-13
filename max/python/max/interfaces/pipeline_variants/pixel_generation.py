@@ -117,7 +117,7 @@ class PixelGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def max_length(self) -> int:
+    def max_text_encoder_length(self) -> int:
         """Maximum sequence length for text encoder."""
         ...
 
@@ -138,7 +138,7 @@ class PixelGenerationContext(BaseContext, Protocol):
 
     @property
     def guidance_scale(self) -> float:
-        """Classifier-free guidance scale (1 to disable CFG)."""
+        """Classifier-free guidance scale (1.0 to disable CFG)."""
         ...
 
     @property
@@ -147,32 +147,13 @@ class PixelGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def model_name(self) -> str:
-        """Name of the model (for scheduler compatibility)."""
+    def seed(self) -> int | None:
+        """Random seed for reproducible generation."""
         ...
 
     @property
-    def needs_ce(self) -> bool:
-        """Whether this context needs context encoding."""
-        return False
-
-    @property
-    def active_length(self) -> int:
-        """Current sequence length for batch constructor compatibility."""
-        return 1
-
-    @property
-    def current_length(self) -> int:
-        """Current length for batch constructor compatibility."""
-        return 1
-
-    @property
-    def processed_length(self) -> int:
-        """Processed length for batch constructor compatibility."""
-        return 0
-
-    def compute_num_available_steps(self, max_seq_len: int) -> int:
-        """Compute number of available steps for scheduler compatibility."""
+    def model_name(self) -> str:
+        """Name of the model."""
         ...
 
 
