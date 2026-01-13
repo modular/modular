@@ -66,7 +66,7 @@ def run_elementwise[
             )
 
 
-def _test_exp[dtype: DType](ctx: DeviceContext):
+def _test_exp[dtype: DType](ctx: DeviceContext) where dtype.is_floating_point():
     var input = ctx.enqueue_create_buffer[dtype](length)
     comptime epsilon = 0.001
     with input.map_to_host() as in_host:
@@ -75,7 +75,9 @@ def _test_exp[dtype: DType](ctx: DeviceContext):
     run_elementwise[dtype, exp](ctx, input)
 
 
-def _test_exp2[dtype: DType](ctx: DeviceContext):
+def _test_exp2[
+    dtype: DType
+](ctx: DeviceContext) where dtype.is_floating_point():
     var input = ctx.enqueue_create_buffer[dtype](length)
     comptime epsilon = 0.001
     with input.map_to_host() as in_host:

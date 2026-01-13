@@ -951,7 +951,9 @@ fn _log_base[
 
 
 @always_inline
-fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn log[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Performs elementwise natural log (base E) of a SIMD vector.
 
     Parameters:
@@ -964,9 +966,6 @@ fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         Vector containing result of performing natural log base E on x.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
@@ -1947,7 +1946,7 @@ fn asinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn _atanh_float32(x: SIMD) -> type_of(x):
+fn _atanh_float32(x: SIMD) -> type_of(x) where x.dtype.is_floating_point():
     """This computes the `atanh` of the inputs for float32. It uses the same
     approximation used by Eigen library."""
 

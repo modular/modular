@@ -3390,7 +3390,9 @@ fn _pow[
 
 
 @always_inline
-fn _powf_scalar(base: Scalar, exponent: Scalar) -> type_of(base):
+fn _powf_scalar(
+    base: Scalar, exponent: Scalar
+) -> type_of(base) where base.dtype.is_floating_point():
     __comptime_assert (
         exponent.dtype.is_floating_point()
     ), "exponent must be floating point"
@@ -3413,6 +3415,9 @@ fn _powf[
     __comptime_assert (
         exp.dtype.is_floating_point()
     ), "exponent must be floating point"
+    __comptime_assert (
+        base.dtype.is_floating_point()
+    ), "base must be floating point"
     result = {}
 
     @parameter
