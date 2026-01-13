@@ -129,8 +129,8 @@ def test_shuffle_compile():
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
     # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = add i32 %5, %3
-    # CHECK: %7 = icmp ugt i32 %6, 63
-    # CHECK: %8 = select i1 %7, i32 0, i32 %3
+    # CHECK: %7 = icmp ult i32 %6, 64
+    # CHECK: %8 = select i1 %7, i32 %3, i32 0
     # CHECK: %9 = add i32 %8, %5
     # CHECK: %10 = shl i32 %9, 2
     # CHECK: %11 = tail call i32 @llvm.amdgcn.ds.bpermute(i32 %10, i32 %3)

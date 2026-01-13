@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import re
+from unittest.mock import MagicMock
 
 import pytest
 from max.interfaces import (
@@ -24,6 +25,23 @@ from max.interfaces import (
     TextGenerationRequestTool,
 )
 from max.pipelines import TextTokenizer
+from transformers import AutoConfig
+
+
+def _create_mock_pipeline_config(model_path: str) -> MagicMock:
+    """Create a mock PipelineConfig with real HuggingFace config."""
+    hf_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+
+    mock_kv_cache_config = MagicMock()
+    mock_kv_cache_config.enable_prefix_caching = False
+
+    mock_model_config = MagicMock()
+    mock_model_config.huggingface_config = hf_config
+    mock_model_config.kv_cache_config = mock_kv_cache_config
+
+    pipeline_config = MagicMock()
+    pipeline_config.model = mock_model_config
+    return pipeline_config
 
 
 # Sample tool definitions for testing
@@ -192,8 +210,10 @@ async def test_tool_calling_prompt_format(model_name: str) -> None:
         model_name: The model name to test (parameterized)
     """
     # Create tokenizer for the specified model
+    pipeline_config = _create_mock_pipeline_config(model_name)
     tokenizer = TextTokenizer(
         model_path=model_name,
+        pipeline_config=pipeline_config,
         trust_remote_code=True,
         max_length=4096,
     )
@@ -282,8 +302,10 @@ async def test_tool_calling_no_tools_baseline(model_name: str) -> None:
         model_name: The model name to test (parameterized)
     """
     # Create tokenizer for the specified model
+    pipeline_config = _create_mock_pipeline_config(model_name)
     tokenizer = TextTokenizer(
         model_path=model_name,
+        pipeline_config=pipeline_config,
         trust_remote_code=True,
         max_length=4096,
     )
@@ -357,8 +379,10 @@ async def test_model_specific_tool_formatting(
     """
     # Create tokenizer for the specified model
     try:
+        pipeline_config = _create_mock_pipeline_config(model_name)
         tokenizer = TextTokenizer(
             model_path=model_name,
+            pipeline_config=pipeline_config,
             trust_remote_code=True,
             max_length=4096,
         )
@@ -404,8 +428,10 @@ async def test_tool_calling_edge_cases() -> None:
     """Test edge cases in tool calling functionality."""
     model_name = "meta-llama/Llama-3.2-1B-Instruct"  # Use one model for edge case testing
 
+    pipeline_config = _create_mock_pipeline_config(model_name)
     tokenizer = TextTokenizer(
         model_path=model_name,
+        pipeline_config=pipeline_config,
         trust_remote_code=True,
         max_length=4096,
     )

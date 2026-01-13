@@ -396,7 +396,7 @@ def get_rope_index(
                 np.int64
             )
             position_ids[attention_mask == 0] = 1
-            position_ids = np.tile(position_ids[np.newaxis, ...], (3, 1, 1))  # type: ignore
+            position_ids = np.tile(position_ids[np.newaxis, ...], (3, 1, 1))
             # Max across rope dimensions (axis=0) and sequence (axis=-1) to get (batch_size,)
             # This matches the logic in the image branch where we compute per-batch deltas
             max_position_ids = position_ids.max(axis=(0, -1))
@@ -406,7 +406,7 @@ def get_rope_index(
                 .astype(np.int64)
             )
         else:
-            position_ids = np.tile(  # type: ignore[assignment]
+            position_ids = np.tile(
                 np.arange(input_ids.shape[1], dtype=np.int64)[
                     np.newaxis, np.newaxis, :
                 ],

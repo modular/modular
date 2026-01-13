@@ -306,8 +306,7 @@ def _build_token_frequency_csr(
     frequency_row_offsets[batch_size] = current_offset
 
     # Trim to actual size used
-    # Slicing preserves 2D shape, but numpy stubs lose the specific shape type
-    token_frequency_pairs = token_frequency_pairs[:current_offset]  # type: ignore[assignment]
+    token_frequency_pairs = token_frequency_pairs[:current_offset]
 
     return FrequencyData(
         data=Tensor.from_dlpack(token_frequency_pairs).to(device),

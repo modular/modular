@@ -37,7 +37,6 @@ from max.pipelines.core import TextAndVisionContext, TextContext
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import (
-    AutoConfig,
     AutoProcessor,
     AutoTokenizer,
     CodeLlamaTokenizer,
@@ -226,12 +225,12 @@ class TextTokenizer(
     def __init__(
         self,
         model_path: str,
+        pipeline_config: PipelineConfig,
         *,
         revision: str | None = None,
         max_length: int | None = None,
         trust_remote_code: bool = False,
         enable_llama_whitespace_fix: bool = False,
-        pipeline_config: PipelineConfig | None = None,
         chat_template: str | None = None,
         context_validators: list[Callable[[TextContext], None]] | None = None,
         **unused_kwargs,
@@ -597,11 +596,11 @@ class TextAndVisionTokenizer(
     def __init__(
         self,
         model_path: str,
+        pipeline_config: PipelineConfig,
         *,
         revision: str | None = None,
         max_length: int | None = None,
         trust_remote_code: bool = False,
-        pipeline_config: PipelineConfig | None = None,
         context_validators: list[Callable[[TextAndVisionContext], None]]
         | None = None,
         **unused_kwargs,
@@ -618,9 +617,8 @@ class TextAndVisionTokenizer(
         )
         self.max_length = max_length or self.delegate.model_max_length
 
-        config = AutoConfig.from_pretrained(
-            model_path, revision=revision, trust_remote_code=trust_remote_code
-        )
+        # Use the pre-loaded HuggingFace config from pipeline_config
+        config = pipeline_config.model.huggingface_config
 
         # As we are adding special tokens during chat templating prior to tokenization,
         # when add_special_tokens=True, we duplicate BOS tokens specifically.
@@ -635,21 +633,16 @@ class TextAndVisionTokenizer(
         )
         self._default_eos_token_ids = set([self.eos])
 
-        if pipeline_config:
-            huggingface_config = pipeline_config.model.huggingface_config
-            if eos_token_id := getattr(
-                huggingface_config, "eos_token_id", None
-            ):
-                if isinstance(eos_token_id, int):
-                    self._default_eos_token_ids.add(eos_token_id)
-                elif isinstance(eos_token_id, list):
-                    self._default_eos_token_ids.update(eos_token_id)
+        huggingface_config = pipeline_config.model.huggingface_config
+        if eos_token_id := getattr(huggingface_config, "eos_token_id", None):
+            if isinstance(eos_token_id, int):
+                self._default_eos_token_ids.add(eos_token_id)
+            elif isinstance(eos_token_id, list):
+                self._default_eos_token_ids.update(eos_token_id)
 
-            self.enable_prefix_caching = (
-                pipeline_config.model.kv_cache_config.enable_prefix_caching
-                if pipeline_config
-                else False
-            )
+        self.enable_prefix_caching = (
+            pipeline_config.model.kv_cache_config.enable_prefix_caching
+        )
 
         self._context_validators = (
             context_validators if context_validators else []

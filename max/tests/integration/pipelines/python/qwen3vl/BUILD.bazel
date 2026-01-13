@@ -177,7 +177,6 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        ":utils",
         "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
         requirement("numpy"),

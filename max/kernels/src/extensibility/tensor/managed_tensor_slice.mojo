@@ -29,6 +29,8 @@ from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor
+from layout._coord import Coord, _DimsToCoordLike
+from layout._tile_tensor import TileTensor
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -1270,6 +1272,49 @@ struct ManagedTensorSlice[
                 self.strides().cast[result.linear_idx_type](),
             ),
         )
+
+    @always_inline
+    fn to_tile_tensor[
+        coord_dtype: DType
+    ](
+        self,
+        out result: TileTensor[
+            shape_types = _DimsToCoordLike[coord_dtype, Self.static_spec.shape],
+            stride_types = _DimsToCoordLike[
+                coord_dtype, Self.static_spec.strides
+            ],
+            dtype = Self.dtype,
+            origin=MutExternalOrigin,
+        ],
+    ):
+        var shape_tuple = Coord[
+            *_DimsToCoordLike[coord_dtype, Self.static_spec.shape]
+        ]()
+        var stride_tuple = Coord[
+            *_DimsToCoordLike[coord_dtype, Self.static_spec.strides]
+        ]()
+        var shape = self.shape()
+        var stride = self.strides()
+
+        @parameter
+        for i in range(Self.rank):
+
+            @parameter
+            if not shape_tuple.element_types[i].IS_STATIC_VALUE:
+                shape_tuple[i] = rebind[shape_tuple.element_types[i]](
+                    Scalar[coord_dtype](shape[i])
+                )
+
+            @parameter
+            if not stride_tuple.element_types[i].IS_STATIC_VALUE:
+                stride_tuple[i] = rebind[stride_tuple.element_types[i]](
+                    Scalar[coord_dtype](stride[i])
+                )
+
+        return {
+            self.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
+            layout._layout.Layout(shape_tuple^, stride_tuple^),
+        }
 
     fn write_to(self, mut writer: Some[Writer]):
         """

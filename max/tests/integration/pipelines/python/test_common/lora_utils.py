@@ -16,6 +16,7 @@ import json
 import os
 import tempfile
 from typing import Any
+from unittest.mock import MagicMock
 
 import hf_repo_lock
 import torch
@@ -273,19 +274,34 @@ def create_pipeline_with_lora(lora_paths: list[str]) -> TextGenerationPipeline:
 
 
 def create_tokenizer(
-    model_path: str = REPO_ID, max_length: int = 512
+    model_path: str = REPO_ID,
+    max_length: int = 512,
+    pipeline_config: PipelineConfig | None = None,
 ) -> TextTokenizer:
     """Create a tokenizer for the specified model.
 
     Args:
         model_path: Path to the model
         max_length: Maximum sequence length
+        pipeline_config: Optional pipeline configuration. If not provided,
+            a mock config will be created.
 
     Returns:
         TextTokenizer: Tokenizer instance
     """
+    if pipeline_config is None:
+        # Create a mock pipeline config with real HuggingFace config
+        hf_config = AutoConfig.from_pretrained(
+            model_path, revision=REVISION, trust_remote_code=True
+        )
+        mock_model_config = MagicMock()
+        mock_model_config.huggingface_config = hf_config
+        pipeline_config = MagicMock()
+        pipeline_config.model = mock_model_config
+
     return TextTokenizer(
         model_path,
+        pipeline_config,
         revision=REVISION,
         max_length=max_length,
         max_new_tokens=max_length,

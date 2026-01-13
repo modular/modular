@@ -118,7 +118,7 @@ comptime END_SECOND_RANGE = 51
 fn _to_b64_ascii[width: Int, //](input: Bytes[width]) -> Bytes[width]:
     var abcd = _6bit_to_byte(input)
     var target_indices = _sub_with_saturation(abcd, END_SECOND_RANGE)
-    var offset_indices = abcd.le(END_FIRST_RANGE).select(13, target_indices)
+    var offset_indices = abcd.gt(END_FIRST_RANGE).select(target_indices, 13)
     return abcd + OFFSETS._dynamic_shuffle(offset_indices)
 
 

@@ -71,7 +71,7 @@ fn async_copy_kernel[
 
     var tx = thread_idx.x
     var ty = thread_idx.y
-    smem_tile[tx, ty] += ty
+    smem_tile[tx, ty] += Float32(ty)
 
     input_tile.copy_from(smem_tile)
 

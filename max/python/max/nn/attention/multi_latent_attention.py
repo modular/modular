@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import (
@@ -45,6 +46,15 @@ from ..linear import Linear
 from ..norm import RMSNorm
 from ..rotary_embedding import RotaryEmbedding
 from .mask_config import MHAMaskVariant
+
+
+@dataclass
+class MLAPrefillMetadata:
+    """Dataclass to hold MLA prefill metadata."""
+
+    buffer_row_offsets: TensorValue
+    cache_offsets: TensorValue
+    buffer_lengths: TensorValue
 
 
 class LatentAttentionWithRope(Module, Shardable):
@@ -191,10 +201,9 @@ class LatentAttentionWithRope(Module, Shardable):
             device=self.devices[0],
         )
 
-    def create_mla_inputs(
+    def create_mla_prefill_metadata(
         self, input_row_offsets: TensorValue, kv_collection: PagedCacheValues
-    ) -> list[TensorValue]:
-        mla_inputs: list[TensorValue] = []
+    ) -> MLAPrefillMetadata:
         (buffer_row_offsets, cache_offsets, buffer_lengths) = (
             flare_mla_prefill_plan(
                 self.kv_params,
@@ -204,13 +213,12 @@ class LatentAttentionWithRope(Module, Shardable):
                 self.BUFFER_TOK_SIZE,
             )
         )
-        buffer_lengths_host = buffer_lengths.to(DeviceRef.CPU())
 
-        mla_inputs.append(buffer_row_offsets)
-        mla_inputs.append(cache_offsets)
-        mla_inputs.append(buffer_lengths_host)
-
-        return mla_inputs
+        return MLAPrefillMetadata(
+            buffer_row_offsets=buffer_row_offsets,
+            cache_offsets=cache_offsets,
+            buffer_lengths=buffer_lengths,
+        )
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -465,7 +473,7 @@ class LatentAttentionWithRope(Module, Shardable):
         kv_collection: PagedCacheValues,
         layer_idx: TensorValue,
         input_row_offsets: TensorValue,
-        _mla_inputs: list[TensorValue] | None = None,
+        _mla_prefill_metadata: MLAPrefillMetadata | None = None,
     ) -> TensorValue:
         # These weights are going to be used in the decode path.
         # Move the creation of these weights outside of the decode subgraph so the
@@ -474,20 +482,19 @@ class LatentAttentionWithRope(Module, Shardable):
         w_uk, w_uv = self.w_uk_uv
 
         def _mla_prefill() -> TensorValue:
-            if _mla_inputs is None or len(_mla_inputs) == 0:
-                mla_inputs = self.create_mla_inputs(
+            if _mla_prefill_metadata is None:
+                mla_prefill_metadata = self.create_mla_prefill_metadata(
                     input_row_offsets, kv_collection
                 )
             else:
-                assert len(_mla_inputs) == 3
-                mla_inputs = _mla_inputs
+                mla_prefill_metadata = _mla_prefill_metadata
             xq = ops.concat([xq_nope, xq_rope], axis=2)
 
             kv_buffer = flare_mla_decompress_k_cache(
                 self.kv_params,
-                mla_inputs[0][0],
-                mla_inputs[1][0],
-                mla_inputs[2][0],
+                mla_prefill_metadata.buffer_row_offsets[0],
+                mla_prefill_metadata.cache_offsets[0],
+                mla_prefill_metadata.buffer_lengths.to(DeviceRef.CPU())[0],
                 self.kv_b_proj,
                 kv_collection,
                 layer_idx,
@@ -507,8 +514,8 @@ class LatentAttentionWithRope(Module, Shardable):
                 k_nope,
                 v,
                 input_row_offsets,
-                mla_inputs[0][0],
-                mla_inputs[1][0],
+                mla_prefill_metadata.buffer_row_offsets[0],
+                mla_prefill_metadata.cache_offsets[0],
                 kv_collection,
                 layer_idx,
                 MHAMaskVariant.CAUSAL_MASK,
@@ -584,7 +591,7 @@ class LatentAttentionWithRope(Module, Shardable):
         kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
-        mla_inputs: list[TensorValue] | None = None,
+        mla_prefill_metadata: MLAPrefillMetadata | None = None,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -641,7 +648,7 @@ class LatentAttentionWithRope(Module, Shardable):
             kv_collection,
             layer_idx,
             input_row_offsets,
-            mla_inputs,
+            mla_prefill_metadata,
         )
 
         return self.o_proj(attn_out)
@@ -661,21 +668,23 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
 
         self.list_of_attentions = self.shard(self.devices)
 
-    def create_mla_inputs(  # type: ignore[override]
+    def create_mla_prefill_metadata(  # type: ignore[override]
         self,
         input_row_offsets_: list[TensorValue],
         kv_collections: list[PagedCacheValues],
-    ) -> list[TensorValue]:
-        multi_mla_inputs: list[TensorValue] = []
+    ) -> list[MLAPrefillMetadata]:
+        multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
 
         for input_row_offsets, kv_collection in zip(
             input_row_offsets_, kv_collections, strict=True
         ):
-            multi_mla_inputs.extend(
-                super().create_mla_inputs(input_row_offsets, kv_collection)
+            multi_mla_prefill_metadata.append(
+                super().create_mla_prefill_metadata(
+                    input_row_offsets, kv_collection
+                )
             )
 
-        return multi_mla_inputs
+        return multi_mla_prefill_metadata
 
     def __call__(  # type: ignore[override]
         self,
@@ -685,7 +694,7 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
         kv_collections: Sequence[PagedCacheValues],
         freqs_cis: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
-        mla_inputs: list[TensorValue] | None = None,
+        mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
     ) -> list[TensorValue]:
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
@@ -701,11 +710,14 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
         n = len(self.devices)
         inputs: list[TensorValue] = []
         for i in range(n):
-            mla_inputs_i: list[TensorValue] | None
-            if mla_inputs is not None and len(mla_inputs) == 3 * n:
-                mla_inputs_i = mla_inputs[3 * i : 3 * (i + 1)]
+            mla_prefill_metadata_i: MLAPrefillMetadata | None
+            if (
+                mla_prefill_metadata is not None
+                and len(mla_prefill_metadata) == n
+            ):
+                mla_prefill_metadata_i = mla_prefill_metadata[i]
             else:
-                mla_inputs_i = mla_inputs
+                mla_prefill_metadata_i = None
             inputs.append(
                 self.list_of_attentions[i](
                     layer_idx,
@@ -713,7 +725,7 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
                     kv_collections[i],
                     freqs_cis=freqs_cis[i],
                     input_row_offsets=input_row_offsets[i],
-                    mla_inputs=mla_inputs_i,
+                    mla_prefill_metadata=mla_prefill_metadata_i,
                 )
             )
 
@@ -747,21 +759,23 @@ class DataParallelLatentAttentionWithRope(LatentAttentionWithRope):
         self.sharding_strategy = ShardingStrategy.replicate(num_devices)
         self.list_of_attentions = self.shard(self.devices)
 
-    def create_mla_inputs(  # type: ignore[override]
+    def create_mla_prefill_metadata(  # type: ignore[override]
         self,
         input_row_offsets_: list[TensorValue],
         kv_collections: list[PagedCacheValues],
-    ) -> list[TensorValue]:
-        multi_mla_inputs: list[TensorValue] = []
+    ) -> list[MLAPrefillMetadata]:
+        multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
 
         for input_row_offsets, kv_collection in zip(
             input_row_offsets_, kv_collections, strict=True
         ):
-            multi_mla_inputs.extend(
-                super().create_mla_inputs(input_row_offsets, kv_collection)
+            multi_mla_prefill_metadata.append(
+                super().create_mla_prefill_metadata(
+                    input_row_offsets, kv_collection
+                )
             )
 
-        return multi_mla_inputs
+        return multi_mla_prefill_metadata
 
     def __call__(  # type: ignore[override]
         self,
@@ -771,7 +785,7 @@ class DataParallelLatentAttentionWithRope(LatentAttentionWithRope):
         kv_collections: Sequence[PagedCacheValues],
         freqs_cis: list[TensorValue],
         input_row_offsets: Sequence[TensorValue],
-        mla_inputs: list[TensorValue] | None = None,
+        mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
     ) -> list[TensorValue]:
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
@@ -791,11 +805,14 @@ class DataParallelLatentAttentionWithRope(LatentAttentionWithRope):
 
         outs: list[TensorValue] = []
         for i in range(n):
-            mla_inputs_i: list[TensorValue] | None
-            if mla_inputs is not None and len(mla_inputs) == 3 * n:
-                mla_inputs_i = mla_inputs[3 * i : 3 * (i + 1)]
+            mla_prefill_metadata_i: MLAPrefillMetadata | None
+            if (
+                mla_prefill_metadata is not None
+                and len(mla_prefill_metadata) == n
+            ):
+                mla_prefill_metadata_i = mla_prefill_metadata[i]
             else:
-                mla_inputs_i = mla_inputs
+                mla_prefill_metadata_i = None
             outs.append(
                 self.list_of_attentions[i](
                     layer_idx,
@@ -803,7 +820,7 @@ class DataParallelLatentAttentionWithRope(LatentAttentionWithRope):
                     kv_collections[i],
                     freqs_cis=freqs_cis[i],
                     input_row_offsets=input_row_offsets[i],
-                    mla_inputs=mla_inputs_i,
+                    mla_prefill_metadata=mla_prefill_metadata_i,
                 )
             )
         return outs

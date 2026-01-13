@@ -66,7 +66,7 @@ async def stream_text_to_console(
         TextGenerationContext, Any, TextGenerationRequest
     ],
     prompt: str,
-    images: list[bytes] | None,
+    images: list[bytes],
     sampling_params: SamplingParams,
     metrics: TextGenerationMetrics | None = None,
     print_tokens: bool = True,
@@ -116,7 +116,7 @@ def generate_text_for_pipeline(
             logger.info("Downloading images")
             images = [requests.get(url).content for url in image_urls]
         else:
-            images = None
+            images = []
 
         if num_warmups > 0:
             logger.info("Running warmup")

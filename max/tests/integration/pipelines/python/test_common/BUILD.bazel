@@ -72,7 +72,6 @@ modular_py_library(
     srcs = ["test_data.py"],
     imports = [".."],
     deps = [
-        ":storage",
         "//max/python/max/interfaces",
     ],
 )

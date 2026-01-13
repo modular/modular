@@ -90,6 +90,12 @@ MODELS = {
         "max-ci@2xH100",
         "sglang@B200",
     ],
+    "qwen/qwen3-vl-30b-a3b-thinking": [
+        "max",
+        "max-ci@H100",
+        "max-ci@2xH100",
+        "sglang@B200",
+    ],
     "redhatai/gemma-3-27b-it-fp8-dynamic": [],
     "tbmod/gemma-3-4b-it": [
         "multi",

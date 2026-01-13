@@ -745,9 +745,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     @implicit
     fn __init__(
         out self: StaticString,
-        ref [
-            Origin(__mlir_attr.`#lit.comptime.origin : !lit.origin<0>`)
-        ]value: String,
+        ref [__mlir_attr.`#lit.comptime.origin : !lit.origin<0>`]value: String,
     ):
         """Construct an immutable StringSlice at comptime.
         FIXME: This is a hack.

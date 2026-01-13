@@ -133,8 +133,8 @@ fn fold[
 
         # Given the position in the output tensor (h_out, w_out), compute the
         # start and end of the kernel patches that might overlap with this position.
-        var h_start = max(0, (h_out - kernel_span_h) // stride_h + 1)
-        var w_start = max(0, (w_out - kernel_span_w) // stride_w + 1)
+        var h_start = max(((h_out - kernel_span_h) // stride_h + 1), 0)
+        var w_start = max(((w_out - kernel_span_w) // stride_w + 1), 0)
         var h_end = min(h_out // stride_h + 1, height_col)
         var w_end = min(w_out // stride_w + 1, width_col)
 

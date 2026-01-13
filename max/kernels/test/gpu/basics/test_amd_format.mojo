@@ -28,7 +28,7 @@ struct Buffer[capacity: Int](Defaultable, Writer):
         self.pos = 0
 
     fn write_string(mut self, string: StringSlice):
-        len_bytes = len(string)
+        len_bytes = string.byte_length()
         # If empty then return
         if len_bytes == 0:
             return

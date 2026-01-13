@@ -219,7 +219,7 @@ fn test_tma_sliced_multicast_load_kernel[
     if thread_idx.x == 0:
         mbar[0].expect_bytes(expected_bytes)
         var slice_cord = Int(
-            block_idx.y * UInt(tileM)
+            UInt32(block_idx.y) * tileM
             + Int(block_rank % CLUSTER_N) * tileM // CLUSTER_N
         )
         var multicast_mask = tma_multicast_mask << (rank_m * CLUSTER_N)

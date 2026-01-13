@@ -170,7 +170,7 @@ fn rand[
 
     @parameter
     if dtype == DType.bool or dtype.is_unsigned():
-        var min_ = math.max(0, min.cast[DType.uint64]())
+        var min_ = math.max(min.cast[DType.uint64](), 0)
         var max_ = math.min(
             max.cast[DType.uint64](), Scalar[dtype].MAX.cast[DType.uint64]()
         )

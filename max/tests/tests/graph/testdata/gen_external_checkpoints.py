@@ -36,7 +36,7 @@ def test_data():  # noqa: ANN201
 def write_gguf(filename: Path) -> None:
     gguf_writer = GGUFWriter(str(filename), "example")
 
-    data: dict[str, np.ndarray] = {  # type: ignore
+    data: dict[str, np.ndarray] = {
         "a": np.arange(10, dtype=np.int32).reshape(5, 2),
         "b": np.full((1, 2, 3), 3.5, dtype=np.float64),
         "c": np.array(5432.1, dtype=np.float32),

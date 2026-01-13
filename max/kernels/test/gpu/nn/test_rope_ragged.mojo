@@ -100,7 +100,7 @@ def test_rope_ragged_gpu[
 
     # Create output tensor using ManagedLayoutTensor
     var q_out_managed = ManagedLayoutTensor[dtype, q_layout](ctx)
-    var q_out_tensor = q_out_managed.device_buffer()
+    var q_out_tensor = q_out_managed.device_tensor()
 
     @always_inline
     @__copy_capture(q_out_tensor)
@@ -108,7 +108,7 @@ def test_rope_ragged_gpu[
         width: Int, alignment: Int
     ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
         q_out_tensor.store[width=width](
-            rebind[IndexList[q_out_tensor.rank]](idx), val
+            rebind[IndexList[q_out_tensor.layout.rank()]](idx), val
         )
 
     # Execute rope_ragged kernel on GPU

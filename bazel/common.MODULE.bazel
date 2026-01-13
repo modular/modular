@@ -221,8 +221,11 @@ environments.create_for_python_toolchains(
     name = "rules_pycross_all_environments",
     platforms = [
         "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu-freethreaded",
         "aarch64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu-freethreaded",
         "aarch64-apple-darwin",
+        "aarch64-apple-darwin-freethreaded",
     ],
     python_versions = [x.replace("_", ".") for x in PYTHON_VERSIONS],
 )
