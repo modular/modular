@@ -1,0 +1,357 @@
+---
+id: mojo-literals
+title: "Mojo literals reference"
+sidebar_label: Mojo literals
+description: A reference to literal values, the fixed data written directly in Mojo source code.
+---
+<!-- Generated Jan 12 2026 -->
+
+Literals represent fixed values written directly in source code. They are
+evaluated at compile time and have specific types determined by their form.
+
+:::caution
+Auto-generated on 12 Jan 2026. Content may be incomplete or incorrect.
+:::
+
+## Integer literals
+
+### Supported formats
+
+| Base | Prefix | Valid digits | Example |
+|------|--------|--------------|---------|
+| Decimal | none | `0-9` | `42`, `1_000_000` |
+| Binary | `0b` or `0B` | `0-1` | `0b1010`, `0B1111_0000` |
+| Octal | `0o` or `0O` | `0-7` | `0o755`, `0O644` |
+| Hexadecimal | `0x` or `0X` | `0-9`, `a-f`, `A-F` | `0xFF`, `0x0102_0304` |
+
+### Grammar
+
+```
+integer_literal = decimal_integer | hex_integer | octal_integer | binary_integer
+decimal_integer = nonzero_digit {digit} | "0"+
+hex_integer     = "0" ("x" | "X") hex_digit+
+octal_integer   = "0" ("o" | "O") octal_digit+
+binary_integer  = "0" ("b" | "B") ("0" | "1")+
+
+digit           = "0"..."9"
+nonzero_digit   = "1"..."9"
+hex_digit       = "0"..."9" | "a"..."f" | "A"..."F"
+octal_digit     = "0"..."7"
+```
+
+**Note:** Underscores (`_`) may appear between any two digits for readability.
+
+### Examples
+
+```mojo
+42                 # Decimal
+0xFF               # Hexadecimal (255)
+0o52               # Octal (42)
+0b101010           # Binary (42)
+1_000_000          # Decimal with underscores
+0x0102_0304        # Hex with underscores
+```
+
+### Underscores for readability
+
+Mojo allows underscores between digits, including consecutive and trailing underscores:
+
+```mojo
+1_000_000          # Standard grouping
+1__9_              # Consecutive and trailing (valid but unconventional)
+0xFF_FF_FF         # Hex grouping
+0b1111_0000        # Binary nibble grouping
+```
+
+### Edge cases
+
+**Leading zeros are not permitted in decimal literals:**
+
+```mojo
+0123               # ERROR: leading zeros not allowed
+01                 # ERROR: leading zero before digit
+0o123              # OK: octal literal
+```
+
+**Literal zero accepts trailing zeros and underscores:**
+
+```mojo
+0                  # OK: literal zero
+00                 # OK: literal zero with trailing zero
+000                # OK: literal zero with multiple trailing zeros
+0_0_0              # OK: literal zero with underscores
+0__0_              # OK: consecutive and trailing underscores
+```
+
+**Empty digit sequences are errors:**
+
+```mojo
+0b                 # ERROR: no digits specified for binary literal
+0o                 # ERROR: no digits specified for octal literal
+0x                 # ERROR: no digits specified for hex literal
+0b_                # ERROR: underscore is not a digit
+```
+
+**Zero with non-zero digit is an error:**
+
+```mojo
+01, 02, 09         # ERROR: leading zero before digit
+0123               # ERROR: octal must use 0o prefix
+```
+
+**Bases are case-insensitive:**
+
+```mojo
+0xFF == 0Xff == 0XFF == 0xff    # All equivalent
+0b1010 == 0B1010                # Equivalent
+0o755 == 0O755                  # Equivalent
+```
+
+## Floating-point literals
+
+### Supported formats
+
+Floating-point literals require either a decimal point or an exponent (or both):
+
+```mojo
+3.14               # Decimal point
+.5                 # Fraction only (leading digit optional)
+2.                 # Integer with decimal point
+2.5e-3             # Decimal with exponent
+1E10               # Integer with exponent (capital E)
+1_000.000_5        # Underscores allowed
+```
+
+### Grammar
+
+```
+float_literal   = pointfloat | exponentfloat
+pointfloat      = [digitpart] fraction | digitpart "."
+exponentfloat   = (digitpart | pointfloat) exponent
+fraction        = "." digitpart
+exponent        = ("e" | "E") ["+" | "-"] digitpart
+digitpart       = digit+
+```
+
+**Note:** The exponent marker (`e` or `E`) is case-insensitive.
+
+### Examples
+
+```mojo
+3.14159            # Standard decimal
+0.5                # Leading zero
+.5                 # No leading zero
+2.                 # Trailing decimal point
+1.5e-10            # Scientific notation (lowercase e)
+2.0E+8             # Scientific notation (uppercase E, explicit +)
+1E10               # Integer with exponent
+1_000.5            # Underscores in integer part
+3.141_592          # Underscores in fraction
+1e1_0              # Underscores in exponent
+```
+
+### Edge cases
+
+**Both exponent markers are valid:**
+
+```mojo
+1e10 == 1E10       # Equivalent
+2.5e-3 == 2.5E-3   # Equivalent
+```
+
+**Exponent sign is optional:**
+
+```mojo
+1e10               # Positive exponent (implicit +)
+1e+10              # Positive exponent (explicit +)
+1e-10              # Negative exponent
+```
+
+**Leading digit before fraction is optional:**
+
+```mojo
+.5                 # OK: 0.5
+.123               # OK: 0.123
+0.5                # OK: explicit leading zero
+```
+
+**Transition from integer to float:**
+
+When lexing `0`, if followed by `.` or exponent marker, it becomes a float:
+
+```mojo
+0.5                # Float
+0e10               # Float (0 × 10^10)
+0E5                # Float
+```
+
+## String literals
+
+### Quote styles
+
+| Style | Delimiter | Allows newlines | Raw prefix | Example |
+|-------|-----------|-----------------|------------|---------|
+| Single-quoted | `'...'` | No | Yes | `'hello'` |
+| Double-quoted | `"..."` | No | Yes | `"world"` |
+| Triple single-quoted | `'''...'''` | Yes | Yes | `'''line1\nline2'''` |
+| Triple double-quoted | `"""..."""` | Yes | Yes | `"""line1\nline2"""` |
+
+### Grammar
+
+```
+string_literal = [raw_prefix] short_string | [raw_prefix] long_string
+raw_prefix     = "r" | "R"
+short_string   = "'" string_content "'" | '"' string_content '"'
+long_string    = "'''" string_content "'''" | '"""' string_content '"""'
+```
+
+### Raw strings
+
+Prefix with `r` or `R` to disable escape sequence processing:
+
+```mojo
+r"C:\path\to\file"     # Backslashes included in string, treated literally
+R'[a-z]+'              # Regex pattern with literal backslash
+r"\n"                  # Literal backslash-n (not newline)
+```
+
+### Examples
+
+```mojo
+"Hello"                # Double quotes
+'World'                # Single quotes
+"""Multi-line
+string"""              # Triple double quotes
+'''Also
+multi-line'''          # Triple single quotes
+r"C:\Users\data"       # Raw string (Windows path)
+R'regex: \d+'          # Raw string (regex)
+```
+
+### Escape sequences
+
+In non-raw strings, the following escape sequences are processed:
+
+| Sequence | Result | Notes |
+|----------|--------|-------|
+| `\\` | Backslash | Single backslash character |
+| `\"` | Double quote | Useful in double-quoted strings |
+| `\'` | Single quote | Useful in single-quoted strings |
+| `\n` | Newline (LF) | Line feed character |
+| `\r` | Carriage return (CR) | Carriage return character |
+| `\t` | Horizontal tab | Tab character |
+| `\a` | Bell | Alert/bell character |
+| `\b` | Backspace | Backspace character |
+| `\f` | Form feed | Form feed character |
+| `\v` | Vertical tab | Vertical tab character |
+| `\xHH` | Hex byte | Exactly 2 hex digits required |
+| `\OOO` | Octal byte | 1 to 3 octal digits |
+
+### Edge cases
+
+**Hex escapes require exactly 2 hex digits:**
+
+```mojo
+"\x41"             # OK: 'A' (hex 41)
+"\x4"              # ERROR: exactly two hex digits needed
+"\x041"            # OK: 'A' (hex 04) followed by '1'
+"\xFF"             # OK: byte 255
+```
+
+**Octal escapes accept 1 to 3 octal digits:**
+
+```mojo
+"\101"             # OK: 'A' (octal 101)
+"\1"               # OK: single octal digit (byte 1)
+"\777"             # OK: maximum 3 octal digits (byte 511 mod 256)
+"\0"               # OK: null byte
+```
+
+**Invalid escape sequences are errors:**
+
+```mojo
+"\z"               # ERROR: invalid escape sequence
+"\q"               # ERROR: invalid escape sequence
+r"\z"              # OK: raw string, literal backslash followed by 'z'
+```
+
+**Newlines in strings:**
+
+```mojo
+"hello\nworld"     # OK: escape sequence for newline
+"hello
+world"             # ERROR: literal newline in short string
+"""hello
+world"""           # OK: triple-quoted strings allow literal newlines
+```
+
+**Unterminated strings:**
+
+```mojo
+"hello             # ERROR: unterminated string (no closing quote)
+'hello\n'          # ERROR: literal newline not allowed in short string
+"""hello           # ERROR: unterminated triple-quoted string
+"""hello"""        # OK: properly terminated
+```
+
+**Quote mixing:**
+
+```mojo
+"It's valid"       # OK: single quote inside double-quoted string
+'Say "hello"'      # OK: double quote inside single-quoted string
+"Can't say \"hi\"" # OK: escaped double quotes
+```
+
+**Raw string edge case:**
+
+```mojo
+r"\"               # ERROR: raw strings cannot end with odd backslash
+r"\\"              # OK: even number of backslashes
+r"C:\path\"        # ERROR: trailing backslash
+r"C:\path\\"       # OK: escaped backslash at end
+```
+
+Raw strings process backslashes literally but still cannot end with an odd number of backslashes before the closing quote.
+
+## Boolean literals
+
+```mojo
+True               # Boolean true value (type: Bool)
+False              # Boolean false value (type: Bool)
+```
+
+Boolean literals are keywords and must be capitalized.
+
+## None literal
+
+```mojo
+None               # Absence of value (type: NoneType)
+```
+
+The `None` literal represents the single value of type `NoneType`. It is a keyword and must be capitalized.
+
+
+## Literal types at compile time
+
+Literals have special types at compile time that allow arbitrary precision:
+
+| Literal form | Compile-time type | Runtime type |
+|--------------|-------------------|--------------|
+| Integer literal | `IntLiteral` | `Int` |
+| Float literal | `FloatLiteral` | `Float64` |
+| String literal | `StringLiteral` | `String` |
+| Boolean literal | `Bool` | `Bool` |
+| None literal | `NoneType` | `NoneType` |
+
+### Examples
+
+```mojo
+comptime big = 99_999_999_999_999_999_999  # IntLiteral at compile time
+runtime_val = big                          # Materializes to Int at runtime
+
+comptime pi = 3.14159265358979323846       # FloatLiteral at compile time
+runtime_pi = pi                            # Materializes to Float64 at runtime
+
+comptime greeting = "Hello"                # StringLiteral at compile time
+runtime_str = greeting                     # Materializes to String at runtime
+```
