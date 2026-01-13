@@ -26,6 +26,12 @@ public:
   /// attributes do not need to be created in the first place.
   TypedAttr getGetWitnessAttr(TypedAttr typeParam, StringAttr traitName,
                               StringAttr witnessName, Type type);
+  TypedAttr getStructFieldTypesAttr(TypedAttr typeValue, VariadicType type);
+  TypedAttr getStructFieldNamesAttr(TypedAttr typeValue, VariadicType type);
+  TypedAttr getStructFieldIndexByNameAttr(TypedAttr typeValue,
+                                          TypedAttr fieldName, IndexType type);
+  TypedAttr getStructFieldTypeByNameAttr(TypedAttr typeValue,
+                                         TypedAttr fieldName, TypeType type);
 
 private:
   friend class SharedState;
@@ -34,6 +40,16 @@ private:
   FailureOr<TypedAttr> evaluateGetWitness(TypedAttr typeParam,
                                           StringAttr traitName,
                                           StringAttr witnessName, Type type);
+  FailureOr<TypedAttr> evaluateStructFieldTypes(TypedAttr typeValue,
+                                                VariadicType type);
+  FailureOr<TypedAttr> evaluateStructFieldNames(TypedAttr typeValue,
+                                                VariadicType type);
+  FailureOr<TypedAttr> evaluateStructFieldIndexByName(TypedAttr typeValue,
+                                                      TypedAttr fieldName,
+                                                      IndexType type);
+  FailureOr<TypedAttr> evaluateStructFieldTypeByName(TypedAttr typeValue,
+                                                     TypedAttr fieldName,
+                                                     TypeType type);
 
   SharedState &shared;
 };

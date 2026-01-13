@@ -4495,7 +4495,8 @@ AnyValue MagicFunctionNode::emitStructFieldTypes(ValueDest &dest,
   // elaboration to return the actual field types.
   MLIRContext *ctx = emitter.getContext();
   auto variadicType = VariadicType::get(TypeType::get(ctx));
-  auto attr = StructFieldTypesAttr::get(ctx, typeArg->get(), variadicType);
+  auto attr = emitter.shared.getEvaluationContext().getStructFieldTypesAttr(
+      typeArg->get(), variadicType);
   return emitter.emitResult(PValue(attr), this, dest);
 }
 
@@ -4509,7 +4510,8 @@ AnyValue MagicFunctionNode::emitStructFieldNames(ValueDest &dest,
   // elaboration to return the actual field names.
   MLIRContext *ctx = emitter.getContext();
   auto variadicType = VariadicType::get(StringType::get(ctx));
-  auto attr = StructFieldNamesAttr::get(ctx, typeArg->get(), variadicType);
+  auto attr = emitter.shared.getEvaluationContext().getStructFieldNamesAttr(
+      typeArg->get(), variadicType);
   return emitter.emitResult(PValue(attr), this, dest);
 }
 
@@ -4550,7 +4552,8 @@ MagicFunctionNode::emitStructFieldTypeAtIndex(ValueDest &dest,
   auto variadicType = VariadicType::get(TypeType::get(ctx));
   TypedAttr structTypeAttr = TypeParamAttr::get(innerType, TypeType::get(ctx));
   auto fieldTypesAttr =
-      StructFieldTypesAttr::get(ctx, structTypeAttr, variadicType);
+      emitter.shared.getEvaluationContext().getStructFieldTypesAttr(
+          structTypeAttr, variadicType);
 
   // Normalize index to IndexType for VariadicGet.
   TypedAttr indexAttr = normalizeToIndexType(indexPValue.get(), ctx);
@@ -4720,7 +4723,8 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
       structTypeAttr = TypeParamAttr::get(elementType, TypeType::get(ctx));
     }
     auto fieldTypesAttr =
-        StructFieldTypesAttr::get(ctx, structTypeAttr, variadicType);
+        emitter.shared.getEvaluationContext().getStructFieldTypesAttr(
+            structTypeAttr, variadicType);
 
     // Normalize index to IndexType for VariadicGet.
     TypedAttr indexAttr = normalizeToIndexType(parametricIndex, ctx);

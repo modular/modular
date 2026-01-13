@@ -86,6 +86,13 @@ private:
   FailureOr<TypedAttr> evaluateGetWitness(GetWitnessAttr getWitness);
   FailureOr<TypedAttr> inlineApply(ParamOperatorAttr getWitness);
   Operation *getStructInstIfResolved(TypedAttr typeVal);
+
+  FailureOr<TypedAttr> evaluateStructFieldTypes(StructFieldTypesAttr attr);
+  FailureOr<TypedAttr> evaluateStructFieldNames(StructFieldNamesAttr attr);
+  FailureOr<TypedAttr>
+  evaluateStructFieldIndexByName(StructFieldIndexByNameAttr attr);
+  FailureOr<TypedAttr>
+  evaluateStructFieldTypeByName(StructFieldTypeByNameAttr attr);
 };
 
 //===----------------------------------------------------------------------===//
