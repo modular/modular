@@ -700,6 +700,15 @@ what we publish.
   directly. This is useful for integrating Mojo's fix-it suggestions into
   external tooling workflows. The flag is mutually exclusive with
   `--experimental-fixit` (which applies fix-its directly).
+- The Mojo compiler now supports the `-Xlinker` flag to pass options on
+  directly to the linker, e.g.,
+
+  ```console
+  mojo build -Xlinker -lfoo main.mojo
+  ```
+
+  Note: this option only has an effect with `mojo build`. With `mojo run`, the
+  arguments are ignored and a warning is issued.
 
 ### Experimental changes
 
