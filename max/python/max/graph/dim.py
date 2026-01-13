@@ -44,7 +44,7 @@ class Dim:
 
         tensor_type = TensorType(DType.int64, ("batch", 10), device=DeviceRef.CPU())
 
-    This creates a tensor type with three dimensions:
+    This creates a tensor type with two dimensions:
 
     - A symbolic "batch" dimension
     - A static dimension of size 10

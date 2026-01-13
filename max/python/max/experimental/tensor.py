@@ -177,7 +177,7 @@ class RealizationState:
 class RealizationContext(Protocol, contextlib.AbstractContextManager):
     """Implements a way to realize unrealized tensors.
 
-    Most users should never have to think about the existance of this type.
+    Most users should never have to think about the existence of this type.
     It exists to facilitate optimizations around where and when tensor
     operations are executed.
 
@@ -185,8 +185,8 @@ class RealizationContext(Protocol, contextlib.AbstractContextManager):
     - If a tensor is not `real`, ie. "unrealized", then it is backed by some
       symbolic computation.
     - The RealizationContext is responsible for tracking this symbolic
-      omputation and "realizing" the tensor (executing the computation and
-      acking the tensor with real data) if and when it is asked to do so.
+      computation and "realizing" the tensor (executing the computation and
+      backing the tensor with real data) if and when it is asked to do so.
     - A RealizationContext can only realize tensors associated with it.
 
     RealizationContext abstracts over various semantics of tensor construction.

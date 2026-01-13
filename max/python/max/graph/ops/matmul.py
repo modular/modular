@@ -44,7 +44,7 @@ def matmul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
         location: An optional location for a more specific error message.
 
     Returns:
-        A tensor graph value representing he result of broadcasting the two
+        A tensor graph value representing the result of broadcasting the two
         matrices together and then performing a matrix multiply
         along the innermost two dimension of each tensor.
     """
