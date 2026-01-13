@@ -128,6 +128,11 @@ build --action_env=MODULAR_TELEMETRY_ENABLED=false --host_action_env=MODULAR_TEL
 build --test_env=MODULAR_TELEMETRY_ENABLED=false
 run --run_env=MODULAR_TELEMETRY_ENABLED=false
 
+# Emit Mojo is enabled by default for build, run, and test.
+build --//:emit_mojo=true
+test --test_env=EMIT_MOJO=1
+run --run_env=EMIT_MOJO=1
+
 # Differentiate between accidental 'bazel run' vs 'bazel test'
 test --test_env=MODULAR_RUNNING_TESTS=true
 
