@@ -65,8 +65,11 @@ int main() {
 
   // Create tensor map for inputs
   int64_t shape[1] = {8};
-  M_TensorSpec *inputSpec1 = M_newTensorSpec(shape, 1, M_FLOAT32, "input0");
-  M_TensorSpec *inputSpec2 = M_newTensorSpec(shape, 1, M_FLOAT32, "input1");
+  M_Device *host = M_newDevice(M_HOST, 0, status);
+  M_TensorSpec *inputSpec1 =
+      M_newTensorSpec(shape, 1, M_FLOAT32, "input0", host);
+  M_TensorSpec *inputSpec2 =
+      M_newTensorSpec(shape, 1, M_FLOAT32, "input1", host);
 
   M_AsyncTensorMap *inputs = M_newAsyncTensorMap(context);
   M_borrowTensorInto(inputs, vector1, inputSpec1, status);
@@ -155,6 +158,7 @@ cleanupInputs:
   M_freeAsyncTensorMap(inputs);
   M_freeTensorSpec(inputSpec2);
   M_freeTensorSpec(inputSpec1);
+  M_freeDevice(host);
 cleanupModel:
   M_freeModel(model);
 cleanupCompiledModel:

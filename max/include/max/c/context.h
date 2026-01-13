@@ -41,6 +41,13 @@ MODULAR_API_EXPORT M_RuntimeConfig *M_newRuntimeConfig();
 /// @param config The runtime config.
 MODULAR_API_EXPORT void M_freeRuntimeConfig(M_RuntimeConfig *config);
 
+/// Adds a device to be accessible from the runtime.
+///
+/// @param config The runtime config.
+/// @param device The device to add to the runtime config.
+MODULAR_API_EXPORT void M_runtimeConfigAddDevice(M_RuntimeConfig *config,
+                                                 M_Device *device);
+
 /// Creates a runtime context.
 ///
 /// The context is an application-level object that sets up various resources
