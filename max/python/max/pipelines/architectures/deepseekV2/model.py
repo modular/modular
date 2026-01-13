@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Sequence
 from typing import Any, cast
 
@@ -30,6 +29,7 @@ from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
+    CompilationTimer,
     KVCacheConfig,
     KVCacheMixin,
     ModelInputs,
@@ -458,25 +458,12 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         self,
         session: InferenceSession,
     ) -> Model:
-        logger.info("Building and compiling model...")
-        before = time.perf_counter()
-
+        timer = CompilationTimer("model")
         graph = self._build_graph()
-        after_build = time.perf_counter()
-
-        logger.info(f"Building graph took {after_build - before:.6f} seconds")
-
-        before_compile = time.perf_counter()
+        timer.mark_build_complete()
         model = session.load(graph, weights_registry=self.state_dict)
-        after = time.perf_counter()
+        timer.done()
 
-        logger.info(
-            f"Compiling model took {after - before_compile:.6f} seconds"
-        )
-
-        logger.info(
-            f"Building and compiling model took {after - before:.6f} seconds"
-        )
         return model
 
     def load_logprobs_model(self, session: InferenceSession) -> Model:

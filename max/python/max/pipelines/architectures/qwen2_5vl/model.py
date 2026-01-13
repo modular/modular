@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
@@ -40,6 +39,7 @@ from max.nn.parallel import ParallelArrayOps
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
+    CompilationTimer,
     KVCacheConfig,
     KVCacheMixin,
     ModelInputs,
@@ -291,27 +291,21 @@ class Qwen2_5VLModel(
         self.model: Module = Qwen2_5VL(self.model_config)
         self.model.load_state_dict(model_state_dict, strict=True)
 
-        logger.info("Building and compiling vision model...")
-        before = time.perf_counter()
+        timer = CompilationTimer("vision model")
         vision_graph = self._build_vision_graph()
+        timer.mark_build_complete()
         vision_model = session.load(
             vision_graph, weights_registry=vision_state_dict
         )
-        after = time.perf_counter()
-        logger.info(
-            f"Building and compiling vision model took {after - before:.6f} seconds"
-        )
+        timer.done()
 
-        logger.info("Building and compiling language model...")
-        before = time.perf_counter()
+        timer = CompilationTimer("language model")
         language_graph = self._build_language_graph()
+        timer.mark_build_complete()
         language_model = session.load(
             language_graph, weights_registry=llm_state_dict
         )
-        after = time.perf_counter()
-        logger.info(
-            f"Building and compiling language model took {after - before:.6f} seconds"
-        )
+        timer.done()
 
         return vision_model, language_model
 

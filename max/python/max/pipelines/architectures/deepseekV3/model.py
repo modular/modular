@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Sequence
 from typing import Any
 
@@ -30,6 +29,7 @@ from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
+    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -442,9 +442,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             for _ in range(len(self.devices))
         ]
 
-        logger.info("Building DeepseekV3 model...")
-        before = time.perf_counter()
-
+        timer = CompilationTimer("model")
         if self.adapter:
             state_dict = self.adapter(
                 dict(self.weights.items()),
@@ -520,23 +518,11 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             )
 
             graph.output(*outputs)
-        after_build = time.perf_counter()
-        logger.info(
-            f"Building graph took {after_build - before:.6f} seconds. Compiling..."
-        )
 
-        # Compile the graph
-        before_compile = time.perf_counter()
-
+        timer.mark_build_complete()
         model = session.load(graph, weights_registry=nn_model.state_dict())
-        after = time.perf_counter()
+        timer.done()
 
-        logger.info(
-            f"Compiling model took {after - before_compile:.6f} seconds"
-        )
-
-        load_time = after - before
-        logging.info(f"DeepseekV3 model loaded in {load_time:.6f} seconds")
         return model
 
     def execute(
