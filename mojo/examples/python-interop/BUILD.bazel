@@ -67,4 +67,5 @@ modular_run_binary_test(
 modular_run_binary_test(
     name = "mandelbrot_test",
     binary = "mandelbrot",
+    tags = ["gpu"],
 )
