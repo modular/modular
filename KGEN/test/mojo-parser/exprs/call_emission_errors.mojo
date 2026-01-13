@@ -351,7 +351,7 @@ fn param_inference_unrelated_error[T: AnyType](x: T, y: FloatLiteral[_]):
 fn call_param_inference_unrelated_error():
     comptime x = "hello"
     comptime y = "world"
-    # expected-error @below {{failed to infer parameter 'T'}}
+    # expected-error @below {{value passed to 'y' cannot be converted from 'StringLiteral["world"]' to 'FloatLiteral[y.value]', it depends on an unresolved parameter 'y.value'}}
     param_inference_unrelated_error(x, y)
 
 
@@ -410,7 +410,7 @@ fn test_print_errors(s: MyStruct):
     # expected-error @below {{invalid call to 'my_print_variadic': could not convert element of 'args' with type 'MyStruct' to expected type 'MyWritable'}}
     my_print_variadic(1, s)
 
-    # expected-error @below {{invalid call to 'my_print_single': failed to infer parameter 'T', argument type 'MyStruct' does not conform to trait 'MyWritable'}}
+    # expected-error @below {{invalid call to 'my_print_single': value passed to 'value' cannot be converted from 'MyStruct' to 'T', argument type 'MyStruct' does not conform to trait 'MyWritable'}}
     my_print_single(s)
 
 

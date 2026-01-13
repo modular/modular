@@ -731,6 +731,8 @@ static TraitType getDeclProvidedTrait(ASTDecl *decl) {
 /// reported or abandoned based on the client's needs.
 bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
                                        std::optional<MojoInflightDiag> &diag) {
+  // We only need trait symbol to verify trait conformance, not the resolved
+  // witness table.
   if (failed(shared.declResolver->resolveSignature(*this, getLoc())))
     return false; // Error emitted.
 

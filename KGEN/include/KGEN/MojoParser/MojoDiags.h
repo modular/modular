@@ -36,6 +36,13 @@ public:
   MojoInflightDiag(MojoInflightDiag &&other) = default;
   MojoInflightDiag &operator=(MojoInflightDiag &&other) = default;
 
+  /// If this diagnostic is active, return the SharedState it is associated
+  /// with.  This returns null if the diagnostic has been abandoned.
+  SharedState *getSharedIfActive() const {
+    auto *diags = getDiags();
+    return !diags ? nullptr : static_cast<SharedState *>(diags->extraContext);
+  }
+
   MojoInflightDiag attachNote(Location loc) && {
     auto params = emittedParams;
     return {std::move(*this).InflightDiag::attachNote(loc), params};

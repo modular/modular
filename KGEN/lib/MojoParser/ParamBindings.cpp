@@ -416,13 +416,11 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
         if (paramIdx < structSig.getNumParams()) {
           diag << " of parent struct '" << structOp.getDeclName().getValue()
                << "'";
-          inference.inferenceDiags.addExplanation(diag);
           diag.attachNote(structOp.getLoc()) << " struct declared here";
           return;
         }
       }
     }
-    inference.inferenceDiags.addExplanation(diag);
   };
 
   auto emitTypeMismatch = [&](size_t index, ASTExprAnd<AnyValue> binding,

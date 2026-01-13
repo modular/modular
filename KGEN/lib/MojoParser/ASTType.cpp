@@ -51,14 +51,14 @@ void MojoInflightDiag::addEmittedParam(TypedAttr param,
 }
 
 void M::addToDiagnostic(TypedAttr paramValue, InflightDiag &diag) {
-  if (!diag.getDiags())
+  SharedState *shared =
+      static_cast<MojoInflightDiag &>(diag).getSharedIfActive();
+  if (!shared)
     return; // Ignore discarded diagnostics.
 
   // Format it of course.
-  diag << '\'';
-  auto *shared = static_cast<SharedState *>(diag.getDiags()->extraContext);
-  diag << ASTType::getParamAsString(paramValue, /*forDiag=*/shared);
-  diag << '\'';
+  diag << '\'' << ASTType::getParamAsString(paramValue, /*forDiag=*/shared)
+       << '\'';
 
   // Remember the context decl for when this type was emitted - it could change
   // before the diagnostic is emitted.  This happens (e.g.) in overload
@@ -215,8 +215,9 @@ struct ParamDiffer {
 /// There may be more than one type, in which case we're complaining about a X
 /// != Y sort of event. We should only unwrap any given identical alias once.
 MojoInflightDiag::~MojoInflightDiag() {
+  SharedState *shared = getSharedIfActive();
   // If abandoned, don't do anything.
-  if (!getDiags() || emittedParams.empty())
+  if (!shared || emittedParams.empty())
     return;
 
   // Copy the attribute list so we don't get more entries as we emit notes.
@@ -228,7 +229,6 @@ MojoInflightDiag::~MojoInflightDiag() {
   // programming.  In this case, we should dig into the type to understand what
   // is going on and explain it in a way that doesn't require too much squinting
   // at long type names.
-  auto *shared = static_cast<SharedState *>(getDiags()->extraContext);
   if (emittedParams.size() > 1 &&
       !isEqualCanon(emittedParams[0].value, emittedParams[1].value)) {
     ParamDiffer differ{*shared, "", {}, {}};

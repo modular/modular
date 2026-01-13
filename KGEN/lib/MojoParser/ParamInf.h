@@ -13,6 +13,7 @@
 
 namespace M::KGEN::LIT {
 class ExprNode;
+class ParamInf;
 
 //===----------------------------------------------------------------------===//
 // InferenceFailure
@@ -63,37 +64,6 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-// ParamInfDiags
-//===----------------------------------------------------------------------===//
-
-class ParamInfDiags {
-public:
-  /// Indicate that parameter inference failed to infer the parameter at
-  /// `paramIdx` from the argument at `argPos`.
-  void addFailure(InferenceFailure &&info) {
-    // only report the first error;
-    if (hasFailure())
-      return;
-    diags = std::move(info);
-  }
-
-  void addExplanation(MojoInflightDiag &diag) {
-    if (hasFailure())
-      diags->addExplanation(diag);
-  }
-
-  bool hasFailure() const { return diags.has_value(); }
-
-  using DiagStorage = std::optional<InferenceFailure>;
-
-  DiagStorage saveDiags() { return diags; }
-  void resetDiags(DiagStorage &&newDiags) { diags = std::move(newDiags); }
-
-private:
-  DiagStorage diags;
-};
-
-//===----------------------------------------------------------------------===//
 // ParamInf
 //===----------------------------------------------------------------------===//
 
@@ -112,10 +82,6 @@ public:
 
   /// This is the callback to report diagnostics through.
   llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag;
-
-  // Built up diagnostic state for failures.
-  // TODO: Keep removing this.
-  ParamInfDiags inferenceDiags;
 
   ParamInf(
       ASTDecl &declScope, const CallOperands &givenBindings,
@@ -162,14 +128,6 @@ public:
   }
 
   void dump() const;
-
-  void addFailure(InferenceFailure &&info) {
-    inferenceDiags.addFailure(std::move(info));
-  }
-
-  /// Emit a diagnostic to the diagnostic handler indicating that we failed to
-  /// infer the parameter at `paramIdx`.
-  void emitInferenceFailure(size_t paramIdx, SMLoc loc);
 
   /// This is the evaluator instance parameter inference uses to progressively
   /// refine dependent types as we infer parameters.

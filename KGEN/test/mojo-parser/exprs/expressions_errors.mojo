@@ -671,7 +671,7 @@ fn test_bad_ref(a: Int, b: CopyAndInitMemType):
 
   var bref = Pointer(to=b) # ok
 
-  # expected-error @+1 {{invalid call to '__le__': value passed to 'other' cannot be converted from 'Pointer[CopyAndInitMemType, origin_of(b)]' to 'CopyAndInitMemType'}}
+  # expected-error @+1 {{invalid call to '__le__': value passed to 'other' cannot be converted from 'Pointer[CopyAndInitMemType, b]' to 'CopyAndInitMemType'}}
   _ = b <= bref
 
 fn transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNonTrivRegPassable, *vararg: String):
@@ -764,7 +764,7 @@ struct Addable:
     fn __add__(self, other: Self): pass # expected-note {{function declared here}}
 fn test(a: Pointer[Addable, _], b: Addable):
     # FIXME: This shouldn't mention mut since it is an implicit parameter.
-    # expected-error @+1 {{invalid call to '__add__': value passed to 'other' cannot be converted from 'Pointer[Addable, a.origin]' to 'Addable'}}
+    # expected-error @+1 {{invalid call to '__add__': value passed to 'other' cannot be converted from 'Pointer[Addable, origin]' to 'Addable'}}
     _ = b+a
 
 
@@ -880,8 +880,7 @@ fn getSomeNonTrivRegPassable() -> SomeNonTrivRegPassable: pass
 # expected-note @below {{function declared here}}
 fn direct3830(ref a: SomeNonTrivRegPassable, ref[a] b: SomeNonTrivRegPassable): pass
 fn test3830():
-    # expected-error @below {{invalid call to 'direct3830': value passed to 'b' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
-    # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'anonymous*'}}
+    # expected-error @below {{invalid call to 'direct3830': failed to infer parameter 'a_is_mut'}}
     direct3830(getSomeNonTrivRegPassable(), getSomeNonTrivRegPassable())
 
 fn test3830_1[o: ImmutOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None):

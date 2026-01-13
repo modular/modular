@@ -38,12 +38,18 @@ extern bool checkConventionsConvertible(ArgConvention expectedConv,
 //===----------------------------------------------------------------------===//
 
 void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
+  SharedState *shared = diag.getSharedIfActive();
+  if (!shared)
+    return;
+
   if (isa<Unclassified>(info))
     return;
 
   if (isa<DependsOnUnresolved>(info)) {
-    // TODO: Could print which one.
-    diag << ", it depends on an unresolved parameter";
+    auto details = cast<DependsOnUnresolved>(info);
+    diag << ", it depends on an unresolved parameter "
+         << ParamIndexRefAttr::get(/*depth*/ 0, details.paramIdx,
+                                   UnresolvedType::get(shared->getContext()));
     return;
   }
 
@@ -664,8 +670,6 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
 
       if (!fixableByUpCast) {
         if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
-          state.addFailure(InferenceFailure::TypeConflict{
-              ire.getIndex(), expectedAttr.getType(), actualAttr.getType()});
           return error(InferenceFailure::TypeConflict{
               ire.getIndex(), expectedAttr.getType(), actualAttr.getType()});
         }
@@ -737,6 +741,7 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
         expectedType = adjuster.replace(expectedType);
       }
 
+      expectedType = state.evaluator.getReboundType(expectedType);
       // If the types don't agree, attempt an implicit conversion between the
       // actual value and the expected type.
       if (!isEqualCanon(actualAttr.getType(), expectedType)) {
@@ -756,9 +761,13 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
       }
 
       size_t parameterIndex = ire.getIndex();
+      // If the reference is out of bound, this is a hard no.
+      // TODO: we should probably precheck this.
+      if (parameterIndex >= state.evaluator.getNumIndexBindings())
+        return error(InferenceFailure::Unclassified{});
+
       TypedAttr inferredValue =
           state.evaluator.getIndexBindings()[parameterIndex];
-
       // If this is a new parameter we've inferred, huzzah, remember it.
       if (!inferredValue) {
         state.evaluator.overwriteIndexBinding(parameterIndex, actualAttr);
@@ -769,8 +778,6 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
       // If we saw this parameter before, make sure it is compatible with
       // (or more specific than) the other values we've inferred.
       if (!isEqualCanon(inferredValue, actualAttr)) {
-        state.addFailure(InferenceFailure::ValueConflict{
-            parameterIndex, inferredValue, actualAttr});
         return error(InferenceFailure::ValueConflict{
             parameterIndex, inferredValue, actualAttr});
       }
@@ -1052,39 +1059,6 @@ void ParamInf::dump() const {
   }
 }
 
-/// Emit a diagnostic to the diagnostic handler indicating that we failed to
-/// infer the parameter at `paramIdx`.
-void ParamInf::emitInferenceFailure(size_t paramIdx, SMLoc loc) {
-  MojoInflightDiag &diag = getDiag(loc);
-  if (declIfKnown && isa<StructDeclOp>(declIfKnown->getIfOperation()))
-    diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
-
-  {
-    // The parameter name is scoped to 'declScope'.
-    DeclResolver::DeclScopeChanger x(&declScope);
-    diag << "failed to infer parameter "
-         << ParamDeclRefAttr::get(declaredParamPogs.getName(paramIdx),
-                                  declaredParamTypes[paramIdx]);
-  }
-
-  // If this is a method on a struct and we couldn't infer something from
-  // its self parameters, complain about the struct.
-  if (declIfKnown && isa<FnOp>(declIfKnown->getIfOperation())) {
-    if (auto structOp = dyn_cast<StructDeclOp>(
-            cast<FnOp>(declIfKnown->getIfOperation())->getParentOp())) {
-      auto structSig = structOp.getSignature();
-      if (paramIdx < structSig.getNumParams()) {
-        diag << " of parent struct '" << structOp.getDeclName().getValue()
-             << "'";
-        inferenceDiags.addExplanation(diag);
-        diag.attachNote(structOp.getLoc()) << " struct declared here";
-        return;
-      }
-    }
-  }
-  inferenceDiags.addExplanation(diag);
-}
-
 /// Try to infer parameters of Self from an initializer if specialized.
 ///
 /// Consider:
@@ -1195,30 +1169,47 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue *init,
       .getUserResultType();
 }
 
-/// Infer parameters from an operand being passed into this function. This is
-/// only called on the top level function operands being matched up, not
-/// anything in recursive functiontype positions.
+// TODO: Reconsolidate this.
+namespace M::KGEN::LIT {
+void printUValueTypeInfo(const AnyValue &value, MojoInflightDiag &diag);
+void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
+                       ASTType expectedType, size_t argIdx,
+                       PogListAttr argListAttr, CallSyntax syntax,
+                       SharedState &shared);
+} // namespace M::KGEN::LIT
+
+/// Check the expected type against the provided operand. This identifies any
+/// problems with the operand type, which it handled by emitting a diagnostic
+/// and returning failure.
+///
+/// This can be called on a function signature with incomplete bindings, which
+/// means that 'origExpectedType' may have unbound parameters.  As such, this
+/// will infer parameters from the operand and return the inferred type.
+///
+/// TODO: This is a more general mirror of 'OverloadFitness::checkOneOperand':
+/// unify it into this.
 LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
                                         size_t argIdx, ASTType origExpectedType,
                                         ArgConvention expectedConvention,
                                         PogListAttr argPogs,
                                         CallSyntax syntax) {
+  // Make sure the diagnostic machinery knows about our declScope so parameter
+  // names get emitted correctly.
+  DeclResolver::DeclScopeChanger x(declIfKnown);
+
+  auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
+    auto &diag = getDiag(operand.expr->getLoc());
+    ::emitWrongTypeDiag(diag, operand, expectedType, argIdx, argPogs, syntax,
+                        shared);
+    return diag;
+  };
+
   // Whenever a parameter is bound, we need to re-evaluate the expected type and
   // try again.
 RetryLabel:
   ASTType expectedType = evaluator.getReboundType(origExpectedType);
 
-  // Early return if this operand will not help with inferring parameters. This
-  // avoids unnecessary checks & dealing with errors unrelated to parameter
-  // inference here. The only operands that can contribute to param inference
-  // are either those whose expected types contain param references.
-  //
-  // FIXME: This is covering up for a bunch of bugs, but is necessary because
-  // removing it exacerbates incorrect "could not infer X" error messages when
-  // there are fundamental type mismatches.
-  if (!paramFinder.hasReferences(expectedType))
-    return success();
-
+  // TODO: Calculate OverloadFitness's fitness (# implicit conversions etc).
   ParamMatcher matcher(operand.expr, *this);
 
   // We'll bind the next provided value.
@@ -1228,23 +1219,49 @@ RetryLabel:
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError: {
-    // The actual value must be an lvalue if callee takes things by-ref, but we
-    // don't want to force this - we want parameter inference to infer argument
-    // types etc instead of producing a "failed to infer" message.
-    CValue argVal = operand.ir.getIfCValue();
-    if (!argVal)
+    // The actual value must be an lvalue if callee takes things by-ref.
+    auto argVal = operand.ir.getIfLValue();
+    if (!argVal) {
+      auto &diag = getDiag(operand.expr->getLoc());
+      if ((syntax == CallSyntax::kMethodCall ||
+           syntax == CallSyntax::kMethodCallSynthetic) &&
+          argIdx == 0) {
+        diag << "invalid use of mutating method on rvalue of type ";
+        if (ASTType type = operand.ir.getRValueTypeIfResolvable())
+          diag << type;
+        else
+          printUValueTypeInfo(operand.ir, diag);
+      } else {
+        diag << "value passed to mutable argument " << argPogs.getName(argIdx)
+             << " must be mutable";
+      }
+      diag << operand.expr->getRange();
       return failure();
+    }
+
+    // If this is a wildcard type, we can match any operand.
+    if (sugarIsa<NameLookupArgWildcardType>(argVal.getRValueType()))
+      return success();
+
+    // Ok we have an LValue.  The reference element types must match.
     switch (matcher.matchTypes(argVal.getRValueType(),
                                expectedType.getReferenceElementType())) {
     case ParamMatcher::Retry:
       goto RetryLabel;
     case ParamMatcher::Match:
-      return success();
+      break;
     case ParamMatcher::Error:
+      // ByRef argument types must exactly match, no conversions are allowed.
+      auto &diag = getDiag(operand.expr->getLoc());
+      diag << "l-value of type " << operand.ir.getIfLValue().getRValueType()
+           << " cannot be converted to reference of type "
+           << expectedType.getReferenceElementType()
+           << operand.expr->getRange();
+      matcher.failureReason->addExplanation(diag);
       return failure();
     }
+    return success();
   }
-
   case ArgConvention::Ref:
   case ArgConvention::MutRef: {
     auto expectedRef = sugarCast<RefType>(expectedType);
@@ -1278,8 +1295,26 @@ RetryLabel:
       case ParamMatcher::Match:
         return success();
       case ParamMatcher::Error:
+        emitWrongTypeDiag(expectedType);
         return failure();
       }
+    }
+    // Otherwise, we are binding something like a PValue or SRValue to a
+    // reference argument, which doesn't have a origin.  This is a problem
+    // because origins can be propagated through the type system of the
+    // function call to other arguments and they all need to line up.  We
+    // handle this in two phases: during overload resolution we bind this to
+    // an immortal origin, and then after the candidate is selected, we
+    // re-emit these arguments to memory and re-infer all the parameters.
+    //
+    // One detail is how we do this: we bind these arguments to immutable
+    // temporaries, because we specifically do NOT want 'ref' arguments with
+    // parametric mutability to treat these things as mutable.
+    if (sugarCast<RefType>(expectedType).isMutableKnown(true)) {
+      auto &diag = getDiag(operand.expr->getLoc());
+      diag << "mutable reference argument " << argPogs.getName(argIdx)
+           << "cannot bind to temporary value";
+      return diag;
     }
 
     // Otherwise, we'll need to drop this value into a temporary.  For now, we
@@ -1353,8 +1388,10 @@ RetryLabel:
       // If there were declaration errors, assume success to not raise
       // spurious errors due to not resolving to those erroneous
       // declarations.
-      if (!initType)
+      if (!initType) { // TODO: Could improve this error to talk about inits.
+        emitWrongTypeDiag(expectedType);
         return failure();
+      }
       // If we found one, we resolve our value to the inferred type.
       switch (matcher.matchTypes(initType, expectedType)) {
       case ParamMatcher::Retry:
@@ -1362,6 +1399,9 @@ RetryLabel:
       case ParamMatcher::Match:
         return success();
       case ParamMatcher::Error:
+        // TODO: Could improve this to talk about initializers.
+        auto &diag = emitWrongTypeDiag(expectedType);
+        matcher.failureReason->addExplanation(diag);
         return failure();
       }
     }
@@ -1371,14 +1411,19 @@ RetryLabel:
 
     // Try to refine the OverloadSetUValue into a PValue.
     argVal = orValue->getDirectSymbol(expectedType, declScope);
-    if (!argVal)
+    if (!argVal) { // TODO: Could improve this to talk about overload sets.
+      emitWrongTypeDiag(expectedType);
       return failure();
+    }
+
     // If we have a reference to an overloaded method like foo(a.method),
     // then we can't resolve it.
     // TODO(partial application => closures): Given we just resolved argVal,
     // we could form the "a.method" expression with a closure.
-    if (orValue->baseValue) // Cannot merge base value.
-      return failure();
+    if (orValue->baseValue) { // Cannot merge base value.
+      emitWrongTypeDiag(expectedType);
+      return failure(); // TODO: Improve this.
+    }
     // Otherwise, success, fallthrough.
   }
 
@@ -1391,63 +1436,72 @@ RetryLabel:
 
   // We're speculatively trying different options.  If we have errors on one
   // path we need to roll them back.
-  auto savedDiags = inferenceDiags.saveDiags();
   std::optional<InferenceFailure> savedFailureReason;
 
-  // See if the types match with inference, if not, remember why.
-  switch (matcher.matchTypes(argType, expectedType)) {
-  case ParamMatcher::Retry:
-    goto RetryLabel;
-  case ParamMatcher::Match:
-    return success();
-  case ParamMatcher::Error:
-    savedFailureReason = matcher.failureReason;
-    matcher.resetError();
-    break;
-  }
-
-  // Before we check with the implicit conversions, save any diagnostics
-  // accumulated without it.  If both fail, we default to the non-implicit
-  // conversion diagnostics.
-  auto noImplicitConversionDiags = inferenceDiags.saveDiags();
-
-  // Go back to diagnostics before we did the thing that failed.
-  inferenceDiags.resetDiags(std::move(savedDiags));
-  savedDiags = inferenceDiags.saveDiags();
-
-  // Zero cost conversions don't count as implicit conversions. We attempt this
-  // after trying to match the types to try to infer values first.
-  if (IREmitter::canZeroCostConvert(argType, expectedType, shared))
-    return success();
-
-  // Handle values of nonmaterializable types.  These freely convert to their
-  // nonmaterializableTarget type even when implicit conversions are disabled,
-  // so we can accept this argument if that converted type is compatible with
-  // our expected type.
-  if (auto nonmaterializableTarget =
-          argType.getNonmaterializableTarget(shared)) {
-
-    // Infer the parameters of this overload candidate against the computed
-    // result type of the initializer.
-    switch (matcher.matchTypes(nonmaterializableTarget, expectedType)) {
+  // If the expected type has unresolved bindings, try to infer them from the
+  // argument first, before trying implicit conversions etc.
+  if (paramFinder.hasReferences(expectedType)) {
+    switch (matcher.matchTypes(argType, expectedType)) {
     case ParamMatcher::Retry:
       goto RetryLabel;
     case ParamMatcher::Match:
-      return success();
+      return success(); // Types were equal after matching.
     case ParamMatcher::Error:
+      savedFailureReason = matcher.failureReason;
       matcher.resetError();
       break;
     }
+  } else {
+    // Zero cost conversions don't count as implicit conversions. We attempt
+    // this after trying to match the types to try to infer values first.
+    if (IREmitter::canZeroCostConvert(argType, expectedType, shared))
+      return success();
+  }
 
-    // If that didn't work out, keep going, but with the original
-    // diagnostics.
-    inferenceDiags.resetDiags(std::move(savedDiags));
-    savedDiags = inferenceDiags.saveDiags();
+  // Handle values of nonmaterializable types.  These freely convert to their
+  // nonmaterializable target type: even when implicit conversions are disabled.
+  // We can accept this argument if that converted type is compatible with
+  // our expected type.
+  if (syntax != CallSyntax::kParamBindings) {
+    if (auto nonmaterializableTarget =
+            argType.getNonmaterializableTarget(shared)) {
+
+      // Infer the parameters of this overload candidate against the computed
+      // result type of the initializer.
+      switch (matcher.matchTypes(nonmaterializableTarget, expectedType)) {
+      case ParamMatcher::Retry:
+        goto RetryLabel;
+      case ParamMatcher::Match:
+        return success();
+      case ParamMatcher::Error:
+        matcher.resetError();
+        break;
+      }
+    }
   }
 
   // If implicit conversions are enabled and the target type is known, then
   // we can check to see if any of the constructors for the result type can
-  // work.
+  // work.  If disabled, then we have a failure.
+  if (!allowImplicitConversions) {
+    auto &diag = emitWrongTypeDiag(expectedType);
+    if (savedFailureReason)
+      savedFailureReason->addExplanation(diag);
+    return failure();
+  }
+
+  // If the expected type has been fully resolved, check it for implicit
+  // conversions using the normal type machinery.  This will handle things like
+  // function pointer conversions that the code below doesn't.
+  if (!paramFinder.hasReferences(expectedType)) {
+    if (IREmitter::canImplicitlyConvertToType({argVal, operand.expr},
+                                              expectedType, declScope))
+      return success();
+    auto &diag = emitWrongTypeDiag(expectedType);
+    if (savedFailureReason)
+      savedFailureReason->addExplanation(diag);
+    return failure();
+  }
 
   /// When checking if an implicit conversion is possible, apply the bindings
   /// inferred so far (plus a distinct new attribute relating back to the
@@ -1461,11 +1515,6 @@ RetryLabel:
   ///     fn foo[dt: DType](p: UnsafePointer[Scalar[dt]], v:
   ///     Scalar[p.type.type]):
   /// where the type of 'v' depends on 'dt' being inferred.
-  ASTDecl *expectedDecl = expectedType.getDecl(shared);
-  if (!allowImplicitConversions || !expectedDecl) {
-    inferenceDiags.resetDiags(std::move(noImplicitConversionDiags));
-    return failure();
-  }
 
   // Determine if we can construct the requested type given the existing value
   // we have.  If so, get the type inferred signature of the init method that
@@ -1498,6 +1547,9 @@ RetryLabel:
   //
   // # here Int(8) need to be implicitly converted to SIMD[dtype, 1],
   // store(ptr, Int(8))
+  //
+  // FIXME: getWithUnknownParametersReplaced is wrong, it only handles struct
+  // type correctly, things like function type will pass through.
   auto nonParamType =
       expectedType.getWithUnknownParametersReplaced(emitter.shared);
   FailureOr<PValue> pValue = OverloadSet::canConstructType(
@@ -1505,17 +1557,17 @@ RetryLabel:
       CallOperands(CallSyntax::kImplicitConvert, operand.expr,
                    {{argVal, operand.expr}}),
       emitter.getDeclScope());
-  if (llvm::failed(pValue))
-    return success(); // Issue already diagnosed.
+  if (llvm::failed(pValue)) {
+    auto &diag = getDiag(operand.expr->getLoc());
+    diag << "cannot convert to type with a previously diagnosed error";
+    return failure();
+  }
 
-  // If we found one, we recursively call inferOneOperand (but with implicit
-  // conversions disabled of course) to resolve our value as the init
-  // methods argument.  This allows us to infer parameters from it.
+  // If we found one, we succeed if the returned type is compatible with the
+  // expected type.  Infer the parameters of this overload candidate against
+  // the computed result type of the initializer.
   if (auto callee = pValue.value()) {
     auto initSig = sugarCast<FnTypeGeneratorType>(callee.getType());
-    // We expect the initializer to return the constructed type.
-    // Infer the parameters of this overload candidate against the computed
-    // result type of the initializer.
     switch (matcher.matchTypes(initSig.getUserResultType(), expectedType)) {
     case ParamMatcher::Retry:
       goto RetryLabel;
@@ -1527,7 +1579,11 @@ RetryLabel:
     }
   }
 
-  if (nonParamType.mlirType != expectedType.mlirType) {
+  // Otherwise, none of that worked. We aren't sure what to do here - it could
+  // be any of these things, so we need to emit an error.  If out failure is
+  // due to an uninferred parameter, and if that parameter had a default, then
+  // we can bind it.
+  if (savedFailureReason && savedFailureReason->getIfDependentOnUnresolved()) {
     // If we're in the parameter binding list for a call then we can re-evaluate
     // this binding after the arguments of the call are resolved.
     if (syntax == CallSyntax::kParamBindings) {
@@ -1537,25 +1593,20 @@ RetryLabel:
 
     // Otherwise, check to see if this is due to an uninferred param with a
     // default value.  If so, bind the default and try again.
-    if (savedFailureReason &&
-        savedFailureReason->getIfDependentOnUnresolved()) {
-      size_t paramIdx =
-          savedFailureReason->getIfDependentOnUnresolved().value();
-
-      DefaultValueHandler defaultHandler(declaredParamPogs);
-      if (auto value = defaultHandler.getDefault(paramIdx)) {
-        assert(!evaluator.getIndexBindings()[paramIdx] &&
-               "shouldn't have inferred this if we failed because of it");
-        evaluator.overwriteIndexBinding(paramIdx,
-                                        evaluator.getReboundAttribute(value));
-        goto RetryLabel;
-      }
+    size_t paramIdx = savedFailureReason->getIfDependentOnUnresolved().value();
+    DefaultValueHandler defaultHandler(declaredParamPogs);
+    if (auto value = defaultHandler.getDefault(paramIdx)) {
+      assert(!evaluator.getIndexBindings()[paramIdx] &&
+             "shouldn't have inferred this if we failed because of it");
+      evaluator.overwriteIndexBinding(paramIdx,
+                                      evaluator.getReboundAttribute(value));
+      goto RetryLabel;
     }
   }
 
-  // Otherwise restore the diags from the non-implicit conversion path,
-  // they'll be less confusing.
-  inferenceDiags.resetDiags(std::move(noImplicitConversionDiags));
+  auto &diag = emitWrongTypeDiag(expectedType);
+  if (savedFailureReason)
+    savedFailureReason->addExplanation(diag);
   return failure();
 }
 
@@ -1577,27 +1628,18 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   // from the value directly, but also inferring as a result of implicit
   // conversions.
   if (paramFinder.hasReferences(expectedType)) {
-    LogicalResult ret =
-        inferOneOperand(binding, paramIdx, expectedType, ArgConvention::ReadReg,
-                        declaredParamPogs, CallSyntax::kParamBindings);
-
-    expectedType = evaluator.getReboundType(expectedType);
-    // If inference failed, check to see if this is due to unresolved dependent
-    // type.  If so, we have to defer the binding.
-    // FIXME: Move this logic into inferOneOperand
-    if (paramFinder.hasReferences(expectedType)) {
-      hasDeferredGivenParam = true;
-      return TypedAttr(); // Deferred.
-    }
-
-    // If this is not failed due to deferred param, propagate the error;
-    // FIXME: maybe propagate error code to `inferOneOperand`.
-    if (failed(ret)) {
-      // If inference failed, emit a diagnostic.
-      // TODO: Sink this into 'inferOneOperand' to make it more specific.
-      emitInferenceFailure(paramIdx, binding.expr->getLoc());
+    if (failed(inferOneOperand(binding, paramIdx, expectedType,
+                               ArgConvention::ReadReg, declaredParamPogs,
+                               CallSyntax::kParamBindings)))
       return failure();
-    }
+  }
+
+  // We might have inferred more parameter after `inferOneOperand`.
+  expectedType = evaluator.getReboundType(expectedType);
+
+  if (paramFinder.hasReferences(expectedType)) {
+    hasDeferredGivenParam = true;
+    return TypedAttr(); // Deferred.
   }
 
   // Check the type matches what is expected, and perform an implicit
@@ -2066,30 +2108,8 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
   //         pass
   // All of the arguments have been resolved here so all parameters must be
   // inferred (or not able to).
-  if (returnsSelf) {
-    if (failed(inferSelfFromInitResult(signature)))
-      return failure();
-  }
-
-  // See if we can fulfill any missing parameters with default values for their
-  // type.
-  for (size_t i = 0, e = declaredParamTypes.size(); i != e; ++i) {
-    if (!evaluator.getIndexBindings()[i] &&
-        signature.getParamListAttrs().isPosVarArg(i)) {
-      // FIXME: This isn't rewriting the variadic list for dependent types.
-      auto type = declaredParamTypes[i];
-      auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
-      evaluator.overwriteIndexBinding(i, empty);
-      break;
-    }
-  }
-
-  if (hasDeferredGivenParam) {
-    hasInferredForCall = false;
-    if (failed(inferFromParamList(/*hasArguments*/ true)))
-      return failure();
-    hasInferredForCall = true;
-  }
+  if (returnsSelf && failed(inferSelfFromInitResult(signature)))
+    return failure();
 
   // Check to see if this is a CTAD parameter - a parameter on the struct
   // that encloses the method.  Consider "conditional conformance" cases like:
@@ -2107,8 +2127,29 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
   //
   // TODO: Provide a first class representation for conditional conformance
   // that doesn't have us shadowing parameters like this!
-  if (hasCTADParams)
-    return inferCTADParams(signature, operands);
+  if (hasCTADParams && failed(inferCTADParams(signature, operands)))
+    return failure();
+
+  if (hasDeferredGivenParam) {
+    hasInferredForCall = false;
+    if (failed(inferFromParamList(/*hasArguments*/ true)))
+      return failure();
+    hasInferredForCall = true;
+  }
+
+  // Lastly, See if we can fulfill any missing parameters with default values
+  // for their type (variadic attr always have a default empty value if not
+  // inferable).
+  for (size_t i = 0, e = declaredParamTypes.size(); i != e; ++i) {
+    if (!evaluator.getIndexBindings()[i] &&
+        signature.getParamListAttrs().isPosVarArg(i)) {
+      // FIXME: This isn't rewriting the variadic list for dependent types.
+      auto type = declaredParamTypes[i];
+      auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
+      evaluator.overwriteIndexBinding(i, empty);
+      break;
+    }
+  }
 
   // We succeed iff we inferred a value for this parameter.
   return success();
