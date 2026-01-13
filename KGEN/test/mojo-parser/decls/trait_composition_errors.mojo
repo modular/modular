@@ -45,12 +45,12 @@ fn use12Direct[T: Trait1 & Trait2](x: T):
 fn main_use():
     s4 = Struct4()
 
-    # expected-error @below {{invalid call to 'use1': failed to infer parameter 'T', argument type 'Struct4' does not conform to trait 'Trait1'}}
+    # expected-error @below {{invalid call to 'use1': value passed to 'x' cannot be converted from 'Struct4' to 'T', argument type 'Struct4' does not conform to trait 'Trait1'}}
     use1(s4)
 
-    # expected-error @below {{invalid call to 'use12Alias': failed to infer parameter 'T', argument type 'Struct4' does not conform to trait 'Traits12'}}
+    # expected-error @below {{invalid call to 'use12Alias': value passed to 'x' cannot be converted from 'Struct4' to 'T', argument type 'Struct4' does not conform to trait 'Traits12'}}
     # expected-note @below {{'Traits12' is aka 'Trait1 & Trait2'}}
     use12Alias(s4)
 
-    # expected-error @below {{invalid call to 'use12Direct': failed to infer parameter 'T', argument type 'Struct4' does not conform to trait 'Trait1 & Trait2'}}
+    # expected-error @below {{invalid call to 'use12Direct': value passed to 'x' cannot be converted from 'Struct4' to 'T', argument type 'Struct4' does not conform to trait 'Trait1 & Trait2'}}
     use12Direct(s4)

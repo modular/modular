@@ -34,12 +34,11 @@ fn all_int[*elt_type: type_of(Int)](t: SomeVA[*elt_type]):
 
 
 fn foo():
-    # TODO: better error msg here?
-
-    # @expected-error @below{{invalid call to 'all_copyable': failed to infer parameter 'elt_type'}}
+    # @expected-error @below{{invalid call to 'all_copyable': value passed to 't' cannot be converted from 'SomeVA[SomeCopyable, SomeNonCopyable]' to 'SomeVA[elt_type]'}}
+    # @expected-note @below{{.elt_types of left value is 'SomeCopyable, SomeNonCopyable' but the right value is 'elt_type'}}
     all_copyable(SomeVA[SomeCopyable, SomeNonCopyable]())
 
-    # @expected-error @below{{invalid call to 'all_int': failed to infer parameter 'elt_type'}}
+    # @expected-error @below{{invalid call to 'all_int': value passed to 't' cannot be converted from 'SomeVA[Int, SomeNonCopyable]' to 'SomeVA[elt_type]'}}
     all_int(SomeVA[Int, SomeNonCopyable]())
 
 

@@ -558,14 +558,14 @@ fn test_param_deduction_failure[
     # expected-error @+1 {{missing 1 required positional argument: 'b'}}
     takes_same_arg_types[_](u)
 
-    # expected-error @below {{invalid call to 'takes_same_arg_types': failed to infer parameter 'x'}}
+    # expected-error @below {{invalid call to 'takes_same_arg_types': value passed to 'a' cannot be converted from 'Int' to 'Parametric[x]', it depends on an unresolved parameter 'x'}}
     takes_same_arg_types[_](u, v)
 
     # expected-error @+1 {{missing 1 required positional argument: 'd'}}
     func[_](u)
 
     # TODO: This is because we're not inferring signatures correctly
-    # expected-error @below {{invalid indirect call: failed to infer parameter 'y'}}
+    # expected-error @below {{invalid indirect call: value passed to 'c' cannot be converted from 'Int' to 'Parametric[func]', it depends on an unresolved parameter 'func'}}
     func[_](u, v)
 
 struct InitOverloaded:

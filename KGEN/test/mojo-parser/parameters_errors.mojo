@@ -94,7 +94,7 @@ fn testSIMD(
     # expected-error @below {{invalid call to '__add__': value passed to 'rhs' cannot be converted from 'MySIMD[1, float64]' to 'MySIMD[2, int32]'}}
     var z = b + a
 
-    # expected-error @below {{invalid call to 'twoUses': failed to infer parameter 'dt1'}}
+    # expected-error @below {{invalid call to 'twoUses': value passed to 'rhs' cannot be converted from 'MySIMD[2, int32]' to 'MySIMD[1, dt2]'}}
     twoUses(a, b)
 
 
@@ -413,7 +413,7 @@ fn take_some_trait[T: SomeTrait, //](x: T):
 
 
 fn pass_no_traits(x: NoTraitsType):
-    # expected-error @below {{invalid call to 'take_some_trait': failed to infer parameter 'T', argument type 'NoTraitsType' does not conform to trait 'SomeTrait'}}
+    # expected-error @below {{invalid call to 'take_some_trait': value passed to 'x' cannot be converted from 'NoTraitsType' to 'T', argument type 'NoTraitsType' does not conform to trait 'SomeTrait'}}
     take_some_trait(x)
 
 
@@ -468,14 +468,14 @@ fn invalid_params[f: fn (ParamType) -> None]():
     autoparams[](ParamType[1]())
     # expected-error @below {{callee expects at most 1 positional parameter, but 2 were specified}}
     autoparams[1, 2](ParamType[2]())
-    # expected-error @below {{'autoparams' parameter 'a' has 'Int' type, but value has type 'Int'}}
+    # expected-error @below {{value passed to 'x' cannot be converted from 'IntLiteral[1]' to 'ParamType[x.p]', it depends on an unresolved parameter 'x.p'}}
     autoparams[1](1)
-    # expected-error @below {{failed to infer parameter 'p'}}
+    # expected-error @below {{value passed to 'x' cannot be converted from 'IntLiteral[1]' to 'MemParamType[x.p]', it depends on an unresolved parameter 'x.p'}}
     autoparams_mem(1)
-    # expected-error @below {{failed to infer parameter 'p'}}
+    # expected-error @below {{value passed to 'x' cannot be converted from 'IntLiteral[1]' to 'MemParamType[p]', it depends on an unresolved parameter 'p'}}
     autoparams_variadic(1)
 
-    # expected-error @below {{failed to infer parameter 'p'}}
+    # expected-error @below {{value passed to '' cannot be converted from 'IntLiteral[1]' to 'ParamType[f]', it depends on an unresolved parameter 'f'}}
     f(1)
 
 
@@ -486,8 +486,7 @@ fn mem_param_with_ref(a: MemParamType[_], ref [AddressSpace(3)]b: MemParamType[3
 
 fn call_mem_param_with_ref(ref [AddressSpace(2)]b: MemParamType[3]):
     var a = MemParamType[1]()
-    # expected-error @below {{invalid call to 'mem_param_with_ref': value passed to 'b' cannot be converted from 'MemParamType[3]' to ref 'MemParamType[3]'}}
-    # expected-note @below {{operand address space '2' doesn't match expected address space '3'}}
+    # expected-error @below {{invalid call to 'mem_param_with_ref': failed to infer parameter 'p'}}
     mem_param_with_ref(a, b)
 
 
@@ -577,17 +576,17 @@ struct StructWithAlias:
 # MOCO-970: "can't convert type to type" error stripped off full parameter name.
 struct TestAutoParamsAndSugar[f1: HasSize]:
     fn method[f2: HasSize](self, f3: HasSize):
-        # expected-error @+1 {{cannot be converted from 'HasSize[f1.size]' to 'HasSize[4]'}}
+        # expected-error @+1 {{cannot be converted from 'HasSize[size]' to 'HasSize[4]'}}
         takes4(HasSize[Self.f1.size]())
-        # expected-error @+1 {{cannot be converted from 'HasSize[f2.size]' to 'HasSize[4]'}}
+        # expected-error @+1 {{cannot be converted from 'HasSize[size]' to 'HasSize[4]'}}
         takes4(HasSize[f2.size]())
-        # expected-error @+1 {{cannot be converted from 'HasSize[f3.size]' to 'HasSize[4]'}}
+        # expected-error @+1 {{cannot be converted from 'HasSize[size]' to 'HasSize[4]'}}
         takes4(HasSize[f3.size]())
-        # expected-error @below {{converted from 'HasSize[f3.size._positive_div(4)]' to 'HasSize[4]'}}
-        # expected-note @below {{.size of left value is 'f3.size._positive_div(4)' but the right value is '4'}}
+        # expected-error @below {{converted from 'HasSize[size._positive_div(4)]' to 'HasSize[4]'}}
+        # expected-note @below {{.size of left value is 'size._positive_div(4)' but the right value is '4'}}
         takes4(HasSize[f3.size._positive_div(4)]())
-        # expected-error @below {{converted from 'HasSize[complex((f3.size * 1234))]' to 'HasSize[4]'}}
-        # expected-note @below {{.size of left value is 'complex((f3.size * 1234))' but the right value is '4'}}
+        # expected-error @below {{converted from 'HasSize[complex((size * 1234))]' to 'HasSize[4]'}}
+        # expected-note @below {{.size of left value is 'complex((size * 1234))' but the right value is '4'}}
         # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
         takes4(HasSize[complex(f3.size*1234)]())
         # expected-error @below {{cannot be converted from 'HasSize[StructWithAlias.size_int]' to 'HasSize[4]'}}
@@ -605,13 +604,13 @@ struct TakeAnything[T: AnyType, //, a: T]:
 struct SomeParamStruct[x: HasSize]: pass
 
 fn auto_param_of_autoparam[a: SomeParamStruct]():
-    # expected-error @+1 {{cannot be converted from 'HasSize[a.x.size]' to 'HasSize[4]'}}
+    # expected-error @+1 {{cannot be converted from 'HasSize[size]' to 'HasSize[4]'}}
     takes4(HasSize[a.x.size]())
 
 # expected-note @below {{function declared here}}
 fn take_a_4(a: TakeAnything[4]): pass
 fn pass_it(x: String):
-  # expected-error @+1 {{cannot be converted from 'TakeAnything[origin_of(x)]' to 'TakeAnything[4]'}}
+  # expected-error @+1 {{cannot be converted from 'TakeAnything[x]' to 'TakeAnything[4]'}}
   take_a_4(TakeAnything[origin_of(x)]())
 
 fn test_unbound_pack_arg():

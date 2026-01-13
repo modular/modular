@@ -86,5 +86,5 @@ struct Issue3142IntList:
     fn __setitem__[idx: Int](mut self, value: Int): pass
 
 fn test(lst: Issue3142IntList):
-    # expected-error @below {{invalid call to '__setitem__': failed to infer parameter 'idx'}}
+    # expected-error @below {{invalid call to '__setitem__': invalid use of mutating method on rvalue of type 'Issue3142IntList'}}
     lst[0] = 0

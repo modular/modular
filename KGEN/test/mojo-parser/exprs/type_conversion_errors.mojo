@@ -127,10 +127,10 @@ fn test_bad_conversion(a: MySIMD[0]):
 
 # MOCO-1090: bad parameter inference error message.
 fn test_rp_trivial_inference(a: RP_NotTrivial, b: Foo):
-    # expected-error @below {{invalid call to 'infer_rp_trivial': failed to infer parameter 'T', argument type 'RP_NotTrivial' is not a '@register_passable("trivial")' type, so does not satisfy AnyTrivialRegType}}
+    # expected-error @below {{invalid call to 'infer_rp_trivial': value passed to 'val' cannot be converted from 'RP_NotTrivial' to 'T', argument type 'RP_NotTrivial' is not a '@register_passable("trivial")' type, so does not satisfy AnyTrivialRegType}}
     _ = infer_rp_trivial(a)
 
-    # expected-error @below {{invalid call to 'infer_rp_trivial': failed to infer parameter 'T', argument type 'Foo' is not a '@register_passable("trivial")' type, so does not satisfy AnyTrivialRegType}}
+    # expected-error @below {{invalid call to 'infer_rp_trivial': value passed to 'val' cannot be converted from 'Foo' to 'T', argument type 'Foo' is not a '@register_passable("trivial")' type, so does not satisfy AnyTrivialRegType}}
     _ = infer_rp_trivial(b)
 
 
