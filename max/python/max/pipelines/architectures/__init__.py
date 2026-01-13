@@ -23,6 +23,7 @@ def register_all_models() -> None:
     if _MODELS_ALREADY_REGISTERED:
         return
 
+    from .bert import bert_arch
     from .deepseekV2 import deepseekV2_arch
     from .deepseekV3 import deepseekV3_arch
     from .eagle_llama3 import eagle_llama_arch
@@ -47,7 +48,6 @@ def register_all_models() -> None:
     from .qwen2_5vl import qwen2_5_vl_arch
     from .qwen3 import qwen3_arch
     from .qwen3vl_moe import qwen3vl_moe_arch
-    from .bert import bert_arch
 
     architectures = [
         exaone_arch,

@@ -30,22 +30,22 @@ class BertTokenizer(TextTokenizer):
     def __init__(
         self,
         model_path: str,
+        pipeline_config: PipelineConfig,
         *,
         revision: str | None = None,
         max_length: int | None = None,
         trust_remote_code: bool = False,
         enable_llama_whitespace_fix: bool = False,
-        pipeline_config: PipelineConfig | None = None,
         chat_template: str | None = None,
         **unused_kwargs,
     ) -> None:
         super().__init__(
             model_path,
+            pipeline_config,
             revision=revision,
             max_length=max_length,
             trust_remote_code=trust_remote_code,
             enable_llama_whitespace_fix=enable_llama_whitespace_fix,
-            pipeline_config=pipeline_config,
             chat_template=chat_template,
             **unused_kwargs,
         )

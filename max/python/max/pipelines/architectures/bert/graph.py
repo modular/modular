@@ -118,7 +118,9 @@ class BertSelfAttention(Module):
     ) -> None:
         config = huggingface_config
         self.num_attention_heads = config.num_attention_heads
-        self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
+        self.attention_head_size = int(
+            config.hidden_size / config.num_attention_heads
+        )
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
         self.query = Linear(
@@ -164,7 +166,9 @@ class BertSelfAttention(Module):
         value_layer = self.transpose_for_scores(self.value(hidden_states))
 
         attention_scores = query_layer @ key_layer.transpose(-1, -2)
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        attention_scores = attention_scores / math.sqrt(
+            self.attention_head_size
+        )
 
         attention_scores = attention_scores + attention_mask
 
@@ -223,7 +227,9 @@ class BertAttention(Module):
         self.self = BertSelfAttention(
             pipeline_config, huggingface_config, dtype, device
         )
-        self.output = BertSelfOutput(pipeline_config, huggingface_config, dtype, device)
+        self.output = BertSelfOutput(
+            pipeline_config, huggingface_config, dtype, device
+        )
 
     def __call__(
         self,
@@ -316,7 +322,9 @@ class BertLayer(Module):
         self.intermediate = BertIntermediate(
             pipeline_config, huggingface_config, dtype, device
         )
-        self.output = BertOutput(pipeline_config, huggingface_config, dtype, device)
+        self.output = BertOutput(
+            pipeline_config, huggingface_config, dtype, device
+        )
 
     def __call__(
         self,
@@ -407,7 +415,9 @@ class BertModel(Module):
             )
             input_lengths = ops.max(
                 ops.sum(input_mask_expanded),
-                ops.constant(1e-9, DType.float32, device=input_mask_expanded.device),
+                ops.constant(
+                    1e-9, DType.float32, device=input_mask_expanded.device
+                ),
             )
             pooled_output = (
                 ops.sum(encoded_results * input_mask_expanded) / input_lengths
@@ -431,7 +441,9 @@ def build_graph(
         DType.float32, shape=["batch_size", "seq_len"], device=input_device
     )
 
-    with Graph("bert", input_types=[input_ids_type, attention_mask_type]) as graph:
+    with Graph(
+        "bert", input_types=[input_ids_type, attention_mask_type]
+    ) as graph:
         model = BertModel(
             pipeline_config,
             huggingface_config,

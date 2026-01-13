@@ -23,12 +23,11 @@ from collections.abc import Sequence
 
 import numpy as np
 from max.driver import Device, Tensor
-from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.core import TextContext
 from max.pipelines.dataprocessing import collate_batch
 from max.pipelines.lib import (
@@ -141,14 +140,20 @@ class BertPipelineModel(PipelineModel[TextContext]):
         attention_mask = (next_tokens_batch != pad_value).astype(np.float32)
 
         return BertInputs(
-            next_tokens_batch=Tensor.from_numpy(next_tokens_batch).to(self.devices[0]),
-            attention_mask=Tensor.from_numpy(attention_mask).to(self.devices[0]),
+            next_tokens_batch=Tensor.from_numpy(next_tokens_batch).to(
+                self.devices[0]
+            ),
+            attention_mask=Tensor.from_numpy(attention_mask).to(
+                self.devices[0]
+            ),
         )
 
     def prepare_next_token_inputs(
         self, next_tokens: Tensor, prev_model_inputs: ModelInputs
     ) -> BertInputs:
-        raise NotImplementedError("Bert does not support preparing next tokens inputs.")
+        raise NotImplementedError(
+            "Bert does not support preparing next tokens inputs."
+        )
 
     def load_model(self, session: InferenceSession) -> Model:
         logger.info("Building and compiling model...")
@@ -156,7 +161,9 @@ class BertPipelineModel(PipelineModel[TextContext]):
         if self.adapter:
             state_dict = self.adapter(dict(self.weights.items()))
         else:
-            state_dict = {key: value.data() for key, value in self.weights.items()}
+            state_dict = {
+                key: value.data() for key, value in self.weights.items()
+            }
         graph = build_graph(
             self.pipeline_config,
             state_dict,
@@ -172,7 +179,11 @@ class BertPipelineModel(PipelineModel[TextContext]):
         model = session.load(graph, weights_registry=state_dict)
         after = time.perf_counter()
 
-        logger.info(f"Compiling model took {after - before_compile:.6f} seconds")
+        logger.info(
+            f"Compiling model took {after - before_compile:.6f} seconds"
+        )
 
-        logger.info(f"Building and compiling model took {after - before:.6f} seconds")
+        logger.info(
+            f"Building and compiling model took {after - before:.6f} seconds"
+        )
         return model

@@ -14,7 +14,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.pipelines import TextContext
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,

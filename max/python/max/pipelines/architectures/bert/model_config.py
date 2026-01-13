@@ -41,7 +41,8 @@ class BertModelConfig(MAXModelConfig):
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_attention_heads,
             head_dim=(
-                huggingface_config.hidden_size // huggingface_config.num_attention_heads
+                huggingface_config.hidden_size
+                // huggingface_config.num_attention_heads
             ),
             num_layers=BertModelConfig.get_num_layers(huggingface_config),
             cache_strategy=kv_cache_config.cache_strategy,
