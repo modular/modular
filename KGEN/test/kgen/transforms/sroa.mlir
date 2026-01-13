@@ -460,3 +460,18 @@ kgen.func @non_integer_index_array_get() {
   %2 = pop.array.get %1[*"i`2x7"] : !pop.array<2, scalar<si64>>
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @unresolved_index_struct_gep<I>
+// CHECK-SAME: (%[[ARG0:.*]]: !kgen.struct<(index, index)>)
+kgen.generator @unresolved_index_struct_gep<I: index>(%arg0: !kgen.struct<(index, index)>) -> index {
+  // CHECK-NEXT: %[[STACK_ALLOC:.*]] = pop.stack_allocation 1 x struct<(index, index)>
+  %0 = pop.stack_allocation 1 x struct<(index, index)>
+  // CHECK-NEXT: pop.store %[[ARG0]], %[[STACK_ALLOC]]
+  pop.store %arg0, %0 : !kgen.pointer<struct<(index, index)>>
+  // CHECK-NEXT: %[[GEP:.*]] = kgen.struct.gep %[[STACK_ALLOC]][I]
+  %gep = kgen.struct.gep %0[I] : <struct<(index, index)>> -> <index>
+  // CHECK-NEXT: %[[LOAD:.*]] = pop.load %[[GEP]] align<8>
+  %load = pop.load %gep align<8> : !kgen.pointer<index>
+  // CHECK-NEXT: kgen.return %[[LOAD]]
+  kgen.return %load : index
+}
