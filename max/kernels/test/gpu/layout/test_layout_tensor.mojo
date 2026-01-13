@@ -214,32 +214,34 @@ def test_reshape():
 
 def test_aligned_load():
     """Tests aligned_load with both index types."""
-    var storage = InlineArray[Float32, 4 * 4](uninitialized=True)
-    var tensor = LayoutTensor[DType.float32, Layout([4, 4]),](
+    # Use a 4x7 tensor so we can load 4 elements starting at columns 0,1,2,3
+    # without going out of bounds (column 3 + width 4 = 7)
+    var storage = InlineArray[Float32, 4 * 7](uninitialized=True)
+    var tensor = LayoutTensor[DType.float32, Layout([4, 7]),](
         storage
     ).fill(0.0)
 
-    tensor.store[4](0, 0, 1.0)  # First column
-    tensor.store[4](0, 1, 2.0)  # Second column
-    tensor.store[4](0, 2, 3.0)  # Third column
-    tensor.store[4](0, 3, 4.0)  # Fourth column
+    tensor.store[4](0, 0, 1.0)  # Store 4 elements starting at column 0
+    tensor.store[4](0, 1, 2.0)  # Store 4 elements starting at column 1
+    tensor.store[4](0, 2, 3.0)  # Store 4 elements starting at column 2
+    tensor.store[4](0, 3, 4.0)  # Store 4 elements starting at column 3
 
-    # [1.0, 1.0, 1.0, 1.0] in first column
+    # Load 4 elements starting at column 0
     var a0 = tensor.aligned_load[4](0, 0)
     var b0 = tensor.aligned_load[4](IndexList[2](0, 0))
     assert_equal(a0, b0)
 
-    # [2.0, 2.0, 2.0, 2.0] in second column
+    # Load 4 elements starting at column 1
     var a1 = tensor.aligned_load[4](0, 1)
     var b1 = tensor.aligned_load[4](IndexList[2](0, 1))
     assert_equal(a1, b1)
 
-    # [3.0, 3.0, 3.0, 3.0] in third column
+    # Load 4 elements starting at column 2
     var a2 = tensor.aligned_load[4](0, 2)
     var b2 = tensor.aligned_load[4](IndexList[2](0, 2))
     assert_equal(a2, b2)
 
-    # [4.0, 4.0, 4.0, 4.0] in fourth column
+    # Load 4 elements starting at column 3
     var a3 = tensor.aligned_load[4](0, 3)
     var b3 = tensor.aligned_load[4](IndexList[2](0, 3))
     assert_equal(a3, b3)

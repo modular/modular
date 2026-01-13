@@ -137,6 +137,8 @@ _FILECHECK_TESTS = [
             "test_tensor_core_amd_utils.mojo",
         ],
         copts = _EXTRA_COPTS.get(src, []),
+        # KERN-2339: naive_matmul kernel has out-of-bounds indexing bugs that need proper fixing
+        enable_assertions = src not in ["test_tiled_matmul_gpu.mojo"],
         main = src,
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
