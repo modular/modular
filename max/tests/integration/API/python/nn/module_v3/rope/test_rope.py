@@ -47,13 +47,13 @@ def test_parameters() -> None:
 
 def test_call() -> None:
     embedding = RotaryEmbedding(Tensor.zeros([2, 3, 2]))
-    result = embedding(Tensor.ones([1, 2, 1, 6]))
+    result = embedding(Tensor.ones([1, 2, 1, 6]), 0)
     assert result.shape == [1, 2, 1, 6]
 
 
 def test_transposed_rotary_embedding() -> None:
     embedding = TransposedRotaryEmbedding(Tensor.zeros([2, 3, 2]))
-    result = embedding(Tensor.ones([1, 2, 1, 6]))
+    result = embedding(Tensor.ones([1, 2, 1, 6]), 0)
     assert result.shape == [1, 2, 1, 6]
 
 

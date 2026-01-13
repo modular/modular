@@ -41,7 +41,9 @@ from .layers.transformer_block import GptOssTransformerBlock
 from .model_config import GptOssConfig
 
 
-class GptOssTextModel(Module):
+class GptOssTextModel(
+    Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]
+):
     """The GPT OSS language model.
 
     Decoder-only Transformer with MoE feed-forward, rotary embeddings (YARN),
@@ -130,7 +132,7 @@ class GptOssTextModel(Module):
         self.kv_params = config.kv_params
         self.return_logits = config.return_logits
 
-    def __call__(
+    def forward(
         self,
         tokens: Tensor,
         kv_collection: PagedCacheValues,
@@ -162,7 +164,7 @@ class GptOssTextModel(Module):
         return (last_logits,)
 
 
-class GptOss(Module):
+class GptOss(Module[..., tuple[Tensor, ...]]):
     """The GPT OSS model."""
 
     def __init__(
@@ -175,7 +177,7 @@ class GptOss(Module):
         self.config = config
         self.kv_manager = kv_manager
 
-    def __call__(
+    def forward(
         self,
         tokens: Tensor,
         return_n_logits: Tensor,

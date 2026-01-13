@@ -21,10 +21,10 @@ from max.nn.module_v3 import Module, Sequential, module_dataclass
 
 
 @module_dataclass
-class TestModule(Module):
+class TestModule(Module[[Tensor], Tensor]):
     a: int
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         return x + self.a
 
 

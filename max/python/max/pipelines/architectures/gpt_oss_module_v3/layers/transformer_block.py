@@ -24,7 +24,7 @@ from .attention import GptOssAttention
 from .moe import GptOssMoE
 
 
-class GptOssTransformerBlock(Module):
+class GptOssTransformerBlock(Module[..., Tensor]):
     """Stack of Attention, MoE, and RMSNorm layers for GPT OSS.
 
     This is a distributed transformer block that uses a Mixture of Experts (MoE)
@@ -46,7 +46,7 @@ class GptOssTransformerBlock(Module):
         self.input_layernorm = input_layernorm
         self.post_attention_layernorm = post_attention_layernorm
 
-    def __call__(
+    def forward(
         self,
         layer_idx: Tensor,
         x: Tensor,

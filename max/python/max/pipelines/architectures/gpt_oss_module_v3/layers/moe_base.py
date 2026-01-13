@@ -31,7 +31,7 @@ from .functional_kernels import grouped_matmul_ragged, moe_create_indices
 from .mlp import MLP
 
 
-class MoEGate(Module):
+class MoEGate(Module[[Tensor], tuple[Tensor, Tensor]]):
     """Gate module for MoE."""
 
     def __init__(
@@ -55,7 +55,7 @@ class MoEGate(Module):
             in_dim=hidden_dim, out_dim=num_experts, bias=False
         )
 
-    def __call__(self, hidden_state: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(self, hidden_state: Tensor) -> tuple[Tensor, Tensor]:
         """
         Args:
             hidden_state: The hidden state of the model.
@@ -71,7 +71,7 @@ class MoEGate(Module):
         return topk_indices, topk_scores
 
 
-class MoE(Module):
+class MoE(Module[[Tensor], Tensor]):
     """Implementation of Mixture of Experts (MoE)."""
 
     def __init__(
@@ -160,7 +160,7 @@ class MoE(Module):
         )
         return down_proj
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """
         Args:
             x: (seq_len, hidden_dim)

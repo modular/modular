@@ -56,7 +56,7 @@ class GptOssMoEGate(MoEGate):
             bias=True,
         )
 
-    def __call__(self, hidden_state: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(self, hidden_state: Tensor) -> tuple[Tensor, Tensor]:
         """
         Args:
             hidden_state: The hidden state of the model.
@@ -152,7 +152,7 @@ class GptOssMoE(MoE):
         # Return the combined down projection biases
         return self._experts_down_proj_bias
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """
         Args:
             x: (seq_len, hidden_dim)

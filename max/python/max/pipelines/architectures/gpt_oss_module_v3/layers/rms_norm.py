@@ -22,7 +22,7 @@ class GptOssRMSNorm(rms_norm.RMSNorm):
     of x.to(orig_dtype) * w.
     """
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         return rms_norm.rms_norm(
             x,
             self.weight,

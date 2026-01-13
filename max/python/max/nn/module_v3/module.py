@@ -19,7 +19,7 @@ import copy
 import dataclasses
 import functools
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Generic
 
 from max import graph
 from max.driver import CPU, Device, DLPackArray
@@ -31,26 +31,40 @@ from max.experimental.realization_context import (
 from max.experimental.tensor import Tensor, realization_context
 from max.graph import Graph, TensorType
 from rich.pretty import pretty_repr
-from typing_extensions import Self, dataclass_transform
+from typing_extensions import ParamSpec, Self, TypeVar, dataclass_transform
 
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
 
+# Type variables for Module's forward signature.
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
-class Module:
+
+class Module(Generic[_P, _R]):
     """The core unit of composition for modeling in MAX.
 
     Informally, a ``Module`` is a container class. It can contain
     other ``Module`` instances, tensors (the ``Module``'s "local parameters")
     or other arbitrary Python data.
 
-    A ``Module`` also has a ``__call__()`` which applies that ``Module`` to
-    some input. In the simplest case this is a function from one tensor
-    to another tensor.
+    A ``Module`` also has a ``forward()`` method which defines how the ``Module``
+    computes its output. In the simplest case this is a function from one tensor
+    to another tensor. Users call the module using ``__call__()`` which internally
+    invokes ``forward()``.
 
     Formally modules form a tree, and subtrees of modules can be manipulated
     directly. A ``Module`` may also be thought of as a closure, where the parameters
-    form the data of the closure and ``__call__()`` is the application of the closure.
+    form the data of the closure and ``forward()`` is the application of the closure.
+
+    Users who do not use a Python type checker, or use lax settings for their
+    type checker, may inherit from ``Module`` without parameters. Users who use
+    a type checker with stricter settings (including MAX internal code) should
+    specify explicit types for full type checking::
+
+        class Linear(Module[[Tensor], Tensor]):
+            def forward(self, x: Tensor) -> Tensor:
+                return x @ self.weight.T + self.bias
 
     **Terminology:**
 
@@ -78,7 +92,7 @@ class Module:
             weight: Tensor
             bias: Tensor | int = 0
 
-            def __call__(self, x: Tensor) -> Tensor:
+            def forward(self, x: Tensor) -> Tensor:
                 return x @ self.weight.T + self.bias
 
         linear = Linear(Tensor.zeros([5, 4]))
@@ -86,7 +100,41 @@ class Module:
         print(linear(Tensor.constant([1, 2, 3, 4])))
     """
 
-    __call__: Callable[..., Any]
+    def forward(self, *args: _P.args, **kwargs: _P.kwargs) -> _R:
+        """Defines the computation performed by the module.
+
+        Users must override this method in their subclass to define the
+        module's computation.
+
+        Args:
+            *args: Positional arguments for the computation.
+            **kwargs: Keyword arguments for the computation.
+
+        Returns:
+            The result of applying the module to the input.
+
+        Raises:
+            NotImplementedError: If the subclass does not override this method.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement forward()"
+        )
+
+    def __call__(self, *args: _P.args, **kwargs: _P.kwargs) -> _R:
+        """Applies the module to the input by calling ``forward``.
+
+        This method wraps the user-defined ``forward`` method, following
+        PyTorch's convention. Users should override ``forward`` to define
+        their module's computation.
+
+        Args:
+            *args: The arguments to pass to ``forward``.
+            **kwargs: The keyword arguments to pass to ``forward``.
+
+        Returns:
+            The result of applying the module to the input.
+        """
+        return self.forward(*args, **kwargs)
 
     @property
     def local_parameters(self) -> Iterable[tuple[str, Tensor]]:
@@ -125,7 +173,7 @@ class Module:
                 fc1: Linear
                 fc2: Linear
 
-                def __call__(self, x: Tensor) -> Tensor:
+                def forward(self, x: Tensor) -> Tensor:
                     return self.fc2(self.fc1(x))
 
             model = MLP(
@@ -151,7 +199,7 @@ class Module:
                 yield f"{prefix}.{name}", parameter
 
     @property
-    def children(self) -> Iterable[tuple[str, Module]]:
+    def children(self) -> Iterable[tuple[str, Module[..., Any]]]:
         """Iterates over the direct child modules of the ``Module``.
 
         Yields:
@@ -163,7 +211,7 @@ class Module:
                 yield name, value
 
     @property
-    def descendants(self) -> Iterable[tuple[str, Module]]:
+    def descendants(self) -> Iterable[tuple[str, Module[..., Any]]]:
         """Iterates over the ``Module``'s descendant modules.
 
         Yields:
@@ -227,7 +275,7 @@ class Module:
                 fc1: Linear
                 fc2: Linear
 
-                def __call__(self, x: Tensor) -> Tensor:
+                def forward(self, x: Tensor) -> Tensor:
                     return self.fc2(self.fc1(x))
 
             model = MLP(
@@ -331,7 +379,7 @@ class Module:
                 weight: Tensor
                 bias: Tensor
 
-                def __call__(self, x: Tensor) -> Tensor:
+                def forward(self, x: Tensor) -> Tensor:
                     return x @ self.weight.T + self.bias
 
             model = Linear(
@@ -448,20 +496,20 @@ class Module:
     ) -> Callable[..., Any]:
         """Compiles the module to an optimized executable through graph tracing.
 
-        This method performs symbolic tracing of the module's ``__call__`` method
+        This method performs symbolic tracing of the module's ``forward`` method
         to construct a MAX :obj:`Graph`, which is then compiled and optimized for
         efficient execution on CPU, GPU, or other accelerators.
 
         The compilation process:
 
         1. Creates symbolic :obj:`Tensor` instances based on provided type specifications
-        2. Executes ``__call__`` with symbolic tensors to record operations
+        2. Executes ``forward`` with symbolic tensors to record operations
         3. Constructs a :obj:`Graph` representing the computation
         4. Includes all module parameters as weights in the graph
         5. Compiles and optimizes the graph for target hardware
-        6. Returns an executable function with the same signature as ``__call__``
+        6. Returns an executable function with the same signature as ``forward``
 
-        The input type specifications must match the signature of ``__call__``.
+        The input type specifications must match the signature of ``forward``.
         Use positional arguments for positional parameters.
 
         Basic compilation with fixed shapes:
@@ -477,7 +525,7 @@ class Module:
                 weight: Tensor
                 bias: Tensor
 
-                def __call__(self, x: Tensor) -> Tensor:
+                def forward(self, x: Tensor) -> Tensor:
                     return x @ self.weight.T + self.bias
 
             linear = Linear(
@@ -497,7 +545,7 @@ class Module:
 
         Args:
             *input_types: Type specifications for each positional argument to
-                ``__call__``. Must match the number and order of arguments.
+                ``forward``. Must match the number and order of arguments.
                 Each should be a :obj:`max.graph.Type` (typically
                 :obj:`TensorType`) describing the shape and dtype.
             weights: Mapping of parameter names to weight data. Weights should
@@ -508,13 +556,13 @@ class Module:
         Returns:
             Callable[..., Any]
                 A compiled executable function with the same signature as
-                ``__call__``. This function runs the optimized graph and
-                returns results with the same structure as ``__call__``
+                ``forward``. This function runs the optimized graph and
+                returns results with the same structure as ``forward``
                 (single :obj:`Tensor` or tuple of tensors).
 
         Raises:
-            TypeError: If input types don't match ``__call__`` signature or if
-                operations in ``__call__`` cannot be traced.
+            TypeError: If input types don't match ``forward`` signature or if
+                operations in ``forward`` cannot be traced.
             RuntimeError: If graph construction fails due to incompatible
                 operations or parameter access issues.
         """
@@ -537,7 +585,9 @@ class Module:
             #       can be replaced in the compiled model and still subject
             #       to exec-invariant-code-motion optimizations.
             with self._mapped_parameters(as_weight):
-                outputs: Tensor | Sequence[Tensor] = self(*inputs)
+                # Type ignore: compile() calls self() with dynamic inputs;
+                # the specific forward signature is only known in subclasses.
+                outputs: Tensor | Sequence[Tensor] = self(*inputs)  # type: ignore[call-arg,assignment,arg-type]
 
             # Set the outputs.
             # - The graph API and model assume that all graphs and models
@@ -599,7 +649,7 @@ class Module:
                 weight: Tensor
                 bias: Tensor
 
-                def __call__(self, x: Tensor) -> Tensor:
+                def forward(self, x: Tensor) -> Tensor:
                     return x @ self.weight.T + self.bias
 
             layer = Linear(
@@ -629,7 +679,11 @@ def _module_dataclass_rich_repr(self: DataclassInstance):  # noqa: ANN202
 
 @dataclass_transform()
 def module_dataclass(  # noqa: ANN201
-    cls: type[Module] | None = None, /, *, repr: bool = False, **kwargs
+    cls: type[Module[..., Any]] | None = None,
+    /,
+    *,
+    repr: bool = False,
+    **kwargs,
 ):
     """Converts a class into a MAX module with automatic parameter tracking.
 
@@ -644,7 +698,7 @@ def module_dataclass(  # noqa: ANN201
     debugging experience when printing module structures.
 
     Args:
-        cls: The class to decorate. Must define a ``__call__`` method.
+        cls: The class to decorate. Must define a ``forward`` method.
             When :obj:`None`, returns a decorator function (supports
             using ``@module_dataclass`` with or without parentheses).
         repr: If :obj:`True`, use dataclass's default ``__repr__`` instead of
@@ -659,7 +713,7 @@ def module_dataclass(  # noqa: ANN201
     """
     dataclass_decorator = dataclasses.dataclass(repr=repr, **kwargs)
 
-    def decorator(cls: type[Module]) -> type[Module]:
+    def decorator(cls: type[Module[..., Any]]) -> type[Module[..., Any]]:
         decorated = dataclass_decorator(cls)
         if cls.__rich_repr__ is Module.__rich_repr__:
             decorated.__rich_repr__ = _module_dataclass_rich_repr  # type: ignore

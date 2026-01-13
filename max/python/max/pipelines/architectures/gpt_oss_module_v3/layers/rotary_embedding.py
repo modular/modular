@@ -25,7 +25,7 @@ from max.nn.module_v3 import Module
 from max.nn.rotary_embedding import YarnScalingParams
 
 
-class RotaryEmbedding(Module):
+class RotaryEmbedding(Module[..., Tensor]):
     """
     RotaryEmbedding layer to calculate and apply the frequency tensor for complex exponentials.
     """
@@ -125,7 +125,7 @@ class RotaryEmbedding(Module):
         """
         return []
 
-    def __call__(
+    def forward(
         self,
         x: Tensor,
         start_pos: Dim | None = None,

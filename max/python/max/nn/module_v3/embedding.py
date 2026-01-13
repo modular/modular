@@ -24,7 +24,7 @@ from ...graph import Dim, DimLike, ShapeLike
 from .module import Module
 
 
-class Embedding(Module):
+class Embedding(Module[[Tensor], Tensor]):
     """A vector embedding.
 
     An embedding can be thought of as a lookup table for vectors by index.
@@ -115,7 +115,7 @@ class Embedding(Module):
         else:
             yield "dims", self.dims
 
-    def __call__(self, indices: Tensor) -> Tensor:
+    def forward(self, indices: Tensor) -> Tensor:
         """Applies the vector embedding to the input tensor of indices.
 
         Args:

@@ -23,7 +23,7 @@ from ...graph import Dim, DimLike
 from .module import Module
 
 
-class Linear(Module):
+class Linear(Module[[Tensor], Tensor]):
     """A unary linear transformation over an input tensor.
 
     Linear is defined as `f(x) = x @ W.T + B` where `W` is the
@@ -84,7 +84,7 @@ class Linear(Module):
         yield "bias", isinstance(self.bias, Tensor), True
 
     @F.functional
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """Applies a linear transformation to the input tensor.
 
         Linear is defined as `f(x) = x @ W.T + B` where `W` is the
