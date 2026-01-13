@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import base64
 import copy
-import functools
 import io
 import json
 import logging
@@ -334,14 +333,6 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             model_max_length=max_length,
         )
         self.max_length = max_length or self.delegate.model_max_length
-
-        # Create encoding functions. Used by encode method in parent class.
-        self._encode_with_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=True
-        )
-        self._encode_without_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=False
-        )
 
         # Use the pre-loaded HuggingFace config from pipeline_config
         config = pipeline_config.model.huggingface_config

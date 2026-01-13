@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import io
 import json
 import logging
@@ -265,14 +264,6 @@ class TextTokenizer(
                 f"Set custom chat template on tokenizer for {model_path}"
             )
 
-        # As we are adding special tokens during chat templating prior to tokenization,
-        # when add_special_tokens=True, we duplicate BOS tokens specifically.
-        self._encode_with_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=True
-        )
-        self._encode_without_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=False
-        )
         self.max_length = max_length or self.delegate.model_max_length
 
         # configure Llama whitespace fix if needed
@@ -399,16 +390,21 @@ class TextTokenizer(
 
         encoded_prompt: npt.NDArray[np.integer[Any]]
         if isinstance(prompt, str):
+
+            def _encode_fn(
+                prompt: str, add_special_tokens: bool
+            ) -> npt.NDArray[np.integer[Any]]:
+                return self.delegate.encode(
+                    prompt, add_special_tokens=add_special_tokens
+                )
+
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
             # Add a standard (non-async) lock in the executor thread if needed.
-            if add_special_tokens:
-                encoded_prompt = await run_with_default_executor(
-                    self._encode_with_special_tokens, prompt
-                )
-            else:
-                encoded_prompt = await run_with_default_executor(
-                    self._encode_without_special_tokens, prompt
-                )
+            encoded_prompt = await run_with_default_executor(
+                _encode_fn,
+                prompt,
+                add_special_tokens,
+            )
 
             if self.max_length and len(encoded_prompt) > self.max_length:
                 raise ValueError(
@@ -617,14 +613,6 @@ class TextAndVisionTokenizer(
         # Use the pre-loaded HuggingFace config from pipeline_config
         config = pipeline_config.model.huggingface_config
 
-        # As we are adding special tokens during chat templating prior to tokenization,
-        # when add_special_tokens=True, we duplicate BOS tokens specifically.
-        self._encode_with_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=True
-        )
-        self._encode_without_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=False
-        )
         self.processor = AutoProcessor.from_pretrained(
             model_path, revision=revision, trust_remote_code=trust_remote_code
         )
@@ -688,16 +676,21 @@ class TextAndVisionTokenizer(
 
         encoded_prompt: npt.NDArray[np.integer[Any]]
         if isinstance(prompt, str):
+
+            def _encode_fn(
+                prompt: str, add_special_tokens: bool
+            ) -> npt.NDArray[np.integer[Any]]:
+                return self.delegate.encode(
+                    prompt, add_special_tokens=add_special_tokens
+                )
+
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
             # Add a standard (non-async) lock in the executor thread if needed.
-            if add_special_tokens:
-                encoded_prompt = await run_with_default_executor(
-                    self._encode_with_special_tokens, prompt
-                )
-            else:
-                encoded_prompt = await run_with_default_executor(
-                    self._encode_without_special_tokens, prompt
-                )
+            encoded_prompt = await run_with_default_executor(
+                _encode_fn,
+                prompt,
+                add_special_tokens,
+            )
 
             max_length = self.max_length or self.delegate.model_max_length
             if max_length and len(encoded_prompt) > max_length:

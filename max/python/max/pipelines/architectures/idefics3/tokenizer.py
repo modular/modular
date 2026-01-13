@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import functools
 import io
 import json
 from collections.abc import Sequence
@@ -70,14 +69,6 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
 
         # Set max_length after delegate is created (like parent class)
         self.max_length = max_length or self.delegate.model_max_length
-
-        # Set up encode methods (copied from TextAndVisionTokenizer)
-        self._encode_with_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=True
-        )
-        self._encode_without_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=False
-        )
 
         # Use the pre-loaded HuggingFace config from pipeline_config
         config = pipeline_config.model.huggingface_config
