@@ -59,7 +59,7 @@ class PixelGenerationRequest(Request):
     """
     guidance_scale: float = 7.5
     """
-    Guidance scale for classifier-free guidance. Set to 1 to disable CFG.
+    Guidance scale for classifier-free guidance. Set to 1.0 to disable CFG.
     """
     height: int | None = None
     """
