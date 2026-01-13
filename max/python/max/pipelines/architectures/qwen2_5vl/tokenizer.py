@@ -312,7 +312,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         self.image_token_id = config.image_token_id
         self.video_token_id = config.video_token_id
         self.enable_prefix_caching = (
-            config.kv_cache_config.enable_prefix_caching
+            pipeline_config.model.kv_cache_config.enable_prefix_caching
         )
 
         self.vision_start_token_id = config.vision_start_token_id
