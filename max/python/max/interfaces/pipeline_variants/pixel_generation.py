@@ -38,14 +38,14 @@ from .text_generation import (
 
 @dataclass(frozen=True)
 class PixelGenerationRequest(Request):
-    model: str = field()
+    model_name: str = field()
     """The name of the model to be used for generating pixels. This should match
     the available models on the server and determines the behavior and
     capabilities of the response generation.
     """
     prompt: str | None = None
     """
-    The text to generate pixels for. The maximum length is 4096 characters.
+    The text prompt to generate pixels for.
     """
     negative_prompt: str | None = None
     """
@@ -61,13 +61,13 @@ class PixelGenerationRequest(Request):
     """
     Guidance scale for classifier-free guidance. Set to 1 to disable CFG.
     """
-    height: int | None = 1024
+    height: int | None = None
     """
-    Height of generated image/frame in pixels. Defaults to model's default (typically 1024).
+    Height of generated output in pixels. None uses model's native resolution.
     """
-    width: int | None = 1024
+    width: int | None = None
     """
-    Width of generated image/frame in pixels. Defaults to model's default (typically 1024).
+    Width of generated output in pixels. None uses model's native resolution.
     """
     num_inference_steps: int = 50
     """
@@ -90,7 +90,11 @@ class PixelGenerationRequest(Request):
 
     def __post_init__(self) -> None:
         if self.prompt is None and self.messages is None:
-            raise RuntimeError("Either prompt or messages must be provided.")
+            raise ValueError("Either prompt or messages must be provided.")
+        if self.prompt is not None and self.messages is not None:
+            raise ValueError(
+                "Both prompt and messages cannot be provided to PixelGenerationRequest."
+            )
 
 
 @runtime_checkable
@@ -190,8 +194,9 @@ class PixelGenerationInputs(
 class PixelGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
     """
     Represents a response from the pixel generation API.
+
     This class encapsulates the result of a pixel generation request, including
-    request ID, the final status, generated pixel data.
+    the request ID, final status, and generated pixel data.
     """
 
     request_id: RequestID
