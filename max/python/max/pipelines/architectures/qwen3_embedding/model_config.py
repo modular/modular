@@ -19,8 +19,7 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
 from transformers import AutoConfig
-
-from ..qwen3.model_config import Qwen3Config
+from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 
 
 class Qwen3EmbeddingConfig(MAXModelConfigBase):

@@ -21,11 +21,10 @@ from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.weights import WeightData
 from max.nn import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
-
-from ..qwen3.model_config import Qwen3Config
-from ..qwen3.qwen3 import Qwen3
+from max.pipelines.architectures.qwen3.model_config import Qwen3Config
+from max.pipelines.architectures.qwen3.qwen3 import Qwen3
 
 
 def last_token_pool(
@@ -75,9 +74,9 @@ def last_token_pool(
     )
     # Transfer to the correct device
     batch_offsets = ops.transfer_to(batch_offsets, device=hidden_states.device)
-    batch_offsets = batch_offsets * ops.constant(
-        seq_len, DType.int64, device=hidden_states.device
-    )
+    # Get seq_len as a TensorValue from the shape
+    seq_len_tensor = TensorValue(hidden_states.shape[1])
+    batch_offsets = batch_offsets * seq_len_tensor
     flat_indices = batch_offsets + sequence_lengths
     
     # Gather the last tokens
@@ -113,17 +112,19 @@ def build_graph(
         DType.float32, shape=["batch_size", "seq_len"], device=input_device
     )
 
-    # Convert state_dict to the expected format
+    # Convert state_dict to the expected format  
+    # Most entries are already WeightData, just ensure the type is correct
     state_dict_converted: dict[str, WeightData] = {}
     for k, v in state_dict.items():
-        if isinstance(v, WeightData):
-            state_dict_converted[k] = v
-        elif hasattr(v, "__dlpack__"):
-            from max.graph.weights import WeightData as WD
-            # Create WeightData from DLPackArray
-            state_dict_converted[k] = WD(v)
-        else:
-            state_dict_converted[k] = v
+        # Assume all values can be converted to WeightData or are already WeightData
+        state_dict_converted[k] = v  # type: ignore
+
+    # Create a minimal KV cache config for single forward pass
+    # We don't actually cache anything for embeddings, but Qwen3 model needs it
+    kv_cache_config = KVCacheConfig(
+        enable_prefix_caching=False,
+        cache_strategy="paged",
+    )
 
     # Create model config for Qwen3 - we'll use it to build the model
     # but configure it to return hidden states instead of logits
@@ -136,68 +137,53 @@ def build_graph(
         norm_method="rms_norm",
         attention_bias=getattr(huggingface_config, "attention_bias", False),
         cache_dtype=dtype,
-        kv_cache_config=pipeline_config.kv_cache,
-        # Configure to return LAST_TOKEN logits but also LAST_NORMALIZED hidden states
+        kv_cache_config=kv_cache_config,
+        # For embedding generation, we need ALL hidden states to apply last token pooling
+        # ReturnHiddenStates.ALL returns the hidden states from the last layer
         return_logits=ReturnLogits.LAST_TOKEN,
-        return_hidden_states=ReturnHiddenStates.LAST_NORMALIZED,
+        return_hidden_states=ReturnHiddenStates.ALL,
     )
 
     with Graph(
         "qwen3_embedding", input_types=[input_ids_type, attention_mask_type]
     ) as graph:
-        # Build the Qwen3 model
+        # Build the Qwen3 model - Qwen3-Embedding uses the full CausalLM model
+        # with tied embeddings (lm_head shares weights with embed_tokens)
         qwen3_model = Qwen3(model_config)
         
-        # Load weights (excluding LM head which we don't need for embeddings)
-        filtered_state_dict = {
-            k: v
-            for k, v in state_dict_converted.items()
-            if not k.startswith("lm_head") and not k.startswith("output")
-        }
+        # Load all weights - the model has lm_head with tied weights
         qwen3_model.load_state_dict(
-            filtered_state_dict,
+            state_dict_converted,
             override_quantization_encoding=True,
             weight_alignment=1,
-            strict=False,  # Allow missing lm_head weights
+            strict=False,  # Allow missing weights if any
         )
         
         input_ids = graph.inputs[0].tensor
         attention_mask = graph.inputs[1].tensor
         
-        # For embedding generation, we need to:
-        # 1. Flatten input_ids to [total_seq_len]
-        # 2. Create input_row_offsets for ragged tensors
-        # 3. Call the model to get hidden states
-        # 4. Reshape and pool
-        
-        # Flatten input_ids to [total_seq_len]
+        # Flatten input_ids to ragged format [total_tokens]
         input_ids_flat = ops.reshape(input_ids, (-1,))
         
-        # Create input_row_offsets for ragged tensors
-        batch_size = input_ids.shape[0]
-        seq_len = input_ids.shape[1]
+        # Get dimensions
+        batch_size_dim = input_ids_type.shape[0]
+        seq_len_dim = input_ids_type.shape[1]
         
-        # input_row_offsets indicates where each sequence starts
-        # [0, seq_len, 2*seq_len, ..., batch_size*seq_len]
-        total_tokens = batch_size * seq_len
+        # Use max_seq_len from model config (known at graph build time)
+        max_seq_len = model_config.max_seq_len
+        
+        # Create row offsets: [0, max_seq_len, 2*max_seq_len, ...]
         input_row_offsets = ops.range(
             0,
-            batch_size + 1,
+            batch_size_dim + 1,
             1,
-            out_dim=batch_size + 1,
+            out_dim=batch_size_dim + 1,
             dtype=DType.uint32,
-            device=DeviceRef.CPU(),
-        )
-        # Transfer to device and multiply by seq_len
-        input_row_offsets = ops.transfer_to(input_row_offsets, device=input_device)
-        input_row_offsets = input_row_offsets * ops.constant(
-            seq_len, DType.uint32, device=input_device
-        )
+            device=input_device,
+        ) * max_seq_len
         
-        # Return all tokens' hidden states
-        return_n_logits = ops.constant(
-            total_tokens, DType.int64, device=DeviceRef.CPU()
-        )
+        # For LAST_TOKEN logits mode, return_n_logits should be 1 (just the last token)
+        return_n_logits = 1
         
         # Create dummy KV cache for single-pass embedding generation
         from max.nn.kv_cache import PagedCacheValues
@@ -207,29 +193,40 @@ def build_graph(
         num_layers = model_config.num_hidden_layers
         num_kv_heads = model_config.num_key_value_heads
         head_dim = model_config.kv_params.head_dim
+        page_size = kv_cache_config.kv_cache_page_size
         
         # Create a minimal buffer (won't be used)
+        # Shape must be: (num_blocks, 2, num_layers, page_size, num_kv_heads, head_dim)
+        # where 2 is for key and value
+        from max.graph import BufferType
+        
         kv_block_buffer = ops.buffer_create(
-            (1, num_layers, num_kv_heads, 1, head_dim),
-            dtype=dtype,
-            device=input_device,
+            BufferType(
+                dtype,
+                shape=(1, 2, num_layers, page_size, num_kv_heads, head_dim),
+                device=input_device,
+            )
         )
         
-        # Create cache metadata
+        # Create cache metadata (all should be uint32 for paged cache)
+        # cache_lengths: [batch_size] - number of cached tokens per sequence
         cache_lengths = ops.range(
-            0, 0, 1, out_dim=batch_size, dtype=DType.int64, device=DeviceRef.CPU()
+            0, 0, 1, out_dim=batch_size_dim, dtype=DType.uint32, device=DeviceRef.CPU()
         )
         cache_lengths = ops.transfer_to(cache_lengths, device=input_device)
         
-        lookup_table = ops.range(
-            0, 0, 1, out_dim=batch_size, dtype=DType.int64, device=DeviceRef.CPU()
-        )
+        # lookup_table: [batch_size, max_blocks] - maps sequence indices to block IDs
+        # For embedding generation we just need 1 block per batch
+        import numpy as np
+        max_blocks = 1  # Minimal for single forward pass
+        lookup_table_np = np.zeros((1, max_blocks), dtype=np.uint32)
+        lookup_table = ops.constant(lookup_table_np, device=DeviceRef.CPU())
         lookup_table = ops.transfer_to(lookup_table, device=input_device)
         
-        max_lengths_val = ops.constant(seq_len, DType.int64, device=DeviceRef.CPU())
-        max_lengths = ops.broadcast_to(
-            ops.unsqueeze(max_lengths_val, 0), (batch_size,)
-        )
+        # max_lengths: [1, 2] containing [max_seq_length, max_cache_length]
+        # For embeddings, both are the same (max_seq_len)
+        max_lengths_np = np.array([[max_seq_len, max_seq_len]], dtype=np.uint32)
+        max_lengths = ops.constant(max_lengths_np, device=DeviceRef.CPU())
         max_lengths = ops.transfer_to(max_lengths, device=input_device)
         
         kv_collection = PagedCacheValues(
@@ -239,8 +236,8 @@ def build_graph(
             max_lengths=max_lengths,
         )
         
-        # Call the model - it will return (logits, hidden_states) tuple
-        # since we configured return_hidden_states=LAST_NORMALIZED
+        # Call the model - with return_hidden_states=ALL, it returns (logits, all_hidden_states)
+        # The all_hidden_states is the last layer's hidden states for ALL tokens
         outputs = qwen3_model(
             input_ids_flat,
             kv_collection,
@@ -248,14 +245,14 @@ def build_graph(
             input_row_offsets,
         )
         
-        # Extract hidden states (second element of tuple)
-        # Shape: [batch_size * seq_len, hidden_size]
-        hidden_states_flat = outputs[1]
+        # Extract hidden states from the tuple (logits, hidden_states)
+        # hidden_states shape: [batch_size * seq_len, hidden_size]
+        _, hidden_states_flat = outputs
         
-        # Reshape back to [batch_size, seq_len, hidden_size]
+        # Reshape back to [batch_size, seq_len, hidden_size] for last token pooling
         hidden_size = model_config.hidden_size
         hidden_states = ops.reshape(
-            hidden_states_flat, (batch_size, seq_len, hidden_size)
+            hidden_states_flat, (batch_size_dim, seq_len_dim, hidden_size)
         )
         
         # Apply last token pooling

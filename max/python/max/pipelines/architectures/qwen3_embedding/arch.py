@@ -18,19 +18,19 @@ from max.pipelines.lib import (
     SupportedEncoding,
     TextTokenizer,
 )
+from max.pipelines.architectures.llama3 import weight_adapters
 
-from ..llama3 import weight_adapters
 from .model import Qwen3EmbeddingPipelineModel
 
 qwen3_embedding_arch = SupportedArchitecture(
-    name="Qwen3ForCausalLM",
+    name="Qwen3Model",
     task=PipelineTask.EMBEDDINGS_GENERATION,
     example_repo_ids=[
         "Qwen/Qwen3-Embedding-0.6B",
         "Qwen/Qwen3-Embedding-4B",
         "Qwen/Qwen3-Embedding-8B",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding=SupportedEncoding.float32,
     supported_encodings={
         SupportedEncoding.float32: [],
         SupportedEncoding.bfloat16: [],

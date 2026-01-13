@@ -13,4 +13,7 @@
 
 from .arch import qwen3_embedding_arch
 
+# Expose ARCHITECTURES list for custom architecture loading
+ARCHITECTURES = [qwen3_embedding_arch]
+
 __all__ = ["qwen3_embedding_arch"]

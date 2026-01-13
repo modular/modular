@@ -206,7 +206,11 @@ class Qwen3EmbeddingPipelineModel(PipelineModel[TextContext]):
         before = time.perf_counter()
         
         if self.adapter:
-            state_dict = self.adapter(dict(self.weights.items()))
+            state_dict = self.adapter(
+                dict(self.weights.items()),
+                huggingface_config=self.huggingface_config,
+                pipeline_config=self.pipeline_config,
+            )
         else:
             state_dict = {
                 key: value.data() for key, value in self.weights.items()
