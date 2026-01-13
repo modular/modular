@@ -247,7 +247,11 @@ class MemoryEstimator:
                         "q6_k": 4,
                         "float8_e4m3fn": 1,
                     }
-                    encoding_str = str(model_config.quantization_encoding.value) if model_config.quantization_encoding else "float32"
+                    encoding_str = (
+                        str(model_config.quantization_encoding.value)
+                        if model_config.quantization_encoding
+                        else "float32"
+                    )
                     dtype_size = encoding_to_bytes.get(encoding_str, 4)
 
                     # conv_state: (num_layers, batch, intermediate_size, conv_kernel)

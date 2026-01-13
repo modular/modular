@@ -150,6 +150,7 @@ class SSMStateCacheParams:
         Returns:
             The number of devices.
         """
+        assert self.devices is not None
         return len(self.devices)
 
     @property

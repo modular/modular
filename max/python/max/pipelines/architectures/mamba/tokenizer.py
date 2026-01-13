@@ -73,7 +73,7 @@ class MambaTokenizer(TextTokenizer):
         max_length: int | None = None,
         trust_remote_code: bool = False,
         enable_llama_whitespace_fix: bool = False,
-        pipeline_config: PipelineConfig | None = None,
+        pipeline_config: PipelineConfig,
         chat_template: str | None = None,
         context_validators: list[Callable[[TextContext], None]] | None = None,
         **unused_kwargs,

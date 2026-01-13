@@ -28,7 +28,7 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn import ReturnHiddenStates, ReturnLogits
 from max.nn.kv_cache import KVCacheInputs
-from max.nn.mamba.ssm_state_cache import SSMStateCacheInputs
+from max.nn.mamba.ssm_state_cache import SSMStateCacheInputs, SSMStateValues
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -286,7 +286,7 @@ class MambaModelBase(PipelineModel[TextContext]):
                 model_inputs.input_row_offsets,
                 model_inputs.return_n_logits,
                 splits_tensor,
-                *model_inputs.ssm_state_cache,  # type: ignore[arg-type]
+                *model_inputs.ssm_state_cache,  # type: ignore[misc]
             )
         elif self._lora_manager:
             model_outputs = self.model.execute(
@@ -300,7 +300,7 @@ class MambaModelBase(PipelineModel[TextContext]):
                 model_inputs.batch_seq_len,  # type: ignore[arg-type]
                 model_inputs.lora_ids_kv,  # type: ignore[arg-type]
                 model_inputs.lora_grouped_offsets_kv,  # type: ignore[arg-type]
-                *model_inputs.ssm_state_cache,  # type: ignore[arg-type]
+                *model_inputs.ssm_state_cache,  # type: ignore[misc]
                 *model_inputs.signal_buffers,
             )
         else:
@@ -308,7 +308,7 @@ class MambaModelBase(PipelineModel[TextContext]):
                 model_inputs.tokens,
                 model_inputs.input_row_offsets,
                 model_inputs.return_n_logits,
-                *model_inputs.ssm_state_cache,  # type: ignore[arg-type]
+                *model_inputs.ssm_state_cache,  # type: ignore[misc]
                 *model_inputs.signal_buffers,
             )
 
@@ -717,12 +717,10 @@ class MambaModelBase(PipelineModel[TextContext]):
                         lora_grouped_offsets_kv.tensor,
                     )
                     # Construct SSM state cache values for graph execution
-                    from max.nn.mamba.ssm_state_cache import SSMStateValues
-
                     ssm_state_cache = SSMStateValues(
-                        conv_state=conv_state,
-                        ssm_state=ssm_state,
-                        seqlen_offset=seqlen_offset,
+                        conv_state=conv_state,  # type: ignore[arg-type]
+                        ssm_state=ssm_state,  # type: ignore[arg-type]
+                        seqlen_offset=seqlen_offset,  # type: ignore[arg-type]
                     )
                     outputs = single_model(
                         tokens.tensor,
@@ -740,12 +738,10 @@ class MambaModelBase(PipelineModel[TextContext]):
                         seqlen_offset,
                     ) = graph.inputs
                     # Construct SSM state cache values for graph execution
-                    from max.nn.mamba.ssm_state_cache import SSMStateValues
-
                     ssm_state_cache = SSMStateValues(
-                        conv_state=conv_state,
-                        ssm_state=ssm_state,
-                        seqlen_offset=seqlen_offset,
+                        conv_state=conv_state,  # type: ignore[arg-type]
+                        ssm_state=ssm_state,  # type: ignore[arg-type]
+                        seqlen_offset=seqlen_offset,  # type: ignore[arg-type]
                     )
                     outputs = single_model(
                         tokens.tensor,

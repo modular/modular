@@ -18,7 +18,7 @@ from collections.abc import Callable
 from functools import partial
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue, ops
+from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
 from max.nn import (
     ConstantLayerNorm,
     Embedding,
@@ -198,7 +198,7 @@ class Mamba(Module):
         self,
         lora_manager: LoRAManager | None,
         needs_hidden_state_input: bool = False,
-    ) -> tuple[TensorType, ...]:
+    ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         device_ref = self.config.devices[0]
 

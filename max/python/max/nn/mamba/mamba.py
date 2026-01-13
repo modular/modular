@@ -280,9 +280,9 @@ class MambaSSM(Module):
 
         # If using step method, call it directly with original hidden_states
         if use_step:
-            if ssm_state_cache is not None:
+            if ssm_state_cache is not None and self.layer_idx is not None:
                 # Use new structured cache approach
-                batch_size = x.shape[0]
+                batch_size = int(x.shape[0])
 
                 # Extract states from cache
                 conv_state = ssm_state_cache.conv_state[self.layer_idx]
