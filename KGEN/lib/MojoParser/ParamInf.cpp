@@ -761,10 +761,8 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
       }
 
       size_t parameterIndex = ire.getIndex();
-      // If the reference is out of bound, this is a hard no.
-      // TODO: we should probably precheck this.
-      if (parameterIndex >= state.evaluator.getNumIndexBindings())
-        return error(InferenceFailure::Unclassified{});
+      assert(parameterIndex < state.evaluator.getNumIndexBindings() &&
+             "out-of-bound parameter reference");
 
       TypedAttr inferredValue =
           state.evaluator.getIndexBindings()[parameterIndex];
