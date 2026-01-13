@@ -67,7 +67,7 @@ def rms_norm(
     )[0]
 
 
-class RMSNorm(Module):
+class RMSNorm(Module[[Tensor], Tensor]):
     """Computes the Root Mean Square normalization on inputs."""
 
     weight: Tensor
@@ -91,7 +91,7 @@ class RMSNorm(Module):
         yield "dim", self.dim
         yield "eps", self.eps, 1e-6
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         return rms_norm(x, self.weight, self.eps)
 
 
@@ -103,7 +103,7 @@ class GemmaRMSNorm(RMSNorm):
     - (x * w).to(orig_dtype) instead of x.to(orig_dtype) * w.
     """
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         return rms_norm(
             x,
             self.weight,

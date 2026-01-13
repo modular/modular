@@ -542,7 +542,7 @@ async def test_tokenizer__generate_prompt_and_token_ids(
     prompt = "Hello, how are you?"
     prompt_text, token_ids = await tokenizer._generate_prompt_and_token_ids(
         prompt=prompt,
-        messages=None,
+        messages=[],
     )
     assert isinstance(prompt_text, str)
     assert prompt_text == prompt
@@ -590,7 +590,7 @@ async def test_tokenizer__generate_prompt_and_token_ids(
     ):
         await tokenizer._generate_prompt_and_token_ids(
             prompt=None,
-            messages=None,
+            messages=[],
         )
 
 

@@ -972,10 +972,10 @@ def test_blockscaled_pair_cta_mxfp8[
         m,
         n,
         k,
-        a_scales_host_ref,
-        b_scales_host_ref,
-        a_scales_host,
-        b_scales_host,
+        from_ndbuffer_row_major(a_scales_host_ref),
+        from_ndbuffer_row_major(b_scales_host_ref),
+        from_ndbuffer_row_major(a_scales_host),
+        from_ndbuffer_row_major(b_scales_host),
     )
     # Initialize matmul operands
     if simple_init():

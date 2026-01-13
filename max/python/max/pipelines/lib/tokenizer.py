@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import io
 import json
 import logging
@@ -265,14 +264,6 @@ class TextTokenizer(
                 f"Set custom chat template on tokenizer for {model_path}"
             )
 
-        # As we are adding special tokens during chat templating prior to tokenization,
-        # when add_special_tokens=True, we duplicate BOS tokens specifically.
-        self._encode_with_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=True
-        )
-        self._encode_without_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=False
-        )
         self.max_length = max_length or self.delegate.model_max_length
 
         # configure Llama whitespace fix if needed
@@ -308,26 +299,26 @@ class TextTokenizer(
         flattened_messages: list[dict[str, str]] = []
         for message in messages:
             flattened_message = {
-                "role": message["role"],
+                "role": message.role,
                 "content": "",
             }
-            if isinstance(message["content"], str):
-                flattened_message["content"] = message["content"]
-            elif isinstance(message["content"], list):
-                for content in message["content"]:
-                    if "type" not in content:
+            if isinstance(message.content, str):
+                flattened_message["content"] = message.content
+            elif isinstance(message.content, list):
+                for content in message.content:
+                    if not hasattr(content, "type"):
                         raise ValueError(
                             "Malformed message content, missing 'type' field"
                         )
-                    if content["type"] != "text":
+                    if content.type != "text":
                         raise ValueError(
-                            f"Unsupported content type: {content['type']}"
+                            f"Unsupported content type: {content.type}"
                         )
 
                     if flattened_message["content"] != "":
                         flattened_message["content"] += "\n"
 
-                    flattened_message["content"] += content["text"]
+                    flattened_message["content"] += content.text
 
                 if "content" not in flattened_message:
                     raise ValueError(
@@ -335,7 +326,7 @@ class TextTokenizer(
                     )
             else:
                 raise ValueError(
-                    f"Unsupported content type: {type(message['content'])}"
+                    f"Unsupported content type: {type(message.content)}"
                 )
 
             flattened_messages.append(flattened_message)
@@ -399,16 +390,21 @@ class TextTokenizer(
 
         encoded_prompt: npt.NDArray[np.integer[Any]]
         if isinstance(prompt, str):
+
+            def _encode_fn(
+                prompt: str, add_special_tokens: bool
+            ) -> npt.NDArray[np.integer[Any]]:
+                return self.delegate.encode(
+                    prompt, add_special_tokens=add_special_tokens
+                )
+
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
             # Add a standard (non-async) lock in the executor thread if needed.
-            if add_special_tokens:
-                encoded_prompt = await run_with_default_executor(
-                    self._encode_with_special_tokens, prompt
-                )
-            else:
-                encoded_prompt = await run_with_default_executor(
-                    self._encode_without_special_tokens, prompt
-                )
+            encoded_prompt = await run_with_default_executor(
+                _encode_fn,
+                prompt,
+                add_special_tokens,
+            )
 
             if self.max_length and len(encoded_prompt) > self.max_length:
                 raise ValueError(
@@ -447,13 +443,10 @@ class TextTokenizer(
     async def _generate_prompt_and_token_ids(
         self,
         prompt: Sequence[int] | str | None,
-        messages: list[TextGenerationRequestMessage] | None,
+        messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None = None,
         chat_template_options: dict[str, Any] | None = None,
     ) -> tuple[str | list[int], npt.NDArray[np.integer[Any]]]:
-        if prompt is not None and messages is not None:
-            raise ValueError("both prompt and messages cannot be provided.")
-
         if isinstance(prompt, str):
             return prompt, await self.encode(prompt, add_special_tokens=True)
         elif isinstance(prompt, list):
@@ -620,14 +613,6 @@ class TextAndVisionTokenizer(
         # Use the pre-loaded HuggingFace config from pipeline_config
         config = pipeline_config.model.huggingface_config
 
-        # As we are adding special tokens during chat templating prior to tokenization,
-        # when add_special_tokens=True, we duplicate BOS tokens specifically.
-        self._encode_with_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=True
-        )
-        self._encode_without_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=False
-        )
         self.processor = AutoProcessor.from_pretrained(
             model_path, revision=revision, trust_remote_code=trust_remote_code
         )
@@ -691,16 +676,21 @@ class TextAndVisionTokenizer(
 
         encoded_prompt: npt.NDArray[np.integer[Any]]
         if isinstance(prompt, str):
+
+            def _encode_fn(
+                prompt: str, add_special_tokens: bool
+            ) -> npt.NDArray[np.integer[Any]]:
+                return self.delegate.encode(
+                    prompt, add_special_tokens=add_special_tokens
+                )
+
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
             # Add a standard (non-async) lock in the executor thread if needed.
-            if add_special_tokens:
-                encoded_prompt = await run_with_default_executor(
-                    self._encode_with_special_tokens, prompt
-                )
-            else:
-                encoded_prompt = await run_with_default_executor(
-                    self._encode_without_special_tokens, prompt
-                )
+            encoded_prompt = await run_with_default_executor(
+                _encode_fn,
+                prompt,
+                add_special_tokens,
+            )
 
             max_length = self.max_length or self.delegate.model_max_length
             if max_length and len(encoded_prompt) > max_length:
@@ -730,7 +720,7 @@ class TextAndVisionTokenizer(
         add_special_tokens = True
         if request.prompt is not None:
             prompt = request.prompt
-        elif request.messages is not None:
+        elif request.messages:
             prompt = self.apply_chat_template(request.messages)
             add_special_tokens = False
         else:

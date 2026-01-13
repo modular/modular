@@ -275,7 +275,14 @@ def dump_results(
             kl_max = f"{verdict.discrepancy_report.max_kl_div:.2e}"
             threshold_max = f"{verdict.kl_div_threshold:.2e}"
             kl_avg = f"{verdict.discrepancy_report.avg_kl_div:.2e}"
-            if kl_max > threshold_max:
+            if (
+                verdict.discrepancy_report.max_kl_div is None
+                or verdict.kl_div_threshold is None
+            ):
+                kl_max_str = f"{kl_max} (? {threshold_max})"
+            elif (
+                verdict.discrepancy_report.max_kl_div > verdict.kl_div_threshold
+            ):
                 kl_max_str = f"{kl_max} (>{threshold_max})"
             else:
                 kl_max_str = f"{kl_max} (<={threshold_max})"

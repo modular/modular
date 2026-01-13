@@ -622,7 +622,9 @@ class Tensor:
         with the given stream.
 
         The tensor is only copied if the requested device is different from the
-        device upon which the tensor is already resident.
+        device upon which the tensor is already resident. If the destination
+        stream is on the same device, then a new reference to the same tensor is
+        returned.
         """
 
     @overload

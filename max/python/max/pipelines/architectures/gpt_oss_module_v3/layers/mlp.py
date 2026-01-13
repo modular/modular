@@ -32,7 +32,7 @@ _ACTIVATION_FUNCTIONS: dict[str, Callable[[Tensor], Tensor]] = {
 }
 
 
-class MLP(Module):
+class MLP(Module[[Tensor], Tensor]):
     """Simple multi-layer perceptron composed of three :obj:`Linear` layers.
 
     Computes the MLP transformation as:
@@ -87,7 +87,7 @@ class MLP(Module):
         self.activation_function = _ACTIVATION_FUNCTIONS[activation_function]
         self.bias = bias
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """Applies the MLP transformation to the input.
 
         Args:

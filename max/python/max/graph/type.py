@@ -193,7 +193,7 @@ class DeviceRef:
 
     @staticmethod
     def from_mlir(attr: m.DeviceRefAttr) -> DeviceRef:
-        """Returns a device from mlir attribute"""
+        """Returns a device from an mlir attribute"""
         return DeviceRef(device_type=DeviceKind(attr.label), id=attr.id)
 
     @staticmethod

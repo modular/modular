@@ -398,13 +398,13 @@ def execute_flash_attention_suite(ctx: DeviceContext):
     var valid_length_ptr = UnsafePointer[UInt32].alloc(bs)
     var valid_length = LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
         valid_length_ptr,
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(1)),
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(bs)),
     )
 
     var cache_valid_length_ptr = UnsafePointer[UInt32].alloc(bs)
     var cache_valid_length = LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
         cache_valid_length_ptr,
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(1)),
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(bs)),
     )
 
     comptime dtype = DType.bfloat16

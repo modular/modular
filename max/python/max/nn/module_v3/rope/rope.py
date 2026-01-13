@@ -15,7 +15,7 @@
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor, defaults, defaults_like
-from max.graph import Dim
+from max.graph import Dim, DimLike
 
 from ..module import Module, module_dataclass
 
@@ -90,7 +90,7 @@ def positional_embedding(
 
 
 @module_dataclass
-class RotaryEmbedding(Module):
+class RotaryEmbedding(Module[[Tensor, DimLike], Tensor]):
     weight: Tensor
     #: Pre-computed embeddings of shape [max_sequence_length, n // 2, 2]
 
@@ -107,7 +107,7 @@ class RotaryEmbedding(Module):
         yield "max_sequence_length", self.max_sequence_length
 
     @F.functional
-    def __call__(self, x: Tensor, start_pos: Dim = Dim(0)) -> Tensor:
+    def forward(self, x: Tensor, start_pos: DimLike = 0) -> Tensor:
         """Applies rotary positional embeddings (RoPE) to `x`.
 
         seq_len is inferred from the shape of `x`.
@@ -124,6 +124,7 @@ class RotaryEmbedding(Module):
             the same shape as `x`.
         """
         _, seq_len, _, _ = x.shape
+        start_pos = Dim(start_pos)
 
         x_complex = F.as_interleaved_complex(x)
         freqs_cis = self.weight[start_pos : start_pos + seq_len, None, ...]
@@ -132,7 +133,7 @@ class RotaryEmbedding(Module):
 
 class TransposedRotaryEmbedding(RotaryEmbedding):
     @F.functional
-    def __call__(self, x: Tensor, start_pos: Dim = Dim(0)) -> Tensor:
+    def forward(self, x: Tensor, start_pos: DimLike = 0) -> Tensor:
         """Applies rotary positional embeddings (RoPE) to `x`.
 
         The representation of `x` is transposed within the final dimension
@@ -153,6 +154,7 @@ class TransposedRotaryEmbedding(RotaryEmbedding):
         """
         _, seq_len, _, _ = x.shape
         *rest, head_dim = x.shape
+        start_pos = Dim(start_pos)
 
         x_complex = x.reshape((*rest, 2, head_dim // 2)).T
         freqs_cis = self.weight[start_pos : start_pos + seq_len, None, ...]

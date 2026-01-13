@@ -105,7 +105,7 @@ from .block_scaled_tile_pipeline import (
     BlockScaledConsumerStage,
     BlockScaledProducerStage,
 )
-from .block_scaled_tile_loader import ScalingFactorLoader, copy_sf_tmem
+from .block_scaled_tile_loader import ScalingFactorLoader
 
 # Import WarpRole from the standard kernel
 from .matmul_kernels import WarpRole
@@ -348,6 +348,7 @@ struct BlackwellBlockScaledMatmulKernel[
         Self.b_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
+        Self.config.scaling_kind,
         Self.config.block_tile_shape,
         Self.config.mma_shape,
         accum_type = Self.accum_type,
@@ -410,6 +411,10 @@ struct BlackwellBlockScaledMatmulKernel[
         constrained[
             sf_tmem_usage <= Self.NUM_TMEM_COLS,
             "Scaling factor TMEM usage exceeds capacity",
+        ]()
+        constrained[
+            Self.config.scaling_kind == UMMAKind.KIND_MXF8F6F4,
+            "Structured implementation only support MXF8F6F4 for scaling kind",
         ]()
 
     # ========== Tile Scheduler Type ==========
@@ -546,23 +551,11 @@ struct BlackwellBlockScaledMatmulKernel[
                 var sfa_tmem = tmem_region.sfa(sf_idx)
                 var sfb_tmem = tmem_region.sfb(sf_idx)
 
-                # Copy scaling factors from SMEM to TMEM
-                copy_sf_tmem[
-                    Self.sfa_dtype,
-                    Self.sfa_smem_layout,
-                    Self.BM,
-                    Self.cta_group,
-                ](sfa_smem, sfa_tmem)
-                copy_sf_tmem[
-                    Self.sfb_dtype,
-                    Self.sfb_smem_layout,
-                    Self.MMA_N,
-                    Self.cta_group,
-                ](sfb_smem, sfb_tmem)
-
                 mma_op.mma(
                     a_tile,
                     b_tile,
+                    sfa_smem,
+                    sfb_smem,
                     UInt32(accum.offset()),
                     UInt32(sfa_tmem.offset()),
                     UInt32(sfb_tmem.offset()),

@@ -67,25 +67,30 @@ class _ThirdPartyDep:
     import_paths: list[str]
 
 
+def _third_party_dep_name(label: str) -> str:
+    # @@rules_pycross++lock_file+modular_pip_lock_file_repo//deps:pytest@8.2.2 -> pytest
+    # @modular_pip_lock_file_repo//deps:pytest -> pytest
+    return label.split(":")[-1].split("@")[0]
+
+
 # Raw label name, short name, import path
 def _process_third_party_deps(
     third_party_deps: set[str],
 ) -> list[_ThirdPartyDep]:
     results = list[_ThirdPartyDep]()
     for dep in third_party_deps:
-        if dep.startswith("@@rules_pycross"):
-            # Format: @@rules_pycross++lock_file+modular_pip_lock_file_repo//deps:pytest@8.2.2
-            name = dep.split(":")[-1].split("@")[0].replace("-", "_")
+        if dep.startswith(("@modular_pip_lock_file_repo//", "@@rules_pycross")):
+            name = _third_party_dep_name(dep).replace("-", "_")
             if imports := _THIRD_PARTY_IMPORTS.get(name):
                 import_paths = imports
             else:
-                import_paths = [name.replace("-", "_")]
+                import_paths = [name]
             results.append(_ThirdPartyDep(dep, import_paths))
         elif dep == "@@rules_python+//python/runfiles:runfiles":
             import_paths = ["python.runfiles"]
             results.append(_ThirdPartyDep(dep, import_paths))
         else:
-            raise ValueError(f"Unsupported pycross dep format: {dep}")
+            raise ValueError(f"Unsupported dep format: {dep}")
 
     return results
 
@@ -272,5 +277,13 @@ def check_dependencies_against_imports(
 
             # If none of the above, unresolved
             unresolved.add(mod._module)
+
+    # Map resolved label to unresolved alias from third_party_deps
+    ignore_extra_deps |= set(
+        "@@rules_pycross++lock_file+modular_pip_lock_file_repo//deps:"
+        + _third_party_dep_name(dep)
+        for dep in ignore_extra_deps
+        if dep.startswith("@@rules_pycross")
+    )
 
     return unresolved, all_deps - used_deps - ignore_extra_deps | no_src_deps

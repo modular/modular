@@ -18,7 +18,11 @@ import io
 import pytest
 from max import pipelines
 from max.driver import DeviceSpec
-from max.interfaces import RequestID, TextGenerationRequest
+from max.interfaces import (
+    RequestID,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+)
 from max.pipelines import PipelineConfig
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from PIL import Image
@@ -104,15 +108,17 @@ async def test_internvl_tokenizer_apply_chat_template(
 
     # Test with multimodal message (text + image).
     messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "content": "What is this?"},
-                {"type": "image"},
-                {"type": "text", "content": ", what is this "},
-                {"type": "image"},
-            ],
-        }
+        TextGenerationRequestMessage(
+            **{
+                "role": "user",
+                "content": [
+                    {"type": "text", "content": "What is this?"},
+                    {"type": "image"},
+                    {"type": "text", "content": ", what is this "},
+                    {"type": "image"},
+                ],
+            }
+        )
     ]
 
     # Mock the warning logger.
@@ -143,7 +149,11 @@ async def test_internvl_tokenizer_apply_chat_template(
 
     # Test with text-only message.
     mock_tokenizer.apply_chat_template.reset_mock()
-    text_only_messages = [{"role": "user", "content": "Hello world"}]
+    text_only_messages = [
+        TextGenerationRequestMessage(
+            **{"role": "user", "content": "Hello world"}
+        )
+    ]
 
     result2 = processor.apply_chat_template(
         text_only_messages, tokenize=False, add_generation_prompt=True
@@ -160,14 +170,16 @@ async def test_internvl_tokenizer_apply_chat_template(
     )
 
     multi_text_messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "content": "Hello"},
-                {"type": "image"},
-                {"type": "text", "content": "world"},
-            ],
-        }
+        TextGenerationRequestMessage(
+            **{
+                "role": "user",
+                "content": [
+                    {"type": "text", "content": "Hello"},
+                    {"type": "image"},
+                    {"type": "text", "content": "world"},
+                ],
+            }
+        )
     ]
 
     result3 = processor.apply_chat_template(

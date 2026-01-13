@@ -201,6 +201,8 @@ fn tcgen05_ld[
             " * m) // (32 * 32). width is "
         ),
         width,
+        " and ",
+        dtype,
         " but need ",
         (repeat * bits * datapaths) // (32 * 32),
     )

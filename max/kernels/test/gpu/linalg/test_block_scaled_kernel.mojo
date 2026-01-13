@@ -42,7 +42,7 @@ from linalg.matmul.gpu.sm100_structured.tile_pipeline import (
 from linalg.matmul.gpu.sm100_structured.block_scaled_output_writer import (
     BlockScaledTileWriter,
 )
-
+from gpu.mma_sm100 import UMMAKind
 
 # =============================================================================
 # Test Configuration Helper
@@ -64,6 +64,7 @@ fn _make_test_config[
     return BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ](
+        scaling_kind=UMMAKind.KIND_MXF8F6F4,
         cta_group=2,
         mma_shape=Index(256, 256, MMA_K),
         cluster_shape=Index(2, 1, 1),

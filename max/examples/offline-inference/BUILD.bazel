@@ -22,7 +22,6 @@ modular_run_binary_test(
     binary = "basic",
     tags = [
         "requires-network",
-        "resources:memory:55000",  # 55 GB
     ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],

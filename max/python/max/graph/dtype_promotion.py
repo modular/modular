@@ -116,7 +116,7 @@ def _promote_to_strong(
 ) -> TensorValue:
     """Promotes weak dtypes and handle device placement.
 
-    If the the input value is already strong, its dtype will not be changed.
+    If the input value is already strong, its dtype will not be changed.
     Instead, strong dtype promotion will be handled by the individual ops in RMO.
     """
     if _is_strong_tensor_value_like(value):

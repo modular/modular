@@ -19,9 +19,8 @@ if running on a single node you can run the compiled binary directly without
 mpirun.
 """
 
-# RUN: NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # RUN: %mojo-build %s -o %t
-# RUN: %mpirun -n $NUM_GPUS %t
+# RUN: %mpirun-all-gpus %t
 
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import LegacyUnsafePointer, alloc

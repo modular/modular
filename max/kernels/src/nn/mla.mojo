@@ -2000,7 +2000,7 @@ fn mla_prefill_single_batch[
         IntTuple(Int(BM), Int(q_depth)),
         IntTuple(Int(num_heads * UInt(q_depth)), 1),
     )
-    var q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
+    var q_tile_num_rows = min(UInt32(BM), UInt(seq_len) - q_tile_idx * BM)
     var q_offset = q_depth * (head_idx + num_heads * q_tile_idx * BM)
 
     var q_gmem_block = LayoutTensor[

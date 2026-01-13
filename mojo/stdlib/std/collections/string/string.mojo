@@ -447,20 +447,6 @@ struct String(
         """
         self = value.__str__()
 
-    fn __init__[T: StringableRaising](out self, value: T) raises:
-        """Initialize from a type conforming to `StringableRaising`.
-
-        Parameters:
-            T: The type conforming to Stringable.
-
-        Args:
-            value: The object to get the string representation of.
-
-        Raises:
-            If there is an error when computing the string representation of the type.
-        """
-        self = value.__str__()
-
     # ===------------------------------------------------------------------=== #
     # Writables
     # ===------------------------------------------------------------------=== #

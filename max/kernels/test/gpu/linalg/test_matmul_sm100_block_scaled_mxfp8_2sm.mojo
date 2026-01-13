@@ -45,6 +45,7 @@ from linalg.fp4_utils import (
 from random import random_ui64
 from builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import LayoutTensor, Layout, RuntimeLayout
+from gpu.mma_sm100 import UMMAKind
 
 
 fn simple_init() -> Bool:
@@ -302,8 +303,10 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             0, align_up(k.value, SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
         ):
             if idx0 < m.value and idx1 < k.value:
-                var scale_value = _convert_f32_to_float8_ue8m0[scales_dtype](
-                    (1 << random_ui64(0, 3)).cast[DType.float32]()
+                var scale_value = (
+                    (1 << random_ui64(0, 3))
+                    .cast[DType.float32]()
+                    .cast[scales_dtype]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     a_scales_tensor_host, idx0, idx1, scale_value
@@ -318,8 +321,10 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             0, align_up(k.value, SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
         ):
             if idx0 < n.value and idx1 < k.value:
-                var scale_value = _convert_f32_to_float8_ue8m0[scales_dtype](
-                    (1 << random_ui64(0, 3)).cast[DType.float32]()
+                var scale_value = (
+                    (1 << random_ui64(0, 3))
+                    .cast[DType.float32]()
+                    .cast[scales_dtype]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     b_scales_tensor_host, idx0, idx1, scale_value
@@ -338,6 +343,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime matmul_config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ](
+        scaling_kind=UMMAKind.KIND_MXF8F6F4,
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
@@ -413,131 +419,130 @@ def main():
         comptime out_dtype = DType.bfloat16
         comptime scale_dtype = MXFP8_SF_DTYPE
         comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
+        comptime cta_group = 2
+        comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
+        comptime BK = (swizzle.bytes() // size_of[dtype]())
+        comptime MMA_K = 32
 
         @parameter
-        for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
-            comptime BK = (swizzle.bytes() // size_of[dtype]())
-            comptime MMA_K = 32
+        for bm in [128]:
 
             @parameter
-            for bm in [128]:
+            for bn in [64, 128]:
+                comptime block_tile_shape = Index(bm, bn, BK)
+                comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
 
-                @parameter
-                for bn in [64, 128]:
-                    comptime block_tile_shape = Index(bm, bn, BK)
-                    comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cta_group=cta_group,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=8,
+                ](
+                    ctx,
+                    dynamic(1000),
+                    static[1024](),
+                    static[1024 + 16](),
+                )
 
-                    test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-                        dtype,
-                        dtype,
-                        out_dtype,
-                        scale_dtype,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                        cta_group=2,
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        block_swizzle_size=8,
-                    ](
-                        ctx,
-                        dynamic(1000),
-                        static[1024](),
-                        static[1024 + 16](),
-                    )
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cta_group=cta_group,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=4,
+                ](
+                    ctx,
+                    dynamic(512),
+                    static[4096](),
+                    static[1024 + 16](),
+                )
 
-                    test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-                        dtype,
-                        dtype,
-                        out_dtype,
-                        scale_dtype,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                        cta_group=2,
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        block_swizzle_size=4,
-                    ](
-                        ctx,
-                        dynamic(512),
-                        static[4096](),
-                        static[1024 + 16](),
-                    )
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](4, 2, 1),
+                    cta_group=cta_group,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=0,
+                    k_group_size=1,
+                ](
+                    ctx,
+                    dynamic(500),
+                    static[2048](),
+                    static[4096](),
+                )
 
-                    test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-                        dtype,
-                        dtype,
-                        out_dtype,
-                        scale_dtype,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 2, 1),
-                        cta_group=2,
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        block_swizzle_size=0,
-                        k_group_size=1,
-                    ](
-                        ctx,
-                        dynamic(500),
-                        static[2048](),
-                        static[4096](),
-                    )
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](8, 2, 1),
+                    cta_group=cta_group,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=2,
+                ](
+                    ctx,
+                    dynamic(999),
+                    static[256](),
+                    static[128](),
+                )
 
-                    test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-                        dtype,
-                        dtype,
-                        out_dtype,
-                        scale_dtype,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](8, 2, 1),
-                        cta_group=2,
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        block_swizzle_size=2,
-                    ](
-                        ctx,
-                        dynamic(999),
-                        static[256](),
-                        static[128](),
-                    )
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cta_group=cta_group,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=1,
+                ](
+                    ctx,
+                    dynamic(777),
+                    static[2560](),
+                    static[8192](),
+                )
 
-                    test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-                        dtype,
-                        dtype,
-                        out_dtype,
-                        scale_dtype,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                        cta_group=2,
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        block_swizzle_size=1,
-                    ](
-                        ctx,
-                        dynamic(777),
-                        static[2560](),
-                        static[8192](),
-                    )
-
-                    test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-                        dtype,
-                        dtype,
-                        out_dtype,
-                        scale_dtype,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                        cta_group=2,
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        block_swizzle_size=1,
-                    ](
-                        ctx,
-                        dynamic(1),
-                        static[576](),
-                        static[7168](),
-                    )
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cta_group=cta_group,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=1,
+                ](
+                    ctx,
+                    dynamic(1),
+                    static[576](),
+                    static[7168](),
+                )

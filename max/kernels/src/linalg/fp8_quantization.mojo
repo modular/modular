@@ -1183,7 +1183,7 @@ fn convert_e4m3fn_to_e4m3fnuz(
         comptime ROCM_FP8_NAN_AS_INT = -128
 
         input_vec_int8 = input_vec_int8.eq(ROCM_FP8_NAN_AS_INT).select(
-            0, input_vec_int8
+            Int8(0), input_vec_int8
         )
         var output_vec = bitcast[DType.float8_e4m3fnuz](input_vec_int8)
         output_buffer.store(idx, output_vec)

@@ -121,6 +121,16 @@ fn MPI_Init_thread(
         raise Error("failed to MPI_Init_thread with error code:", result)
 
 
+fn MPI_Initialized(flag: UnsafePointer[c_int, MutExternalOrigin]) raises:
+    """Check if MPI has been initialized."""
+    var result = _get_mpi_function[
+        "MPI_Initialized",
+        fn (UnsafePointer[c_int, MutExternalOrigin]) -> c_int,
+    ]()(flag)
+    if result != 0:
+        raise Error("failed to check MPI_Initialized with error code:", result)
+
+
 fn MPI_Finalize() raises:
     """Finalize MPI."""
     var result = _get_mpi_function[

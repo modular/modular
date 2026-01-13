@@ -28,12 +28,13 @@ from sys.ffi import (
 from sys.info import CompilationTarget, is_nvidia_gpu, is_amd_gpu
 
 from gpu.host import DeviceContext
-from gpu.host._amdgpu_hip import hipStream_t
+from gpu.host._amdgpu_hip import hipStream_t, HIP
 from gpu.host._nvidia_cuda import CUmodule, CUstream
 
 from ._mpi import (
     MPI_Comm_rank,
     MPI_Init,
+    MPI_Initialized,
     MPIComm,
     get_mpi_comm_world,
     MPI_THREAD_MULTIPLE,
@@ -61,7 +62,7 @@ comptime ROCSHMEM_LIBRARY = _Global["ROCSHMEM_LIBRARY", _init_rocshmem_dylib]
 
 
 fn _init_rocshmem_dylib() -> OwnedDLHandle:
-    var lib = "librocshmem.so"
+    var lib = "librocshmem_host.so"
     # If provided, allow an override directory for nvshmem bootstrap libs.
     # Example:
     #   export MODULAR_SHMEM_LIB_DIR="/path/to/venv/lib"
@@ -352,6 +353,28 @@ fn rocshmem_finalize():
     ]()()
 
 
+fn rocshmemx_hipmodule_init[T: AnyType](module: T) -> c_int:
+    """Initialize rocSHMEM device state in a dynamically loaded HIP module.
+
+    This is the AMD equivalent of NVSHMEM's nvshmemx_cumodule_init().
+    It copies the initialized ROCSHMEM_CTX_DEFAULT from the host library
+    to the specified HIP module's device memory.
+
+    Parameters:
+        T: The HIP module type (usually HIP.hipModule_t).
+
+    Args:
+        module: The HIP module handle to initialize.
+
+    Returns:
+        A hipSuccess (0) on success, error code otherwise.
+    """
+    return _get_rocshmem_function[
+        "rocshmemx_hipmodule_init",
+        fn (T) -> c_int,
+    ]()(module)
+
+
 fn rocshmem_my_pe() -> c_int:
     @parameter
     if is_amd_gpu():
@@ -397,6 +420,19 @@ fn rocshmem_free[
         "rocshmem_free",
         fn (type_of(ptr)) -> NoneType,
     ]()(ptr)
+
+
+fn rocshmem_calloc[
+    dtype: DType
+](count: c_size_t, size: c_size_t) -> UnsafePointer[
+    Scalar[dtype], MutExternalOrigin
+]:
+    return _get_rocshmem_function[
+        "rocshmem_calloc",
+        fn (
+            c_size_t, c_size_t
+        ) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    ]()(count, size)
 
 
 # ===----------------------------------------------------------------------=== #

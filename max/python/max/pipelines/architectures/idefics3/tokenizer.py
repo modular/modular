@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import functools
 import io
 import json
 from collections.abc import Sequence
@@ -71,14 +70,6 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         # Set max_length after delegate is created (like parent class)
         self.max_length = max_length or self.delegate.model_max_length
 
-        # Set up encode methods (copied from TextAndVisionTokenizer)
-        self._encode_with_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=True
-        )
-        self._encode_without_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=False
-        )
-
         # Use the pre-loaded HuggingFace config from pipeline_config
         config = pipeline_config.model.huggingface_config
 
@@ -126,13 +117,13 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         # Convert to text-only messages first
         text_messages: list[dict[str, Any]] = []
         for message in messages:
-            text_message: dict[str, Any] = {"role": message.get("role")}
-            content = message.get("content")
+            text_message: dict[str, Any] = {"role": message.role}
+            content = message.content
 
             if isinstance(content, str):
                 text_message["content"] = content
             elif isinstance(content, list):
-                text_parts = []
+                text_parts: list[str] = []
                 for item in content:
                     if isinstance(item, dict) and item.get("type") == "text":
                         # Handle both "content" and "text" keys
@@ -165,7 +156,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         add_special_tokens = True
         if request.prompt is not None:
             prompt = request.prompt
-        elif request.messages is not None:
+        elif request.messages:
             prompt = self.apply_chat_template(request.messages)
             add_special_tokens = False
         else:

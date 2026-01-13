@@ -20,12 +20,9 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
+        "//max/python/max/driver",
         "//max/python/max/nn",
         requirement("numpy"),
     ],

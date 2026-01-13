@@ -12,7 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-from max.interfaces import RequestID, TextGenerationRequest
+from max.interfaces import (
+    RequestID,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+)
 
 
 def test_text_generation_request_init() -> None:
@@ -23,10 +27,10 @@ def test_text_generation_request_init() -> None:
             model_name="test",
             prompt="hello world",
             messages=[
-                {
-                    "role": "user",
-                    "content": [{"type": "text", "text": "hello world"}],
-                }
+                TextGenerationRequestMessage(
+                    role="user",
+                    content=[{"type": "text", "text": "hello world"}],
+                )
             ],
         )
 
@@ -34,7 +38,6 @@ def test_text_generation_request_init() -> None:
         request_id=RequestID(),
         model_name="test",
         prompt="hello world",
-        messages=None,
     )
 
     _ = TextGenerationRequest(
@@ -42,9 +45,103 @@ def test_text_generation_request_init() -> None:
         model_name="test",
         prompt=None,
         messages=[
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": "hello world"}],
-            }
+            TextGenerationRequestMessage(
+                role="user",
+                content=[{"type": "text", "text": "hello world"}],
+            )
         ],
     )
+
+    # String prompts with images provided are not accepted.
+    with pytest.raises(ValueError):
+        _ = TextGenerationRequest(
+            request_id=RequestID(),
+            model_name="test",
+            prompt="hello world",
+            messages=[],
+            images=[b""],
+        )
+
+    # If images are provided, we should verify there is an appropriate message for each.
+    with pytest.raises(ValueError):
+        _ = TextGenerationRequest(
+            request_id=RequestID(),
+            model_name="test",
+            prompt=None,
+            messages=[
+                TextGenerationRequestMessage(
+                    role="user",
+                    content=[
+                        {"type": "text", "text": "hello world"},
+                        {"type": "image"},
+                        {"type": "image"},
+                    ],
+                )
+            ],
+            images=[b""],
+        )
+
+    with pytest.raises(ValueError):
+        _ = TextGenerationRequest(
+            request_id=RequestID(),
+            model_name="test",
+            prompt=None,
+            messages=[
+                TextGenerationRequestMessage(
+                    role="user",
+                    content=[{"type": "text", "text": "hello world"}],
+                )
+            ],
+            images=[b"", b""],
+        )
+
+    _ = TextGenerationRequest(
+        request_id=RequestID(),
+        model_name="test",
+        prompt=None,
+        messages=[
+            TextGenerationRequestMessage(
+                role="user",
+                content=[
+                    {"type": "text", "text": "hello world"},
+                    {"type": "image"},
+                    {"type": "image"},
+                ],
+            )
+        ],
+        images=[b"", b""],
+    )
+
+    # role not user is not supported.
+    with pytest.raises(ValueError):
+        _ = TextGenerationRequest(
+            request_id=RequestID(),
+            model_name="test",
+            prompt=None,
+            messages=[
+                TextGenerationRequestMessage(
+                    role="not_user",
+                    content=[{"type": "text", "text": "hello world"}],
+                )
+            ],
+        )
+
+    # image_url content type is not supported in internal format.
+    with pytest.raises(ValueError):
+        _ = TextGenerationRequest(
+            request_id=RequestID(),
+            model_name="test",
+            prompt=None,
+            messages=[
+                TextGenerationRequestMessage(
+                    role="user",
+                    content=[
+                        {"type": "text", "text": "hello world"},
+                        {
+                            "type": "image_url",
+                            "image_url": "https://example.com/image.jpg",
+                        },
+                    ],
+                )
+            ],
+        )

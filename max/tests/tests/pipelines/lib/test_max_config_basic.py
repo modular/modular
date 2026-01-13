@@ -15,9 +15,10 @@
 from __future__ import annotations
 
 import tempfile
+from pathlib import Path
 
 import yaml
-from max.config import ConfigFileModel
+from max.config import ConfigFileModel, MAXBaseModel
 from max.dtype import DType
 from max.engine import GPUProfilingMode
 from max.nn.kv_cache import KVCacheStrategy
@@ -37,6 +38,17 @@ class TestConfig(ConfigFileModel):
     test_int: int = Field(default=42)
     test_bool: bool = Field(default=True)
     test_inf: float = Field(default=float("inf"))
+
+
+class _BaseModelForEqTest(MAXBaseModel):
+    a: int = 1
+    b: str = "x"
+
+
+class _ConfigFileModelForEqTest(ConfigFileModel):
+    x: int = 1
+    # Ensure `section_name` does not participate in equality.
+    section_name: str | None = Field(default=None, exclude=True)
 
 
 class TestMAXConfigInterface:
@@ -138,6 +150,43 @@ class TestMAXConfigFileLoading:
             assert isinstance(sampling_config.in_dtype, DType)
             assert sampling_config.in_dtype == DType.float16
             assert sampling_config.out_dtype == DType.bfloat16
+
+
+class TestPydanticBaseModelEquality:
+    def test_max_base_model_structural_equality(self) -> None:
+        assert _BaseModelForEqTest(a=1, b="x") == _BaseModelForEqTest(
+            a=1, b="x"
+        )
+        assert _BaseModelForEqTest(a=1, b="x") != _BaseModelForEqTest(
+            a=2, b="x"
+        )
+        assert _BaseModelForEqTest(a=1, b="x") != _BaseModelForEqTest(
+            a=1, b="y"
+        )
+
+    def test_max_base_model_notimplemented_for_other_types(self) -> None:
+        obj = _BaseModelForEqTest(a=1, b="x")
+        assert obj.__eq__(123) is NotImplemented
+        assert obj.__ne__(123) is NotImplemented
+
+    def test_config_file_model_section_name_excluded_from_equality(
+        self,
+    ) -> None:
+        assert _ConfigFileModelForEqTest(
+            x=1, section_name="a"
+        ) == _ConfigFileModelForEqTest(x=1, section_name="b")
+
+    def test_config_file_model_config_file_participates_in_equality(
+        self,
+    ) -> None:
+        # Construct a trivial config file so the validator can open it.
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = Path(td) / "cfg.yaml"
+            cfg_path.write_text("{}", encoding="utf-8")
+
+            a = _ConfigFileModelForEqTest(x=1)
+            b = _ConfigFileModelForEqTest(x=1, config_file=str(cfg_path))
+            assert a != b
 
 
 class TestBuiltinConfigClasses:

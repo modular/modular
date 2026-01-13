@@ -1,0 +1,335 @@
+---
+id: mojo-grammar
+title: "Mojo grammar reference"
+sidebar_label: Mojo grammar
+description: An overview of the Mojo Programming Language grammar
+---
+
+Mojo programming language grammar. Features marked _(Nightly)_ are available only in nightly builds.
+
+:::caution
+Auto-generated on 12 Jan 2026. Content may be incomplete or incorrect.
+:::
+
+---
+
+## Lexical Structure
+
+### Source Organization
+
+- Physical lines are separated by newline characters.
+- Logical lines may span multiple physical lines using `\` for line continuation.
+- Indentation is semantically significant, following Python-style rules.
+- Comments start with `#` and continue to the end of the line.
+
+### Identifiers
+
+```
+identifier = (letter | "_") {letter | digit | "_"}
+
+any_byte = any byte except "\`" and vertical whitespace
+escaped_identifier = "`" any_byte+ "`"
+
+letter = "a"..."z" | "A"..."Z"
+digit = "0"..."9"
+```
+
+Keywords can be used as identifiers by enclosing them in backticks, or after `.` without escaping.
+
+### Literals
+
+```
+nonzero_digit = "1"..."9"
+hex_digit = "0"..."9" | "a"..."f" | "A"..."F"
+octal_digit = "0"..."7"
+
+integer_literal = decimal_integer | hex_integer | octal_integer | binary_integer
+decimal_integer = nonzero_digit {digit} | "0"+
+hex_integer = "0" ("x" | "X") hex_digit+
+octal_integer = "0" ("o" | "O") octal_digit+
+binary_integer = "0" ("b" | "B") ("0" | "1")+
+
+float_literal = pointfloat | exponentfloat
+pointfloat = [digitpart] fraction | digitpart "."
+exponentfloat = (digitpart | pointfloat) exponent
+fraction = "." digitpart
+exponent = ("e" | "E") ["+" | "-"] digitpart
+digitpart = digit+
+
+string_literal = [raw_prefix] short_string | [raw_prefix] long_string
+raw_prefix = "r" | "R"
+short_string = "'" string_content "'" | '"' string_content '"'
+long_string = "'''" string_content "'''" | '"""' string_content '"""'
+```
+
+### Keywords
+
+```
+and        as         break      class      continue   def
+elif       else       except     False      finally    fn
+for        from       if         import     in         is
+Never      None       not        or         pass       raise
+return     Self       struct     trait      True       try
+while      with
+
+comptime   var        ref
+```
+
+### Operators
+
+- **Arithmetic:** `+` `-` `*` `/` `//` `%` `**` `@`
+- **Comparison:** `==` `!=` `<` `>` `<=` `>=` `is` `in`
+- **Logical:** `and` `or` `not`
+- **Bitwise:** `&` `|` `^` `~` `<<` `>>`
+- **Assignment:** `=` `:=` `+=` `-=` `*=` `/=` `//=` `%=` `**=` `@=` `&=` `|=` `^=` `<<=` `>>=`
+- **Other:** `->` `.` `,` `:` `;` `...` `_`
+
+---
+
+## Expressions
+
+### Precedence (highest to lowest)
+
+```
+1.  ()  []  .              Grouping, subscript, attribute
+2.  **                     Power (right-associative)
+3.  (tbd)                  (Not yet released)
+4.  +x  -x  ~x             Unary
+5.  *  /  //  %  @         Multiplicative
+6.  +  -                   Additive
+7.  <<  >>                 Shift
+8.  &                      Bitwise AND
+9.  ^                      Bitwise XOR
+10. |                      Bitwise OR
+11. ==  !=  <  >  <=  >=   Comparisons
+    is  in
+12. not                    Boolean NOT
+13. and                    Boolean AND
+14. or                     Boolean OR
+15. if-else                Conditional
+16. :=                     Walrus
+```
+
+<!--
+
+Not yet released
+
+3. await                  Await
+17. lambda                 Lambda
+
+-->
+
+### Expression Grammar
+
+<!--
+
+power = await_expression ["**" factor] _async/await not yet released_
+await_expression = ["await"] primary _async/await not yet released_
+expression = conditional_expression | lambda_expression
+
+-->
+
+```
+expression = conditional_expression
+
+conditional_expression = or_expression ["if" or_expression "else" expression]
+
+or_expression = and_expression {"or" and_expression}
+and_expression = not_expression {"and" not_expression}
+not_expression = "not" not_expression | comparison
+
+comparison = bitwise_or {comp_operator bitwise_or}
+comp_operator = "<" | ">" | "==" | ">=" | "<=" | "!=" | "is" ["not"] | ["not"] "in"
+
+bitwise_or = bitwise_xor {"|" bitwise_xor}
+bitwise_xor = bitwise_and {"^" bitwise_and}
+bitwise_and = shift_expression {"&" shift_expression}
+
+shift_expression = arith_expression {("<<" | ">>") arith_expression}
+arith_expression = term {("+" | "-") term}
+term = factor {("*" | "@" | "/" | "//" | "%") factor}
+
+factor = ("+" | "-" | "~") factor | power
+power = primary ["**" factor]
+
+primary = atom | attributeref | subscription | call
+
+atom = identifier | literal | enclosure | comptime_expression | ellipsis
+enclosure = parenth_form | list_display | dict_display | set_display | comprehension
+
+comptime_expression = "comptime" "(" expression ")"
+ellipsis = "..."
+
+parenth_form = "(" [expression_list] ")"
+list_display = "[" [expression_list | comprehension] "]"
+dict_display = "{" [key_datum_list | dict_comprehension] "}"
+set_display = "{" (expression_list | comprehension) "}"
+
+attributeref = primary "." identifier
+subscription = primary "[" expression_list "]"
+call = primary "(" [argument_list] ")"
+
+argument_list = positional_arguments ["," keyword_arguments] | keyword_arguments
+positional_arguments = argument {"," argument} ["," "*" expression]
+keyword_arguments = keyword_item {"," keyword_item} ["," "**" expression]
+keyword_item = identifier "=" expression
+
+comprehension = expression comp_for
+comp_for = "for" target_list "in" or_expression [comp_iter]
+comp_iter = comp_for | comp_if
+comp_if = "if" expression [comp_iter]
+
+expression_list = expression {"," expression} [","]
+target_list = target {"," target} [","]
+target = identifier | "(" target_list ")" | "[" target_list "]" | attributeref | subscription
+```
+
+<!--
+
+Not yet released
+
+lambda_expression = "lambda" [parameter_list] ":" expression
+
+-->
+
+---
+
+## Statements
+
+```
+statement = simple_stmt | compound_stmt
+
+simple_stmt = small_stmt {";" small_stmt} [";"] NEWLINE
+small_stmt = expression_stmt | assignment_stmt | pass_stmt | return_stmt
+           | raise_stmt | break_stmt | continue_stmt | import_stmt
+
+expression_stmt = expression
+
+assignment_stmt = target_list {"=" target_list} "=" expression_list
+                | target augop expression_list
+                | target ":" expression ["=" expression]
+
+augop = "+=" | "-=" | "*=" | "@=" | "/=" | "//=" | "%=" | "**="
+      | ">>=" | "<<=" | "&=" | "^=" | "|="
+
+pass_stmt = "pass"
+return_stmt = "return" [expression_list]
+raise_stmt = "raise" [expression ["from" expression]]
+break_stmt = "break"
+continue_stmt = "continue"
+
+import_stmt = "import" module_list | "from" module "import" ("*" | import_list)
+module_list = module_name {"," module_name}
+module_name = identifier {"." identifier} ["as" identifier]
+import_list = identifier ["as" identifier] {"," identifier ["as" identifier]}
+
+compound_stmt = if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | structdef | traitdef
+
+suite = simple_stmt | NEWLINE INDENT statement+ DEDENT
+
+if_stmt = "if" expression ":" suite {"elif" expression ":" suite} ["else" ":" suite]
+while_stmt = "while" expression ":" suite ["else" ":" suite]
+for_stmt = "for" target_list "in" expression_list ":" suite ["else" ":" suite]
+
+try_stmt = "try" ":" suite
+           (except_clause ":" suite)+
+           ["else" ":" suite]
+           ["finally" ":" suite]
+except_clause = "except" [expression ["as" identifier]]
+
+with_stmt = "with" with_item {"," with_item} ":" suite
+with_item = expression ["as" target]
+```
+
+<!--
+Not yet released
+
+assert_stmt = "assert" expression ["," expression]
+| assert_stmt
+-->
+
+---
+
+## Declarations
+
+### Functions
+
+```
+funcdef = [decorators] functype identifier [type_params] parameters
+          ["->" type] ["raises" [type]] ":" suite  # Typed raises (Nightly)
+
+functype = "def" | "fn"
+
+parameters = "(" [parameter_list] ")"
+parameter_list = param {"," param} ["," ["*" [param]] ["," "**" param]]
+               | param {"," param} ["," "..."]  # Ellipsis delays parameter binding
+param = identifier [":" type] [convention] ["=" expression]
+
+convention = "borrowed" | "inout" | "var" | "ref" | "deinit"  # deinit (Nightly)
+
+decorators = {"@" expression NEWLINE}
+
+type_params = "[" type_param {"," type_param} "]"
+type_param = identifier [":" type] ["=" expression]
+```
+
+### Structs
+
+```
+structdef = [decorators] "struct" identifier [type_params]
+            ["(" trait_list ")"] ":" suite
+
+trait_list = identifier [type_params] {"," identifier [type_params]}
+```
+
+### Traits
+
+```
+traitdef = [decorators] "trait" identifier [type_params]
+           ["(" trait_list ")"] ":" suite
+```
+
+### Extensions
+
+```
+extensiondef = [decorators] "__extension" type [":" trait] ":" suite
+```
+
+### Aliases
+
+```
+aliasdef = "comptime" identifier [type_params] "=" expression
+```
+
+---
+
+## Types
+
+```
+type = identifier [type_arguments]
+     | function_type
+     | tuple_type
+     | ref_type  # (Nightly)
+
+type_arguments = "[" type_arg {"," type_arg} "]"
+type_arg = type | expression
+
+tuple_type = "(" type {"," type} [","] ")"
+function_type = "fn" "(" [type_list] ")" ["->" type] ["raises" [type]]  # Typed raises (Nightly)
+ref_type = "ref" "[" origin_list "]" type  # (Nightly)
+
+type_list = type {"," type} [","]
+origin_list = expression {"," expression} [","]
+```
+
+---
+
+## Notes
+
+- **Indentation**: Spaces or tabs are allowed, but must be consistent.
+- **Line continuation**: Use `\` or implicit continuation within `()`, `[]`, or `{}`.
+- **Trailing commas**: Allowed in lists, tuples, and argument lists.
+- **Semicolons**: Optional as statement separators on the same line.
+- **Ellipsis (`...`)**: Used as an expression value of type `EllipsisType`, in subscripting operations, and in parameter lists to delay binding of both keyword and non-keyword parameters (replaces `*_` and `**_` syntax).
+- **`comptime()` expression**: Forces a subexpression to be evaluated at compile time.
+- **`Never` type**: Used for functions that never return normally (like `abort()`) or are guaranteed to raise without returning.

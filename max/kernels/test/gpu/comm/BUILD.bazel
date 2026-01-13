@@ -51,6 +51,8 @@ HIGH_GPU_MEMORY_TESTS = [
             src,
             "comm_test_utils.mojo",
         ],
+        # NOTE: test_allgather.mojo tests deprecated functionality.
+        copts = ["-Wno-error"] if src == "test_allgather.mojo" else [],
         env = {
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "80",

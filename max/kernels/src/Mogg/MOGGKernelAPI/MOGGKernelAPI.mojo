@@ -846,6 +846,9 @@ struct Log(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
         return log(x)
 
 

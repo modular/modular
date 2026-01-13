@@ -28,7 +28,9 @@ from utils import IndexList
 # ===----------------------------------------------------------------------=== #
 
 
-fn kl_div(x: SIMD, y: type_of(x)) -> type_of(x):
+fn kl_div(
+    x: SIMD, y: type_of(x)
+) -> type_of(x) where x.dtype.is_floating_point():
     """Elementwise function for computing Kullback-Leibler divergence.
 
     $$
@@ -56,7 +58,7 @@ fn kl_div[
     x: type_of(output),
     y: type_of(output),
     len: Int,
-) raises:
+) raises where dtype.is_floating_point():
     @parameter
     fn kl_div_elementwise[
         simd_width: Int, rank: Int, alignment: Int = 1
@@ -80,7 +82,7 @@ fn kl_div[
     len: Int,
 ) -> Scalar[
     out_type
-]:
+] where dtype.is_floating_point() where out_type.is_floating_point():
     comptime simd_width = simd_width_of[dtype]()
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)

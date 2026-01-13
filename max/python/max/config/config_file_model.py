@@ -18,10 +18,12 @@ import enum
 from typing import Any, get_args, get_origin
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import Field, model_validator
+
+from .base_model import MAXBaseModel
 
 
-class ConfigFileModel(BaseModel):
+class ConfigFileModel(MAXBaseModel):
     """Base class for models that can load configuration from a file.
 
     This class provides functionality for Pydantic-based config classes to load
@@ -122,27 +124,6 @@ class ConfigFileModel(BaseModel):
             # Note: Due to cyclopts processing order, env vars override config files.
             data = loaded_data | data
         return data
-
-    # TODO(SERVSYS-1087): If still needed, move them to a separate class.
-    # Doesn't seem specific to ConfigFileModel.
-    def __eq__(self, other: object) -> bool:
-        """Structural equality based on public model fields.
-
-        Pydantic's default equality can incorporate internal bookkeeping (e.g.
-        fields-set tracking and private attributes). For config objects we want a
-        stable notion of equality based on their declared fields, so config
-        roundtrips through pickling/serialization compare equal.
-        """
-        if not isinstance(other, type(self)):
-            return NotImplemented
-        return self.model_dump(mode="python") == other.model_dump(mode="python")
-
-    def __ne__(self, other: object) -> bool:
-        """Negation of `__eq__` with consistent NotImplemented behavior."""
-        eq_result = self.__eq__(other)
-        if eq_result is NotImplemented:
-            return NotImplemented
-        return not eq_result
 
     @classmethod
     def _coerce_enum_fields(cls, loaded_data: dict[str, Any]) -> dict[str, Any]:

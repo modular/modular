@@ -70,9 +70,12 @@ class MAXModelConfigBase(ConfigFileModel):
     # Allow arbitrary types (like DeviceRef, AutoConfig) to avoid schema generation errors.
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    # TODO(SERVSYS-1084): Restructure the inheritance hierarchy so that this
-    # class can be made largely empty for all model configs, and that the only
-    # ones that need fields below are subclassed separately.
+    @staticmethod
+    def help() -> dict[str, str]:
+        return {}
+
+
+class MAXModelConfig(MAXModelConfigBase):
     use_subgraphs: bool = Field(default=True)
     """Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true."""
 
@@ -80,12 +83,6 @@ class MAXModelConfigBase(ConfigFileModel):
     """Data-parallelism parameter. The degree to which the model is replicated
     is dependent on the model type."""
 
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {}
-
-
-class MAXModelConfig(MAXModelConfigBase):
     # NOTE: model_path is made a str of "" by default, to avoid having
     # it be Optional to check for None and then littering the codebase with
     # asserts just to keep mypy happy.
@@ -1010,6 +1007,7 @@ class MAXModelConfig(MAXModelConfigBase):
             "force_download": "Specify whether to forcefully download a file even if it already exists in local cache. Set this to true if you want to ensure you have the latest version.",
             "vision_config_overrides": "Model-specific vision configuration overrides. For example, for InternVL: {'max_dynamic_patch': 24}.",
             "rope_type": "Force using a specific rope type: 'none' | 'normal' | 'neox'. Only matters for GGUF weights.",
+            "data_parallel_degree": "Data-parallelism parameter. The degree to which the model is replicated is dependent on the model type.",
             "use_subgraphs": "Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true.",
         }
 

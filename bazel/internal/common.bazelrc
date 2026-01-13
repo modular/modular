@@ -78,6 +78,7 @@ common --@rules_python//python/config_settings:exec_tools_toolchain=disabled
 
 # Make flag easier to write on the command line
 build --flag_alias=mojocopt=@rules_mojo//:mojo_copt
+build --flag_alias=mojopackagecopt=@rules_mojo//:mojo_package_copt
 
 # Disable cc_library's underlying shared library because of circular dependency linking issues
 build --dynamic_mode=off
@@ -127,6 +128,11 @@ run --run_env=MODULAR_CRASH_REPORTING_ENABLED=false
 build --action_env=MODULAR_TELEMETRY_ENABLED=false --host_action_env=MODULAR_TELEMETRY_ENABLED=false
 build --test_env=MODULAR_TELEMETRY_ENABLED=false
 run --run_env=MODULAR_TELEMETRY_ENABLED=false
+
+# Emit Mojo is enabled by default for build, run, and test.
+build --//:emit_mojo=true
+test --test_env=EMIT_MOJO=1
+run --run_env=EMIT_MOJO=1
 
 # Differentiate between accidental 'bazel run' vs 'bazel test'
 test --test_env=MODULAR_RUNNING_TESTS=true

@@ -177,7 +177,7 @@ class RealizationState:
 class RealizationContext(Protocol, contextlib.AbstractContextManager):
     """Implements a way to realize unrealized tensors.
 
-    Most users should never have to think about the existance of this type.
+    Most users should never have to think about the existence of this type.
     It exists to facilitate optimizations around where and when tensor
     operations are executed.
 
@@ -185,8 +185,8 @@ class RealizationContext(Protocol, contextlib.AbstractContextManager):
     - If a tensor is not `real`, ie. "unrealized", then it is backed by some
       symbolic computation.
     - The RealizationContext is responsible for tracking this symbolic
-      omputation and "realizing" the tensor (executing the computation and
-      acking the tensor with real data) if and when it is asked to do so.
+      computation and "realizing" the tensor (executing the computation and
+      backing the tensor with real data) if and when it is asked to do so.
     - A RealizationContext can only realize tensors associated with it.
 
     RealizationContext abstracts over various semantics of tensor construction.
@@ -1500,6 +1500,41 @@ class Tensor(DLPackArray, HasTensorValue):
             Tensor: A reshaped tensor with the specified shape.
         """
         return F.reshape(self, shape)
+
+    def broadcast_to(self, shape: ShapeLike) -> Tensor:
+        """Broadcasts the tensor to the specified shape.
+
+        Returns a tensor broadcast to the target shape, following NumPy
+        broadcasting semantics. Dimensions of size 1 in the input can be
+        expanded to match larger dimensions in the target shape.
+
+        This is equivalent to PyTorch's :func:`torch.broadcast_to` and
+        :meth:`torch.Tensor.expand`.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.dtype import DType
+
+            # Create a tensor with shape (3, 1)
+            x = tensor.Tensor.ones([3, 1], dtype=DType.float32)
+
+            # Broadcast to (3, 4) - expands the second dimension
+            y = x.broadcast_to([3, 4])
+            print(y.shape)  # (3, 4)
+
+            # Add a new leading dimension
+            w = x.broadcast_to([2, 3, 1])
+            print(w.shape)  # (2, 3, 1)
+
+        Args:
+            shape: The target shape. Each dimension must either match the input
+                dimension or be broadcastable from size 1.
+
+        Returns:
+            Tensor: A tensor broadcast to the specified shape.
+        """
+        return F.broadcast_to(self, shape)
 
     def cast(self, dtype: DType) -> Tensor:
         """Casts the tensor to a different data type.

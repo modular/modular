@@ -276,8 +276,14 @@ def test_count_utf8_continuation_bytes():
     comptime b3 = UInt8(0b1110_0000)
     comptime b4 = UInt8(0b1111_0000)
 
+    for i in range(c):
+        assert_false(_is_utf8_continuation_byte(i))
+
     for i in range(c, b2):
         assert_true(_is_utf8_continuation_byte(i))
+
+    for i in range(b2, UInt8.MAX):
+        assert_false(_is_utf8_continuation_byte(i))
 
     def _test(amnt: Int, items: List[UInt8]):
         var p = items.unsafe_ptr()

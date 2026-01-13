@@ -118,7 +118,7 @@ from builtin.simd import (
     UInt256,
 )
 from builtin.sort import partition, sort
-from builtin.str import Stringable, StringableRaising
+from builtin.str import Stringable
 from builtin.string_literal import StringLiteral
 from builtin.swap import swap
 from builtin.tuple import Tuple

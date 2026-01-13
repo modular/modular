@@ -201,6 +201,21 @@ typedef enum M_ValueType {
 /// Maps unique weight names to their backing data.
 typedef struct M_WeightsRegistry M_WeightsRegistry;
 
+/// Represents the type of device.
+typedef enum M_DeviceType {
+  M_HOST = 0,
+  M_ACCELERATOR = 1,
+} M_DeviceType;
+
+/// Contains a device handle.
+///
+/// A device represents a computational unit (CPU or GPU) that can execute
+/// operations and hold tensors.
+///
+/// You can create this with `M_newDevice()`. When you're done, call
+/// `M_freeDevice()`.
+typedef struct M_Device M_Device;
+
 /// Represents the result output style for debug printing.
 typedef enum M_ResultOutputStyle {
   M_COMPACT = 0,

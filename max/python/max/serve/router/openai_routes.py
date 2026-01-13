@@ -591,13 +591,17 @@ async def openai_parse_chat_completion_request(
                         )
                     else:
                         message_content.append(content_part.model_dump())
-            messages.append({"role": m.root.role, "content": message_content})
+            messages.append(
+                TextGenerationRequestMessage(
+                    role=m.root.role, content=message_content
+                )
+            )
         else:
             messages.append(
-                {
-                    "role": m.root.role,
-                    "content": m.root.content if m.root.content else "",
-                }
+                TextGenerationRequestMessage(
+                    role=m.root.role,
+                    content=m.root.content if m.root.content else "",
+                )
             )
 
     resolve_image_tasks = [

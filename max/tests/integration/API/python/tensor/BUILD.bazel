@@ -18,7 +18,6 @@ modular_py_test(
     imports = ["."],
     tags = [
         "no-pydeps",  # TODO: Fix and re-enable
-        "resources:memory:50000",  # 50 GB
     ],
     target_compatible_with = select({
         # Takes too long, this is mostly just testing plumbing into other code so low value.

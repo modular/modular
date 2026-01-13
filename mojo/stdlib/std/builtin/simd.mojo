@@ -3171,9 +3171,14 @@ struct SIMD[dtype: DType, size: Int](
         if Self.size == 1:
             __comptime_assert shift == 0, "for scalars the shift must be 0"
             return self
-        return llvm_intrinsic[
-            "llvm.vector.splice", Self, has_side_effect=False
-        ](self, self, Int32(shift))
+        elif shift >= 0:
+            return llvm_intrinsic[
+                "llvm.vector.splice.left", Self, has_side_effect=False
+            ](self, self, Int32(shift))
+        else:
+            return llvm_intrinsic[
+                "llvm.vector.splice.right", Self, has_side_effect=False
+            ](self, self, Int32(-shift))
 
     @always_inline
     fn rotate_right[shift: Int](self) -> Self:
@@ -3235,7 +3240,7 @@ struct SIMD[dtype: DType, size: Int](
             return 0
 
         return llvm_intrinsic[
-            "llvm.vector.splice", Self, has_side_effect=False
+            "llvm.vector.splice.left", Self, has_side_effect=False
         ](self, Self(), Int32(shift))
 
     @always_inline
@@ -3270,8 +3275,8 @@ struct SIMD[dtype: DType, size: Int](
             return 0
 
         return llvm_intrinsic[
-            "llvm.vector.splice", Self, has_side_effect=False
-        ](Self(), self, Int32(-shift))
+            "llvm.vector.splice.right", Self, has_side_effect=False
+        ](Self(), self, Int32(shift))
 
     fn reversed(self) -> Self:
         """Reverses the SIMD vector by indexes.
@@ -3385,7 +3390,9 @@ fn _pow[
 
 
 @always_inline
-fn _powf_scalar(base: Scalar, exponent: Scalar) -> type_of(base):
+fn _powf_scalar(
+    base: Scalar, exponent: Scalar
+) -> type_of(base) where base.dtype.is_floating_point():
     __comptime_assert (
         exponent.dtype.is_floating_point()
     ), "exponent must be floating point"
@@ -3408,6 +3415,9 @@ fn _powf[
     __comptime_assert (
         exp.dtype.is_floating_point()
     ), "exponent must be floating point"
+    __comptime_assert (
+        base.dtype.is_floating_point()
+    ), "base must be floating point"
     result = {}
 
     @parameter

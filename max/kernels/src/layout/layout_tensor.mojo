@@ -68,6 +68,8 @@ from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
 from .swizzle import Swizzle, make_ldmatrix_swizzle
 
+from builtin.debug_assert import ASSERT_MODE
+
 
 fn _compute_distribute_layout[
     data_layout: Layout,
@@ -1974,6 +1976,26 @@ struct LayoutTensor[
         for arg_idx in range(arg_count):
             index_list[arg_idx] = index(args[arg_idx])
 
+        # Bounds checking for each dimension
+        # Note: We skip bounds checking for nested layouts because computing the logical
+        # dimension size requires calling IntTuple.__getitem__ which cannot be evaluated
+        # at compile-time when assertions are enabled (it would trigger llvm.memcpy).
+        #
+        # We use a simple static error message to minimize register pressure on GPU kernels.
+        # Including runtime values (idx, dim_size) in the message requires passing them to
+        # debug_assert and allocating buffer machinery, which increases register usage.
+        @parameter
+        if ASSERT_MODE == "all" and depth(Self.layout.shape) <= 1:
+
+            @parameter
+            for arg_idx in range(arg_count):
+                var idx = index_list[arg_idx]
+                var dim_size = self.dim[arg_idx]()
+                debug_assert(
+                    0 <= idx < dim_size,
+                    "LayoutTensor index out of bounds",
+                )
+
         var strides = self.runtime_layout.stride.value
         var offset = Self._get_offset[rank=arg_count](strides, index_list)
         return self._load_offset(offset)
@@ -2077,8 +2099,10 @@ struct LayoutTensor[
 
         Notes:
 
-        - No bounds checking is performed. Accessing out-of-bounds indices
-            will result in undefined behavior.
+        - Bounds checking is NOT currently supported for `__setitem__` due to
+          complications with certain layout types and mutation contexts.
+          Use `__getitem__`, `load`, or `store` methods for bounds-checked access.
+          In the future, this restriction will be lifted.
         """
 
         comptime arg_count = args.__len__()
@@ -2136,10 +2160,32 @@ struct LayoutTensor[
 
         Notes:
 
-        - No bounds checking is performed. Accessing out-of-bounds indices will
-            result in undefined behavior.
+        - Bounds checking is performed via debug_assert for the base coordinate
+            and the full SIMD width range. Enable assertions with `-D ASSERT=all`
+            to catch out-of-bounds accesses during development.
         - The elements are loaded according to the tensor's stride configuration.
         """
+
+        # Bounds checking for 2D load
+        # Note: We skip bounds checking for nested layouts because computing the logical
+        # dimension size requires calling IntTuple.__getitem__ which cannot be evaluated
+        # at compile-time when assertions are enabled (it would trigger llvm.memcpy).
+        #
+        # We use a simple static error message to minimize register pressure on GPU kernels.
+        @parameter
+        if ASSERT_MODE == "all" and depth(Self.layout.shape) <= 1:
+            # Use self.dim which correctly handles both compile-time and
+            # runtime layouts (including UNKNOWN_VALUE dimensions)
+            var dim0 = self.dim[0]()
+            var dim1 = self.dim[1]()
+            debug_assert(
+                0 <= m < dim0,
+                "LayoutTensor load out of bounds",
+            )
+            debug_assert(
+                0 <= n and n + width <= dim1,
+                "LayoutTensor load out of bounds",
+            )
 
         return self.ptr.load[width=width, alignment = Self.alignment](
             self._offset(m, n)
@@ -2377,11 +2423,44 @@ struct LayoutTensor[
 
         Notes:
 
-        - No bounds checking is performed. Accessing out-of-bounds indices will
-            result in undefined behavior.
+        - Bounds checking is performed via debug_assert for the base coordinate
+            and the full SIMD width range. Enable assertions with `-D ASSERT=all`
+            to catch out-of-bounds accesses during development.
         - The elements are stored according to the tensor's stride configuration.
         - This operation modifies the tensor's data in-place.
         """
+
+        # Bounds checking for 2D store
+        # Note: We skip bounds checking for nested layouts because computing the logical
+        # dimension size requires calling IntTuple.__getitem__ which cannot be evaluated
+        # at compile-time when assertions are enabled (it would trigger llvm.memcpy).
+        #
+        # We use a simple static error message to minimize register pressure on GPU kernels.
+        @parameter
+        if ASSERT_MODE == "all" and depth(Self.layout.shape) <= 1:
+            # Use self.dim which correctly handles both compile-time and
+            # runtime layouts (including UNKNOWN_VALUE dimensions)
+            var dim0 = self.dim[0]()
+            var dim1 = self.dim[1]()
+            debug_assert(
+                0 <= m < dim0,
+                "LayoutTensor store out of bounds: m=",
+                m,
+                " (valid range: [0, ",
+                dim0,
+                "))",
+            )
+            debug_assert(
+                0 <= n and n + width <= dim1,
+                "LayoutTensor store out of bounds: n=",
+                n,
+                ", width=",
+                width,
+                " (valid range for n+width: [0, ",
+                dim1,
+                "])",
+            )
+
         return self.ptr.store[alignment = Self.alignment](
             self._offset(m, n), val
         )
@@ -2882,7 +2961,7 @@ struct LayoutTensor[
             The dimension of the tensor along the specified axis as an integer.
         """
 
-        __comptime_assert 0 <= depth(Self.layout.shape) <= 1, String(
+        __comptime_assert depth(Self.layout.shape) in (0, 1), String(
             (
                 "This method only works with tensors that have depth-1"
                 " layouts (no nested shapes). Received: "
@@ -2955,7 +3034,7 @@ struct LayoutTensor[
         - For tensors with masked or partial views, this returns the actual
             size of the view, not the original tensor.
         """
-        __comptime_assert 0 <= depth(Self.layout.shape) <= 1, String(
+        __comptime_assert depth(Self.layout.shape) in (0, 1), String(
             (
                 "This method only works with tensors that have depth-1"
                 " layouts (no nested shapes). Received: "

@@ -254,7 +254,6 @@ def execute_fused_qk_rope_ragged(
                 mixed_ce_q_ragged_host, mixed_ce_q_ragged_runtime_layout
             )
             for bs_idx in range(batch_size):
-                true_ce_prompt_len = true_ce_prompt_lens[bs_idx]
                 mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
                 true_ce_row_offset = Int(true_ce_row_offsets_host_ptr[bs_idx])
                 mixed_ce_row_offset = Int(mixed_ce_row_offsets_host_ptr[bs_idx])

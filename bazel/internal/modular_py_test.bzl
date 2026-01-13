@@ -10,6 +10,19 @@ load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
 load(":mojo_test_environment.bzl", "mojo_test_environment")
 load(":py_repl.bzl", "py_repl")
+load(":test_resources.bzl", "TEST_RESOURCES")
+
+def _get_resource_tags(use_resource_tags, name):
+    if not use_resource_tags:
+        return []
+    resources = TEST_RESOURCES.get("//" + native.package_name() + ":" + name)
+    tags = []
+    if resources:
+        if "cpu" in resources:
+            tags.append("resources:cpu:{}".format(resources["cpu"]))
+        if "memory" in resources:
+            tags.append("resources:memory:{}".format(resources["memory"]))
+    return tags
 
 def modular_py_test(
         name,
@@ -27,6 +40,7 @@ def modular_py_test(
         gpu_constraints = [],
         main = None,
         imports = [],
+        use_resource_tags = False,
         **kwargs):
     """Creates a pytest based python test target.
 
@@ -46,6 +60,7 @@ def modular_py_test(
         gpu_constraints: GPU requirements for the tests
         main: If provided, this is the main entry point for the test. If not provided, pytest is used.
         imports: Additional python import paths
+        use_resource_tags: If true, use pregenerated resource tags for the test.
         **kwargs: Extra arguments passed through to py_test
     """
 
@@ -183,7 +198,7 @@ def modular_py_test(
                 srcs = [src] + non_test_srcs + ["//bazel/internal:pytest_runner"],
                 exec_properties = default_exec_properties | exec_properties,
                 target_compatible_with = gpu_constraints + target_compatible_with,
-                tags = tags,
+                tags = tags + _get_resource_tags(use_resource_tags, test_name),
                 imports = imports,
                 **kwargs
             )
@@ -206,7 +221,7 @@ def modular_py_test(
             srcs = srcs + ["//bazel/internal:pytest_runner"],
             exec_properties = default_exec_properties | exec_properties,
             target_compatible_with = gpu_constraints + target_compatible_with,
-            tags = tags,
+            tags = tags + _get_resource_tags(use_resource_tags, name),
             imports = imports,
             **kwargs
         )

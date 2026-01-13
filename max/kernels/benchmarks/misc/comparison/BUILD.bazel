@@ -131,3 +131,23 @@ modular_py_binary(
         "//max/python/max/support",
     ],
 )
+
+# Expert Parallelism (EP) benchmark: MAX EP dispatch/combine operations
+modular_py_binary(
+    name = "bench_ep_baseline",
+    srcs = ["bench_ep_baseline.py"],
+    env = {
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    main = "bench_ep_baseline.py",
+    tags = [
+        "gpu",
+        "manual",
+        "no-pydeps",
+    ],
+    deps = [
+        requirement("torch"),
+        "//max/kernels/benchmarks/misc/utils:bench_utils",
+        "//max/python/max",
+    ],
+)

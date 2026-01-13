@@ -24,7 +24,7 @@ package(default_visibility = [
         imports = ["../.."],
         tags = [
             "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
-        ] + (["external-exclusive"] if src == "test_reset_prefix_cache.py" else []),  # FIXME: SDLC-2838
+        ] + (["external-exclusive"] if src == "test_reset_prefix_cache.py" else []),  # This one test misbehaves when run in parallel with others
         target_compatible_with = select({
             "@platforms//os:macos": ["@platforms//:incompatible"],
             "//conditions:default": [],
@@ -74,8 +74,8 @@ modular_py_test(
         "MAX_SERVE_DISABLE_TELEMETRY": "True",
         "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
     },
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/serve/parser",
+        "//max/python/max/serve/schemas",
     ],
 )

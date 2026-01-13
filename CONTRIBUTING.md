@@ -5,12 +5,6 @@ Thank you for your interest in contributing to this repository!
 This page explains the overall process to create a pull request (PR), from
 forking the repo all the way through review and final merge.
 
-> [!NOTE]
-> We accept code contributions to the [Mojo standard library](./mojo), [MAX
-> AI kernels](./max/kernels), [code examples](./examples), and
-> [Mojo docs](./mojo/docs), but currently not to
-> other parts of the repository.
-
 ## Submitting bugs
 
 Reporting issues is a great way to contribute to the project.
@@ -62,6 +56,7 @@ For example, we accept contributions to the following sections where you can
 find specific contribution guidelines:
 
 - [Mojo standard library](mojo/CONTRIBUTING.md)
+- [MAX API and models](max/CONTRIBUTING.md)
 - [MAX AI kernels](max/kernels/CONTRIBUTING.md)
 - [Code examples](examples#contributing)
 - [Mojo documentation](mojo/docs#contributing)

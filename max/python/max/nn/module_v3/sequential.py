@@ -14,16 +14,17 @@
 
 import functools
 from collections.abc import Iterable
+from typing import Any
 
 from typing_extensions import TypeVar
 
 from ...experimental.tensor import Tensor
 from .module import Module
 
-T = TypeVar("T", bound=Module, default=Module)
+T = TypeVar("T", bound=Module[..., Any], default=Module[..., Any])
 
 
-class ModuleList(list[T], Module):
+class ModuleList(list[T], Module[[Tensor], Tensor]):
     """A ``Module`` subclass which is locally a list container.
 
     ``ModuleList`` instances will use the stringified integer index of their
@@ -47,7 +48,7 @@ class ModuleList(list[T], Module):
     """
 
     @property
-    def children(self) -> Iterable[tuple[str, Module]]:
+    def children(self) -> Iterable[tuple[str, Module[..., Any]]]:
         """Iterates over the direct child modules of the ``Module``.
 
         Yields:
@@ -70,11 +71,11 @@ class ModuleList(list[T], Module):
 class Sequential(ModuleList[T]):
     """A ``Module`` subclass which holds a sequence of unary modules.
 
-    A unary ``Module`` is one whose ``__call__()`` method has the signature::
+    A unary ``Module`` is one whose ``forward()`` method has the signature::
 
-        def __call__(self, x: Tensor) -> Tensor: ...
+        def forward(self, x: Tensor) -> Tensor: ...
 
-    ``Sequential`` is itself a unary ``Module``. Its ``__call__()`` method
+    ``Sequential`` is itself a unary ``Module``. Its ``forward()`` method
     computes the result of applying each of its child modules
     in sequence to its input.
 
@@ -123,7 +124,7 @@ class Sequential(ModuleList[T]):
         """
         super().__init__(modules)
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """Applies the contained modules in order.
 
         For example, this code creates a sequence of linear transformations

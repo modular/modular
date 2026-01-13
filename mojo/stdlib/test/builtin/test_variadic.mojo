@@ -305,6 +305,63 @@ def test_map_types_to_types():
     assert_true(_type_is_eq[variadic[1], String]())
 
 
+def test_filter_types_exclude_one():
+    comptime IsNotInt[Type: Movable] = not _type_is_eq[Type, Int]()
+    comptime without_int = Variadic.filter_types[
+        *Tuple[Int, String, Float64, Bool].element_types, predicate=IsNotInt
+    ]
+    assert_equal(Variadic.size(without_int), 3)
+    assert_true(_type_is_eq[without_int[0], String]())
+    assert_true(_type_is_eq[without_int[1], Float64]())
+    assert_true(_type_is_eq[without_int[2], Bool]())
+
+
+def test_filter_types_keep_only():
+    comptime IsStringOrFloat[Type: Movable] = (
+        _type_is_eq[Type, String]() or _type_is_eq[Type, Float64]()
+    )
+    comptime kept = Variadic.filter_types[
+        *Tuple[Int, String, Float64, Bool].element_types,
+        predicate=IsStringOrFloat,
+    ]
+    assert_equal(Variadic.size(kept), 2)
+    assert_true(_type_is_eq[kept[0], String]())
+    assert_true(_type_is_eq[kept[1], Float64]())
+
+
+def test_filter_types_exclude_many():
+    comptime NotIntOrBool[Type: Movable] = (
+        not _type_is_eq[Type, Int]() and not _type_is_eq[Type, Bool]()
+    )
+    comptime filtered = Variadic.filter_types[
+        *Tuple[Int, String, Float64, Bool].element_types,
+        predicate=NotIntOrBool,
+    ]
+    assert_equal(Variadic.size(filtered), 2)
+    assert_true(_type_is_eq[filtered[0], String]())
+    assert_true(_type_is_eq[filtered[1], Float64]())
+
+
+def test_filter_types_chained():
+    comptime IsNotBool[Type: Movable] = not _type_is_eq[Type, Bool]()
+    comptime IsNotInt[Type: Movable] = not _type_is_eq[Type, Int]()
+    comptime step1 = Variadic.filter_types[
+        *Tuple[Int, String, Float64, Bool].element_types, predicate=IsNotBool
+    ]
+    comptime step2 = Variadic.filter_types[*step1, predicate=IsNotInt]
+    assert_equal(Variadic.size(step2), 2)
+    assert_true(_type_is_eq[step2[0], String]())
+    assert_true(_type_is_eq[step2[1], Float64]())
+
+
+def test_filter_types_empty_result():
+    comptime AlwaysFalse[Type: Movable] = False
+    comptime empty = Variadic.filter_types[
+        *Tuple[Int, String, Float64, Bool].element_types, predicate=AlwaysFalse
+    ]
+    assert_equal(Variadic.size(empty), 0)
+
+
 def test_variadic_list_linear_type():
     """Test owned variadics with a linear type (ExplicitDelOnly)."""
 

@@ -1,6 +1,7 @@
 """Generates a test to enforce that Python dependencies are declared, and to flag unused dependencies."""
 
 load("@rules_python//python:py_info.bzl", "PyInfo")
+load("@with_cfg.bzl//with_cfg/private:select.bzl", "decompose_select_elements")  # buildifier: disable=bzl-visibility
 
 def _pydeps_test_impl(ctx):
     output = ctx.actions.declare_file(ctx.label.name + ".test_script")
@@ -24,9 +25,8 @@ def _pydeps_test_impl(ctx):
     for dep in ctx.attr.deps:
         label = str(dep.label)
 
-        # Most of these are pycross deps, these mostly don't give us a good way to inspect the import paths.
-        # We figure those out manually in the test script.
-        if dep.label.repo_name != "":
+        # TODO: Remove this exception
+        if "rules_python" in dep.label.repo_name:
             third_party_deps.append(label)
             continue
 
@@ -73,7 +73,7 @@ def _pydeps_test_impl(ctx):
 
     env["IGNORE_EXTRA_DEPS"] = [str(dep.label) for dep in ctx.attr.ignore_extra_deps]
     env["IGNORE_UNRESOLVED_IMPORTS"] = ctx.attr.ignore_unresolved_imports
-    env["THIRD_PARTY_DEPS"] = third_party_deps
+    env["THIRD_PARTY_DEPS"] = third_party_deps + ctx.attr.pycross_deps
     env["TARGET_LABEL"] = str(ctx.label)
 
     # Look for compiled extensions, provided by data, and use our own import path.
@@ -110,12 +110,48 @@ def _pydeps_test_impl(ctx):
         ),
     ]
 
+def _split_third_party_deps(name, **kwargs):
+    deps = kwargs.pop("deps", [])
+    pycross_deps = kwargs.pop("pycross_deps", [])
+    if pycross_deps:
+        fail("This should not be set explicitly, it is computed from deps.")
+
+    new_deps = []
+    for in_select, elements in decompose_select_elements(deps):
+        if in_select:
+            # Rebuild the select() contents, excluding third party deps
+            new_select = {}
+            for key, values in elements.items():
+                new_select_deps = []
+                for dep in values:
+                    if "pycross" in dep.repo_name:
+                        pycross_deps.append(str(dep))
+                    else:
+                        new_select_deps.append(dep)
+                new_select[key] = new_select_deps
+            new_deps += select(new_select)
+        else:
+            for dep in elements:
+                if "pycross" in dep.repo_name:
+                    pycross_deps.append(str(dep))
+                else:
+                    new_deps.append(dep)
+
+    return kwargs | {
+        "deps": new_deps,
+        "pycross_deps": pycross_deps,
+    }
+
 pydeps_test = rule(
     implementation = _pydeps_test_impl,
+    initializer = _split_third_party_deps,
     attrs = {
         "deps": attr.label_list(
             doc = "List of dependencies.",
             providers = [PyInfo],
+        ),
+        "pycross_deps": attr.string_list(
+            doc = "List of third party dependency labels.",
         ),
         "data": attr.label_list(
             doc = "List of data dependencies.",

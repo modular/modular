@@ -408,7 +408,9 @@ def _test_frexp_impl[dtype: DType](*, atol: Float64, rtol: Float64):
     )
 
 
-def _test_log_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+def _test_log_impl[
+    dtype: DType
+](*, atol: Float64, rtol: Float64) where dtype.is_floating_point():
     var res0 = log(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 4.8158, atol=atol, rtol=rtol

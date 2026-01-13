@@ -123,6 +123,7 @@ from linalg.matmul.gpu.sm100.matmul import (
     multi_stage_store_C,
     accum_arrive,
 )
+from gpu.mma_sm100 import UMMAKind
 
 
 @always_inline
@@ -852,31 +853,6 @@ struct B200BlockScaledMatmulSmem[
 
 
 @always_inline
-fn copy_sf_tmem[
-    sf_dtype: DType,
-    sf_smem_layout: Layout,
-    TILE_MN: Int,
-    cta_group: Int,
-](
-    sf_smem: LayoutTensor[address_space = AddressSpace.SHARED, *_, **_],
-    sf_tmem: UInt32,
-):
-    comptime sf_smem_size = sf_smem_layout.size()
-
-    @parameter
-    for i in range(TILE_MN // SF_MN_GROUP_SIZE):
-        comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
-        comptime sf_offset = sf_smem_layout(idx) * size_of[sf_dtype]()
-        var sf_tmem_addr = sf_tmem + i * (SF_MN_GROUP_SIZE // 32)
-        var sf_desc = MMASmemDescriptor.create[
-            8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
-        ](sf_smem.ptr + sf_offset)
-        tcgen05_cp[
-            cta_group=cta_group, datapaths=32, bits=128, multicast="warpx4"
-        ](sf_tmem_addr, sf_desc)
-
-
-@always_inline
 fn load_AB[
     a_type: DType,
     b_type: DType,
@@ -1072,6 +1048,7 @@ fn consumer_main_loop[
     b_swizzle: TensorMapSwizzle,
     transpose_b: Bool,
     pipeline_stages: Int,
+    scaling_kind: UMMAKind,
     /,
     *,
     block_tile_shape: IndexList[3],
@@ -1120,6 +1097,7 @@ fn consumer_main_loop[
         b_type,
         sfa_dtype,
         sfb_dtype,
+        scaling_kind,
         block_tile_shape,
         mma_shape,
         accum_type=accum_type,
@@ -1155,16 +1133,11 @@ fn consumer_main_loop[
                 sfb_tmem + (stage * k_group_size + j) * SFB_NUM_COLS
             )
 
-            copy_sf_tmem[sfa_dtype, sfa_smem_layout, BM, cta_group](
-                sfa_smem_tile, sfa_tmem_offset
-            )
-            copy_sf_tmem[sfb_dtype, sfb_smem_layout, MMA_N, cta_group](
-                sfb_smem_tile, sfb_tmem_offset
-            )
-
             mma_op.mma(
                 a_smem_tile,
                 b_smem_tile,
+                sfa_smem_tile,
+                sfb_smem_tile,
                 tmem_addr,
                 sfa_tmem_offset,
                 sfb_tmem_offset,
@@ -1791,7 +1764,9 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
 
-    comptime accum_type = get_accum_type[a_type]()
+    # hardcode to float32 for now as we only support FP32 accumulation for block scaled matmul
+    # TODO: (KERN-2238) replace with get_accum_type[a_type]() when KERN-2238 is fixed and we can return FP32 for FP4-E2M1
+    comptime accum_type = DType.float32
 
     var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -1847,6 +1822,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         b_type,
         sfa_dtype,
         sfb_dtype,
+        config.scaling_kind,
         config.block_tile_shape,
         config.mma_shape,
         accum_type=accum_type,

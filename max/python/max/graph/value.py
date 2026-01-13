@@ -513,7 +513,7 @@ class TensorValue(Value[mo.TensorType]):
         """Prints detailed information about the tensor.
 
         Args:
-            label: A string label for the printed output. Defaults ``debug_tensor``.
+            label: A string label for the printed output. Defaults to ``debug_tensor``.
         """
         ops.print(self, label=label)
 
@@ -579,7 +579,7 @@ class TensorValue(Value[mo.TensorType]):
                 print(f"Flattened shape: {flattened_tensor.shape}")  # Output: [4]
 
         Args:
-            start_dim: The starting dimension to flatten. Defaults to ``1``.
+            start_dim: The starting dimension to flatten. Defaults to ``0``.
             end_dim: The ending dimension to flatten. Defaults to ``-1``.
 
         Returns:

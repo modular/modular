@@ -822,27 +822,17 @@ Because the Mojo compiler performs static type checking, a `String` constructor
 can accept a value only if its type implements some required behavior—in this
 case, it only accepts types that can generate a `String` representation.
 
-To enforce this, the `String()` constructors require a type to conform to either
-the [`Stringable`](/mojo/std/builtin/str/Stringable) or
-[`StringableRaising`](/mojo/std/builtin/str/StringableRaising) trait. (This
-type of function is sometimes referred to as a [*generic*
-function](/mojo/manual/parameters/#parameters-and-generics).) Each trait
-requires a conforming type to implement a `__str__()` method that returns a
-`String` representation. The only difference between the two traits is that
-`Stringable` requires that the method *cannot* raise an error, whereas
-`StringableRaising` indicates that the method *might* raise an error. (To learn
-more, read [The `Stringable`, `Representable`, and `Writable`
+To enforce this, the `String()` constructors require a type to conform to the 
+[`Stringable`] trait. (This type of function is sometimes referred to as a
+[*generic* function](/mojo/manual/parameters/#parameters-and-generics).) Each
+trait requires a conforming type to implement a `__str__()` method that returns
+a `String` representation. (To learn more, read [The `Stringable`,
+`Representable`, and `Writable`
 traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
 
 Our `grid_str()` method already returns a `String` representation, so it looks
 like we just have to rename it to `__str__()`. However, we also need to indicate
-which trait `Grid` conforms to. In our case, it must be `Stringable` instead of
-`StringableRaising` because we used `fn` to define the method. If you define
-a function or method with `def`, the compiler *always* assumes the
-function *can* raise an error. In contrast, an `fn` function is a [non-raising
-function](/mojo/manual/functions#raising-and-non-raising-functions) by default
-(though you can still declare that it might raise an error using the [`raises`
-keyword](/mojo/manual/errors#declare-a-raising-function)).
+which trait `Grid` conforms to. In our case, it must be `Stringable`.
 
 In `gridv1.mojo`, we need to update the `Grid` declaration to indicate that
 the type conforms to `Stringable` and rename the `grid_str()` method to

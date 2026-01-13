@@ -27,25 +27,25 @@ from max.nn.module_v3.module import Module, module_dataclass
 
 
 @module_dataclass
-class SubModule(Module):
+class SubModule(Module[[Tensor], Tensor]):
     b: Tensor
     eps: float = 1e-5
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         return x + self.b
 
 
 @module_dataclass
-class TestModule(Module):
+class TestModule(Module[[Tensor], Tensor]):
     a: Tensor
     sub: SubModule
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         return self.sub(x) + self.a
 
 
 @module_dataclass
-class SuperModule(Module):
+class SuperModule(Module[[Tensor], Tensor]):
     mod: TestModule
 
 
@@ -73,7 +73,7 @@ def super_module(test_module: TestModule):  # noqa: ANN201
 
 def test_module_dataclass() -> None:
     @module_dataclass
-    class Test(Module):
+    class Test(Module[..., None]):
         a: int
         b: int = 0
 
@@ -97,7 +97,7 @@ def test_module_repr(test_module: TestModule) -> None:
 
 
 def test_module_custom_repr() -> None:
-    class Linear(Module):
+    class Linear(Module[..., None]):
         weight: Tensor
         bias: Tensor | int
 
@@ -129,6 +129,12 @@ def test_module_decomposition_call(test_module: TestModule) -> None:
     x = Tensor.constant(1)
     assert test_module.sub.b.item() == 2
     assert test_module.sub(x).item() == 3
+
+
+def test_module_forward(test_module: TestModule) -> None:
+    x = Tensor.constant(1)
+    # __call__ invokes forward, so both should produce the same result
+    assert test_module.forward(x).item() == test_module(x).item()
 
 
 def test_module_local_parameters(test_module: TestModule) -> None:

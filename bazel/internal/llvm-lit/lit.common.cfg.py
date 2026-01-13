@@ -167,7 +167,7 @@ llvm_config.add_tool_substitutions(
     [
         ToolSubst(
             "%mpirun",
-            "mpirun",
+            os.environ.get("ROCSHMEM_MPIRUN", "mpirun"),
             extra_args=[
                 "--allow-run-as-root",
                 "--bind-to",
@@ -176,5 +176,20 @@ llvm_config.add_tool_substitutions(
         )
     ]
 )
+
+# For %mpirun-all-gpus, we dynamically detect the number of GPUs at runtime
+# and run mpirun with -n set to that count. This uses nvidia-smi for NVIDIA GPUs
+# or rocm-smi for AMD GPUs. Uses ROCSHMEM_MPIRUN env var if set (for AMD).
+mpirun_all_gpus_cmd = (
+    "bash -c '"
+    'MPIRUN="${ROCSHMEM_MPIRUN:-mpirun}"; '
+    "if command -v nvidia-smi &> /dev/null; then "
+    "N=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l); "
+    "elif command -v rocm-smi &> /dev/null; then "
+    'N=$(rocm-smi --showid --json | jq "keys | length"); '
+    "else N=1; fi; "
+    '"$MPIRUN" --allow-run-as-root --bind-to none -n $N "$@"\' _'
+)
+config.substitutions.append(("%mpirun-all-gpus", mpirun_all_gpus_cmd))
 
 config.substitutions.append(("%bare-mojo", mojo_exe))

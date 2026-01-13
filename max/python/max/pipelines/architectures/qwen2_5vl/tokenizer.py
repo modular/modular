@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -274,14 +273,6 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         )
         self.max_length = max_length or self.delegate.model_max_length
 
-        # Create encoding functions. Used by encode method in parent class.
-        self._encode_with_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=True
-        )
-        self._encode_without_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=False
-        )
-
         # Use the pre-loaded HuggingFace config from pipeline_config
         config = pipeline_config.model.huggingface_config
         config = cast(Qwen2_5_VLConfig, config)
@@ -312,7 +303,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         self.image_token_id = config.image_token_id
         self.video_token_id = config.video_token_id
         self.enable_prefix_caching = (
-            config.kv_cache_config.enable_prefix_caching
+            pipeline_config.model.kv_cache_config.enable_prefix_caching
         )
 
         self.vision_start_token_id = config.vision_start_token_id
@@ -359,7 +350,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                 )
             return request.prompt
 
-        if request.messages is not None:
+        if request.messages:
             return self.apply_chat_template(request.messages)
 
         raise ValueError(f"{request} does not provide messages or prompt.")
@@ -479,7 +470,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             return True
         if request.messages:
             for msg in request.messages:
-                content = msg.get("content", [])
+                content = msg.content
                 if isinstance(content, list):
                     for item in content:
                         if isinstance(item, dict) and (

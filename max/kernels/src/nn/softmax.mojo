@@ -775,6 +775,9 @@ fn softmax_kernel[
 
         @parameter
         if logsoftmax:
+            __comptime_assert (
+                dtype.is_floating_point()
+            ), "dtype must be floating point"
             output.store(row_coords, log(output.load[width=1](row_coords)))
 
 

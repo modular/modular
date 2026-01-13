@@ -73,6 +73,7 @@ modular_py_library(
     imports = [".."],
     deps = [
         "//max/python/max/interfaces",
+        "//max/python/max/support",
     ],
 )
 
@@ -301,6 +302,7 @@ modular_py_library(
     name = "storage",
     testonly = True,
     srcs = ["storage.py"],
+    ignore_unresolved_imports = ["botocore"],
     imports = [".."],
     deps = [
         requirement("boto3"),

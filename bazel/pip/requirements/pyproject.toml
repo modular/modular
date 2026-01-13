@@ -59,7 +59,7 @@ dependencies = [
   "pyarrow",
   "pydantic",
   "pydantic-settings==2.3.4",
-  "pygame",
+  "pygame-ce",
   "pygments",
   "pyinstrument",
   "pytest-asyncio==0.23.7",

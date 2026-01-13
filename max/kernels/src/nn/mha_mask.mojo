@@ -119,6 +119,62 @@ struct TileMaskStatus(
         writer.write("unknown mask")
 
 
+@register_passable("trivial")
+struct MaskStrategy(ImplicitlyCopyable):
+    var _value: Int32
+    var _upper_triangular_window_size: Int32
+    comptime NO_MASK = Self(0)
+    """
+    No mask is to be applied.
+    """
+    comptime LOWER_TRIANGULAR = Self(1)
+    """
+    Masks above the diagonal, e.g. a CausalMask or a SlidingWindowCausalMask.
+    """
+    comptime UPPER_TRIANGULAR = Self(2)
+    """
+    Masks below the diagonal, e.g. a SlidingWindowCausalMask.
+    """
+    comptime COMPUTED = Self(4)
+    """
+    Mask where the call operator must be used to compute the masked value.
+    """
+    comptime OUT_OF_BOUNDS = Self(8)
+    """
+    Check if we are out of bounds, e.g. at the end of a `NullMask` but unnecessary for a `CausalMask`.
+    """
+
+    @always_inline
+    fn __init__(out self, value: Int32):
+        self._value = value
+        self._upper_triangular_window_size = 0
+
+    @always_inline
+    fn __init__(out self, value: Int32, window_size: Int32):
+        self._value = value
+        self._upper_triangular_window_size = window_size
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        return self._value != other._value
+
+    @always_inline
+    fn __and__(self, other: Self) -> Self:
+        return {self._value & other._value}
+
+    @always_inline
+    fn __or__(self, other: Self) -> Self:
+        return {self._value | other._value}
+
+    @always_inline
+    fn __contains__(self, other: Self) -> Bool:
+        return (self._value | other._value) == self._value
+
+
 # ===-----------------------------------------------------------------------===#
 # MHAMask
 # ===-----------------------------------------------------------------------===#
@@ -245,6 +301,16 @@ trait MHAMask(Copyable, DevicePassable):
         hint that it's worth checking on each iteration at runtime for
         `FULL_MASK` (in which case we can skip the tile) or `NO_MASK`
         (in which case we can unswitch and avoid masking in an inner loop).
+        """
+        ...
+
+    @staticmethod
+    fn mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        """
+        For each set of iterations that are either partially masked or not masked,
+        this indicates the `MaskStrategy` to use.
         """
         ...
 
@@ -416,6 +482,12 @@ struct CausalMask(ImplicitlyCopyable, MHAMask):
     ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
         return {TileMaskStatus.NO_MASK, TileMaskStatus.PARTIAL_MASK}
 
+    @staticmethod
+    fn mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        return {MaskStrategy.NO_MASK, MaskStrategy.LOWER_TRIANGULAR}
+
 
 # ===-----------------------------------------------------------------------===#
 # NullMask
@@ -509,6 +581,12 @@ struct NullMask(ImplicitlyCopyable, MHAMask):
         BM: Int, BN: Int
     ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
         return {TileMaskStatus.NO_MASK}
+
+    @staticmethod
+    fn mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        return {MaskStrategy.OUT_OF_BOUNDS}
 
 
 # ===-----------------------------------------------------------------------===#
@@ -608,7 +686,7 @@ struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
             elif q_chunk_idx == k_end_chunk_idx:
                 mask_val = k_indices.lt(boundary)
 
-            return mask_val.select(MASK_VALUE, retval)
+            return mask_val.select(SIMD[dtype, width](MASK_VALUE), retval)
 
         # fully masked
         return SIMD[dtype, width](MASK_VALUE)
@@ -691,6 +769,12 @@ struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
         BM: Int, BN: Int
     ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
         return {TileMaskStatus.PARTIAL_MASK}
+
+    @staticmethod
+    fn mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        return {MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS}
 
 
 # ===-----------------------------------------------------------------------===#
@@ -935,6 +1019,22 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
                 TileMaskStatus.PARTIAL_MASK,
             }
 
+    @staticmethod
+    fn mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        @parameter
+        if (((Self.window_size) // BN) - ((BM + BN - 2) // BN)) > 0:
+            return {
+                MaskStrategy.UPPER_TRIANGULAR,
+                MaskStrategy.NO_MASK,
+                MaskStrategy.LOWER_TRIANGULAR,
+            }
+        else:
+            return {
+                MaskStrategy.UPPER_TRIANGULAR | MaskStrategy.LOWER_TRIANGULAR
+            }
+
 
 # ===-----------------------------------------------------------------------===#
 # MaterializedMask
@@ -1143,6 +1243,12 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
     ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
         return {TileMaskStatus.UNKNOWN_MASK}
 
+    @staticmethod
+    fn mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        return {MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS}
+
 
 # ===-----------------------------------------------------------------------===#
 # AndMask
@@ -1247,6 +1353,12 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
         return {TileMaskStatus.UNKNOWN_MASK}
 
+    @staticmethod
+    fn mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        return {MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS}
+
 
 # ===-----------------------------------------------------------------------===#
 # OrMask
@@ -1348,6 +1460,12 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         BM: Int, BN: Int
     ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
         return {TileMaskStatus.UNKNOWN_MASK}
+
+    @staticmethod
+    fn mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        return {MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS}
 
 
 # ===-----------------------------------------------------------------------===#

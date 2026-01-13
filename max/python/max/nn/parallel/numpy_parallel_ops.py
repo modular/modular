@@ -25,25 +25,6 @@ import numpy.typing as npt
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 
-GiB = 1024 * 1024 * 1024
-
-
-def _prime_cache(accelerator: Device, bytes: int = GiB) -> None:
-    """Prime the pinned memory manager cache for the given accelerator.
-
-    Populate the host memory manager by allocating and immediately freeing a
-    large pinned tensor. If the host memory manager is activated, future allocations
-    and frees will likely hit the cache and be much faster.
-
-    Args:
-        accelerator: The accelerator to prime the cache for.
-        bytes: The number of bytes to allocate.
-    """
-    pinned = Tensor(
-        shape=(bytes,), dtype=DType.int8, device=accelerator, pinned=True
-    )
-    del pinned
-
 
 class ParallelArrayOps:
     """Parallelized numpy array operations for performance-critical data processing.
@@ -73,15 +54,10 @@ class ParallelArrayOps:
                 well for typical server CPUs. Consider setting to match your expected
                 number of arrays (e.g., 20 for up to 20 concurrent copies).
         """
-        if accelerator is not None:
-            if accelerator.is_host:
-                raise ValueError(
-                    "Unable to allocate pinned memory on CPU. A provided device must be a GPU."
-                )
-
-            # By priming the cache here, we can move some overhead from runtime
-            # to __init__.
-            _prime_cache(accelerator)
+        if accelerator is not None and accelerator.is_host:
+            raise ValueError(
+                "Unable to allocate pinned memory on CPU. A provided device must be a GPU."
+            )
         self._accelerator = accelerator
 
         self._pool = ThreadPoolExecutor(max_workers=max_workers)

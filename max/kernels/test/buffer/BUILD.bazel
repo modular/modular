@@ -13,6 +13,12 @@ _FILECHECK_TESTS = [
     "test_strsv.mojo",
 ]
 
+# Tests that have compilation time regressions on macOS after LLVM bump
+# (commit 04013d58e3). TODO(MOCO-3079): Remove once the compiler regression is fixed.
+_MACOS_SLOW_COMPILE_TESTS = [
+    "test_partial_load_store.mojo",
+]
+
 [
     mojo_filecheck_test(
         name = src + ".test",
@@ -21,6 +27,11 @@ _FILECHECK_TESTS = [
             "--debug-level",
             "full",
         ],
+        # Skip tests with macOS compilation time regressions
+        target_compatible_with = select({
+            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }) if src in _MACOS_SLOW_COMPILE_TESTS else [],
         deps = [
             "//max:internal_utils",
             "@mojo//:std",
