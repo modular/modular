@@ -25,7 +25,7 @@ from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 from max.pipelines.architectures.qwen3.qwen3 import Qwen3
-
+import numpy as np
 
 def last_token_pool(
     hidden_states: TensorValue, attention_mask: TensorValue
@@ -209,18 +209,19 @@ def build_graph(
         )
         
         # Create cache metadata (all should be uint32 for paged cache)
-        # cache_lengths: [batch_size] - number of cached tokens per sequence
-        cache_lengths = ops.range(
-            0, 0, 1, out_dim=batch_size_dim, dtype=DType.uint32, device=DeviceRef.CPU()
+        # For embeddings with batch_size=1, we can use concrete values
+        # cache_lengths: [1] - number of cached tokens per sequence (0 for embeddings)
+        cache_lengths = ops.constant(
+            np.array([0], dtype=np.uint32), dtype=DType.uint32, device=DeviceRef.CPU()
         )
         cache_lengths = ops.transfer_to(cache_lengths, device=input_device)
         
-        # lookup_table: [batch_size, max_blocks] - maps sequence indices to block IDs
-        # For embedding generation we just need 1 block per batch
-        import numpy as np
+        # lookup_table: [1, 1] - maps sequence indices to block IDs
+        # For embedding generation we just need 1 block
         max_blocks = 1  # Minimal for single forward pass
-        lookup_table_np = np.zeros((1, max_blocks), dtype=np.uint32)
-        lookup_table = ops.constant(lookup_table_np, device=DeviceRef.CPU())
+        lookup_table = ops.constant(
+            np.array([[0]], dtype=np.uint32), dtype=DType.uint32, device=DeviceRef.CPU()
+        )
         lookup_table = ops.transfer_to(lookup_table, device=input_device)
         
         # max_lengths: [1, 2] containing [max_seq_length, max_cache_length]

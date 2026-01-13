@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import EmbeddingsContext, PipelineTask
+from max.interfaces import PipelineTask
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
@@ -37,7 +38,7 @@ qwen3_embedding_arch = SupportedArchitecture(
     },
     pipeline_model=Qwen3EmbeddingPipelineModel,
     tokenizer=TextTokenizer,
-    context_type=EmbeddingsContext,
+    context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,

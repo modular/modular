@@ -28,6 +28,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
+from max.interfaces import RequestID
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext
@@ -49,6 +50,34 @@ from .model_config import Qwen3EmbeddingConfig
 logger = logging.getLogger("max.pipelines")
 
 PAD_VALUE = 1
+
+
+class DummyKVManager:
+    """Dummy KV cache manager for embeddings that don't use KV cache.
+    
+    This satisfies the serve layer's interface requirements without
+    actually managing any cache.
+    """
+    
+    def contains(self, request_id: RequestID) -> bool:
+        """Always returns False since embeddings don't cache."""
+        return False
+    
+    def claim(self, *args, **kwargs):
+        """No-op claim."""
+        pass
+    
+    def allocate(self, *args, **kwargs):
+        """No-op allocation."""
+        pass
+    
+    def free(self, *args, **kwargs):
+        """No-op free."""
+        pass
+    
+    def get_runtime_inputs(self, *args, **kwargs):
+        """Return None since embeddings don't use KV cache."""
+        return None
 
 
 class Qwen3EmbeddingInputs(ModelInputs):
@@ -105,6 +134,8 @@ class Qwen3EmbeddingPipelineModel(PipelineModel[TextContext]):
             return_logits,
         )
         self.model = self.load_model(session)
+        # Embedding models don't use KV cache, but serve layer may check for it
+        self.kv_manager = DummyKVManager()
 
     @classmethod
     def get_kv_params(
