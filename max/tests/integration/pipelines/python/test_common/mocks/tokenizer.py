@@ -72,7 +72,7 @@ class MockTextTokenizer(
         prompt: str | Sequence[int]
         if request.prompt is None and request.messages:
             prompt = ".".join(
-                [str(message.get("content")) for message in request.messages]
+                [str(message.content) for message in request.messages]
             )
         elif request.prompt is not None:
             assert request.prompt is not None

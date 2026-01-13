@@ -470,7 +470,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             return True
         if request.messages:
             for msg in request.messages:
-                content = msg.get("content", [])
+                content = msg.content
                 if isinstance(content, list):
                     for item in content:
                         if isinstance(item, dict) and (

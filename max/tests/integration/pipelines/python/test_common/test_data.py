@@ -29,15 +29,6 @@ from max.interfaces import (
 from max.support import fetch_bytes_from_s3
 
 
-def message_has_images(request_message: TextGenerationRequestMessage) -> bool:
-    if isinstance(request_message["content"], list):
-        for message in request_message["content"]:
-            if message["type"] == "image":
-                return True
-
-    return False
-
-
 @dataclass(frozen=True)
 class MockTextGenerationRequest:
     """Request for text generation testing, supporting both text-only and multimodal inputs."""

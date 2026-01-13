@@ -105,7 +105,7 @@ class EchoPipelineTokenizer(
         elif request.messages:
             prompt = "\n".join(
                 [
-                    str(message["content"])
+                    str(message.content)
                     for message in cast(
                         list[TextGenerationRequestMessage], request.messages
                     )

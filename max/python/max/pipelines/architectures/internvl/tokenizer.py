@@ -20,6 +20,11 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
+from max.interfaces import (
+    ImageContentPart,
+    TextContentPart,
+    TextGenerationRequestMessage,
+)
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     TextAndVisionTokenizer,
@@ -363,21 +368,22 @@ class InternVLProcessor:
 
     def apply_chat_template(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[TextGenerationRequestMessage],
         tokenize: bool = False,
         add_generation_prompt: bool = True,
         **kwargs,
     ) -> str | list[int] | list[str] | list[list[int]] | BatchEncoding:
-        """Converts a list of dictionaries with `"role"` and `"content"` keys to a formatted string.
+        """Converts a list of TextGenerationRequestMessage with `role` and `content` to a formatted string.
 
         This method handles multimodal messages by extracting text content before
         forwarding to the HF tokenizer.
         """
+
         # Convert multimodal messages to text-only for the tokenizer
         text_messages = []
         for message in messages:
-            text_message = {"role": message.get("role")}
-            content = message.get("content")
+            text_message = {"role": str(message.role)}
+            content = message.content
 
             if isinstance(content, str):
                 text_message["content"] = content
@@ -386,17 +392,12 @@ class InternVLProcessor:
                 # where image content appears to match VLMEvalKit behavior.
                 content_parts = []
                 for item in content:
-                    if isinstance(item, dict):
-                        if item.get("type") == "text":
-                            # Handle both "content" and "text" keys.
-                            text_content = item.get("content") or item.get(
-                                "text", ""
-                            )
-                            if text_content:
-                                content_parts.append(text_content)
-                        elif item.get("type") == "image":
-                            # Insert image placeholder where image content appears.
-                            content_parts.append("<image>")
+                    if isinstance(item, TextContentPart):
+                        if item.text:
+                            content_parts.append(item.text)
+                    elif isinstance(item, ImageContentPart):
+                        # Insert image placeholder where image content appears.
+                        content_parts.append("<image>")
 
                 # Join content parts preserving order.
                 text_message["content"] = " ".join(content_parts)

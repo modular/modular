@@ -299,26 +299,26 @@ class TextTokenizer(
         flattened_messages: list[dict[str, str]] = []
         for message in messages:
             flattened_message = {
-                "role": message["role"],
+                "role": message.role,
                 "content": "",
             }
-            if isinstance(message["content"], str):
-                flattened_message["content"] = message["content"]
-            elif isinstance(message["content"], list):
-                for content in message["content"]:
-                    if "type" not in content:
+            if isinstance(message.content, str):
+                flattened_message["content"] = message.content
+            elif isinstance(message.content, list):
+                for content in message.content:
+                    if not hasattr(content, "type"):
                         raise ValueError(
                             "Malformed message content, missing 'type' field"
                         )
-                    if content["type"] != "text":
+                    if content.type != "text":
                         raise ValueError(
-                            f"Unsupported content type: {content['type']}"
+                            f"Unsupported content type: {content.type}"
                         )
 
                     if flattened_message["content"] != "":
                         flattened_message["content"] += "\n"
 
-                    flattened_message["content"] += content["text"]
+                    flattened_message["content"] += content.text
 
                 if "content" not in flattened_message:
                     raise ValueError(
@@ -326,7 +326,7 @@ class TextTokenizer(
                     )
             else:
                 raise ValueError(
-                    f"Unsupported content type: {type(message['content'])}"
+                    f"Unsupported content type: {type(message.content)}"
                 )
 
             flattened_messages.append(flattened_message)

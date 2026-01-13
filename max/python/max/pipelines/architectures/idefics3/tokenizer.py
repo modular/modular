@@ -117,13 +117,13 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         # Convert to text-only messages first
         text_messages: list[dict[str, Any]] = []
         for message in messages:
-            text_message: dict[str, Any] = {"role": message.get("role")}
-            content = message.get("content")
+            text_message: dict[str, Any] = {"role": message.role}
+            content = message.content
 
             if isinstance(content, str):
                 text_message["content"] = content
             elif isinstance(content, list):
-                text_parts = []
+                text_parts: list[str] = []
                 for item in content:
                     if isinstance(item, dict) and item.get("type") == "text":
                         # Handle both "content" and "text" keys

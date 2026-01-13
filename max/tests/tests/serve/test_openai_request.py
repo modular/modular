@@ -54,18 +54,18 @@ async def test_openai_extract_image_from_requests() -> None:
     )
     assert len(messages) == 2
     assert len(images) == 0
-    assert isinstance(messages[0]["content"], str)
-    assert isinstance(messages[1]["content"], list)
-    assert "text" in messages[1]["content"][0]
+    assert isinstance(messages[0].content, str)
+    assert isinstance(messages[1].content, list)
+    assert hasattr(messages[1].content[0], "text")
 
     messages, images = await openai_parse_chat_completion_request(
         request, True, settings
     )
     assert len(messages) == 2
     assert len(images) == 0
-    assert isinstance(messages[0]["content"], list)
-    assert isinstance(messages[1]["content"], list)
-    assert "text" in messages[1]["content"][0]
+    assert isinstance(messages[0].content, list)
+    assert isinstance(messages[1].content, list)
+    assert hasattr(messages[1].content[0], "text")
 
     user_message_image_with_url = {
         "role": "user",
@@ -87,7 +87,10 @@ async def test_openai_extract_image_from_requests() -> None:
     )
     assert len(messages) == 1
     assert len(images) == 1
-    assert "image_url" in messages[0]["content"][1]
+    assert isinstance(messages[0].content, list)
+    # When wrap_content=False, content items are dicts
+    assert isinstance(messages[0].content[1], dict)
+    assert "image_url" in messages[0].content[1]
     assert images[0] == AnyUrl(request_images["boardwark_url"])
 
     messages, images = await openai_parse_chat_completion_request(
@@ -97,7 +100,8 @@ async def test_openai_extract_image_from_requests() -> None:
     )
     assert len(messages) == 1
     assert len(images) == 1
-    assert messages[0]["content"][1] == {"type": "image"}
+    assert isinstance(messages[0].content, list)
+    assert messages[0].content[1].type == "image"
     assert images[0] == AnyUrl(request_images["boardwark_url"])
 
     user_message_image_two_urls = {
@@ -156,7 +160,8 @@ async def test_openai_extract_image_from_requests() -> None:
     )
     assert len(messages) == 1
     assert len(images) == 2
-    assert messages[0]["content"][1] == {"type": "image"}
-    assert messages[0]["content"][2] == {"type": "image"}
+    assert isinstance(messages[0].content, list)
+    assert messages[0].content[1].type == "image"
+    assert messages[0].content[2].type == "image"
     assert images[0] == AnyUrl(request_images["smily_b64"])
     assert images[1] == AnyUrl(request_images["mountain_url"])

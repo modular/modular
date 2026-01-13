@@ -34,6 +34,7 @@ from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
 from max.interfaces.tokens import TokenBuffer
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class TextGenerationRequestFunction(TypedDict):
@@ -75,45 +76,101 @@ class TextGenerationResponseFormat(TypedDict):
     """A JSON schema dictionary that defines the structure and validation rules for the generated response."""
 
 
-class TextGenerationRequestMessage(TypedDict):
-    role: Literal["system", "user", "assistant", "tool", "function"]
-    """
-    The role of the message sender, indicating whether the message is from the system, user, or assistant.
-    """
+class ContentPart(BaseModel):
+    type: Literal["text", "image"]
 
-    content: str | list[dict[str, Any]]
-    """
-    Content can be a simple string or a list of message parts of different modalities.
 
-    For example:
+class MessageContentPart(BaseModel):
+    type: str = Field(..., description="Content type identifier")
+    model_config = ConfigDict(frozen=True)
 
-    .. code-block:: json
 
-        {
-          "role": "user",
-          "content": "What's the weather like in Boston today?"
-        }
+class TextContentPart(MessageContentPart):
+    type: Literal["text"] = Field(
+        default="text", description="Content type identifier"
+    )
+    text: str = Field(..., description="Text text content")
 
-    Or:
 
-    .. code-block:: json
+class ImageContentPart(MessageContentPart):
+    type: Literal["image"] = Field(
+        default="image", description="Content type identifier"
+    )
 
-        {
-          "role": "user",
-          "content": [
-            {
-              "type": "text",
-              "text": "What's in this image?"
-            },
-            {
-              "type": "image_url",
-              "image_url": {
-                  "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
-              }
-            }
-          ]
-        }
-    """
+
+MessageContent = TextContentPart | ImageContentPart
+
+MessageRole = Literal["system", "user", "assistant", "tool", "function"]
+
+
+class TextGenerationRequestMessage(BaseModel):
+    role: MessageRole = Field(
+        ..., description="Text role of the message sender"
+    )
+
+    content: str | list[MessageContent]
+    model_config = ConfigDict(
+        frozen=True,
+        from_attributes=True,
+    )
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def validate_content_format(cls, v: Any) -> str | list[MessageContent]:
+        if isinstance(v, str):
+            return v
+
+        if not isinstance(v, list):
+            raise ValueError(
+                f"Invalid content format: {type(v).__name__}. "
+                "Expected str or list of content parts."
+            )
+
+        normalized: list[MessageContent] = []
+        for item in v:
+            if isinstance(item, (TextContentPart, ImageContentPart)):
+                normalized.append(item)
+                continue
+
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"Invalid content part type: {type(item).__name__}. "
+                    "Expected dict or MessageContentPart instance."
+                )
+
+            if "type" not in item:
+                raise ValueError(
+                    f"Malformed message content part: missing 'type' field. Got: {item}"
+                )
+
+            content_type = item["type"]
+
+            if content_type == "text":
+                text_value = item.get("text") or item.get("content", "")
+                normalized.append(TextContentPart(text=text_value))
+            elif content_type == "image":
+                normalized.append(ImageContentPart())
+            elif content_type == "image_url":
+                raise ValueError(
+                    "image_url content type not supported in internal format. "
+                    "Images must be provided as bytes in TextGenerationRequest.images "
+                    "with image placeholders (type='image') in message content."
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported message content type: '{content_type}'"
+                )
+
+        return normalized
+
+    @cached_property
+    def number_of_images(self) -> int:
+        """Returns the number of ImageContentPart instances in the message content."""
+        if isinstance(self.content, str):
+            return 0
+        return sum(
+            1 for item in self.content if isinstance(item, ImageContentPart)
+        )
 
 
 @dataclass(frozen=True)
@@ -198,6 +255,21 @@ class TextGenerationRequest(Request):
 
     def __post_init__(self) -> None:
         """Validates mutual exclusivity, image-messaging constraints, and message-image consistency after object initialization."""
+        # Convert dict messages to TextGenerationRequestMessage objects
+        if self.messages is not None:
+            converted_messages: list[TextGenerationRequestMessage] = []
+            for msg in self.messages:
+                if isinstance(msg, dict):
+                    converted_messages.append(
+                        TextGenerationRequestMessage(**msg)
+                    )
+                elif isinstance(msg, TextGenerationRequestMessage):
+                    converted_messages.append(msg)
+                else:
+                    raise TypeError(f"Invalid message type: {type(msg)}")
+            # Use object.__setattr__ for frozen dataclass
+            object.__setattr__(self, "messages", converted_messages)
+
         if self.prompt and self.messages:
             raise ValueError(
                 "both prompt and messages cannot be provided to TextGenerationRequest"
@@ -221,18 +293,11 @@ class TextGenerationRequest(Request):
         Returns:
             int: Total count of image-type contents found in messages.
         """
-        i = 0
-        if self.messages:
-            for message in self.messages:
-                content = message.get("content", [])
-                if isinstance(content, list):
-                    for item in content:
-                        if (
-                            isinstance(item, dict)
-                            and item.get("type") == "image"
-                        ):
-                            i += 1
-        return i
+        return (
+            sum(message.number_of_images for message in self.messages)
+            if self.messages
+            else 0
+        )
 
 
 def _check_text_generation_output_implements_pipeline_output(

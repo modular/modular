@@ -84,13 +84,13 @@ def test_chat_template_preserves_text_with_image() -> None:
     )
 
     messages: list[TextGenerationRequestMessage] = [
-        {
-            "role": "system",
-            "content": "You are a helpful assistant.",
-        },
-        {
-            "role": "user",
-            "content": [
+        TextGenerationRequestMessage(
+            role="system",
+            content="You are a helpful assistant.",
+        ),
+        TextGenerationRequestMessage(
+            role="user",
+            content=[
                 {
                     "type": "image",
                     "image": image_b64,
@@ -100,7 +100,7 @@ def test_chat_template_preserves_text_with_image() -> None:
                     "text": test_question,
                 },
             ],
-        },
+        ),
     ]
 
     # Apply chat template.
@@ -147,9 +147,9 @@ def test_chat_template_multiple_text_parts() -> None:
     text_part_2 = "Second part of the question."
 
     messages: list[TextGenerationRequestMessage] = [
-        {
-            "role": "user",
-            "content": [
+        TextGenerationRequestMessage(
+            role="user",
+            content=[
                 {
                     "type": "text",
                     "text": text_part_1,
@@ -163,7 +163,7 @@ def test_chat_template_multiple_text_parts() -> None:
                     "text": text_part_2,
                 },
             ],
-        },
+        ),
     ]
 
     prompt = tokenizer.apply_chat_template(messages)
@@ -189,10 +189,10 @@ def test_chat_template_text_only() -> None:
     test_question = "What is 2 + 2?"
 
     messages: list[TextGenerationRequestMessage] = [
-        {
-            "role": "user",
-            "content": test_question,
-        },
+        TextGenerationRequestMessage(
+            role="user",
+            content=test_question,
+        ),
     ]
 
     prompt = tokenizer.apply_chat_template(messages)
