@@ -289,7 +289,7 @@ filegroup(
         "bin/prterun",
         "lib/libmpi.so",
         "lib/libmpi.so.40.40.7",
-        "lib/librocshmem.so",
+        "lib/librocshmem_host.so",
         "lib/libucp.so.0",
         "lib/libucs.so.0",
         "lib/libopen-pal.so.80",
@@ -301,14 +301,27 @@ filegroup(
         "lib/libucm.so.0",
         "lib/libprrte.so.3",
         "lib/libnl-3.so.200",
-        "share/openmpi/help-mpirun.txt",
-        "share/prte/help-pcompress.txt",
-        "share/pmix/help-pcompress.txt",
-    ],
+    ] + glob([
+        "share/openmpi/help-*.txt",
+        "share/pmix/help-*.txt",
+        "share/prte/help-*.txt",
+    ]),
+)
+
+# Individual targets for MPI tools
+filegroup(
+    name = "mpirun",
+    srcs = ["bin/mpirun"],
+)
+
+filegroup(
+    name = "prterun",
+    srcs = ["bin/prterun"],
 )
 """,
-    sha256 = "a94edf6e52add4efe8c417d338d98c8381701c5399b71412020abef31f8b9d9b",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/rocshmem//a94edf6e52add4efe8c417d338d98c8381701c5399b71412020abef31f8b9d9b/rocshmem.tar.gz",
+    # built from commit: https://github.com/modular/rocSHMEM/commit/09569c2c5fa32264f1facbd0357a884089e4c2a4
+    sha256 = "0ed6412e8a2e1021a6b5da3afd4092573a3c75dec75d82c92a46d6f1424b7423",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/rocshmem/3.2.1/0ed6412e8a2e1021a6b5da3afd4092573a3c75dec75d82c92a46d6f1424b7423/rocshmem.tar.gz",
 )
 
 http_archive(

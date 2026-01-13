@@ -43,7 +43,7 @@ from gpu.host import (
     LaunchAttribute,
 )
 from gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
-from gpu.host._amdgpu_hip import HIP
+from gpu.host._amdgpu_hip import HIP, HIP_MODULE
 from gpu.host.device_context import (
     _ConstCharPtr,
     _checked,
@@ -65,12 +65,15 @@ from ._rocshmem import (
     rocshmem_finalize,
     rocshmem_n_pes,
     rocshmem_malloc,
+    rocshmem_calloc,
     rocshmem_team_my_pe,
     rocshmem_free,
     rocshmem_barrier_all,
     rocshmem_barrier_all_wave,
     rocshmem_p,
+    rocshmemx_hipmodule_init,
     rocshmem_put,
+    rocshmem_init_thread,
 )
 from ._nvshmem import (
     NVSHMEM_CMP_EQ,
@@ -219,6 +222,8 @@ fn shmem_init_thread(
     @parameter
     if has_nvidia_gpu_accelerator():
         nvshmemx_init_thread(ctx, number_of_devices_node)
+    elif has_amd_gpu_accelerator():
+        rocshmem_init_thread(ctx, number_of_devices_node)
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
@@ -382,6 +387,8 @@ fn shmem_calloc[
     @parameter
     if has_nvidia_gpu_accelerator():
         return nvshmem_calloc[dtype](count, size)
+    elif has_amd_gpu_accelerator():
+        return rocshmem_calloc[dtype](count, size)
     else:
         return CompilationTarget.unsupported_target_error[
             UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -900,12 +907,15 @@ fn shmem_barrier_all_on_stream(stream: DeviceStream) raises:
 
 fn shmem_module_init(device_function: DeviceFunction) raises:
     """
-    Initializes the device state in the compiled function module so that it’s
-    able to perform NVSHMEM operations. Must have completed device
+    Initializes the device state in the compiled function module so that it's
+    able to perform SHMEM operations. Must have completed device
     initialization prior to calling this function.
 
+    For NVSHMEM, this calls nvshmemx_cumodule_init().
+    For ROCSHMEM, this calls rocshmemx_hipmodule_init().
+
     Args:
-        device_function: The compiled device function to initialize with NVSHMEM.
+        device_function: The compiled device function to initialize with SHMEM.
 
     Raises:
         String: If module initialization fails.
@@ -914,7 +924,14 @@ fn shmem_module_init(device_function: DeviceFunction) raises:
     @parameter
     if has_nvidia_gpu_accelerator():
         var func = CUDA_MODULE(device_function)
-        _ = nvshmemx_cumodule_init(func)
+        var status = nvshmemx_cumodule_init(func)
+        if status != 0:
+            raise Error("nvshmemx_hipmodule_init failed with status:", status)
+    elif has_amd_gpu_accelerator():
+        var hip_module = HIP_MODULE(device_function)
+        var status = rocshmemx_hipmodule_init(hip_module)
+        if status != 0:
+            raise Error("rocshmemx_hipmodule_init failed with status:", status)
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name(),
@@ -939,6 +956,9 @@ fn shmem_module_finalize(device_function: DeviceFunction) raises:
     if has_nvidia_gpu_accelerator():
         var func = CUDA_MODULE(device_function)
         _ = nvshmemx_cumodule_finalize(func)
+    elif has_amd_gpu_accelerator():
+        # Finalalizing a module is not required on AMD
+        pass
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name(),
