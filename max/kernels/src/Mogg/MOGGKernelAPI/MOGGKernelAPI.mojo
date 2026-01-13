@@ -20,6 +20,7 @@ from math import (
     acos,
     atanh,
     ceil,
+    ceildiv,
     cos,
     erf,
     exp,
@@ -110,6 +111,16 @@ from nn.concat import _concat_cpu, concat, fused_concat
 from nn.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv import pack_filter_shape as pack_filter_shape_conv
+from nn.causal_conv1d import (
+    causal_conv1d_channel_first_fwd_cpu,
+    causal_conv1d_channel_first_fwd_cpu_no_bias,
+    causal_conv1d_channel_first_fwd_gpu,
+    causal_conv1d_channel_first_fwd_gpu_no_bias,
+    causal_conv1d_update_cpu,
+    causal_conv1d_update_cpu_no_bias,
+    causal_conv1d_update_gpu,
+    causal_conv1d_update_gpu_no_bias,
+)
 from nn.conv_transpose import (
     conv_transpose_shape,
     conv_transposed_cpu,
@@ -9713,3 +9724,904 @@ struct Struct_sliced_add_ragged:
                     lora_end_idx.to_layout_tensor(),
                     None,
                 )
+
+
+@compiler.register("causal_conv1d")
+struct CausalConv1D[activation: StaticString]:
+    """Causal 1D convolution operation with bias.
+
+    Performs causal (autoregressive) 1D convolution where each output position
+    depends only on current and past input positions. Supports optional SiLU
+    activation with SIMD-vectorized implementations for widths 1, 2, 3, 4.
+
+    Parameters:
+        activation: Activation function to apply after convolution.
+            - "none": No activation (identity).
+            - "silu": SiLU/Swish activation (x * sigmoid(x)).
+
+    Tensor Shapes:
+        - input: (batch, channels, seqlen) - Input sequence tensor.
+        - weight: (channels, width) - Convolution weights per channel.
+        - bias: (channels,) - Per-channel bias to add.
+        - output: (batch, channels, seqlen) - Output tensor (same shape as input).
+    """
+
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[
+            dtype=dtype, rank=rank
+        ],  # Changed from FusedInputTensor for GPU compatibility
+        weight: InputTensor[dtype=dtype, rank=2],
+        bias: InputTensor[dtype=dtype, rank=1],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        # Validate ranks using compile-time parameter (runtime checks are optimized away)
+        if rank != 3:
+            raise Error("Input tensor must be rank 3 (batch, channels, seqlen)")
+        if output.shape() != input.shape():
+            raise Error("Output shape must match input shape")
+
+        var X = input.to_layout_tensor()
+        var W = weight.to_layout_tensor()
+        var O = output.to_layout_tensor()
+        var B = bias.to_layout_tensor()
+
+        # Get dimensions and strides from original tensors before conversion
+        # This ensures we have valid values even if layout conversion has issues
+        var batch_size: Int = input.dim_size(0)
+        var dim: Int = input.dim_size(1)
+        var seqlen: Int = input.dim_size(2)
+        var width: Int = weight.dim_size(1)
+
+        var x_batch_stride: UInt32 = UInt32(input.strides()[0])
+        var x_c_stride: UInt32 = UInt32(input.strides()[1])
+        var x_l_stride: UInt32 = UInt32(input.strides()[2])
+
+        var weight_c_stride: UInt32 = UInt32(weight.strides()[0])
+        var weight_width_stride: UInt32 = UInt32(weight.strides()[1])
+
+        var out_batch_stride: UInt32 = UInt32(output.strides()[0])
+        var out_c_stride: UInt32 = UInt32(output.strides()[1])
+        var out_l_stride: UInt32 = UInt32(output.strides()[2])
+
+        var bias_stride: UInt32 = UInt32(bias.strides()[0])
+
+        var silu_activation = Self.activation == "silu"
+
+        @parameter
+        if is_cpu[target]():
+            causal_conv1d_channel_first_fwd_cpu[
+                X.dtype,
+                X.layout,
+                W.dtype,
+                W.layout,
+                O.dtype,
+                O.layout,
+                B.dtype,
+                B.layout,
+            ](
+                batch_size,
+                dim,
+                seqlen,
+                width,
+                X,
+                W,
+                O,
+                B,
+                x_batch_stride,
+                x_c_stride,
+                x_l_stride,
+                weight_c_stride,
+                weight_width_stride,
+                out_batch_stride,
+                out_c_stride,
+                out_l_stride,
+                bias_stride,
+                silu_activation,
+            )
+        elif is_gpu[target]():
+            var gpu_ctx: DeviceContext = ctx.get_device_context()
+            comptime kNThreads = 128
+            comptime kNElts = 4
+            if width == 1:
+                comptime kWidth = 1
+                var compiled_func = gpu_ctx.compile_function[
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                ]()
+                var silu_activation_int8 = Int8(silu_activation)
+                gpu_ctx.enqueue_function(
+                    compiled_func,
+                    batch_size,
+                    dim,
+                    seqlen,
+                    width,
+                    X,
+                    W,
+                    O,
+                    B,
+                    x_batch_stride,
+                    x_c_stride,
+                    x_l_stride,
+                    weight_c_stride,
+                    weight_width_stride,
+                    out_batch_stride,
+                    out_c_stride,
+                    out_l_stride,
+                    bias_stride,
+                    silu_activation_int8,
+                    grid_dim=(
+                        ceildiv(X.dim(2), kNThreads * kNElts),
+                        X.dim(1),
+                        X.dim(0),
+                    ),
+                    block_dim=(kNThreads),
+                )
+            elif width == 2:
+                comptime kWidth = 2
+                var compiled_func = gpu_ctx.compile_function[
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                ]()
+                var silu_activation_int8 = Int8(silu_activation)
+                gpu_ctx.enqueue_function(
+                    compiled_func,
+                    batch_size,
+                    dim,
+                    seqlen,
+                    width,
+                    X,
+                    W,
+                    O,
+                    B,
+                    x_batch_stride,
+                    x_c_stride,
+                    x_l_stride,
+                    weight_c_stride,
+                    weight_width_stride,
+                    out_batch_stride,
+                    out_c_stride,
+                    out_l_stride,
+                    bias_stride,
+                    silu_activation_int8,
+                    grid_dim=(
+                        ceildiv(X.dim(2), kNThreads * kNElts),
+                        X.dim(1),
+                        X.dim(0),
+                    ),
+                    block_dim=(kNThreads),
+                )
+            elif width == 3:
+                comptime kWidth = 3
+                var compiled_func = gpu_ctx.compile_function[
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                ]()
+                var silu_activation_int8 = Int8(silu_activation)
+                gpu_ctx.enqueue_function(
+                    compiled_func,
+                    batch_size,
+                    dim,
+                    seqlen,
+                    width,
+                    X,
+                    W,
+                    O,
+                    B,
+                    x_batch_stride,
+                    x_c_stride,
+                    x_l_stride,
+                    weight_c_stride,
+                    weight_width_stride,
+                    out_batch_stride,
+                    out_c_stride,
+                    out_l_stride,
+                    bias_stride,
+                    silu_activation_int8,
+                    grid_dim=(
+                        ceildiv(X.dim(2), kNThreads * kNElts),
+                        X.dim(1),
+                        X.dim(0),
+                    ),
+                    block_dim=(kNThreads),
+                )
+            elif width == 4:
+                comptime kWidth = 4
+                var compiled_func = gpu_ctx.compile_function[
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                    causal_conv1d_channel_first_fwd_gpu[
+                        X.dtype,
+                        X.layout,
+                        W.dtype,
+                        W.layout,
+                        O.dtype,
+                        O.layout,
+                        kNThreads,
+                        kWidth,
+                        kNElts,
+                        B.dtype,
+                        B.layout,
+                    ],
+                ]()
+                var silu_activation_int8 = Int8(silu_activation)
+                gpu_ctx.enqueue_function(
+                    compiled_func,
+                    batch_size,
+                    dim,
+                    seqlen,
+                    width,
+                    X,
+                    W,
+                    O,
+                    B,
+                    x_batch_stride,
+                    x_c_stride,
+                    x_l_stride,
+                    weight_c_stride,
+                    weight_width_stride,
+                    out_batch_stride,
+                    out_c_stride,
+                    out_l_stride,
+                    bias_stride,
+                    silu_activation_int8,
+                    grid_dim=(
+                        ceildiv(X.dim(2), kNThreads * kNElts),
+                        X.dim(1),
+                        X.dim(0),
+                    ),
+                    block_dim=(kNThreads),
+                )
+            else:
+                raise Error(
+                    "Unsupported kernel width: only widths 1, 2, 3, 4 are"
+                    " supported"
+                )
+        else:
+            raise Error("Unsupported target device")
+
+    @staticmethod
+    fn shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank],
+        weight: InputTensor[dtype=dtype, rank=2],
+        bias: InputTensor[dtype=dtype, rank=1],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+# ===----------------------------------------------------------------------=== #
+# Causal Conv1D Update Operation (for autoregressive decode)
+# ===----------------------------------------------------------------------=== #
+
+
+fn _execute_causal_conv1d_update_with_bias[
+    activation: StaticString,
+    target: StaticString,
+](
+    output: OutputTensor,
+    conv_state: OutputTensor,  # Note: Output because it's modified in-place
+    input: FusedInputTensor[dtype = output.dtype, rank = output.rank],
+    weight: InputTensor[dtype = output.dtype, rank=2],
+    bias: InputTensor[dtype = output.dtype, rank=1],
+    ctx: DeviceContextPtr,
+) raises:
+    comptime dtype = output.dtype
+    comptime rank = output.rank
+    if input.rank != 3:
+        raise Error("Input tensor x must be rank 3 for update (B, C, L)")
+    if conv_state.rank != 3:
+        raise Error("conv_state must be rank 3 (B, C, S)")
+    # weight.rank is known at compile time (rank=2), so this check is optimized away
+    # but kept for documentation and consistency
+    if output.rank != 3:
+        raise Error("Output tensor must be rank 3 (B, C, L)")
+
+    var X = input.to_layout_tensor()
+    var W = weight.to_layout_tensor()
+    var O = output.to_layout_tensor()
+    var CS = conv_state.to_layout_tensor()
+    var B = bias.to_layout_tensor()
+
+    var batch_size: Int = input.dim_size(0)
+    var dim: Int = input.dim_size(1)
+    var seqlen: Int = input.dim_size(2)
+    var width: Int = weight.dim_size(1)
+    var state_len: Int = conv_state.dim_size(2)
+
+    var x_batch_stride: UInt32 = input.strides()[0]
+    var x_c_stride: UInt32 = input.strides()[1]
+    var x_l_stride: UInt32 = input.strides()[2]
+
+    var conv_state_batch_stride: UInt32 = conv_state.strides()[0]
+    var conv_state_c_stride: UInt32 = conv_state.strides()[1]
+    var conv_state_l_stride: UInt32 = conv_state.strides()[2]
+
+    var weight_c_stride: UInt32 = weight.strides()[0]
+    var weight_width_stride: UInt32 = weight.strides()[1]
+
+    var out_batch_stride: UInt32 = output.strides()[0]
+    var out_c_stride: UInt32 = output.strides()[1]
+    var out_l_stride: UInt32 = output.strides()[2]
+
+    var silu_activation = activation == "silu"
+
+    @parameter
+    if target == "cpu":
+        causal_conv1d_update_cpu[
+            X.dtype,
+            X.layout,
+            CS.dtype,
+            CS.layout,
+            W.dtype,
+            W.layout,
+            O.dtype,
+            O.layout,
+            B.dtype,
+            B.layout,
+        ](
+            batch_size,
+            dim,
+            seqlen,
+            width,
+            state_len,
+            X,
+            CS,
+            W,
+            O,
+            B,
+            x_batch_stride,
+            x_c_stride,
+            x_l_stride,
+            conv_state_batch_stride,
+            conv_state_c_stride,
+            conv_state_l_stride,
+            weight_c_stride,
+            weight_width_stride,
+            out_batch_stride,
+            out_c_stride,
+            out_l_stride,
+            silu_activation,
+        )
+    elif target == "gpu":
+        var gpu_ctx: DeviceContext = ctx.get_device_context()
+        comptime kNThreads = 128
+        var silu_activation_int8 = Int8(silu_activation)
+        var compiled_func = gpu_ctx.compile_function[
+            causal_conv1d_update_gpu[
+                X.dtype,
+                X.layout,
+                CS.dtype,
+                CS.layout,
+                W.dtype,
+                W.layout,
+                O.dtype,
+                O.layout,
+                B.dtype,
+                B.layout,
+                kNThreads,
+            ],
+            causal_conv1d_update_gpu[
+                X.dtype,
+                X.layout,
+                CS.dtype,
+                CS.layout,
+                W.dtype,
+                W.layout,
+                O.dtype,
+                O.layout,
+                B.dtype,
+                B.layout,
+                kNThreads,
+            ],
+        ]()
+        gpu_ctx.enqueue_function(
+            compiled_func,
+            batch_size,
+            dim,
+            seqlen,
+            width,
+            state_len,
+            X,
+            CS,
+            W,
+            O,
+            B,
+            x_batch_stride,
+            x_c_stride,
+            x_l_stride,
+            conv_state_batch_stride,
+            conv_state_c_stride,
+            conv_state_l_stride,
+            weight_c_stride,
+            weight_width_stride,
+            out_batch_stride,
+            out_c_stride,
+            out_l_stride,
+            silu_activation_int8,
+            grid_dim=(batch_size, ceildiv(dim, kNThreads)),
+            block_dim=(kNThreads),
+        )
+    else:
+        raise Error("Unsupported target device")
+
+
+fn _execute_causal_conv1d_update_no_bias[
+    activation: StaticString,
+    target: StaticString,
+](
+    output: OutputTensor,
+    conv_state: OutputTensor,
+    input: InputTensor[
+        dtype = output.dtype, rank = output.rank
+    ],  # Changed from FusedInputTensor for GPU compatibility
+    weight: InputTensor[dtype = output.dtype, rank=2],
+    ctx: DeviceContextPtr,
+) raises:
+    comptime dtype = output.dtype
+    comptime rank = output.rank
+    if input.rank != 3:
+        raise Error("Input tensor x must be rank 3 for update (B, C, L)")
+    if conv_state.rank != 3:
+        raise Error("conv_state must be rank 3 (B, C, S)")
+    # weight.rank is known at compile time (rank=2), so this check is optimized away
+    # but kept for documentation and consistency
+    if output.rank != 3:
+        raise Error("Output tensor must be rank 3 (B, C, L)")
+
+    var X = input.to_layout_tensor()
+    var W = weight.to_layout_tensor()
+    var O = output.to_layout_tensor()
+    var CS = conv_state.to_layout_tensor()
+
+    var batch_size: Int = input.dim_size(0)
+    var dim: Int = input.dim_size(1)
+    var seqlen: Int = input.dim_size(2)
+    var width: Int = weight.dim_size(1)
+    var state_len: Int = conv_state.dim_size(2)
+
+    var x_batch_stride: UInt32 = input.strides()[0]
+    var x_c_stride: UInt32 = input.strides()[1]
+    var x_l_stride: UInt32 = input.strides()[2]
+
+    var conv_state_batch_stride: UInt32 = conv_state.strides()[0]
+    var conv_state_c_stride: UInt32 = conv_state.strides()[1]
+    var conv_state_l_stride: UInt32 = conv_state.strides()[2]
+
+    var weight_c_stride: UInt32 = weight.strides()[0]
+    var weight_width_stride: UInt32 = weight.strides()[1]
+
+    var out_batch_stride: UInt32 = output.strides()[0]
+    var out_c_stride: UInt32 = output.strides()[1]
+    var out_l_stride: UInt32 = output.strides()[2]
+
+    var silu_activation = activation == "silu"
+
+    @parameter
+    if target == "cpu":
+        causal_conv1d_update_cpu_no_bias[
+            X.dtype,
+            X.layout,
+            CS.dtype,
+            CS.layout,
+            W.dtype,
+            W.layout,
+            O.dtype,
+            O.layout,
+        ](
+            batch_size,
+            dim,
+            seqlen,
+            width,
+            state_len,
+            X,
+            CS,
+            W,
+            O,
+            x_batch_stride,
+            x_c_stride,
+            x_l_stride,
+            conv_state_batch_stride,
+            conv_state_c_stride,
+            conv_state_l_stride,
+            weight_c_stride,
+            weight_width_stride,
+            out_batch_stride,
+            out_c_stride,
+            out_l_stride,
+            silu_activation,
+        )
+    elif target == "gpu":
+        var gpu_ctx: DeviceContext = ctx.get_device_context()
+        comptime kNThreads = 128
+        var silu_activation_int8 = Int8(silu_activation)
+        var compiled_func = gpu_ctx.compile_function[
+            causal_conv1d_update_gpu_no_bias[
+                X.dtype,
+                X.layout,
+                CS.dtype,
+                CS.layout,
+                W.dtype,
+                W.layout,
+                O.dtype,
+                O.layout,
+                kNThreads,
+            ],
+            causal_conv1d_update_gpu_no_bias[
+                X.dtype,
+                X.layout,
+                CS.dtype,
+                CS.layout,
+                W.dtype,
+                W.layout,
+                O.dtype,
+                O.layout,
+                kNThreads,
+            ],
+        ]()
+        gpu_ctx.enqueue_function(
+            compiled_func,
+            batch_size,
+            dim,
+            seqlen,
+            width,
+            state_len,
+            X,
+            CS,
+            W,
+            O,
+            x_batch_stride,
+            x_c_stride,
+            x_l_stride,
+            conv_state_batch_stride,
+            conv_state_c_stride,
+            conv_state_l_stride,
+            weight_c_stride,
+            weight_width_stride,
+            out_batch_stride,
+            out_c_stride,
+            out_l_stride,
+            silu_activation_int8,
+            grid_dim=(batch_size, ceildiv(dim, kNThreads)),
+            block_dim=(kNThreads),
+        )
+    else:
+        raise Error("Unsupported target device")
+
+
+@compiler.register("causal_conv1d_update")
+struct CausalConv1DUpdate[activation: StaticString]:
+    """Incremental causal conv1d update for autoregressive decoding.
+
+    This operation is designed for token-by-token generation where:
+        1. A sliding window of recent inputs is maintained in conv_state.
+        2. Each new input updates the state and produces an output.
+        3. The conv_state is modified in-place for efficiency.
+
+    Use this for:
+        - Language model inference with autoregressive generation.
+        - Real-time streaming applications.
+        - Efficient incremental convolution without full sequence recomputation.
+
+    Parameters:
+        activation: "none" or "silu" - activation function to apply.
+
+    Tensor Shapes:
+        - input: (batch, channels, seqlen) - New input tokens (typically seqlen=1).
+        - weight: (channels, width) - Convolution weights.
+        - bias: (channels,) - Per-channel bias.
+        - conv_state: (batch, channels, state_len) - Sliding window state (modified in-place).
+        - output: (batch, channels, seqlen) - Convolution output for new tokens.
+
+    State Management:
+        The conv_state maintains the last (width-1) inputs for each channel.
+        After update, the oldest values are shifted out and new inputs are appended.
+    """
+
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        conv_state: OutputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[
+            dtype=dtype, rank=rank
+        ],  # Changed from FusedInputTensor for GPU compatibility
+        weight: InputTensor[dtype=dtype, rank=2],
+        bias: InputTensor[dtype=dtype, rank=1],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        # Validate ranks
+        if rank != 3:
+            raise Error("Input tensor must be rank 3 (batch, channels, seqlen)")
+        if output.shape() != input.shape():
+            raise Error("Output shape must match input shape")
+        if conv_state.dim_size(0) != input.dim_size(0) or conv_state.dim_size(
+            1
+        ) != input.dim_size(1):
+            raise Error(
+                "conv_state batch and channel dimensions must match input"
+            )
+
+        var X = input.to_layout_tensor()
+        var CS = conv_state.to_layout_tensor()
+        var W = weight.to_layout_tensor()
+        var O = output.to_layout_tensor()
+        var B = bias.to_layout_tensor()
+
+        var batch_size: Int = input.dim_size(0)
+        var dim: Int = input.dim_size(1)
+        var seqlen: Int = input.dim_size(2)
+        var width: Int = weight.dim_size(1)
+        var state_len: Int = conv_state.dim_size(2)
+
+        var x_batch_stride: UInt32 = UInt32(input.strides()[0])
+        var x_c_stride: UInt32 = UInt32(input.strides()[1])
+        var x_l_stride: UInt32 = UInt32(input.strides()[2])
+
+        var conv_state_batch_stride: UInt32 = UInt32(conv_state.strides()[0])
+        var conv_state_c_stride: UInt32 = UInt32(conv_state.strides()[1])
+        var conv_state_l_stride: UInt32 = UInt32(conv_state.strides()[2])
+
+        var weight_c_stride: UInt32 = UInt32(weight.strides()[0])
+        var weight_width_stride: UInt32 = UInt32(weight.strides()[1])
+
+        var out_batch_stride: UInt32 = UInt32(output.strides()[0])
+        var out_c_stride: UInt32 = UInt32(output.strides()[1])
+        var out_l_stride: UInt32 = UInt32(output.strides()[2])
+
+        var bias_stride: UInt32 = UInt32(bias.strides()[0])
+
+        var silu_activation = Self.activation == "silu"
+
+        @parameter
+        if is_cpu[target]():
+            causal_conv1d_update_cpu[
+                X.dtype,
+                X.layout,
+                CS.dtype,
+                CS.layout,
+                W.dtype,
+                W.layout,
+                O.dtype,
+                O.layout,
+                B.dtype,
+                B.layout,
+            ](
+                batch_size,
+                dim,
+                seqlen,
+                width,
+                state_len,
+                X,
+                CS,
+                W,
+                O,
+                B,
+                x_batch_stride,
+                x_c_stride,
+                x_l_stride,
+                conv_state_batch_stride,
+                conv_state_c_stride,
+                conv_state_l_stride,
+                weight_c_stride,
+                weight_width_stride,
+                out_batch_stride,
+                out_c_stride,
+                out_l_stride,
+                silu_activation,
+            )
+        elif is_gpu[target]():
+            var gpu_ctx: DeviceContext = ctx.get_device_context()
+            comptime kNThreads = 128
+            var compiled_func = gpu_ctx.compile_function[
+                causal_conv1d_update_gpu[
+                    X.dtype,
+                    X.layout,
+                    CS.dtype,
+                    CS.layout,
+                    W.dtype,
+                    W.layout,
+                    O.dtype,
+                    O.layout,
+                    B.dtype,
+                    B.layout,
+                    kNThreads,
+                ],
+                causal_conv1d_update_gpu[
+                    X.dtype,
+                    X.layout,
+                    CS.dtype,
+                    CS.layout,
+                    W.dtype,
+                    W.layout,
+                    O.dtype,
+                    O.layout,
+                    B.dtype,
+                    B.layout,
+                    kNThreads,
+                ],
+            ]()
+            var silu_activation_int8 = Int8(silu_activation)
+            gpu_ctx.enqueue_function(
+                compiled_func,
+                batch_size,
+                dim,
+                seqlen,
+                width,
+                state_len,
+                X,
+                CS,
+                W,
+                O,
+                B,
+                x_batch_stride,
+                x_c_stride,
+                x_l_stride,
+                conv_state_batch_stride,
+                conv_state_c_stride,
+                conv_state_l_stride,
+                weight_c_stride,
+                weight_width_stride,
+                out_batch_stride,
+                out_c_stride,
+                out_l_stride,
+                bias_stride,
+                silu_activation_int8,
+                grid_dim=(batch_size, ceildiv(dim, kNThreads)),
+                block_dim=(kNThreads),
+            )
+        else:
+            raise Error("Unsupported target device")
+
+    @staticmethod
+    fn shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank],
+        weight: InputTensor[dtype=dtype, rank=2],
+        bias: InputTensor[dtype=dtype, rank=1],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("causal_conv1d_update_no_bias")
+struct CausalConv1DUpdateNoBias[activation: StaticString]:
+    """Incremental causal conv1d update without bias.
+
+    Same as CausalConv1DUpdate but without the bias term. Use when your model
+    doesn't use per-channel bias in the convolution layer.
+
+    Parameters:
+        activation: "none" or "silu" - activation function to apply.
+
+    Tensor Shapes:
+        - input: (batch, channels, seqlen) - New input tokens.
+        - weight: (channels, width) - Convolution weights.
+        - conv_state: (batch, channels, state_len) - Sliding window state.
+        - output: (batch, channels, seqlen) - Output for new tokens.
+
+    See Also:
+        CausalConv1DUpdate for the variant with bias.
+    """
+
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        conv_state: OutputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[
+            dtype=dtype, rank=rank
+        ],  # Changed from FusedInputTensor for GPU compatibility
+        weight: InputTensor[dtype=dtype, rank=2],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        _execute_causal_conv1d_update_no_bias[Self.activation, target](
+            output, conv_state, input, weight, ctx
+        )
+
+    @staticmethod
+    fn shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank],
+        weight: InputTensor[dtype=dtype, rank=2],
+    ) -> IndexList[rank]:
+        return input.shape()
