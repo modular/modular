@@ -211,7 +211,7 @@ fn test_block_scaled_nvfp4_cublaslt[
     var a_scales = from_ndbuffer_row_major(a_scales_device_nd)
     var b_scales = from_ndbuffer_row_major(b_scales_device_nd)
 
-    matmul[scales_type=scales_dtype](
+    matmul(
         ctx,
         c,
         a,

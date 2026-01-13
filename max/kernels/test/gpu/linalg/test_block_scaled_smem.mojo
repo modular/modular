@@ -24,6 +24,7 @@ from linalg.matmul.gpu.sm100_structured.block_scaled_smem import (
     get_sfa_num_cols,
     get_sfb_num_cols,
 )
+from gpu.mma_sm100 import UMMAKind
 
 
 # Create a valid SM100 config for testing
@@ -45,6 +46,7 @@ fn _make_test_config[
     return BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ](
+        scaling_kind=UMMAKind.KIND_MXF8F6F4,
         cta_group=2,
         mma_shape=Index(256, 256, MMA_K),
         cluster_shape=Index(2, 1, 1),

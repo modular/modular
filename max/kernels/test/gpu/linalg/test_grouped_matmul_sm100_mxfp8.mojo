@@ -51,6 +51,7 @@ from layout import (
     IntTuple,
     UNKNOWN_VALUE,
 )
+from gpu.mma_sm100 import UMMAKind
 
 
 fn simple_init() -> Bool:
@@ -455,6 +456,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime matmul_config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ](
+        scaling_kind=UMMAKind.KIND_MXF8F6F4,
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),

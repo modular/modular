@@ -32,6 +32,7 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from gpu.mma_sm100 import UMMAKind
 
 
 # =============================================================================
@@ -54,6 +55,7 @@ fn _create_test_config[
     return BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ](
+        scaling_kind=UMMAKind.KIND_MXF8F6F4,
         cta_group=2,
         mma_shape=Index(256, 256, MMA_K),
         cluster_shape=Index(2, 1, 1),
@@ -274,7 +276,6 @@ fn test_tile_loader_types() raises:
     """Test that scaling factor loader types can be imported."""
     from linalg.matmul.gpu.sm100_structured.block_scaled_tile_loader import (
         ScalingFactorLoader,
-        copy_sf_tmem,
     )
 
     # Just verify the imports work

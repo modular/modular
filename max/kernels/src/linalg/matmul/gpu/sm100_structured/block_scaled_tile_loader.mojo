@@ -14,7 +14,6 @@
 """TMA loaders for 5D MXFP8 scaling factor tensors.
 
 - ScalingFactorLoader: Async TMA loads for SFA/SFB tiles
-- copy_sf_tmem: SMEM → TMEM transfer before MMA operations
 """
 
 from sys import size_of
@@ -102,53 +101,6 @@ struct ScalingFactorLoader[
                 batch_idx,
             ),
         )
-
-
-# =============================================================================
-# copy_sf_tmem - Copy scaling factors from SMEM to TMEM
-# =============================================================================
-
-from .tmem import TmemTensor
-
-
-@always_inline
-fn copy_sf_tmem[
-    sf_dtype: DType,
-    sf_smem_layout: Layout,
-    TILE_MN: Int,
-    cta_group: Int,
-](
-    sf_smem: LayoutTensor[address_space = AddressSpace.SHARED, ...],
-    sf_tmem: TmemTensor,
-):
-    """Copy scaling factors from shared memory to tensor memory.
-
-    This is required before MMA operations that use block scaling. The
-    scaling factors must be in TMEM for the MMA instruction to access them.
-
-    Parameters:
-        sf_dtype: Scaling factor data type.
-        sf_smem_layout: Layout of scaling factors in SMEM.
-        TILE_MN: M or N dimension of the tile (BM for A, MMA_N for B).
-        cta_group: CTA group size.
-
-    Args:
-        sf_smem: Source SMEM tensor containing scaling factors.
-        sf_tmem: Destination TMEM tensor for scaling factors.
-    """
-    var tmem_base = sf_tmem.offset()
-
-    @parameter
-    for i in range(TILE_MN // SF_MN_GROUP_SIZE):
-        comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
-        comptime sf_offset = sf_smem_layout(idx) * size_of[sf_dtype]()
-        var sf_tmem_addr = tmem_base + UInt32(i * (SF_MN_GROUP_SIZE // 32))
-        var sf_desc = MMASmemDescriptor.create[
-            8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
-        ](sf_smem.ptr + sf_offset)
-        tcgen05_cp[
-            cta_group=cta_group, datapaths=32, bits=128, multicast="warpx4"
-        ](sf_tmem_addr, sf_desc)
 
 
 # TileLoaderTMA is imported above and can be used directly for A/B tiles

@@ -32,6 +32,7 @@ from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils.index import Index, IndexList, product
+from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 
 
 # TODO: Add methods to conveniently extract specific modes from a layout.
@@ -312,6 +313,7 @@ struct MmaOpSM100_BlockScaled_SS[
     b_type: DType,
     sfa_dtype: DType,
     sfb_dtype: DType,
+    scaling_kind: UMMAKind,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     /,
@@ -323,11 +325,18 @@ struct MmaOpSM100_BlockScaled_SS[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = False,
 ](Defaultable):
-    var idesc: UMMAInsDescriptor[Self._get_umma_kind[Self.a_type]()]
+    var idesc: UMMAInsDescriptor[Self.scaling_kind]
     var mask: UInt16
 
     @always_inline
     fn __init__(out self):
+        __comptime_assert (
+            Self.scaling_kind == UMMAKind.KIND_MXF8F6F4
+            or Self.scaling_kind == UMMAKind.KIND_MXF4NVF4
+        ), (
+            "Only support MXF8F6F4 or MXF4NVF4 scaling kind for block scaled"
+            " matmul!"
+        )
         __comptime_assert (
             Self.transpose_b
         ), "MmaOpSM100 only supports transposed B"
@@ -338,16 +347,19 @@ struct MmaOpSM100_BlockScaled_SS[
         __comptime_assert (
             Self.a_type == Self.b_type
         ), "a_type and b_type must be the same"
+        __comptime_assert Self.a_type in (
+            DType.float8_e4m3fn,
+            DType.uint8,  # TODO: (KERN-2238) replace with FP4-E2M1
+        ), "Only support float8_e4m3fn or uint8 (F4-E2M1) for input operands"
         __comptime_assert (
             Self.sfa_dtype == Self.sfb_dtype
         ), "sfa_dtype and sfb_dtype must be the same"
-        __comptime_assert (
-            Self.sfa_dtype == DType.float8_e8m0fnu
-        ), "Only support float8_e8m0fnu for scales"
+        __comptime_assert Self.sfa_dtype in (
+            DType.float8_e4m3fn,
+            DType.float8_e8m0fnu,
+        ), "Only support float8_e4m3fn or float8_e8m0fnu for scales"
 
-        self.idesc = UMMAInsDescriptor[
-            Self._get_umma_kind[Self.a_type]()
-        ].create[
+        self.idesc = UMMAInsDescriptor[Self.scaling_kind].create[
             Self.accum_type,
             Self.a_type,
             Self.b_type,
@@ -392,6 +404,8 @@ struct MmaOpSM100_BlockScaled_SS[
         self,
         a: LayoutTensor[address_space = AddressSpace.SHARED, ...],
         b: LayoutTensor[address_space = AddressSpace.SHARED, ...],
+        sfa_smem: LayoutTensor[address_space = AddressSpace.SHARED, ...],
+        sfb_smem: LayoutTensor[address_space = AddressSpace.SHARED, ...],
         c_tmem: UInt32,
         sfa_tmem: UInt32,
         sfb_tmem: UInt32,
@@ -425,6 +439,16 @@ struct MmaOpSM100_BlockScaled_SS[
             Self.block_tile_shape[2] == 128 and Self.mma_shape[2] == 32
         ), "block_tile_shape[2] must be 128 and mma_shape[2] must be 32"
 
+        # when scaling kind is MXF8F6F4, one scale tile covers the whole [BM,BK] and [MMA_N,BK] tiles so we load it once.
+        @parameter
+        if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
+            self.copy_sf_to_tmem[
+                Self.sfa_dtype, sfa_smem.layout, Self.block_tile_shape[0], 0
+            ](sfa_smem, sfa_tmem)
+            self.copy_sf_to_tmem[
+                Self.sfb_dtype, sfb_smem.layout, Self.mma_shape[1], 0
+            ](sfb_smem, sfb_tmem)
+
         @parameter
         for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
             comptime a_offset = a.layout(IntTuple(0, k)) * size_of[
@@ -436,20 +460,45 @@ struct MmaOpSM100_BlockScaled_SS[
 
             var c_scale: UInt32 = 0 if (init_c and k == 0) else 1
 
-            var runtime_desc = UMMAInsDescriptor[
-                Self._get_umma_kind[Self.a_type]()
-            ].update_desc_with_sf_id[k // Self.mma_shape[2]](
-                self.idesc,
-            )
-            mma[Self.cta_group](
-                a_desc + a_offset,
-                b_desc + b_offset,
-                c_tmem,
-                runtime_desc,
-                sfa_tmem,
-                sfb_tmem,
-                c_scale=c_scale,
-            )
+            @parameter
+            if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
+                comptime sf_idx = k // Self.mma_shape[2]
+                var runtime_desc = UMMAInsDescriptor[
+                    Self.scaling_kind
+                ].update_desc_with_sf_id[sf_idx](
+                    self.idesc,
+                )
+                mma[Self.cta_group](
+                    a_desc + a_offset,
+                    b_desc + b_offset,
+                    c_tmem,
+                    runtime_desc,
+                    sfa_tmem,
+                    sfb_tmem,
+                    c_scale=c_scale,
+                )
+            else:
+                comptime sf_idx = k // Self.mma_shape[2]
+                # when scaling kind is MXFP4NVF4, four scale tiles cover the whole [BM,BK] and [MMA_N,BK] tiles so we need to load one scale tile for each k iteration.
+                self.copy_sf_to_tmem[
+                    Self.sfa_dtype,
+                    sfa_smem.layout,
+                    Self.block_tile_shape[0],
+                    sf_idx,
+                ](sfa_smem, sfa_tmem)
+                self.copy_sf_to_tmem[
+                    Self.sfb_dtype, sfb_smem.layout, Self.mma_shape[1], sf_idx
+                ](sfb_smem, sfb_tmem)
+
+                mma[Self.cta_group](
+                    a_desc + a_offset,
+                    b_desc + b_offset,
+                    c_tmem,
+                    self.idesc,
+                    sfa_tmem + sf_idx * (SF_MN_GROUP_SIZE // 32),
+                    sfb_tmem + sf_idx * (SF_MN_GROUP_SIZE // 32),
+                    c_scale=c_scale,
+                )
 
     @always_inline
     fn commit(
@@ -466,19 +515,36 @@ struct MmaOpSM100_BlockScaled_SS[
     fn wait(self):
         pass
 
-    @staticmethod
-    fn _get_umma_kind[dtype: DType]() -> UMMAKind:
-        @parameter
-        if dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
-            return UMMAKind.KIND_MXF8F6F4
-        else:
-            constrained[
-                False,
-                (
-                    "Unsupported/not implemented operand type for block scaled"
-                    " UMMA: "
-                ),
-                String(dtype),
-            ]()
+    @always_inline
+    fn copy_sf_to_tmem[
+        sf_dtype: DType,
+        sf_smem_layout: Layout,
+        TILE_MN: Int,
+        tile_k_idx: Int,
+    ](
+        self,
+        sf_smem: LayoutTensor[address_space = AddressSpace.SHARED, ...],
+        sf_tmem: UInt32,
+    ):
+        comptime sf_smem_size = sf_smem_layout.size()
 
-        return UMMAKind(-1)
+        @parameter
+        for i in range(TILE_MN // SF_MN_GROUP_SIZE):
+            comptime idx = IntTuple(
+                i * SF_ATOM_M[0], tile_k_idx * SF_ATOM_M[1] * SF_ATOM_K
+            )
+            comptime sf_offset = sf_smem_layout(idx) * size_of[sf_dtype]()
+            var sf_tmem_addr = (
+                sf_tmem
+                + i * (SF_MN_GROUP_SIZE // 32)
+                + tile_k_idx * (SF_MN_GROUP_SIZE // 32)
+            )
+            var sf_desc = MMASmemDescriptor.create[
+                8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
+            ](sf_smem.ptr + sf_offset)
+            tcgen05_cp[
+                cta_group = Self.cta_group,
+                datapaths=32,
+                bits=128,
+                multicast="warpx4",
+            ](sf_tmem_addr, sf_desc)
