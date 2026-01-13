@@ -17,7 +17,6 @@ from utils.numerics import FPUtils
 from memory import bitcast
 from layout import Layout, LayoutTensor
 from internal_utils._utils import ValOrDim, dynamic, static
-from buffer import NDBuffer
 from builtin.simd import _convert_f32_to_float8_ue8m0
 
 
@@ -289,6 +288,12 @@ fn get_batched_scale_factor[
 fn convert_ref_scales_to_mxfp8_format[
     ref_scales_type: DType,
     scales_type: DType,
+    ref_a_scales_layout: Layout,
+    ref_b_scales_layout: Layout,
+    a_scales_layout: Layout,
+    b_scales_layout: Layout,
+    a_scales_origin: MutOrigin,
+    b_scales_origin: MutOrigin,
     *,
     REF_BLOCK_SIZE: Int,
     SF_VECTOR_SIZE: Int,
@@ -296,10 +301,10 @@ fn convert_ref_scales_to_mxfp8_format[
     m: ValOrDim,
     n: ValOrDim,
     k: ValOrDim,
-    ref_a_scales: NDBuffer[ref_scales_type, 2, _, _, _],
-    ref_b_scales: NDBuffer[ref_scales_type, 2, _, _, _],
-    a_scales: NDBuffer[mut=True, scales_type, 5, _, _, _],
-    b_scales: NDBuffer[mut=True, scales_type, 5, _, _, _],
+    ref_a_scales: LayoutTensor[ref_scales_type, ref_a_scales_layout, _],
+    ref_b_scales: LayoutTensor[ref_scales_type, ref_b_scales_layout, _],
+    a_scales: LayoutTensor[scales_type, a_scales_layout, a_scales_origin],
+    b_scales: LayoutTensor[scales_type, b_scales_layout, b_scales_origin],
 ):
     __comptime_assert (
         ref_scales_type == DType.float32
@@ -307,6 +312,10 @@ fn convert_ref_scales_to_mxfp8_format[
     __comptime_assert (
         scales_type == DType.float8_e8m0fnu
     ), "Only support float8_e8m0fnu scales"
+    __comptime_assert ref_a_scales_layout.rank() == 2, "ref_a_scales must be 2D"
+    __comptime_assert ref_b_scales_layout.rank() == 2, "ref_b_scales must be 2D"
+    __comptime_assert a_scales_layout.rank() == 5, "a_scales must be 5D"
+    __comptime_assert b_scales_layout.rank() == 5, "b_scales must be 5D"
 
     var M = m.value
     var N = n.value

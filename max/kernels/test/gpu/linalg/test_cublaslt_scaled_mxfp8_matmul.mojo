@@ -243,10 +243,10 @@ fn test_scaled_mxfp8_cublaslt[
         m,
         n,
         k,
-        a_scales_host_ref,
-        b_scales_host_ref,
-        a_scales_host,
-        b_scales_host,
+        from_ndbuffer_row_major(a_scales_host_ref),
+        from_ndbuffer_row_major(b_scales_host_ref),
+        from_ndbuffer_row_major(a_scales_host),
+        from_ndbuffer_row_major(b_scales_host),
     )
 
     rand(a_host.data, a_host.num_elements())
