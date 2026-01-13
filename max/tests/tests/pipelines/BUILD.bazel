@@ -11,13 +11,16 @@ modular_py_test(
     name = "pipelines",
     srcs = glob(["*.py"]),
     data = glob(["testdata/*"]),
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable Fix and re-enable
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max",
+        "//max/python/max/dtype",
+        "//max/python/max/nn",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/architectures",
         requirement("numpy"),
         # TODO(GEX-2238): replace data field in WeightData with driver tensor.
         requirement("torch"),

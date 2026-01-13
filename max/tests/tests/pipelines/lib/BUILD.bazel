@@ -11,15 +11,17 @@ modular_py_test(
     name = "lib",
     srcs = glob(["test_*.py"]),
     imports = ["."],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable Fix and re-enable
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/python/max/config",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
         requirement("pyyaml"),
-        requirement("types-pyyaml"),
+        requirement("pydantic"),
     ],
 )

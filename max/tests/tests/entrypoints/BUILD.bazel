@@ -17,11 +17,16 @@ modular_py_test(
         "MAX_SERVE_DISABLE_TELEMETRY": "True",
         "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
     },
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
-        "//max/python/max/pipelines",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/serve",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/scheduler",
+        "//max/python/max/serve/telemetry",
         requirement("pytest-asyncio"),
-        requirement("pyzmq"),
+        requirement("fastapi"),
     ],
 )

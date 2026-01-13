@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_test")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -14,13 +14,9 @@ modular_py_test(
         "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
         "//conditions:default": [],
     }),
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/kv_cache",
         "//max/python/max/nn",
-        requirement("numpy"),
     ],
 )
