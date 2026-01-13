@@ -47,3 +47,63 @@ def test_text_generation_request_init() -> None:
             }
         ],
     )
+
+    # String prompts with images provided are not accepted.
+    with pytest.raises(ValueError):
+        _ = TextGenerationRequest(
+            request_id=RequestID(),
+            model_name="test",
+            prompt="hello world",
+            messages=[],
+            images=[b""],
+        )
+
+    # If images are provided, we should verify there is an appropriate message for each.
+    with pytest.raises(ValueError):
+        _ = TextGenerationRequest(
+            request_id=RequestID(),
+            model_name="test",
+            prompt=None,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "hello world"},
+                        {"type": "image"},
+                        {"type": "image"},
+                    ],
+                }
+            ],
+            images=[b""],
+        )
+
+    with pytest.raises(ValueError):
+        _ = TextGenerationRequest(
+            request_id=RequestID(),
+            model_name="test",
+            prompt=None,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "hello world"}],
+                }
+            ],
+            images=[b"", b""],
+        )
+
+    _ = TextGenerationRequest(
+        request_id=RequestID(),
+        model_name="test",
+        prompt=None,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "hello world"},
+                    {"type": "image"},
+                    {"type": "image"},
+                ],
+            }
+        ],
+        images=[b"", b""],
+    )

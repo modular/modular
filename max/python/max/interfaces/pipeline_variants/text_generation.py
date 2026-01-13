@@ -197,10 +197,42 @@ class TextGenerationRequest(Request):
     """
 
     def __post_init__(self) -> None:
+        """Validates mutual exclusivity, image-messaging constraints, and message-image consistency after object initialization."""
         if self.prompt and self.messages:
             raise ValueError(
                 "both prompt and messages cannot be provided to TextGenerationRequest"
             )
+
+        if self.images and isinstance(self.prompt, str):
+            raise ValueError(
+                "string prompts cannot be provided, when images are provided, use messages"
+            )
+
+        if self.images and self.number_of_images != len(self.images):
+            raise ValueError(
+                f"number of images provided in TextGenerationRequest do not match messages:\n{self.messages}"
+            )
+
+    @cached_property
+    def number_of_images(self) -> int:
+        """
+        Returns the total number of image-type contents across all provided messages.
+
+        Returns:
+            int: Total count of image-type contents found in messages.
+        """
+        i = 0
+        if self.messages:
+            for message in self.messages:
+                content = message.get("content", [])
+                if isinstance(content, list):
+                    for item in content:
+                        if (
+                            isinstance(item, dict)
+                            and item.get("type") == "image"
+                        ):
+                            i += 1
+        return i
 
 
 def _check_text_generation_output_implements_pipeline_output(
