@@ -1009,13 +1009,15 @@ struct BlackwellMatmulSM100Kernel[
             for j in range(Int(Self.config.k_group_size)):
                 var a_tile, b_tile = tiles.get_tile(j)
 
-                # Tile the full SMEM buffer to get peer CTA's slice.
-                # Each peer CTA loads (a_tma_rows × BK) for A, (b_tma_rows × BK) for B.
-                var a_peer_tile = a_tile.tile[Self.a_tma_rows, Self.BK](
-                    Int(peer_m_rank), 0
+                # Peer CTA slice using pointer arithmetic (not tile[]).
+                # The tile[] method uses SMEM layout strides which can differ from
+                # TMA descriptor layout. Pointer arithmetic with a_tma_load_size
+                # preserves the original working behavior.
+                var a_peer_tile = type_of(a_tile)(
+                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size)
                 )
-                var b_peer_tile = b_tile.tile[Self.b_tma_rows, Self.BK](
-                    Int(peer_rank_m), 0
+                var b_peer_tile = type_of(b_tile)(
+                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size)
                 )
 
                 var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
