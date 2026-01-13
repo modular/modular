@@ -25,7 +25,6 @@ modular_cc_binary(
         "bench_gpu_kernel_enqueue_cuda.cpp",
         "cuda_common.h",
     ],
-    target_compatible_with = ["//:nvidia_gpu"],
     deps = [
         "//Support:MicroBenchmark",
         "@llvm-project//llvm:Support",
@@ -37,7 +36,6 @@ modular_cc_binary(
     srcs = [
         "bench_gpu_kernel_enqueue_devicecontext.cpp",
     ],
-    target_compatible_with = ["//:nvidia_gpu"],
     deps = [
         "//MLRT:Driver/DeviceContext",
         "//Support:MicroBenchmark",
