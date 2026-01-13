@@ -1200,6 +1200,47 @@ static LIT::StructType getStructTypeForTypeValue(TypedAttr typeValue) {
   return sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
 }
 
+std::optional<ResolvedLITStructInfo>
+ResolvedLITStructInfo::tryResolve(TypedAttr typeValue,
+                                  mlir::LockedSymbolTableCollection &symtab,
+                                  Operation *module) {
+  LIT::StructType resolvedType = getStructTypeForTypeValue(typeValue);
+  if (!resolvedType)
+    return std::nullopt;
+
+  auto decl =
+      symtab.lookupSymbolIn<StructDeclOp>(module, resolvedType.getSymbol());
+  if (!decl)
+    return std::nullopt;
+
+  return ResolvedLITStructInfo{decl, resolvedType};
+}
+
+std::optional<size_t> ResolvedLITStructInfo::findFieldIndex(StringRef name) {
+  size_t index = 0;
+  for (StructFieldOp field : structDecl.getFieldDecls()) {
+    if (field.getName() == name)
+      return index;
+    ++index;
+  }
+  return std::nullopt;
+}
+
+StructFieldOp ResolvedLITStructInfo::findField(StringRef name) {
+  for (StructFieldOp field : structDecl.getFieldDecls())
+    if (field.getName() == name)
+      return field;
+  return {};
+}
+
+ParameterEvaluator
+ResolvedLITStructInfo::createEvaluator(ParameterEvaluationContext &context) {
+  ParameterEvaluator evaluator(structDecl.getInputParams(),
+                               structType.getParamValues());
+  evaluator.setEvaluationContext(&context);
+  return evaluator;
+}
+
 FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateExpression(
     ContextuallyEvaluatedAttrInterface attr) {
   TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
@@ -1211,14 +1252,9 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateExpression(
 
   if (auto conformsTo =
           sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
-    auto structType = getStructTypeForTypeValue(conformsTo.getTypeValue());
-    if (structType) {
-      auto structDecl =
-          symtab.lookupSymbolIn<StructDeclOp>(module, structType.getSymbol());
-      if (!structDecl)
-        return failure();
-      return conformsTo.simplify(SymbolTable(structDecl));
-    }
+    if (auto info = ResolvedLITStructInfo::tryResolve(conformsTo.getTypeValue(),
+                                                      symtab, module))
+      return conformsTo.simplify(SymbolTable(info->structDecl));
     // Try fold tighter trait types.
     auto typeValue = dyn_cast<TypeParamAttr>(conformsTo.getTypeValue());
     if (!typeValue)
@@ -1240,30 +1276,55 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateExpression(
     return failure();
   }
 
+  if (auto structFieldTypes =
+          sugarDynCastIfPresent<StructFieldTypesAttr>(typedAttr)) {
+    FailureOr<TypedAttr> simplified =
+        evaluateStructFieldTypes(structFieldTypes);
+    if (succeeded(simplified))
+      return simplified.value();
+  }
+
+  if (auto structFieldNames =
+          sugarDynCastIfPresent<StructFieldNamesAttr>(typedAttr)) {
+    FailureOr<TypedAttr> simplified =
+        evaluateStructFieldNames(structFieldNames);
+    if (succeeded(simplified))
+      return simplified.value();
+  }
+
+  if (auto structFieldIndexByName =
+          sugarDynCastIfPresent<StructFieldIndexByNameAttr>(typedAttr)) {
+    FailureOr<TypedAttr> simplified =
+        evaluateStructFieldIndexByName(structFieldIndexByName);
+    if (succeeded(simplified))
+      return simplified.value();
+  }
+
+  if (auto structFieldTypeByName =
+          sugarDynCastIfPresent<StructFieldTypeByNameAttr>(typedAttr)) {
+    FailureOr<TypedAttr> simplified =
+        evaluateStructFieldTypeByName(structFieldTypeByName);
+    if (succeeded(simplified))
+      return simplified.value();
+  }
+
   // Delegate to base class logic.
   return SymTabEvaluationContext::evaluateExpression(attr);
 }
 
 FailureOr<TypedAttr>
 LITSymTabEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
-  StructType structType = getStructTypeForTypeValue(getWitness.getTypeValue());
-  if (!structType)
-    return failure();
-
-  // Find the struct decl for the instance.
-  auto structDecl =
-      symtab.lookupSymbolIn<StructDeclOp>(module, structType.getSymbol());
-  if (!structDecl)
+  auto info = ResolvedLITStructInfo::tryResolve(getWitness.getTypeValue(),
+                                                symtab, module);
+  if (!info)
     return failure();
 
   auto conformance = symtab.lookupSymbolIn<ConformanceOp>(
-      structDecl, getWitness.getTraitName());
+      info->structDecl, getWitness.getTraitName());
   if (!conformance)
     return failure();
 
-  ParameterEvaluator evaluator(structDecl.getInputParams(),
-                               structType.getParamValues());
-  evaluator.setEvaluationContext(this);
+  ParameterEvaluator evaluator = info->createEvaluator(*this);
 
   FailureOr<TypedAttr> simplified =
       getWitness.simplify(conformance, &evaluator);
@@ -1271,6 +1332,79 @@ LITSymTabEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
     return failure();
 
   return simplified.value();
+}
+
+FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateStructFieldTypes(
+    StructFieldTypesAttr attr) {
+  std::optional<ResolvedLITStructInfo> info =
+      ResolvedLITStructInfo::tryResolve(attr.getTypeValue(), symtab, module);
+  if (!info)
+    return failure();
+
+  ParameterEvaluator evaluator = info->createEvaluator(*this);
+
+  SmallVector<TypedAttr> fieldTypes;
+  MLIRContext *ctx = attr.getContext();
+  for (StructFieldOp field : info->structDecl.getFieldDecls()) {
+    Type reboundType = evaluator.getReboundType(field.getType());
+    fieldTypes.push_back(TypeParamAttr::get(reboundType, TypeType::get(ctx)));
+  }
+  return cast<TypedAttr>(VariadicAttr::get(fieldTypes, attr.getType()));
+}
+
+FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateStructFieldNames(
+    StructFieldNamesAttr attr) {
+  std::optional<ResolvedLITStructInfo> info =
+      ResolvedLITStructInfo::tryResolve(attr.getTypeValue(), symtab, module);
+  if (!info)
+    return failure();
+
+  SmallVector<TypedAttr> fieldNames;
+  MLIRContext *ctx = attr.getContext();
+  for (StructFieldOp field : info->structDecl.getFieldDecls()) {
+    fieldNames.push_back(
+        StringAttr::get(field.getName(), StringType::get(ctx)));
+  }
+  return cast<TypedAttr>(VariadicAttr::get(fieldNames, attr.getType()));
+}
+
+FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateStructFieldIndexByName(
+    StructFieldIndexByNameAttr attr) {
+  auto fieldNameAttr = dyn_cast<StringAttr>(attr.getFieldName());
+  if (!fieldNameAttr)
+    return failure();
+
+  std::optional<ResolvedLITStructInfo> info =
+      ResolvedLITStructInfo::tryResolve(attr.getTypeValue(), symtab, module);
+  if (!info)
+    return failure();
+
+  auto index = info->findFieldIndex(fieldNameAttr.getValue());
+  if (!index)
+    return failure();
+
+  return cast<TypedAttr>(
+      Builder(attr.getType().getContext()).getIndexAttr(*index));
+}
+
+FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateStructFieldTypeByName(
+    StructFieldTypeByNameAttr attr) {
+  auto fieldNameAttr = dyn_cast<StringAttr>(attr.getFieldName());
+  if (!fieldNameAttr)
+    return failure();
+
+  std::optional<ResolvedLITStructInfo> info =
+      ResolvedLITStructInfo::tryResolve(attr.getTypeValue(), symtab, module);
+  if (!info)
+    return failure();
+
+  auto field = info->findField(fieldNameAttr.getValue());
+  if (!field)
+    return failure();
+
+  ParameterEvaluator evaluator = info->createEvaluator(*this);
+  Type reboundType = evaluator.getReboundType(field.getType());
+  return cast<TypedAttr>(TypeParamAttr::get(reboundType, attr.getType()));
 }
 
 //===----------------------------------------------------------------------===//
