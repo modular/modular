@@ -1519,61 +1519,49 @@ RetryLabel:
   // would make it work.
   IREmitter emitter(declScope, ExprContext::EC_CallArgValue);
 
-  // The expected type may be parameterized, and that type may both have
-  // parameters that we are trying to infer as well as parameters that are
-  // already known.  For example, if expectedType is known to be
-  // 'SIMD[uint8, 1]', then we can infer which constructor to use when the
-  // input is an IntLiteral.
-  //
-  // On the other hand, if expectedType is something like 'SIMD[?, 1]' and the
-  // argument is an Int8, then we need the implicit conversion to infer the
-  // base element.  Our solution to this is to rip and replace parameters that
-  // contain unbound parameters, replacing them with UnboundAttr so inference
-  // can find them.
+  // If this is a struct type, try to infer by implicit conversion. Non-struct
+  // type should have been handled above by `canZeroCostConvert` if possible.
+  // `canConstructType` call below looks up `__init__`, which does not make
+  // sense on non-struct type either.
+  if (sugarIsa<StructType>(expectedType)) {
+    // The expected type may be parameterized, and that type may both have
+    // parameters that we are trying to infer as well as parameters that are
+    // already known.  For example, if expectedType is known to be
+    // 'SIMD[uint8, 1]', then we can infer which constructor to use when the
+    // input is an IntLiteral.
+    //
+    // On the other hand, if expectedType is something like 'SIMD[?, 1]' and the
+    // argument is an Int8, then we need the implicit conversion to infer the
+    // base element.  Our solution to this is to rip and replace parameters that
+    // contain unbound parameters, replacing them with UnboundAttr so inference
+    // can find them.
+    auto nonParamType =
+        expectedType.getWithUnknownParametersReplaced(emitter.shared);
+    FailureOr<PValue> pValue = OverloadSet::canConstructType(
+        nonParamType,
+        CallOperands(CallSyntax::kImplicitConvert, operand.expr,
+                     {{argVal, operand.expr}}),
+        emitter.getDeclScope());
+    if (llvm::failed(pValue)) {
+      auto &diag = getDiag(operand.expr->getLoc());
+      diag << "cannot convert to type with a previously diagnosed error";
+      return failure();
+    }
 
-  // TODO: at this point, if we still have an unresolvable dependent type, we
-  // should raise an error. But we probably do need to try to pull default
-  // parameter value first to handle cases like
-  //
-  // fn store[
-  //     dtype: DType
-  //     width: Int = 1,
-  // ](
-  //     self: UnsafePointer[Scalar[dtype], ...],
-  //     val: SIMD[dtype, width],
-  // )
-  //
-  // # here Int(8) need to be implicitly converted to SIMD[dtype, 1],
-  // store(ptr, Int(8))
-  //
-  // FIXME: getWithUnknownParametersReplaced is wrong, it only handles struct
-  // type correctly, things like function type will pass through.
-  auto nonParamType =
-      expectedType.getWithUnknownParametersReplaced(emitter.shared);
-  FailureOr<PValue> pValue = OverloadSet::canConstructType(
-      nonParamType,
-      CallOperands(CallSyntax::kImplicitConvert, operand.expr,
-                   {{argVal, operand.expr}}),
-      emitter.getDeclScope());
-  if (llvm::failed(pValue)) {
-    auto &diag = getDiag(operand.expr->getLoc());
-    diag << "cannot convert to type with a previously diagnosed error";
-    return failure();
-  }
-
-  // If we found one, we succeed if the returned type is compatible with the
-  // expected type.  Infer the parameters of this overload candidate against
-  // the computed result type of the initializer.
-  if (auto callee = pValue.value()) {
-    auto initSig = sugarCast<FnTypeGeneratorType>(callee.getType());
-    switch (matcher.matchTypes(initSig.getUserResultType(), expectedType)) {
-    case ParamMatcher::Retry:
-      goto RetryLabel;
-    case ParamMatcher::Match:
-      return success();
-    case ParamMatcher::Error:
-      matcher.resetError();
-      break;
+    // If we found one, we succeed if the returned type is compatible with the
+    // expected type.  Infer the parameters of this overload candidate against
+    // the computed result type of the initializer.
+    if (auto callee = pValue.value()) {
+      auto initSig = sugarCast<FnTypeGeneratorType>(callee.getType());
+      switch (matcher.matchTypes(initSig.getUserResultType(), expectedType)) {
+      case ParamMatcher::Retry:
+        goto RetryLabel;
+      case ParamMatcher::Match:
+        return success();
+      case ParamMatcher::Error:
+        matcher.resetError();
+        break;
+      }
     }
   }
 
@@ -1589,6 +1577,20 @@ RetryLabel:
       return success();
     }
 
+    // At this point, if we still have an unresolvable dependent type, give it
+    // one last shot and try to pull default parameter value
+    //
+    // fn store[
+    //     dtype: DType
+    //     width: Int = 1,
+    // ](
+    //     self: UnsafePointer[Scalar[dtype], ...],
+    //     val: SIMD[dtype, width],
+    // )
+    //
+    // # here Int(8) need to be implicitly converted to SIMD[dtype, 1],
+    // store(ptr, Int(8))
+    //
     // Otherwise, check to see if this is due to an uninferred param with a
     // default value.  If so, bind the default and try again.
     size_t paramIdx = savedFailureReason->getIfDependentOnUnresolved().value();
