@@ -526,7 +526,7 @@ buffer for 1,024 [`Float32`](/mojo/std/builtin/simd/#float32) values, you
 would execute:
 
 ```mojo
-device_buffer = ctx.enqueue_create_buffer[Float32](1024)
+device_buffer = ctx.enqueue_create_buffer[DType.float32](1024)
 ```
 
 As the method name implies, this method is asynchronous and enqueues the
@@ -553,7 +553,7 @@ method to ensure that the operation has completed before you write to or read
 from the `HostBuffer` object.
 
 ```mojo
-device_buffer = ctx.enqueue_create_host_buffer[Float32](1024)
+device_buffer = ctx.enqueue_create_host_buffer[DType.float32](1024)
 
 # Synchronize to wait until buffer is created before attempting to write to it
 ctx.synchronize()
