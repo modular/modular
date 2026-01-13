@@ -143,7 +143,20 @@ def _test_inplace_dunder_methods(mut python: Python):
     # test dunder methods that don't fall back to their non-inplace counterparts
     var list_obj: PythonObject = [1, 2]
 
-    list_obj += [3, 4]
+    # FIXME: list literal can be converted to `PythonObject`? We might turn list
+    # into `non-materializable-target` too early?
+    # Given:
+    #
+    # @always_inline
+    # fn __init__[
+    #    *Ts: ConvertibleToPython & Copyable
+    # ](out self, var *values: *Ts, __list_literal__: ()) raises:
+    #     pass
+    #
+    # Note that there is no @implicit
+    var to_be_added: PythonObject = [3, 4]
+    list_obj += to_be_added
+
     assert_equal(String(list_obj), "[1, 2, 3, 4]")
 
     list_obj *= 2

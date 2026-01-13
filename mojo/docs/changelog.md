@@ -763,11 +763,13 @@ or removed in future releases.
 
 ### 🛠️ Fixed
 
+- Mojo no longer complains about "cannot infer parameter X" when unrelated type
+  checking errors happen in complex parametric code.  It now gives much more
+  useful and actionable error messages in these cases.
 - `Codepoint.unsafe_decode_utf8_codepoint()` no longer returns `Codepoint(0)`
   (NUL) when passed an empty span. Instead, a `debug_assert` now enforces the
   requirement that the input span be non-empty, consistent with the function's
   existing safety contract.
-
 - [Issue #5732](https://github.com/modular/modular/issues/5732): Compiler
   crash when using `get_type_name` with types containing constructor calls in
   their parameters (like `A[B(True)]`) when extracted via `struct_field_types`.

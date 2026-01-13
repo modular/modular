@@ -46,7 +46,8 @@ def test_map_function_can_take_owned_value():
     fn report_copies_ref(counter: CopyCounter[NoneType]) -> Int:
         return counter.copy_count
 
-    var list = [CopyCounter(None)]
+    # FIXME: fix compiler, just to make progress.
+    var list = [CopyCounter[NoneType](None)]
 
     # ensure the number of copies are equal between an "owned" and
     # "borrowed" mapping function.
