@@ -4472,3 +4472,38 @@ def sliced_add(
             )
         ],
     )[0].tensor
+
+
+def kv_cache_copy_pages_d2h(
+    device_kv_collection: PagedCacheValues,
+    device_page_ids: TensorValue,
+    host_kv_blocks: BufferValue,
+    host_page_ids: TensorValue,
+    layer_idx: int,
+    device_ref: DeviceRef,
+) -> None:
+    """Copy KV cache pages from GPU to CPU for a single layer.
+
+    Performs async GPU->CPU copy of specified pages for layer-wise KV cache
+    offloading.
+
+    Args:
+        device_kv_collection: Source KV cache on GPU.
+        device_page_ids: Source page IDs to read from GPU.
+        host_kv_collection: Destination KV cache on CPU.
+        host_page_ids: Destination page IDs to write to CPU.
+            Must have same length as device_page_ids.
+        layer_idx: Which layer to copy.
+        device_ref: Device for the GPU context.
+    """
+    ops.inplace_custom(
+        name="mo.kv_cache.copy_pages_d2h",
+        device=device_ref,
+        values=[
+            device_kv_collection.kv_blocks,
+            host_kv_blocks,
+            device_page_ids,
+            host_page_ids,
+            ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
+        ],
+    )
