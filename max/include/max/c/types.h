@@ -202,7 +202,11 @@ typedef enum M_ValueType {
 typedef struct M_WeightsRegistry M_WeightsRegistry;
 
 /// Represents the type of device.
+#ifdef __cplusplus
+typedef enum M_DeviceType : int {
+#else
 typedef enum M_DeviceType {
+#endif
   M_HOST = 0,
   M_ACCELERATOR = 1,
 } M_DeviceType;
