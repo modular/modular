@@ -22,7 +22,12 @@ Unlike KV cache which stores key-value pairs for attention, SSM state cache stor
 
 from __future__ import annotations
 
+import logging
+import math
+from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import reduce
+from operator import mul
 
 from max.driver import Tensor
 from max.dtype import DType
@@ -33,6 +38,9 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
+from max.support.human_readable_formatter import to_human_readable_bytes
+
+logger = logging.getLogger("max.nn.mamba")
 
 
 @dataclass
@@ -120,6 +128,176 @@ class SSMStateCacheParams:
 
     device: DeviceRef
     """Device for the state tensors."""
+
+    devices: Sequence[DeviceRef] | None = None
+    """Multiple devices for distributed caching (optional)."""
+
+    enable_prefix_caching: bool = False
+    """Whether to enable prefix caching for efficient reuse of common prompt prefixes."""
+
+    page_size: int = 128
+    """Number of tokens per page (block) when using paged cache strategy."""
+
+    def __post_init__(self):
+        """Validate configuration and compute derived fields after initialization."""
+        if self.devices is None:
+            self.devices = [self.device]
+
+    @property
+    def n_devices(self) -> int:
+        """Returns the number of devices.
+
+        Returns:
+            The number of devices.
+        """
+        return len(self.devices)
+
+    @property
+    def shape_per_block(self) -> list[int]:
+        """Returns the shape of each cache block.
+
+        Returns:
+            The shape of the cache block.
+        """
+        return [
+            self.num_layers,
+            self.page_size,
+            self.intermediate_size,
+            self.conv_kernel,
+        ]
+
+    @property
+    def bytes_per_block(self) -> int:
+        """Returns the number of bytes per cache block.
+
+        Returns:
+            The number of bytes per cache block.
+        """
+        return (
+            reduce(mul, self.shape_per_block, 1)
+            * self.dtype.size_in_bytes
+            * self.n_devices
+        )
+
+    def compute_num_device_blocks(
+        self,
+        available_cache_memory: int,
+        max_batch_size: int | None,
+        max_seq_len: int | None,
+    ) -> int:
+        """Computes the number of blocks that can be allocated based on the available cache memory.
+
+        Args:
+            available_cache_memory: The amount of cache memory available across all devices.
+            max_batch_size: The maximum batch size, or None.
+            max_seq_len: The maximum sequence length, or None.
+
+        Returns:
+            The number of blocks that can be allocated for a single replica.
+        """
+        # Compute upper bound of total number of pages required.
+        max_blocks_per_req: int | None = None
+        max_total_blocks: int | None = None
+        if max_seq_len is not None and max_batch_size is not None:
+            max_blocks_per_req = math.ceil(max_seq_len / self.page_size)
+            max_total_blocks = max_blocks_per_req * max_batch_size
+
+        # Compute total number of blocks allocatable based on available memory.
+        available_cache_memory_per_replica = (
+            available_cache_memory // self.n_devices
+        )
+        num_allocable_blocks = (
+            available_cache_memory_per_replica // self.bytes_per_block
+        )
+
+        if max_total_blocks is not None:
+            num_blocks = min(num_allocable_blocks, max_total_blocks)
+        else:
+            num_blocks = num_allocable_blocks
+
+        # Check if we are allocating sufficient blocks.
+        single_page_size_bytes_str = to_human_readable_bytes(
+            self.bytes_per_block
+        )
+        cache_memory_str = to_human_readable_bytes(
+            available_cache_memory_per_replica
+        )
+        across_x_devices_str = (
+            f" across {self.n_devices} devices" if self.n_devices > 1 else ""
+        )
+        if num_allocable_blocks == 0:
+            raise RuntimeError(
+                f"Insufficient cache memory to allocate even a single page.\n"
+                f"One page requires {single_page_size_bytes_str} but only "
+                f"{cache_memory_str} are available{across_x_devices_str}."
+            )
+
+        if max_batch_size is not None and max_batch_size > num_allocable_blocks:
+            memory_needed_str = to_human_readable_bytes(
+                max_batch_size * self.bytes_per_block
+            )
+            logger.warning(
+                f"Insufficient cache memory to support a batch containing {max_batch_size} "
+                f"requests with one token per request. Need to allocate at least {max_batch_size} "
+                f"pages ({memory_needed_str}), but only have enough memory for {num_allocable_blocks} "
+                f"pages ({cache_memory_str}{across_x_devices_str})."
+            )
+
+        if (
+            max_blocks_per_req is not None
+            and max_blocks_per_req > num_allocable_blocks
+        ):
+            memory_needed_str = to_human_readable_bytes(
+                max_blocks_per_req * self.bytes_per_block
+            )
+            logger.warning(
+                f"Insufficient cache memory to support a batch containing one request "
+                f"at the max sequence length of {max_seq_len} tokens. "
+                f"Need to allocate at least {max_blocks_per_req} "
+                f"pages ({memory_needed_str}), but only have enough memory for "
+                f"{num_allocable_blocks} pages ({cache_memory_str}{across_x_devices_str})."
+            )
+
+        return num_blocks
+
+    def estimated_memory_size(
+        self, available_cache_memory: int, max_batch_size: int, max_seq_len: int
+    ) -> int:
+        """Computes the estimated memory size of the SSM cache used by all replicas.
+
+        Args:
+            available_cache_memory: The amount of cache memory available across all devices.
+            max_batch_size: The maximum batch size.
+            max_seq_len: The maximum sequence length.
+
+        Returns:
+            The estimated memory usage of the SSM cache in bytes.
+        """
+        num_device_blocks = self.compute_num_device_blocks(
+            available_cache_memory=available_cache_memory,
+            max_batch_size=max_batch_size,
+            max_seq_len=max_seq_len,
+        )
+        return num_device_blocks * self.bytes_per_block * self.n_devices
+
+    def compute_max_seq_len_fitting_in_cache(
+        self, available_cache_memory: int
+    ) -> int:
+        """Computes the maximum sequence length that can fit in the available cache memory.
+
+        Args:
+            available_cache_memory: The amount of cache memory available across all devices.
+
+        Returns:
+            The maximum sequence length that can fit in the available cache memory.
+        """
+        num_blocks = self.compute_num_device_blocks(
+            available_cache_memory=available_cache_memory,
+            max_batch_size=1,
+            # Do not limit the sequence length.
+            max_seq_len=None,
+        )
+        return num_blocks * self.page_size
 
     def get_input_symbols(self) -> SSMStateInputSymbols:
         """Get graph input type symbols for SSM state cache."""
@@ -210,6 +388,9 @@ def create_ssm_state_params(
     d_state: int,
     conv_kernel: int,
     device: DeviceRef,
+    devices: Sequence[DeviceRef] | None = None,
+    enable_prefix_caching: bool = False,
+    page_size: int = 128,
 ) -> SSMStateCacheParams:
     """Create SSM state cache parameters.
 
@@ -220,6 +401,9 @@ def create_ssm_state_params(
         d_state: State dimension of the SSM.
         conv_kernel: Convolution kernel size.
         device: Device for state tensors.
+        devices: Multiple devices for distributed caching (optional).
+        enable_prefix_caching: Whether to enable prefix caching.
+        page_size: Number of tokens per page (block).
 
     Returns:
         SSMStateCacheParams instance.
@@ -231,4 +415,7 @@ def create_ssm_state_params(
         d_state=d_state,
         conv_kernel=conv_kernel,
         device=device,
+        devices=devices,
+        enable_prefix_caching=enable_prefix_caching,
+        page_size=page_size,
     )

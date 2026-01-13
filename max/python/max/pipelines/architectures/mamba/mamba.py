@@ -28,6 +28,10 @@ from max.nn import (
     Module,
 )
 from max.nn.mamba import Block, MambaSSM
+from max.nn.mamba.ssm_state_cache import (
+    SSMStateCacheParams,
+    SSMStateValues,
+)
 from max.pipelines.lib.lora import LoRAManager
 
 from .model_config import MambaConfig
@@ -139,6 +143,7 @@ class Mamba(Module):
         tokens: TensorValue,
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
+        ssm_state_cache: SSMStateValues | None = None,
         **kwargs,
     ) -> tuple[TensorValue, ...]:
         """Forward pass through the Mamba model.
@@ -147,6 +152,7 @@ class Mamba(Module):
             tokens: Input token IDs.
             return_n_logits: Number of logits to return.
             input_row_offsets: Row offsets for ragged tensor processing.
+            ssm_state_cache: Optional SSM state cache inputs for structured caching.
 
         Returns:
             Tuple of output tensors (logits, and optionally offsets and hidden states).
@@ -165,6 +171,7 @@ class Mamba(Module):
                 hidden_states=h,
                 residual=residual,
                 input_row_offsets=input_row_offsets,
+                ssm_state_cache=ssm_state_cache,
             )
             h, residual = layer_output
 
@@ -219,10 +226,17 @@ class Mamba(Module):
                 lora_ids_kv,
                 lora_grouped_offsets_kv,
             ) = lora_manager.get_symbolic_inputs(device_ref)
-            # Add seqlen_offset for SSM state caching
-            seqlen_offset_type = TensorType(
-                DType.int32, shape=["seqlen_offset"], device=DeviceRef.CPU()
+
+            # Add SSM state cache inputs
+            ssm_cache_params = SSMStateCacheParams(
+                dtype=self.config.dtype,
+                num_layers=self.config.num_hidden_layers,
+                intermediate_size=self.config.intermediate_size,
+                d_state=self.config.d_state,
+                conv_kernel=self.config.conv_kernel,
+                device=device_ref,
             )
+            ssm_input_symbols = ssm_cache_params.get_input_symbols()
 
             return (
                 tokens_type,
@@ -236,6 +250,9 @@ class Mamba(Module):
                 batch_seq_len,
                 lora_ids_kv,
                 lora_grouped_offsets_kv,
+                ssm_input_symbols.conv_state,
+                ssm_input_symbols.ssm_state,
+                ssm_input_symbols.seqlen_offset,
             )
 
         if needs_hidden_state_input:
@@ -244,25 +261,44 @@ class Mamba(Module):
                 shape=["total_seq_len", self.config.hidden_size],
                 device=device_ref,
             )
-            # Add seqlen_offset for SSM state caching
-            seqlen_offset_type = TensorType(
-                DType.int32, shape=["seqlen_offset"], device=DeviceRef.CPU()
+
+            # Add SSM state cache inputs
+            ssm_cache_params = SSMStateCacheParams(
+                dtype=self.config.dtype,
+                num_layers=self.config.num_hidden_layers,
+                intermediate_size=self.config.intermediate_size,
+                d_state=self.config.d_state,
+                conv_kernel=self.config.conv_kernel,
+                device=device_ref,
             )
+            ssm_input_symbols = ssm_cache_params.get_input_symbols()
 
             return (
                 tokens_type,
                 input_row_offsets_type,
                 return_n_logits_type,
                 hidden_states_type,
+                ssm_input_symbols.conv_state,
+                ssm_input_symbols.ssm_state,
+                ssm_input_symbols.seqlen_offset,
             )
 
-        # Add seqlen_offset for SSM state caching
-        seqlen_offset_type = TensorType(
-            DType.int32, shape=["seqlen_offset"], device=DeviceRef.CPU()
+        # Add SSM state cache inputs
+        ssm_cache_params = SSMStateCacheParams(
+            dtype=self.config.dtype,
+            num_layers=self.config.num_hidden_layers,
+            intermediate_size=self.config.intermediate_size,
+            d_state=self.config.d_state,
+            conv_kernel=self.config.conv_kernel,
+            device=device_ref,
         )
+        ssm_input_symbols = ssm_cache_params.get_input_symbols()
 
         return (
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
+            ssm_input_symbols.conv_state,
+            ssm_input_symbols.ssm_state,
+            ssm_input_symbols.seqlen_offset,
         )

@@ -19,12 +19,12 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorType, TensorValue, Weight, ops
 from max.nn import Layer, Linear, Module
 from max.nn.conv import causal_conv1d_fn, causal_conv1d_update_fn
+from max.nn.mamba.ssm_state_cache import SSMStateValues
 from max.nn.norm import layer_norm_fn
 from max.nn.norm.layer_norm_gated import LayerNorm, RMSNorm
 from max.nn.selective_scan import mamba_inner_fn
@@ -243,7 +243,7 @@ class MambaSSM(Module):
         self,
         x: TensorValue,
         input_row_offsets: TensorValue | None = None,
-        inference_params: dict[Any, Any] | None = None,
+        ssm_state_cache: SSMStateValues | None = None,
         **kwargs,
     ) -> TensorValue:
         """Forward pass through the SSM layer.
@@ -251,34 +251,27 @@ class MambaSSM(Module):
         Args:
             x: Input hidden states of shape (batch * seqlen, hidden_size) or (batch, seqlen, hidden_size).
             input_row_offsets: Row offsets for ragged tensor processing.
-            inference_params: Optional inference parameters for caching.
+            ssm_state_cache: Optional SSM state cache inputs for structured caching.
             **kwargs: Additional keyword arguments.
 
         Returns:
             Output after SSM transformation.
         """
         # Step 1: Check if we should use step method (autoregressive mode)
-        # Only use step when we *know* we have a single token (seqlen==1); otherwise fall back to prefill
+        # Note: During graph building, we can't determine this with symbolic values
+        # For now, disable step path and use prefill path for all cases
         use_step = False
         seqlen_offset = 0
-        if inference_params is not None and self.layer_idx is not None:
-            seqlen_offset = inference_params.get("seqlen_offset", 0)
 
-            def _is_one(dim: Dim | int) -> bool:
-                try:
-                    return int(dim) == 1
-                except (TypeError, ValueError):
-                    return False
+        # Handle both legacy inference_params and new ssm_state_cache
+        if ssm_state_cache is not None and self.layer_idx is not None:
+            # Use new structured cache approach
+            # The step method is an optimization for single-token generation
+            # Disabling it doesn't affect correctness - prefill handles both cases
 
-            # Require concrete single-token inputs to enter step path
-            use_step = (
-                seqlen_offset > 0
-                and _is_one(x.shape[0])
-                and (
-                    input_row_offsets is None
-                    or _is_one(input_row_offsets.shape[0] - 1)
-                )
-            )
+            # TODO: Implement proper step path with symbolic execution support
+            # This requires conditional graph construction or runtime branching
+            pass
 
         # Infer batch and seqlen early for step method
         # For now, simplify and use batch_size=1 to avoid ragged tensor complexity
@@ -287,66 +280,63 @@ class MambaSSM(Module):
 
         # If using step method, call it directly with original hidden_states
         if use_step:
-            if inference_params is None:
-                raise ValueError(
-                    "inference_params must be provided when use_step=True"
+            if ssm_state_cache is not None:
+                # Use new structured cache approach
+                batch_size = x.shape[0]
+
+                # Extract states from cache
+                conv_state = ssm_state_cache.conv_state[self.layer_idx]
+                ssm_state = ssm_state_cache.ssm_state[self.layer_idx]
+
+                # Reshape hidden_states for step: (batch * seqlen, hidden_size) -> (batch, seqlen, hidden_size)
+                # Step expects (batch, 1, hidden_size) for single token
+                # Reference asserts seqlen == 1, so we reshape accordingly
+                hidden_states_step = ops.reshape(
+                    x,
+                    shape=[batch_size, seqlen, self.hidden_size],
                 )
-            conv_state, ssm_state = self._get_states_from_cache(
-                inference_params, batch_size
-            )
 
-            # Reshape hidden_states for step: (batch * seqlen, hidden_size) -> (batch, seqlen, hidden_size)
-            # Step expects (batch, 1, hidden_size) for single token
-            # Reference asserts seqlen == 1, so we reshape accordingly
-            hidden_states_step = ops.reshape(
-                x,
-                shape=[batch_size, seqlen, self.hidden_size],
-            )
-
-            # For seqlen=1, reshape to (batch, 1, hidden_size)
-            # For seqlen>1, we'd need to loop, but typically step is called with seqlen=1
-            # Reshape to (batch, 1, hidden_size) - step method will handle both shapes
-            if hasattr(seqlen, "__int__"):
-                try:
-                    if int(seqlen) == 1:
+                # For seqlen=1, reshape to (batch, 1, hidden_size)
+                # For seqlen>1, we'd need to loop, but typically step is called with seqlen=1
+                # Reshape to (batch, 1, hidden_size) - step method will handle both shapes
+                if hasattr(seqlen, "__int__"):
+                    try:
+                        if int(seqlen) == 1:
+                            hidden_states_step = ops.reshape(
+                                hidden_states_step,
+                                shape=[batch_size, 1, self.hidden_size],
+                            )
+                    except (TypeError, ValueError):
+                        # Symbolic dimension, assume seqlen=1 and reshape
                         hidden_states_step = ops.reshape(
                             hidden_states_step,
                             shape=[batch_size, 1, self.hidden_size],
                         )
-                except (TypeError, ValueError):
-                    # Symbolic dimension, assume seqlen=1 and reshape
+                else:
+                    # Assume seqlen=1 for autoregressive mode
                     hidden_states_step = ops.reshape(
                         hidden_states_step,
                         shape=[batch_size, 1, self.hidden_size],
                     )
-            else:
-                # Assume seqlen=1 for autoregressive mode
-                hidden_states_step = ops.reshape(
-                    hidden_states_step, shape=[batch_size, 1, self.hidden_size]
-                )
 
-            # Call step method
-            out_step, conv_state, ssm_state = self.step(
-                hidden_states_step,
-                conv_state,
-                ssm_state,
-            )
-
-            # Update cache
-            if (
-                inference_params is not None
-                and "key_value_memory_dict" in inference_params
-            ):
-                inference_params["key_value_memory_dict"][self.layer_idx] = (
+                # Call step method
+                out_step, conv_state, ssm_state = self.step(
+                    hidden_states_step,
                     conv_state,
                     ssm_state,
                 )
 
-            # Reshape output: (batch, 1, hidden_size) -> (batch, hidden_size)
-            ss_output = ops.reshape(
-                out_step, shape=[batch_size, self.hidden_size]
-            )
-            return ss_output
+                # Update cache - this will be handled externally in the new approach
+                # Reshape output: (batch, 1, hidden_size) -> (batch, hidden_size)
+                ss_output = ops.reshape(
+                    out_step, shape=[batch_size, self.hidden_size]
+                )
+                return ss_output
+
+            else:
+                raise ValueError(
+                    "Either ssm_state_cache must be provided when use_step=True"
+                )
 
         # Step 2: Input projection and gating (for prefill mode)
         # Infer batch and seqlen for reshaping
@@ -374,7 +364,7 @@ class MambaSSM(Module):
         use_fast_path = (
             self.use_fast_path
             and causal_conv1d_fn is not None
-            and inference_params is None
+            and ssm_state_cache is None
         )
 
         if use_fast_path:
@@ -747,59 +737,6 @@ class MambaSSM(Module):
 
         return conv_state, ssm_state
 
-    def _get_states_from_cache(
-        self,
-        inference_params: dict[Any, Any],
-        batch_size: int,
-        initialize_states: bool = False,
-    ) -> tuple[TensorValue, TensorValue]:
-        """Get or create state buffers from inference cache.
-
-        Matches reference implementation:
-        https://github.com/state-spaces/mamba/blob/main/mamba_ssm/modules/mamba_simple.py
-
-        Args:
-            inference_params: Inference parameters dict containing key_value_memory_dict.
-            batch_size: Batch size for the states.
-            initialize_states: Whether to initialize states to zero.
-
-        Returns:
-            Tuple of (conv_state, ssm_state) buffers.
-        """
-        assert self.layer_idx is not None, (
-            "layer_idx must be set for inference caching"
-        )
-
-        if "key_value_memory_dict" not in inference_params:
-            inference_params["key_value_memory_dict"] = {}
-
-        cache_dict = inference_params["key_value_memory_dict"]
-
-        if self.layer_idx not in cache_dict:
-            # Allocate new states
-            conv_state, ssm_state = self.allocate_inference_cache(
-                batch_size,
-                max_seqlen=1,  # Not used but required by signature
-            )
-            cache_dict[self.layer_idx] = (conv_state, ssm_state)
-        else:
-            conv_state, ssm_state = cache_dict[self.layer_idx]
-            if initialize_states:
-                # Zero out states
-                conv_state = ops.constant(
-                    0.0, dtype=conv_state.dtype, device=self.device
-                )
-                conv_state = ops.broadcast_to(
-                    conv_state, shape=conv_state.shape
-                )
-                ssm_state = ops.constant(
-                    0.0, dtype=ssm_state.dtype, device=self.device
-                )
-                ssm_state = ops.broadcast_to(ssm_state, shape=ssm_state.shape)
-                cache_dict[self.layer_idx] = (conv_state, ssm_state)
-
-        return conv_state, ssm_state
-
 
 class Block(Module):
     """Simple block wrapping a mixer class with LayerNorm/RMSNorm and residual connection.
@@ -879,7 +816,7 @@ class Block(Module):
         hidden_states: TensorValue,
         residual: TensorValue | None = None,
         input_row_offsets: TensorValue | None = None,
-        inference_params: dict[Any, Any] | None = None,
+        ssm_state_cache: SSMStateValues | None = None,
         **mixer_kwargs,
     ) -> tuple[TensorValue, TensorValue]:
         """Forward pass through the block.
@@ -888,7 +825,8 @@ class Block(Module):
             hidden_states: The sequence to the block (required).
             residual: Optional residual tensor. If None, uses hidden_states as residual.
             input_row_offsets: Row offsets for ragged tensor processing.
-            inference_params: Optional inference parameters for caching.
+            inference_params: Optional inference parameters for caching (legacy support).
+            ssm_state_cache: Optional SSM state cache inputs for structured caching.
             **mixer_kwargs: Additional keyword arguments for the mixer.
 
         Returns:
@@ -975,13 +913,13 @@ class Block(Module):
             hidden_states = self.mixer(
                 hidden_states,
                 input_row_offsets=input_row_offsets,
-                inference_params=inference_params,
+                ssm_state_cache=ssm_state_cache,
                 **mixer_kwargs,
             )
         else:
             hidden_states = self.mixer(
                 hidden_states,
-                inference_params=inference_params,
+                ssm_state_cache=ssm_state_cache,
                 **mixer_kwargs,
             )
 

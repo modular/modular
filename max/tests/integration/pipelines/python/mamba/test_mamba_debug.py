@@ -38,15 +38,15 @@ def test_mamba_token_by_token_comparison() -> None:
         "MAMBA_130M_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
 
-    prompt = "Why is the sky blue?"
-    num_tokens = 50
+    prompt = "The capital of France is"
+    num_tokens = 200
 
     # =================================================================
     # PyTorch Reference Generation
     # =================================================================
-    print("\n" + "=" * 70)
-    print("PYTORCH REFERENCE GENERATION")
-    print("=" * 70)
+    logger.info("\n" + "=" * 70)
+    logger.info("PYTORCH REFERENCE GENERATION")
+    logger.info("=" * 70)
 
     torch.manual_seed(0)
     device = torch.device("cpu")
@@ -65,9 +65,9 @@ def test_mamba_token_by_token_comparison() -> None:
 
     # Tokenize prompt
     input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
-    print(f"\nPrompt: {prompt!r}")
-    print(f"Prompt tokens: {input_ids[0].tolist()}")
-    print(
+    logger.info(f"\nPrompt: {prompt!r}")
+    logger.info(f"Prompt tokens: {input_ids[0].tolist()}")
+    logger.info(
         f"Prompt token strings: {[tokenizer.decode([t]) for t in input_ids[0]]}"
     )
 
@@ -92,19 +92,19 @@ def test_mamba_token_by_token_comparison() -> None:
         # Get top 5 for comparison
         top5_values, top5_indices = torch.topk(logits[0, -1, :], 5)
 
-        print(f"\nPyTorch Step {step}:")
-        print(
+        logger.info(f"\nPyTorch Step {step}:")
+        logger.info(
             f"  Sequence so far ({len(current_ids[0])} tokens): {tokenizer.decode(current_ids[0])!r}"
         )
-        print("  Top 5 predictions:")
+        logger.info("  Top 5 predictions:")
         for i in range(5):
             token_id = top5_indices[i].item()
             token_str = tokenizer.decode([token_id])
             logit_val = top5_values[i].item()
-            print(
+            logger.info(
                 f"    [{token_id:5d}] {token_str!r:20s} logit={logit_val:8.3f}"
             )
-        print(
+        logger.info(
             f"  ✓ Chosen: [{next_token_id:5d}] {tokenizer.decode([next_token_id])!r}"
         )
 
@@ -112,19 +112,21 @@ def test_mamba_token_by_token_comparison() -> None:
         next_token = torch.tensor([[next_token_id]]).to(device)
         current_ids = torch.cat([current_ids, next_token], dim=1)
 
-    print(f"\nPyTorch final output: {tokenizer.decode(current_ids[0])!r}")
-    print(f"PyTorch token sequence: {current_ids[0].tolist()}")
+    logger.info(f"\nPyTorch final output: {tokenizer.decode(current_ids[0])!r}")
+    logger.info(f"PyTorch token sequence: {current_ids[0].tolist()}")
 
     # =================================================================
-    # Print Summary
+    # logger.info Summary
     # =================================================================
-    print("\n" + "=" * 70)
-    print("SUMMARY")
-    print("=" * 70)
-    print(f"PyTorch generated {num_tokens} tokens successfully")
-    print(f"Expected token sequence: {torch_tokens}")
-    print("Now run MAX pipeline and compare token-by-token...")
-    print("\nTo test MAX, you can run the pipeline manually and compare:")
-    print("  ./bazelw run //max/python/max/entrypoints:pipelines -- \\")
-    print(f"    generate --model {MAMBA_130M_HF_REPO_ID} \\")
-    print(f"    --prompt '{prompt}' --top-k=1 --max-new-tokens={num_tokens}")
+    logger.info("\n" + "=" * 70)
+    logger.info("SUMMARY")
+    logger.info("=" * 70)
+    logger.info(f"PyTorch generated {num_tokens} tokens successfully")
+    logger.info(f"Expected token sequence: {torch_tokens}")
+    logger.info("Now run MAX pipeline and compare token-by-token...")
+    logger.info("\nTo test MAX, you can run the pipeline manually and compare:")
+    logger.info("  ./bazelw run //max/python/max/entrypoints:pipelines -- \\")
+    logger.info(f"    generate --model {MAMBA_130M_HF_REPO_ID} \\")
+    logger.info(
+        f"    --prompt '{prompt}' --top-k=1 --max-new-tokens={num_tokens}"
+    )

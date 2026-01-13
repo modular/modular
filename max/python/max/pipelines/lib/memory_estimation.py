@@ -208,13 +208,88 @@ class MemoryEstimator:
             and model_config is pipeline_config.draft_model_config
         )
 
-        # Skip memory estimation for models that don't use KV cache
+        # Skip KV cache estimation for models that don't use KV cache
         # (e.g., Mamba models use state-space models instead)
         if not issubclass(pipeline_model, KVCacheMixin):
-            logger.info(
-                f"Skipping memory estimation for {pipeline_model.__name__} "
-                "(model does not use KV cache)"
-            )
+            # Check if this is a Mamba model with SSM cache
+            model_name = pipeline_model.__name__
+            if "Mamba" in model_name:
+                # Estimate SSM cache memory for Mamba models
+                try:
+                    free_memory = cls.free_memory(devices)
+                    model_weights_size = cls.model_weights_size(
+                        pipeline_model, pipeline_config
+                    )
+                    activation_memory_size = cls.activation_memory_size(
+                        pipeline_model, pipeline_config, model_config
+                    )
+                    static_memory_size = (
+                        model_weights_size + activation_memory_size
+                    )
+
+                    # Calculate SSM cache memory (per batch item)
+                    # SSM cache = (num_layers * batch_size * intermediate_size * d_state * dtype_size) * 2
+                    # The *2 accounts for conv_state and ssm_state
+                    batch_size = pipeline_config.max_batch_size or 1
+                    num_layers = huggingface_config.num_hidden_layers
+                    intermediate_size = huggingface_config.intermediate_size
+                    d_state = huggingface_config.state_size
+                    conv_kernel = huggingface_config.conv_kernel
+
+                    # Get dtype size - SSM cache uses the model's compute dtype
+                    # Map encoding to bytes per element
+                    encoding_to_bytes = {
+                        "float32": 4,
+                        "bfloat16": 2,
+                        "float16": 2,
+                        "q4_k": 4,  # Conservative estimate
+                        "q4_0": 4,
+                        "q6_k": 4,
+                        "float8_e4m3fn": 1,
+                    }
+                    encoding_str = str(model_config.quantization_encoding.value) if model_config.quantization_encoding else "float32"
+                    dtype_size = encoding_to_bytes.get(encoding_str, 4)
+
+                    # conv_state: (num_layers, batch, intermediate_size, conv_kernel)
+                    conv_state_size = (
+                        num_layers
+                        * batch_size
+                        * intermediate_size
+                        * conv_kernel
+                        * dtype_size
+                    )
+                    # ssm_state: (num_layers, batch, intermediate_size, d_state)
+                    ssm_state_size = (
+                        num_layers
+                        * batch_size
+                        * intermediate_size
+                        * d_state
+                        * dtype_size
+                    )
+                    # seqlen_offset: (1,) - negligible
+
+                    ssm_cache_memory = conv_state_size + ssm_state_size
+
+                    logger.info(
+                        f"Estimated SSM cache memory for {model_name}: "
+                        f"{to_human_readable_bytes(ssm_cache_memory)} "
+                        f"(batch_size={batch_size})"
+                    )
+
+                    model_config.kv_cache_config._available_cache_memory = (
+                        ssm_cache_memory
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not estimate SSM cache memory: {e}")
+                    model_config.kv_cache_config._available_cache_memory = 0
+            else:
+                logger.info(
+                    f"Skipping memory estimation for {model_name} "
+                    "(model does not use KV cache)"
+                )
+                # Set a dummy value for _available_cache_memory to satisfy config validation
+                model_config.kv_cache_config._available_cache_memory = 0
+
             if not pipeline_config.max_batch_size:
                 pipeline_config.max_batch_size = 1
             if not pipeline_config.max_length:
@@ -223,9 +298,6 @@ class MemoryEstimator:
                         pipeline_config, huggingface_config=huggingface_config
                     )
                 )
-            # Set a dummy value for _available_cache_memory to satisfy config validation
-            # Non-KV-cache models don't actually use this value
-            model_config.kv_cache_config._available_cache_memory = 0
             return
 
         # In virtual device mode (cross-compilation), skip memory estimation
