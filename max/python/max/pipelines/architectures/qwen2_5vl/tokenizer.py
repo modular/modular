@@ -318,8 +318,10 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         self, messages: list[TextGenerationRequestMessage]
     ) -> str:
         """Apply chat template using tokenizer directly (not processor)."""
+
+        messages_dicts = [msg.model_dump() for msg in messages]
         templated_message = self.delegate.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
+            messages_dicts, tokenize=False, add_generation_prompt=True
         )
         assert isinstance(templated_message, str)
         return templated_message
@@ -368,7 +370,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             ]
         elif request.messages:
             image_inputs, _, _ = process_vision_info(
-                [dict(msg) for msg in request.messages]
+                [msg.model_dump() for msg in request.messages]
             )
 
         if image_inputs is None:
@@ -464,22 +466,6 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             return self.max_length
         return input_ids_length + tokens_to_generate
 
-    def _has_images(self, request: TextGenerationRequest) -> bool:
-        """Check if the request contains any images."""
-        if request.images:
-            return True
-        if request.messages:
-            for msg in request.messages:
-                content = msg.content
-                if isinstance(content, list):
-                    for item in content:
-                        if isinstance(item, dict) and (
-                            item.get("type") == "image_url"
-                            or item.get("type") == "image"
-                        ):
-                            return True
-        return False
-
     def _calculate_rope_params(
         self,
         input_ids: npt.NDArray[np.int64],
@@ -571,7 +557,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         self, request: TextGenerationRequest
     ) -> Qwen2_5VLTextAndVisionContext:
         # Exit early, if no images are provided.
-        if not self._has_images(request):
+        if not request.images:
             input_ids, attention_mask = self._tokenize_inputs(request, None)
 
             return self._create_context(
