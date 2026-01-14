@@ -127,7 +127,7 @@ def draw_mandelbrot(
             var v = tensor[row, col]
             if v < iterations:
                 var idx = Int(v % len(sr))
-                var p = sr[idx]
+                var p = sr[byte=idx]
                 buffer += p
             else:
                 buffer += " "

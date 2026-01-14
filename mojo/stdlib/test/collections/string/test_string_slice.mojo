@@ -244,11 +244,11 @@ fn test_string_substring() raises:
     var str_slice = string.as_string_slice()
 
     assert_equal(len(str_slice), 5)
-    assert_equal(str_slice[0], "H")
-    assert_equal(str_slice[1], "e")
-    assert_equal(str_slice[2], "l")
-    assert_equal(str_slice[3], "l")
-    assert_equal(str_slice[4], "o")
+    assert_equal(str_slice[byte=0], "H")
+    assert_equal(str_slice[byte=1], "e")
+    assert_equal(str_slice[byte=2], "l")
+    assert_equal(str_slice[byte=3], "l")
+    assert_equal(str_slice[byte=4], "o")
 
     # ----------------------------------
     # Test subslicing
@@ -257,24 +257,24 @@ fn test_string_substring() raises:
     # Slice the whole thing
     var sub1 = str_slice[:5]
     assert_equal(len(sub1), 5)
-    assert_equal(sub1[0], "H")
-    assert_equal(sub1[1], "e")
-    assert_equal(sub1[2], "l")
-    assert_equal(sub1[3], "l")
-    assert_equal(sub1[4], "o")
+    assert_equal(sub1[byte=0], "H")
+    assert_equal(sub1[byte=1], "e")
+    assert_equal(sub1[byte=2], "l")
+    assert_equal(sub1[byte=3], "l")
+    assert_equal(sub1[byte=4], "o")
 
     # Slice the end
     var sub2 = str_slice[2:5]
     assert_equal(len(sub2), 3)
-    assert_equal(sub2[0], "l")
-    assert_equal(sub2[1], "l")
-    assert_equal(sub2[2], "o")
+    assert_equal(sub2[byte=0], "l")
+    assert_equal(sub2[byte=1], "l")
+    assert_equal(sub2[byte=2], "o")
 
     # Slice the first element
     var sub3 = str_slice[0:1]
     assert_equal(len(sub3), 1)
-    assert_equal(sub3[0], "H")
-    assert_equal(sub3[-1], "H")
+    assert_equal(sub3[byte=0], "H")
+    assert_equal(sub3[byte= -1], "H")
 
     # ----------------------------------
     # Test empty subslicing
@@ -979,11 +979,11 @@ def test_string_slice_from_pointer():
     assert_equal(4, len(c))
     assert_equal(4, len(d))
     assert_equal(4, len(e))
-    assert_true("A", d[0])
-    assert_true("B", d[1])
-    assert_true("C", d[2])
-    assert_true("D", d[3])
-    assert_true("D", d[-1])
+    assert_true("A", d[byte=0])
+    assert_true("B", d[byte=1])
+    assert_true("C", d[byte=2])
+    assert_true("D", d[byte=3])
+    assert_true("D", d[byte= -1])
 
 
 def test_replace():

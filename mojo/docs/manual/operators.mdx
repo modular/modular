@@ -662,15 +662,15 @@ It contains a nut
 #### String indexing and slicing
 
 `String`, `StringLiteral`, and `StringSlice` allow you to use indexing to return
-a single character. Character positions are identified with a zero-based index
-starting from the first character. You can also specify a negative index to
+a single byte. Byte positions are identified with a zero-based index
+starting from the first byte. You can also specify a negative index to
 count backwards from the end of the string, with the last character identified
 by index -1. Specifying an index beyond the bounds of the string results in a
 run-time error.
 
 ```mojo
 var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # String type value
-print(alphabet[0], alphabet[-1])
+print(alphabet[byte=0], alphabet[byte-1])
 
 # The following would produce a run-time error
 # print(alphabet[45])
