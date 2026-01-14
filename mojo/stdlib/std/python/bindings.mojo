@@ -1235,7 +1235,7 @@ fn _try_convert_arg[
     func_name: StringSlice, py_args: PythonObject, argidx: Int, out result: T
 ) raises:
     try:
-        result = T(py_args[argidx])
+        result = T(py=py_args[argidx])
     except convert_err:
         raise Error(
             String.format(

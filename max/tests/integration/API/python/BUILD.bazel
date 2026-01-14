@@ -13,7 +13,6 @@ modular_py_test(
     srcs = [
         "conftest.py",
         "test_bfloat16_utils.py",
-        "test_cli.py",
         "test_context.py",
         "test_cumsum.py",
         "test_dtype.py",
@@ -31,7 +30,6 @@ modular_py_test(
         "test_registry.py",
         "test_speculative_config.py",
         "test_telemetry.py",
-        "test_use_module_v3.py",
         "test_weight_path_parser.py",
     ],
     data = [
@@ -78,6 +76,45 @@ modular_py_test(
     ],
 )
 
+# TODO (SERVOPT-900): Move these tests back into tests-pure once they stop reaching out to HF
+modular_py_test(
+    name = "tests-pure-hf",
+    size = "large",
+    srcs = [
+        "test_cli.py",
+        "test_use_module_v3.py",
+    ],
+    gpu_constraints = [
+        "//:has_gpu",
+    ] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = [
+        "gpu",
+        "manual",  # TODO(SERVOPT-900)
+        "no-sandbox",
+        "requires-network",
+        "run-in-hf-workflow",  # TODO(SERVOPT-900)
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/entrypoints",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/pipelines/python/test_common:mocks",
+        "//max/tests/integration/pipelines/python/test_common:pipeline_cli_utils",
+        "//max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
+        "//max/tests/integration/pipelines/python/test_common:registry",
+        requirement("click"),
+    ],
+)
+
 # TODO(PAQ-1028): Some tests in test_config_pure.py still fail on B200.
 modular_py_test(
     name = "tests_disabled_on_b200",
@@ -106,9 +143,11 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
+        "manual",  # TODO(SERVOPT-900)
         "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
+        "run-in-hf-workflow",  # TODO(SERVOPT-900)
     ],
     target_compatible_with = select({
         "//:b200_gpu": ["@platforms//:incompatible"],
@@ -168,9 +207,11 @@ modular_py_test(
     }),
     tags = [
         "gpu",
+        "manual",  # TODO(SERVOPT-900)
         "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
+        "run-in-hf-workflow",  # TODO(SERVOPT-900)
     ],
     deps = [
         "//max/python/max",
@@ -200,9 +241,11 @@ modular_py_test(
     }),
     tags = [
         "gpu",
+        "manual",  # TODO(SERVOPT-900)
         "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
+        "run-in-hf-workflow",  # TODO(SERVOPT-900)
     ],
     deps = [
         "//max/python/max",

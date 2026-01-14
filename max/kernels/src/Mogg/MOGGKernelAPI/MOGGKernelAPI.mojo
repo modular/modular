@@ -57,7 +57,7 @@ from comm.allgather import allgather
 from comm.allreduce import allreduce
 from comm import MAX_GPUS, Signal
 from compiler_internal import StaticTensorSpec
-from gpu.host import DeviceContext, get_gpu_target
+from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -159,6 +159,7 @@ from nn.index_tensor import (
 )
 from nn.irfft import irfft
 from nn.kv_cache import (
+    copy_kv_pages_d2h,
     generic_flash_attention_kv_cache_padded,
     generic_flash_attention_kv_cache_padded_materialized_mask,
     generic_fused_qk_rope_bshd_continuous_batch,
@@ -373,7 +374,7 @@ fn _unsafe_str_to_int_tuple[str_slice: StaticString]() -> IntTuple:
 
         @parameter
         for pos in range(str_len):
-            result = result * 10 + (ord(sub_string[pos]) - ord("0"))
+            result = result * 10 + (ord(sub_string[byte=pos]) - ord("0"))
         int_tuple.append(result)
 
     return int_tuple^
@@ -10625,3 +10626,53 @@ struct CausalConv1DUpdateNoBias[activation: StaticString]:
         weight: InputTensor[dtype=dtype, rank=2],
     ) -> IndexList[rank]:
         return input.shape()
+# ===-----------------------------------------------------------------------===#
+# KV Cache GPU→CPU Copy Operations
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.kv_cache.copy_pages_d2h")
+struct KVCacheCopyPagesD2H:
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        device_kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        host_kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        src_page_ids: InputTensor[dtype = DType.int64, rank=1],
+        dst_page_ids: InputTensor[dtype = DType.int64, rank=1],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var gpu_ctx = ctx.get_device_context()
+
+        copy_kv_pages_d2h(
+            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+                device_kv_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    device_kv_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+                host_kv_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    host_kv_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.int64, Layout.row_major[1](), MutAnyOrigin](
+                src_page_ids.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    src_page_ids.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.int64, Layout.row_major[1](), MutAnyOrigin](
+                dst_page_ids.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    dst_page_ids.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            Int(layer_idx),
+            gpu_ctx,
+        )

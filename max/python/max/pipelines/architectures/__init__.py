@@ -23,6 +23,7 @@ def register_all_models() -> None:
     if _MODELS_ALREADY_REGISTERED:
         return
 
+    from .bert import bert_arch
     from .deepseekV2 import deepseekV2_arch
     from .deepseekV3 import deepseekV3_arch
     from .eagle_llama3 import eagle_llama_arch
@@ -62,6 +63,7 @@ def register_all_models() -> None:
         idefics3_arch,
         llama_arch,
         llama4_arch,
+        bert_arch,
         mistral_arch,
         mistral3_arch,
         mpnet_arch,

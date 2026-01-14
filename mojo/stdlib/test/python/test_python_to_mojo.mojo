@@ -62,12 +62,12 @@ def test_range():
 
 
 def test_int():
-    assert_equal(Int(PythonObject(5)), 5)
-    assert_equal(Int(PythonObject(-1)), -1)
+    assert_equal(Int(py=PythonObject(5)), 5)
+    assert_equal(Int(py=PythonObject(-1)), -1)
 
     # Test error trying conversion from Python '"str"'
     with assert_raises(contains="invalid literal for int()"):
-        _ = Int(PythonObject("str"))
+        _ = Int(py=PythonObject("str"))
 
     assert_equal_pyobj(Int(5).to_python_object(), PythonObject(5))
     assert_equal_pyobj(Int(-1).to_python_object(), PythonObject(-1))
@@ -76,7 +76,7 @@ def test_int():
 def test_float():
     var py_float = PythonObject(1.0)
     var mojo_float = Float64(1.0)
-    assert_equal(Float64(py_float), mojo_float)
+    assert_equal(Float64(py=py_float), mojo_float)
 
 
 def test_bool():
@@ -91,14 +91,14 @@ def test_numpy_int():
     var np = Python.import_module("numpy")
     var py_numpy_int = np.int64(1)
     var mojo_int = Int(1)
-    assert_equal(Int(py_numpy_int), mojo_int)
+    assert_equal(Int(py=py_numpy_int), mojo_int)
 
 
 def test_numpy_float():
     var np = Python.import_module("numpy")
     var py_numpy_float = np.float64(1.0)
     var mojo_float = Float64(1.0)
-    assert_equal(Float64(py_numpy_float), mojo_float)
+    assert_equal(Float64(py=py_numpy_float), mojo_float)
 
 
 def main():

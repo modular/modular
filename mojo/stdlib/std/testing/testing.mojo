@@ -451,8 +451,8 @@ fn _colorize_diff_string[color: Color](s: String, other: String) -> String:
     """
     var result = String()
     for i in range(len(s)):
-        var char = s[i]
-        if i < len(other) and char == other[i]:
+        var char = s[byte=i]
+        if i < len(other) and char == other[byte=i]:
             # Characters match - no color
             result += char
         else:

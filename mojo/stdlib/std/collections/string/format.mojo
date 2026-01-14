@@ -71,6 +71,7 @@ methods.
 
 
 from builtin.variadics import Variadic
+from compile import get_type_name
 from utils import Variant
 
 # TODO: _FormatCurlyEntry and _FormatSpec should be public in the future for
@@ -83,22 +84,20 @@ from utils import Variant
 
 
 @fieldwise_init
-struct _PrecompiledEntries[
-    origin: ImmutOrigin, //, *Ts: _CurlyEntryFormattable
-](Movable):
+struct _PrecompiledEntries[origin: ImmutOrigin, //, *Ts: AnyType](Movable):
     var entries: List[_FormatCurlyEntry[Self.origin]]
     var size_hint: Int
     var format: StringSlice[Self.origin]
 
 
-comptime _FormatArgs = VariadicPack[element_trait=_CurlyEntryFormattable, ...]
+comptime _FormatArgs = VariadicPack[element_trait=AnyType, ...]
 
 
 struct _FormatUtils:
     # TODO: Have this return a `Result[_PrecompiledEntries, Error]`
     @staticmethod
     fn compile_entries[
-        *Ts: Stringable & Representable
+        *Ts: AnyType
     ](format: StringSlice) -> Variant[
         _PrecompiledEntries[origin = ImmutOrigin(format.origin), *Ts],
         Error,
@@ -113,11 +112,11 @@ struct _FormatUtils:
     # allocations in the `_PrecompiledEntries` struct.
     @staticmethod
     fn format_precompiled[
-        *Ts: _CurlyEntryFormattable,
+        *Ts: AnyType,
     ](
         mut writer: Some[Writer],
         compiled: _PrecompiledEntries[*Ts],
-        args: VariadicPack[_, _CurlyEntryFormattable, *Ts],
+        args: VariadicPack[_, AnyType, *Ts],
     ):
         """Format the arguments using the given format string and precompiled entries.
         """
@@ -142,19 +141,32 @@ struct _FormatUtils:
         writer.write(_build_slice(ptr, offset, fmt_len))
 
     @staticmethod
-    fn format(format: StringSlice, args: _FormatArgs) raises -> String:
+    fn format[
+        TraitType: type_of(AnyType), //
+    ](
+        format: StringSlice, args: VariadicPack[element_trait=TraitType, ...]
+    ) raises -> String:
         """Format the arguments using the given format string."""
-        var compiled = Self._compile_entries[*type_of(args).element_types](
-            format
-        )
+        comptime PackType = type_of(args)
+        comptime AnyTypePack = VariadicPack[
+            elt_is_mutable = PackType.elt_is_mutable,
+            origin = PackType.origin,
+            PackType.is_owned,
+            AnyType,
+            *PackType.element_types,
+        ]
+
+        var compiled = Self._compile_entries[*PackType.element_types](format)
 
         var res = String(capacity=format.byte_length() + compiled.size_hint)
-        Self.format_precompiled(writer=res, compiled=compiled, args=args)
+        Self.format_precompiled(
+            writer=res, compiled=compiled, args=rebind[AnyTypePack](args)
+        )
         return res^
 
     @staticmethod
     fn _compile_entries[
-        *Ts: _CurlyEntryFormattable
+        *Ts: AnyType
     ](
         format: StringSlice,
     ) raises -> _PrecompiledEntries[
@@ -455,10 +467,32 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
                     var flag = self.conversion_flag
                     var empty = flag == 0 and not self.format_spec
 
-                    if empty or flag == s_value:
-                        writer.write(String(args[i]))
-                    elif flag == r_value:
-                        writer.write(repr(args[i]))
+                    comptime ArgType = type_of(args[i])
+
+                    @parameter
+                    if conforms_to(ArgType, Stringable & Representable):
+                        ref arg = trait_downcast[Stringable & Representable](
+                            args[i]
+                        )
+                        if empty or flag == s_value:
+                            writer.write(String(arg))
+                        elif flag == r_value:
+                            writer.write(repr(arg))
+                    elif conforms_to(ArgType, Writable):
+                        ref arg = trait_downcast[Writable](args[i])
+                        if empty or flag == s_value:
+                            arg.write_to(writer)
+                        elif flag == r_value:
+                            arg.write_repr_to(writer)
+                    else:
+                        constrained[
+                            False,
+                            (
+                                "`format` requires a type that implements"
+                                " `Stringable & Representable` or `Writable`: "
+                            ),
+                            get_type_name[ArgType](),
+                        ]()
 
                     # TODO: Support format specs
 
@@ -474,14 +508,6 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
 # ===-----------------------------------------------------------------------===#
 # Format Specification
 # ===-----------------------------------------------------------------------===#
-
-
-comptime _CurlyEntryFormattable = Stringable & Representable
-"""This trait is used by the `format()` method to support format specifiers.
-Currently, it is a composition of both `Stringable` and `Representable`
-traits i.e. a type to be formatted must implement both. In the future this
-will be less constrained.
-"""
 
 
 # TODO: trait _FormattableStr: fn __format__(self, spec: FormatSpec) -> String:
@@ -741,7 +767,7 @@ struct _FormatSpec(ImplicitlyCopyable):
         # TODO: align, fill, etc.
         res += item
 
-    fn format[T: _CurlyEntryFormattable](self, mut res: String, item: T):
+    fn format[T: Stringable & Representable](self, mut res: String, item: T):
         """Stringify a type according to its format specification.
 
         Args:

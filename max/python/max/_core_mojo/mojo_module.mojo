@@ -116,8 +116,8 @@ fn mojo_block_hasher(
     ](unchecked_downcast_value=py_array_object)
 
     # Parse other arguments
-    var block_size = Int(block_size_obj)
-    var parent_hash = Int(parent_hash_obj)
+    var block_size = Int(py=block_size_obj)
+    var parent_hash = Int(py=parent_hash_obj)
 
     # Performing hashing
     var results = _mojo_block_hasher(
