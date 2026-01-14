@@ -7427,6 +7427,7 @@ struct Struct_moe_create_indices:
 struct Struct_moe_router_group_limited:
     @always_inline
     @staticmethod
+    @parameter
     fn execute[
         scores_type: DType,
         bias_type: DType,
@@ -7440,11 +7441,18 @@ struct Struct_moe_router_group_limited:
     ](
         expert_indices: OutputTensor[dtype = DType.int32, rank=2],
         expert_weights: OutputTensor[dtype=scores_type, rank=2],
-        expert_scores: InputTensor[dtype=scores_type, rank=2],
+        expert_scores: FusedInputTensor[dtype=scores_type, rank=2],
         expert_bias: InputTensor[dtype=bias_type, rank=1],
         routed_scaling_factor: Float32,
         context: DeviceContextPtr,
     ) raises:
+        @parameter
+        @always_inline
+        fn scores_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[scores_type, width]:
+            return expert_scores._lambda_load[width=width](coords)
+
         router_group_limited[
             n_routed_experts,
             n_experts_per_tok,
@@ -7452,6 +7460,11 @@ struct Struct_moe_router_group_limited:
             topk_group,
             norm_weights,
             target=target,
+            scores_input_fn = OptionalReg[
+                fn[
+                    width: Int
+                ] (IndexList[2]) capturing -> SIMD[scores_type, width]
+            ](scores_input_fn),
         ](
             expert_indices.to_layout_tensor(),
             expert_weights.to_layout_tensor(),

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 
 from math import align_up, ceildiv
 from memory import LegacyUnsafePointer, stack_allocation
@@ -20,13 +21,14 @@ from os.atomic import Atomic
 from sys.info import simd_width_of
 
 import gpu.warp as warp
-from bit import next_power_of_two, pop_count
+from bit import pop_count, log2_floor
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
     block_idx,
     grid_dim,
+    lane_id,
     thread_idx,
 )
 from gpu.grid_controls import PDL, pdl_launch_attributes
@@ -38,7 +40,7 @@ from runtime.tracing import Trace, TraceLevel
 from utils.index import IndexList, StaticTuple
 from builtin.dtype import _uint_type_of_width
 
-from nn.topk import _warp_reduce_topk, TopK_2
+from nn.topk import TopK_2
 
 
 @__llvm_metadata(
@@ -738,6 +740,71 @@ fn moe_create_indices[
         _ = expert_usage_stats_host^
 
 
+# Function to perform warp-level sorting
+@always_inline
+@parameter
+fn _warp_bitonic_sort[
+    T: DType,
+    num_lanes: Int = WARP_SIZE,
+    descending: Bool = True,
+](_val: TopK_2[T]) -> TopK_2[T]:
+    """
+    Performs warp-level bitonic sort to sort TopK_2 elements.
+
+    Parameters:
+        T: DType - Data type of the values being compared.
+        num_lanes: Int - Number of lanes that participate in the reduction.
+        descending: Bool - Whether to sort in descending order.
+
+    Arguments:
+        _val: TopK_2[T] - TopK_2 value from each thread to be sorted.
+
+    Returns:
+        TopK_2[T] - Sorted TopK_2 value across the warp.
+    """
+
+    __comptime_assert (
+        num_lanes.is_power_of_two()
+    ), "num_lanes must be power of 2"
+
+    @always_inline
+    fn bitonic_sort_step(
+        v: TopK_2[T],
+        step: UInt32,
+        stage: UInt32,
+        i: UInt32,
+    ) -> TopK_2[T]:
+        var partner = TopK_2[T](
+            u=warp.shuffle_xor(v.u, step),  # u is the value
+            p=Int(warp.shuffle_xor(Int32(v.p), step)),  # p is the index
+        )
+
+        if v.u == partner.u:
+            return v
+
+        var cmp_val = (v.u < partner.u) ^ descending
+        var merge_direction = pop_count(i & (stage | step)) == 1
+
+        if cmp_val == merge_direction:
+            return partner
+        else:
+            return v
+
+    var val = _val
+    var i = UInt32(lane_id())
+
+    @parameter
+    for stage_i in range(1, log2_floor(num_lanes) + 1):
+        var stage = 1 << stage_i
+
+        @parameter
+        for step_i in reversed(range(stage_i)):
+            var step = 1 << step_i
+            val = bitonic_sort_step(val, step, stage, i)
+
+    return val
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
 )
@@ -754,6 +821,9 @@ fn group_limited_router_kernel[
     topk_group: Int,
     norm_weights: Bool,
     num_threads: Int,
+    scores_input_fn: OptionalReg[
+        fn[width: Int] (IndexList[2]) capturing -> SIMD[scores_type, width]
+    ] = None,
 ](
     expert_indices: LayoutTensor[
         DType.int32, expert_indices_layout, MutAnyOrigin
@@ -800,8 +870,7 @@ fn group_limited_router_kernel[
         num_threads == n_routed_experts
     ), "num_threads must be equal to n_routed_experts"
 
-    var grid_size = grid_dim.x
-    var bid = block_idx.x
+    var token_idx = Int(block_idx.x)
     var tid = Int(thread_idx.x)
     var warp_id = tid // WARP_SIZE
 
@@ -815,135 +884,109 @@ fn group_limited_router_kernel[
     var selected_group = stack_allocation[
         topk_group, DType.int32, address_space = AddressSpace.SHARED
     ]()
-    var thread_group_id = tid // group_size
+    var thread_group_id, tid_in_group = divmod(tid, group_size)
 
     var thread_expert_bias = expert_bias.load[width=1](IndexList[1](tid)).cast[
         scores_type
     ]()
 
     with PDL():
-        for token_idx in range(bid, num_tokens, grid_size):
-            var thread_expert_score = (
-                expert_scores.load[width=1](token_idx, tid) + thread_expert_bias
+        var thread_expert_score: Scalar[scores_type]
+
+        @parameter
+        if scores_input_fn:
+            comptime scores_fn = scores_input_fn.value()
+            thread_expert_score = scores_fn[width=1]((token_idx, tid))
+        else:
+            thread_expert_score = expert_scores.load[width=1](token_idx, tid)
+
+        thread_expert_score += thread_expert_bias
+        var thd_topk2 = TopK_2(u=thread_expert_score, p=tid)
+        var sorted_group = _warp_bitonic_sort[num_lanes=group_size](thd_topk2)
+
+        # In each group, the sum of the first two highest scores is the
+        # score for the group. Store the two scores in shared memory.
+
+        if tid_in_group == 0 or tid_in_group == 1:
+            shared_mem[2 * thread_group_id + tid_in_group] = TopK_2(
+                u=sorted_group.u, p=thread_group_id
             )
-            var thread_topk_candidate = TopK_2(u=thread_expert_score, p=tid)
+        barrier()
 
-            var group_scores: Scalar[scores_type] = 0
-
-            # First, In each group, find the first two experts with the highest scores.
-            # The sum of the two experts' scores is the score for the group.
-            @parameter
-            for _ in range(2):
-                var warp_topk_result = _warp_reduce_topk[
-                    num_lanes=group_size, broadcast=True
-                ](thread_topk_candidate)
-
-                group_scores += warp_topk_result.u
-                if thread_topk_candidate.p == warp_topk_result.p:
-                    thread_topk_candidate = TopK_2[scores_type]()
-            barrier()
-
-            # Store the group score in shared memory. Only the first thread in each group
-            # does this.
-            if tid % group_size == 0:
-                shared_mem[thread_group_id] = TopK_2(
-                    u=group_scores, p=thread_group_id
+        # The first warp finds the `topk_group` groups with the highest scores.
+        if warp_id == 0:
+            if tid < n_groups:
+                var group_scores = (
+                    shared_mem[2 * tid].u + shared_mem[2 * tid + 1].u
                 )
-            barrier()
+                thd_topk2 = TopK_2(u=group_scores, p=tid)
+            else:
+                thd_topk2 = TopK_2[scores_type]()
 
-            # The first warp finds the `topk_group` groups with the highest scores.
-            if warp_id == 0:
-                if tid < n_groups:
-                    thread_topk_candidate = shared_mem[tid]
-                else:
-                    thread_topk_candidate = TopK_2[scores_type]()
+            var sorted_group_id = _warp_bitonic_sort[num_lanes=n_groups](
+                thd_topk2
+            )
 
-                # repeat Top‑1 K times (greedy top‑K)
-                @parameter
-                for i in range(topk_group):
-                    var warp_topk_result = _warp_reduce_topk[
-                        num_lanes=n_groups, broadcast=True
-                    ](thread_topk_candidate)
+            if tid < topk_group:
+                selected_group[tid] = sorted_group_id.p
 
-                    # Skip threads that hold dead values
-                    if tid < n_groups:
-                        if thread_topk_candidate.p == warp_topk_result.p:
-                            selected_group[i] = tid
-                            thread_topk_candidate = TopK_2[scores_type]()
-            barrier()
+        # Check if this group is selected
+        barrier()
+        var selected_group_smem_offset: Int32 = -1
 
-            var selected_group_smem_offset: Int32 = -1
+        @parameter
+        for i in range(topk_group):
+            if selected_group[i] == thread_group_id:
+                selected_group_smem_offset = i * n_experts_per_tok
+
+        if selected_group_smem_offset >= 0:
+            # Store the selected group's top `n_experts_per_tok` experts in
+            # shared memory.
+            if tid_in_group < n_experts_per_tok:
+                shared_mem[
+                    selected_group_smem_offset + tid_in_group
+                ] = sorted_group
+
+        # Now, we use the first warp to find the global top `n_experts_per_tok` experts.
+        barrier()
+        if warp_id == 0:
+            if tid_in_group < topk_group * n_experts_per_tok:
+                thd_topk2 = shared_mem[tid]
+            else:
+                thd_topk2 = TopK_2[scores_type]()
+
+            var global_topk_result = _warp_bitonic_sort[
+                num_lanes = topk_group * n_experts_per_tok
+            ](thd_topk2)
+
+            var weights_sum: Scalar[scores_type] = 0
+            var original_weight: Scalar[scores_type] = 0
+
+            if tid_in_group < n_experts_per_tok:
+                # We need to subtract the expert bias from the weight to get the original score.
+                # This global load shouldn't be a problem since the expert bias is likely to be cached in L1.
+                original_weight = (
+                    global_topk_result.u
+                    - expert_bias.load[width=1](
+                        IndexList[1](global_topk_result.p)
+                    ).cast[scores_type]()
+                )
+
+            weights_sum = warp.lane_group_sum_and_broadcast[
+                num_lanes=n_experts_per_tok
+            ](original_weight)
 
             @parameter
-            for i in range(topk_group):
-                if selected_group[i] == thread_group_id:
-                    selected_group_smem_offset = i * n_experts_per_tok
+            if norm_weights:
+                original_weight /= weights_sum
 
-            # Find the top `n_experts_per_tok` experts with the highest scores in each group.
-            # However, only the selected group's threads will store the results in shared memory.
-            thread_topk_candidate = TopK_2(u=thread_expert_score, p=tid)
+            original_weight *= Scalar[scores_type](routed_scaling_factor)
 
-            # repeat Top‑1 K times (greedy top‑K)
-            @parameter
-            for i in range(n_experts_per_tok):
-                var warp_topk_result = _warp_reduce_topk[
-                    num_lanes=group_size, broadcast=True
-                ](thread_topk_candidate)
-
-                if thread_topk_candidate.p == warp_topk_result.p:
-                    thread_topk_candidate = TopK_2[scores_type]()
-                    if selected_group_smem_offset >= 0:
-                        shared_mem[
-                            selected_group_smem_offset + i
-                        ] = warp_topk_result
-            barrier()
-
-            # For all the selected groups, their top `n_experts_per_tok` experts are stored in shared memory.
-            # Now, we use the first warp to find the global top `n_experts_per_tok` experts.
-            if warp_id == 0:
-                if tid < topk_group * n_experts_per_tok:
-                    thread_topk_candidate = shared_mem[tid]
-                else:
-                    thread_topk_candidate = TopK_2[scores_type]()
-
-                var weights_sum: Scalar[scores_type] = 0
-                var topk_idx: Int = -1
-                var selected_weight: Scalar[scores_type] = 0
-                var selected_index: Int32 = -1
-
-                @parameter
-                for i in range(n_experts_per_tok):
-                    var warp_topk_result = _warp_reduce_topk[
-                        num_lanes = topk_group * n_experts_per_tok,
-                        broadcast=True,
-                    ](thread_topk_candidate)
-
-                    # We need to subtract the expert bias from the weight to get the original score.
-                    # This global load shouldn't be a problem since the expert bias is likely to be cached in L1.
-                    var original_weight = (
-                        warp_topk_result.u
-                        - expert_bias.load[width=1](
-                            IndexList[1](warp_topk_result.p)
-                        ).cast[scores_type]()
-                    )
-                    weights_sum += original_weight
-                    # Skip threads that hold dead values
-                    if tid < topk_group * n_experts_per_tok:
-                        if thread_topk_candidate.p == warp_topk_result.p:
-                            selected_weight = original_weight
-                            selected_index = warp_topk_result.p
-                            thread_topk_candidate = TopK_2[scores_type]()
-                            topk_idx = i
-
-                @parameter
-                if norm_weights:
-                    selected_weight /= weights_sum
-
-                selected_weight *= Scalar[scores_type](routed_scaling_factor)
-
-                if topk_idx != -1:
-                    expert_indices.store(token_idx, topk_idx, selected_index)
-                    expert_weights.store(token_idx, topk_idx, selected_weight)
+            if tid_in_group < n_experts_per_tok:
+                expert_indices.store(
+                    token_idx, tid_in_group, Int32(global_topk_result.p)
+                )
+                expert_weights.store(token_idx, tid_in_group, original_weight)
 
 
 @always_inline
@@ -957,6 +1000,9 @@ fn router_group_limited[
     topk_group: Int,
     norm_weights: Bool,
     target: StaticString,
+    scores_input_fn: OptionalReg[
+        fn[width: Int] (IndexList[2]) capturing -> SIMD[scores_type, width]
+    ] = None,
 ](
     expert_indices: LayoutTensor[mut=True, DType.int32, ...],
     expert_weights: LayoutTensor[mut=True, scores_type, ...],
@@ -979,6 +1025,7 @@ fn router_group_limited[
         topk_group: The number of expert groups to be selected per token.
         norm_weights: Whether to normalize the selected weights.
         target: The target device to run the kernel on.
+        scores_input_fn: Input lambda function to load the scores.
 
     Inputs:
         expert_indices: The indices of the routed experts for each token.
@@ -1008,7 +1055,6 @@ fn router_group_limited[
         comptime blocks_per_sm = hw_info.threads_per_multiprocessor // num_threads
 
         comptime num_sms = hw_info.sm_count
-        var num_blocks = min(num_sms * blocks_per_sm, expert_scores.dim(0))
 
         comptime kernel = group_limited_router_kernel[
             scores_type,
@@ -1023,6 +1069,7 @@ fn router_group_limited[
             topk_group,
             norm_weights,
             num_threads,
+            scores_input_fn=scores_input_fn,
         ]
 
         gpu_ctx.enqueue_function[kernel, kernel](
@@ -1031,7 +1078,7 @@ fn router_group_limited[
             expert_scores,
             expert_bias,
             routed_scaling_factor,
-            grid_dim=num_blocks,
+            grid_dim=expert_scores.dim(0),
             block_dim=num_threads,
             attributes=pdl_launch_attributes(),
         )
