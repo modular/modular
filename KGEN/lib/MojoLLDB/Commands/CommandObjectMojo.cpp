@@ -103,7 +103,6 @@ public:
 
   bool DoExecute(SBDebugger debugger, char **command,
                  SBCommandReturnObject &result) override {
-#ifdef MODULAR_ENABLE_TELEMETRY
     SmallVector<StringRef> args;
     for (char **it = command; it && *it; ++it)
       args.push_back(*it);
@@ -120,7 +119,6 @@ public:
       result.SetStatus(lldb::eReturnStatusSuccessFinishResult);
       return true;
     }
-#endif // MODULAR_ENABLE_TELEMETRY
     result.SetStatus(lldb::eReturnStatusFailed);
     return false;
   }

@@ -4,8 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifdef MODULAR_ENABLE_TELEMETRY
-
 #include "Support/Telemetry/Exporters/FileLogExporter.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
@@ -51,5 +49,3 @@ FileLogExporter::Export(const opentelemetry::nostd::span<
 
   return opentelemetry::sdk::common::ExportResult::kSuccess;
 }
-
-#endif // MODULAR_ENABLE_TELEMETRY

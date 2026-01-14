@@ -23,12 +23,10 @@
 #include <utility>
 #include <variant>
 
-#ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/logs/event_logger_provider.h"
 #include "opentelemetry/logs/logger_provider.h"
 #include "opentelemetry/metrics/meter.h"
 #include "opentelemetry/metrics/meter_provider.h"
-#endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::Telemetry {
 
@@ -121,7 +119,6 @@ public:
       StringRef name, Level instrumentLevel,
       const llvm::StringMap<MetricAttributeValue> &attributes = {},
       StringRef description = "", StringRef unit = "") {
-#ifdef MODULAR_ENABLE_TELEMETRY
     if (unit.empty()) {
       if constexpr (std::is_same_v<DurationT, std::chrono::nanoseconds>)
         unit = "ns";
@@ -149,23 +146,16 @@ public:
       return Timer<uint64_t, DurationT>(
           noopMeter->CreateUInt64Histogram(name, description, unit),
           attributes);
-#else
-    return Timer<uint64_t, DurationT>();
-#endif
   }
 
   /// Create a Logger with given domain (see
   /// https://opentelemetry.io/docs/specs/otel/logs/semantic_conventions/events/).
   virtual std::shared_ptr<Logs::Logger> getLogger(StringRef eventDomain) {
-#ifdef MODULAR_ENABLE_TELEMETRY
     auto otelLogger = loggerProvider->GetLogger("modular_logger");
     auto otelEventLogger =
         eventLoggerProvider->CreateEventLogger(otelLogger, eventDomain);
     return std::shared_ptr<Logs::Logger>(
         new Logs::Logger(otelEventLogger, telemetryLevel));
-#else
-    return std::shared_ptr<Logs::Logger>(new Logs::Logger());
-#endif
   }
 
   /// Flush all the collected metrics. Blocks until the flush completes
@@ -180,7 +170,6 @@ private:
   /// Configured telemetry level for this telemetry context.
   Level telemetryLevel;
   StringRef machineId;
-#ifdef MODULAR_ENABLE_TELEMETRY
   // Metrics.
   std::unique_ptr<opentelemetry::metrics::MeterProvider> userMetricsProvider;
   std::shared_ptr<opentelemetry::metrics::Meter> userMeter;
@@ -191,7 +180,6 @@ private:
   //  Logs.
   std::shared_ptr<opentelemetry::logs::LoggerProvider> loggerProvider;
   std::shared_ptr<opentelemetry::logs::EventLoggerProvider> eventLoggerProvider;
-#endif
 
   bool isValidInstrumentName(StringRef name) {
     // TODO: SERV-138 - If the name is invalid, it looks like OTel logs the
@@ -207,7 +195,6 @@ private:
                 const llvm::StringMap<MetricAttributeValue> &attributes = {},
                 StringRef description = "", StringRef unit = "") {
     assert(isValidInstrumentName(name) && "instrument name is invalid");
-#ifdef MODULAR_ENABLE_TELEMETRY
     if (isUserMetric(instrumentLevel) && userMeter)
       return createCounterImpl<T>(userMeter, name, description, unit,
                                   attributes);
@@ -216,11 +203,8 @@ private:
     else
       return createCounterImpl<T>(noopMeter, name, description, unit,
                                   attributes);
-#else
-    return Counter<T>();
-#endif
   }
-#ifdef MODULAR_ENABLE_TELEMETRY
+
   // Utility function to help make code cleaner
   template <typename T>
   Counter<T>
@@ -237,7 +221,6 @@ private:
           attributes);
     }
   }
-#endif
 
   /// Create a Histogram
   template <typename T>
@@ -246,7 +229,6 @@ private:
                   const llvm::StringMap<MetricAttributeValue> &attributes = {},
                   StringRef description = "", StringRef unit = "") {
     assert(isValidInstrumentName(name) && "instrument name is invalid");
-#ifdef MODULAR_ENABLE_TELEMETRY
     if (isUserMetric(instrumentLevel) && userMeter)
       return createHistogramImpl<T>(userMeter, name, description, unit,
                                     attributes);
@@ -254,11 +236,8 @@ private:
       return createHistogramImpl<T>(meter, name, description, unit, attributes);
     return createHistogramImpl<T>(noopMeter, name, description, unit,
                                   attributes);
-#else
-    return Histogram<T>();
-#endif
   }
-#ifdef MODULAR_ENABLE_TELEMETRY
+
   // Utility function to help make code cleaner
   template <typename T>
   Histogram<T>
@@ -277,7 +256,6 @@ private:
                                attributes);
     }
   }
-#endif
 };
 
 } // namespace M::Telemetry

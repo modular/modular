@@ -4,8 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifdef MODULAR_ENABLE_TELEMETRY
-
 #include "Support/Telemetry/Exporters/FileMetricExporter.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
@@ -47,5 +45,3 @@ opentelemetry::sdk::common::ExportResult FileMetricExporter::Export(
 
   return opentelemetry::sdk::common::ExportResult::kSuccess;
 }
-
-#endif // MODULAR_ENABLE_TELEMETRY

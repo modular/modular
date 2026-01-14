@@ -495,9 +495,6 @@ modular_cc_library(
     hdrs = glob(["include/Support/Telemetry/**/*.h"]),
     copts = MODULAR_TELEMETRY_COPTS,
     defines = [
-        # FIXME(amscanne): These configurations should be removed. We
-        # unilaterally set sensible configurations for now.
-        "MODULAR_ENABLE_TELEMETRY",
         "HAVE_CPP_STDLIB",
     ],
     local_defines = select({

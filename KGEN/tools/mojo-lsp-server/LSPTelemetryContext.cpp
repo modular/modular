@@ -28,52 +28,36 @@ LSPTelemetryContext::LSPTelemetryContext(Telemetry::TelemetryContext &ctx)
 
 void LSPTelemetryContext::recordResponseTime(
     StringRef request, std::chrono::microseconds microseconds) {
-#ifdef MODULAR_ENABLE_TELEMETRY
   responseTimeHistogram.record(microseconds.count(),
                                {{"request", request.str()}});
-#endif // MODULAR_ENABLE_TELEMETRY
 }
 
 void LSPTelemetryContext::recordInvalidRequest(StringRef request) {
-#ifdef MODULAR_ENABLE_TELEMETRY
   invalidRequestCounter.add(1, {{"request", request.str()}});
-#endif // MODULAR_ENABLE_TELEMETRY
 }
 
 void LSPTelemetryContext::recordOutdatedRequest(StringRef request) {
-#ifdef MODULAR_ENABLE_TELEMETRY
   outdatedRequestCounter.add(1, {{"request", request.str()}});
-#endif // MODULAR_ENABLE_TELEMETRY
 }
 
 void LSPTelemetryContext::reportInitialization(
     std::optional<StringRef> clientName) {
-#ifdef MODULAR_ENABLE_TELEMETRY
   ctx.getLogger("mojo")->emitL0Event(
       "lsp.initialized", {{"client_name", clientName.value_or("").str()}});
-#endif // MODULAR_ENABLE_TELEMETRY
 }
 
 void LSPTelemetryContext::reportShutdown() {
-#ifdef MODULAR_ENABLE_TELEMETRY
   ctx.getLogger("mojo")->emitL0Event("lsp.shutdown");
-#endif // MODULAR_ENABLE_TELEMETRY
 }
 
-void LSPTelemetryContext::flush() {
-#ifdef MODULAR_ENABLE_TELEMETRY
-  ctx.flush();
-#endif // MODULAR_ENABLE_TELEMETRY
-}
+void LSPTelemetryContext::flush() { ctx.flush(); }
 
 void LSPTelemetryContext::recordParseTime(std::chrono::microseconds duration,
                                           size_t byteSize, bool notebook) {
-#ifdef MODULAR_ENABLE_TELEMETRY
   ctx.getLogger("mojo")->emitL1Event(
       "lsp.parse", {
                        {"duration", duration.count()},
                        {"size", byteSize},
                        {"documentType", notebook ? "notebook" : "text"},
                    });
-#endif // MODULAR_ENABLE_TELEMETRY
 }
