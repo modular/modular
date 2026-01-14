@@ -615,36 +615,19 @@ String: Dog(Rex, 5)
 Representation: Dog(name='Rex', age=5)
 ```
 
-### The `ImplicitlyDestructible` trait
+### Lifetime management traits
 
-When building a generic container type, one challenge is knowing how to dispose
-of the contained items when the container is destroyed. Any type that
-dynamically allocates memory needs to supply a
-[destructor](/mojo/manual/lifecycle/death#destructor) (`__del__()` method)
-that must be called to free the allocated memory. But not all types have a
-destructor.
+Mojo provides two core traits for managing value lifetimes:
 
-The [`ImplicitlyDestructible`](/mojo/std/builtin/anytype/ImplicitlyDestructible)
-trait represents a type with a destructor. Almost all traits inherit from
-`ImplicitlyDestructible`, and all structs conform to `ImplicitlyDestructible` by
-default. For any type that conforms to `ImplicitlyDestructible` and doesn't
-define a destructor, Mojo generates a no-op destructor. This means you can call
-the destructor on any type that inherits from `ImplicitlyDestructible`.
+- [`AnyType`](/mojo/std/builtin/anytype/AnyType): The base trait that all types
+extend. Types conforming only to `AnyType` may require explicit destruction.
 
-:::note TODO
+- [`ImplicitlyDestructible`](/mojo/std/builtin/anytype/ImplicitlyDestructible):
+Types that can be automatically destroyed by calling `__del__()` when their lifetime ends.
 
-In the Mojo standard library docs you will also see a trait called
-[`AnyType`](/mojo/std/builtin/anytype/AnyType),
-which represents a type that may or may not have a destructor. All structs
-implicitly conform to this trait.
-
-This trait exists to support a feature called *linear* or *explicitly-destroyed*
-types. A linear type may not be destroyed by the compiler implicitly, and
-instead may only be destroyed when the programmer explicitly calls a named
-destructor method. The compiler will issue an error if a linear type becomes
-unused without being explicitly destroyed.
-
-:::
+For detailed information about value destruction, explicit destruction with the
+`@explicit_destroy` decorator, and when to use each approach, see [Death of a
+value](/mojo/manual/lifecycle/death).
 
 ## Generic structs with traits
 
