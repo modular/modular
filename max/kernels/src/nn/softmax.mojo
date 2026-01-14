@@ -1563,7 +1563,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     #
 
     var tid = thread_idx.x
-    var lane = lane_id()
+    var lane = UInt32(lane_id())
     var warp_y, warp_x = divmod(tid // UInt(WARP_SIZE), UInt(num_warps_n))
 
     comptime fragment_layout = Layout.row_major(
@@ -1828,7 +1828,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                     address_space = AddressSpace.SHARED,
                 ](o_smem_ptr_write)
                 .vectorize[1, frag_size]()
-                .distribute[Layout.row_major(WARP_SIZE, 1)](lane)
+                .distribute[Layout.row_major(WARP_SIZE, 1)](UInt(lane))
             )
             # after distribute and vectorize, the shape should be
             # WM * WN // (2*frag_size * WARP_SIZE), 1
@@ -1860,7 +1860,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                 address_space = AddressSpace.SHARED,
             ](o_smem_ptr_reduce)
             .vectorize[1, frag_size]()
-            .distribute[Layout.row_major(WARP_SIZE, 1)](lane)
+            .distribute[Layout.row_major(WARP_SIZE, 1)](UInt(lane))
         )
 
         @parameter

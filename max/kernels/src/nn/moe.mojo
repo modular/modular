@@ -91,7 +91,7 @@ fn moe_create_indices_kernel[
     for tok_id in range(num_tokens_per_thread):
         var i = thd_tok_idx + UInt(tok_id)
         if i < UInt(num_tokens):
-            indices_padded[i] = i
+            indices_padded[i] = UInt32(i)
             topk_ids_padded[i] = rebind[Scalar[input_type]](topk_ids[i])
         elif i < UInt(num_tokens_padded):
             indices_padded[i] = Scalar[indices_type].MAX_FINITE
@@ -192,12 +192,12 @@ fn moe_create_indices_kernel[
             token_expert_order[i] = indices_padded[i]
 
             # also, fill the restore_token_order array
-            restore_token_order[Int(indices_padded[i])] = i
+            restore_token_order[Int(indices_padded[i])] = UInt32(i)
 
             # check if this is the start of a new expert
             if i != 0:
                 if topk_ids_padded[i] != topk_ids_padded[i - 1]:
-                    expert_start_indices[Int(topk_ids_padded[i])] = i
+                    expert_start_indices[Int(topk_ids_padded[i])] = UInt32(i)
             else:
                 expert_start_indices[Int(topk_ids_padded[i])] = 0
     barrier()
@@ -247,7 +247,7 @@ fn calculate_warp_offset[MaskType: DType](state: Bool) -> Tuple[UInt64, UInt64]:
     var writes = pop_count(mask)
 
     # masks out all bits that are set to 1 for higher thread IDs
-    var preceding_mask = mask & ((UInt64(1) << thread_idx.x) - 1)
+    var preceding_mask = mask & ((UInt64(1) << UInt64(thread_idx.x)) - 1)
 
     # counts the number of bits that are set to 1 in the preceding mask
     var offset = pop_count(preceding_mask)
@@ -315,7 +315,7 @@ fn _count_expert_tokens[
         @parameter
         for i in range(width):
             var expert_id = g_vector[i]
-            var state = expert_id == bg_params.expert
+            var state = expert_id == Scalar[input_type](bg_params.expert)
 
             var offset = total_writes
 
@@ -338,9 +338,10 @@ fn _count_expert_tokens[
         topk_ids[
             0, bg_params.remainder_start_idx
         ] if bg_params.remainder_start_idx
-        < bg_params.topk_ids_length else bg_params.expert + 1
+        < bg_params.topk_ids_length else Scalar[input_type](bg_params.expert)
+        + 1
     )
-    var state = expert_id == bg_params.expert
+    var state = expert_id == Scalar[input_type](bg_params.expert)
 
     # Use same warp voting technique for remainder elements
     var warp_writes, preceding_thread_writes = calculate_warp_offset[MaskType](
@@ -425,16 +426,16 @@ fn _copy_tokens_smem_to_gmem[
 
     var start_idx = UInt((smem_writes // width) * width)
 
-    g_offset_copy += start_idx
+    g_offset_copy += UInt32(start_idx)
 
-    if thread_idx.x < UInt(smem_writes - start_idx):
-        token_expert_order[Int(g_offset_copy + thread_idx.x)] = rebind[
+    if UInt64(thread_idx.x) < smem_writes - UInt64(start_idx):
+        token_expert_order[Int(g_offset_copy + UInt32(thread_idx.x))] = rebind[
             SIMD[DType.uint32, token_expert_order.element_size]
         ](smem[0, start_idx + thread_idx.x])
 
-        restore_token_order[smem[0, start_idx + thread_idx.x]] = (
-            g_offset_copy + thread_idx.x
-        )
+        restore_token_order[
+            smem[0, start_idx + thread_idx.x]
+        ] = g_offset_copy + UInt32(thread_idx.x)
 
 
 @always_inline
@@ -476,7 +477,7 @@ fn _copy_tokens_to_gmem[
         @parameter
         for i in range(width):
             var expert_id = g_vector[i]
-            var state = expert_id == bg_params.expert
+            var state = expert_id == Scalar[input_type](bg_params.expert)
 
             var warp_writes, preceding_thread_writes = calculate_warp_offset[
                 MaskType
@@ -489,23 +490,24 @@ fn _copy_tokens_to_gmem[
             # so we only need to write the remaining tokens to global memory.
             if thr_tokens_seen >= expected_count and state:
                 token_expert_order[
-                    g_offset_copy + UInt(preceding_thread_writes)
+                    g_offset_copy + UInt32(preceding_thread_writes)
                 ] = (idx + i)
-                restore_token_order[idx + i] = g_offset_copy + UInt(
+                restore_token_order[idx + i] = g_offset_copy + UInt32(
                     preceding_thread_writes
                 )
 
             tokens_seen += warp_writes
-            g_offset_copy += UInt(warp_writes)
+            g_offset_copy += UInt32(warp_writes)
 
     # Handle remainder elements that couldn't be vectorized
     var expert_id = (
         topk_ids[
             0, bg_params.remainder_start_idx
         ] if bg_params.remainder_start_idx
-        < bg_params.topk_ids_length else bg_params.expert + 1
+        < bg_params.topk_ids_length else Scalar[input_type](bg_params.expert)
+        + 1
     )
-    var state = expert_id == bg_params.expert
+    var state = expert_id == Scalar[input_type](bg_params.expert)
 
     # Use same warp voting technique for remainder elements
     var _, preceding_thread_writes = calculate_warp_offset[MaskType](state)
@@ -515,11 +517,11 @@ fn _copy_tokens_to_gmem[
 
     if temp_current_writes >= expected_count and state:
         token_expert_order[
-            g_offset_copy + UInt(preceding_thread_writes)
+            g_offset_copy + UInt32(preceding_thread_writes)
         ] = bg_params.remainder_start_idx
         restore_token_order[
             bg_params.remainder_start_idx
-        ] = g_offset_copy + UInt(preceding_thread_writes)
+        ] = g_offset_copy + UInt32(preceding_thread_writes)
 
 
 @__llvm_metadata(
@@ -623,7 +625,7 @@ fn moe_create_indices_bucket_group_kernel[
 
         # Record which expert is active at this index
         # this signals this expert is being used
-        expert_ids[expert_idx] = bucket_group_params.expert
+        expert_ids[expert_idx] = Int32(bucket_group_params.expert)
 
         # Store the ending index for this expert (start of next expert)
         # NOTE: expert_start_indices must be zero-initialized for this to work correctly

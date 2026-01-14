@@ -455,7 +455,7 @@ fn radix_sort_pairs_kernel[
 
             @parameter
             if current_bit == 0:
-                output_key_ids[global_offset] = index
+                output_key_ids[global_offset] = Scalar[out_idx_type](index)
             else:
                 output_key_ids[global_offset] = input_key_ids[index]
 
