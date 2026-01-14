@@ -32,7 +32,6 @@ from typing_extensions import TypeVar
 
 from .text_generation import (
     TextGenerationRequestMessage,
-    TextGenerationRequestTool,
 )
 
 
@@ -80,12 +79,6 @@ class PixelGenerationRequest(Request):
     chat_template_options: dict[str, Any] | None = None
     """
     Optional dictionary of options to pass when applying the chat template.
-    """
-    tools: list[TextGenerationRequestTool] | None = None
-    """
-    A list of tools that can be invoked during the generation process. This
-    allows the model to utilize external functionalities or APIs to enhance its
-    responses.
     """
 
     def __post_init__(self) -> None:
