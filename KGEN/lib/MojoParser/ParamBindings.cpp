@@ -702,8 +702,7 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
   };
 
   // The inference diagnostics will be unused.
-  ParamInf inference(declScope, getParameters(), getNumPreCheckedParams(),
-                     paramTypes, paramList,
+  ParamInf inference(*this, paramTypes, paramList,
                      /*allowImplicitConversions=*/true, getDiag,
                      /*declIfDirect=*/nullptr);
   auto [bindings, _] =
@@ -765,8 +764,7 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
     diag = shared.emitError(loc ? *loc : getExprLoc());
     return *diag;
   };
-  ParamInf inference(declScope, getParameters(), getNumPreCheckedParams(),
-                     expectedParamTypes, paramListAttr,
+  ParamInf inference(*this, expectedParamTypes, paramListAttr,
                      /*allowImplicitConversions=*/true, getDiags, declIfKnown);
   auto [bindings, fitness] = verifyBindingsImpl(
       parameters, expectedParamTypes, paramListAttr, inference, partial);

@@ -78,9 +78,8 @@ private:
 /// information about the specified parameter.
 class ParamInf {
 public:
-  /// This is the declaration that we do name lookup against.
-  ASTDecl &declScope;
-  SharedState &shared;
+  /// These are the bindings originally provided to the callable.
+  const ParamBindings &paramBindings;
 
   /// If we're inferring the parameters for a declaration like a fn or struct,
   /// maintain a pointer to it so we can emit better diagnostics.  This will be
@@ -91,8 +90,7 @@ public:
   llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag;
 
   ParamInf(
-      ASTDecl &declScope, const CallOperands &givenBindings,
-      size_t numPreCheckedBindings, ArrayRef<Type> declaredParamTypes,
+      const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
       PogListAttr declaredParamPogs, bool allowImplicitConversions,
       llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
       ASTDecl *declIfDirect);
@@ -132,6 +130,16 @@ public:
   /// After inferring parameter values, this allows access to the results.
   TypedAttr getInferredValue(size_t idx) const {
     return evaluator.getIndexBindings()[idx];
+  }
+
+  /// Convenience getters for fields from paramBindings.
+  ASTDecl &getDeclScope() const { return paramBindings.declScope; }
+  SharedState &getShared() const { return paramBindings.shared; }
+  const CallOperands &getGivenBindings() const {
+    return paramBindings.getParameters();
+  }
+  size_t getNumPreCheckedParam() const {
+    return paramBindings.getNumPreCheckedParams();
   }
 
   void dump() const;
@@ -192,10 +200,6 @@ private:
                                             ASTType expectedType,
                                             size_t paramIdx);
 
-  /// These are the bindings originally provided to the callable. These are used
-  /// to infer parameters from other parameter values.
-  const CallOperands &givenBindings;
-
   /// This describes the number of type of all of the parameters we're trying to
   /// resolve for this entire declaration.
   ArrayRef<Type> declaredParamTypes;
@@ -205,10 +209,6 @@ private:
 
   /// True if implicit conversions in argument lists are permitted.
   const bool allowImplicitConversions;
-
-  /// The number "givenBindings" that are pre-checked and just need to be
-  /// installed, instead of treated as things specified in the [] list.
-  const size_t numPreCheckedParam;
 };
 
 } // namespace M::KGEN::LIT
