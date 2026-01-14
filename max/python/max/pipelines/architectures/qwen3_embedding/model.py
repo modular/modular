@@ -23,6 +23,7 @@ import time
 from collections.abc import Sequence
 
 import numpy as np
+from max._core.engine import Model
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -35,6 +36,7 @@ from max.pipelines.core import TextContext
 from max.pipelines.dataprocessing import collate_batch
 from max.pipelines.lib import (
     KVCacheConfig,
+    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -57,30 +59,34 @@ class Qwen3EmbeddingInputs(ModelInputs):
 
     This class encapsulates the input tensors required for the Qwen3 Embedding
     model execution:
-    - next_tokens_batch: A tensor containing the input token IDs
     - attention_mask: A tensor containing the attention mask
+    - next_tokens_batch: A tensor containing the input token IDs (flattened/ragged)
     - row_offsets: Row offsets for ragged tensor format
+    - return_n_logits: Number of logits to return
+    - kv_cache_inputs: KV cache tensors (optional, for compatibility with generative model)
     """
 
-    next_tokens_batch: Tensor
     attention_mask: Tensor
+    next_tokens_batch: Tensor
     row_offsets: Tensor
+    return_n_logits: Tensor
 
     def __init__(
         self,
-        next_tokens_batch: Tensor,
         attention_mask: Tensor,
+        next_tokens_batch: Tensor,
         row_offsets: Tensor,
+        return_n_logits: Tensor,
+        kv_cache_inputs: tuple[Tensor, ...] | None = None,
     ) -> None:
+        self.attention_mask = attention_mask
         self.next_tokens_batch = next_tokens_batch
-        self.attention_mask = attention_mask
         self.row_offsets = row_offsets
-        self.attention_mask = attention_mask
-        # Qwen3 Embedding does not use KV cache for single-pass embedding generation.
-        self.kv_cache_inputs = None
+        self.return_n_logits = return_n_logits
+        self.kv_cache_inputs = kv_cache_inputs
 
 
-class Qwen3EmbeddingPipelineModel(PipelineModel[TextContext]):
+class Qwen3EmbeddingPipelineModel(PipelineModel[TextContext], KVCacheMixin):
     """Pipeline model for Qwen3 Embedding models.
     
     This model processes text inputs and generates embeddings using
@@ -111,16 +117,6 @@ class Qwen3EmbeddingPipelineModel(PipelineModel[TextContext]):
             return_logits,
         )
         self.model = self.load_model(session)
-        # Embedding models don't use KV cache, but serve layer may check for it
-        # Use NullKVCacheManager which provides a no-op implementation
-        kv_params = self.get_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=[DeviceRef.from_device(devices[0])],
-            kv_cache_config=kv_cache_config,
-            cache_dtype=self.dtype,
-        )
-        self.kv_manager = NullKVCacheManager(params=kv_params)
 
     @classmethod
     def get_kv_params(
@@ -162,8 +158,16 @@ class Qwen3EmbeddingPipelineModel(PipelineModel[TextContext]):
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, Qwen3EmbeddingInputs)
+        
+        # Get KV cache inputs if available, otherwise use empty tuple
+        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+        
         model_outputs = self.model.execute(
-            model_inputs.next_tokens_batch, model_inputs.attention_mask, model_inputs.row_offsets
+            model_inputs.attention_mask,
+            model_inputs.next_tokens_batch,
+            model_inputs.row_offsets,
+            model_inputs.return_n_logits,
+            *curr_kv_cache_inputs,
         )
         assert isinstance(model_outputs[0], Tensor)
 
@@ -200,22 +204,75 @@ class Qwen3EmbeddingPipelineModel(PipelineModel[TextContext]):
         # Compute attention mask.
         attention_mask = (next_tokens_batch != pad_value).astype(np.float32)
 
+        # Flatten tokens to ragged format [total_seq_len] like generative model
+        # This is what the Qwen3 model expects
+        tokens_flat = np.concatenate(tokens)
+
         # Compute row offsets for ragged tensor format
-        # Since we're flattening the padded batch, row_offsets marks the boundaries
-        # of each sequence in the flattened array (including padding)
-        batch_size, seq_len = next_tokens_batch.shape
-        row_offsets = np.arange(0, (batch_size + 1) * seq_len, seq_len, dtype=np.uint32)
+        # These mark the start/end boundaries of each sequence in the flattened array
+        row_offsets = np.zeros(len(tokens) + 1, dtype=np.uint32)
+        np.cumsum(
+            [0] + [len(t) for t in tokens],
+            dtype=np.uint32,
+            out=row_offsets,
+        )
+
+        # return_n_logits tensor - must be on CPU
+        return_n_logits_tensor = Tensor.from_numpy(
+            np.array([return_n_logits], dtype=np.int64)
+        )  # Defaults to CPU
+
+        # Get KV cache inputs from manager
+        # For embeddings, we need to provide KV cache tensors even though we don't use them
+        # between requests. Create empty/zero KV cache inputs.
+        if kv_cache_inputs is None:
+            # Create empty KV cache inputs manually
+            # Get the KV blocks tensor from the manager (first device)
+            kv_blocks = self.kv_manager._replica_managers[0].device_tensors[0]
+            
+            batch_size = len(tokens)
+            # Cache lengths: all zeros since we don't have cached tokens
+            cache_lengths = Tensor.from_numpy(
+                np.zeros(batch_size, dtype=np.uint32)
+            ).to(self.devices[0])
+            
+            # Lookup table: maps sequences to blocks (just use sequential blocks)
+            # Calculate max_pages based on max sequence length and page size
+            page_size = self.kv_params.page_size
+            max_seq_len = self.pipeline_config.max_length
+            max_pages = (max_seq_len + page_size - 1) // page_size  # Ceiling division
+            
+            lookup_table = Tensor.from_numpy(
+                np.arange(batch_size * max_pages, dtype=np.uint32).reshape(batch_size, max_pages)
+            ).to(self.devices[0])
+            
+            # Max lengths: [max_seq_length, max_cache_length] per sequence
+            # This must be on CPU according to KVCacheParams.get_symbolic_inputs
+            max_lengths = Tensor.from_numpy(
+                np.array([[max_seq_len, max_seq_len] for _ in range(batch_size)], dtype=np.uint32)
+            )  # Defaults to CPU
+            
+            kv_inputs_tuple = (kv_blocks, cache_lengths, lookup_table, max_lengths)
+        else:
+            kv_inputs_tuple = (
+                kv_cache_inputs.kv_blocks,
+                kv_cache_inputs.cache_lengths,
+                kv_cache_inputs.lookup_table,
+                kv_cache_inputs.max_lengths,
+            )
 
         return Qwen3EmbeddingInputs(
-            next_tokens_batch=Tensor.from_numpy(next_tokens_batch).to(
+            attention_mask=Tensor.from_numpy(attention_mask).to(
                 self.devices[0]
             ),
-            attention_mask=Tensor.from_numpy(attention_mask).to(
+            next_tokens_batch=Tensor.from_numpy(tokens_flat).to(
                 self.devices[0]
             ),
             row_offsets=Tensor.from_numpy(row_offsets).to(
                 self.devices[0]
             ),
+            return_n_logits=return_n_logits_tensor,
+            kv_cache_inputs=kv_inputs_tuple,
         )
 
     def prepare_next_token_inputs(
@@ -247,6 +304,8 @@ class Qwen3EmbeddingPipelineModel(PipelineModel[TextContext]):
             self.huggingface_config,
             self.dtype,
             DeviceRef.from_device(self.devices[0]),
+            self.kv_params,
+            self.kv_cache_config,
         )
         after_build = time.perf_counter()
 

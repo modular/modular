@@ -21,6 +21,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.weights import WeightData
 from max.nn import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
@@ -76,6 +77,8 @@ def build_graph(
     huggingface_config: AutoConfig,
     dtype: DType,
     input_device: DeviceRef,
+    kv_params: KVCacheParams,
+    kv_cache_config: KVCacheConfig,
 ) -> Graph:
     """Build the computation graph for Qwen3 Embedding model.
     
@@ -85,41 +88,18 @@ def build_graph(
         huggingface_config: HuggingFace model configuration
         dtype: Data type for computation
         input_device: Device to place inputs on
+        kv_params: KV cache parameters for proper graph input construction
+        kv_cache_config: KV cache configuration
     
     Returns:
         Compiled graph for embedding generation
     """
-    # For embedding generation, we use batch_size=1 and variable sequence length
-    # This matches the encode command usage pattern
-    batch_size = 1
-    
-    # Graph input types with concrete batch size
-    # We need: input_ids, attention_mask, and row_offsets (like text generation)
-    input_ids_type = TensorType(
-        DType.int64, shape=[batch_size, "seq_len"], device=input_device
-    )
-    attention_mask_type = TensorType(
-        DType.float32, shape=[batch_size, "seq_len"], device=input_device
-    )
-    # Row offsets for ragged tensor: [0, seq_len] for batch_size=1
-    # Use symbolic dimension to avoid layout type issues
-    row_offsets_type = TensorType(
-        DType.uint32, shape=["row_offsets_len"], device=input_device
-    )
-
     # Convert state_dict to the expected format  
     # Most entries are already WeightData, just ensure the type is correct
     state_dict_converted: dict[str, WeightData] = {}
     for k, v in state_dict.items():
         # Assume all values can be converted to WeightData or are already WeightData
         state_dict_converted[k] = v  # type: ignore
-
-    # Create a minimal KV cache config for single forward pass
-    # We don't actually cache anything for embeddings, but Qwen3 model needs it
-    kv_cache_config = KVCacheConfig(
-        enable_prefix_caching=False,
-        cache_strategy="paged",
-    )
 
     # Create model config for Qwen3 - we'll use it to build the model
     # but configure it to return hidden states instead of logits
@@ -139,96 +119,51 @@ def build_graph(
         return_hidden_states=ReturnHiddenStates.ALL,  # Enable hidden states for embeddings
     )
 
+    # Build the Qwen3 model - Qwen3-Embedding uses the full CausalLM model
+    # with tied embeddings (lm_head shares weights with embed_tokens)
+    qwen3_model = Qwen3(model_config)
+    
+    # Load all weights - the model has lm_head with tied weights
+    qwen3_model.load_state_dict(
+        state_dict_converted,
+        override_quantization_encoding=True,
+        weight_alignment=1,
+        strict=False,  # Allow missing weights if any
+    )
+
+    # Get proper graph input types from the model, including KV cache inputs
+    graph_inputs = qwen3_model.input_types(kv_params)
+    
+    # Add attention_mask as an additional input for pooling
+    # attention_mask shape: [batch_size, seq_len]
+    attention_mask_type = TensorType(
+        DType.float32, shape=["batch_size", "seq_len"], device=input_device
+    )
+    # Prepend attention mask to the graph inputs
+    graph_inputs_with_mask = (attention_mask_type,) + graph_inputs
+
     with Graph(
-        "qwen3_embedding", input_types=[input_ids_type, attention_mask_type, row_offsets_type]
+        "qwen3_embedding", input_types=graph_inputs_with_mask
     ) as graph:
-        # Build the Qwen3 model - Qwen3-Embedding uses the full CausalLM model
-        # with tied embeddings (lm_head shares weights with embed_tokens)
-        qwen3_model = Qwen3(model_config)
-        
-        # Load all weights - the model has lm_head with tied weights
-        qwen3_model.load_state_dict(
-            state_dict_converted,
-            override_quantization_encoding=True,
-            weight_alignment=1,
-            strict=False,  # Allow missing weights if any
-        )
-        
-        input_ids = graph.inputs[0].tensor
-        attention_mask = graph.inputs[1].tensor
+        # Extract inputs: attention_mask, then the standard model inputs
+        attention_mask = graph.inputs[0].tensor
+        tokens = graph.inputs[1].tensor
         input_row_offsets = graph.inputs[2].tensor
+        return_n_logits = graph.inputs[3].tensor
+        kv_cache_inputs = graph.inputs[4:]
         
-        # Flatten input_ids to ragged format [seq_len] since batch_size=1
-        input_ids_flat = ops.reshape(input_ids, (-1,))
-        
-        # return_n_logits = batch_size = 1 (return one set of logits)
-        return_n_logits = ops.constant(batch_size, dtype=DType.int64, device=DeviceRef.CPU())
-        
-        # Create KV cache for embedding generation
+        # Construct KV cache collection from graph inputs (like generative model)
         from max.nn.kv_cache import PagedCacheValues
-        
-        # Get KV cache parameters
-        num_layers = model_config.num_hidden_layers
-        num_kv_heads = model_config.num_key_value_heads
-        head_dim = model_config.kv_params.head_dim
-        page_size = kv_cache_config.kv_cache_page_size
-        
-        # Create buffer for KV cache
-        # Shape: (num_blocks, 2, num_layers, page_size, num_kv_heads, head_dim)
-        from max.graph import BufferType
-        
-        # For embeddings, we need at least enough blocks for the batch
-        num_blocks = max(1, batch_size)
-        kv_block_buffer = ops.buffer_create(
-            BufferType(
-                dtype,
-                shape=(num_blocks, 2, num_layers, page_size, num_kv_heads, head_dim),
-                device=input_device,
-            )
-        )
-        
-        # cache_lengths: [batch_size] - number of cached tokens per sequence (0 for new embeddings)
-        cache_lengths = ops.constant(
-            np.zeros(batch_size, dtype=np.uint32),
-            dtype=DType.uint32,
-            device=input_device,
-        )
-        
-        # lookup_table: [batch_size, max_pages_per_seq] - maps sequences to blocks
-        # For embeddings, use model's max_seq_len to determine max pages needed
-        max_seq_len = model_config.max_seq_len
-        max_pages = (max_seq_len + page_size - 1) // page_size
-        lookup_table_np = np.array(
-            [[i] + [0] * (max_pages - 1) for i in range(batch_size)],
-            dtype=np.uint32  # Use uint32 as kernels expect unsigned int
-        )
-        lookup_table = ops.constant(
-            lookup_table_np,
-            dtype=DType.uint32,  # Match numpy dtype
-            device=input_device,
-        )
-        
-        # max_lengths: [batch_size, 2] containing [max_seq_length, max_cache_length] per sequence
-        max_lengths_np = np.array(
-            [[max_seq_len, max_seq_len] for _ in range(batch_size)],
-            dtype=np.uint32
-        )
-        max_lengths = ops.constant(
-            max_lengths_np,
-            dtype=DType.uint32,
-            device=input_device,
-        )
-        
         kv_collection = PagedCacheValues(
-            kv_blocks=kv_block_buffer,
-            cache_lengths=cache_lengths,
-            lookup_table=lookup_table,
-            max_lengths=max_lengths,
+            kv_blocks=kv_cache_inputs[0].buffer,
+            cache_lengths=kv_cache_inputs[1].tensor,
+            lookup_table=kv_cache_inputs[2].tensor,
+            max_lengths=kv_cache_inputs[3].tensor,
         )
         
         # Call the model - returns tuple (logits, hidden_states)
         outputs = qwen3_model(
-            input_ids_flat,
+            tokens,
             kv_collection,
             return_n_logits,
             input_row_offsets,
@@ -242,7 +177,11 @@ def build_graph(
         # Use attention_mask to find the last valid (non-padding) token
         embeddings = last_token_pool(hidden_states, attention_mask, input_row_offsets)
         
+        # Cast to float32 for compatibility with numpy/dlpack
+        # bfloat16 is not supported by dlpack's to_numpy conversion
+        embeddings_f32 = ops.cast(embeddings, DType.float32)
+        
         # Output the embeddings [batch_size, hidden_size]
-        graph.output(embeddings)
+        graph.output(embeddings_f32)
 
     return graph

@@ -13,6 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
+from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
@@ -33,11 +34,11 @@ qwen3_embedding_arch = SupportedArchitecture(
     ],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.float32: [],
-        SupportedEncoding.bfloat16: [],
-        SupportedEncoding.q4_0: [],
-        SupportedEncoding.q4_k: [],
-        SupportedEncoding.q6_k: [],
+        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.q4_0: [KVCacheStrategy.PAGED],
+        SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
+        SupportedEncoding.q6_k: [KVCacheStrategy.PAGED],
     },
     pipeline_model=Qwen3EmbeddingPipelineModel,
     tokenizer=TextTokenizer,
