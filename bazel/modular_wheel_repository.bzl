@@ -16,7 +16,7 @@ _WHEELS = [
 def _rebuild_wheel(rctx):
     for py_version in PYTHON_VERSIONS_DOTTED:
         rctx.download_and_extract(
-            url = "{base_url}/max/max-{version}-cp{py}-cp{py}-{platform}.whl".format(
+            url = "{base_url}/max-{version}-cp{py}-cp{py}-{platform}.whl".format(
                 base_url = rctx.attr.base_url,
                 version = rctx.attr.version,
                 py = py_version.replace(".", ""),
@@ -27,9 +27,8 @@ def _rebuild_wheel(rctx):
         version_prefix = "0." if name.startswith("mojo") else ""
         version = version_prefix + rctx.attr.version
         rctx.download_and_extract(
-            url = "{}/{}/{}-{}-py3-none-{}.whl".format(
+            url = "{}/{}-{}-py3-none-{}.whl".format(
                 rctx.attr.base_url,
-                name.replace("_", "-"),
                 name,
                 version,
                 _PLATFORM_MAPPINGS[rctx.attr.platform],

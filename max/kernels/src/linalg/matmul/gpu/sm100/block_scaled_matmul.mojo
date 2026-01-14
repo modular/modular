@@ -1119,7 +1119,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 ) raises:
     # Feature flag: use sm100_structured implementation when enabled
     @parameter
-    if _USE_STRUCTURED:
+    if _USE_STRUCTURED and sfa_dtype == sfb_dtype == MXFP8_SF_DTYPE:
         from ..sm100_structured.block_scaled_matmul import (
             blackwell_block_scaled_matmul_tma_umma_warp_specialized as structured_impl,
         )

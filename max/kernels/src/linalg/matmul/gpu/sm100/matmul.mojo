@@ -107,7 +107,7 @@ from ..profiler import (
 from .pipeline import ProducerConsumerPipeline
 
 # Feature flag: set MODULAR_USE_STRUCTURED_SM100=1 to use sm100_structured
-comptime _USE_STRUCTURED = env_get_bool["MODULAR_USE_STRUCTURED_SM100", False]()
+comptime _USE_STRUCTURED = env_get_bool["MODULAR_USE_STRUCTURED_SM100", True]()
 
 
 @fieldwise_init
