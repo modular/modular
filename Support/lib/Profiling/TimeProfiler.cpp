@@ -543,7 +543,7 @@ TimeTraceProfiler::TimeTraceProfiler(unsigned timeTraceGranularity,
 #ifndef NDEBUG
   llvm::dbgs() << "PROFILE: WARNING: Profiling with NDEBUG not defined\n";
 #endif
-#if MODULAR_DEBUG
+#ifdef MODULAR_DEBUG
   llvm::dbgs() << "PROFILE: WARNING: Profiling with MODULAR_DEBUG defined\n";
 #endif
 
