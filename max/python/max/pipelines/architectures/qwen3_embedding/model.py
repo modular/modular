@@ -78,6 +78,14 @@ class DummyKVManager:
     def get_runtime_inputs(self, *args, **kwargs):
         """Return None since embeddings don't use KV cache."""
         return None
+    
+    def step(self, *args, **kwargs):
+        """No-op step for serving compatibility."""
+        pass
+    
+    def release(self, *args, **kwargs):
+        """No-op release for serving compatibility."""
+        pass
 
 
 class Qwen3EmbeddingInputs(ModelInputs):
