@@ -28,7 +28,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.interfaces import RequestID
+from max.kv_cache import NullKVCacheManager
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext
@@ -50,42 +50,6 @@ from .model_config import Qwen3EmbeddingConfig
 logger = logging.getLogger("max.pipelines")
 
 PAD_VALUE = 1
-
-
-class DummyKVManager:
-    """Dummy KV cache manager for embeddings that don't use KV cache.
-    
-    This satisfies the serve layer's interface requirements without
-    actually managing any cache.
-    """
-    
-    def contains(self, request_id: RequestID) -> bool:
-        """Always returns False since embeddings don't cache."""
-        return False
-    
-    def claim(self, *args, **kwargs):
-        """No-op claim."""
-        pass
-    
-    def allocate(self, *args, **kwargs):
-        """No-op allocation."""
-        pass
-    
-    def free(self, *args, **kwargs):
-        """No-op free."""
-        pass
-    
-    def get_runtime_inputs(self, *args, **kwargs):
-        """Return None since embeddings don't use KV cache."""
-        return None
-    
-    def step(self, *args, **kwargs):
-        """No-op step for serving compatibility."""
-        pass
-    
-    def release(self, *args, **kwargs):
-        """No-op release for serving compatibility."""
-        pass
 
 
 class Qwen3EmbeddingInputs(ModelInputs):
@@ -148,7 +112,15 @@ class Qwen3EmbeddingPipelineModel(PipelineModel[TextContext]):
         )
         self.model = self.load_model(session)
         # Embedding models don't use KV cache, but serve layer may check for it
-        self.kv_manager = DummyKVManager()
+        # Use NullKVCacheManager which provides a no-op implementation
+        kv_params = self.get_kv_params(
+            huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
+            devices=[DeviceRef.from_device(devices[0])],
+            kv_cache_config=kv_cache_config,
+            cache_dtype=self.dtype,
+        )
+        self.kv_manager = NullKVCacheManager(params=kv_params)
 
     @classmethod
     def get_kv_params(
