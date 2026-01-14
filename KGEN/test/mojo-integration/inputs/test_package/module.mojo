@@ -72,3 +72,15 @@ fn dont_inline_me():
 @export
 fn exported_func():
     pass
+
+
+# This function calls a closure, whose trait is preserved by the package. When
+# a module using this package uses a closure with an identical signature, the
+# declaration will first be pulled from this package. Thus the signatures of
+# the two closures must match.
+fn call_closure[
+    func: fn[x: Int, y: Int, z: Int] (idx: Int) unified -> None,
+    //,
+    simd_width: Int,
+](size: Int, closure: func):
+    closure[simd_width, 0, 1](0)

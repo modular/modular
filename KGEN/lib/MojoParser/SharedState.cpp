@@ -1580,6 +1580,12 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
       ASTDecl &traitDecl = declResolver->addBytecodeDecl(
           &*trait, trait.getSymNameAttr(), &getTopLevelDecl(),
           DeclResolvedness::body);
+      traitDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForTrait(trait));
+      // Ensure that the trait's methods are registered, too.
+      for (auto fn : trait.getOps<FnOp>()) {
+        declResolver->addBytecodeDecl(fn, fn.getSourceNameAttr(), &traitDecl,
+                                      DeclResolvedness::body);
+      }
       return &traitDecl;
     };
     this->getClosureEmitter().getOrCreateClosureTrait(key, creation);
