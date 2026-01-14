@@ -699,6 +699,42 @@ def test_struct_field_type_by_name_matches_index():
     )
 
 
+def test_struct_field_type_by_name_as_type_annotation():
+    # Test that ReflectedType.T can be used as a type annotation.
+    # This tests the fix for: https://github.com/modularml/modular/issues/5754
+    comptime x_type = struct_field_type_by_name[SimpleStruct, "x"]()
+    var value: x_type.T = 42
+    assert_equal(value, 42)
+
+    comptime y_type = struct_field_type_by_name[SimpleStruct, "y"]()
+    var float_value: y_type.T = 3.14
+    assert_true(float_value > 3.0)
+
+
+def test_struct_field_type_by_name_nested_struct():
+    # Test that ReflectedType.T works with nested struct types.
+    comptime inner_type = struct_field_type_by_name[Outer, "inner"]()
+    assert_equal(get_type_name[inner_type.T](), "test_reflection.Inner")
+
+    # Also verify we can use the count field type as an annotation
+    comptime count_type = struct_field_type_by_name[Outer, "count"]()
+    var count_value: count_type.T = 42
+    assert_equal(count_value, 42)
+
+
+def test_struct_field_type_by_name_parametric_struct():
+    # Test that ReflectedType.T works with parametric struct fields.
+    comptime list_type = struct_field_type_by_name[
+        StructWithMultipleParametricFields, "list_field"
+    ]()
+    # Verify we can use the type as an annotation and it works as List[Int]
+    var list_value: list_type.T = List[Int]()
+    list_value.append(1)
+    list_value.append(2)
+    list_value.append(3)
+    assert_equal(len(list_value), 3)
+
+
 # ===----------------------------------------------------------------------=== #
 # Magic Function Tests (for generic type support)
 # ===----------------------------------------------------------------------=== #

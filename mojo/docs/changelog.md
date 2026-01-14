@@ -836,3 +836,7 @@ or removed in future releases.
   when using `get_type_name` with nested parametric types from `struct_field_types`.
 - [Issue #5731](https://github.com/modular/modular/issues/5731): Compiler crash
   when using reflection functions on builtin types like `Int`, `NoneType`, or
+  `Origin`.
+- [Issue #5754](https://github.com/modular/modular/issues/5754):
+  `struct_field_type_by_name` now works correctly when using `ReflectedType.T`
+  as a type annotation.
