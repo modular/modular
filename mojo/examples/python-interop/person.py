@@ -13,14 +13,8 @@
 
 # DOC: mojo/docs/manual/python/mojo-from-python.mdx
 
-import os
-import sys
-
 # The Mojo importer module will handle compilation of the Mojo files.
-import mojo.importer  # noqa: F401
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, current_dir)
+import mojo.importer  # noqa: F401, I001
 
 import person_module  # type: ignore
 

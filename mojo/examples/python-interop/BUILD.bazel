@@ -6,6 +6,7 @@ modular_py_binary(
     name = "hello",
     srcs = ["hello.py"],
     data = ["hello_mojo.mojo"],
+    imports = ["."],
     mojo_deps = select({
         "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
         "//conditions:default": [],
@@ -24,6 +25,7 @@ modular_py_binary(
     name = "person",
     srcs = ["person.py"],
     data = ["person_module.mojo"],
+    imports = ["."],
     mojo_deps = select({
         "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
         "//conditions:default": [],
@@ -42,6 +44,7 @@ modular_py_binary(
     name = "mandelbrot",
     srcs = ["mandelbrot.py"],
     data = ["mandelbrot_mojo.mojo"],
+    imports = ["."],
     mojo_deps = [
         "//max:layout",
     ] + select({
