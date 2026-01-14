@@ -27,7 +27,7 @@ import llguidance.numpy
 import numpy as np
 import numpy.typing as npt
 from llguidance import LLMatcher
-from max.driver import load_devices
+from max.driver import Tensor, load_devices
 from max.engine import Model
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
@@ -574,6 +574,8 @@ class TextGenerationPipeline(
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
+        device0 = self._devices[0]
+        pinned = not device0.is_host
         # Prepare the batch.
         model_inputs, num_steps, bitmask, flat_batch = self.prepare_batch(
             inputs.batches, inputs.num_steps
@@ -597,7 +599,7 @@ class TextGenerationPipeline(
                     pipeline_config=self._pipeline_config,
                     context_batch=flat_batch,
                     num_steps=num_steps,
-                    device=self._devices[0],
+                    device=device0,
                     bitmask=bitmask,
                     vocab_size=self.vocab_size,
                 )
@@ -704,14 +706,27 @@ class TextGenerationPipeline(
             return {}
 
         # Do the copy to host for each token generated.
-        with Tracer("generated_tokens.to(CPU())") as tracer:
-            generated_tokens_host = (
-                sampling_processor.generated_tokens.to_numpy()
+        with Tracer("D2H generated_tokens") as tracer:
+            generated_tokens_device = sampling_processor.generated_tokens
+            # Allocate a pinned tensor on the host for faster async d2h transfer
+            # speeds. If the model is on host, then fall back to normal pageable
+            # memory.
+            generated_tokens_host = Tensor(
+                shape=generated_tokens_device.shape,
+                dtype=generated_tokens_device.dtype,
+                device=device0,
+                pinned=not device0.is_host,
             )
+            generated_tokens_host.inplace_copy_from(generated_tokens_device)
+            # We assume that the call to `.to_numpy()` will insert a device
+            # synchronize to guarantee that the async d2h transfer is done.
+            # However, if this API changes we will have to add an explicit
+            # device0.synchronize() here.
+            generated_tokens_np = generated_tokens_host.to_numpy()
 
         # Update the context object.
         res = self.update_context_and_prepare_responses(
-            generated_tokens_host,
+            generated_tokens_np,
             batch_log_probabilities,
             flat_batch,
             num_steps,
