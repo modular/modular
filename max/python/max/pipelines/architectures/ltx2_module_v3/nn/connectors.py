@@ -57,9 +57,9 @@ class LTX2RotaryPosEmbed1d(nn.Module):
         batch_size: int,
         pos: int,
         device: str | torch.device,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[Tensor, Tensor]:
         # 1. Get 1D position ids
-        grid_1d = torch.arange(pos, dtype=torch.float32, device=device)
+        grid_1d = Tensor.arange(pos, dtype=DType.float32, device=device)
         # Get fractional indices relative to self.base_seq_len
         grid_1d = grid_1d / self.base_seq_len
         grid = grid_1d.unsqueeze(0).repeat(
@@ -68,7 +68,7 @@ class LTX2RotaryPosEmbed1d(nn.Module):
 
         # 2. Calculate 1D RoPE frequencies
         num_rope_elems = 2  # 1 (because 1D) * 2 (for cos, sin) = 2
-        freqs_dtype = torch.float64 if self.double_precision else torch.float32
+        freqs_dtype = torch.float64 if self.double_precision else DType.float32
         pow_indices = torch.pow(
             self.theta,
             torch.linspace(
@@ -79,7 +79,7 @@ class LTX2RotaryPosEmbed1d(nn.Module):
                 device=device,
             ),
         )
-        freqs = (pow_indices * torch.pi / 2.0).to(dtype=torch.float32)
+        freqs = (pow_indices * torch.pi / 2.0).to(dtype=DType.float32)
 
         # 3. Matrix-vector outer product between pos ids of shape (batch_size, seq_len) and freqs vector of shape
         # (self.dim // 2,).
@@ -99,8 +99,8 @@ class LTX2RotaryPosEmbed1d(nn.Module):
                 sin_padding = torch.zeros_like(
                     sin_freqs[:, :, : self.dim % num_rope_elems]
                 )
-                cos_freqs = torch.cat([cos_padding, cos_freqs], dim=-1)
-                sin_freqs = torch.cat([sin_padding, sin_freqs], dim=-1)
+                cos_freqs = F.concat([cos_padding, cos_freqs], dim=-1)
+                sin_freqs = F.concat([sin_padding, sin_freqs], dim=-1)
 
         elif self.rope_type == "split":
             expected_freqs = self.dim // 2
@@ -113,8 +113,8 @@ class LTX2RotaryPosEmbed1d(nn.Module):
                 cos_padding = torch.ones_like(cos_freq[:, :, :pad_size])
                 sin_padding = torch.zeros_like(sin_freq[:, :, :pad_size])
 
-                cos_freq = torch.concatenate([cos_padding, cos_freq], axis=-1)
-                sin_freq = torch.concatenate([sin_padding, sin_freq], axis=-1)
+                cos_freq = F.concat([cos_padding, cos_freq], axis=-1)
+                sin_freq = F.concat([sin_padding, sin_freq], axis=-1)
 
             # Reshape freqs to be compatible with multi-head attention
             b = cos_freq.shape[0]
@@ -141,7 +141,7 @@ class LTX2TransformerBlock1d(nn.Module):
     ):
         super().__init__()
 
-        self.norm1 = torch.nn.RMSNorm(dim, eps=eps, elementwise_affine=False)
+        self.norm1 = nn.RMSNorm(dim, eps=eps, elementwise_affine=False)
         self.attn1 = LTX2Attention(
             query_dim=dim,
             heads=num_attention_heads,
@@ -151,15 +151,15 @@ class LTX2TransformerBlock1d(nn.Module):
             rope_type=rope_type,
         )
 
-        self.norm2 = torch.nn.RMSNorm(dim, eps=eps, elementwise_affine=False)
+        self.norm2 = nn.RMSNorm(dim, eps=eps, elementwise_affine=False)
         self.ff = FeedForward(dim, activation_fn=activation_fn)
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
-        rotary_emb: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+        hidden_states: Tensor,
+        attention_mask: Tensor | None = None,
+        rotary_emb: Tensor | None = None,
+    ) -> Tensor:
         norm_hidden_states = self.norm1(hidden_states)
         attn_hidden_states = self.attn1(
             norm_hidden_states,
@@ -231,7 +231,7 @@ class LTX2ConnectorTransformer1d(nn.Module):
             ]
         )
 
-        self.norm_out = torch.nn.RMSNorm(
+        self.norm_out = nn.RMSNorm(
             self.inner_dim, eps=eps, elementwise_affine=False
         )
 
@@ -239,10 +239,10 @@ class LTX2ConnectorTransformer1d(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
+        hidden_states: Tensor,
+        attention_mask: Tensor | None = None,
         attn_mask_binarize_threshold: float = -9000.0,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[Tensor, Tensor]:
         # hidden_states shape: [batch_size, seq_len, hidden_dim]
         # attention_mask shape: [batch_size, seq_len] or [batch_size, 1, 1, seq_len]
         batch_size, seq_len, _ = hidden_states.shape
@@ -282,7 +282,7 @@ class LTX2ConnectorTransformer1d(nn.Module):
                     hidden_states_non_padded, pad_lengths, strict=False
                 )
             ]
-            padded_hidden_states = torch.cat(
+            padded_hidden_states = F.concat(
                 [x.unsqueeze(0) for x in padded_hidden_states], dim=0
             )  # [B, L, D]
 
@@ -372,8 +372,8 @@ class LTX2TextConnectors(ModelMixin, ConfigMixin):
 
     def forward(
         self,
-        text_encoder_hidden_states: torch.Tensor,
-        attention_mask: torch.Tensor,
+        text_encoder_hidden_states: Tensor,
+        attention_mask: Tensor,
         additive_mask: bool = False,
     ):
         # Convert to additive attention mask, if necessary
