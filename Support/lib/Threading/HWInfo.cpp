@@ -55,7 +55,7 @@ using namespace M;
 //===----------------------------------------------------------------------===//
 
 namespace {
-#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+#if HAVE_LINUX_X86_SYSTEM_INFO
 /// Function is very similar to what linux uses. We will mainly use
 /// this to detect P and E cores on x86.
 static inline void native_cpuid(unsigned int *eax, unsigned int *ebx,
@@ -77,7 +77,7 @@ std::unique_ptr<llvm::MemoryBuffer> fileBuffer(StringRef path) {
 
 } // namespace
 
-#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+#if HAVE_LINUX_X86_SYSTEM_INFO
 ErrorOr<std::string>
 Detail::parseV1CPUCgroupFile(const llvm::MemoryBuffer &buf) {
   std::string cgroup;
@@ -338,7 +338,7 @@ ErrorOr<CPUSystemInfo> M::Detail::getLinuxX86CPUSystemInfo() {
 #endif
 
 ErrorOr<CPUSystemInfo> CPUSystemInfo::get() {
-#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+#if HAVE_LINUX_X86_SYSTEM_INFO
   return Detail::getLinuxX86CPUSystemInfo();
 #endif
   return Error("CPUSystemInfo is not supported by this build");
@@ -376,7 +376,7 @@ size_t M::getNumPerformanceCores() {
       pcores > 0)
     return static_cast<size_t>(pcores);
   return M::getNumPhysicalCores();
-#elif defined(HAVE_LINUX_X86_SYSTEM_INFO)
+#elif HAVE_LINUX_X86_SYSTEM_INFO
   // Detect hybrid cores first.
   // https://www.intel.com/content/www/us/en/developer/articles/guide/12th-gen-intel-core-processor-gamedev-guide.html
   unsigned eax = 7, ecx = 0, ebx, edx;
@@ -525,7 +525,7 @@ std::vector<std::string> M::localMACs() {
 }
 
 ErrorOr<CPULimits> CPULimits::get() {
-#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+#if HAVE_LINUX_X86_SYSTEM_INFO
   CPULimits limits; // Translate below.
   Detail::linuxCPULimits linuxLimits = Detail::getLinuxCPULimits();
   if (linuxLimits.quota_us >= 0 && linuxLimits.period_us > 0)

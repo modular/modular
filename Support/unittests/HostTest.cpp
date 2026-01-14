@@ -12,7 +12,7 @@
 
 using namespace M;
 
-#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+#if HAVE_LINUX_X86_SYSTEM_INFO
 // A two socket system, first with 3 cores + SMT, the second with 2 plain cores.
 constexpr static const char *kCpuInfo = R"(
 processor	: 0

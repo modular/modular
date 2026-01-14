@@ -23,7 +23,9 @@
 #include <vector>
 
 #if defined(__linux__) && (defined(__i386__) || defined(__x86_64__))
-#define HAVE_LINUX_X86_SYSTEM_INFO
+#define HAVE_LINUX_X86_SYSTEM_INFO 1
+#else
+#define HAVE_LINUX_X86_SYSTEM_INFO 0
 #endif
 
 namespace M {
@@ -112,7 +114,7 @@ struct CPULimits {
 //===----------------------------------------------------------------------===//
 
 namespace Detail {
-#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+#if HAVE_LINUX_X86_SYSTEM_INFO
 /// Specifies CPU quota per period of CPU time allotted by the Linux CFS.
 struct linuxCPULimits {
   int quota_us = -1;
@@ -137,7 +139,7 @@ ErrorOr<CPUSystemInfo>
 getLinuxX86CPUSystemInfoImpl(const cpu_set_t &availableCpus,
                              std::unique_ptr<llvm::MemoryBuffer> buf);
 ErrorOr<CPUSystemInfo> getLinuxX86CPUSystemInfo();
-#endif // defined(HAVE_LINUX_X86_SYSTEM_INFO)
+#endif // HAVE_LINUX_X86_SYSTEM_INFO
 
 } // namespace Detail
 } // namespace M
