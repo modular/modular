@@ -51,28 +51,37 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
+    ignore_extra_deps = [
+        # Optional dep of max.graph, used to test loading weights
+        requirement("gguf"),
+    ],
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
     deps = [
-        "//max/python/max",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/entrypoints",
         "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/mlir",
         "//max/python/max/nn",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration/pipelines/python/test_common",
-        requirement("click"),
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration/pipelines/python/test_common:mocks",
+        "//max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
+        "//max/tests/integration/pipelines/python/test_common:registry",
+        requirement("gguf"),
+        requirement("huggingface-hub"),
         requirement("hypothesis"),
+        requirement("msgspec"),
+        requirement("numpy"),
         requirement("safetensors"),
+        requirement("torch"),
     ],
 )
 
@@ -174,13 +183,15 @@ modular_py_test(
     }),
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
         "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
         requirement("numpy"),
     ],
@@ -276,15 +287,22 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
     deps = [
-        "//max/python/max",
-        "//max/python/max/entrypoints",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/test_common",
+        requirement("llguidance"),
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("transformers"),
     ],
 )
 
@@ -342,10 +360,12 @@ modular_py_test(
     gpu_constraints = ["//:has_multi_gpu"],
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("numpy"),
     ],
@@ -362,7 +382,10 @@ modular_py_test(
     env = {
         "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
     },
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    ignore_extra_deps = [
+        # FIXME: GEX-1846
+        "//max/python/max/engine",
+    ],
     deps = [
         "//max/python/max/engine",
         "//max/python/max/graph",

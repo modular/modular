@@ -27,11 +27,12 @@ modular_py_library(
     testonly = True,
     srcs = ["modular_graph_test.py"],
     imports = ["."],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:graph_utils",
         requirement("hypothesis"),
         requirement("torch"),
         requirement("numpy"),
@@ -72,14 +73,19 @@ modular_py_test(
     ],
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
         ":modular_graph_test",
-        "//max/python/max",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/tests/integration/pipelines/python/test_common:graph_utils",
+        requirement("numpy"),
+        requirement("hypothesis"),
         requirement("torch"),
         requirement("torchvision"),
-        requirement("hypothesis"),
     ],
 )
 
@@ -93,11 +99,16 @@ modular_py_test(
     gpu_constraints = ["//:nvidia_gpu"],
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
-        ":modular_graph_test",
-        "//max/python/max",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/tests/integration/pipelines/python/test_common:graph_utils",
+        requirement("hypothesis"),
+        requirement("torch"),
     ],
 )
 
@@ -110,12 +121,16 @@ modular_py_test(
     },
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     target_compatible_with = ["//:amd_gpu"],
     deps = [
-        ":modular_graph_test",
-        "//max/python/max",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("hypothesis"),
+        requirement("numpy"),
     ],
 )
 
@@ -132,11 +147,14 @@ modular_py_test(
         "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
         "//conditions:default": [],
     }),
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":modular_graph_test",
-        "//max/python/max",
-        requirement("torch"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
         requirement("numpy"),
+        requirement("torch"),
     ],
 )

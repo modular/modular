@@ -15,10 +15,11 @@ modular_py_test(
         "-n",
         "auto",
     ],
-    imports = ["."],
-    tags = [
-        "no-pydeps",  # TODO: Fix and re-enable
+    ignore_extra_deps = [
+        # Used for parallel testing
+        requirement("pytest-xdist"),
     ],
+    imports = ["."],
     target_compatible_with = select({
         # Takes too long, this is mostly just testing plumbing into other code so low value.
         "//:asan": ["@platforms//:incompatible"],
@@ -27,7 +28,10 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/experimental",
+        "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("pytest-xdist"),
     ],

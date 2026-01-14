@@ -45,7 +45,7 @@ IDEFICS3_VISION_CONFIG = {
 }
 
 
-def create_config_object(config_dict: dict) -> SimpleNamespace:
+def create_config_object(config_dict: dict) -> SimpleNamespace:  # type: ignore
     """Create a config object from dictionary that HuggingFace expects."""
     config = SimpleNamespace()
     for key, value in config_dict.items():
@@ -99,7 +99,7 @@ def create_idefics3_attention_weights(
 
 @torch.no_grad()
 def generate_pytorch_outputs(
-    config: dict,
+    config: dict,  # type: ignore
     attention_weights: dict[str, torch.Tensor],
     input_tensor: torch.Tensor,
     output_attentions: bool = False,
@@ -125,7 +125,7 @@ def generate_pytorch_outputs(
 
 
 def generate_max_outputs(
-    config: dict,
+    config: dict,  # type: ignore
     attention_weights: dict[str, torch.Tensor],
     input_tensor: torch.Tensor,
     dtype: DType = DType.bfloat16,
