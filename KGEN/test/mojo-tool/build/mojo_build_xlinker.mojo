@@ -22,7 +22,7 @@
 # RUN: mojo build -Xlinker -L%t.dir -Xlinker -lfooshared %s -o %t.dir/run_shared
 # RUN: env LD_LIBRARY_PATH=%t.dir %t.dir/run_shared | FileCheck %s
 
-# HELP: OVERVIEW: lld
+# HELP: OVERVIEW: {{(lld|LLVM Linker)}}
 
 from sys.ffi import external_call
 
