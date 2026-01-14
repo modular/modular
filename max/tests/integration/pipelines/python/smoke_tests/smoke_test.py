@@ -450,7 +450,7 @@ def smoke_test(
     )
     tasks = ["gsm8k_cot_llama"]
     if is_vision_model:
-        tasks.append("chartqa")
+        tasks = ["chartqa"] + tasks
 
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
     results = []
