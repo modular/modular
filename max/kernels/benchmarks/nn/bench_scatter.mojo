@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from random import rand, randint
 
 from benchmark import *
@@ -43,11 +40,11 @@ fn bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
     var input_shape = Index(spec.m1, spec.m2)
     var indices_shape = Index(spec.n1, spec.n2)
 
-    var data_ptr = UnsafePointer[Float32].alloc(input_shape.flattened_length())
+    var data_ptr = alloc[Float32](input_shape.flattened_length())
     rand(data_ptr, input_shape.flattened_length())
     var data_tensor = DynamicTensor[DType.float32, 2](data_ptr, input_shape)
 
-    var indices_ptr = UnsafePointer[Int32].alloc(
+    var indices_ptr = alloc[Int32](
         indices_shape.flattened_length()
     )
     randint(
@@ -60,7 +57,7 @@ fn bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
         indices_ptr, indices_shape
     )
 
-    var updates_ptr = UnsafePointer[Float32].alloc(
+    var updates_ptr = alloc[Float32](
         indices_shape.flattened_length()
     )
     rand(updates_ptr, indices_shape.flattened_length())
@@ -68,7 +65,7 @@ fn bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
         updates_ptr, indices_shape
     )
 
-    var output_ptr = UnsafePointer[Float32].alloc(
+    var output_ptr = alloc[Float32](
         input_shape.flattened_length()
     )
     var output_tensor = DynamicTensor[DType.float32, 2](output_ptr, input_shape)
