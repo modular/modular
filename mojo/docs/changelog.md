@@ -257,6 +257,24 @@ what we publish.
 
 ### Library changes
 
+- The `Hashable` trait now has a default implementation of
+  `__hash__[H: Hasher](self, mut hasher: H)` that uses
+  reflection to automatically hash all struct fields.
+  This means simple structs can conform to `Hashable` without
+  implementing any methods:
+
+  ```mojo
+  @fieldwise_init
+  struct Point(Hashable):
+      var x: Float64
+      var y: Float64
+
+  var p = Point(1.5, 2.7)
+  hash(p)
+  ```
+
+  All fields must conform to `Hashable`. Override `__hash__` for custom hashing.
+
 - The `Writable` trait now has a default implementation of `write_to()` that uses
   reflection to automatically format all struct fields. This means simple structs
   can conform to `Writable` without implementing any methods:

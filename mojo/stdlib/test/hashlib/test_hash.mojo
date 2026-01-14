@@ -150,5 +150,125 @@ def test_hash_comptime():
     assert_equal(hash_22, hash[HasherType=default_comp_time_hasher](22))
 
 
+@fieldwise_init
+struct TestStruct(Hashable):
+    var x: StaticString
+    var y: Int
+    var z: Float32
+
+
+def test_default_conformance():
+    # Test that two instances with the same values hash to the same value
+    var a = TestStruct("hello", 42, 3.14)
+    var b = TestStruct("hello", 42, 3.14)
+    assert_equal(hash(a), hash(b))
+
+    # Test that instances with different values hash to different values
+    var c = TestStruct("world", 42, 3.14)
+    var d = TestStruct("hello", 43, 3.14)
+    var e = TestStruct("hello", 42, 2.71)
+
+    assert_not_equal(hash(a), hash(c))  # different x
+    assert_not_equal(hash(a), hash(d))  # different y
+    assert_not_equal(hash(a), hash(e))  # different z
+
+
+def test_default_conformance_deterministic():
+    var a = TestStruct("hello", 42, 3.14)
+    var b = TestStruct("world", 42, 3.14)
+    # Test that hash is deterministic across multiple calls
+    assert_equal(hash(a), hash(a))
+    assert_equal(hash(b), hash(b))
+
+
+# Test structs for reflection-based default __hash__
+@fieldwise_init
+struct SimpleHashable(Equatable, Hashable, ImplicitlyCopyable):
+    """A simple struct that uses the default reflection-based __hash__."""
+
+    var x: Int
+    var y: Int
+
+    # Uses default reflection-based __hash__ from Hashable trait
+    # Uses default reflection-based __eq__ from Equatable trait
+
+
+@fieldwise_init
+struct NestedHashable(Equatable, Hashable):
+    """A struct with nested fields using default __hash__."""
+
+    var point: SimpleHashable
+    var name: String
+
+    # Uses default reflection-based __hash__ from Hashable trait
+    # Uses default reflection-based __eq__ from Equatable trait
+
+
+@fieldwise_init
+struct EmptyHashable(Equatable, Hashable):
+    """A struct with no fields."""
+
+    pass
+    # Uses default reflection-based __hash__ from Hashable trait
+    # Uses default reflection-based __eq__ from Equatable trait
+
+
+def test_default_hash_simple():
+    """Test the reflection-based default __hash__ with a simple struct."""
+    var p1 = SimpleHashable(1, 2)
+    var p2 = SimpleHashable(1, 2)
+    var p3 = SimpleHashable(1, 3)
+    var p4 = SimpleHashable(2, 2)
+
+    # Equal values must have equal hashes
+    assert_equal(hash(p1), hash(p2))
+
+    # Different values should (usually) have different hashes
+    assert_not_equal(hash(p1), hash(p3))
+    assert_not_equal(hash(p1), hash(p4))
+
+    # Verify deterministic hashing
+    assert_equal(hash(p1), hash(p1))
+
+
+def test_default_hash_nested():
+    """Test the reflection-based default __hash__ with nested structs."""
+    var s1 = NestedHashable(SimpleHashable(1, 2), "hello")
+    var s2 = NestedHashable(SimpleHashable(1, 2), "hello")
+    var s3 = NestedHashable(SimpleHashable(1, 2), "world")
+    var s4 = NestedHashable(SimpleHashable(3, 4), "hello")
+
+    # Equal values must have equal hashes
+    assert_equal(hash(s1), hash(s2))
+
+    # Different values should have different hashes
+    assert_not_equal(hash(s1), hash(s3))
+    assert_not_equal(hash(s1), hash(s4))
+
+
+def test_default_hash_empty():
+    """Test the reflection-based default __hash__ with an empty struct."""
+    var e1 = EmptyHashable()
+    var e2 = EmptyHashable()
+
+    # Empty structs should hash to the same value
+    assert_equal(hash(e1), hash(e2))
+
+
+def test_default_hash_equatable_consistency():
+    """Test that default __hash__ is consistent with default __eq__."""
+    var p1 = SimpleHashable(42, 99)
+    var p2 = SimpleHashable(42, 99)
+    var p3 = SimpleHashable(42, 100)
+
+    # If p1 == p2, then hash(p1) == hash(p2)
+    assert_true(p1 == p2)
+    assert_equal(hash(p1), hash(p2))
+
+    # If p1 != p3, hashes should differ (not guaranteed but expected)
+    assert_true(p1 != p3)
+    assert_not_equal(hash(p1), hash(p3))
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
