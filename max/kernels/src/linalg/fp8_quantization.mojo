@@ -125,9 +125,9 @@ fn quantize_dynamic_scaled_fp8[
     in_dtype: DType,
     scales_dtype: DType,
     //,
-    input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
-        in_dtype, width
-    ],
+    input_fn: fn[width: Int, alignment: Int] (
+        row: Int, col: Int
+    ) capturing -> SIMD[in_dtype, width],
     group_size_or_per_token: Int,
     num_cols: Int,
 ](
@@ -188,9 +188,9 @@ fn quantize_fp8_kernel[
     out_type: DType,
     scales_type: DType,
     in_type: DType,
-    input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
-        in_type, width
-    ],
+    input_fn: fn[width: Int, alignment: Int] (
+        row: Int, col: Int
+    ) capturing -> SIMD[in_type, width],
     num_threads: Int,
     group_size: Int,
 ](
@@ -213,9 +213,9 @@ fn quantize_fp8_kernel[
     with PDL():
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
-            input_vec = input_fn[simd_width](Int(row), Int(idx)).cast[
-                accum_type
-            ]()
+            input_vec = input_fn[simd_width, simd_width](
+                Int(row), Int(idx)
+            ).cast[accum_type]()
             thread_max = max(thread_max, abs(input_vec).reduce_max())
 
         var group_max = block.max[block_size=num_threads, broadcast=True](
@@ -244,9 +244,9 @@ fn quantize_fp8_kernel[
             if use_warp_tiling:
                 pass
             else:
-                input_vec = input_fn[simd_width](Int(row), Int(idx)).cast[
-                    accum_type
-                ]()
+                input_vec = input_fn[simd_width, simd_width](
+                    Int(row), Int(idx)
+                ).cast[accum_type]()
 
             var output_vec = input_vec * scale_factor_recip
 
@@ -259,9 +259,9 @@ fn batched_quantize_dynamic_scaled_fp8[
     in_dtype: DType,
     scales_dtype: DType,
     //,
-    input_fn: fn[width: Int] (batch: Int, row: Int, col: Int) capturing -> SIMD[
-        in_dtype, width
-    ],
+    input_fn: fn[width: Int, alignment: Int] (
+        batch: Int, row: Int, col: Int
+    ) capturing -> SIMD[in_dtype, width],
     group_size_or_per_token: Int,
     num_cols: Int,
 ](
@@ -320,9 +320,9 @@ fn batched_quantize_fp8_kernel[
     out_type: DType,
     scales_type: DType,
     in_type: DType,
-    input_fn: fn[width: Int] (batch: Int, row: Int, col: Int) capturing -> SIMD[
-        in_type, width
-    ],
+    input_fn: fn[width: Int, alignment: Int] (
+        batch: Int, row: Int, col: Int
+    ) capturing -> SIMD[in_type, width],
     num_threads: Int,
     group_size: Int,
 ](
@@ -346,9 +346,9 @@ fn batched_quantize_fp8_kernel[
     with PDL():
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
-            input_vec = input_fn[simd_width](batch_idx, row, idx).cast[
-                accum_type
-            ]()
+            input_vec = input_fn[simd_width, simd_width](
+                batch_idx, row, idx
+            ).cast[accum_type]()
             thread_max = max(thread_max, abs(input_vec).reduce_max())
 
         var group_max = block.max[block_size=num_threads, broadcast=True](
@@ -377,9 +377,9 @@ fn batched_quantize_fp8_kernel[
             if use_warp_tiling:
                 pass
             else:
-                input_vec = input_fn[simd_width](batch_idx, row, idx).cast[
-                    accum_type
-                ]()
+                input_vec = input_fn[simd_width, simd_width](
+                    batch_idx, row, idx
+                ).cast[accum_type]()
 
             var output_vec = input_vec * scale_factor_recip
 

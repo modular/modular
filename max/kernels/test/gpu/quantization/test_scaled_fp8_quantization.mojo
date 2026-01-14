@@ -25,7 +25,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
-from utils import IndexList
+from utils import Index, IndexList
 from utils.numerics import get_accum_type, max_finite, min_finite
 
 
@@ -39,7 +39,7 @@ fn test_static_scaled_fp8_quant[
     N: Optional[Int],
 ](ctx: DeviceContext, scale: Float32, m: Int, n: Int) raises:
     comptime static_shape = DimList(to_dim[M], to_dim[N])
-    var dynamic_shape = IndexList[2](M.or_else(m), N.or_else(n))
+    var dynamic_shape = Index(M.or_else(m), N.or_else(n))
     var total_size = m * n
 
     comptime layout_2d = Layout.row_major(
@@ -124,8 +124,8 @@ fn test_dynamic_fp8_quant[
 
     comptime static_shape = DimList(to_dim[M], to_dim[N])
     comptime static_scales_shape = DimList(to_dim[N] // group_size, to_dim[M])
-    var dynamic_shape = IndexList[2](M.or_else(m), N.or_else(n))
-    var dynamic_scales_shape = IndexList[2](n // group_size, m)
+    var dynamic_shape = Index(M.or_else(m), N.or_else(n))
+    var dynamic_scales_shape = Index(n // group_size, m)
     var total_size = m * n
     var scales_size = (n // group_size) * m
 
@@ -177,8 +177,10 @@ fn test_dynamic_fp8_quant[
     @__copy_capture(in_ndbuffer)
     @always_inline
     @parameter
-    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[in_dtype, width]:
-        return in_ndbuffer.load[width=width](row, col)
+    fn input_fn[
+        width: Int, alignment: Int
+    ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+        return in_ndbuffer.load[width=width, alignment=alignment](row, col)
 
     quantize_dynamic_scaled_fp8[
         input_fn, group_size_or_per_token, in_ndbuffer.shape.get[1]()
@@ -256,8 +258,8 @@ fn test_batched_dynamic_fp8_quant[
         to_dim[K] // group_size,
         to_dim[M],
     )
-    var dynamic_shape = IndexList[3](BS.or_else(bs), M.or_else(m), K.or_else(k))
-    var dynamic_scales_shape = IndexList[3](bs, k // group_size, m)
+    var dynamic_shape = Index(BS.or_else(bs), M.or_else(m), K.or_else(k))
+    var dynamic_scales_shape = Index(bs, k // group_size, m)
     var total_size = bs * m * k
     var scales_size = bs * (k // group_size) * m
 
@@ -314,9 +316,11 @@ fn test_batched_dynamic_fp8_quant[
     @__copy_capture(in_ndbuffer)
     @always_inline
     fn input_fn[
-        width: Int
+        width: Int, alignment: Int
     ](batch: Int, row: Int, col: Int) capturing -> SIMD[in_dtype, width]:
-        return in_ndbuffer.load[width=width](IndexList[3](batch, row, col))
+        return in_ndbuffer.load[width=width, alignment=alignment](
+            Index(batch, row, col)
+        )
 
     batched_quantize_dynamic_scaled_fp8[
         input_fn=input_fn,

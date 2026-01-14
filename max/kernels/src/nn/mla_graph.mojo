@@ -335,7 +335,9 @@ fn mla_prefill_branch_fp8[
     @__copy_capture(k_latent)
     @always_inline
     @parameter
-    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[k_latent.dtype, width]:
+    fn input_fn[
+        width: Int, alignment: Int
+    ](row: Int, col: Int) -> SIMD[k_latent.dtype, width]:
         return k_latent.load[width=width](row, col)
 
     quantize_dynamic_scaled_fp8[
@@ -534,10 +536,10 @@ fn quantize_and_bmm_fp8_helper[
     @__copy_capture(a)
     @always_inline
     fn input_fn[
-        width: Int
+        width: Int, alignment: Int
     ](batch: Int, row: Int, col: Int) capturing -> SIMD[dtype, width]:
         # First transpose the q_nope tensor from [row, batch, col] to [batch, row, col].
-        return a.aligned_load[width=width](IndexList[3](row, batch, col))
+        return a.aligned_load[width=width](Index(row, batch, col))
 
     batched_quantize_dynamic_scaled_fp8[
         input_fn=input_fn,

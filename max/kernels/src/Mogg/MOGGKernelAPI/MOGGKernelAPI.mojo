@@ -9264,11 +9264,11 @@ struct QuantizeDynamicScaledFloat8:
         @parameter
         @always_inline
         fn input_fn[
-            width: Int
+            width: Int, alignment: Int
         ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
-            return input._lambda_load[width=width](IndexList[2](row, col))
-
-        comptime hidden_dim = input.static_spec.shape.get[1]()
+            return input._lambda_load[width=width, element_alignment=alignment](
+                Index(row, col)
+            )
 
         quantize_dynamic_scaled_fp8[
             out_dtype=output_type,
@@ -9276,13 +9276,13 @@ struct QuantizeDynamicScaledFloat8:
             scales_dtype=scales_type,
             input_fn,
             group_size_or_per_token,
-            hidden_dim,
+            num_cols = input.static_spec.shape.get[1](),
         ](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(scales),
             scale_ub,
             ctx.get_device_context(),
-            input.dim_size(0),
+            num_rows=input.dim_size(0),
         )
 
 
@@ -9306,31 +9306,26 @@ struct BatchedQuantizeDynamicScaledFloat8:
     ) raises:
         __comptime_assert is_gpu[target](), "only valid on GPUs"
 
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var batch_size = input.dim_size(0)
-        var num_rows = input.dim_size(1)
-
         @parameter
-        @__copy_capture(input_ndbuffer)
         @always_inline
         fn input_fn[
-            width: Int
+            width: Int, alignment: Int
         ](batch: Int, row: Int, col: Int) capturing -> SIMD[input_type, width]:
-            return input_ndbuffer.load[width=width](
-                IndexList[3](batch, row, col)
+            return input._lambda_load[width=width, element_alignment=alignment](
+                Index(batch, row, col)
             )
 
         batched_quantize_dynamic_scaled_fp8[
             input_fn=input_fn,
             group_size_or_per_token=group_size_or_per_token,
-            num_cols = input_ndbuffer.shape.get[2](),
+            num_cols = input.static_spec.shape.get[2](),
         ](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(scales),
             scale_ub,
             ctx.get_device_context(),
-            num_rows=num_rows,
-            batch_size=batch_size,
+            num_rows=input.dim_size(1),
+            batch_size=input.dim_size(0),
         )
 
 
