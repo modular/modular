@@ -59,6 +59,23 @@ fn use_trait[T: PackageTrait](x: UseTrait, y: T):
     y.method()
 
 
+# This function calls a closure whose signature matches a closure uses by a
+# function in the test_package_trait package. The signatures of these closures
+# must match so that the closure trait is first loaded from the package.
+fn my_vectorize[
+    func: fn[x: Int, y: Int, z: Int] (idx: Int) unified -> None
+](closure: func):
+    closure[0, 1, 1](0)
+
+
+# CHECK-LABEL: lit.fn @"my_test
+fn my_test():
+    fn foo[width: Int, x: Int, y: Int](idx: Int) unified {var}:
+        print(width + x + y)
+
+    my_vectorize(foo)
+
+
 # CHECK-LABEL: lit.package @test_package_trait
 
 # CHECK: lit.trait.decl @PackageTrait
