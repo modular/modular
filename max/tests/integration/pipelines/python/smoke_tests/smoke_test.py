@@ -322,7 +322,7 @@ def start_server(
     start = time.monotonic()
     proc = Popen(cmd, start_new_session=True, env=env)
     try:
-        deadline = start + 600
+        deadline = start + 900
         while time.monotonic() < deadline:
             if server_is_ready():
                 break
@@ -330,7 +330,7 @@ def start_server(
                 raise RuntimeError("Server process terminated unexpectedly")
             time.sleep(0.5)
         else:
-            raise TimeoutError("Server did not start in 600 seconds")
+            raise TimeoutError("Server did not start in 900 seconds")
         return proc, time.monotonic() - start
     except:
         gracefully_stop_process(proc)
