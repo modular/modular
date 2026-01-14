@@ -13,8 +13,8 @@
 
 import pytest
 from max.interfaces import (
-    RequestID,
     PixelGenerationRequest,
+    RequestID,
     TextGenerationRequestMessage,
 )
 
