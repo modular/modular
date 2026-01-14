@@ -25,7 +25,7 @@ std::unique_ptr<Runtime> RuntimeOptions::createRuntime() const {
     runtimeOptions.profilingAllocator = true;
     break;
   case RuntimeOptions::AllocatorType::kUseAfterFree:
-#if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
+#if HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
     runtimeOptions.useAfterFreeAllocator = true;
 #else
     llvm::errs() << "The use-after-free allocator is not available for this "

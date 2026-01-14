@@ -86,7 +86,7 @@ AsyncRT::getAllocator(const AllocatorOptions &options) {
   // These are mutually exclusive and must be enabled at compile time.
   std::unique_ptr<Allocator> allocator;
   if (options.useAfterFreeAllocator) {
-#ifdef HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
+#if HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
     allocator = createUseAfterFreeAllocator();
 #else
     llvm_unreachable("cannot use the user-after-free allocator");
