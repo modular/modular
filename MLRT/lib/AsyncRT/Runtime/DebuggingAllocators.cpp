@@ -30,7 +30,7 @@ constexpr bool kCaptureSysMem = true;
 /// the ProfilingAllocator.
 constexpr bool kCaptureMalloc = true;
 
-#if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
+#if HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
 #include <sys/mman.h>
 #endif
 
@@ -213,7 +213,7 @@ M::AsyncRT::createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator) {
 // UseAfterFree Allocator
 //===----------------------------------------------------------------------===//
 
-#if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
+#if HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
 
 namespace {
 class UseAfterFreeAllocator : public Allocator {

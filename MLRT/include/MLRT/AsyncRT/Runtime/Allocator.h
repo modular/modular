@@ -103,10 +103,12 @@ std::unique_ptr<Allocator>
 createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator);
 
 #if !defined(_WIN64) && !defined(_WIN32)
-#define HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
+#define HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR 1
+#else
+#define HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR 0
 #endif
 
-#if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
+#if HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
 /// Returns an allocator which will read/write protect every allocated
 /// block to detect use-after-free errors as soon as they occur
 /// (without depending on ASAN). Allocated blocks are freed only when

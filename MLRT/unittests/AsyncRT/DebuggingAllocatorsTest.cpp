@@ -12,7 +12,7 @@ using namespace M::AsyncRT;
 
 namespace {
 
-#if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
+#if HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
 TEST(UseAfterFreeAllocator, Detects) {
   auto allocator = createUseAfterFreeAllocator();
   int *ptr1 = allocator->allocate<int>();
