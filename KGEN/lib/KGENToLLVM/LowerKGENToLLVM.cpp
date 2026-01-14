@@ -202,10 +202,8 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
     Attribute value = attr.getValue();
     Dialect *nameDialect = attr.getNameDialect();
     if (!nameDialect) {
-      return mlir::emitError(
-                 func.getLoc(),
-                 "dialect not loaded for LLVM passthrough attribute: ")
-             << attr.getName() << '=' << value;
+      return mlir::emitError(func.getLoc(), "'")
+             << attr.getName() << "' is not defined";
     }
     if (isa<LLVM::LLVMDialect>(nameDialect)) {
       StringAttr name = b.getStringAttr(
