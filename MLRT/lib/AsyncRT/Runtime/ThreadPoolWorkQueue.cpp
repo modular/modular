@@ -876,7 +876,7 @@ private:
   /// Log2(number of threads per bit of SuspendedThreadsBitvec)
   size_t multicastFactor = 0;
   std::string poolName;
-#ifdef ASYNCRT_WORKER_STATS
+#if ASYNCRT_WORKER_STATS
   AlignedAtomic<double> affinityEnqueueTime = 0.0f;
   AlignedAtomic<double> taskListEnqueueTime = 0.0f;
   AlignedAtomic<uint64_t> taskListEnqueueCount = 0;
