@@ -512,29 +512,84 @@ to achieve near-zero latency data exchange. This makes them ideal for:
 The [`gpu.primitives.warp`](/mojo/std/gpu/primitives/warp) module provides
 five shuffle primitives, each optimized for specific data movement patterns:
 
-- [`shuffle_up(value, delta)`](/mojo/std/gpu/primitives/warp/shuffle_up):
+- [`shuffle_up(value, offset)`](/mojo/std/gpu/primitives/warp/shuffle_up):
   Each thread receives the value from a thread with a lower lane ID (that is,
-  from lane current_lane - `delta`). If the resulting lane ID is less than 0,
+  from lane current_lane - `offset`). If the resulting lane ID is less than 0,
   the thread receives an undefined value.
 
-- [`shuffle_down(value, delta)`](/mojo/std/gpu/primitives/warp/shuffle_down):
+  <figure>
+
+  ![](../images/gpu/shuffle-up.png#light)
+  ![](../images/gpu/shuffle-up-dark.png#dark)
+
+  <figcaption>
+    <b>Figure 1.</b> The `shuffle_up()` operation, with a `offset` of 2.
+  </figcaption>
+
+  </figure>
+
+- [`shuffle_down(value, offset)`](/mojo/std/gpu/primitives/warp/shuffle_down):
   Each thread receives a value from a thread with a higher lane ID (that is,
-  from lane current_lane + `delta`). If the resulting lane ID is greater than or
+  from lane current_lane + `offset`). If the resulting lane ID is greater than or
   equal to the warp size, the thread receives an undefined value.
+
+  <figure>
+
+  ![](../images/gpu/shuffle-down.png#light)
+  ![](../images/gpu/shuffle-down-dark.png#dark)
+
+  <figcaption>
+    <b>Figure 2.</b> The `shuffle_down()` operation, with a `offset` of 2.
+  </figcaption>
+
+  </figure>
 
 - [`shuffle_xor(value, offset)`](/mojo/std/gpu/primitives/warp/shuffle_xor):
   Each thread exchanges its value with the thread at lane current_lane XOR
   `offset`. This is particularly useful for implementing butterfly patterns
   common in algorithms like FFTs and parallel reductions.
 
-- [`shuffle_idx(value, src_lane)`](/mojo/std/gpu/primitives/warp/shuffle_idx):
-  Each thread receives the value from the thread at the specified `src_lane`.
+  <figure>
+
+  ![](../images/gpu/shuffle-xor.png#light)
+  ![](../images/gpu/shuffle-xor-dark.png#dark)
+
+  <figcaption>
+    <b>Figure 3.</b> The `shuffle_xor()` operation, with an `offset` of 1.
+  </figcaption>
+
+  </figure>
+
+- [`shuffle_idx(value, offset)`](/mojo/std/gpu/primitives/warp/shuffle_idx):
+  Each thread receives the value from the thread at the specified `offset`.
   This is effectively a broadcast from one lane to all others in the warp.
   Essential for sharing computed results or constants across the entire warp.
+
+  <figure>
+
+  ![](../images/gpu/shuffle-idx.png#light)
+  ![](../images/gpu/shuffle-idx-dark.png#dark)
+
+  <figcaption>
+    <b>Figure 4.</b> The `shuffle_idx()` operation, with a `offset` of 2.
+  </figcaption>
+
+  </figure>
 
 - [`broadcast(value)`](/mojo/std/gpu/primitives/warp/broadcast): A
   convenience wrapper around `shuffle_idx()` that distributes the value from
   lane 0 to all other threads in the warp.
+
+  <figure>
+
+  ![](../images/gpu/broadcast.png#light)
+  ![](../images/gpu/broadcast-dark.png#dark)
+
+  <figcaption>
+    <b>Figure 5.</b> The `broadcast()` operation.
+  </figcaption>
+
+  </figure>
 
 All of these primitives other than `broadcast()` take an optional `mask`
 argument that serves a dual purpose:
@@ -841,7 +896,7 @@ result = warp.shuffle_down(value, 1)
 
 When using `shuffle_up()` and `shuffle_down()`, be mindful of edge cases. A
 thread will receive an undefined value if the source lane is out of bounds
-(for example, `current_lane - delta < 0`). When implementing patterns like
+(for example, `current_lane - offset < 0`). When implementing patterns like
 sliding windows, you must add logic to handle these boundary conditions
 correctly.
 
