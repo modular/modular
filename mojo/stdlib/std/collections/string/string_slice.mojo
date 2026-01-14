@@ -169,7 +169,7 @@ struct CodepointSliceIter[
         Returns:
             Number of codepoints remaining in this iterator.
         """
-        return Int(self._slice.char_length())
+        return Int(self._slice.count_codepoints())
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -385,7 +385,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             Number of codepoints remaining in this iterator.
         """
-        return Int(self._slice.char_length())
+        return Int(self._slice.count_codepoints())
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -1328,7 +1328,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
     fn _interleave(self, val: StringSlice) -> String:
         # TODO: this may be better as:
-        # (val.byte_length() * self.codepoint_length()) + self.codepoint_length()
+        # (val.byte_length() * self.count_codepoints()) + self.count_codepoints()
         var estimated_capacity = val.byte_length() * self.byte_length()
         var res = String(capacity=estimated_capacity)
         for codepoint in self.codepoint_slices():
@@ -1556,55 +1556,50 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         return len(self._slice)
 
-    fn char_length(self) -> UInt:
-        """Returns the length in Unicode codepoints.
-
-        This returns the number of `Codepoint` codepoint values encoded in the UTF-8
-        representation of this string.
-
-        Note: To get the length in bytes, use `StringSlice.byte_length()`.
+    fn count_codepoints(self) -> UInt:
+        """Calculates the length in Unicode codepoints encoded in the
+        UTF-8 representation of this string.
 
         Returns:
             The length in Unicode codepoints.
 
-        # Examples
+        Examples:
 
-        Query the length of a string, in bytes and Unicode codepoints:
+            Query the length of a string, in bytes and Unicode codepoints:
 
-        ```mojo
+            ```mojo
+            %# from testing import assert_equal
 
-        from testing import assert_equal
+            var s = StringSlice("ನಮಸ್ಕಾರ")
+            assert_equal(s.count_codepoints(), 7)
+            assert_equal(s.byte_length(), 21)
+            ```
 
-        var s = StringSlice("ನಮಸ್ಕಾರ")
+            Strings containing only ASCII characters have the same byte and
+            Unicode codepoint length:
 
-        assert_equal(s.char_length(), 7)
-        assert_equal(len(s), 21)
-        ```
+            ```mojo
+            %# from testing import assert_equal
 
-        Strings containing only ASCII characters have the same byte and
-        Unicode codepoint length:
+            var s = StringSlice("abc")
+            assert_equal(s.count_codepoints(), 3)
+            assert_equal(s.byte_length(), 3)
+            ```
 
-        ```mojo
+            The character length of a string with visual combining characters is
+            the length in Unicode codepoints, not grapheme clusters:
 
-        from testing import assert_equal
+            ```mojo
+            %# from testing import assert_equal
 
-        var s = StringSlice("abc")
+            var s = StringSlice("á")
+            assert_equal(s.count_codepoints(), 2)
+            assert_equal(s.byte_length(), 3)
+            ```
 
-        assert_equal(s.char_length(), 3)
-        assert_equal(len(s), 3)
-        ```
-
-        The character length of a string with visual combining characters is
-        the length in Unicode codepoints, not grapheme clusters:
-
-        ```mojo
-
-        from testing import assert_equal
-
-        var s = StringSlice("á")
-        assert_equal(s.char_length(), 2)
-        assert_equal(s.byte_length(), 3)
-        ```
+        Notes:
+            This method needs to traverse the whole string to count, so it has
+            a performance hit compared to using the byte length.
         """
         # Every codepoint is encoded as one leading byte + 0 to 3 continuation
         # bytes.
