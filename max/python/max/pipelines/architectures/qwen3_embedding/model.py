@@ -87,17 +87,22 @@ class Qwen3EmbeddingInputs(ModelInputs):
     model execution:
     - next_tokens_batch: A tensor containing the input token IDs
     - attention_mask: A tensor containing the attention mask
+    - row_offsets: Row offsets for ragged tensor format
     """
 
     next_tokens_batch: Tensor
     attention_mask: Tensor
+    row_offsets: Tensor
 
     def __init__(
         self,
         next_tokens_batch: Tensor,
         attention_mask: Tensor,
+        row_offsets: Tensor,
     ) -> None:
         self.next_tokens_batch = next_tokens_batch
+        self.attention_mask = attention_mask
+        self.row_offsets = row_offsets
         self.attention_mask = attention_mask
         # Qwen3 Embedding does not use KV cache for single-pass embedding generation.
         self.kv_cache_inputs = None
@@ -178,7 +183,7 @@ class Qwen3EmbeddingPipelineModel(PipelineModel[TextContext]):
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, Qwen3EmbeddingInputs)
         model_outputs = self.model.execute(
-            model_inputs.next_tokens_batch, model_inputs.attention_mask
+            model_inputs.next_tokens_batch, model_inputs.attention_mask, model_inputs.row_offsets
         )
         assert isinstance(model_outputs[0], Tensor)
 
@@ -215,11 +220,19 @@ class Qwen3EmbeddingPipelineModel(PipelineModel[TextContext]):
         # Compute attention mask.
         attention_mask = (next_tokens_batch != pad_value).astype(np.float32)
 
+        # Compute row offsets for ragged tensor format
+        # For batch_size=1, this is simply [0, seq_len]
+        batch_size, seq_len = next_tokens_batch.shape
+        row_offsets = np.array([i * seq_len for i in range(batch_size + 1)], dtype=np.uint32)
+
         return Qwen3EmbeddingInputs(
             next_tokens_batch=Tensor.from_numpy(next_tokens_batch).to(
                 self.devices[0]
             ),
             attention_mask=Tensor.from_numpy(attention_mask).to(
+                self.devices[0]
+            ),
+            row_offsets=Tensor.from_numpy(row_offsets).to(
                 self.devices[0]
             ),
         )
