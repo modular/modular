@@ -43,19 +43,29 @@ def last_token_pool(
     Returns:
         Pooled embeddings [batch_size, hidden_size]
     """
-    # For each sequence, we need to find the index of the last valid (non-padding) token
+    # Compute sequence lengths by summing attention mask
     # attention_mask shape: [batch_size, seq_len]
-    # Sum over seq_len dimension to get the number of valid tokens per sequence
-    sequence_lengths = ops.cast(ops.sum(attention_mask, axis=1), DType.int64)
+    sequence_lengths = ops.sum(attention_mask, axis=1)  # [batch_size], float32
     
-    # Compute the global indices of the last valid token for each sequence
-    # input_row_offsets[i] gives the starting position of sequence i in the flattened array
-    # Adding (sequence_lengths - 1) gives us the position of the last valid token
-    last_token_indices = ops.cast(input_row_offsets[:-1], DType.int64) + sequence_lengths - 1
+    # Convert to int64 for indexing
+    sequence_lengths_int = ops.cast(sequence_lengths, DType.int64)
     
-    # Gather the hidden states at these indices
-    # This will give us [batch_size, hidden_size]
-    pooled = ops.gather(hidden_states, last_token_indices, axis=0)
+    # Get starting offsets for each sequence using Python slicing
+    # For batch_size=1: input_row_offsets = [0, total_len], so start_offsets = [0]
+    start_offsets = input_row_offsets[:-1]  # Remove last element
+    start_offsets_int = ops.cast(start_offsets, DType.int64)
+    
+    # Compute the index of the last valid token for each sequence
+    # last_index = start_offset + sequence_length - 1
+    one = ops.constant(1, DType.int64, device=hidden_states.device)
+    last_token_indices = start_offsets_int + sequence_lengths_int - one
+    
+    # Use gather to extract the embeddings - cast to int32 for gather
+    last_token_indices_i32 = ops.cast(last_token_indices, DType.int32)
+    
+    # Gather the hidden states at the last valid token positions
+    # For batch_size=1, this will give us [1, hidden_size]
+    pooled = ops.gather(hidden_states, last_token_indices_i32, axis=0)
     
     return pooled
 
