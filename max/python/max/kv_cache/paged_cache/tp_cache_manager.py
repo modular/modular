@@ -20,6 +20,7 @@ from collections.abc import Sequence
 
 import numpy as np
 from max.driver import Device, Tensor
+from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import RequestID, TextGenerationContext
 from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
@@ -264,17 +265,37 @@ class _TPPagedKVCacheManager:
             seq_len = len(ctx.tokens) + num_steps - 1
             max_seq_len = max(max_seq_len, seq_len)
 
-        # Allocate the buffers containing metadata about the batch.
-        # [0, total_num_pages) are the valid block ids and total_num_pages
-        # denotes an unassigned block.
         max_total_num_pages = ceildiv(max_seq_len, self.page_size)
         batch_size = len(batch)
-        lut_table_np = np.full(
-            (batch_size, max_total_num_pages),
-            self.total_num_pages,
-            dtype=np.uint32,
+
+        # Allocate the kvcache runtime inputs on pinned memory for faster h2d
+        # transfer speeds. If kvcache is on host, then fall back to normal
+        # pageable memory. We initialize these empty max tensors by exporting
+        # to numpy over dlpack and using numpy methods.
+        device0 = self.devices[0]
+        pinned = not device0.is_host
+
+        # Allocate the lookup table buffer.
+        # [0, total_num_pages) are the valid block ids and total_num_pages
+        # denotes an unassigned block.
+        lut_table = Tensor(
+            shape=(batch_size, max_total_num_pages),
+            dtype=DType.uint32,
+            device=device0,
+            pinned=pinned,
         )
-        cache_lengths_np = np.zeros((batch_size,), dtype=np.uint32)
+        lut_table_np = lut_table.to_numpy()
+        lut_table_np.fill(self.total_num_pages)
+
+        # Allocate cache length buffer. It is zero-initialized.
+        cache_lengths = Tensor(
+            shape=(batch_size,),
+            dtype=DType.uint32,
+            device=device0,
+            pinned=pinned,
+        )
+        cache_lengths_np = cache_lengths.to_numpy()
+        cache_lengths_np.fill(0)
 
         # Update cache_lengths and max_lengths.
         max_prompt_len = 0
@@ -307,22 +328,20 @@ class _TPPagedKVCacheManager:
         self.block_manager.eagerly_offload_recently_committed_blocks()
 
         # Build a tensor of maximum lengths. Each step slices the first row to
-        # advance to the values for the next row.
+        # advance to the values for the next row. This should not be allocated
+        # on pinned memory since it is exclusively accessed on the CPU and never
+        # copied to the GPU.
         max_lengths_host = build_max_lengths_tensor(
             num_steps, max_prompt_len, max_cached_len
         )
-
-        # Convert from numpy to host tensors.
-        lut_table_host = Tensor.from_numpy(lut_table_np)
-        cache_lengths_host = Tensor.from_numpy(cache_lengths_np)
 
         ret_list = []
         for i, device in enumerate(self.devices):
             ret_list.append(
                 RaggedKVCacheInputs(
                     blocks=self.device_tensors[i],
-                    cache_lengths=cache_lengths_host.to(device=device),
-                    lookup_table=lut_table_host.to(device=device),
+                    cache_lengths=cache_lengths.to(device=device),
+                    lookup_table=lut_table.to(device=device),
                     max_lengths=max_lengths_host,
                 )
             )

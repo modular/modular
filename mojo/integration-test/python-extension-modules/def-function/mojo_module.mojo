@@ -205,7 +205,7 @@ fn sum_kwargs_ints(
     var total = 0
     for entry in kwargs.items():
         var value = entry.value
-        total += Int(value)
+        total += Int(py=value)
 
     return PythonObject(total)
 
@@ -214,4 +214,4 @@ fn sum_kwargs_ints(
 fn sum_pos_arg_and_kwargs(
     arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]
 ) raises -> PythonObject:
-    return PythonObject(Int(arg1) + Int(sum_kwargs_ints(kwargs)))
+    return PythonObject(Int(py=arg1) + Int(py=sum_kwargs_ints(kwargs)))

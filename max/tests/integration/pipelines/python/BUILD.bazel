@@ -209,9 +209,11 @@ modular_py_test(
         "PIPELINES_CUSTOM_ARCHITECTURE": "max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
     },
     tags = [
+        "manual",  # TODO(SERVOPT-900)
         "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
+        "run-in-hf-workflow",  # TODO(SERVOPT-900)
     ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -240,9 +242,11 @@ modular_py_test(
     }),
     tags = [
         "gpu",
+        "manual",  # TODO(SERVOPT-900)
         "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
+        "run-in-hf-workflow",  # TODO(SERVOPT-900)
     ],
     deps = [
         ":hf_repo_lock",

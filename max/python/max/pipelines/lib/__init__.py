@@ -70,13 +70,14 @@ from .tokenizer import (
     TextTokenizer,
     max_tokens_to_generate,
 )
-from .utils import upper_bounded_default
+from .utils import CompilationTimer, upper_bounded_default
 from .weight_path_parser import WeightPathParser
 
 __all__ = [
     "PIPELINE_REGISTRY",
     "AlwaysSignalBuffersMixin",
     "AudioGenerationConfig",
+    "CompilationTimer",
     "EAGLESpeculativeDecodingPipeline",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",

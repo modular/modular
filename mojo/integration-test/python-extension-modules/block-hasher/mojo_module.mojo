@@ -117,7 +117,7 @@ fn mojo_block_hasher(
     )
 
     # Parse block size
-    var block_size = Int(block_size_obj)
+    var block_size = Int(py=block_size_obj)
 
     # Performing hashing
     var results = _mojo_block_hasher(py_array_object_ptr, block_size)

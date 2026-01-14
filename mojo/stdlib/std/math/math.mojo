@@ -1809,6 +1809,9 @@ fn cos[
     elif is_apple_gpu():
         return _llvm_unary_fn["llvm.air.cos"](x)
     else:
+        __comptime_assert (
+            not is_nvidia_gpu() or dtype != DType.float64
+        ), "DType.float64 is not supported on NVIDIA GPU"
         return _llvm_unary_fn["llvm.cos"](x)
 
 
@@ -1854,6 +1857,9 @@ fn sin[
     elif is_apple_gpu():
         return _llvm_unary_fn["llvm.air.sin"](x)
     else:
+        __comptime_assert (
+            not is_nvidia_gpu() or dtype != DType.float64
+        ), "DType.float64 is not supported on NVIDIA GPU"
         return _llvm_unary_fn["llvm.sin"](x)
 
 

@@ -56,7 +56,7 @@ When you modify a .cpp file in the _core/src directory, you can run
 modular_py_library(
     name = "max",
     srcs = [],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    tags = ["no-pydeps"],  # All deps are unused
     deps = [
         ":_core",
         "//max/python/max/_core_mojo",
@@ -64,6 +64,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/entrypoints",
+        "//max/python/max/entrypoints:_pipelines",
         "//max/python/max/entrypoints:gpu-query",
         "//max/python/max/entrypoints:pipelines",
         "//max/python/max/entrypoints:replay_recording",

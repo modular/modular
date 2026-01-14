@@ -160,7 +160,7 @@ def _test_inplace_dunder_methods(mut python: Python):
     assert_equal(String(list_obj), "[1, 2, 3, 4]")
 
     list_obj *= 2
-    assert_equal(String(list_obj), "[1, 2, 3, 4, 1, 2, 3, 4]")
+    assert_equal(String(py=list_obj), "[1, 2, 3, 4, 1, 2, 3, 4]")
 
     _ = python.eval("class A:\n  def __iadd__(self, other):\n    return 1")
     var a = python.evaluate("A()")
@@ -171,7 +171,7 @@ def _test_inplace_dunder_methods(mut python: Python):
 def test_num_conversion():
     comptime n = UInt64(0xFEDC_BA09_8765_4321)
     comptime n_str = String(n)
-    assert_equal(n_str, String(PythonObject(n)))
+    assert_equal(n_str, String(py=PythonObject(n)))
 
 
 def test_boolean_operations():
@@ -216,7 +216,7 @@ fn _test_string_conversions(mut python: Python) raises -> None:
     # type object
     var py_float = PythonObject(3.14)
     var type_obj = python.type(py_float)
-    assert_equal(String(type_obj), "<class 'float'>")
+    assert_equal(String(py=type_obj), "<class 'float'>")
 
 
 def test_len():
@@ -260,8 +260,8 @@ def test_nested_object():
     var nested_list: PythonObject = [a, b]
     var nested_tuple = Python.tuple(a, b)
 
-    assert_equal(String(nested_list), "[[1, 2, 3], [4, 5, 6]]")
-    assert_equal(String(nested_tuple), "([1, 2, 3], [4, 5, 6])")
+    assert_equal(String(py=nested_list), "[[1, 2, 3], [4, 5, 6]]")
+    assert_equal(String(py=nested_tuple), "([1, 2, 3], [4, 5, 6])")
 
 
 fn test_iter() raises:
@@ -308,41 +308,41 @@ fn test_iter() raises:
 
 fn test_setitem() raises:
     var ll: PythonObject = [1, 2, 3, "food"]
-    assert_equal(String(ll), "[1, 2, 3, 'food']")
+    assert_equal(String(py=ll), "[1, 2, 3, 'food']")
     # TODO(MOCO-2851): This should work with the RHS being a string literal
     ll[1] = PythonObject("nomnomnom")
-    assert_equal(String(ll), "[1, 'nomnomnom', 3, 'food']")
+    assert_equal(String(py=ll), "[1, 'nomnomnom', 3, 'food']")
 
 
 fn test_dict() raises:
     # Test Python.dict from keyword arguments.
     # TODO(MOCO-2945): Heterogenous convertible kwargs should work
     var dd = Python.dict(food=PythonObject(123), fries=PythonObject("yes"))
-    assert_equal(String(dd), "{'food': 123, 'fries': 'yes'}")
+    assert_equal(String(py=dd), "{'food': 123, 'fries': 'yes'}")
 
     # TODO(MOCO-2945): Heterogenous convertible kwargs should work
     var dd2: PythonObject = {
         PythonObject("food"): PythonObject(123),
         PythonObject("fries"): PythonObject("yes"),
     }
-    assert_equal(String(dd2), "{'food': 123, 'fries': 'yes'}")
+    assert_equal(String(py=dd2), "{'food': 123, 'fries': 'yes'}")
 
     # TODO(MOCO-2851): This should work w/ keys and value being string literals
     dd[PythonObject("food")] = PythonObject("salad")
     dd[42] = Python.list(4, 2)
-    assert_equal(String(dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
+    assert_equal(String(py=dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
 
     # Test Python.dict from a Span of tuples.
     var tuples = [(123, PythonObject("food")), (42, PythonObject("42"))]
     dd = Python.dict(tuples)
-    assert_equal(String(dd), "{123: 'food', 42: '42'}")
+    assert_equal(String(py=dd), "{123: 'food', 42: '42'}")
 
     # Also test that Python.dict() creates the right object.
     var empty = Python.dict()
-    assert_equal(String(empty), "{}")
+    assert_equal(String(py=empty), "{}")
 
     var empty2: PythonObject = {}
-    assert_equal(String(empty2), "{}")
+    assert_equal(String(py=empty2), "{}")
 
     # Test that Python.dict uses RC correctly.
     ref cpy = Python().cpython()
@@ -371,7 +371,7 @@ fn test_set() raises:
     var dd: PythonObject = {123, "yes"}
     var dd2 = Python.evaluate("{123, 'yes'}")
     # Be care about instability of set ordering across platforms.
-    assert_equal(String(dd), String(dd2))
+    assert_equal(String(py=dd), String(py=dd2))
 
     assert_true(123 in dd)
     assert_true("yes" in dd)
@@ -380,7 +380,7 @@ fn test_set() raises:
 
 fn test_none() raises:
     var n = Python.none()
-    assert_equal(String(n), "None")
+    assert_equal(String(py=n), "None")
     assert_true(n is PythonObject(None))
 
 
@@ -445,9 +445,9 @@ fn test_getitem_raises() raises:
         _ = d[0, 0]
 
     with_get = custom_indexable.WithGetItem()
-    assert_equal("Key: 0", String(with_get[0]))
-    assert_equal("Keys: 0, 0", String(with_get[0, 0]))
-    assert_equal("Keys: 0, 0, 0", String(with_get[0, 0, 0]))
+    assert_equal("Key: 0", String(py=with_get[0]))
+    assert_equal("Keys: 0, 0", String(py=with_get[0, 0]))
+    assert_equal("Keys: 0, 0, 0", String(py=with_get[0, 0, 0]))
 
     var without_get = custom_indexable.Simple()
     with assert_raises(contains="'Simple' object is not subscriptable"):
@@ -461,9 +461,9 @@ fn test_getitem_raises() raises:
         _ = with_get_exception[1]
 
     with_2d = custom_indexable.With2DGetItem()
-    assert_equal("[1, 2, 3]", String(with_2d[0]))
-    assert_equal(2, Int(with_2d[0, 1]))
-    assert_equal(6, Int(with_2d[1, 2]))
+    assert_equal("[1, 2, 3]", String(py=with_2d[0]))
+    assert_equal(2, Int(py=with_2d[0, 1]))
+    assert_equal(6, Int(py=with_2d[1, 2]))
 
     with assert_raises(contains="list index out of range"):
         _ = with_2d[0, 4]
@@ -507,43 +507,43 @@ def test_setitem_raises():
 fn test_py_slice() raises:
     custom_indexable = Python.import_module("custom_indexable")
     var a: PythonObject = [1, 2, 3, 4, 5]
-    assert_equal("[2, 3]", String(a[1:3]))
-    assert_equal("[1, 2, 3, 4, 5]", String(a[:]))
-    assert_equal("[1, 2, 3]", String(a[:3]))
-    assert_equal("[3, 4, 5]", String(a[2:]))
-    assert_equal("[1, 3, 5]", String(a[::2]))
-    assert_equal("[2, 4]", String(a[1::2]))
-    assert_equal("[4, 5]", String(a[-2:]))
-    assert_equal("[1, 2, 3]", String(a[:-2]))
-    assert_equal("[5, 4, 3, 2, 1]", String(a[::-1]))
-    assert_equal("[1, 2, 3, 4, 5]", String(a[-10:10]))  # out of bounds
-    assert_equal("[1, 2, 3, 4, 5]", String(a[::]))
-    assert_equal("[1, 2, 3, 4, 5]", String(a[:100]))
-    assert_equal("[]", String(a[5:]))
-    assert_equal("[5, 4, 3, 2]", String(a[:-5:-1]))
+    assert_equal("[2, 3]", String(py=a[1:3]))
+    assert_equal("[1, 2, 3, 4, 5]", String(py=a[:]))
+    assert_equal("[1, 2, 3]", String(py=a[:3]))
+    assert_equal("[3, 4, 5]", String(py=a[2:]))
+    assert_equal("[1, 3, 5]", String(py=a[::2]))
+    assert_equal("[2, 4]", String(py=a[1::2]))
+    assert_equal("[4, 5]", String(py=a[-2:]))
+    assert_equal("[1, 2, 3]", String(py=a[:-2]))
+    assert_equal("[5, 4, 3, 2, 1]", String(py=a[::-1]))
+    assert_equal("[1, 2, 3, 4, 5]", String(py=a[-10:10]))  # out of bounds
+    assert_equal("[1, 2, 3, 4, 5]", String(py=a[::]))
+    assert_equal("[1, 2, 3, 4, 5]", String(py=a[:100]))
+    assert_equal("[]", String(py=a[5:]))
+    assert_equal("[5, 4, 3, 2]", String(py=a[:-5:-1]))
 
     var b = Python.evaluate("[i for i in range(1000)]")
-    assert_equal("[0, 250, 500, 750]", String(b[::250]))
+    assert_equal("[0, 250, 500, 750]", String(py=b[::250]))
     with assert_raises(contains="slice step cannot be zero"):
         _ = b[::0]
     # Negative cases such as `b[1.3:10]` or `b["1":10]` are handled by parser
     # which would normally throw a TypeError in Python
 
     var s = PythonObject("Hello, World!")
-    assert_equal("Hello", String(s[:5]))
-    assert_equal("World!", String(s[7:]))
-    assert_equal("!dlroW ,olleH", String(s[::-1]))
-    assert_equal("Hello, World!", String(s[:]))
-    assert_equal("Hlo ol!", String(s[::2]))
-    assert_equal("Hlo ol!", String(s[None:None:2]))
+    assert_equal("Hello", String(py=s[:5]))
+    assert_equal("World!", String(py=s[7:]))
+    assert_equal("!dlroW ,olleH", String(py=s[::-1]))
+    assert_equal("Hello, World!", String(py=s[:]))
+    assert_equal("Hlo ol!", String(py=s[::2]))
+    assert_equal("Hlo ol!", String(py=s[None:None:2]))
 
     var t = Python.tuple(1, 2, 3, 4, 5)
-    assert_equal("(2, 3, 4)", String(t[1:4]))
-    assert_equal("(4, 3, 2)", String(t[3:0:-1]))
+    assert_equal("(2, 3, 4)", String(py=t[1:4]))
+    assert_equal("(4, 3, 2)", String(py=t[3:0:-1]))
 
     var empty: PythonObject = []
-    assert_equal("[]", String(empty[:]))
-    assert_equal("[]", String(empty[1:2:3]))
+    assert_equal("[]", String(py=empty[:]))
+    assert_equal("[]", String(py=empty[1:2:3]))
 
     # TODO: enable this test.  Currently it fails with error: unhashable type: 'slice'
     # var d = Python.dict()
@@ -553,31 +553,31 @@ fn test_py_slice() raises:
     #     _ = d[1:3]
 
     var custom = custom_indexable.Sliceable()
-    assert_equal("slice(1, 3, None)", String(custom[1:3]))
+    assert_equal("slice(1, 3, None)", String(py=custom[1:3]))
 
     var i = PythonObject(1)
     with assert_raises(contains="'int' object is not subscriptable"):
         _ = i[0:1]
 
     with_2d = custom_indexable.With2DGetItem()
-    assert_equal("[1, 2]", String(with_2d[0, PythonObject(Slice(0, 2))]))
-    assert_equal("[1, 2]", String(with_2d[0][0:2]))
+    assert_equal("[1, 2]", String(py=with_2d[0, PythonObject(Slice(0, 2))]))
+    assert_equal("[1, 2]", String(py=with_2d[0][0:2]))
 
-    assert_equal("[4, 5, 6]", String(with_2d[PythonObject(Slice(0, 2)), 1]))
-    assert_equal("[4, 5, 6]", String(with_2d[0:2][1]))
-
-    assert_equal(
-        "[[1, 2, 3], [4, 5, 6]]", String(with_2d[PythonObject(Slice(0, 2))])
-    )
-    assert_equal("[[1, 2, 3], [4, 5, 6]]", String(with_2d[0:2]))
-    assert_equal("[[1, 3], [4, 6]]", String(with_2d[0:2, ::2]))
+    assert_equal("[4, 5, 6]", String(py=with_2d[PythonObject(Slice(0, 2)), 1]))
+    assert_equal("[4, 5, 6]", String(py=with_2d[0:2][1]))
 
     assert_equal(
-        "[6, 5, 4]", String(with_2d[1, PythonObject(Slice(None, None, -1))])
+        "[[1, 2, 3], [4, 5, 6]]", String(py=with_2d[PythonObject(Slice(0, 2))])
     )
-    assert_equal("[6, 5, 4]", String(with_2d[1][::-1]))
+    assert_equal("[[1, 2, 3], [4, 5, 6]]", String(py=with_2d[0:2]))
+    assert_equal("[[1, 3], [4, 6]]", String(py=with_2d[0:2, ::2]))
 
-    assert_equal("[7, 9]", String(with_2d[2][::2]))
+    assert_equal(
+        "[6, 5, 4]", String(py=with_2d[1, PythonObject(Slice(None, None, -1))])
+    )
+    assert_equal("[6, 5, 4]", String(py=with_2d[1][::-1]))
+
+    assert_equal("[7, 9]", String(py=with_2d[2][::2]))
 
     with assert_raises(contains="list index out of range"):
         _ = with_2d[0:1][4]
@@ -643,24 +643,24 @@ def test_conversion_to_simd():
     var py_float = PythonObject(0.123456789121212)
     var py_int = PythonObject(256)
 
-    assert_equal(Float64(py_float), 0.123456789121212)
-    assert_equal(Float32(py_float), 0.12345679)
-    assert_equal(Float16(py_float), 0.12345679)
-    assert_equal(Float64(py_int), 256.0)
+    assert_equal(Float64(py=py_float), 0.123456789121212)
+    assert_equal(Float32(py=py_float), 0.12345679)
+    assert_equal(Float16(py=py_float), 0.12345679)
+    assert_equal(Float64(py=py_int), 256.0)
 
     var py_str = PythonObject("inf")
     with assert_raises(contains="must be real number, not str"):
-        _ = Float64(py_str)
+        _ = Float64(py=py_str)
 
-    assert_equal(Int64(py_int), Int64(256))
-    assert_equal(Int32(py_int), Int32(256))
-    assert_equal(Int16(py_int), Int16(256))
-    assert_equal(Int8(py_int), Int8(0))
+    assert_equal(Int64(py=py_int), Int64(256))
+    assert_equal(Int32(py=py_int), Int32(256))
+    assert_equal(Int16(py=py_int), Int16(256))
+    assert_equal(Int8(py=py_int), Int8(0))
 
-    assert_equal(UInt64(py_int), UInt64(256))
-    assert_equal(UInt32(py_int), UInt32(256))
-    assert_equal(UInt16(py_int), UInt16(256))
-    assert_equal(UInt8(py_int), UInt8(0))
+    assert_equal(UInt64(py=py_int), UInt64(256))
+    assert_equal(UInt32(py=py_int), UInt32(256))
+    assert_equal(UInt16(py=py_int), UInt16(256))
+    assert_equal(UInt8(py=py_int), UInt8(0))
 
 
 def test_hash():
@@ -691,7 +691,7 @@ def test_call_with_kwargs():
     _ = print_func("test", file=string_io)
 
     var output = string_io.getvalue()
-    assert_equal(String(output).strip(), "test")
+    assert_equal(String(py=output).strip(), "test")
 
 
 def test_attribute_access():
@@ -745,7 +745,7 @@ def test_python_module_operations():
     # Test Python.import_module()
     var math_module = Python.import_module("math")
     var pi_value = math_module.pi
-    assert_true(Float64(pi_value) > 3.1 and Float64(pi_value) < 3.2)
+    assert_true(Float64(py=pi_value) > 3.1 and Float64(py=pi_value) < 3.2)
 
     # Test Python.add_to_path() and importing custom modules
     # Note: This test might need a custom module file to be truly effective
@@ -757,11 +757,11 @@ def test_python_type_functions():
     # Test Python.type()
     var int_obj = PythonObject(42)
     var int_type = Python.type(int_obj)
-    assert_equal(String(int_type), "<class 'int'>")
+    assert_equal(String(py=int_type), "<class 'int'>")
 
     var str_obj = PythonObject("hello")
     var str_type = Python.type(str_obj)
-    assert_equal(String(str_type), "<class 'str'>")
+    assert_equal(String(py=str_type), "<class 'str'>")
 
     # Test Python.str(), Python.int(), Python.float()
     var str_result = Python.str(int_obj)
@@ -779,11 +779,11 @@ def test_advanced_slicing():
     var data: PythonObject = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
     # Test step slicing with negative indices
-    assert_equal("[9, 7, 5, 3, 1]", String(data[-1::-2]))
+    assert_equal("[9, 7, 5, 3, 1]", String(py=data[-1::-2]))
 
     # Test empty slices
-    assert_equal("[]", String(data[5:5]))
-    assert_equal("[]", String(data[10:20]))
+    assert_equal("[]", String(py=data[5:5]))
+    assert_equal("[]", String(py=data[10:20]))
 
     # Test slice assignment (if supported)
     var mutable_list: PythonObject = [1, 2, 3, 4, 5]
@@ -827,14 +827,14 @@ def test_with_python_eval_and_evaluate():
 
 
 def test_python_object_string():
-    var s = String(PythonObject("hello"))
+    var s = String(py=PythonObject("hello"))
     assert_equal(s, "hello")
 
     var p = Python()
     _ = p.eval("class A:\n  def __str__(self): pass")
     var a = p.evaluate("A()")
     with assert_raises(contains="__str__ returned non-string"):
-        _ = String(a)
+        _ = String(py=a)
 
 
 def main():
