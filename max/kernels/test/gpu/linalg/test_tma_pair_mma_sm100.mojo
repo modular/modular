@@ -35,7 +35,12 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
     tile_to_descriptor,
 )
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tensor_tile,
+    create_tma_tile,
+)
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
@@ -428,10 +433,10 @@ def test_tma_umma_pair_cta[
         Layout.row_major(M, N),
     ](ctx)
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a.device_tensor())
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),

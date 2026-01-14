@@ -67,6 +67,7 @@ from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
+    create_tensor_tile,
     create_tma_tile,
 )
 
@@ -1369,12 +1370,12 @@ fn sm100_warp_specialized_blockwise_fp8[
     var N = c.dim(1)
     var K = a.dim(1)
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // config.cluster_shape[1], BK),
         swizzle_mode = config.a_swizzle,
     ](ctx, a)
 
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (config.cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
@@ -1392,7 +1393,7 @@ fn sm100_warp_specialized_blockwise_fp8[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    var c_tma_op = create_tma_tile[
+    var c_tma_op = create_tensor_tile[
         c_tma_tile_shape,
         swizzle_mode = config.c_swizzle,
     ](ctx, c)

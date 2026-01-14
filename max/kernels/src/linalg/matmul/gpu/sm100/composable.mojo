@@ -51,7 +51,7 @@ from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
     _tma_desc_tile_layout,
-    create_tma_tile,
+    create_tensor_tile,
 )
 
 from utils.index import Index, IndexList
@@ -242,7 +242,7 @@ struct TMALoadOp[
         b: LayoutTensor[Self.b_type, ...],
         ctx: DeviceContext,
     ) -> Self.args_type:
-        var a_tma_op = create_tma_tile[
+        var a_tma_op = create_tensor_tile[
             Index(
                 Self.block_tile_shape[0] // Self.cluster_shape[0],
                 Self.block_tile_shape[2],
@@ -250,7 +250,7 @@ struct TMALoadOp[
             swizzle_mode = Self.a_swizzle,
         ](ctx, a)
 
-        var b_tma_op = create_tma_tile[
+        var b_tma_op = create_tensor_tile[
             Index(
                 Self.block_tile_shape[1] // Self.cluster_shape[1],
                 Self.block_tile_shape[2],

@@ -23,7 +23,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import H100
 from layout import Layout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.tma_async import create_tma_tile, create_tma_tile_template
+from layout.tma_async import create_tensor_tile, create_tma_tile_template
 from logger import Logger
 from std.bit import log2_floor
 
@@ -307,7 +307,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
 
     @parameter
     if use_tma_store:
-        c_tma_op = create_tma_tile[
+        c_tma_op = create_tensor_tile[
             c_smem_tile,
             swizzle_mode=c_swizzle,
             __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
@@ -369,14 +369,14 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     # Dispatch kernel using TMA load when the stride is multiple of 16B.
     @parameter
     if k_align == 16:
-        var a_tma_op = create_tma_tile[
+        var a_tma_op = create_tensor_tile[
             Index(
                 BM // Int(CLUSTER_N), BK
             ) if config.partitioned_multicast else Index(BM, BK),
             swizzle_mode=a_swizzle,
         ](ctx, a)
 
-        var b_tma_op = create_tma_tile[
+        var b_tma_op = create_tensor_tile[
             Index(
                 BN // Int(CLUSTER_M), BK
             ) if config.partitioned_multicast else Index(BN, BK),
@@ -617,20 +617,20 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         min(log2_floor(c_smem_tile[1] // 8), 3)
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(
             BM // Int(CLUSTER_N), BK
         ) if config.partitioned_multicast else Index(BM, BK),
         swizzle_mode=a_swizzle,
     ](ctx, a)
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // Int(CLUSTER_M), BK
         ) if config.partitioned_multicast else Index(BN, BK),
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    c_tma_op = create_tma_tile[
+    c_tma_op = create_tensor_tile[
         c_smem_tile,
         swizzle_mode=c_swizzle,
         __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),

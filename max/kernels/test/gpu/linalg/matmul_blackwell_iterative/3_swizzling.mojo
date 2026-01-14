@@ -40,7 +40,12 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
     tile_to_descriptor,
 )
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tensor_tile,
+    create_tma_tile,
+)
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -386,8 +391,8 @@ fn blackwell_kernel_3[
     # hard coded 64 for BK
 
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
-    a_tma_op = create_tma_tile[Index(BM, 64), swizzle_mode=a_swizzle](ctx, a)
-    b_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[Index(BM, 64), swizzle_mode=a_swizzle](ctx, a)
+    b_tma_op = create_tensor_tile[
         Index(BN, 64) if transpose_b else Index(64, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b)

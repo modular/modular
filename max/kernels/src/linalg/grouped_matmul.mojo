@@ -52,7 +52,7 @@ from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
-    create_tma_tile,
+    create_tensor_tile,
 )
 
 from utils.fast_div import FastDiv
@@ -623,7 +623,7 @@ fn grouped_matmul_sm100[
     comptime c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
     a_tensor = from_ndbuffer_row_major(a)
-    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
         ctx, a_tensor
     )
     b_tensor = LayoutTensor[
@@ -632,7 +632,7 @@ fn grouped_matmul_sm100[
         MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ](b.data)
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b_tensor)

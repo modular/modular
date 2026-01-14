@@ -32,7 +32,12 @@ from layout.tensor_core_async import (
 from layout.layout import tile_to_shape
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE, RuntimeLayout
 from gpu.cluster import block_rank_in_cluster
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tensor_tile,
+    create_tma_tile,
+)
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
@@ -529,8 +534,8 @@ fn sm100_block_scaled_mxfp8[
         256,
     ), "Only support 128x128x128 or 128x256x128 block size"
 
-    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
-    b_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
+    b_tma_op = create_tensor_tile[
         Index(BN, BK),
         swizzle_mode=b_swizzle,
     ](ctx, b)
@@ -593,7 +598,7 @@ fn sm100_block_scaled_mxfp8[
         ),
     )
 
-    var a_scales_tma_op = create_tma_tile[
+    var a_scales_tma_op = create_tensor_tile[
         Index(
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
@@ -603,7 +608,7 @@ fn sm100_block_scaled_mxfp8[
         ),
     ](ctx, a_scales_4d)
 
-    var b_scales_tma_op = create_tma_tile[
+    var b_scales_tma_op = create_tensor_tile[
         Index(
             BN // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),

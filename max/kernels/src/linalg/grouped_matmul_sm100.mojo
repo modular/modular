@@ -71,7 +71,7 @@ from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
-    create_tma_tile,
+    create_tensor_tile,
 )
 
 from utils.fast_div import FastDiv
@@ -1300,11 +1300,11 @@ fn _grouped_matmul_sm100_persistent[
     if M == 0 or N == 0 or K == 0:
         return
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a_device)
 
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
@@ -1333,7 +1333,7 @@ fn _grouped_matmul_sm100_persistent[
     __comptime_assert (
         not (transpose_c and cta_group == 2)
     ) or MMA_M == 256, "swapAB is only supported for MMA_M == 256"
-    var c_tma_op = create_tma_tile[
+    var c_tma_op = create_tensor_tile[
         c_tma_tile_shape if not transpose_c else Index(
             c_tma_tile_shape[0], c_swizzle.bytes() // size_of[c_type]()
         ),

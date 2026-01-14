@@ -76,6 +76,7 @@ from layout.tensor_core_async import (
     tile_sf_layout_k_major,
 )
 from layout.tma_async import (
+    create_tensor_tile,
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
@@ -1257,7 +1258,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime cluster_shape = config.cluster_shape
 
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
-    var a_tma_op = create_tma_tile[
+    var a_tma_op = create_tensor_tile[
         a_tma_tile_shape,
         swizzle_mode = config.a_swizzle,
         __tile_layout = Layout.row_major(a_tma_tile_shape),
@@ -1269,7 +1270,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ) if transpose_b else Index(
         1, BK, BN // (cluster_shape[0] // config.cta_group)
     )
-    var b_tma_op = create_tma_tile[
+    var b_tma_op = create_tensor_tile[
         b_tma_tile_shape,
         swizzle_mode = config.b_swizzle,
         __tile_layout = Layout.row_major(b_tma_tile_shape),
@@ -1289,7 +1290,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime c_tma_tile_shape_final = c_tma_tile_shape if not config.AB_swapped else Index(
         1, c_tma_tile_shape[0], config.c_swizzle.bytes() // size_of[c_type]()
     )
-    var c_tma_op = create_tma_tile[
+    var c_tma_op = create_tensor_tile[
         c_tma_tile_shape_final,
         swizzle_mode = config.c_swizzle,
         __tile_layout = Layout.row_major(c_tma_tile_shape_final),
@@ -1362,7 +1363,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var sfa_tma_op = create_tma_tile[
+    var sfa_tma_op = create_tensor_tile[
         sfa_tma_tile_shape,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
         __tile_layout = Layout.row_major(sfa_tma_tile_shape),
@@ -1375,7 +1376,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var sfb_tma_op = create_tma_tile[
+    var sfb_tma_op = create_tensor_tile[
         sfb_tma_tile_shape,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
         __tile_layout = Layout.row_major(sfb_tma_tile_shape),

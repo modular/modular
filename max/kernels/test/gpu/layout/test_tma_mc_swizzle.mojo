@@ -23,7 +23,12 @@ from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tensor_tile,
+    create_tma_tile,
+)
 from memory import stack_allocation
 from testing import assert_equal
 
@@ -141,7 +146,7 @@ def test_tma_multicast_swizzle[
         arange(src.tensor(), 0)
         arange(dst.tensor(), 0)
 
-    var tma_tensor = create_tma_tile[
+    var tma_tensor = create_tensor_tile[
         subcluster_tile_shape, swizzle_mode=swizzle_mode
     ](ctx, src.device_tensor())
 

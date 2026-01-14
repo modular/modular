@@ -93,6 +93,7 @@ from layout.tensor_core_async import (
     tile_to_descriptor,
 )
 from layout.tma_async import (
+    create_tensor_tile,
     PipelineState,
     SharedMemBarrier,
     SplitLastDimTMATensorTile,
@@ -369,7 +370,7 @@ fn tma_tile_qo[
     var tensor = LayoutTensor[dtype, layout, MutAnyOrigin](ptr, rt_layout)
 
     res = rebind[QOTMATile[dtype, BM, BK, swizzle_mode]](
-        create_tma_tile[
+        create_tensor_tile[
             IndexList[2](BM, BK),
             swizzle_mode=swizzle_mode,
         ](ctx, tensor)

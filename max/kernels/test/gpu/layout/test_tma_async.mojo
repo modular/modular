@@ -24,6 +24,7 @@ from layout._fillers import arange, random
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
 from layout.tma_async import (
+    create_tensor_tile,
     SharedMemBarrier,
     TMATensorTile,
     create_tma_tile,
@@ -930,16 +931,16 @@ def test_tma_load_and_store_two_buffers_row_major[
 
     arange(a_src.tensor(), 1)
     arange(b_src.tensor(), 1)
-    var a_tma_src_tensor = create_tma_tile[Index(tileM, tileN)](
+    var a_tma_src_tensor = create_tensor_tile[Index(tileM, tileN)](
         ctx, a_src.device_tensor()
     )
-    var b_tma_src_tensor = create_tma_tile[Index(tileM, tileN)](
+    var b_tma_src_tensor = create_tensor_tile[Index(tileM, tileN)](
         ctx, b_src.device_tensor()
     )
-    var a_tma_dst_tensor = create_tma_tile[Index(tileM, tileN)](
+    var a_tma_dst_tensor = create_tensor_tile[Index(tileM, tileN)](
         ctx, a_dst.device_tensor()
     )
-    var b_tma_dst_tensor = create_tma_tile[Index(tileM, tileN)](
+    var b_tma_dst_tensor = create_tensor_tile[Index(tileM, tileN)](
         ctx, b_dst.device_tensor()
     )
     ctx.synchronize()

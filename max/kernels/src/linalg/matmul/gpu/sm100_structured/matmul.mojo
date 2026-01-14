@@ -31,7 +31,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from layout.tma_async import create_tma_tile
+from layout.tma_async import create_tensor_tile
 
 from utils.index import Index
 from utils.static_tuple import StaticTuple
@@ -130,12 +130,12 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         ceildiv(K, BK) % Int(config.k_group_size) == 0
     ), "K iterations must be a multiple of k_group_size"
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode = config.a_swizzle
     ](ctx, a_device)
 
     # fmt: off
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
@@ -155,7 +155,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
 
     __comptime_assert (not config.AB_swapped) or config.c_swizzle.bytes() == 128, "Only support 128B swizzle mode when AB_swapped is True"
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
-    var c_tma_op = create_tma_tile[
+    var c_tma_op = create_tensor_tile[
         c_tma_tile_shape if not config.AB_swapped else Index(
             c_tma_tile_shape[0], c_tma_tile_shape_1
         ),
@@ -431,11 +431,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         config.num_pipeline_stages % config.k_group_size == 0
     ), "num_pipeline_stages must be a multiple of k_group_size"
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode = config.a_swizzle
     ](ctx, a_device)
 
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
@@ -457,7 +457,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     # the tile shape with 128B swizzle mode, there should always be 64 elements
     # on the contiguous dim.
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
-    var c_tma_op = create_tma_tile[
+    var c_tma_op = create_tensor_tile[
         c_tma_tile_shape if not config.AB_swapped else Index(
             c_tma_tile_shape[0], c_tma_tile_shape_1
         ),
@@ -622,8 +622,8 @@ fn matmul_sm100_fallback[
     comptime BK = block_tile_shape[2]
 
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
-    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
-    b_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
+    b_tma_op = create_tensor_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b)

@@ -55,7 +55,7 @@ from memory import bitcast
 from gpu.sync import named_barrier
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
 from layout.layout_tensor import LayoutTensorIter
 from gpu.memory import external_memory, fence_async_view_proxy
 from gpu import barrier
@@ -1079,14 +1079,14 @@ fn quantize_dynamic_scaled_fp4_async[
     comptime NUM_PIPELINES_STAGES = 1
 
     comptime input_tma_tile_shape = Index(128, SF_K_GROUP_SIZE)
-    var input_tma_op = create_tma_tile[
+    var input_tma_op = create_tensor_tile[
         input_tma_tile_shape,
         swizzle_mode=input_swizzle_mode,
         __tile_layout = Layout.row_major(input_tma_tile_shape),
     ](ctx, input_tensor)
 
     comptime output_tma_tile_shape = Index(128, 32)
-    var output_tma_op = create_tma_tile[
+    var output_tma_op = create_tensor_tile[
         output_tma_tile_shape,
         swizzle_mode=output_swizzle_mode,
         __tile_layout = Layout.row_major(output_tma_tile_shape),
@@ -1122,7 +1122,7 @@ fn quantize_dynamic_scaled_fp4_async[
     comptime scales_tma_tile_shape = Index(
         1, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
     )
-    var scales_tma_op = create_tma_tile[
+    var scales_tma_op = create_tensor_tile[
         scales_tma_tile_shape,
         swizzle_mode=scales_swizzle_mode,
         __tile_layout = Layout.row_major(scales_tma_tile_shape),

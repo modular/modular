@@ -33,7 +33,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import A100, is_cpu, is_valid_target
 from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.tma_async import TMATensorTile, create_tma_tile
+from layout.tma_async import TMATensorTile, create_tensor_tile, create_tma_tile
 from logger import Logger
 from memory import LegacyUnsafePointer, memset_zero
 
@@ -1314,7 +1314,7 @@ fn bmm_sm100_blockwise_scaled_fp8[
         "]",
     )
 
-    var a_tma_op = create_tma_tile[
+    var a_tma_op = create_tensor_tile[
         Index(1, BM, BK),
         swizzle_mode=a_swizzle,
         __tile_layout = Layout.row_major(1, BM, BK),
@@ -1324,13 +1324,13 @@ fn bmm_sm100_blockwise_scaled_fp8[
         1, BK, BN
     )
 
-    var b_tma_op = create_tma_tile[
+    var b_tma_op = create_tensor_tile[
         b_tile_shape,
         swizzle_mode=b_swizzle,
         __tile_layout = Layout.row_major(b_tile_shape),
     ](ctx, b)
 
-    var a_scales_tma_op = create_tma_tile[
+    var a_scales_tma_op = create_tensor_tile[
         Index(1, 1, BM),
         __tile_layout = Layout.row_major(1, 1, BM),
         __desc_layout = Layout(IntTuple(1, 1, BM), IntTuple(1, 1, 1)),

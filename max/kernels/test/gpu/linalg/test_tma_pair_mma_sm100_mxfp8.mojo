@@ -36,7 +36,12 @@ from layout.tensor_core_async import (
     tile_to_descriptor,
     tile_sf_layout_k_major,
 )
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tensor_tile,
+    create_tma_tile,
+)
 from internal_utils._utils import ValOrDim, dynamic, static
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, max_finite, min_finite
@@ -593,10 +598,10 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         256,
     ), "MMA_M and MMA_N must be divisible by 128"
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
@@ -661,7 +666,7 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         ),
     )
 
-    var a_scales_tma_op = create_tma_tile[
+    var a_scales_tma_op = create_tensor_tile[
         Index(
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
@@ -671,7 +676,7 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         ),
     ](ctx, a_scales_4d)
 
-    var b_scales_tma_op = create_tma_tile[
+    var b_scales_tma_op = create_tensor_tile[
         Index(
             MMA_N // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),

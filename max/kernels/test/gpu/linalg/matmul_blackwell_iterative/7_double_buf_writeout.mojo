@@ -58,6 +58,7 @@ from layout.tensor_core_async import (
     tile_to_descriptor,
 )
 from layout.tma_async import (
+    create_tensor_tile,
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
@@ -794,11 +795,11 @@ fn blackwell_kernel_7[
     comptime MMA_N = umma_shape[1]
     comptime MMA_K = umma_shape[2]
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
@@ -807,9 +808,9 @@ fn blackwell_kernel_7[
 
     comptime output_tile_shape = Index(BM, 32)
     comptime c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-    var c_tma_op = create_tma_tile[output_tile_shape, swizzle_mode=c_swizzle](
-        ctx, c
-    )
+    var c_tma_op = create_tensor_tile[
+        output_tile_shape, swizzle_mode=c_swizzle
+    ](ctx, c)
 
     # Configure shared memory usage
     # Total size = capacity - 1KB_reserved_by_L1

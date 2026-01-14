@@ -21,7 +21,12 @@ from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tensor_tile,
+    create_tma_tile,
+)
 from memory import stack_allocation
 from testing import assert_equal
 
@@ -155,7 +160,7 @@ def test_tma_4d_load_row_major[
 
     arange(src.tensor(), start=0, step=0.015625)
 
-    tma_tensor = create_tma_tile[
+    tma_tensor = create_tensor_tile[
         Index(cta_tile_dim0, cta_tile_dim1, cta_tile_dim2, cta_tile_dim3),
         swizzle_mode=swizzle_mode,
         __tile_layout=cta_tile_layout,

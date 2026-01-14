@@ -54,6 +54,7 @@ from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
+    create_tensor_tile,
     create_tma_tile,
 )
 from logger import Logger
@@ -596,9 +597,9 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     )
 
     # LayoutTensors are already in the right format for TMA operations
-    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode = config.a_swizzle](
-        ctx, a
-    )
+    a_tma_op = create_tensor_tile[
+        Index(BM, BK), swizzle_mode = config.a_swizzle
+    ](ctx, a)
 
     b_2d = LayoutTensor[
         b_type,
@@ -606,7 +607,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         b.origin,
         address_space = b.address_space,
     ](b.ptr)
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(BN, BK) if config.transpose_b else Index(BK, BN),
         swizzle_mode = config.b_swizzle,
     ](ctx, b_2d)
@@ -2051,7 +2052,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     comptime N = c_layout.shape[1].value()
     comptime K = a_layout.shape[1].value()
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // config.cluster_shape[1], BK),
         swizzle_mode = config.a_swizzle,
     ](ctx, a)
@@ -2063,7 +2064,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         b.origin,
         address_space = b.address_space,
     ](b.ptr)
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (config.cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
@@ -2081,7 +2082,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    var c_tma_op = create_tma_tile[
+    var c_tma_op = create_tensor_tile[
         c_tma_tile_shape,
         swizzle_mode = config.c_swizzle,
     ](ctx, c)

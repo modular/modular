@@ -77,7 +77,7 @@ from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
-    create_tma_tile,
+    create_tensor_tile,
 )
 
 from utils.fast_div import FastDiv
@@ -1310,11 +1310,11 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         "K iterations must be a multiple of k_group_size",
     ]()
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode = config.a_swizzle
     ](ctx, a_device)
 
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
@@ -1337,7 +1337,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         "Only support 128B swizzle mode when AB_swapped is True",
     ]()
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
-    var c_tma_op = create_tma_tile[
+    var c_tma_op = create_tensor_tile[
         c_tma_tile_shape if not config.AB_swapped else Index(
             c_tma_tile_shape[0], c_tma_tile_shape_1
         ),
@@ -1376,7 +1376,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ),
     )
 
-    var sfa_tma_op = create_tma_tile[
+    var sfa_tma_op = create_tensor_tile[
         Index(
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
@@ -1386,7 +1386,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ),
     ](ctx, sfa_4d)
 
-    var sfb_tma_op = create_tma_tile[
+    var sfb_tma_op = create_tensor_tile[
         Index(
             MMA_N // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
