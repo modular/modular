@@ -94,5 +94,5 @@ def test_block_scales_interleave() -> None:
         scales_interleaved = block_scales_interleave(
             scales,
         )
-        assert scales_interleaved.shape == [2, 3, 32, 4, 4]
+        assert scales_interleaved.shape == [2, 34, 32, 4, 4]
         assert scales_interleaved.dtype == DType.float8_e4m3fn

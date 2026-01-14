@@ -72,6 +72,19 @@ _MHA_MASK_CONFIG_DICT = {
 }
 
 
+def ceildiv(n: Dim, d: Dim) -> Dim:
+    """Ceiling division.
+
+    Args:
+        n: The numerator.
+        d: The denominator.
+
+    Returns:
+        The ceiling of dividing n by d.
+    """
+    return (n + d - 1) // d
+
+
 def fused_qkv_padded_matmul(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -3174,13 +3187,13 @@ def dynamic_block_scaled_matmul_fp4(
 
     # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
     # a_scales_dim_0 = (a.shape[0] + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
-    a_scales_dim_1 = (
-        (a.shape[1] * 2) + SF_K_GROUP_SIZE - 1
-    ) // SF_K_GROUP_SIZE  # each output element (uint8) is 2 fp4-e2m1fn values
-    b_scales_dim_0 = (b.shape[0] + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
-    b_scales_dim_1 = (
-        (b.shape[1] * 2) + SF_K_GROUP_SIZE - 1
-    ) // SF_K_GROUP_SIZE  # each output element (uint8) is 2 fp4-e2m1fn values
+    a_scales_dim_1 = ceildiv(
+        a.shape[1] * 2, Dim(SF_K_GROUP_SIZE)
+    )  # each output element (uint8) is 2 fp4-e2m1fn values
+    b_scales_dim_0 = ceildiv(b.shape[0], Dim(SF_MN_GROUP_SIZE))
+    b_scales_dim_1 = ceildiv(
+        b.shape[1] * 2, Dim(SF_K_GROUP_SIZE)
+    )  # each output element (uint8) is 2 fp4-e2m1fn values
     scales_dim_2 = SF_ATOM_M[0]
     scales_dim_3 = SF_ATOM_M[1]
     scales_dim_4 = SF_ATOM_K
@@ -3204,6 +3217,12 @@ def dynamic_block_scaled_matmul_fp4(
     ):
         raise ValueError(
             f"b_scales shape must be {b_scales_dim_0, b_scales_dim_1, scales_dim_2, scales_dim_3, scales_dim_4}, but got {b_scales.shape}"
+        )
+
+    if a_scales.shape[1] != b_scales.shape[1]:
+        raise ValueError(
+            "a_scales and b_scales must have the same shape on the K dimension."
+            f" got a_scales.shape={a_scales.shape} and b_scales.shape={b_scales.shape}"
         )
 
     result = ops.custom(
@@ -3276,8 +3295,8 @@ def quantize_dynamic_block_scaled_fp4(
     SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
 
     # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
-    scales_dim_0 = (input.shape[0] + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
-    scales_dim_1 = (input.shape[1] + SF_K_GROUP_SIZE - 1) // SF_K_GROUP_SIZE
+    scales_dim_0 = ceildiv(input.shape[0], Dim(SF_MN_GROUP_SIZE))
+    scales_dim_1 = ceildiv(input.shape[1], Dim(SF_K_GROUP_SIZE))
     scales_dim_2 = SF_ATOM_M[0]
     scales_dim_3 = SF_ATOM_M[1]
     scales_dim_4 = SF_ATOM_K
@@ -3346,11 +3365,10 @@ def block_scales_interleave(
     SF_ATOM_M = [32, 4]
     SF_ATOM_K = 4
     SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
-    SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
 
     # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
-    scales_dim_0 = (scales.shape[0] + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
-    scales_dim_1 = (scales.shape[1] + SF_K_GROUP_SIZE - 1) // SF_K_GROUP_SIZE
+    scales_dim_0 = ceildiv(scales.shape[0], Dim(SF_MN_GROUP_SIZE))
+    scales_dim_1 = ceildiv(scales.shape[1], Dim(SF_ATOM_K))
     scales_dim_2 = SF_ATOM_M[0]
     scales_dim_3 = SF_ATOM_M[1]
     scales_dim_4 = SF_ATOM_K

@@ -637,8 +637,8 @@ fn quantize_dynamic_block_scaled[
         DType.bfloat16,
     ), "input dtype should be bfloat16"
     __comptime_assert out_dtype in (
-        DType.uint32,
-    ), "output dtype should be uint32"
+        DType.uint8,
+    ), "output dtype should be uint8"
     __comptime_assert scales_dtype in (
         NVFP4_SF_DTYPE,
     ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)"
