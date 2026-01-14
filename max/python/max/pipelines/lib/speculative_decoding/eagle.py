@@ -232,7 +232,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                     self._draft_kv_start_idx[context.request_id]
                     - context.tokens.processed_length
                 )
-                context.tokens.skip_processing(delta)
+                if delta > 0:
+                    context.tokens.skip_processing(delta)
+                else:
+                    context.tokens.rewind_processing(-delta)
 
         for ctx in batch:
             model.kv_manager.alloc(ctx, num_steps=num_steps)
@@ -610,9 +613,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 token = int(draft_tokens[idx, token_idx])
                 context.update(token)
 
-            # This is added because the draft needs to process the same tokens but with the hidden states received from the target model. This will also set the start index to the correct position for the kv cache
-            context.apply_processing_offset(-rejected_token_idx)
-
             if not context.is_done:
                 if rejected_token_idx < num_draft_tokens_generated:
                     token = int(recovered_tokens[idx, rejected_token_idx])
@@ -623,6 +623,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 if not context.is_done:
                     active_context_indices.append(idx)
                 self._last_verified_token[context.request_id] = token
+
+            # This is added because the draft needs to process the same tokens but with the hidden states received from the target model. This will also set the start index to the correct position for the kv cache
+            context.apply_processing_offset(-rejected_token_idx)
 
             total_draft_accepted += rejected_token_idx
             acceptance_lengths.append(rejected_token_idx)
