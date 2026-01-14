@@ -360,6 +360,7 @@ class TextBatchConstructor:
             ReplicaRequests() for _ in range(self.num_replicas)
         ]
         self._request_id_to_replica_idx: dict[RequestID, int] = {}
+        self._request_id_to_lora_name: dict[RequestID, str | None] = {}
 
         self.total_preemption_count: int = 0
         self.last_preemption_logging_time: float = time.monotonic()
@@ -419,6 +420,11 @@ class TextBatchConstructor:
             replica_idx = self.get_next_replica_idx()
         replica = self.replicas[replica_idx]
         self._request_id_to_replica_idx[ctx.request_id] = replica_idx
+        self._request_id_to_lora_name[ctx.request_id] = (
+            ctx.model_name
+            if self._lora_manager and is_lora(ctx, self._lora_manager)
+            else None
+        )
 
         # Add the request to the appropriate dict based on whether it needs CE.
         if ctx.tokens.generated_length == 0:
@@ -495,11 +501,31 @@ class TextBatchConstructor:
             del replica.ce_reqs[request_id]
         elif request_id in replica.tg_reqs:
             del replica.tg_reqs[request_id]
+        elif request_id in replica.deferred_lora_requests:
+            del replica.deferred_lora_requests[request_id]
         # Note: Request might not be in any queue if it was moved to a batch
         # during construct_batch() and then an exception occurred during execution.
         # In this case, we still need to release pipeline resources and clean up tracking.
 
+        # Clean up LoRA state if no other request uses this adapter.
+        # Note: We only check the current replica because LoRA currently requires
+        # data_parallel_degree == 1. If DP > 1 LoRA becomes supported, this check
+        # would need to search across all replicas.
+        lora_name = self._request_id_to_lora_name.pop(request_id, None)
+        if lora_name is not None:
+            # Check _request_id_to_lora_name rather than the queues because
+            # requests may be in the active batch (not in any queue) but still
+            # using this LoRA adapter.
+            lora_still_needed = (
+                lora_name in self._request_id_to_lora_name.values()
+            )
+            if not lora_still_needed:
+                replica.active_loras.discard(lora_name)
+
         self.pipeline.release(request_id)
+        # _request_id_to_replica_idx is the source of truth for whether a request
+        # is managed by the scheduler (checked by contains()).
+        # Remove from here, marking the request as fully released.
         del self._request_id_to_replica_idx[request_id]
 
     def clear_tg_reqs(self) -> None:

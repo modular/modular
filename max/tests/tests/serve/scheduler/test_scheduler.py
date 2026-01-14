@@ -498,3 +498,72 @@ def test_pipeline_exception_sends_error_to_client() -> None:
     assert "CUDA out of memory" in result.error.error_message
     assert result.error.traceback_str  # Non-empty traceback
     assert "RuntimeError" in result.error.traceback_str
+
+
+def _create_lora_scheduler(adapter_name: str) -> TokenGenerationScheduler:
+    """Create a scheduler with LoRA support for testing."""
+    pipeline = Mock()
+    pipeline.release = Mock()
+    lora_manager = Mock()
+    lora_manager.is_lora = Mock(side_effect=lambda n: n == adapter_name)
+    lora_manager.is_active_lora = Mock(return_value=False)
+    lora_manager.activate_adapter = Mock()
+    lora_manager.max_num_loras = 4
+    pipeline._pipeline_model = Mock(_lora_manager=lora_manager)
+
+    return TokenGenerationScheduler(
+        scheduler_config=TokenGenerationSchedulerConfig(
+            max_batch_size=4,
+            max_forward_steps_tg=8,
+            target_tokens_per_batch_ce=32,
+            data_parallel_degree=1,
+            kvcache_ce_watermark=0.95,
+        ),
+        pipeline=pipeline,
+        request_queue=queue.Queue(),
+        response_queue=queue.Queue(),
+        cancel_queue=queue.Queue(),
+    )
+
+
+def test_lora_cleanup_on_release() -> None:
+    """Test LoRA cleanup: stays active with remaining requests, removed when last released."""
+    scheduler = _create_lora_scheduler("test-adapter")
+    bc = scheduler.batch_constructor
+
+    # Create two requests using the same LoRA adapter
+    req1, req2 = create_mock_request(), create_mock_request()
+    req1.model_name = req2.model_name = "test-adapter"
+    bc.enqueue_new_request(req1)
+    bc.enqueue_new_request(req2)
+    bc.construct_batch()  # Activates LoRA
+
+    replica = bc.replicas[0]
+    assert "test-adapter" in replica.active_loras
+
+    # Release first - LoRA stays active
+    bc.release_request(req1.request_id)
+    assert "test-adapter" in replica.active_loras
+
+    # Release second - LoRA removed
+    bc.release_request(req2.request_id)
+    assert "test-adapter" not in replica.active_loras
+
+
+def test_deferred_lora_request_cleanup() -> None:
+    """Test that deferred LoRA requests are properly cleaned up on release."""
+    scheduler = _create_lora_scheduler("deferred-adapter")
+    bc = scheduler.batch_constructor
+
+    req = create_mock_request()
+    req.model_name = "deferred-adapter"
+    bc.enqueue_new_request(req)
+
+    # Simulate deferral by moving request to deferred_lora_requests
+    replica = bc.replicas[0]
+    del replica.ce_reqs[req.request_id]
+    replica.deferred_lora_requests[req.request_id] = req
+
+    bc.release_request(req.request_id)
+
+    assert req.request_id not in replica.deferred_lora_requests
