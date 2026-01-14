@@ -89,6 +89,22 @@ class PixelGenerationRequest(Request):
     """
 
     def __post_init__(self) -> None:
+        """Validates mutual exclusivity and converts dict messages after initialization."""
+        # Convert dict messages to TextGenerationRequestMessage objects
+        if self.messages is not None:
+            converted_messages: list[TextGenerationRequestMessage] = []
+            for msg in self.messages:
+                if isinstance(msg, dict):
+                    converted_messages.append(
+                        TextGenerationRequestMessage(**msg)
+                    )
+                elif isinstance(msg, TextGenerationRequestMessage):
+                    converted_messages.append(msg)
+                else:
+                    raise TypeError(f"Invalid message type: {type(msg)}")
+            # Use object.__setattr__ for frozen dataclass
+            object.__setattr__(self, "messages", converted_messages)
+
         if self.prompt is None and self.messages is None:
             raise ValueError("Either prompt or messages must be provided.")
         if self.prompt is not None and self.messages is not None:
