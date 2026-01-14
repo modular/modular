@@ -19,6 +19,10 @@ modular_py_test(
     size = "large",
     srcs = ["test_tokenizer.py"],
     env_inherit = ["HF_TOKEN"],
+    ignore_extra_deps = [
+        # Undeclared dep of transformers
+        requirement("jinja2"),
+    ],
     tags = [
         "gpu",
         "manual",  # TODO(AITLIB-293): Remove this once we have a way to run these tests on CI.
@@ -30,6 +34,8 @@ modular_py_test(
         "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
+        "//max/tests/integration/pipelines/python/test_common:mocks",
+        requirement("jinja2"),
         requirement("pytest-asyncio"),
         requirement("pillow"),
     ],
