@@ -19,7 +19,7 @@ trait CanDoSomething:
 
         @parameter
         for i in range(names.size):
-            print(names[i], ": ", sep="", end="")
+            print(materialize[names[i]](), ": ", sep="", end="")
             trait_downcast[CanDoSomething](
                 __struct_field_ref(i, self)
             ).do_something()
