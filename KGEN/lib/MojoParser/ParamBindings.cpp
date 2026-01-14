@@ -237,8 +237,12 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
       operands.values.push_back(binding);
   }
 
-  if (failed(inference.inferFromParamList(partial)))
+  if (failed(inference.inferFromParamList(partial))) {
+    // TODO: remove `unprovableConstraints` after fully migrated, we still need
+    // it for error messages that reported in paramBinding.
+    fitness.unprovableConstraints = inference.unprovableConstraints;
     return {{}, fitness};
+  }
 
   // With that out of the way, we can now get onto normal type checking of
 
@@ -259,27 +263,10 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
   ArrayRef<PogMetadataAttr> pogs = paramListAttr.getPogs();
   auto setParamValueAndVerify = [&](TypedAttr value,
                                     Type requestedType) -> LogicalResult {
-    size_t idx = newBindings.size();
-    // The canonical types must match, now make sure sugar aligns.
-    if (value.getType() != requestedType)
-      value = ParamOperatorAttr::getRebind(value, requestedType);
     evaluator.appendIndexBinding(value);
     newBindings.push_back(value);
 
-    // If this is a partial binding, we don't need to verify constraints. The
-    // caller is expected to verify the full binding list later.
-    if (partial && isa<UnboundAttr>(value))
-      return success();
-
-    ArrayRef<ConstraintAttr> constraints = pogs[idx].getConstraints();
-    if (constraints.empty())
-      return success();
-
-    // Verify all constraints are satisfied, collecting unprovable constraints.
-    ConstraintResult result = checkConstraints(
-        declScope, paramListAttr, constraints, /*origConstraints=*/{}, getDiag,
-        &fitness.unprovableConstraints, &evaluator);
-    return success(result == ConstraintResult::Satisfied);
+    return success();
   };
 
   // Use an expr emitter to perform implicit conversions within a parameter
