@@ -543,7 +543,7 @@ def test_struct_field_count_mixed_visibility():
 
 def test_struct_field_names():
     # Test field names via indexing - returns InlineArray[StaticString, N]
-    comptime names = struct_field_names[SimpleStruct]()
+    var names = struct_field_names[SimpleStruct]()
     assert_equal(names[0], "x")
     assert_equal(names[1], "y")
 
@@ -838,7 +838,7 @@ def test_user_defined_parametric_struct():
     comptime count = struct_field_count[ParametricTestStruct[Float64, 10]]()
     assert_equal(count, 2)
 
-    comptime names = struct_field_names[ParametricTestStruct[Float64, 10]]()
+    var names = struct_field_names[ParametricTestStruct[Float64, 10]]()
     assert_equal(names[0], "data")
     assert_equal(names[1], "count")
 
@@ -1022,7 +1022,7 @@ def test___struct_field_ref_non_copyable():
 def test___struct_field_ref_with_names():
     """Test combining __struct_field_ref with struct_field_names."""
     var p = PointForRef(30, 40)
-    comptime names = struct_field_names[PointForRef]()
+    var names = struct_field_names[PointForRef]()
 
     # Get field references and verify names match values
     ref f0 = __struct_field_ref(0, p)
@@ -1045,7 +1045,7 @@ fn print_struct_debug[T: AnyType](ref s: T):
 
     Uses __struct_field_ref with parametric indices (the loop variable i).
     """
-    comptime names = struct_field_names[T]()
+    var names = struct_field_names[T]()
     comptime count = struct_field_count[T]()
 
     # Test that __struct_field_ref works with parametric indices

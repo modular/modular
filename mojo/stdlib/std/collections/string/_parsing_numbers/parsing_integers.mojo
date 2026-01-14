@@ -28,7 +28,7 @@ fn standardize_string_slice(
     memcpy(
         dest=std_x_ptr + CONTAINER_SIZE - x_len, src=x.unsafe_ptr(), count=x_len
     )
-    return standardized_x
+    return standardized_x^
 
 
 # The idea is to end up with a InlineArray of size
@@ -121,4 +121,4 @@ fn get_vector_with_exponents() -> InlineArray[UInt64, CONTAINER_SIZE]:
     var result = InlineArray[UInt64, CONTAINER_SIZE](uninitialized=True)
     for i in range(4, CONTAINER_SIZE):
         result[i] = 10 ** (CONTAINER_SIZE - i - 1)
-    return result
+    return result^

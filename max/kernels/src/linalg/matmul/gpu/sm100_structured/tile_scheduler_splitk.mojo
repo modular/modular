@@ -598,7 +598,7 @@ struct TileScheduler[
             i += 1
             current_width = second_width
 
-        return (arr, i)
+        return (arr^, i)
 
     @staticmethod
     @always_inline

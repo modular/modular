@@ -423,4 +423,4 @@ fn struct_field_names[
     for i in range(count):
         result[i] = StaticString(raw[i])
 
-    return result
+    return result^

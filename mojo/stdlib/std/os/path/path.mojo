@@ -622,7 +622,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
         ord("8"),
         ord("9"),
     )
-    return Int(byte) in shell_variables
+    return Int(byte) in materialize[shell_variables]()
 
 
 fn _is_alphanumeric(byte: Byte) -> Bool:

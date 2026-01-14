@@ -207,6 +207,10 @@ struct Communicators(ImplicitlyCopyable):
     var ngpus: Int
     var comms: InlineArray[ncclComm_t, MAX_GPUS]
 
+    fn __copyinit__(out self, rhs: Self):
+        self.ngpus = rhs.ngpus
+        self.comms = rhs.comms.copy()
+
 
 fn _dtype_to_ccl[dtype: DType]() raises -> ncclDataType_t:
     @parameter
@@ -243,7 +247,7 @@ fn _get_global_comms(ngpus: Int) raises -> Communicators:
         ncclCommInitAll(comms.unsafe_ptr(), ngpus, devlist.unsafe_ptr())
     )
 
-    var c = Communicators(ngpus=ngpus, comms=comms)
+    var c = Communicators(ngpus=ngpus, comms=comms.copy())
     var ptr = UnsafePointer[Communicators].alloc(1)
     ptr.init_pointee_move(c)
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](

@@ -19,14 +19,14 @@ from testing import TestSuite
 
 def test_uppercase_conversion():
     # a -> A
-    count1, chars1 = _get_uppercase_mapping(Codepoint(97)).value()
+    count1, ref chars1 = _get_uppercase_mapping(Codepoint(97)).value()
     assert_equal(count1, 1)
     assert_equal(chars1[0], Codepoint(65))
     assert_equal(chars1[1], Codepoint(0))
     assert_equal(chars1[2], Codepoint(0))
 
     # ß -> SS
-    count2, chars2 = _get_uppercase_mapping(
+    count2, ref chars2 = _get_uppercase_mapping(
         Codepoint.from_u32(0xDF).value()
     ).value()
     assert_equal(count2, 2)
@@ -35,7 +35,7 @@ def test_uppercase_conversion():
     assert_equal(chars2[2], Codepoint(0))
 
     # ΐ -> Ϊ́
-    count3, chars3 = _get_uppercase_mapping(
+    count3, ref chars3 = _get_uppercase_mapping(
         Codepoint.from_u32(0x390).value()
     ).value()
     assert_equal(count3, 3)

@@ -104,7 +104,7 @@ comptime UTF8_CHAR_WIDTHS = InlineArray[Byte, 256](
 
 @always_inline
 fn _utf8_char_width(b: Byte) -> Int:
-    return Int(UTF8_CHAR_WIDTHS[Int(b)])
+    return Int(materialize[UTF8_CHAR_WIDTHS]()[Int(b)])
 
 
 @always_inline

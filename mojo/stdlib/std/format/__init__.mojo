@@ -235,7 +235,7 @@ trait Writable:
             @parameter
             if i > 0:
                 writer.write_string(", ")
-            writer.write_string(names[i])
+            writer.write_string(materialize[names[i]]())
             writer.write_string("=")
             trait_downcast[Writable](__struct_field_ref(i, self)).write_repr_to(
                 writer

@@ -2578,7 +2578,7 @@ struct DeviceFunction[
             else:
                 translated_arg_offsets[i] = -1
 
-        return (num_translated_args, translated_arg_offsets)
+        return (num_translated_args, translated_arg_offsets^)
 
     @always_inline
     @parameter
@@ -2731,9 +2731,11 @@ struct DeviceFunction[
         # dtype in the kernel.
         @parameter
         if Self.declared_arg_types:
-            num_translated_args, translated_arg_offsets = (
-                Self._validate_arguments[*Ts, num_args=num_passed_args]()
-            )
+            var validated_args = Self._validate_arguments[
+                *Ts, num_args=num_passed_args
+            ]()
+            num_translated_args = validated_args[0]
+            translated_arg_offsets = validated_args[1].copy()
 
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate

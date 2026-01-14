@@ -274,6 +274,9 @@ what we publish.
   All fields must conform to `Writable`. Override `write_to()` for custom
   formatting.
 
+- `InlineArray` no longer conforms to `ImplicitlyCopyable`.
+  Users must explicitly copy arrays or take references.
+
 - `PythonObject` now supports implicit conversion from `None`, allowing more
   natural Python-like code:
 

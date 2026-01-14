@@ -598,7 +598,7 @@ struct Header(ImplicitlyCopyable):
 
             sleep(UInt(1))
 
-        var ptr = payload._handle[].slots[Int(me)]
+        ref ptr = payload._handle[].slots[Int(me)]
         var value0 = ptr[0]
         var value1 = ptr[1]
         return value0, value1

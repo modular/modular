@@ -384,9 +384,7 @@ def test_issue_30237():
     comptime dtype = DType.float32
     comptime simd_width = 1
     comptime coefficients_len = 7
-    comptime coefficients = InlineArray[
-        SIMD[dtype, simd_width], coefficients_len
-    ](
+    var coefficients = InlineArray[SIMD[dtype, simd_width], coefficients_len](
         4.89352455891786e-03,
         6.37261928875436e-04,
         1.48572235717979e-05,
@@ -420,7 +418,7 @@ def test_issue_30237():
         var result = x.fma(c_last, c_second_from_last)
 
         for idx in range(coefficients_len - 2):
-            var coefs = coefficients
+            ref coefs = coefficients
             var c = coefs[coefficients_len - 3 - idx]
             result = x.fma(result, c)
 

@@ -61,7 +61,7 @@ def test_array_int():
     i -= 1
     assert_equal(arr[i], 2)
 
-    var copy = arr
+    var copy = arr.copy()
     assert_equal(arr[0], copy[0])
     assert_equal(arr[1], copy[1])
     assert_equal(arr[2], copy[2])
@@ -133,7 +133,7 @@ def test_array_str():
     assert_equal(arr[-1], "wazzup")
     assert_equal(arr[-2], "morning")
 
-    var copy = arr
+    var copy = arr.copy()
     assert_equal(arr[0], copy[0])
     assert_equal(arr[1], copy[1])
     assert_equal(arr[2], copy[2])

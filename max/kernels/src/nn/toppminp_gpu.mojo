@@ -482,6 +482,11 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
         self._selection = 0
         self._size = size
 
+    fn __copyinit__(out self, rhs: Self):
+        self._d_buffers = rhs._d_buffers.copy()
+        self._selection = rhs._selection
+        self._size = rhs._size
+
     @always_inline
     fn current(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
         return DeviceBuffer[Self.dtype](
