@@ -339,8 +339,8 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
         # Constructs splits for the data parallel execution.
         if dp > 1:
-            data_parallel_splits = compute_data_parallel_splits(
-                replica_batches, device0, pinned
+            data_parallel_splits = Tensor.from_numpy(
+                compute_data_parallel_splits(replica_batches)
             )
         else:
             data_parallel_splits = None

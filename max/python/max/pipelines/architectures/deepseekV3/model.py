@@ -625,8 +625,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         device_input_row_offsets = host_input_row_offsets.to(device0)
 
-        data_parallel_splits = compute_data_parallel_splits(
-            replica_batches, device0, pinned
+        data_parallel_splits = Tensor.from_numpy(
+            compute_data_parallel_splits(replica_batches)
         )
 
         return DeepseekV3Inputs(
