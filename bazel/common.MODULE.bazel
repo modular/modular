@@ -425,6 +425,13 @@ mojo.gpu_toolchains(
 use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")
 
 http_archive(
+    name = "bazel_clang_tidy",
+    sha256 = "354e13c7a5d0ad69c32c509cc244954e40af98b66ad17136c84a6277afe178d4",
+    strip_prefix = "bazel_clang_tidy-496018e020cf0a7d813a2b5a9d246ec55340a7ed",
+    url = "https://github.com/erenon/bazel_clang_tidy/archive/496018e020cf0a7d813a2b5a9d246ec55340a7ed.tar.gz",
+)
+
+http_archive(
     name = "uv_linux_aarch64",
     build_file_content = 'exports_files(["uv"])',
     sha256 = "f177397625eb7ca184a01a954c7d487d1cafee68e53cc8f2789a02f75c347a68",

@@ -25,6 +25,12 @@ macos_sysroot_repository(name = "sysroot-macos")
 
 include("//bazel:mojo.MODULE.bazel")
 
+link_hack = use_repo_rule("//bazel/internal:link_hack.bzl", "link_hack")
+
+link_hack(
+    name = "build_bazel_rules_android",  # See link_hack.bzl for details
+)
+
 register_toolchains(
     "@mojo_toolchains//...",
     "//bazel/internal/cc-toolchain:all",
