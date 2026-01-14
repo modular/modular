@@ -254,12 +254,15 @@ class Qwen3EmbeddingPipelineModel(PipelineModel[TextContext], KVCacheMixin):
             
             kv_inputs_tuple = (kv_blocks, cache_lengths, lookup_table, max_lengths)
         else:
-            kv_inputs_tuple = (
-                kv_cache_inputs.kv_blocks,
-                kv_cache_inputs.cache_lengths,
-                kv_cache_inputs.lookup_table,
-                kv_cache_inputs.max_lengths,
-            )
+            # Handle KVCacheInputsSequence (from text generation pipeline)
+            from max.nn.kv_cache import KVCacheInputsSequence
+            if isinstance(kv_cache_inputs, KVCacheInputsSequence):
+                # Use the first KV cache inputs from the sequence
+                # Use tuple() to convert to tuple - KVCacheInputs implements __iter__
+                kv_inputs_tuple = tuple(kv_cache_inputs.kv_cache_inputs[0])
+            else:
+                # Regular KVCacheInputs - use tuple() to convert
+                kv_inputs_tuple = tuple(kv_cache_inputs)
 
         return Qwen3EmbeddingInputs(
             attention_mask=Tensor.from_numpy(attention_mask).to(
