@@ -17,7 +17,7 @@ from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string._parsing_numbers.parsing_floats import _atof
 from collections.string._utf8 import UTF8Chunks, _is_valid_utf8
-from collections.string.format import _CurlyEntryFormattable, _FormatUtils
+from collections.string.format import _FormatUtils
 from collections.string.string_slice import (
     CodepointSliceIter,
     _to_string_list,
@@ -61,7 +61,6 @@ struct String(
     Stringable,
     Writable,
     Writer,
-    _CurlyEntryFormattable,
 ):
     """Represents a mutable string.
 
@@ -1872,7 +1871,7 @@ struct String(
         """
         return self.as_string_slice() * n
 
-    fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) raises -> String:
+    fn format[*Ts: AnyType](self, *args: *Ts) raises -> String:
         """Produce a formatted string using the current string as a template.
 
         The template, or "format string" can contain literal text and/or
@@ -1887,8 +1886,8 @@ struct String(
             args: The substitution values.
 
         Parameters:
-            Ts: The types of substitution values that implement `Representable`
-                and `Stringable` (to be changed and made more flexible).
+            Ts: The types of substitution values that implement `Representable &
+                Stringable` or `Writable`.
 
         Returns:
             The template with the given values substituted.

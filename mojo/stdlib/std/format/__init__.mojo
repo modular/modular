@@ -10,71 +10,88 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Text formatting: traits for writing types as human-readable UTF-8 strings.
+"""Provides formatting traits for converting types to text.
 
 The `format` package provides traits that control how types format themselves as
 text and where that text gets written. The `Writable` trait describes how a
 type converts itself to UTF-8 text, while the `Writer` trait accepts formatted
 output from writable types. Together, they enable efficient formatting without
-unnecessary allocations by directly to destinations like files, strings, or
-network sockets.
+unnecessary allocations by writing directly to destinations like files, strings,
+or network sockets.
 
 Use this package to implement custom text formatting for your types, control
 output representation, or write formatted data directly to various destinations.
+
+## Quick Start
+
+To make a type formattable, implement the `Writable` trait:
+
+```mojo
+@fieldwise_init
+struct Point(Writable):
+    var x: Float64
+    var y: Float64
+
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write("(", self.x, ", ", self.y, ")")
+
+var p = Point(1.5, 2.7)
+print(p)  # (1.5, 2.7)
+```
+
+## Debug Formatting
+
+Optionally implement `write_repr_to()` to provide debug output:
+
+```mojo
+@fieldwise_init
+struct Point(Writable):
+    var x: Float64
+    var y: Float64
+
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write("(", self.x, ", ", self.y, ")")
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        writer.write("Point(x=", self.x, ", y=", self.y, ")")
+
+var p = Point(1.5, 2.7)
+print(p)       # (1.5, 2.7)
+print(repr(p)) # Point(x=1.5, y=2.7)
+```
 """
 
 from memory import Span
 
 
-trait Writer:
-    """Describes a type that can be written to by any type that implements the
-    `write_to` function.
+# ===-----------------------------------------------------------------------===#
+# Writer
+# ===-----------------------------------------------------------------------===#
 
-    This enables you to write one implementation that can be written to a
-    variety of types such as file descriptors, strings, network locations etc.
-    The types are written as a `StringSlice`, so the `Writer` can avoid
-    allocations depending on the requirements. There is also a general `write`
-    that takes multiple args that implement `write_to`.
+
+trait Writer:
+    """A destination for formatted text output.
+
+    `Writer` is implemented by types that can accept UTF-8 formatted text, such
+    as strings, files, or network sockets. Types implementing `Writable` write
+    their output to a `Writer`.
+
+    The core method is `write_string()`, which accepts a `StringSlice` for
+    efficient, allocation-free output. The convenience method `write()` accepts
+    multiple `Writable` arguments.
 
     Example:
 
     ```mojo
-    @fieldwise_init
-    struct NewString(Writer, Writable, ImplicitlyCopyable):
+    struct StringBuilder(Writer):
         var s: String
 
-        # Writer requirement to write a String
         fn write_string(mut self, string: StringSlice):
             self.s += string
 
-        # Also make it Writable to allow `print` to write the inner String
-        fn write_to(self, mut writer: Some[Writer]):
-            writer.write(self.s)
-
-
-    @fieldwise_init
-    struct Point(Writable, ImplicitlyCopyable):
-        var x: Int
-        var y: Int
-
-        # Pass multiple args to the Writer. The Int and StaticString types
-        # call `writer.write_string` in their own `write_to` implementations.
-        fn write_to(self, mut writer: Some[Writer]):
-            writer.write("Point(", self.x, ", ", self.y, ")")
-
-
-    fn main():
-        var point = Point(1, 2)
-        var new_string = NewString(String(point))
-        new_string.write("\\n", Point(3, 4))
-        print(new_string)
-    ```
-
-    Output:
-
-    ```plaintext
-    Point(1, 2)
-    Point(3, 4)
+    var builder = StringBuilder("")
+    builder.write("Count: ", 42)  # Writes multiple values at once
+    print(builder.s)  # Count: 42
     ```
     """
 
@@ -113,43 +130,75 @@ trait Writer:
 
 
 trait Writable:
-    """The `Writable` trait describes how a type is written into a `Writer`.
+    """A trait for types that can format themselves as text.
 
-    The `Writable` trait is designed for efficient output operations. It
-    differs from [`Stringable`](/mojo/std/builtin/str/Stringable) in that
-    `Stringable` merely converts a type to a `String` type, whereas `Writable`
-    directly writes the type to an output stream, making it more efficient for
-    output operations like [`print()`](/mojo/std/io/io/print).
+    The `Writable` trait provides a simple, straightforward interface for types
+    that need to convert themselves to text. Types implementing `Writable` write
+    directly to a `Writer`, making formatting efficient and allocation-free.
 
-    To make your type conform to `Writable`, you must implement `write_to()`
-    which takes `self` and a type conforming to
-    [`Writer`](/mojo/std/io/write/Writer):
+    Example:
 
     ```mojo
+    @fieldwise_init
     struct Point(Writable):
         var x: Float64
         var y: Float64
 
         fn write_to(self, mut writer: Some[Writer]):
-            var string = "Point"
-            # Write a single `StringSlice`:
-            writer.write_string(string)
-            # Pass multiple args that implement `Writable`:
             writer.write("(", self.x, ", ", self.y, ")")
+
+        fn write_repr_to(self, mut writer: Some[Writer]):
+            writer.write("Point(x=", self.x, ", y=", self.y, ")")
+
+    var p = Point(1.5, 2.7)
+    print(p)       # (1.5, 2.7)
+    print(repr(p)) # Point(x=1.5, y=2.7)
     ```
+
+    Implement `write_to()` for normal formatting and optionally implement
+    `write_repr_to()` for debug output. If you don't implement
+    `write_repr_to()`, it defaults to calling `write_to()`.
     """
 
     fn write_to(self, mut writer: Some[Writer]):
-        """
-        Formats the string representation of this type to the provided Writer.
+        """Write this value's text representation to a writer.
 
-        For example, when you pass your type to
-        [`print()`](/mojo/std/io/io/print/), it calls `write_to()` on your
-        type and the `writer` is the
-        [`FileDescriptor`](/mojo/std/io/file_descriptor/FileDescriptor/)
-        that `print()` is writing to.
+        This method is called by `print()`, `String()`, and format strings to
+        convert the value to text. Implement this method to define how your type
+        appears when printed or converted to a string.
 
         Args:
-            writer: The type conforming to `Writable`.
+            writer: The destination for formatted output.
+
+        ## Example
+
+        ```mojo
+        fn write_to(self, mut writer: Some[Writer]):
+            writer.write("(", self.x, ", ", self.y, ")")
+        ```
         """
         ...
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write this value's debug representation to a writer.
+
+        This method is called by `repr(value)` or the `"{!r}"` format specifier
+        and should produce unambiguous, developer-facing output that shows the
+        internal state of the value.
+
+        The default implementation calls `write_to()`, providing the same output
+        for both normal and debug formatting. Implement this method to provide
+        custom debug output.
+
+        Args:
+            writer: The destination for formatted output.
+
+        ## Example
+
+        ```mojo
+        fn write_repr_to(self, mut writer: Some[Writer]):
+            writer.write("Point(x=", self.x, ", y=", self.y, ")")
+        ```
+        """
+        # Default: use normal formatting
+        self.write_to(writer)

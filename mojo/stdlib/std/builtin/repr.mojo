@@ -80,6 +80,25 @@ fn repr[T: Representable](value: T) -> String:
     return value.__repr__()
 
 
+fn repr[T: Writable, __disambiguate: NoneType = None](value: T) -> String:
+    """Returns the string representation of the given value.
+
+    Args:
+        value: The value to get the string representation of.
+
+    Parameters:
+        T: The type of `value`. Must implement the `Writable` trait.
+        __disambiguate: A temporary dummy parameter to disambiguate the function
+            from the other `repr(Representable)` function.
+
+    Returns:
+        The string representation of the given value.
+    """
+    var string = String()
+    value.write_repr_to(string)
+    return string^
+
+
 fn repr[U: Copyable & Writable](value: LinkedList[U]) -> String:
     """Returns the string representation of an `LinkedList[U]`.
 

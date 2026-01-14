@@ -27,7 +27,7 @@ from collections.string._utf8 import (
     _utf8_first_byte_sequence_length,
     _is_utf8_continuation_byte,
 )
-from collections.string.format import _CurlyEntryFormattable, _FormatUtils
+from collections.string.format import _FormatUtils
 from hashlib.hasher import Hasher
 from format._utils import _TotalWritableBytes, _WriteBufferStack
 from math import align_down
@@ -474,7 +474,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Sized,
     Stringable,
     Writable,
-    _CurlyEntryFormattable,
 ):
     """A non-owning view into encoded string data.
 
@@ -1849,7 +1848,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return StringSlice(unsafe_from_utf8=self._slice[abs_start:])
 
     @always_inline
-    fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) raises -> String:
+    fn format[*Ts: AnyType](self, *args: *Ts) raises -> String:
         """Produce a formatted string using the current string as a template.
 
         The template, or "format string" can contain literal text and/or
@@ -1864,8 +1863,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             args: The substitution values.
 
         Parameters:
-            Ts: The types of substitution values that implement `Representable`
-                and `Stringable` (to be changed and made more flexible).
+            Ts: The types of substitution values that implement `Representable &
+                Stringable` or `Writable`.
 
         Returns:
             The template with the given values substituted.

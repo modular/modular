@@ -607,6 +607,15 @@ what we publish.
   `io`. These traits are not directly related to binary i/o, but are rather
   closely tied to type/value string formatting.
 
+- The `Writable` trait now supports debug formatting through an optional
+  `write_repr_to()` method, called by `repr()` and the `{!r}` format specifier.
+  Additionally, `repr()` and string formatting methods (`.format()` on `String`,
+  `StringSlice`, and `StringLiteral`) now accept `Writable` types, enabling
+  efficient formatting without intermediate string allocations. To preserve
+  existing behavior, types implementing both `Stringable & Representable` and
+  `Writable` will continue using `Stringable & Representable` methods; only
+  types implementing `Writable` alone will use the new code paths.
+
 - `Writer` has been reworked to only support UTF-8 data instead of arbitrary
   `Byte` sequences. The `write_bytes` method has been replaced with
   `write_string`.
