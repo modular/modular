@@ -7,22 +7,31 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
-modular_py_test(
-    name = "module_v3",
-    timeout = "long",
-    srcs = glob(["**/*.py"]),
-    args = [
-        "-n",
-        "auto",
-    ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2411
-    deps = [
-        "//max/python/max",
-        "//max/tests/integration/pipelines/python:hf_repo_lock",
-        requirement("pytest-xdist"),
-    ],
-)
+[
+    modular_py_test(
+        name = src.replace(".py", ""),
+        timeout = "long",
+        srcs = [src],
+        args = [
+            "-n",
+            "auto",
+        ],
+        tags = [
+            "no-pydeps",  # TODO: Fix and re-enable
+        ] + (["manual"] if src in [
+            # FIXME: SDLC-2904
+            "test_module_gpt2.py",
+            "rope/test_yarn.py",
+        ] else []),
+        target_compatible_with = select({
+            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),  # FIXME: MOCO-2411
+        deps = [
+            "//max/python/max",
+            "//max/tests/integration/pipelines/python:hf_repo_lock",
+            requirement("pytest-xdist"),
+        ],
+    )
+    for src in glob(["**/*.py"])
+]
