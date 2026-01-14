@@ -121,7 +121,7 @@ namespace {
 class ParamMatcher {
 public:
   ParamMatcher(const ExprNode *expr, ParamInf &state)
-      : expr(expr), state(state), shared(state.shared) {}
+      : expr(expr), state(state), shared(state.getShared()) {}
   ~ParamMatcher() {}
 
   // This is set to the parameter index we successfully inferred.
@@ -334,7 +334,7 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       // argument, as long as that struct conforms to that trait.
       // In other words, here we're handling function conversions with covariant
       // arguments (see TTSMFS).
-      IREmitter emitter(state.declScope, EC_TypeParamValue);
+      IREmitter emitter(state.getDeclScope(), EC_TypeParamValue);
       // Now, check if the actual arg can be converted to the expected trait.
       PValue actualAstTypeAsVariadicElTrait =
           emitter.emitMetaTypeToTraitConversion(
@@ -532,7 +532,7 @@ ParamMatcher::ResultCode ParamMatcher::matchTypes(Type actualType,
 
   // Handle meta type upcasting.
   FailureOr<bool> typeUpCastable = IREmitter::canMetaTypeUpCastTo(
-      shared, state.declScope.getLoc(), actualType, expectedType);
+      shared, state.getDeclScope().getLoc(), actualType, expectedType);
   if (succeeded(typeUpCastable) && typeUpCastable.value())
     return Match;
 
@@ -601,7 +601,7 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
     if (result == Match) {
       // If they are different types but compatible then upcast actualAttr to
       // the expected type.
-      IREmitter emitter(state.declScope, EC_TypeParamValue);
+      IREmitter emitter(state.getDeclScope(), EC_TypeParamValue);
 
       // FIXME: We are running into problems because we have Actual values of
       // "FnTypeGeneratorType" that have named parameters in them, but expected
@@ -646,7 +646,7 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
             tightestBound = typeExpr.getType();
           }
           FailureOr<bool> upCastable = IREmitter::canMetaTypeUpCastTo(
-              shared, state.declScope.getLoc(), tightestBound, targetMT);
+              shared, state.getDeclScope().getLoc(), tightestBound, targetMT);
           return succeeded(upCastable) && upCastable.value();
         });
 
@@ -748,7 +748,7 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
       if (!isEqualCanon(actualAttr.getType(), expectedType)) {
         // We can only see subtypes in type values, all other values must be
         // aligned perfectly.
-        IREmitter emitter(state.declScope, EC_TypeParamValue);
+        IREmitter emitter(state.getDeclScope(), EC_TypeParamValue);
         ASTExprAnd<CValue> toConvert = {actualAttr, expr};
         actualAttr =
             emitter.emitPValue(toConvert, EC_TypeParamValue, expectedType);
@@ -969,7 +969,7 @@ ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
       FailureOr<PValue> pValue = OverloadSet::canConstructType(
           nonParamDRT,
           CallOperands(CallSyntax::kImplicitConvert, expr, {{actual, expr}}),
-          state.declScope);
+          state.getDeclScope());
       if (failed(pValue) || !pValue.value())
         return error(InferenceFailure::Unclassified{});
 
@@ -1007,19 +1007,15 @@ ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
 //===----------------------------------------------------------------------===//
 
 ParamInf::ParamInf(
-    ASTDecl &declScope, const CallOperands &givenBindings,
-    size_t numPreCheckedParam, ArrayRef<Type> declaredParamTypes,
+    const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
     PogListAttr declaredParamPogs, bool allowImplicitConversions,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
-    ASTDecl *declIfKnown)
-    : declScope(declScope), shared(declScope.getShared()),
-      declIfKnown(declIfKnown), getDiag(std::move(getDiag)),
-      evaluator(declScope.getShared()), givenBindings(givenBindings),
+    ASTDecl *declIfDirect)
+    : paramBindings(paramBinding), declIfKnown(declIfDirect),
+      getDiag(std::move(getDiag)), evaluator(paramBinding.shared),
       declaredParamTypes(declaredParamTypes),
       declaredParamPogs(declaredParamPogs),
-      allowImplicitConversions(allowImplicitConversions),
-      numPreCheckedParam(numPreCheckedParam) {
-
+      allowImplicitConversions(allowImplicitConversions) {
   size_t finalSize = declaredParamTypes.size();
 
   // Pre-install any "prechecked" bindings.  These come from self arguments like
@@ -1029,9 +1025,9 @@ ParamInf::ParamInf(
   // infer-only parameters etc.  We are also dealing with two concatenated
   // parameter lists: the Self parameters have keywords before the method
   // parameters etc.
-  if (numPreCheckedParam) {
+  if (getNumPreCheckedParam()) {
     ArrayRef preChecked =
-        ArrayRef(givenBindings.values).take_front(numPreCheckedParam);
+        ArrayRef(getGivenBindings().values).take_front(getNumPreCheckedParam());
     for (auto &preCheckedOperand : preChecked) {
       auto preCheckParamVal = preCheckedOperand.ir.getIfPValue().get();
       if (sugarIsa<UnboundAttr>(preCheckParamVal))
@@ -1089,7 +1085,7 @@ RetryLabel:
 
   auto reportConflict = [&](size_t paramIdx, TypedAttr actual,
                             TypedAttr expected) -> LogicalResult {
-    getDiag(givenBindings.callExpr->getLoc())
+    getDiag(getGivenBindings().callExpr->getLoc())
         << "return type " << returnedType << " parameter "
         << ParamIndexRefAttr::get(/*depth*/ 0, paramIdx, actual.getType())
         << " value " << actual << " doesn't match expected value " << expected;
@@ -1114,7 +1110,7 @@ RetryLabel:
     //   struct X[A: AnyType]:
     //     fn __init__[T: Movable](arg: Int, out self: X[T]):
     // which gets used as X[String](42) inferring T and A.
-    ParamMatcher matcher(givenBindings.callExpr, *this);
+    ParamMatcher matcher(getGivenBindings().callExpr, *this);
     if (selfParam) {
       // TODO: Macro'ize this when error handling logic is fixed.
       switch (matcher.matchParams(selfParam, retParam)) {
@@ -1193,14 +1189,14 @@ LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
                                         ArgConvention expectedConvention,
                                         PogListAttr argPogs,
                                         CallSyntax syntax) {
-  // Make sure the diagnostic machinery knows about our declScope so parameter
-  // names get emitted correctly.
+  // Make sure the diagnostic machinery knows about our getDeclScope() so
+  // parameter names get emitted correctly.
   DeclResolver::DeclScopeChanger x(declIfKnown);
 
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
     auto &diag = getDiag(operand.expr->getLoc());
     ::emitWrongTypeDiag(diag, operand, expectedType, argIdx, argPogs, syntax,
-                        shared);
+                        getShared());
     return diag;
   };
 
@@ -1283,7 +1279,8 @@ RetryLabel:
       // because function arguments can be rebound when origins disagree, but
       // this isn't correct/possible in arbitrary nested positions.
       if (!paramFinder.hasReferences(expectedType)) {
-        if (IREmitter::canZeroCostConvert(valueRefType, expectedType, shared))
+        if (IREmitter::canZeroCostConvert(valueRefType, expectedType,
+                                          getShared()))
           return success();
         emitWrongTypeDiag(expectedType);
         return failure();
@@ -1377,14 +1374,14 @@ RetryLabel:
     if (auto initValue = operand.ir.getIfInitializer()) {
       // If we have a type like List[$0] replace it with List[?] so we can
       // infer the unbound parameter.
-      auto unbound = expectedType.getWithUnknownParametersReplaced(shared);
+      auto unbound = expectedType.getWithUnknownParametersReplaced(getShared());
       Type initType =
-          inferInitializerType(declScope, &(*initValue), operand, unbound);
+          inferInitializerType(getDeclScope(), &(*initValue), operand, unbound);
       // If the literal cannot bind to the inferred type, try binding it to the
       // default literal type and matching the inferred type against that.
       if (!initType)
-        initType = inferInitializerType(declScope, &(*initValue), operand,
-                                        initValue->getDefaultType(shared));
+        initType = inferInitializerType(getDeclScope(), &(*initValue), operand,
+                                        initValue->getDefaultType(getShared()));
 
       // If there were declaration errors, assume success to not raise
       // spurious errors due to not resolving to those erroneous
@@ -1411,7 +1408,7 @@ RetryLabel:
     assert(orValue && "Unknown UValue!");
 
     // Try to refine the OverloadSetUValue into a PValue.
-    argVal = orValue->getDirectSymbol(expectedType, declScope);
+    argVal = orValue->getDirectSymbol(expectedType, getDeclScope());
     if (!argVal) { // TODO: Could improve this to talk about overload sets.
       emitWrongTypeDiag(expectedType);
       return failure();
@@ -1455,7 +1452,7 @@ RetryLabel:
   } else {
     // Zero cost conversions don't count as implicit conversions. We attempt
     // this after trying to match the types to try to infer values first.
-    if (IREmitter::canZeroCostConvert(argType, expectedType, shared))
+    if (IREmitter::canZeroCostConvert(argType, expectedType, getShared()))
       return success();
   }
 
@@ -1465,7 +1462,7 @@ RetryLabel:
   // our expected type.
   if (syntax != CallSyntax::kParamBindings) {
     if (auto nonmaterializableTarget =
-            argType.getNonmaterializableTarget(shared)) {
+            argType.getNonmaterializableTarget(getShared())) {
 
       // Infer the parameters of this overload candidate against the computed
       // result type of the initializer.
@@ -1496,7 +1493,7 @@ RetryLabel:
   // function pointer conversions that the code below doesn't.
   if (!paramFinder.hasReferences(expectedType)) {
     if (IREmitter::canImplicitlyConvertToType({argVal, operand.expr},
-                                              expectedType, declScope))
+                                              expectedType, getDeclScope()))
       return success();
     auto &diag = emitWrongTypeDiag(expectedType);
     if (savedFailureReason)
@@ -1520,7 +1517,7 @@ RetryLabel:
   // Determine if we can construct the requested type given the existing value
   // we have.  If so, get the type inferred signature of the init method that
   // would make it work.
-  IREmitter emitter(declScope, ExprContext::EC_CallArgValue);
+  IREmitter emitter(getDeclScope(), ExprContext::EC_CallArgValue);
 
   // If this is a struct type, try to infer by implicit conversion. Non-struct
   // type should have been handled above by `canZeroCostConvert` if possible.
@@ -1653,7 +1650,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     return ParamOperatorAttr::getRebind(bindingVal, expectedType);
 
   // If the parameter can be implicitly converted, do so.
-  IREmitter emitter(declScope, EC_TypeParamValue);
+  IREmitter emitter(getDeclScope(), EC_TypeParamValue);
   if (IREmitter::canImplicitlyConvertToType(
           {bindingVal, binding.expr}, expectedType, emitter.getDeclScope())) {
     ValueDest tmpDest(EC_CallParamValue);
@@ -1664,7 +1661,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
 
   // Otherwise, the parameter is simply the wrong type, emit an error about this
   // problem.
-  DeclResolver::DeclScopeChanger x(&declScope);
+  DeclResolver::DeclScopeChanger x(&(getDeclScope()));
   MojoInflightDiag &diag = getDiag({});
   if (declIfKnown) // Why only structs? Seems arbitrary, push higher?
     diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
@@ -1699,7 +1696,7 @@ LogicalResult ParamInf::setInferredValue(size_t paramIdx, TypedAttr paramVal) {
 
   // Verify all constraints are satisfied, collecting unprovable constraints.
   ConstraintResult result = checkConstraints(
-      declScope, declaredParamPogs, constraints, /*origConstraints=*/{},
+      getDeclScope(), declaredParamPogs, constraints, /*origConstraints=*/{},
       getDiag, &unprovableConstraints, &evaluator);
 
   // TODO: how about we just emitting unprovable error here right away?
@@ -1724,14 +1721,15 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
 
   // Notice, but strip out, the ellipsis if present.
   bool hasEllipsis = false;
-  CallOperands tmpOperands(givenBindings.syntax, givenBindings.callExpr);
-  if (llvm::any_of(givenBindings.values, [](const OperandValue &binding) {
+  CallOperands tmpOperands(getGivenBindings().syntax,
+                           getGivenBindings().callExpr);
+  if (llvm::any_of(getGivenBindings().values, [](const OperandValue &binding) {
         return isa<EllipsisAttr>(binding.ir.getIfPValue().get());
       })) {
     hasEllipsis = true;
     // Rebuild the operands list without it.  We only do this if present as a
     // micro-optimization.
-    for (auto binding : givenBindings.values) {
+    for (auto binding : getGivenBindings().values) {
       if (!isa<EllipsisAttr>(binding.ir.getIfPValue().get()))
         tmpOperands.values.push_back(binding);
       else if (!partial) {
@@ -1744,7 +1742,7 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
 
   // Use the temporary operands list if we had to remove an ellipsis, otherwise
   // use the original operands list.
-  auto &givenBindings = hasEllipsis ? tmpOperands : this->givenBindings;
+  auto &givenBindings = hasEllipsis ? tmpOperands : this->getGivenBindings();
 
   // Do basic validation of the argument list using shared logic.
   // TODO: Integrate this into the logic below.
@@ -1804,7 +1802,7 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
   size_t posIdx = 0, numParams = givenBindings.size();
   DefaultValueHandler defaultHandler(declaredParamPogs);
   for (auto [idx, pog] : llvm::enumerate(declaredParamPogs.getPogs())) {
-    if (idx < numPreCheckedParam) {
+    if (idx < getNumPreCheckedParam()) {
       ++posIdx; // Prechecked, already installed (or not, if _).
       continue;
     }
@@ -2022,7 +2020,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
       // Reset the index before retry.
       posOperandIdx = origPosOperandIdx;
       variadicPackType = evaluator.getReboundType(variadicPackType);
-      RefPackType packType = variadicPackType.getVariadicPackInfo(shared);
+      RefPackType packType = variadicPackType.getVariadicPackInfo(getShared());
 
       // Figure out that the element type of the list is, e.g. AnyType or
       // Stringable.
@@ -2037,7 +2035,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
           dyn_cast<VariadicAttr>(packType.getVariadic());
 
       SmallVector<TypedAttr> types;
-      IREmitter emitter(declScope, EC_TypeParamValue);
+      IREmitter emitter(getDeclScope(), EC_TypeParamValue);
       const ExprNode *packArgExpr = nullptr;
       while (posOperandIdx != numOperands) {
         const auto &operand = operands[posOperandIdx++];
@@ -2066,11 +2064,12 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
           }
 
           // Infer nonmaterializable types as their materialization target.
-          if (ASTType nmTarget = toPush.getNonmaterializableTarget(shared))
+          if (ASTType nmTarget = toPush.getNonmaterializableTarget(getShared()))
             toPush = nmTarget;
           Type metatype = toPush.getMetaType();
           attrForElementType = TypeParamAttr::get(
-              toPush, metatype ? metatype : TypeType::get(shared.getContext()));
+              toPush,
+              metatype ? metatype : TypeType::get(getShared().getContext()));
           // Make sure the value is compatible with the expected trait, this
           // produces better error messages.  It would be great to sink this
           // into matchType at some point!
@@ -2100,7 +2099,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
 
       // If there are no arguments for the pack, use the location of the call.
       if (packArgExpr)
-        packArgExpr = givenBindings.getExpr();
+        packArgExpr = getGivenBindings().getExpr();
       ParamMatcher matcher(packArgExpr, *this);
       switch (matcher.matchParams(VariadicAttr::get(types, variadicType),
                                   packType.getVariadic())) {
@@ -2237,7 +2236,7 @@ LogicalResult ParamInf::inferCTADParams(FnTypeGeneratorType signature,
 
   // Get the ASTDecl for the declared self type.  This will give us the struct
   // that we are referring to without bound parameters.
-  ASTDecl *decl = declaredSelfType.getDecl(shared);
+  ASTDecl *decl = declaredSelfType.getDecl(getShared());
   if (!decl)
     return success();
 
