@@ -611,6 +611,7 @@ what we publish.
   - `Set` now conforms to `Writable`, `Stringable`, and `Representable`.
   - `Deque` now conforms to `Writable`, `Stringable`, and `Representable`.
   - `InlineArray` now conforms to `Writable`, `Stringable`, and `Representable`.
+  - `LinkedList` now conforms to `Writable`, `Stringable`, and `Representable`.
   - `Iterator` no longer requires its type to be `Copyable`.
 
   - The following types no longer require their elements to be `Copyable`.
