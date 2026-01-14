@@ -92,6 +92,7 @@ enum ExprContext {
   EC_MergeWith,            // implicit __merge_with__ call
   EC_RefBinding,           // ref r = x
   EC_SynthesizedMethod,    // synthesized method call
+  EC_ConversionThunk,      // conversion thunk call
 };
 const char *getContextMessage(ExprContext context);
 
