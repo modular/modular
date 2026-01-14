@@ -563,8 +563,9 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
     info.fields.emplace_back(field.getNameAttr(), field.getType());
     structDecls.fieldIndices.try_emplace({structName, field.getNameAttr()},
                                          idx);
+    TypedAttr fieldTypeValue = TypeParamAttr::get(field.getType(), typeType);
     fieldDecls.push_back(
-        StructDefFieldAttr::get(field.getNameAttr(), field.getType()));
+        StructDefFieldAttr::get(field.getNameAttr(), fieldTypeValue));
   }
 
   // Create struct-generator.

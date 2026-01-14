@@ -250,7 +250,7 @@ def ExportKindAttr : DialectAttribute<(attr
 
 def StructDefFieldAttr : DialectAttribute<(attr
   StringAttr:$name,
-  Type:$type
+  TypedAttr:$typeValue
 )>;
 
 def StructAttr : DialectAttribute<(attr

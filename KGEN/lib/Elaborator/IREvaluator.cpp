@@ -406,12 +406,10 @@ IREvaluator::evaluateStructFieldTypesAttr(StructFieldTypesAttr attr) {
     return TypedAttr();
 
   // Build variadic of field types
-  MLIRContext *ctx = attr.getContext();
   SmallVector<TypedAttr> fieldTypes;
   for (StructDefFieldAttr field : structType.getFields()) {
     // Wrap field type as a TypeParamAttr
-    fieldTypes.push_back(TypeParamAttr::get(field.getType(), field.getType(),
-                                            TypeType::get(ctx)));
+    fieldTypes.push_back(field.getTypeValue());
   }
 
   return {cast<TypedAttr>(VariadicAttr::get(fieldTypes, attr.getType()))};
@@ -498,12 +496,10 @@ IREvaluator::evaluateStructFieldTypeByNameAttr(StructFieldTypeByNameAttr attr) {
   StringRef fieldName = fieldNameAttr.getValue();
 
   // Find field by name
-  MLIRContext *ctx = attr.getContext();
   for (StructDefFieldAttr field : structType.getFields()) {
     if (field.getName().getValue() == fieldName) {
       // Return the field type wrapped in TypeParamAttr
-      return {cast<TypedAttr>(TypeParamAttr::get(
-          field.getType(), field.getType(), TypeType::get(ctx)))};
+      return field.getTypeValue();
     }
   }
 

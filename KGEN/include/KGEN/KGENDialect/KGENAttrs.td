@@ -1340,12 +1340,13 @@ def KGEN_StructDefFieldAttr : KGENAttr<"StructDefField", "struct_def.field"> {
     ```
   }];
 
-  let parameters = (ins "StringAttr":$name, "Type":$type);
-  let assemblyFormat = " `<` $name `:` $type `>` ";
+  let parameters = (ins "StringAttr":$name, "TypedAttr":$typeValue);
+  let assemblyFormat = " `<` $name `:` $typeValue `>` ";
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "StringAttr":$name, "Type":$type), [{
-      return get(name.getContext(), name, type);
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
+                                        "TypedAttr":$typeValue), [{
+      return get(name.getContext(), name, typeValue);
     }]>,
   ];
 }

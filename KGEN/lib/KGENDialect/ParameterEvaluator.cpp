@@ -289,10 +289,9 @@ SymTabEvaluationContext::evaluateStructFieldTypes(StructFieldTypesAttr attr) {
   ParameterEvaluator evaluator = info->createEvaluator(*this);
 
   SmallVector<TypedAttr> fieldTypes;
-  MLIRContext *ctx = attr.getContext();
   for (StructDefFieldAttr field : info->structInstType.getFields()) {
-    Type reboundType = evaluator.getReboundType(field.getType());
-    fieldTypes.push_back(TypeParamAttr::get(reboundType, TypeType::get(ctx)));
+    TypedAttr reboundType = evaluator.getReboundAttribute(field.getTypeValue());
+    fieldTypes.push_back(reboundType);
   }
   return cast<TypedAttr>(VariadicAttr::get(fieldTypes, attr.getType()));
 }
@@ -348,8 +347,7 @@ FailureOr<TypedAttr> SymTabEvaluationContext::evaluateStructFieldTypeByName(
     return failure();
 
   ParameterEvaluator evaluator = info->createEvaluator(*this);
-  Type reboundType = evaluator.getReboundType(field.getType());
-  return cast<TypedAttr>(TypeParamAttr::get(reboundType, attr.getType()));
+  return evaluator.getReboundAttribute(field.getTypeValue());
 }
 
 //===----------------------------------------------------------------------===//

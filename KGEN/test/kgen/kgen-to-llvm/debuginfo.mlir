@@ -69,17 +69,17 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   kgen.struct.instance @Int = struct_inst<"Int"(value: index)>
 
   kgen.struct.instance @Pair = struct_inst<"Pair"(
-    first: typevalue<#kgen.instref<@Int>>,
+    first: [typevalue<#kgen.instref<@Int>>, index],
     second: i1
   )>
 
   kgen.struct.instance @Pointer_ListNode = struct_inst<"Pointer"[ty]
     <:type [typevalue<#kgen.instref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>(
-      address: pointer<typevalue<[typevalue<#kgen.instref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>>
+      address: [pointer<typevalue<[typevalue<#kgen.instref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>>, pointer<none>]
     )>
 
   kgen.struct.instance @ListNode = struct_inst<"ListNode"(
-    next: typevalue<#kgen.instref<@Pointer_ListNode>>
+    next: [typevalue<#kgen.instref<@Pointer_ListNode>>, pointer<none>]
   ) memoryOnly>
 
   kgen.func @foo() {

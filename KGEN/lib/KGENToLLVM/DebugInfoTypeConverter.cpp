@@ -282,7 +282,8 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(StructInstanceType type) {
   // Recursively translate member types.
   SmallVector<DebugInfo::DIMemberType> memberTypes;
   for (StructDefFieldAttr field : type.getFields()) {
-    DebugInfo::DIType fieldDIType = convertDebugType(field.getType());
+    DebugInfo::DIType fieldDIType =
+        convertDebugType(TypeValueType::get(field.getTypeValue()));
     auto memberDIType =
         DebugInfo::DIMemberType::get(field.getName(), fieldDIType);
     memberTypes.push_back(memberDIType);
