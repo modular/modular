@@ -31,7 +31,6 @@ def test_abs() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = abs(tensor)
-    result._sync_realize()
     assert result.real
 
 
@@ -42,7 +41,6 @@ def test_argmax() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = tensor.argmax()
-    result._sync_realize()
     assert result.real
 
 
@@ -53,7 +51,6 @@ def test_max() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = tensor.max()
-    result._sync_realize()
     assert result.real
 
 
@@ -64,7 +61,6 @@ def test_mean() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = tensor.mean()
-    result._sync_realize()
     assert result.real
 
 
@@ -76,7 +72,6 @@ def test_sum() -> None:
     )
     # Sum along last axis (rows)
     row_sum = tensor.sum(axis=-1)
-    row_sum._sync_realize()
     assert row_sum.real
     assert list(row_sum.shape) == [2, 1]
     # Values should be [6.0, 15.0]
@@ -99,7 +94,6 @@ def test_squeeze() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = tensor.squeeze(axis=1)
-    result._sync_realize()
     assert result.real
     assert list(result.driver_tensor.shape) == [4, 6]
 
@@ -112,13 +106,11 @@ def test_unsqueeze() -> None:
     )
     # Unsqueeze at the end
     result = tensor.unsqueeze(axis=-1)
-    result._sync_realize()
     assert result.real
     assert list(result.driver_tensor.shape) == [4, 6, 1]
 
     # Unsqueeze at the beginning
     result2 = tensor.unsqueeze(axis=0)
-    result2._sync_realize()
     assert result2.real
     assert list(result2.driver_tensor.shape) == [1, 4, 6]
 
@@ -134,7 +126,6 @@ def test_split_with_int() -> None:
     chunks = t.split(3, axis=0)
     assert len(chunks) == 4
     for chunk in chunks:
-        chunk._sync_realize()
         assert chunk.real
     assert list(chunks[0].driver_tensor.shape) == [3, 4]
     assert list(chunks[1].driver_tensor.shape) == [3, 4]
@@ -153,7 +144,6 @@ def test_split_with_list() -> None:
     chunks = t.split([2, 3, 5], axis=0)
     assert len(chunks) == 3
     for chunk in chunks:
-        chunk._sync_realize()
         assert chunk.real
     assert list(chunks[0].driver_tensor.shape) == [2, 4]
     assert list(chunks[1].driver_tensor.shape) == [3, 4]
@@ -167,7 +157,6 @@ def test_reshape() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = tensor.reshape([6, 4])
-    result._sync_realize()
     assert result.real
     assert list(result.driver_tensor.shape) == [6, 4]
 
@@ -179,7 +168,6 @@ def test_cast() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = tensor.cast(DType.int64)
-    result._sync_realize()
     assert result.real
     assert result.dtype == DType.int64
 
@@ -191,7 +179,6 @@ def test_permute() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = tensor.permute([2, 0, 1])
-    result._sync_realize()
     assert result.real
     assert list(result.driver_tensor.shape) == [4, 2, 3]
 
@@ -203,7 +190,6 @@ def test_transpose() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = tensor.transpose(0, 1)
-    result._sync_realize()
     assert result.real
     assert list(result.driver_tensor.shape) == [6, 4]
 
@@ -215,7 +201,6 @@ def test_T_property() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = tensor.T
-    result._sync_realize()
     assert result.real
     assert list(result.driver_tensor.shape) == [6, 4]
 
@@ -227,7 +212,6 @@ def test_getitem() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = tensor[0:2, 1:4]
-    result._sync_realize()
     assert result.real
 
 
@@ -238,7 +222,6 @@ def test_neg() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = -tensor
-    result._sync_realize()
     assert result.real
 
 
@@ -254,7 +237,6 @@ def test_eq() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a == b
-    result._sync_realize()
     assert result.real
 
 
@@ -270,7 +252,6 @@ def test_ne() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a != b
-    result._sync_realize()
     assert result.real
 
 
@@ -286,7 +267,6 @@ def test_ge() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a >= b
-    result._sync_realize()
     assert result.real
 
 
@@ -302,7 +282,6 @@ def test_gt() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a > b
-    result._sync_realize()
     assert result.real
 
 
@@ -318,7 +297,6 @@ def test_le() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a <= b
-    result._sync_realize()
     assert result.real
 
 
@@ -334,7 +312,6 @@ def test_lt() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a < b
-    result._sync_realize()
     assert result.real
 
 
@@ -350,7 +327,6 @@ def test_add() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a + b
-    result._sync_realize()
     assert result.real
 
 
@@ -361,7 +337,6 @@ def test_radd() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = 2.0 + a  # triggers __radd__
-    result._sync_realize()
     assert result.real
 
 
@@ -377,7 +352,6 @@ def test_sub() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a - b
-    result._sync_realize()
     assert result.real
 
 
@@ -388,7 +362,6 @@ def test_rsub() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = 2.0 - a  # triggers __rsub__
-    result._sync_realize()
     assert result.real
 
 
@@ -404,7 +377,6 @@ def test_mul() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a * b
-    result._sync_realize()
     assert result.real
 
 
@@ -415,7 +387,6 @@ def test_rmul() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = 2.0 * a  # triggers __rmul__
-    result._sync_realize()
     assert result.real
 
 
@@ -431,7 +402,6 @@ def test_truediv() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a / b
-    result._sync_realize()
     assert result.real
 
 
@@ -442,7 +412,6 @@ def test_rtruediv() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = 2.0 / a  # triggers __rtruediv__
-    result._sync_realize()
     assert result.real
 
 
@@ -458,7 +427,6 @@ def test_floordiv() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a // b
-    result._sync_realize()
     assert result.real
 
 
@@ -469,7 +437,6 @@ def test_rfloordiv() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = 2.0 // a  # triggers __rfloordiv__
-    result._sync_realize()
     assert result.real
 
 
@@ -485,7 +452,6 @@ def test_mod() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a % b
-    result._sync_realize()
     assert result.real
 
 
@@ -496,7 +462,6 @@ def test_rmod() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = 2.0 % a  # triggers __rmod__
-    result._sync_realize()
     assert result.real
 
 
@@ -512,8 +477,6 @@ def test_divmod() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     quotient, remainder = divmod(a, b)
-    quotient._sync_realize()
-    remainder._sync_realize()
     assert quotient.real
     assert remainder.real
 
@@ -526,8 +489,6 @@ def test_rdivmod() -> None:
     )
     # Call __rdivmod__ explicitly, divmod(2.0, a) is typed improperly
     quotient, remainder = a.__rdivmod__(2.0)
-    quotient._sync_realize()
-    remainder._sync_realize()
     assert quotient.real
     assert remainder.real
 
@@ -544,7 +505,6 @@ def test_pow() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a**b
-    result._sync_realize()
     assert result.real
 
 
@@ -555,7 +515,6 @@ def test_rpow() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = 2.0**a  # triggers __rpow__
-    result._sync_realize()
     assert result.real
 
 
@@ -573,7 +532,6 @@ def test_and() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a & b
-    result._sync_realize()
     assert result.real
 
 
@@ -585,7 +543,6 @@ def test_rand() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = True & a  # triggers __rand__
-    result._sync_realize()
     assert result.real
 
 
@@ -603,7 +560,6 @@ def test_or() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a | b
-    result._sync_realize()
     assert result.real
 
 
@@ -615,7 +571,6 @@ def test_ror() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = False | a  # triggers __ror__
-    result._sync_realize()
     assert result.real
 
 
@@ -633,7 +588,6 @@ def test_xor() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = a ^ b
-    result._sync_realize()
     assert result.real
 
 
@@ -645,7 +599,6 @@ def test_rxor() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = False ^ a  # triggers __rxor__
-    result._sync_realize()
     assert result.real
 
 
@@ -657,5 +610,4 @@ def test_invert() -> None:
         device=Accelerator() if accelerator_count() else CPU(),
     )
     result = ~a
-    result._sync_realize()
     assert result.real
