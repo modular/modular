@@ -2126,21 +2126,124 @@ kgen.generator @get_array_type<T: type>() -> !kgen.type {
 // CHECK-MAIN-SAME: struct_inst<"WeirdStruct"(data: array<[[SIZEOF]], index>)>
 kgen.struct.generator @WeirdStruct<T: type> = struct_inst<"WeirdStruct"(data: typevalue<apply(:() -> !kgen.type @get_array_type<:type T>)>)>
 
-kgen.generator @use_type<T: type>() {
-  kgen.return
+kgen.generator @get_struct_field_types<T: type>() -> !kgen.variadic<type> {
+  %variadic = kgen.param.constant: variadic<type> = <#kgen.struct_field_types<T>>
+  kgen.return %variadic : !kgen.variadic<type>
+}
+
+kgen.generator @get_struct_field_names<T: type>() -> !kgen.variadic<string> {
+  %variadic = kgen.param.constant: variadic<string> = <#kgen.struct_field_names<T>>
+  kgen.return %variadic : !kgen.variadic<string>
+}
+
+kgen.generator @get_struct_field_index_by_name<T: type>() -> index {
+  %index = kgen.param.constant: index = <#kgen.struct_field_index_by_name<T, "data">>
+  kgen.return %index : index
+}
+
+kgen.generator @get_struct_field_type_by_name<T: type>() -> !kgen.type {
+  %type = kgen.param.constant: type = <#kgen.struct_field_type_by_name<T, "data">>
+  kgen.return %type : !kgen.type
 }
 
 #weird_struct = #kgen.type<typevalue<:() -> !kgen.type #kgen.genref<@WeirdStruct<:type index>>>, struct<(apply(:() -> !kgen.type @get_array_type<:type index>))>> : !kgen.type
 
 // CHECK: kgen.func @gen_structs
 kgen.generator @gen_structs() {
-  // CHECK-NEXT: kgen.call {{.*}}WeirdStruct,T=index{{.*}}, struct<(array<[[SIZEOF:.+]], index>)>
-  kgen.call @use_type<:type #weird_struct>() : () -> ()
+    // CHECK-NEXT: kgen.param.constant: variadic<type> = <[array<[[SIZEOF:.+]], index>]>
+  kgen.param.apply test_struct_field_types = [() -> !kgen.variadic<type>: @get_struct_field_types<:type #weird_struct>]()
+  kgen.param.constant: variadic<type> = <test_struct_field_types>
+  // CHECK-NEXT: kgen.param.constant: variadic<string> = <["data"]>
+  kgen.param.apply test_struct_field_names = [() -> !kgen.variadic<string>: @get_struct_field_names<:type #weird_struct>]()
+  kgen.param.constant: variadic<string> = <test_struct_field_names>
+  // CHECK-NEXT: kgen.param.constant = <0>
+  kgen.param.apply test_struct_field_index_by_name = [() -> index: @get_struct_field_index_by_name<:type #weird_struct>]()
+  kgen.param.constant: index = <test_struct_field_index_by_name>
+  // CHECK-NEXT: kgen.param.constant: type = <array<[[SIZEOF:.+]], index>>
+  kgen.param.apply test_struct_field_type_by_name = [() -> !kgen.type: @get_struct_field_type_by_name<:type #weird_struct>]()
+  kgen.param.constant: type = <test_struct_field_type_by_name>
   kgen.return
 }
 
 // CHECK-NOT: @exported_parametric
 kgen.generator export @exported_parametric<param>() {
+  kgen.return
+}
+
+// -----
+
+//===----------------------------------------------------------------------===//
+// Additional struct field reflection tests
+//===----------------------------------------------------------------------===//
+
+// Test multiple fields: verify correct field ordering and index lookups.
+kgen.struct.generator @MultiFieldStruct<T: type> = struct_inst<
+  "MultiFieldStruct"[T]<:type T>(
+    first: index,
+    second: [typevalue<T>, !kgen.param<T>],
+    third: i32,
+    fourth: f64
+  )>
+
+#multi_field_struct = #kgen.type<typevalue<:!kgen.type #kgen.genref<@MultiFieldStruct<:type i64>>>, struct<(index, i64, i32, f64)>> : !kgen.type
+
+// CHECK: kgen.func @multi_field_struct_tests
+kgen.generator @multi_field_struct_tests() {
+  // Test field types are returned in order
+  // CHECK-NEXT: kgen.param.constant: variadic<type> = <[index, i64, i32, f64]>
+  kgen.param.constant: variadic<type> = <#kgen.struct_field_types<#multi_field_struct>>
+
+  // Test field names are returned in order
+  // CHECK-NEXT: kgen.param.constant: variadic<string> = <["first", "second", "third", "fourth"]>
+  kgen.param.constant: variadic<string> = <#kgen.struct_field_names<#multi_field_struct>>
+
+  // Test field indices are correct
+  // CHECK-NEXT: kgen.param.constant = <0>
+  kgen.param.constant: index = <#kgen.struct_field_index_by_name<#multi_field_struct, "first">>
+  // CHECK-NEXT: kgen.param.constant = <1>
+  kgen.param.constant: index = <#kgen.struct_field_index_by_name<#multi_field_struct, "second">>
+  // CHECK-NEXT: kgen.param.constant = <2>
+  kgen.param.constant: index = <#kgen.struct_field_index_by_name<#multi_field_struct, "third">>
+  // CHECK-NEXT: kgen.param.constant = <3>
+  kgen.param.constant: index = <#kgen.struct_field_index_by_name<#multi_field_struct, "fourth">>
+
+  // Test struct_field_type_by_name returns rebounded type for parametric field
+  // CHECK-NEXT: kgen.param.constant: type = <i64>
+  kgen.param.constant: type = <#kgen.struct_field_type_by_name<#multi_field_struct, "second">>
+
+  kgen.return
+}
+
+// -----
+
+// Test nested parametric types: ensure getReboundType handles complex nested types like List[List[T]].
+
+// CHECK: #[[TYPEVALUE_NESTED_LIST_I32:.+]] = #kgen.type<typevalue<#kgen.instref<@"NestedList,T=i32">>, pointer<none>> : !kgen.type
+
+// CHECK: kgen.struct.instance @"NestedList,T=i32" =
+// CHECK-SAME: struct_inst<"NestedList"[T]<:type i32>
+// CHECK-SAME: (data: i32, nested: #[[TYPEVALUE_NESTED_LIST_I32]])>
+kgen.struct.generator @NestedList<T: type> = struct_inst<
+  "NestedList"[T]<:type T>(
+    data: [typevalue<T>, !kgen.param<T>],
+    nested: [typevalue<#kgen.genref<@NestedList<:type T>>>, pointer<none>]
+  )>
+
+#nested_list_i32 = #kgen.type<typevalue<:!kgen.type #kgen.genref<@NestedList<:type i32>>>, struct<(i32, !kgen.pointer<none>)>> : !kgen.type
+
+// CHECK: kgen.func @nested_parametric_type_tests
+kgen.generator @nested_parametric_type_tests() {
+  // Test getReboundType correctly handles the parametric nested field type.
+  // Getting the field types of the recursive inner list should return the same type as the outer list.
+  // CHECK-NEXT: kgen.param.constant: variadic<type> = <[i32, #[[TYPEVALUE_NESTED_LIST_I32]]]>
+  kgen.param.constant: variadic<type> = <#kgen.struct_field_types<#nested_list_i32>>
+  // CHECK-NEXT: kgen.param.constant: variadic<type> = <[i32, #[[TYPEVALUE_NESTED_LIST_I32]]]>
+  kgen.param.constant: variadic<type> = <#kgen.struct_field_types<variadic_get(:variadic<type> #kgen.struct_field_types<#nested_list_i32>, 1)>>
+
+  // The "data" field should correctly reflect the bound type parameter T=i32
+  // CHECK-NEXT: kgen.param.constant: type = <i32>
+  kgen.param.constant: type = <#kgen.struct_field_type_by_name<#nested_list_i32, "data">>
+
   kgen.return
 }
 
