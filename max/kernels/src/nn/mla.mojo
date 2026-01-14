@@ -408,7 +408,6 @@ fn flare_mla_decoding_dispatch[
             group = Int(group),
             use_score_mod=use_score_mod,
             ragged=ragged,
-            _use_valid_length=_use_valid_length,
             _is_cache_length_accurate=_is_cache_length_accurate,
             decoding_warp_split_k=decoding_warp_split_k,
         ](
@@ -419,6 +418,7 @@ fn flare_mla_decoding_dispatch[
             batch_size,
             num_partitions_value,
             max_cache_valid_length,
+            max_prompt_len,
             valid_length,
             mask_functor,
             score_mod_functor,

@@ -25,6 +25,7 @@ from gpu import (
     barrier,
     thread_idx,
     block_idx,
+    block_dim,
     warp_id,
 )
 from nn.mha_utils import DynamicInt, NoPartition
@@ -425,7 +426,7 @@ fn num_matrix_view_rows_decode[
     dtype: DType,
     //,
 ](q: LayoutTensor[dtype, ...]) -> Int:
-    # q and out are (batch x seq_len=1 x num_heads , depth)
+    # q and out are (batch x seq_len x num_heads , depth)
     var num_rows: Int = q.dim[0]()
 
     @parameter
@@ -449,7 +450,6 @@ fn mla_decode_sm100[
     *,
     use_score_mod: Bool = False,
     ragged: Bool = False,
-    _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
@@ -462,6 +462,7 @@ fn mla_decode_sm100[
     batch_size: Int,
     num_partitions: Int,
     max_cache_valid_length: Int,  # longest KV cache entry
+    q_max_seq_len: Int,
     valid_length: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -524,7 +525,6 @@ fn mla_decode_sm100[
             use_score_mod=use_score_mod,
             ValidLengthType=ValidLengthType,
             ragged=True,
-            _use_valid_length=_use_valid_length,
             _is_cache_length_accurate=_is_cache_length_accurate,
         ](
             q_tma_op,
@@ -535,6 +535,7 @@ fn mla_decode_sm100[
             batch_size,
             num_partitions,
             max_cache_valid_length,
+            q_max_seq_len,
             valid_len,
             mask,
             score_mod,
@@ -552,7 +553,6 @@ fn mla_decode_sm100[
             use_score_mod=use_score_mod,
             ValidLengthType=ValidLengthType,
             ragged=False,
-            _use_valid_length=_use_valid_length,
             _is_cache_length_accurate=_is_cache_length_accurate,
         ](
             q_tma_op,
@@ -563,6 +563,7 @@ fn mla_decode_sm100[
             batch_size,
             num_partitions,
             max_cache_valid_length,
+            q_max_seq_len,
             valid_len,
             mask,
             score_mod,
@@ -579,7 +580,6 @@ fn launch_mla_sm100_decode_enqueue_kernel[
     config: MLA_SM100_Decode_Config,
     use_score_mod: Bool,
     ValidLengthType: OptionalPointer,
-    _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
 ](
@@ -606,6 +606,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
     batch_size: Int,
     num_partitions: Int,
     max_cache_valid_length: Int,  # longest KV cache entry,
+    q_max_seq_len: Int,
     valid_len: ValidLengthType,
     mask: MaskType,
     score_mod: ScoreModType,
@@ -618,8 +619,12 @@ fn launch_mla_sm100_decode_enqueue_kernel[
     ](mask, score_mod, valid_len)
     var block_x = ceildiv(config.num_q_heads, config.BM)
     # TODO: this should be seq_len and batch to be distributed across the grid
-    var block_y = batch_size
-    var block_z = 1  # num_partitions
+    var block_y = q_max_seq_len
+    # TODO: # currently this is fixed for batch size, Next step is to modify it
+    # to support the split k when the KVcachesize is varrable length per batch so
+    # the num_partitions would create more load balanced work per block based on
+    # the KV cache size per batch.
+    var block_z = batch_size
     var grid_dim = (block_x, block_y, block_z)
     # we have 3 warp groups:
     # - one for load/store/2xMMA
@@ -698,7 +703,6 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         use_score_mod=use_score_mod,
         ValidLengthType=ValidLengthType,
         _is_cache_length_accurate=_is_cache_length_accurate,
-        _use_valid_length=_use_valid_length,
         ragged=ragged,
     ].kernel
     ctx.enqueue_function[kernel, kernel](
@@ -708,6 +712,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         kv_lut,
         scale,
         batch_size,
+        q_max_seq_len,
         num_partitions,
         max_cache_valid_length,
         mla_decode_pack,
@@ -748,15 +753,12 @@ struct OffsetPosition[
     config: MLA_SM100_Decode_Config,
     KVLUTType: MHAOperand,
     ragged: Bool,
-    use_valid_length: Bool,
     is_cache_length_accurate: Bool,
     ValidLengthType: OptionalPointer,
 ]:
-    var start_of_seq: Int
-    var end_of_seq: Int
     var seq_len: Int
-    var q_batch_offset: Int
     var num_keys: Int
+    var q_out_row_offset: Int
 
     @always_inline
     fn __init__(
@@ -765,42 +767,49 @@ struct OffsetPosition[
         valid_length: UnsafePointer[
             Scalar[Self.ValidLengthType.dtype], origin=MutAnyOrigin
         ],
+        max_seq_len: Int,
     ):
-        self.start_of_seq = 0
-        self.end_of_seq = 0
         self.seq_len = 0
-        self.q_batch_offset = 0
         self.num_keys = 0
+        self.q_out_row_offset = 0
 
+        # This is when the sequence length is variable
+        @parameter
         if Self.ragged:
             # treat valid_lengths as a input_row_offsets
-            self.start_of_seq = Int(valid_length[Int(block_idx.y)])
-            self.end_of_seq = Int(valid_length[Int(block_idx.y) + 1])
-            self.start_of_seq = self.start_of_seq
-            self.end_of_seq = self.end_of_seq
-            self.seq_len = self.end_of_seq - self.start_of_seq
-            self.q_batch_offset = (
-                self.start_of_seq
-                * Int(Self.config.q_depth)
-                * Int(Self.config.num_q_heads)
-            )
-        elif Self.use_valid_length:
-            # treat valid_lengths as valid lengths
-            self.q_batch_offset = Int(
-                Self.config.q_depth * Self.config.num_q_heads * Int(block_idx.y)
-            )
-            self.seq_len = Int(valid_length[block_idx.y])
-        else:
-            self.seq_len = 1
-            self.q_batch_offset = Int(
-                Self.config.q_depth * Self.config.num_q_heads * Int(block_idx.y)
+            var start_of_seq = Int(valid_length[Int(block_idx.z)])
+            var end_of_seq = Int(valid_length[Int(block_idx.z) + 1])
+            self.seq_len = end_of_seq - start_of_seq
+            self.q_out_row_offset = (
+                start_of_seq * Self.config.num_q_heads
+                + Int(block_idx.x) * Self.config.BM
+                + Int(block_idx.y) * Self.config.num_q_heads
             )
 
-        self.num_keys = k.cache_length(Int(block_idx.y))
+        # This is when the sequence length is Fixed
+        else:
+            self.seq_len = max_seq_len
+            self.q_out_row_offset = (
+                Self.config.num_q_heads * self.seq_len * Int(block_idx.z)
+                + Int(block_idx.x) * Self.config.BM
+                + Int(block_idx.y) * Self.config.num_q_heads
+            )
+
+        self.num_keys = k.cache_length(Int(block_idx.z))
 
         @parameter
         if not Self.is_cache_length_accurate:
             self.num_keys += self.seq_len
+
+    @always_inline
+    fn cache_len(self) -> Int:
+        # num_keys is total keys, seq_len is chunk length
+        return max(self.num_keys - self.seq_len, 0)
+
+    @always_inline
+    fn start_pos(self, cache_start_pos: UInt32) -> UInt32:
+        # start_pos is the base absolute Q index for this chunk (plus any external base)
+        return UInt32(self.cache_len()) + cache_start_pos
 
 
 # ------------------------------------------------------------------------------
@@ -1808,7 +1817,6 @@ struct MLA_SM100_Decode[
     use_score_mod: Bool,
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
-    _use_valid_length: Bool = False,
     ragged: Bool = False,
 ]:
     comptime qkv_type = Self.KVLUTType.dtype
@@ -1921,6 +1929,7 @@ struct MLA_SM100_Decode[
         kv_lut: Self.KVLUTType,
         scale: Float32,
         batch_size: Int,
+        q_max_seq_len: Int,
         num_partitions: Int,
         max_cache_valid_length: Int,  # longest KV cache entry,
         mla_decode_pack: MLA_Decode_Pack[
@@ -1935,6 +1944,21 @@ struct MLA_SM100_Decode[
         mask = mla_decode_pack.mask
         score_mod = mla_decode_pack.score_mod
         valid_length = mla_decode_pack.valid_length
+        var offset_position = OffsetPosition[
+            Self.config,
+            Self.KVLUTType,
+            Self.ragged,
+            Self._is_cache_length_accurate,
+            Self.ValidLengthType,
+        ](kv_lut, valid_length.value(), q_max_seq_len)
+
+        # EARLY EXIT: Skip blocks beyond actual sequence length for this batch
+        @parameter
+        if Self.ragged:
+            # In ragged mode, block_idx.y is the query token index (0 to q_max_seq_len-1)
+            # But this batch might have fewer tokens than q_max_seq_len
+            if Int(block_idx.y) >= offset_position.seq_len:
+                return  # This query position doesn't exist for this batch
         q_smem = external_memory[
             Scalar[Self.qkv_type],
             address_space = AddressSpace.SHARED,
@@ -2071,14 +2095,6 @@ struct MLA_SM100_Decode[
             out_pipeline, out_smem
         )
 
-        var offset_position = OffsetPosition[
-            Self.config,
-            Self.KVLUTType,
-            Self.ragged,
-            Self._use_valid_length,
-            Self._is_cache_length_accurate,
-            Self.ValidLengthType,
-        ](kv_lut, valid_length.value())
         var num_k_tiles = ceildiv(offset_position.num_keys, Self.config.BN)
         if warp_idx < 4:  # softmax warpgroup
             warpgroup_reg_alloc[num_reg_softmax]()
@@ -2092,12 +2108,12 @@ struct MLA_SM100_Decode[
                 c_bars,
                 li_bars,
                 num_k_tiles,
-                offset_position.num_keys,
+                offset_position,
                 scale,
                 mask,
                 score_mod,
-                prompt_idx=UInt32(block_idx.y),
-                max_seq_len=UInt32(1),
+                prompt_idx=UInt32(block_idx.z),
+                max_seq_len=UInt32(q_max_seq_len),
             )
         elif warp_idx >= 4 and warp_idx < 8:  # correction warpgroup
             warpgroup_reg_alloc[num_reg_correction]()
@@ -2142,7 +2158,7 @@ struct MLA_SM100_Decode[
                     offset_position,
                 )
             elif warp_idx == 11:
-                Self.store(out_cons, o_tma)
+                Self.store(out_cons, o_tma, offset_position)
         barrier()
         if warp_idx == 9:
             tcgen05_release_allocation_lock[Self.config.cta_group]()
@@ -2238,7 +2254,6 @@ struct MLA_SM100_Decode[
             Self.config,
             Self.KVLUTType,
             Self.ragged,
-            Self._use_valid_length,
             Self._is_cache_length_accurate,
             Self.ValidLengthType,
         ],
@@ -2246,15 +2261,10 @@ struct MLA_SM100_Decode[
         # assuming seq_len is 1 for now
         var elect_mask = elect()
         var is_leader = elect_mask != 0
-        var row: UInt = UInt(
-            block_idx.x * UInt(Self.config.BM)
-            + block_idx.y * UInt(Self.config.num_q_heads)
-        )
+        var row: UInt = UInt(offset_position.q_out_row_offset)
         var pipe_qk = PipelineState[num_stages=1]()
-        var kv_row: UInt32 = 0  # it seems it goes to the contiuse page as
-
-        # it requires the kv_row to be zero to be corrected
-        var kv_gmem_row: UInt32 = kv_lut.row_idx(block_idx.y, kv_row)
+        var kv_row: UInt32 = 0  # we always start from the first row for KV
+        var kv_gmem_row: UInt32 = kv_lut.row_idx(block_idx.z, kv_row)
         if is_leader:
             # this is the total bytes expected to be transferred to the mbar for Q and K0
             mbar_q[].expect_bytes(
@@ -2288,7 +2298,7 @@ struct MLA_SM100_Decode[
 
             # Base pointer for this KV stage in shared memory
             # Producer-side barrier for this stage (already init'ed in kv_pipeline.init())
-            var kv_gmem_row: UInt32 = kv_lut.row_idx(block_idx.y, kv_row)
+            var kv_gmem_row: UInt32 = kv_lut.row_idx(block_idx.z, kv_row)
 
             if is_leader:
                 k_mbar[].expect_bytes(
@@ -2383,7 +2393,6 @@ struct MLA_SM100_Decode[
             Self.config,
             Self.KVLUTType,
             Self.ragged,
-            Self._use_valid_length,
             Self._is_cache_length_accurate,
             Self.ValidLengthType,
         ],
@@ -2470,7 +2479,6 @@ struct MLA_SM100_Decode[
             Self.config,
             Self.KVLUTType,
             Self.ragged,
-            Self._use_valid_length,
             Self._is_cache_length_accurate,
             Self.ValidLengthType,
         ],
@@ -2559,7 +2567,7 @@ struct MLA_SM100_Decode[
     @staticmethod
     @always_inline
     fn apply_mask[
-        half_load: Int, masked: Bool
+        half_load: Int, NonCausalMask: Bool, CausalMask: Bool
     ](
         tiles_done: Int,
         col0: Int,
@@ -2571,6 +2579,7 @@ struct MLA_SM100_Decode[
         q_head_idx: UInt32,
         score_row: UInt32,
         max_seq_len: UInt32,
+        cache_len: Int,
         start_pos: UInt32,
         cache_start_pos: UInt32,
     ) -> Scalar[Self.AccumType]:
@@ -2580,12 +2589,18 @@ struct MLA_SM100_Decode[
         # first key index for this thread
         var col_base: Int = tile_key_base + col0
 
-        # For now: global padding only.  because the seq len is set to 1
-        # TODO: per-row + causal for seq_len > 1.
-        # clamp num_keys - col_base into [0, half_load]
-        var keys_remaining: Int = num_keys - col_base
-        var n_valid: Int = max(min(keys_remaining, half_load), 0)  # 0..32
+        # Per-row causal masking for chunked decode
+        # Allowed keys for this query row in a chunked causal decode:
+        # cache_len + score_row + 1
+        var causal_limit: Int
 
+        @parameter
+        if CausalMask:
+            causal_limit = cache_len + Int(score_row) + 1
+        else:
+            causal_limit = num_keys
+        var keys_remaining = causal_limit - col_base
+        var n_valid = max(min(keys_remaining, half_load), 0)
         # Build mask_bits with lowest n_valid bits = 1
         var mask_bits_64: UInt64 = (UInt64(1) << UInt64(n_valid)) - UInt64(1)
         var mask_bits: UInt32 = UInt32(mask_bits_64 & UInt64(0xFFFF_FFFF))
@@ -2607,12 +2622,12 @@ struct MLA_SM100_Decode[
             ]()
 
             @parameter
-            if masked:
+            if NonCausalMask:
                 var v = SIMD[Self.AccumType, 1](masked_val)
                 var coord = Self.clamped_index_coordinate(
                     prompt_idx,
                     q_head_idx,
-                    score_row + start_pos,
+                    score_row + start_pos + cache_start_pos,
                     col0 + i,
                     tile_key_base,
                     num_keys,
@@ -2627,7 +2642,7 @@ struct MLA_SM100_Decode[
                 var coord = Self.clamped_index_coordinate(
                     prompt_idx,
                     q_head_idx,
-                    score_row + start_pos,
+                    score_row + start_pos + cache_start_pos,
                     col0 + i,
                     tile_key_base,
                     num_keys,
@@ -2665,7 +2680,13 @@ struct MLA_SM100_Decode[
             num_consumer=WARPGROUP_SIZE,
         ],
         num_k_tiles: Int,
-        num_keys: Int,
+        offset_position: OffsetPosition[
+            Self.config,
+            Self.KVLUTType,
+            Self.ragged,
+            Self._is_cache_length_accurate,
+            Self.ValidLengthType,
+        ],
         scale: Float32,
         mask: Self.MaskType,
         score_mod: Self.ScoreModType,
@@ -2674,7 +2695,6 @@ struct MLA_SM100_Decode[
     ):
         comptime MaskName: String = Self.MaskType.name()
         comptime NoMask: Bool = (MaskName == "NullMask")
-        comptime IsMaterializedMask: Bool = (MaskName == "MaterializedMask")
         comptime CausalMask: Bool = (MaskName == "CausalMask")
         comptime NeedLog2eAfter: Bool = Self.MaskType.apply_log2e_after_mask or Self.use_score_mod
         comptime CheckDuringDecoding: Bool = Self.MaskType.check_mask_during_decoding
@@ -2692,6 +2712,10 @@ struct MLA_SM100_Decode[
 
         var corr_scale_tmem = tmem_addr + UInt32(Self.config.TMEM_CORR_SCALE)
         var corr_li_tmem = tmem_addr + UInt32(Self.config.TMEM_CORR_LI)
+        var num_keys = offset_position.num_keys
+        var cache_start_pos: UInt32 = 0
+        var cache_len: Int = offset_position.cache_len()
+        var start_pos: UInt32 = offset_position.start_pos(cache_start_pos)
 
         # NEW: S consumer wrapper
         var s_cons = DecodeSConsumer(s_bars.consumer())
@@ -2711,16 +2735,13 @@ struct MLA_SM100_Decode[
         var q_head_idx: UInt32 = UInt32(block_idx.x) * UInt32(
             Self.config.BM
         ) + UInt32(row)
-        var score_row: UInt32 = 0  # decode: single token per batch
+        var score_row: UInt32 = block_idx.y  # decode: single token per batch
 
         var mi: Scalar[Self.AccumType] = min_or_neg_inf[Self.AccumType]()
         var li: Scalar[Self.AccumType] = 0.0
         comptime log2e_f32 = Scalar[Self.AccumType](log2e)
         comptime half_load = (Self.config.BN >> 1)
         var scale_log2e = scale.cast[Self.AccumType]()
-
-        var start_pos: UInt32 = UInt32(num_keys - 1)
-        var cache_start_pos: UInt32 = 0
 
         var tiles_done: Int = 0
         while tiles_done < num_k_tiles:
@@ -2754,7 +2775,9 @@ struct MLA_SM100_Decode[
             # TODO: add per row causal mask once seqlen is > 1
             @parameter
             if NoMask or CausalMask:
-                current_max = Self.apply_mask[half_load, masked=False](
+                current_max = Self.apply_mask[
+                    half_load, NonCausalMask=False, CausalMask=CausalMask
+                ](
                     tiles_done,
                     col0,
                     num_keys,
@@ -2765,11 +2788,14 @@ struct MLA_SM100_Decode[
                     q_head_idx,
                     score_row,
                     max_seq_len,
+                    cache_len,
                     start_pos,
                     cache_start_pos,
                 )
             else:
-                current_max = Self.apply_mask[half_load, masked=True](
+                current_max = Self.apply_mask[
+                    half_load, NonCausalMask=True, CausalMask=False
+                ](
                     tiles_done,
                     col0,
                     num_keys,
@@ -2780,6 +2806,7 @@ struct MLA_SM100_Decode[
                     q_head_idx,
                     score_row,
                     max_seq_len,
+                    cache_len,
                     start_pos,
                     cache_start_pos,
                 )
@@ -3073,14 +3100,18 @@ struct MLA_SM100_Decode[
             BK = Self.config.BN,
             swizzle_mode = Self.config.swizzle_mode,
         ],
+        offset_position: OffsetPosition[
+            Self.config,
+            Self.KVLUTType,
+            Self.ragged,
+            Self._is_cache_length_accurate,
+            Self.ValidLengthType,
+        ],
     ):
         elect_mask = elect()
         var is_leader = elect_mask != 0
         comptime num_store_tiles = Self.config.depth // Self.output_tile_width
-        var row: UInt = UInt(
-            block_idx.x * UInt(Self.config.BM)
-            + block_idx.y * UInt(Self.config.num_q_heads)
-        )
+        var row: UInt = UInt(offset_position.q_out_row_offset)
         # The code work with the assumption that the num_q_heads is always power of two.
         var tma_phase: UInt32 = 0
 

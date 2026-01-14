@@ -31,6 +31,8 @@ from nn.mla import flare_mla_decoding, flare_mla_prefill
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
+from gpu.host.info import B200, GPUInfo
+
 
 from utils.index import Index
 from utils.numerics import get_accum_type
@@ -393,8 +395,8 @@ fn test[
                     # if not isclose(actual, expect, atol=1e-3, rtol=rtol):
                     #     var rerr = abs((actual - expect) / expect)
                     #     print(h, s, d, actual, expect, rerr)
-                    # if abs((actual - expect)) > 9e-2:
-                    #     print(b, h, s, d, actual, expect)
+                    if abs((actual - expect)) > 9e-2:
+                        print(b, h, s, d, actual, expect)
                     assert_almost_equal(actual, expect, atol=1e-1, rtol=rtol)
 
     _ = q_device_ptr
@@ -816,76 +818,166 @@ fn test_decoding[
     use_causal_mask: Bool = True,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
-    # BF16 token gen
-    test[
-        4,
-        qkv_type,
-        DType.float32,
-        576,
-        128,
-        group=128,
-        against_gpu_naive=True,
-        batch_size=batch_size,
-        num_partitions=num_partitions,
-        decoding_warp_split_k=split_k,
-        use_causal_mask=use_causal_mask,
-    ](1, 50, ctx, use_index_input=use_index_input)
+    @parameter
+    if ctx.default_device_info == B200:
+        for seq_len in range(1, 9):
+            # BF16 token gen
+            test[
+                4,
+                qkv_type,
+                DType.float32,
+                576,
+                128,
+                group=128,
+                against_gpu_naive=True,
+                batch_size=batch_size,
+                num_partitions=num_partitions,
+                decoding_warp_split_k=split_k,
+                use_causal_mask=use_causal_mask,
+            ](seq_len, 50, ctx, use_index_input=use_index_input)
 
-    test[
-        3,
-        qkv_type,
-        DType.float32,
-        576,
-        128,
-        group=128,
-        against_gpu_naive=True,
-        batch_size=batch_size,
-        num_partitions=num_partitions,
-        decoding_warp_split_k=split_k,
-        use_causal_mask=use_causal_mask,
-    ](1, 1024, ctx, use_index_input=use_index_input)
+            # BF16 token gen, with num_heads=16 (deepseek-v2 lite)
+            test[
+                4,
+                qkv_type,
+                DType.float32,
+                576,
+                16,
+                group=16,
+                against_gpu_naive=True,
+                batch_size=batch_size,
+                num_partitions=num_partitions,
+                decoding_warp_split_k=split_k,
+                use_causal_mask=use_causal_mask,
+            ](seq_len, 50, ctx, use_index_input=use_index_input)
 
-    test[
-        3,
-        qkv_type,
-        DType.float32,
-        576,
-        128,
-        group=128,
-        against_gpu_naive=True,
-        batch_size=batch_size,
-        num_partitions=num_partitions,
-        decoding_warp_split_k=split_k,
-        use_causal_mask=use_causal_mask,
-    ](1, 4096, ctx, use_index_input=use_index_input)
-    # BF16 token gen, with num_heads=16 (deepseek-v2 lite)
-    test[
-        4,
-        qkv_type,
-        DType.float32,
-        576,
-        16,
-        group=16,
-        against_gpu_naive=True,
-        batch_size=batch_size,
-        num_partitions=num_partitions,
-        decoding_warp_split_k=split_k,
-        use_causal_mask=use_causal_mask,
-    ](1, 50, ctx, use_index_input=use_index_input)
+        test[
+            3,
+            qkv_type,
+            DType.float32,
+            576,
+            128,
+            group=128,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+            use_causal_mask=use_causal_mask,
+        ](1, 4096, ctx, use_index_input=use_index_input)
 
-    test[
-        3,
-        qkv_type,
-        DType.float32,
-        576,
-        16,
-        group=16,
-        against_gpu_naive=True,
-        batch_size=batch_size,
-        num_partitions=num_partitions,
-        decoding_warp_split_k=split_k,
-        use_causal_mask=use_causal_mask,
-    ](1, 1024, ctx, use_index_input=use_index_input)
+        test[
+            3,
+            qkv_type,
+            DType.float32,
+            576,
+            16,
+            group=16,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+            use_causal_mask=use_causal_mask,
+        ](2, 4096, ctx, use_index_input=use_index_input)
+
+        test[
+            3,
+            qkv_type,
+            DType.float32,
+            576,
+            128,
+            group=128,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+            use_causal_mask=use_causal_mask,
+        ](3, 1024, ctx, use_index_input=use_index_input)
+
+        test[
+            3,
+            qkv_type,
+            DType.float32,
+            576,
+            16,
+            group=16,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+            use_causal_mask=use_causal_mask,
+        ](4, 1024, ctx, use_index_input=use_index_input)
+
+    else:  # H100 AND AMD
+        # BF16 token gen
+        test[
+            4,
+            qkv_type,
+            DType.float32,
+            576,
+            128,
+            group=128,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+            use_causal_mask=use_causal_mask,
+        ](1, 50, ctx, use_index_input=use_index_input)
+
+        test[
+            3,
+            qkv_type,
+            DType.float32,
+            576,
+            128,
+            group=128,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+            use_causal_mask=use_causal_mask,
+        ](1, 1024, ctx, use_index_input=use_index_input)
+
+        test[
+            3,
+            qkv_type,
+            DType.float32,
+            576,
+            128,
+            group=128,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+            use_causal_mask=use_causal_mask,
+        ](1, 4096, ctx, use_index_input=use_index_input)
+        # BF16 token gen, with num_heads=16 (deepseek-v2 lite)
+        test[
+            4,
+            qkv_type,
+            DType.float32,
+            576,
+            16,
+            group=16,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+            use_causal_mask=use_causal_mask,
+        ](1, 50, ctx, use_index_input=use_index_input)
+
+        test[
+            3,
+            qkv_type,
+            DType.float32,
+            576,
+            16,
+            group=16,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+            use_causal_mask=use_causal_mask,
+        ](1, 1024, ctx, use_index_input=use_index_input)
 
 
 fn test_mla_prefill[
