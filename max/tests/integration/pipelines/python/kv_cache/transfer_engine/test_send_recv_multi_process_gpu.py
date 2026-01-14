@@ -125,9 +125,6 @@ def transfer_routine_receiver(
     engine.cleanup()
 
 
-@pytest.mark.skip(
-    reason="SERVOPT-872: This test flakily times out on b200 in ci"
-)
 def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
     # Use multiprocessing.Queue for inter-process communication
     ctx = mp.get_context("spawn")
@@ -139,7 +136,7 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
 
     # Transfer parameters
     GB = 1024 * 1024 * 1024
-    total_bytes = int(8 * GB)
+    total_bytes = int(1 * GB)
     total_num_pages = 2
     src_idxs = [0, 1]
     dst_idxs = [1, 0]

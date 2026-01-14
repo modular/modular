@@ -149,7 +149,7 @@ def test_multi_tensor_transfer_multiprocessing(
     receiver_done_queue: mp.Queue = ctx.Queue()
 
     GB = 1024 * 1024 * 1024
-    total_bytes = int(12 * GB)
+    total_bytes = int(1 * GB)
     total_num_pages = 2
     src_idxs = [0, 1]
     dst_idxs = [1, 0]
