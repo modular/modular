@@ -19,6 +19,7 @@ modular_py_library(
         requirement("pillow"),
         requirement("prometheus-client"),
         requirement("psutil"),
+        requirement("pydantic"),
         requirement("pyyaml"),
         requirement("requests"),
         requirement("scipy"),
