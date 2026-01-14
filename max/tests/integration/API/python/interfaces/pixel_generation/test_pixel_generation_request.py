@@ -65,3 +65,26 @@ def test_pixel_generation_request_init() -> None:
                 )
             ],
         )
+
+    # Neither prompt nor messages provided.
+    with pytest.raises(ValueError):
+        _ = PixelGenerationRequest(
+            request_id=RequestID(),
+            model_name="test",
+        )
+
+    # Dict messages should be converted to TextGenerationRequestMessage objects.
+    request = PixelGenerationRequest(
+        request_id=RequestID(),
+        model_name="test",
+        messages=[
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "hello world"}],
+            }  # type: ignore[list-item]
+        ],
+    )
+    assert request.messages is not None
+    assert len(request.messages) == 1
+    assert isinstance(request.messages[0], TextGenerationRequestMessage)
+    assert request.messages[0].role == "user"
