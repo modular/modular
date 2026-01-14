@@ -26,10 +26,6 @@
 #define HAVE_LINUX_X86_SYSTEM_INFO
 #endif
 
-#if defined(__linux__)
-#define HAVE_LINUX_SET_AFFINITY
-#endif
-
 namespace M {
 
 /// The distinguished CPU ID denoting 'no affinity to be set'.
@@ -143,11 +139,6 @@ getLinuxX86CPUSystemInfoImpl(const cpu_set_t &availableCpus,
 ErrorOr<CPUSystemInfo> getLinuxX86CPUSystemInfo();
 #endif // defined(HAVE_LINUX_X86_SYSTEM_INFO)
 
-#if defined(HAVE_LINUX_SET_AFFINITY)
-ErrorOrSuccess setThreadAffinityLinux(size_t cpuID);
-ErrorOrSuccess runWithThreadAffinityLinux(size_t cpuID,
-                                          llvm::function_ref<void()> &workFn);
-#endif // defined(HAVE_LINUX_SET_AFFINITY)
 } // namespace Detail
 } // namespace M
 

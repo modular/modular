@@ -34,10 +34,12 @@ modular_cc_test(
         "ProcessTest.cpp",
         "RandomTest.cpp",
         "StringExtrasTest.cpp",
+        "ThreadingTest.cpp",
     ],
     deps = [
         "//Support:Base",
         "//Support:Buffer",
+        "//Support:Threading",
         "@llvm-project//llvm:Support",
     ],
 )

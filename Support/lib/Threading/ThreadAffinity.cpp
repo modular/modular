@@ -13,14 +13,20 @@
 
 #define DEBUG_TYPE "thread-affinity"
 
+#ifdef __linux__
+#define HAVE_LINUX_SET_AFFINITY 1
+#else
+#define HAVE_LINUX_SET_AFFINITY 0
+#endif
+
 using namespace M;
 
 //===----------------------------------------------------------------------===//
 // Thread affinity
 //===----------------------------------------------------------------------===//
 
-#if defined(HAVE_LINUX_SET_AFFINITY)
-ErrorOrSuccess M::Detail::setThreadAffinityLinux(size_t cpuID) {
+#if HAVE_LINUX_SET_AFFINITY
+static ErrorOrSuccess setThreadAffinityLinux(size_t cpuID) {
   assert(cpuID < CPU_SETSIZE);
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
@@ -30,9 +36,8 @@ ErrorOrSuccess M::Detail::setThreadAffinityLinux(size_t cpuID) {
   return success();
 }
 
-ErrorOrSuccess
-M::Detail::runWithThreadAffinityLinux(size_t cpuID,
-                                      llvm::function_ref<void()> &workFn) {
+ErrorOrSuccess static runWithThreadAffinityLinux(
+    size_t cpuID, llvm::function_ref<void()> &workFn) {
   assert(cpuID < CPU_SETSIZE);
   cpu_set_t origset;
   int rc = sched_getaffinity(0, sizeof(origset), &origset);
@@ -58,26 +63,26 @@ M::Detail::runWithThreadAffinityLinux(size_t cpuID,
 #endif
 
 bool M::haveThreadAffinity() {
-#if defined(HAVE_LINUX_SET_AFFINITY)
+#if HAVE_LINUX_SET_AFFINITY
   return true;
 #else
   return false;
-#endif // defined(HAVE_LINUX_SET_AFFINITY)
+#endif // HAVE_LINUX_SET_AFFINITY
 }
 
 ErrorOrSuccess M::setThreadAffinity(size_t cpuID) {
-#if defined(HAVE_LINUX_SET_AFFINITY)
-  return Detail::setThreadAffinityLinux(cpuID);
+#if HAVE_LINUX_SET_AFFINITY
+  return setThreadAffinityLinux(cpuID);
 #else
   return Error("setThreadAffinity is not supported by this build");
-#endif // defined(HAVE_LINUX_SET_AFFINITY)
+#endif // HAVE_LINUX_SET_AFFINITY
 }
 
 ErrorOrSuccess M::runWithThreadAffinity(size_t cpuID,
                                         llvm::function_ref<void()> workFn) {
-#if defined(HAVE_LINUX_SET_AFFINITY)
-  return Detail::runWithThreadAffinityLinux(cpuID, workFn);
+#if HAVE_LINUX_SET_AFFINITY
+  return runWithThreadAffinityLinux(cpuID, workFn);
 #else
   return Error("runWithThreadAffinity is not supported by this build");
-#endif // defined(HAVE_LINUX_SET_AFFINITY)
+#endif // HAVE_LINUX_SET_AFFINITY
 }
