@@ -201,9 +201,10 @@ class Qwen3EmbeddingPipelineModel(PipelineModel[TextContext]):
         attention_mask = (next_tokens_batch != pad_value).astype(np.float32)
 
         # Compute row offsets for ragged tensor format
-        # For batch_size=1, this is simply [0, seq_len]
+        # Since we're flattening the padded batch, row_offsets marks the boundaries
+        # of each sequence in the flattened array (including padding)
         batch_size, seq_len = next_tokens_batch.shape
-        row_offsets = np.array([i * seq_len for i in range(batch_size + 1)], dtype=np.uint32)
+        row_offsets = np.arange(0, (batch_size + 1) * seq_len, seq_len, dtype=np.uint32)
 
         return Qwen3EmbeddingInputs(
             next_tokens_batch=Tensor.from_numpy(next_tokens_batch).to(

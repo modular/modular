@@ -28,7 +28,7 @@ from max.pipelines.architectures.qwen3.qwen3 import Qwen3
 import numpy as np
 
 def last_token_pool(
-    hidden_states: TensorValue, attention_mask: TensorValue
+    hidden_states: TensorValue, attention_mask: TensorValue, input_row_offsets: TensorValue
 ) -> TensorValue:
     """Apply last token pooling to extract embeddings.
     
@@ -37,30 +37,25 @@ def last_token_pool(
     
     Args:
         hidden_states: Output from the transformer model in ragged format [total_seq_len, hidden_size]
-        attention_mask: Attention mask [batch_size, seq_len]
+        attention_mask: Attention mask [batch_size, seq_len] marking valid tokens (1) vs padding (0)
+        input_row_offsets: Row offsets defining sequence boundaries in flattened format [batch_size + 1]
     
     Returns:
         Pooled embeddings [batch_size, hidden_size]
     """
-    # For batch_size=1 with ragged input, hidden_states is [seq_len, hidden_size]
-    # attention_mask is [1, seq_len]
+    # For each sequence, we need to find the index of the last valid (non-padding) token
+    # attention_mask shape: [batch_size, seq_len]
+    # Sum over seq_len dimension to get the number of valid tokens per sequence
+    sequence_lengths = ops.cast(ops.sum(attention_mask, axis=1), DType.int64)
     
-    # Calculate sequence length by summing attention mask
-    sequence_length = ops.sum(attention_mask, axis=1).cast(DType.int64) - 1
+    # Compute the global indices of the last valid token for each sequence
+    # input_row_offsets[i] gives the starting position of sequence i in the flattened array
+    # Adding (sequence_lengths - 1) gives us the position of the last valid token
+    last_token_indices = ops.cast(input_row_offsets[:-1], DType.int64) + sequence_lengths - 1
     
-    # Clamp to ensure we're within bounds (at least 0)
-    sequence_length = ops.max(
-        sequence_length,
-        ops.constant(0, DType.int64, device=sequence_length.device),
-    )
-    
-    # For ragged input, simply gather the last valid token
-    # hidden_states shape: [seq_len, hidden_size]
-    last_hidden = ops.gather(hidden_states, sequence_length, axis=0)
-    
-    # Reshape to [1, hidden_size] for batch_size=1
-    hidden_size = hidden_states.shape[1]
-    pooled = ops.reshape(last_hidden, (1, hidden_size))
+    # Gather the hidden states at these indices
+    # This will give us [batch_size, hidden_size]
+    pooled = ops.gather(hidden_states, last_token_indices, axis=0)
     
     return pooled
 
@@ -230,12 +225,12 @@ def build_graph(
         )
         
         # Extract hidden states from output tuple
-        # outputs is (logits, hidden_states) where hidden_states is [batch, seq_len, hidden_size]
+        # outputs is (logits, hidden_states) where hidden_states is [total_seq_len, hidden_size] in ragged format
         logits, hidden_states = outputs
         
         # Apply last token pooling to get embeddings
-        # Reshape attention_mask to match expected shape [batch_size, seq_len]
-        embeddings = last_token_pool(hidden_states, attention_mask)
+        # Use attention_mask to find the last valid (non-padding) token
+        embeddings = last_token_pool(hidden_states, attention_mask, input_row_offsets)
         
         # Output the embeddings [batch_size, hidden_size]
         graph.output(embeddings)
