@@ -212,7 +212,6 @@ _GPU_MEMORY = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },
         tags = [
-            "b200",
             "gpu",
         ],
         target_compatible_with = [

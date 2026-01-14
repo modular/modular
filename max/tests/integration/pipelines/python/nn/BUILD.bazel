@@ -214,7 +214,6 @@ modular_py_test(
         "test.resources:gpu-memory": "2",
     },
     tags = [
-        "b200",
         "gpu",
     ],
     target_compatible_with = ["//:b200_gpu"],
@@ -241,7 +240,6 @@ modular_py_test(
         "test.resources:gpu-memory": "2",
     },
     tags = [
-        "b200",
         "gpu",
     ],
     target_compatible_with = ["//:b200_gpu"],
