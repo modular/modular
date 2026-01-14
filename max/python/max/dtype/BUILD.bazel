@@ -5,7 +5,10 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "dtype",
     srcs = glob(["**/*.py"]),
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    ignore_unresolved_imports = [
+        # Torch helpers are only defined if torch is installed.
+        "torch",
+    ],
     deps = [
         "//max/python/max:_core",
         requirement("numpy"),

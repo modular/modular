@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Callable, Sequence
 from typing import Any, cast
 
@@ -29,6 +28,7 @@ from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence, KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
+    CompilationTimer,
     KVCacheConfig,
     KVCacheMixin,
     ModelInputs,
@@ -221,9 +221,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
-        logger.info("Building and compiling model...")
-        before = time.perf_counter()
-
+        timer = CompilationTimer("model")
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
@@ -270,6 +268,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]
 
+        timer.mark_build_complete()
         compiled_model = nn_model.compile(
             tokens_type,
             return_n_logits_type,
@@ -277,11 +276,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             *flattened_kv_types,
             weights=state_dict,
         )
-        after = time.perf_counter()
-
-        logger.info(
-            f"Building and compiling model took {after - before:.6f} seconds"
-        )
+        timer.done()
 
         return compiled_model
 

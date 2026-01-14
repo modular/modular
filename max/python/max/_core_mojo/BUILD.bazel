@@ -8,7 +8,7 @@ modular_py_library(
     data = glob(["**/*.mojo"]) + [
         "@mojo//:std",
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    tags = ["no-pydeps"],  # Relative import of "_core_mojo" instead of "._core_mojo", unsure how to handle this case
     deps = [
         requirement("numpy"),
         "@mojo//:python",

@@ -36,8 +36,8 @@ struct Person(Movable, Representable):
             raise Error("Person() takes exactly 2 arguments")
 
         # Convert Python arguments to Mojo types
-        var name = String(args[0])
-        var age = Int(args[1])
+        var name = String(py=args[0])
+        var age = Int(py=args[1])
 
         self = Self(name, age)
 

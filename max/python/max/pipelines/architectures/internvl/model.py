@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import math
-import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
@@ -37,6 +36,7 @@ from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
+    CompilationTimer,
     KVCacheConfig,
     KVCacheMixin,
     ModelInputs,
@@ -400,56 +400,26 @@ class InternVLModel(
         )
 
         # Build and compile vision model
-        logger.info("Building and compiling vision model...")
-        before = time.perf_counter()
+        timer = CompilationTimer("vision model")
         vision_graph, vision_model_state_dict = self._build_vision_graph(
             internvl_config, vision_model_weights_dict
         )
-        after_build = time.perf_counter()
-
-        logger.info(
-            f"Building vision graph took {after_build - before:.6f} seconds"
-        )
-
-        before_compile = time.perf_counter()
+        timer.mark_build_complete()
         vision_model = session.load(
             vision_graph, weights_registry=vision_model_state_dict
         )
-        after = time.perf_counter()
-
-        logger.info(
-            f"Compiling vision model took {after - before_compile:.6f} seconds"
-        )
-
-        logger.info(
-            f"Building and compiling vision model took {after - before:.6f} seconds"
-        )
+        timer.done()
 
         # Build and compile language model
-        logger.info("Building and compiling language model...")
-        before = time.perf_counter()
+        timer = CompilationTimer("language model")
         language_graph, language_model_state_dict = self._build_language_graph(
             internvl_config, llm_weights_dict
         )
-        after_build = time.perf_counter()
-
-        logger.info(
-            f"Building language graph took {after_build - before:.6f} seconds"
-        )
-
-        before_compile = time.perf_counter()
+        timer.mark_build_complete()
         language_model = session.load(
             language_graph, weights_registry=language_model_state_dict
         )
-        after = time.perf_counter()
-
-        logger.info(
-            f"Compiling language model took {after - before_compile:.6f} seconds"
-        )
-
-        logger.info(
-            f"Building and compiling language model took {after - before:.6f} seconds"
-        )
+        timer.done()
 
         return vision_model, language_model
 

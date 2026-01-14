@@ -27,7 +27,7 @@ from collections.string._utf8 import (
     _utf8_first_byte_sequence_length,
     _is_utf8_continuation_byte,
 )
-from collections.string.format import _CurlyEntryFormattable, _FormatUtils
+from collections.string.format import _FormatUtils
 from hashlib.hasher import Hasher
 from format._utils import _TotalWritableBytes, _WriteBufferStack
 from math import align_down
@@ -474,7 +474,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Sized,
     Stringable,
     Writable,
-    _CurlyEntryFormattable,
 ):
     """A non-owning view into encoded string data.
 
@@ -1130,14 +1129,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return CodepointSliceIter[Self.origin, forward=False](self)
 
-    fn __getitem__[I: Indexer, //](self, idx: I) -> String:
+    fn __getitem__[I: Indexer, //](self, *, byte: I) -> String:
         """Gets the character at the specified position.
 
         Parameters:
             I: A type that can be used as an index.
 
         Args:
-            idx: The index value.
+            byte: The index value.
 
         Returns:
             A new string containing the character at the specified position.
@@ -1145,7 +1144,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         # TODO(#933): implement this for unicode when we support llvm intrinsic
         # evaluation at compile time
         var result = String(capacity=1)
-        result._iadd(Span(ptr=UnsafePointer(to=self._slice[idx]), length=1))
+        result._iadd(Span(ptr=UnsafePointer(to=self._slice[byte]), length=1))
         return result^
 
     fn __contains__(self, substr: StringSlice) -> Bool:
@@ -1392,7 +1391,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
 
         var r_idx = self.byte_length()
-        while r_idx > 0 and self[r_idx - 1] in chars:
+        while r_idx > 0 and self[byte = r_idx - 1] in chars:
             r_idx -= 1
 
         return Self(unsafe_from_utf8=self.as_bytes()[:r_idx])
@@ -1442,7 +1441,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
 
         var l_idx = 0
-        while l_idx < self.byte_length() and self[l_idx] in chars:
+        while l_idx < self.byte_length() and self[byte=l_idx] in chars:
             l_idx += 1
 
         return Self(unsafe_from_utf8=self.as_bytes()[l_idx:])
@@ -1849,7 +1848,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return StringSlice(unsafe_from_utf8=self._slice[abs_start:])
 
     @always_inline
-    fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) raises -> String:
+    fn format[*Ts: AnyType](self, *args: *Ts) raises -> String:
         """Produce a formatted string using the current string as a template.
 
         The template, or "format string" can contain literal text and/or
@@ -1864,8 +1863,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             args: The substitution values.
 
         Parameters:
-            Ts: The types of substitution values that implement `Representable`
-                and `Stringable` (to be changed and made more flexible).
+            Ts: The types of substitution values that implement `Representable &
+                Stringable` or `Writable`.
 
         Returns:
             The template with the given values substituted.

@@ -1106,16 +1106,20 @@ class StructDefFieldAttr(max._core.Attribute):
 
     @overload
     def __init__(
-        self, name: max._core.dialects.builtin.StringAttr, type: max._core.Type
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        type_value: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
-        self, name: max._core.dialects.builtin.StringAttr, type: max._core.Type
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        type_value: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def name(self) -> max._core.dialects.builtin.StringAttr: ...
     @property
-    def type(self) -> max._core.Type | None: ...
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class StructExtractAttr(max._core.Attribute):
     """
