@@ -25,6 +25,7 @@ modular_cc_binary(
         "bench_gpu_kernel_enqueue_cuda.cpp",
         "cuda_common.h",
     ],
+    visibility = ["//utils/benchmarking/tools/gpu_kernel_enqueue_numa:__pkg__"],
     deps = [
         "//Support:MicroBenchmark",
         "@llvm-project//llvm:Support",
