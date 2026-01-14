@@ -41,7 +41,6 @@
 #include <utility>
 #include <vector>
 
-#ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter_factory.h"
 #include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter_options.h"
 #include "opentelemetry/exporters/otlp/otlp_http_metric_exporter_factory.h"
@@ -58,7 +57,6 @@
 #include "opentelemetry/sdk/metrics/export/periodic_exporting_metric_reader.h"
 #include "opentelemetry/sdk/metrics/meter_provider.h"
 #include "opentelemetry/sdk/resource/resource.h"
-#endif // MODULAR_ENABLE_TELEMETRY
 
 // enable TEST_UDS to use unix domain sockets for log/metrics. Do set the config
 // value for `telemetry.exporters.metrics.uds_name` to the right socket from the
@@ -73,8 +71,6 @@
 using namespace M;
 using namespace Telemetry;
 using namespace Exporter;
-
-#ifdef MODULAR_ENABLE_TELEMETRY
 
 static bool isModularEmployee() {
   const char *home = std::getenv("HOME");
@@ -179,11 +175,9 @@ static size_t getMaxProcessors(const HostMachineInfo &hostInfo) {
   }
   return hostInfo.numPhysicalCores;
 }
-#endif // MODULAR_ENABLE_TELEMETRY
 
 TelemetryContext::~TelemetryContext() {
   flush(kShutdownFlushTimeout);
-#ifdef MODULAR_ENABLE_TELEMETRY
   // Flush metrics.
   auto metricsProviderImpl =
       static_cast<opentelemetry::sdk::metrics::MeterProvider *>(
@@ -201,11 +195,9 @@ TelemetryContext::~TelemetryContext() {
       std::static_pointer_cast<opentelemetry::sdk::logs::LoggerProvider>(
           loggerProvider);
   loggerProviderImpl->Shutdown();
-#endif // MODULAR_ENABLE_TELEMETRY
 }
 
 void TelemetryContext::flush(std::chrono::microseconds timeout) {
-#ifdef MODULAR_ENABLE_TELEMETRY
   // Flush metrics.
   auto metricsProviderImpl =
       static_cast<opentelemetry::sdk::metrics::MeterProvider *>(
@@ -223,11 +215,9 @@ void TelemetryContext::flush(std::chrono::microseconds timeout) {
       std::static_pointer_cast<opentelemetry::sdk::logs::LoggerProvider>(
           loggerProvider);
   loggerProviderImpl->ForceFlush(timeout);
-#endif // MODULAR_ENABLE_TELEMETRY
 }
 
 TelemetryContext::TelemetryContext(Config &settings) {
-#ifdef MODULAR_ENABLE_TELEMETRY
   using namespace opentelemetry::sdk::resource;
   // -------- Resources --------
   // Get the map of resources for the full host info.
@@ -446,5 +436,4 @@ TelemetryContext::TelemetryContext(Config &settings) {
       std::move(processors), otelResources);
   eventLoggerProvider =
       opentelemetry::sdk::logs::EventLoggerProviderFactory::Create();
-#endif // MODULAR_ENABLE_TELEMETRY
 }

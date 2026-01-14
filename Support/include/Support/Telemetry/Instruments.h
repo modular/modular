@@ -8,6 +8,9 @@
 #define SUPPORT_TELEMETRY_INSTRUMENTS_H
 
 #include "Support/Telemetry/ForwardDecls.h"
+#include "opentelemetry/common/attribute_value.h"
+#include "opentelemetry/context/context.h"
+#include "opentelemetry/metrics/sync_instruments.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include <chrono>
@@ -17,11 +20,6 @@
 #include <unordered_map>
 #include <utility>
 #include <variant>
-#ifdef MODULAR_ENABLE_TELEMETRY
-#include "opentelemetry/common/attribute_value.h"
-#include "opentelemetry/context/context.h"
-#include "opentelemetry/metrics/sync_instruments.h"
-#endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::Telemetry {
 
@@ -32,21 +30,6 @@ using MetricAttributeValue = std::variant<bool, int32_t, uint32_t, int64_t,
 
 using MetricAttributeMap =
     std::unordered_map<std::string, MetricAttributeValue>;
-
-#ifndef MODULAR_ENABLE_TELEMETRY
-
-template <typename T>
-class Counter {
-public:
-  void add(T value) {}
-
-private:
-  friend class TelemetryContext;
-
-  Counter() {}
-};
-
-#else // MODULAR_ENABLE_TELEMETRY
 
 template <typename T>
 class Counter {
@@ -86,23 +69,7 @@ private:
   MetricAttributeMap owned_attributes;
 };
 
-#endif // MODULAR_ENABLE_TELEMETRY
-
 // -------- Gauges ---------
-#ifndef MODULAR_ENABLE_TELEMETRY
-
-template <typename T>
-class Gauge {
-public:
-  void add(T value) {}
-
-private:
-  friend class TelemetryContext;
-
-  Gauge() {}
-};
-
-#else // MODULAR_ENABLE_TELEMETRY
 
 template <typename T>
 class Gauge {
@@ -142,39 +109,7 @@ private:
   MetricAttributeMap owned_attributes;
 };
 
-#endif // MODULAR_ENABLE_TELEMETRY
-
 // -------- Histogram and Timer --------
-
-#ifndef MODULAR_ENABLE_TELEMETRY
-
-template <typename T>
-class Histogram {
-public:
-  void
-  record(T value,
-         std::initializer_list<std::pair<llvm::StringRef, MetricAttributeValue>>
-             additionalAttributes = {}) {}
-
-private:
-  friend class TelemetryContext;
-
-  Histogram() {}
-};
-
-template <typename T, typename DurationT>
-class Timer {
-private:
-  friend class TelemetryContext;
-  /// TODO: Allow passing in attributes to attach to the recorded entry.
-  Timer() {}
-
-public:
-  void setAttribute(const std::string &key, const MetricAttributeValue &value) {
-  }
-};
-
-#else // MODULAR_ENABLE_TELEMETRY
 
 template <typename T>
 class Histogram {
@@ -265,8 +200,6 @@ private:
   /// The start time.
   TimePointType start;
 };
-
-#endif // MODULAR_ENABLE_TELEMETRY
 
 } // namespace M::Telemetry
 

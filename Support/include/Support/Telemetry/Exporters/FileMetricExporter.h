@@ -7,7 +7,6 @@
 #ifndef SUPPORT_TELEMETRY_EXPORTERS_FILEMETRICEXPORTER_H
 #define SUPPORT_TELEMETRY_EXPORTERS_FILEMETRICEXPORTER_H
 
-#ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/exporters/ostream/metric_exporter.h"
 #include "opentelemetry/sdk/common/exporter_utils.h"
 #include "opentelemetry/sdk/metrics/export/metric_producer.h"
@@ -17,11 +16,8 @@
 #include <filesystem>
 #include <sstream>
 #include <utility>
-#endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::Telemetry::Exporter {
-
-#ifdef MODULAR_ENABLE_TELEMETRY
 
 /// The FileMetricExporter exports metric data to a file, leveraging
 /// OTel's OStreamMetricExporter.
@@ -70,8 +66,6 @@ private:
   /// Delegate printing of telemetry data to OTel's OStreamMetricExporter.
   opentelemetry::exporter::metrics::OStreamMetricExporter ostreamExporter;
 };
-
-#endif // MODULAR_ENABLE_TELEMETRY
 
 } // namespace M::Telemetry::Exporter
 

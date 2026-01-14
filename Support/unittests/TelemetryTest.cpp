@@ -22,8 +22,6 @@
 using namespace M;
 using namespace Telemetry;
 
-#ifdef MODULAR_ENABLE_TELEMETRY
-
 /// RAII-style way to restore Modular config after each test.
 struct LogFileSetup {
 public:
@@ -585,5 +583,3 @@ TEST(Telemetry, ModularEmployee) {
 
   checkTelemetry(true);
 }
-
-#endif // MODULAR_ENABLE_TELEMETRY

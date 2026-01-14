@@ -7,7 +7,6 @@
 #ifndef SUPPORT_TELEMETRY_EXPORTERS_FILELOGEXPORTER_H
 #define SUPPORT_TELEMETRY_EXPORTERS_FILELOGEXPORTER_H
 
-#ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/exporters/ostream/log_record_exporter.h"
 #include "opentelemetry/nostd/span.h"
 #include "opentelemetry/sdk/common/exporter_utils.h"
@@ -18,11 +17,8 @@
 #include <memory>
 #include <sstream>
 #include <utility>
-#endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::Telemetry::Exporter {
-
-#ifdef MODULAR_ENABLE_TELEMETRY
 
 /// The FileLogExporter exports log data to a file, leveraging
 /// OTel's OStreamLogRecordExporter.
@@ -64,8 +60,6 @@ private:
   /// Delegate printing of telemetry data to OTel's OStreamLogRecordExporter.
   opentelemetry::exporter::logs::OStreamLogRecordExporter ostreamExporter;
 };
-
-#endif // MODULAR_ENABLE_TELEMETRY
 
 } // namespace M::Telemetry::Exporter
 

@@ -10,17 +10,15 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Common.h"
 #include "Support/Telemetry/ForwardDecls.h"
+#include "opentelemetry/common/attribute_value.h"
+#include "opentelemetry/logs/event_logger.h"
+#include "opentelemetry/logs/severity.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include <memory>
 #include <string>
-#include <utility>
-#ifdef MODULAR_ENABLE_TELEMETRY
-#include "opentelemetry/common/attribute_value.h"
-#include "opentelemetry/logs/event_logger.h"
-#include "opentelemetry/logs/severity.h"
-#endif // MODULAR_ENABLE_TELEMETRY
 #include <unordered_map>
+#include <utility>
 #include <variant>
 
 namespace M::Telemetry::Logs {
@@ -29,40 +27,8 @@ namespace M::Telemetry::Logs {
 /// See
 /// https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md#field-severitynumber
 
-#ifdef MODULAR_ENABLE_TELEMETRY
-
 using Severity = opentelemetry::logs::Severity;
 using AttributeValue = opentelemetry::common::AttributeValue;
-
-#else
-
-// If telemetry is disabled, this enum is only required for the NOOP API.
-// Note: not including all of OTel's severity numbers here, only the ones
-// we are going to use.
-enum class Severity : uint8_t {
-  kInvalid,
-  kTrace,
-  kDebug,
-  kInfo,
-  kWarn,
-  kError,
-  kFatal
-};
-
-struct AttributeValue
-    : std::variant<bool, int32_t, int64_t, uint32_t, uint64_t, double,
-                   llvm::StringRef, llvm::ArrayRef<bool>,
-                   llvm::ArrayRef<int32_t>, llvm::ArrayRef<int64_t>,
-                   llvm::ArrayRef<uint32_t>, llvm::ArrayRef<double>,
-                   ArrayRef<uint64_t>, ArrayRef<uint8_t>,
-                   llvm::ArrayRef<llvm::StringRef>> {
-  using variant::variant;
-
-  template <typename T>
-  AttributeValue(T &&) : variant(false) {}
-};
-
-#endif // MODULAR_ENABLE_TELEMETRY
 
 /// A Logger to emit logs. Logger's methods are thread-safe.
 /// Usage examples:
@@ -99,15 +65,11 @@ public:
   }
 
 protected:
-#ifdef MODULAR_ENABLE_TELEMETRY
   Logger(std::shared_ptr<opentelemetry::logs::EventLogger> logger,
          M::Telemetry::Level level)
       : logger(std::move(logger)), telemetryLevel(level) {}
 
   std::shared_ptr<opentelemetry::logs::EventLogger> logger;
-#else
-  Logger() {}
-#endif // MODULAR_ENABLE_TELEMETRY
 
 private:
   friend class M::Telemetry::TelemetryContext;
@@ -116,7 +78,6 @@ private:
   void emitEvent(StringRef eventName, Severity severity,
                  M::Telemetry::Level level,
                  const llvm::StringMap<AttributeValue> &attributes) {
-#ifdef MODULAR_ENABLE_TELEMETRY
     if (eventEnabled(level)) {
       // Convert the attributes to unordered_map to pass to OTel.
       std::unordered_map<std::string, AttributeValue> attrs;
@@ -128,7 +89,6 @@ private:
                         static_cast<opentelemetry::logs::Severity>(severity),
                         "", attrs);
     }
-#endif
   }
 
   // Configured level for Telemetry.

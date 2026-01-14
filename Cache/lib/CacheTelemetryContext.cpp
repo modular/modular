@@ -30,15 +30,11 @@ CacheTelemetryContext::getCacheTelemetryContext(ContextRef context) {
 }
 
 void CacheTelemetryContext::recordCacheHit(llvm::StringRef pipelineName) {
-#ifdef MODULAR_ENABLE_TELEMETRY
   cacheHitCounter.add(1, {{"pipeline", pipelineName.str()}});
-#endif // MODULAR_ENABLE_TELEMETRY
 }
 
 void CacheTelemetryContext::recordCacheMiss(llvm::StringRef pipelineName) {
-#ifdef MODULAR_ENABLE_TELEMETRY
   cacheMissCounter.add(1, {{"pipeline", pipelineName.str()}});
-#endif // MODULAR_ENABLE_TELEMETRY
 }
 
 std::function<void(mlir::Operation *)>
@@ -46,7 +42,6 @@ CacheTelemetryContext::getTelemetryOnMissLambda(
     const std::string &counterName, const std::string &timerName,
     const llvm::StringMap<M::Telemetry::MetricAttributeValue> &attrs) {
   return [counterName, timerName, attrs](mlir::Operation *op) {
-#ifdef MODULAR_ENABLE_TELEMETRY
     CacheTelemetryContext::getCacheTelemetryContext(
         loadContext(op->getContext()))
         .recordCacheMiss(counterName);
@@ -56,18 +51,14 @@ CacheTelemetryContext::getTelemetryOnMissLambda(
             ->get<M::Telemetry::TelemetryContext>()
             ->createUInt64Timer<std::chrono::milliseconds>(
                 timerName, M::Telemetry::Level::L2, attrs);
-#endif
   };
 }
 
 std::function<void(mlir::Operation *)>
 CacheTelemetryContext::getTelemetryOnHitLambda(const std::string &counterName) {
   return [counterName](mlir::Operation *op) {
-#ifdef MODULAR_ENABLE_TELEMETRY
     CacheTelemetryContext::getCacheTelemetryContext(
         loadContext(op->getContext()))
         .recordCacheHit(counterName);
-
-#endif
   };
 }
