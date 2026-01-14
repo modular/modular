@@ -285,7 +285,7 @@ def test_repr():
     assert_equal(StringLiteral.__repr__("\x0e"), r"'\x0e'")
     assert_equal(StringLiteral.__repr__("\x1f"), r"'\x1f'")
     assert_equal(StringLiteral.__repr__(" "), "' '")
-    assert_equal(StringLiteral.__repr__("'"), '"\'"')
+    assert_equal(StringLiteral.__repr__("'"), r"'\''")
     assert_equal(StringLiteral.__repr__("A"), "'A'")
     assert_equal(StringLiteral.__repr__("\\"), r"'\\'")
     assert_equal(StringLiteral.__repr__("~"), "'~'")

@@ -237,7 +237,7 @@ trait Writable:
                 writer.write_string(", ")
             writer.write_string(materialize[names[i]]())
             writer.write_string("=")
-            trait_downcast[Writable](__struct_field_ref(i, self)).write_repr_to(
+            trait_downcast[Writable](__struct_field_ref(i, self)).write_to(
                 writer
             )
         writer.write_string(")")

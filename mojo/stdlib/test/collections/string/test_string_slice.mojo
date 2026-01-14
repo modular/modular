@@ -368,32 +368,65 @@ fn test_slice_bool() raises:
     assert_true(not str2.as_string_slice().__bool__())
 
 
+comptime REPR_MAPPINGS = [
+    # Empty string
+    ("", "''"),
+    # Standard single-byte printable characters
+    ("hello", "'hello'"),
+    ("ABC123", "'ABC123'"),
+    # Boundary cases for printable ASCII range
+    (" ", "' '"),  # 0x20 - first printable ASCII
+    ("!", "'!'"),  # 0x21 - first printable non-whitespace
+    ("~", "'~'"),  # 0x7E - last printable ASCII
+    # Special escape sequences
+    ("\\", r"'\\'"),  # backslash - must be escaped
+    ("\t", r"'\t'"),  # tab (0x09) - special escape
+    ("\n", r"'\n'"),  # newline (0x0A) - special escape
+    ("\r", r"'\r'"),  # carriage return (0x0D) - special escape
+    ('"', "'\"'"),  # double quote - not escaped, but good to verify
+    ("'", r"'\''"),  # single quote - escaped
+    # Control characters - testing edge cases of different formatting rules
+    ("\x00", r"'\x00'"),  # null - first control char (0x00-0x0F: \x0X format)
+    ("\x06", r"'\x06'"),  # ACK - sample from 0x00-0x0F range
+    ("\x0f", r"'\x0f'"),  # SI - last of 0x00-0x0F range (tests \x0X format)
+    ("\x10", r"'\x10'"),  # DLE - first of 0x10-0x1F range (tests \xXX format)
+    ("\x1b", r"'\x1b'"),  # ESC - sample from 0x10-0x1F range
+    ("\x1f", r"'\x1f'"),  # US - last control char before space (boundary test)
+    ("\x7f", r"'\x7f'"),  # DEL - non-printable after tilde (boundary test)
+    # Multi-byte UTF-8 characters (test each byte length)
+    ("Ö", "'Ö'"),  # 2-byte single char
+    ("café", "'café'"),  # 2-byte mixed with ASCII
+    ("你好", "'你好'"),  # 3-byte
+    ("🔥", "'🔥'"),  # 4-byte emoji
+    ("hello 🔥!", "'hello 🔥!'"),  # 4-byte mixed with ASCII
+    # Mixed content - escapes with normal text
+    ("hello\nworld", r"'hello\nworld'"),
+    ('quote"here', "'quote\"here'"),
+    ("back\\slash", r"'back\\slash'"),
+    ("path\\to\\file", r"'path\\to\\file'"),
+    # Mixed content - control chars embedded in text
+    ("start\x00end", r"'start\x00end'"),
+    ("data\x1fmore", r"'data\x1fmore'"),
+    # Multiple escapes in one string
+    ("\n\t\r", r"'\n\t\r'"),
+    ('\\"', "'\\\\\"'"),
+    # Boundary testing - transitions between character types
+    ("\x1f ", r"'\x1f '"),  # control → printable
+    (" \x7f", r"' \x7f'"),  # printable → DEL
+    ("~\x7f", r"'~\x7f'"),  # last printable → DEL
+]
+
+
 def test_slice_repr():
-    # Standard single-byte characters
-    assert_equal(StringSlice.__repr__("hello"), "'hello'")
-    assert_equal(StringSlice.__repr__(String(0)), "'0'")
-    assert_equal(StringSlice.__repr__("A"), "'A'")
-    assert_equal(StringSlice.__repr__(" "), "' '")
-    assert_equal(StringSlice.__repr__("~"), "'~'")
+    for item in materialize[REPR_MAPPINGS]():
+        assert_equal(StringSlice.__repr__(item[0]), item[1])
 
-    # Special single-byte characters
-    assert_equal(StringSlice.__repr__("\0"), r"'\x00'")
-    assert_equal(StringSlice.__repr__("\x06"), r"'\x06'")
-    assert_equal(StringSlice.__repr__("\x09"), r"'\t'")
-    assert_equal(StringSlice.__repr__("\n"), r"'\n'")
-    assert_equal(StringSlice.__repr__("\x0d"), r"'\r'")
-    assert_equal(StringSlice.__repr__("\x0e"), r"'\x0e'")
-    assert_equal(StringSlice.__repr__("\x1f"), r"'\x1f'")
-    assert_equal(StringSlice.__repr__("'"), '"\'"')
-    assert_equal(StringSlice.__repr__("\\"), r"'\\'")
-    assert_equal(StringSlice.__repr__("\x7f"), r"'\x7f'")
 
-    # Multi-byte characters
-    assert_equal(
-        StringSlice.__repr__("Örnsköldsvik"), "'Örnsköldsvik'"
-    )  # 2-byte
-    assert_equal(StringSlice.__repr__("你好!"), "'你好!'")  # 3-byte
-    assert_equal(StringSlice.__repr__("hello 🔥!"), "'hello 🔥!'")  # 4-byte
+def test_slice_write_repr_to():
+    for item in materialize[REPR_MAPPINGS]():
+        var string = String()
+        StringSlice.write_repr_to(item[0], string)
+        assert_equal(string, item[1])
 
 
 def test_find():

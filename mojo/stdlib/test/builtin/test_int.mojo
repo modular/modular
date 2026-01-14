@@ -153,6 +153,19 @@ def test_int_representation():
     assert_equal(Int(-100).__repr__(), "-100")
 
 
+def test_int_write_repr_to():
+    fn check(i: Int, expected: String) raises:
+        var string = String()
+        i.write_repr_to(string)
+        assert_equal(string, expected)
+
+    check(Int(3), "Int(3)")
+    check(Int(-3), "Int(-3)")
+    check(Int(0), "Int(0)")
+    check(Int(100), "Int(100)")
+    check(Int(-100), "Int(-100)")
+
+
 def test_indexer():
     assert_true(5 == index(Int(5)))
     assert_true(987 == index(Int(987)))

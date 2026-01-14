@@ -13,6 +13,7 @@
 """Implements the `StringSlice` type and related utilities for efficient string operations."""
 
 from builtin.builtin_slice import ContiguousSlice
+from builtin.format_int import _write_int
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -785,33 +786,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             form syntax.
         """
         var result = String()
-        var use_dquote = False
-        for s in self.codepoint_slices():
-            use_dquote = use_dquote or (s == "'")
-
-            if s == "\\":
-                result += r"\\"
-            elif s == "\t":
-                result += r"\t"
-            elif s == "\n":
-                result += r"\n"
-            elif s == "\r":
-                result += r"\r"
-            else:
-                var codepoint = Codepoint.ord(s)
-                if codepoint.is_ascii_printable():
-                    result += s
-                elif codepoint.to_u32() < 0x10:
-                    result += hex(codepoint, prefix=r"\x0")
-                elif codepoint.to_u32() < 0x20 or codepoint.to_u32() == 0x7F:
-                    result += hex(codepoint, prefix=r"\x")
-                else:  # multi-byte character
-                    result += s
-
-        if use_dquote:
-            return String('"', result, '"')
-        else:
-            return String("'", result, "'")
+        self.write_repr_to(result)
+        return result^
 
     @always_inline
     fn __len__(self) -> Int:
@@ -862,6 +838,39 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             writer: The object to write to.
         """
         writer.write_string(self)
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Formats this string slice to the provided `Writer`.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write_string("'")
+
+        for s in self.codepoint_slices():
+            if s == "\\":
+                writer.write_string(r"\\")
+            elif s == "\t":
+                writer.write_string(r"\t")
+            elif s == "\n":
+                writer.write_string(r"\n")
+            elif s == "\r":
+                writer.write_string(r"\r")
+            elif s == "'":
+                writer.write_string(r"\'")
+            else:
+                var codepoint = Codepoint.ord(s)
+                var u32 = codepoint.to_u32()
+                if codepoint.is_ascii_printable():
+                    writer.write_string(s)
+                elif u32 < 0x10:
+                    _write_int[radix=16](writer, u32, prefix=r"\x0")
+                elif u32 < 0x20 or u32 == 0x7F:
+                    _write_int[radix=16](writer, u32, prefix=r"\x")
+                else:  # multi-byte character
+                    writer.write_string(s)
+
+        writer.write_string("'")
 
     fn __bool__(self) -> Bool:
         """Check if a string slice is non-empty.

@@ -316,32 +316,72 @@ def test_convert_simd_to_string():
     )
 
 
-def test_simd_repr():
-    assert_equal(
-        SIMD[DType.int32, 4](1, 2, 3, 4).__repr__(),
+fn _test_repr(value: SIMD, expected: String) raises:
+    # Test __repr__
+    assert_equal(value.__repr__(), expected)
+
+    # Test write_repr_to
+    var string = String()
+    value.write_repr_to(string)
+    assert_equal(string, expected)
+
+
+def test_simd_repr_and_write_repr_to():
+    # Basic integer vectors
+    _test_repr(
+        SIMD[DType.int32, 4](1, 2, 3, 4),
         "SIMD[DType.int32, 4](1, 2, 3, 4)",
     )
-    assert_equal(
-        SIMD[DType.int32, 4](-1, 2, -3, 4).__repr__(),
+    _test_repr(
+        SIMD[DType.int32, 4](-1, 2, -3, 4),
         "SIMD[DType.int32, 4](-1, 2, -3, 4)",
     )
-    assert_equal(
-        SIMD[DType.bool, 2](True, False).__repr__(),
+
+    # Size boundary: scalar (size=1)
+    _test_repr(Int32(4), "SIMD[DType.int32, 1](4)")
+    _test_repr(Int32(0), "SIMD[DType.int32, 1](0)")
+    _test_repr(Int32(-42), "SIMD[DType.int32, 1](-42)")
+
+    # Integer boundary values (min/max for different sizes)
+    _test_repr(Int8.MIN, "SIMD[DType.int8, 1](-128)")
+    _test_repr(Int8.MAX, "SIMD[DType.int8, 1](127)")
+    _test_repr(UInt8.MAX, "SIMD[DType.uint8, 1](255)")
+    _test_repr(
+        Int64.MIN,
+        "SIMD[DType.int64, 1](-9223372036854775808)",
+    )
+    _test_repr(
+        SIMD[DType.uint32, 2](0, UInt32.MAX),
+        "SIMD[DType.uint32, 2](0, 4294967295)",
+    )
+
+    # Boolean vectors - all patterns
+    _test_repr(
+        SIMD[DType.bool, 2](True, False),
         "SIMD[DType.bool, 2](True, False)",
     )
-    assert_equal(Int32(4).__repr__(), "SIMD[DType.int32, 1](4)")
-    assert_equal(
-        Float64(235234523.3452).__repr__(),
+    _test_repr(
+        SIMD[DType.bool, 4](True, True, True, True),
+        "SIMD[DType.bool, 4](True, True, True, True)",
+    )
+    _test_repr(
+        SIMD[DType.bool, 4](False, False, False, False),
+        "SIMD[DType.bool, 4](False, False, False, False)",
+    )
+
+    # Float types - different precisions
+    _test_repr(Float16(324), "SIMD[DType.float16, 1](324.0)")
+    _test_repr(Float32(2897239), "SIMD[DType.float32, 1](2897239.0)")
+    _test_repr(
+        Float64(235234523.3452),
         "SIMD[DType.float64, 1](235234523.3452)",
     )
-    assert_equal(
-        Float32(2897239).__repr__(), "SIMD[DType.float32, 1](2897239.0)"
-    )
-    assert_equal(Float16(324).__repr__(), "SIMD[DType.float16, 1](324.0)")
-    assert_equal(
+
+    # Float special values (inf, -inf, nan, -0.0)
+    _test_repr(
         SIMD[DType.float32, 4](
             Float32.MAX, Float32.MIN, -0.0, nan[DType.float32]()
-        ).__repr__(),
+        ),
         "SIMD[DType.float32, 4](inf, -inf, -0.0, nan)",
     )
 

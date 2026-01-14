@@ -1216,6 +1216,14 @@ struct String(
         """
         writer.write_string(self)
 
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the string".
+
+        Args:
+            writer: The value to write to.
+        """
+        self.as_string_slice().write_repr_to(writer)
+
     fn join[T: Copyable & Writable](self, elems: Span[T, ...]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than

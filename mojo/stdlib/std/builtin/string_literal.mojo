@@ -406,6 +406,14 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         writer.write(self.as_string_slice())
 
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the string literal".
+
+        Args:
+            writer: The value to write to.
+        """
+        self.as_string_slice().write_repr_to(writer)
+
     fn find(self, substr: StaticString, start: Int = 0) -> Int:
         """Finds the offset of the first occurrence of `substr` starting at
         `start`. If not found, returns -1.
