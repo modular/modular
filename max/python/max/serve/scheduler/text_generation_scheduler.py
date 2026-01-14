@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import time
+import traceback
 
 from max.interfaces import (
     MAXPullQueue,
@@ -150,8 +151,31 @@ class TokenGenerationScheduler(Scheduler):
 
     def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Returns the number of terminated requests."""
+        batch_request_ids = list(inputs.batch.keys())
+
         # Execute the batch.
-        responses = self.pipeline.execute(inputs)
+        try:
+            responses = self.pipeline.execute(inputs)
+        except Exception as exc:
+            logger.error(
+                "Exception during pipeline execution: %s",
+                traceback.format_exc(),
+            )
+
+            # Send error results to ALL requests in the batch
+            self.response_queue.put_nowait(
+                {
+                    req_id: SchedulerResult.from_error(exc)
+                    for req_id in batch_request_ids
+                }
+            )
+
+            # Release all requests from batch constructor
+            for req_id in batch_request_ids:
+                if self.batch_constructor.contains(req_id):
+                    self.batch_constructor.release_request(req_id)
+
+            return len(batch_request_ids)
 
         # Advance the requests and collect the invalid request IDs
         for (

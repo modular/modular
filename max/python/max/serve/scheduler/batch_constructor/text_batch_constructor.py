@@ -489,18 +489,18 @@ class TextBatchConstructor:
 
         # Retrieve the replica index for the request
         replica_idx = self._request_id_to_replica_idx[request_id]
-        if request_id in self.replicas[replica_idx].ce_reqs:
-            del self.replicas[replica_idx].ce_reqs[request_id]
-            self.pipeline.release(request_id)
-            del self._request_id_to_replica_idx[request_id]
-        elif request_id in self.replicas[replica_idx].tg_reqs:
-            del self.replicas[replica_idx].tg_reqs[request_id]
-            self.pipeline.release(request_id)
-            del self._request_id_to_replica_idx[request_id]
-        else:
-            raise ValueError(
-                f"Request {request_id} not found in the ce or tg requests of its assigned replica."
-            )
+        replica = self.replicas[replica_idx]
+
+        if request_id in replica.ce_reqs:
+            del replica.ce_reqs[request_id]
+        elif request_id in replica.tg_reqs:
+            del replica.tg_reqs[request_id]
+        # Note: Request might not be in any queue if it was moved to a batch
+        # during construct_batch() and then an exception occurred during execution.
+        # In this case, we still need to release pipeline resources and clean up tracking.
+
+        self.pipeline.release(request_id)
+        del self._request_id_to_replica_idx[request_id]
 
     def clear_tg_reqs(self) -> None:
         """Clears all TG requests from all replicas."""

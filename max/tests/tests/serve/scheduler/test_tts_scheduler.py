@@ -16,6 +16,7 @@ from __future__ import annotations
 import queue
 from collections.abc import Generator
 from dataclasses import dataclass
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -365,6 +366,61 @@ def enqueue_request_with_prompt(
 
 CE = BatchType.CE
 TG = BatchType.TG
+
+
+# =============================================================================
+# Tests for exception handling in AudioGenerationScheduler
+# =============================================================================
+
+
+def test_audio_pipeline_exception_sends_error_to_client() -> None:
+    """Test that audio scheduler catches exceptions and sends error results."""
+    max_seq_len = 2048
+    paged_manager = create_paged_manager(
+        num_blocks=100, max_batch_size=4, max_seq_len=max_seq_len, page_size=128
+    )
+
+    request_queue: queue.Queue[TTSContext] = queue.Queue()
+    response_queue: queue.Queue[
+        dict[RequestID, SchedulerResult[AudioGenerationOutput]]
+    ] = queue.Queue()
+
+    # Create a mock pipeline that raises on execute
+    failing_pipeline = Mock()
+    failing_pipeline.execute.side_effect = RuntimeError("CUDA out of memory")
+
+    scheduler = AudioGenerationScheduler(
+        scheduler_config=AudioGenerationSchedulerConfig(
+            max_batch_size=4,
+            max_forward_steps_tg=10,
+            target_tokens_per_batch_ce=8192,
+            max_seq_len=max_seq_len,
+            enable_in_flight_batching=False,
+            max_queue_size_tg=None,
+            min_batch_size_tg=None,
+            ce_delay_ms=0.0,
+            enable_prioritize_first_decode=False,
+        ),
+        pipeline=failing_pipeline,
+        request_queue=request_queue,
+        response_queue=response_queue,
+        cancel_queue=queue.Queue(),
+        paged_manager=paged_manager,
+    )
+
+    mock_request = create_text_context(prompt_len=100, max_seq_len=max_seq_len)
+    request_queue.put_nowait(mock_request)
+    ce_batch = scheduler._create_ce_batch()
+
+    scheduler._schedule(ce_batch)
+
+    result = response_queue.get_nowait()[mock_request.request_id]
+    assert result.is_done is True
+    assert result.error is not None
+    assert result.error.error_type == "RuntimeError"
+    assert "CUDA out of memory" in result.error.error_message
+    assert result.error.traceback_str  # Non-empty traceback
+    assert "RuntimeError" in result.error.traceback_str
 
 
 @pytest.mark.parametrize("num_reqs", [1, 2, 3])

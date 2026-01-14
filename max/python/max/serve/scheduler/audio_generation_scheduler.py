@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import time
+import traceback
 import uuid
 from collections import deque
 from collections.abc import Generator
@@ -423,16 +424,43 @@ class AudioGenerationScheduler(Scheduler):
     def _schedule(self, batch: AudioGenerationSchedulerOutput) -> None:
         assert batch.batch_size > 0
 
+        batch_request_ids = list(batch.reqs.keys())
+
         # execute the batch
-        with Tracer(f"_schedule({batch})"):
-            responses = self.pipeline.execute(
-                AudioGenerationInputs[TTSContext](batch=batch.reqs)
+        try:
+            with Tracer(f"_schedule({batch})"):
+                responses = self.pipeline.execute(
+                    AudioGenerationInputs[TTSContext](batch=batch.reqs)
+                )
+
+                for response in responses.values():
+                    if response.steps_executed:
+                        self._prev_num_steps = response.steps_executed
+                        break
+        except Exception as exc:
+            logger.error(
+                "Exception during pipeline execution: %s",
+                traceback.format_exc(),
             )
 
-            for response in responses.values():
-                if response.steps_executed:
-                    self._prev_num_steps = response.steps_executed
-                    break
+            # Send error results to ALL requests in the batch
+            self.response_queue.put_nowait(
+                {
+                    req_id: SchedulerResult.from_error(exc)
+                    for req_id in batch_request_ids
+                }
+            )
+
+            # Release all requests from scheduler state
+            for req_id in batch_request_ids:
+                if req_id in self.decode_reqs:
+                    del self.decode_reqs[req_id]
+                self.pipeline.release(req_id)
+
+            # Set a default num_steps for logging
+            self._prev_num_steps = 1
+            batch.num_terminated = len(batch_request_ids)
+            return
 
         # add the encoded requests to the continuous batch
         self.decode_reqs.update(batch.reqs)
