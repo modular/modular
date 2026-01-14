@@ -11,9 +11,12 @@ modular_py_library(
     name = "shared_conv_impl",
     testonly = True,
     srcs = ["shared_conv_impl.py"],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    imports = ["."],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("torch"),
         requirement("numpy"),
@@ -24,15 +27,16 @@ modular_py_library(
     name = "shared_mlp_impl",
     testonly = True,
     srcs = ["shared_mlp_impl.py"],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    imports = ["."],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:graph_utils",
         requirement("torch"),
-        requirement("numpy"),
-        requirement("pytest-mock"),
-        requirement("pytest-asyncio"),
+        requirement("pytest"),
     ],
 )
 
@@ -109,21 +113,20 @@ modular_py_test(
     imports = ["."],
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
         ":shared_conv_impl",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/python/max/serve",
-        "//max/tests/integration/API/python/graph:modular_graph_test",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:graph_utils",
+        "//max/tests/integration/pipelines/python/test_common:numerics",
+        requirement("numpy"),
         requirement("torch"),
-        requirement("transformers"),
+        requirement("triton"),
         requirement("hypothesis"),
-        requirement("gguf"),
-        requirement("pytest-asyncio"),
     ],
 )
 
@@ -134,20 +137,16 @@ modular_py_test(
     imports = ["."],
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/python/max/serve",
-        "//max/tests/integration/API/python/graph:modular_graph_test",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:numerics",
+        requirement("numpy"),
         requirement("torch"),
-        requirement("transformers"),
-        requirement("hypothesis"),
-        requirement("gguf"),
-        requirement("pytest-asyncio"),
     ],
 )
 
@@ -162,21 +161,17 @@ modular_py_test(
     imports = ["."],
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
         ":shared_mlp_impl",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/python/max/serve",
-        "//max/tests/integration/API/python/graph:modular_graph_test",
-        "//max/tests/integration/pipelines/python/test_common",
+        requirement("numpy"),
         requirement("torch"),
-        requirement("transformers"),
         requirement("hypothesis"),
-        requirement("gguf"),
-        requirement("pytest-asyncio"),
     ],
 )
 
@@ -194,16 +189,17 @@ modular_py_test(
         "gpu",
         # TODO: GEX-2676
         "manual",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     target_compatible_with = ["//:amd_gpu"],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/tests/integration/API/python/graph:modular_graph_test",
-        "//max/tests/integration/pipelines/python/test_common",
+        requirement("hypothesis"),
         requirement("torch"),
-        requirement("numpy"),
     ],
 )
 
@@ -220,14 +216,14 @@ modular_py_test(
     tags = [
         "b200",
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/python/max/serve",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
@@ -247,14 +243,14 @@ modular_py_test(
     tags = [
         "b200",
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/python/max/serve",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
