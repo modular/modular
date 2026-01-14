@@ -17,9 +17,10 @@ that point, it immediately ends the value’s lifetime and calls the _implicit_
 required cleanup.
 
 :::note
-For types that require stronger guarantees, Mojo also supports _explicit_,
+For types that require stronger guarantees, Mojo also supports _explicit_
 compiler-checked destructors, which provide an additional layer of safety for
-managing cleanup.
+managing cleanup. For details, read about [explicit
+destruction](#implicit-and-explicit-destruction) below.
 :::
 
 For example, notice when the `__del__()` destructor is called for each instance
