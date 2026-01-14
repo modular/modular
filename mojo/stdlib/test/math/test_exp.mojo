@@ -93,18 +93,14 @@ struct Float32Expable(Equatable, Stringable, _Expable):
 
 @fieldwise_init
 struct FakeExpable(Equatable, Stringable, _Expable):
-    """This is a test struct that has a dummy definition of exp function."""
+    """Test struct using default reflection-based __eq__."""
 
     var x: Int
 
     fn __exp__(self) -> Self:
         return Self(99)
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self.x == other.x
-
-    fn __ne__(self, other: Self) -> Bool:
-        return self.x != other.x
+    # Uses default reflection-based __eq__ from Equatable trait
 
     fn __str__(self) -> String:
         return String("FakeExpable(", self.x, ")")

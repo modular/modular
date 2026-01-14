@@ -24,28 +24,37 @@ struct TestWritable(Writable):
         writer.write("write_repr_to: ", self.x)
 
 
-# Test structs for reflection-based default write_to
+# Test structs for reflection-based default write_to and __eq__
 @fieldwise_init
-struct SimplePoint(ImplicitlyCopyable, Writable):
-    """A simple struct that uses the default reflection-based write_to."""
+struct SimplePoint(Equatable, ImplicitlyCopyable, Writable):
+    """A simple struct that uses default reflection-based write_to and __eq__.
+    """
 
     var x: Int
     var y: Int
 
+    # Uses default reflection-based write_to from Writable trait
+    # Uses default reflection-based __eq__ from Equatable trait
+
 
 @fieldwise_init
-struct NestedStruct(ImplicitlyCopyable, Writable):
-    """A struct with nested Writable fields."""
+struct NestedStruct(Equatable, ImplicitlyCopyable, Writable):
+    """A struct with nested fields using default write_to and __eq__."""
 
     var point: SimplePoint
     var name: String
 
+    # Uses default reflection-based write_to from Writable trait
+    # Uses default reflection-based __eq__ from Equatable trait
+
 
 @fieldwise_init
-struct EmptyStruct(ImplicitlyCopyable, Writable):
+struct EmptyStruct(Equatable, ImplicitlyCopyable, Writable):
     """A struct with no fields."""
 
     pass
+    # Uses default reflection-based write_to from Writable trait
+    # Uses default reflection-based __eq__ from Equatable trait
 
 
 def test_repr():
@@ -95,6 +104,40 @@ def test_default_write_to_empty():
     """Test the reflection-based default write_to with an empty struct."""
     var e = EmptyStruct()
     assert_equal(String(e), "test_format.EmptyStruct()")
+
+
+def test_default_eq_simple():
+    """Test the reflection-based default __eq__ with a simple struct."""
+    var p1 = SimplePoint(1, 2)
+    var p2 = SimplePoint(1, 2)
+    var p3 = SimplePoint(1, 3)
+    var p4 = SimplePoint(2, 2)
+
+    assert_true(p1 == p2)
+    assert_false(p1 != p2)
+    assert_false(p1 == p3)
+    assert_true(p1 != p3)
+    assert_false(p1 == p4)
+
+
+def test_default_eq_nested():
+    """Test the reflection-based default __eq__ with nested structs."""
+    var s1 = NestedStruct(SimplePoint(1, 2), "hello")
+    var s2 = NestedStruct(SimplePoint(1, 2), "hello")
+    var s3 = NestedStruct(SimplePoint(1, 2), "world")
+    var s4 = NestedStruct(SimplePoint(3, 4), "hello")
+
+    assert_true(s1 == s2)
+    assert_false(s1 == s3)
+    assert_false(s1 == s4)
+
+
+def test_default_eq_empty():
+    """Test the reflection-based default __eq__ with an empty struct."""
+    var e1 = EmptyStruct()
+    var e2 = EmptyStruct()
+
+    assert_true(e1 == e2)
 
 
 def main():

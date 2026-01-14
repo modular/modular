@@ -51,13 +51,11 @@ def test_assert_messages():
 
 @fieldwise_init
 struct DummyStruct(Equatable, Stringable):
+    """Test struct using default reflection-based __eq__."""
+
     var value: Int
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self.value == other.value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return self.value != other.value
+    # Uses default reflection-based __eq__ from Equatable trait
 
     @no_inline
     fn __str__(self) -> String:

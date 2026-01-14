@@ -535,6 +535,8 @@ def test_sort_strings():
 
 @fieldwise_init
 struct Person(Comparable, ImplicitlyCopyable):
+    """Test struct using default reflection-based __eq__."""
+
     var name: String
     var age: Int
 
@@ -545,8 +547,7 @@ struct Person(Comparable, ImplicitlyCopyable):
             return self.name < other.name
         return False
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self.age == other.age and self.name == other.name
+    # Uses default reflection-based __eq__ from Equatable trait
 
 
 def test_sort_comparamble_elements_list():

@@ -277,6 +277,27 @@ what we publish.
 - `InlineArray` no longer conforms to `ImplicitlyCopyable`.
   Users must explicitly copy arrays or take references.
 
+- The `Equatable` trait now has a default implementation of `__eq__()` that uses
+  reflection to compare all fields. This means simple structs can conform to
+  `Equatable` without implementing any methods:
+
+  ```mojo
+  @fieldwise_init
+  struct Point(Equatable):
+      var x: Int
+      var y: Int
+
+  var p1 = Point(1, 2)
+  var p2 = Point(1, 2)
+  print(p1 == p2)  # True
+  ```
+
+  All fields must conform to `Equatable`. If a field doesn't implement
+  `Equatable`, a clear compile-time error is produced. Override `__eq__()` for
+  custom equality semantics. Note: The default performs memberwise equality,
+  which may not be appropriate for types with floating-point fields (due to NaN
+  semantics).
+
 - `PythonObject` now supports implicit conversion from `None`, allowing more
   natural Python-like code:
 
