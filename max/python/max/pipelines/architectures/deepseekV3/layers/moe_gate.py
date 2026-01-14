@@ -78,6 +78,7 @@ class DeepseekV3TopKRouter(MoEGate):
 
         if topk_method not in ["noaux_tc"]:
             raise ValueError(f"Invalid topk_method: {topk_method}")
+        assert correction_bias_dtype
 
         # This value is renamed to top_k in the original implementation, keep it
         # here for consistency.
@@ -98,17 +99,12 @@ class DeepseekV3TopKRouter(MoEGate):
                 f"num_experts must be divisible by n_group: {self.num_experts} % {self.n_group} != 0"
             )
 
-        if self.topk_method == "noaux_tc":
-            if correction_bias_dtype is None:
-                raise ValueError(
-                    "correction_bias_dtype is required for topk_method=noaux_tc"
-                )
-            self.e_score_correction_bias = Weight(
-                "e_score_correction_bias",
-                shape=[self.num_experts],
-                device=self.devices[0],
-                dtype=correction_bias_dtype,
-            )
+        self.e_score_correction_bias = Weight(
+            "e_score_correction_bias",
+            shape=[self.num_experts],
+            device=self.devices[0],
+            dtype=correction_bias_dtype,
+        )
 
     def __call__(
         self, hidden_states: TensorValue
@@ -124,13 +120,10 @@ class DeepseekV3TopKRouter(MoEGate):
                 - topk_weight: Routing weights for selected experts of shape (seq_len, num_experts_per_token)
         """
         # compute gate score
-        weight = self.gate_score.weight.cast(DType.float32).to(
-            hidden_states.device
-        )
-        logits = hidden_states.cast(DType.float32) @ weight.T
+        logits = self.gate_score(hidden_states)
 
         if self.scoring_func == "sigmoid":
-            scores = ops.sigmoid(logits)
+            scores = ops.sigmoid(logits.cast(self.correction_bias_dtype))
         else:
             raise NotImplementedError(
                 f"insupportable scoring function for MoE gating: {self.scoring_func}"
