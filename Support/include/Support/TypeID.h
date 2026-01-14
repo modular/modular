@@ -251,7 +251,7 @@ public:
   /// In debug builds, a failure produces a human readable description of the
   /// actual and expected type names, augmented with the context string.
   void assertEqual(TypeID expected, StringRef context) const {
-#if MODULAR_DEBUG
+#ifdef MODULAR_DEBUG
     printErrorIfNotEqual(expected, context);
 #endif
     assert(id == expected.id &&
@@ -302,7 +302,7 @@ private:
   static Detail::RawTypeID getSlow(std::string_view typeName,
                                    ValueDestructorFn destructorFn);
 
-#if MODULAR_DEBUG
+#ifdef MODULAR_DEBUG
   /// Slow path for assertEqual.
   LLVM_ATTRIBUTE_NOINLINE void printErrorIfNotEqual(TypeID expected,
                                                     StringRef context) const;

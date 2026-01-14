@@ -36,7 +36,7 @@ Detail::RawTypeID TypeID::getSlow(std::string_view typeName,
   return Detail::TypeInfoTable::getSingleton().getSlow(typeName, destructorFn);
 }
 
-#if MODULAR_DEBUG
+#ifdef MODULAR_DEBUG
 void TypeID::printErrorIfNotEqual(TypeID expected, StringRef context) const {
   if (id == expected.id)
     return;
