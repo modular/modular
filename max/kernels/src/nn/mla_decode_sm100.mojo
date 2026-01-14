@@ -2062,7 +2062,7 @@ struct MLA_SM100_Decode[
         mbar_base += (
             out_pipeline.num_mbars()
         )  # barrier total [21 + (num_out_stages-1)*2]
-        var warp_idx: UInt32 = warp.broadcast(warp_id())
+        var warp_idx = UInt32(warp.broadcast(warp_id()))
         var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
         is_leader = elect() != 0
         if warp_idx == 8:
@@ -2264,7 +2264,7 @@ struct MLA_SM100_Decode[
         var row: UInt = UInt(offset_position.q_out_row_offset)
         var pipe_qk = PipelineState[num_stages=1]()
         var kv_row: UInt32 = 0  # we always start from the first row for KV
-        var kv_gmem_row: UInt32 = kv_lut.row_idx(block_idx.z, kv_row)
+        var kv_gmem_row: UInt32 = kv_lut.row_idx(UInt32(block_idx.z), kv_row)
         if is_leader:
             # this is the total bytes expected to be transferred to the mbar for Q and K0
             mbar_q[].expect_bytes(
@@ -2298,7 +2298,9 @@ struct MLA_SM100_Decode[
 
             # Base pointer for this KV stage in shared memory
             # Producer-side barrier for this stage (already init'ed in kv_pipeline.init())
-            var kv_gmem_row: UInt32 = kv_lut.row_idx(block_idx.z, kv_row)
+            var kv_gmem_row: UInt32 = kv_lut.row_idx(
+                UInt32(block_idx.z), kv_row
+            )
 
             if is_leader:
                 k_mbar[].expect_bytes(
@@ -2723,7 +2725,7 @@ struct MLA_SM100_Decode[
         var c_prod = DecodeCProducer(c_bars.producer())
         var li_prod = DecodeCProducer(li_bars.producer())
         var warp_idx = warp.broadcast(warp_id())
-        var warp_group_idx: Int32 = warp_idx >> 2
+        var warp_group_idx = Int32(warp_idx >> 2)
         # 0..127 inside the softmax WG
         var lane_id = Int(thread_idx.x)
         # Lane mapping inside the softmax warpgroup
@@ -2735,7 +2737,7 @@ struct MLA_SM100_Decode[
         var q_head_idx: UInt32 = UInt32(block_idx.x) * UInt32(
             Self.config.BM
         ) + UInt32(row)
-        var score_row: UInt32 = block_idx.y  # decode: single token per batch
+        var score_row = UInt32(block_idx.y)  # decode: single token per batch
 
         var mi: Scalar[Self.AccumType] = min_or_neg_inf[Self.AccumType]()
         var li: Scalar[Self.AccumType] = 0.0
@@ -3064,11 +3066,11 @@ struct MLA_SM100_Decode[
 
             out_prod.acquire()
             warp_idx = warp.broadcast(warp_id() - 4)
-            var lane: UInt32 = thread_idx.x & 0x7F  # 0..127
+            var lane: UInt32 = UInt32(thread_idx.x & 0x7F)  # 0..127
             var row: UInt32 = lane & 0x3F  # lan % Config.BN 0..63
-            var warp_pair: UInt32 = (
-                warp_idx >> 1
-            )  # 0..3 inside correction group # 0 or 1
+            var warp_pair = UInt32(
+                warp_idx >> 1  # 0..3 inside correction group # 0 or 1
+            )
             # Column range this thread owns in P
             var col0: UInt32 = warp_pair * half_load  # 0 or 32
 

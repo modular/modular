@@ -464,8 +464,11 @@ fn _copy_frag_to_smem_nvidia[
                 comptime offset_in_frag = type_of(p_smem_frag).layout(i)
 
                 # Translate offset in BM x BN matrix to the right BM x BK tile.
+                comptime OffsetType = type_of(frag_offset)
                 var offset_BMxBN = frag_offset + offset_in_frag
-                var offset_BMxBK = (offset_BMxBN // BN) * BK + offset_BMxBN % BK
+                var offset_BMxBK = (
+                    offset_BMxBN // OffsetType(BN)
+                ) * OffsetType(BK) + offset_BMxBN % OffsetType(BK)
                 # Convert offset to vectorized domain, since BM x BK will be loaded
                 # by vectors in 2nd mma, and swizzle
                 var swizzle_offset = swizzle_fn(offset_BMxBK // simd_width)
@@ -479,7 +482,7 @@ fn _copy_frag_to_smem_nvidia[
                 ]()
                 # Grep the right BMxBK tile and store the casted vec.
                 var tile_BMxBK = p_smem_iter.next_unsafe(
-                    Int((offset_BMxBN % BN) // BK)
+                    Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
                 )[]
                 comptime align = align_of[
                     SIMD[p_smem_iter.dtype, Int(frag_simd_width)]
@@ -551,15 +554,18 @@ fn _copy_frag_to_smem_amd[
             for i in range(frag_simd_width):
                 comptime offset_in_frag = BN * i
                 # Translate offset in BM x BN matrix to the right BM x BK tile.
-                var offset_BMxBN = frag_offset + offset_in_frag
-                var offset_BMxBK = (offset_BMxBN // BN) * BK + offset_BMxBN % BK
+                comptime OffsetType = type_of(frag_offset)
+                var offset_BMxBN = frag_offset + OffsetType(offset_in_frag)
+                var offset_BMxBK = (
+                    offset_BMxBN // OffsetType(BN)
+                ) * OffsetType(BK) + offset_BMxBN % OffsetType(BK)
 
                 var vec = p_reg_vecs[n_mma * num_m_mmas + m_mma, 0][
                     Int(i)
                 ].cast[p_smem_tile.dtype]()
                 # Grep the right BMxBK tile and store the casted vec.
                 var tile_BMxBK = p_smem_iter.next_unsafe(
-                    Int((offset_BMxBN % BN) // BK)
+                    Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
                 )[]
                 tile_BMxBK.ptr.store(offset_BMxBK, vec)
 

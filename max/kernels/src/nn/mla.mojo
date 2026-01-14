@@ -517,7 +517,7 @@ fn flare_mla_decoding_dispatch[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn mla_decoding[
     q_type: DType,
@@ -755,12 +755,13 @@ fn mla_decoding_single_batch[
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]()
-    var q_smem_iter = LayoutTensorIter[
+    comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
         address_space = AddressSpace.SHARED,
         alignment=alignment,
-    ](
+    ]
+    var q_smem_iter = IteratorTypeQ(
         rebind[
             type_of(
                 LayoutTensorIter[
@@ -772,7 +773,7 @@ fn mla_decoding_single_batch[
                 ]().ptr
             )
         ](q_smem),
-        q_smem_size,
+        IteratorTypeQ.layout_uint_type(q_smem_size),
     )
 
     comptime kv_smem_size = BN * depth
@@ -785,29 +786,40 @@ fn mla_decoding_single_batch[
     # (BN, BK) like standard mha kernels, we manually set the following
     # layout. This ensures that once Q @ K calculation is complete, the
     # K[:, :nope_dim] tensor stored continuously in the smem.
-    var kv_nope_smem_iter = LayoutTensorIter[
+    comptime IteratorTypeKV = LayoutTensorIter[
         k_type,
         Layout(IntTuple(Int(BN), Int(BK)), IntTuple(Int(nope_dim), 1)),
         address_space = AddressSpace.SHARED,
         circular=True,
-    ](k_smem, nope_dim, stride=BK)
+    ]
+    var kv_nope_smem_iter = IteratorTypeKV(
+        k_smem,
+        IteratorTypeKV.layout_uint_type(nope_dim),
+        stride=IteratorTypeKV.layout_uint_type(BK),
+    )
 
     # view the K[:, :nope_dim] as V tensor.
-    var v_smem_iter = LayoutTensorIter[
+    comptime IteratorTypeV = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BK), Int(nope_dim)),
         address_space = AddressSpace.SHARED,
         circular=True,
-    ](k_smem, BN * nope_dim)
+    ]
+    var v_smem_iter = IteratorTypeV(
+        k_smem, IteratorTypeV.layout_uint_type(BN * nope_dim)
+    )
 
     # smem for the last rope_dim of each head, will only be used during
     # Q @ K calculation.
-    var k_rope_smem_iter = LayoutTensorIter[
+    comptime IteratorTypeK = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
         address_space = AddressSpace.SHARED,
         circular=True,
-    ](k_smem + BN * nope_dim, BN * rope_dim)
+    ]
+    var k_rope_smem_iter = IteratorTypeK(
+        k_smem + BN * nope_dim, IteratorTypeK.layout_uint_type(BN * rope_dim)
+    )
 
     comptime mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
     comptime MMA_M = mma_shape[0]
@@ -860,11 +872,14 @@ fn mla_decoding_single_batch[
     # Shared memory for P = Q * K^t
     var p_smem = (k_smem + kv_smem_size).bitcast[Scalar[k_type]]()
     comptime p_smem_size = BM * BN
-    var p_smem_iter = LayoutTensorIter[
+    comptime IteratorTypeP = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BM), Int(BK)),
         address_space = AddressSpace.SHARED,
-    ](p_smem, BM * BN)
+    ]
+    var p_smem_iter = IteratorTypeP(
+        p_smem, IteratorTypeP.layout_uint_type(BM * BN)
+    )
 
     # Scratch shared memory for reduction across warps.
     var warp_scratch = LayoutTensor[
@@ -903,7 +918,9 @@ fn mla_decoding_single_batch[
 
     @parameter
     for q_id in range(depth // BK):
-        var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
+        var q_smem_tile = q_smem_iter.next_unsafe(
+            q_smem_iter.layout_uint_type(q_id)
+        )[]
 
         copy_dram_to_sram_async[
             thread_layout=async_copy_q_layout,
@@ -974,7 +991,9 @@ fn mla_decoding_single_batch[
 
         @parameter
         for k_id in range(rope_dim // BK):
-            var k_rope_smem_tile = k_rope_smem_iter.next_unsafe(k_id)[]
+            var k_rope_smem_tile = k_rope_smem_iter.next_unsafe(
+                k_rope_smem_iter.layout_uint_type(k_id)
+            )[]
 
             copy_dram_to_sram_async[
                 thread_layout=async_copy_k_rope_layout,
@@ -1167,7 +1186,7 @@ fn mla_decoding_single_batch[
         # with warp-local data.
         _copy_frag_to_smem[
             BM, BN, BK, WM, WN, UInt(MMA_M), UInt(MMA_N), UInt(p_frag_simdwidth)
-        ](p_smem_iter, p_reg_tile, warp_x, warp_y)
+        ](p_smem_iter, p_reg_tile, UInt32(warp_x), UInt32(warp_y))
 
         async_copy_wait_all()
         barrier()
@@ -1742,13 +1761,15 @@ fn flare_mla_prefill_dispatch[
             block_dim=(Int(config.num_threads()), 1, 1),
             shared_mem_bytes=Int(smem_use),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_use
+                UInt32(smem_use)
             ),
         )
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(config.num_threads())
+    )
 )
 fn mla_prefill[
     q_type: DType,
@@ -1938,12 +1959,12 @@ fn mla_prefill_single_batch[
     ), "Number of warps doesn't match warp tile sizes."
 
     var tid: Int = Int(thread_idx.x)
-    var warp_id: UInt32 = warp.broadcast(tid // WARP_SIZE)
-    var lane: UInt32 = lane_id()
+    var warp_id = UInt32(warp.broadcast(tid // WARP_SIZE))
+    var lane = UInt32(lane_id())
 
     # Coordinates of the current warp.
-    var warp_y = warp_id // num_warps_n
-    var warp_x = warp_id % num_warps_n
+    var warp_y = warp_id // UInt32(num_warps_n)
+    var warp_x = warp_id % UInt32(num_warps_n)
 
     # The entire query block (BM x q_depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()
@@ -1953,12 +1974,13 @@ fn mla_prefill_single_batch[
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]()
-    var q_smem_iter = LayoutTensorIter[
+    comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
         address_space = AddressSpace.SHARED,
         alignment=alignment,
-    ](
+    ]
+    var q_smem_iter = IteratorTypeQ(
         rebind[
             type_of(
                 LayoutTensorIter[
@@ -1970,38 +1992,48 @@ fn mla_prefill_single_batch[
                 ]().ptr
             )
         ](q_smem),
-        q_smem_size,
+        IteratorTypeQ.layout_uint_type(q_smem_size),
     )
     # There is one pre-allocated dynamic shared buffer.
     # Need to explicitly offset key after at query's end.
     comptime k_smem_size = BN * UInt(q_depth)
     var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
-    var k_smem_iter = LayoutTensorIter[
+    comptime IteratorTypeK = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
         address_space = AddressSpace.SHARED,
         circular=True,
-    ](k_smem, k_smem_size)
+    ]
+    var k_smem_iter = IteratorTypeK(
+        k_smem, IteratorTypeK.layout_uint_type(k_smem_size)
+    )
 
     comptime v_smem_size = BN * depth
     var v_smem = (k_smem + k_smem_size).bitcast[Scalar[v_type]]()
-    var v_smem_iter = LayoutTensorIter[
+    comptime IteratorTypeV = LayoutTensorIter[
         v_type,
         Layout.row_major(Int(BK), Int(depth)),
         address_space = AddressSpace.SHARED,
         circular=True,
-    ](v_smem, v_smem_size)
+    ]
+    var v_smem_iter = IteratorTypeV(
+        v_smem, IteratorTypeV.layout_uint_type(v_smem_size)
+    )
 
-    var head_idx: UInt32 = block_idx.y
-    var q_tile_idx: UInt32 = block_idx.x
+    var head_idx = UInt32(block_idx.y)
+    var q_tile_idx = UInt32(block_idx.x)
 
     # Query global memory iterator
     comptime q_gmem_layout = Layout(
         IntTuple(Int(BM), Int(q_depth)),
         IntTuple(Int(num_heads * UInt(q_depth)), 1),
     )
-    var q_tile_num_rows = min(UInt32(BM), UInt(seq_len) - q_tile_idx * BM)
-    var q_offset = q_depth * (head_idx + num_heads * q_tile_idx * BM)
+    var q_tile_num_rows = min(
+        UInt32(BM), UInt32(seq_len) - q_tile_idx * UInt32(BM)
+    )
+    var q_offset = q_depth * (
+        head_idx + UInt32(num_heads) * q_tile_idx * UInt32(BM)
+    )
 
     var q_gmem_block = LayoutTensor[
         q_type,
@@ -2081,12 +2113,15 @@ fn mla_prefill_single_batch[
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
     var p_smem = (v_smem + v_smem_size).bitcast[Scalar[v_type]]()
-    var p_smem_iter = LayoutTensorIter[
+    comptime IteratorTypeP = LayoutTensorIter[
         v_type,
         Layout.row_major(Int(BM), Int(BK)),
         address_space = AddressSpace.SHARED,
         circular=True,
-    ](p_smem, BM * BN)
+    ]
+    var p_smem_iter = IteratorTypeP(
+        p_smem, IteratorTypeP.layout_uint_type(BM * BN)
+    )
 
     # Scratch shared memory for reduction across warps.
     var warp_scratch = LayoutTensor[
@@ -2100,9 +2135,9 @@ fn mla_prefill_single_batch[
     )
 
     # Mask global memory iterator.
-    var mask_block_row: UInt32 = q_tile_idx * BM
-    var mask_warp_row = warp_y * WM
-    var mask_warp_col = warp_x * WN
+    var mask_block_row = q_tile_idx * UInt32(BM)
+    var mask_warp_row = warp_y * UInt32(WM)
+    var mask_warp_col = warp_x * UInt32(WN)
 
     comptime num_pipeline_stages = config.num_pipeline_stages
 
@@ -2148,7 +2183,7 @@ fn mla_prefill_single_batch[
         if (
             mask.status(
                 Index[dtype = DType.uint32](
-                    Int(q_tile_idx * BM + start_pos),
+                    Int(q_tile_idx * UInt32(BM) + start_pos),
                     Int(kv_tile_start_row + cache_start_pos),
                 ),
                 Index[dtype = DType.uint32](Int(BM), Int(BN)),
@@ -2270,7 +2305,9 @@ fn mla_prefill_single_batch[
         # load K tile into smem
         @parameter
         for k_id in range(depth // BK):
-            var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
+            var k_smem_tile = k_smem_iter.next_unsafe(
+                k_smem_iter.layout_uint_type(k_id)
+            )[]
 
             copy_dram_to_sram_async[
                 thread_layout=async_copy_k_layout,
@@ -2347,8 +2384,12 @@ fn mla_prefill_single_batch[
                     comptime mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
-                    var mask_frag_row = mask_warp_row + m_mma * UInt(MMA_M)
-                    var mask_frag_col = mask_warp_col + n_mma * UInt(MMA_N)
+                    var mask_frag_row = mask_warp_row + UInt32(
+                        m_mma * UInt(MMA_M)
+                    )
+                    var mask_frag_col = mask_warp_col + UInt32(
+                        n_mma * UInt(MMA_N)
+                    )
 
                     # Offset to current thread's fragment
                     mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
@@ -2419,7 +2460,7 @@ fn mla_prefill_single_batch[
         unswitch[_apply_mask](
             mask.status(
                 Index[dtype = DType.uint32](
-                    Int(q_tile_idx * BM + start_pos),
+                    Int(q_tile_idx * UInt32(BM) + start_pos),
                     kv_tile_start_row + cache_start_pos,
                 ),
                 Index[dtype = DType.uint32](Int(BM), Int(BN)),
@@ -2428,7 +2469,7 @@ fn mla_prefill_single_batch[
         )
 
         # Increment mask to next BM x BN block.
-        mask_warp_col += BN
+        mask_warp_col += UInt32(BN)
 
         comptime reg_layout_by_mma_unit = Layout.row_major(
             2 * Int(num_m_mmas) * Int(num_n_mmas), 2
@@ -2468,7 +2509,9 @@ fn mla_prefill_single_batch[
         # load V tile into smem
         @parameter
         for v_id in range(BN // BK):
-            var v_smem_tile = v_smem_iter.next_unsafe(v_id)[]
+            var v_smem_tile = v_smem_iter.next_unsafe(
+                v_smem_iter.layout_uint_type(v_id)
+            )[]
 
             @parameter
             if not not_last_iter:
@@ -2571,7 +2614,9 @@ fn mla_prefill_single_batch[
         IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
     )
 
-    var output_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
+    var output_offset = UInt32(depth) * (
+        head_idx + UInt32(num_heads) * q_tile_idx * UInt32(BM)
+    )
     var output_gemm_runtime_layout = RuntimeLayout[
         element_type = DType.int32, linear_idx_type = DType.int32
     ](

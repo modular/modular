@@ -1350,7 +1350,7 @@ fn mha_sm100_dispatch[
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
     var max_prompt_len: UInt32 = max_prompt_len_arg.as_uint32()
-    var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, BM)
+    var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, UInt32(BM))
     var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
     comptime num_scheduler_heads = config.num_heads // UInt(
@@ -1392,7 +1392,7 @@ fn mha_sm100_dispatch[
     ](ctx)
 
     comptime SchedulerType = TransientScheduler[
-        scheduler_tile_shape, num_scheduler_heads
+        UInt32(scheduler_tile_shape), UInt32(num_scheduler_heads)
     ]
     var scheduler: SchedulerType = SchedulerType()
 
@@ -1838,7 +1838,7 @@ fn _mha_sm100_enqueue[
     }
 
     var max_num_prompt_tiles: UInt32 = ceildiv(
-        max_seq_len.as_uint32(), config.block_m()
+        max_seq_len.as_uint32(), UInt32(config.block_m())
     )
     var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
@@ -1883,7 +1883,9 @@ fn _mha_sm100_enqueue[
         grid_dim=SchedulerType.grid_dim(batch_size, block_x),
         block_dim=(Int(num_threads), 1, 1),
         shared_mem_bytes=Int(smem_use),
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 
@@ -1892,7 +1894,7 @@ fn _mha_sm100_enqueue[
 @__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-        config.num_threads[True]()
+        Int32(config.num_threads[True]())
     )
 )
 fn _mha_sm100[
@@ -2029,7 +2031,7 @@ fn _mha_sm100[
     # num_softmax_threads ignores the producers
     # actual number of threads is num_softmax_threads + 128
     comptime pipeline_stages = Int(config.num_pipeline_stages)
-    var tid: UInt32 = thread_idx.x
+    var tid = UInt32(thread_idx.x)
     # warp group idx concept is still useful for sm100
     # because sets of 4 warps access tmem;
     # warp group idx gives index into sets of 16 lanes
@@ -2518,7 +2520,7 @@ fn _mha_sm100[
         # Coordinates of the current warp.
         var elect_one_warp = warp_id == 0
 
-        var lane: UInt32 = lane_id()
+        var lane = UInt32(lane_id())
         var elect_one_thread = thread_idx.x == 128
 
         var warp_y: UInt32 = warp_id  # // num_warps_n

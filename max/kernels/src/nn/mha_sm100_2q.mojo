@@ -2885,7 +2885,7 @@ struct SM100MHA2Q[
             " implementation."
         )
 
-        var warp_idx: UInt32 = warp.broadcast(warp_id())
+        var warp_idx = UInt32(warp.broadcast(warp_id()))
         if warp_idx == 0:
             if elect() != 0:
                 kv_pipeline.init()
@@ -3216,8 +3216,8 @@ struct SM100MHA2Q[
         var order_phase: UInt32 = 0
 
         var q_head_idx: UInt32 = seq_info.head_idx
-        var tid: UInt32 = thread_idx.x
-        var row: UInt32 = tid % 128
+        var tid = UInt32(thread_idx.x)
+        var row = UInt32(tid % 128)
         var scale_log2e: Scalar[Self.accum_type] = scale
 
         @parameter

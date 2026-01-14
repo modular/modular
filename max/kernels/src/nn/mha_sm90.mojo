@@ -228,7 +228,7 @@ fn mha_sm90_dispatch[
     @parameter
     if persistent == 0:
         comptime SchedulerType = TransientScheduler[
-            scheduler_tile_shape, num_scheduler_heads
+            UInt32(scheduler_tile_shape), num_scheduler_heads
         ]
         var scheduler: SchedulerType = SchedulerType()
         _mha_sm90_sink_dispatch[
@@ -275,7 +275,7 @@ fn mha_sm90_dispatch[
         )
     elif persistent == 2:
         comptime SchedulerType = TileScheduler[
-            scheduler_tile_shape, num_scheduler_heads
+            UInt32(scheduler_tile_shape), num_scheduler_heads
         ]
         var scheduler: SchedulerType = SchedulerType()
         _mha_sm90_sink_dispatch[
@@ -322,7 +322,7 @@ fn mha_sm90_dispatch[
         )
     else:
         comptime SchedulerType = QueuedTileScheduler[
-            scheduler_tile_shape, num_scheduler_heads, decoding=decoding
+            UInt32(scheduler_tile_shape), num_scheduler_heads, decoding=decoding
         ]
         var schedule = ctx.enqueue_create_buffer[DType.uint32](1)
         schedule.enqueue_fill(UInt32(H100.sm_count))
@@ -878,7 +878,7 @@ fn _mha_sm90_enqueue[
     }
 
     var max_num_prompt_tiles: UInt32 = ceildiv(
-        max_seq_len.as_uint32(), config.block_m()
+        max_seq_len.as_uint32(), UInt32(config.block_m())
     )
     var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
@@ -897,7 +897,9 @@ fn _mha_sm90_enqueue[
         grid_dim=SchedulerType.grid_dim(batch_size, block_x),
         block_dim=(Int(num_threads), 1, 1),
         shared_mem_bytes=Int(smem_use),
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 
@@ -906,7 +908,7 @@ fn _mha_sm90_enqueue[
 @__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-        config.num_threads[True]()
+        Int32(config.num_threads[True]())
     )
 )
 fn _mha_sm90[
@@ -989,7 +991,7 @@ fn _mha_sm90[
     # actual number of threads is num_consumer_threads + 128
     comptime num_consumer = num_consumer_threads // UInt(WARPGROUP_SIZE)
     comptime pipeline_stages = Int(config.num_pipeline_stages)
-    var tid: UInt32 = thread_idx.x
+    var tid = UInt32(thread_idx.x)
     var warp_group_idx: UInt32 = warp.broadcast(tid // WARPGROUP_SIZE)
 
     mask = pack.mask
@@ -1006,7 +1008,7 @@ fn _mha_sm90[
     ), "Number of warps doesn't match warp tile sizes."
 
     var warp_id: UInt32 = warp.broadcast((tid - WARPGROUP_SIZE) // WARP_SIZE)
-    var lane: UInt32 = lane_id()
+    var lane = UInt32(lane_id())
 
     # Coordinates of the current warp.
     var warp_y: UInt32 = warp_id  # // num_warps_n
@@ -1206,7 +1208,8 @@ fn _mha_sm90[
     # constructing calls barrier() if static
     var tile_summary = MHATileSummary[ValidLengthType](
         batch_size,
-        ceildiv(max_seq_len.as_uint32(), BM) * partition.num_partitions(),
+        ceildiv(max_seq_len.as_uint32(), UInt32(BM))
+        * partition.num_partitions(),
         valid_length,
         max_seq_len.as_uint32(),
     )
@@ -1249,7 +1252,7 @@ fn _mha_sm90[
         @parameter
         for i in range(pipeline_stages):
             produced_mbar_kv[i].init(1)
-            consumed_mbar_kv[i].init(num_consumer_threads)
+            consumed_mbar_kv[i].init(Int32(num_consumer_threads))
 
         @parameter
         if persistent:
@@ -1257,7 +1260,7 @@ fn _mha_sm90[
             @parameter
             for i in range(2):
                 produced_mbar_q[i].init(1)
-                consumed_mbar_q[i].init(num_consumer_threads)
+                consumed_mbar_q[i].init(Int32(num_consumer_threads))
 
     comptime PositionType = MHAPosition[
         Int(BM),
@@ -1284,7 +1287,7 @@ fn _mha_sm90[
         ],
     ):
         comptime sz = BN * config.padded_depth
-        k_smem = {kv_smem + sz * idx}
+        k_smem = {kv_smem + UInt32(sz) * idx}
 
     @parameter
     @always_inline
@@ -1301,7 +1304,7 @@ fn _mha_sm90[
         ],
     ):
         comptime sz = BN * config.padded_depth
-        v_smem = {kv_smem + sz * idx}
+        v_smem = {kv_smem + UInt32(sz) * idx}
 
     @parameter
     @always_inline
@@ -1466,7 +1469,7 @@ fn _mha_sm90[
         ].stack_allocation()
 
         # Mask global memory iterator.
-        mask_warp_row = warp_y * WM
+        mask_warp_row = warp_y * UInt32(WM)
         var scale_log2e: Scalar[accum_type] = (
             scale.cast[accum_type]() if use_score_mod
             or MaskType.apply_log2e_after_mask else scale.cast[accum_type]()
@@ -1604,7 +1607,9 @@ fn _mha_sm90[
             @parameter
             if decoding and PartitionType.do_partition:
                 output_ptr = output_ptr + (
-                    depth * num_heads * batch_size * position.prompt_offset
+                    UInt32(depth * num_heads)
+                    * batch_size
+                    * position.prompt_offset
                 )
             output_gmem_tile = position.q_out_gmem_tensor(output_ptr)
 
@@ -1615,7 +1620,7 @@ fn _mha_sm90[
             comptime q_tile_size: UInt32 = q_smem_size // 2
 
             # ensure all threads have finished reading `q_smem`
-            named_barrier[num_consumer_threads]()
+            named_barrier[Int32(num_consumer_threads)]()
             accum_smem_tile = output_reg_to_smem[
                 Int(BM),
                 Int(config.depth),
@@ -1630,7 +1635,7 @@ fn _mha_sm90[
                 output_reg_tile,
             )
             # Guard writing to shared memory.
-            named_barrier[num_consumer_threads]()
+            named_barrier[Int32(num_consumer_threads)]()
             # Vectorized copy from shared to global memory, during which every 2 FP32
             # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
             # vector and stored using 16B store instruction.
@@ -1678,7 +1683,7 @@ fn _mha_sm90[
             mask_status = position.mask_status(mask, kv_tile_start_row)
             if mask_status != TileMaskStatus.FULL_MASK:
                 break
-            kv_tile_start_row += BN
+            kv_tile_start_row += UInt32(BN)
 
         read_pipeline_states = PipelineState[pipeline_stages]()
 
@@ -1770,13 +1775,13 @@ fn _mha_sm90[
         # Exit: V{-1}
         @parameter
         if persistent:
-            kv_tile_start_row += BN
+            kv_tile_start_row += UInt32(BN)
         while True:
             while True:
 
                 @parameter
                 if not persistent:
-                    kv_tile_start_row += BN
+                    kv_tile_start_row += UInt32(BN)
                 if kv_tile_start_row >= end:
                     break
 
@@ -1786,7 +1791,7 @@ fn _mha_sm90[
 
                     @parameter
                     if persistent:
-                        kv_tile_start_row += BN
+                        kv_tile_start_row += UInt32(BN)
                     continue
                 p_frag.vectorize[
                     1, a_frag_size
@@ -1915,7 +1920,7 @@ fn _mha_sm90[
 
                 @parameter
                 if persistent:
-                    kv_tile_start_row += BN
+                    kv_tile_start_row += UInt32(BN)
 
             @parameter
             if persistent:

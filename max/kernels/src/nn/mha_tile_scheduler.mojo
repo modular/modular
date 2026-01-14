@@ -452,9 +452,9 @@ struct TransientScheduler[
     @always_inline
     fn get_current_work_info(self) -> WorkInfo:
         return WorkInfo(
-            block_idx.x * Self.tile_shape,
-            block_idx.y,
-            block_idx.z,
+            UInt32(block_idx.x) * Self.tile_shape,
+            UInt32(block_idx.y),
+            UInt32(block_idx.z),
             True,
         )
 
@@ -618,7 +618,7 @@ struct TileScheduler[
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         return MHATileState(
-            block_idx.x, ptr, tile_summary.max_idx(Self.num_heads)
+            UInt32(block_idx.x), ptr, tile_summary.max_idx(Self.num_heads)
         )
 
     @always_inline
@@ -766,7 +766,7 @@ struct QueuedTileScheduler[
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         state = MHATileState(
-            block_idx.x, ptr, tile_summary.max_idx(Self.num_heads)
+            UInt32(block_idx.x), ptr, tile_summary.max_idx(Self.num_heads)
         )
 
         if thread_idx.x == 0:
