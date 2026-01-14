@@ -591,15 +591,16 @@ class TextGenerationPipeline(
             else:
                 sampler = self._sampler_without_bitmask
 
-            sampling_processor = FusedSamplingProcessor(
-                sampler=sampler,
-                pipeline_config=self._pipeline_config,
-                context_batch=flat_batch,
-                num_steps=num_steps,
-                device=self._devices[0],
-                bitmask=bitmask,
-                vocab_size=self.vocab_size,
-            )
+            with Tracer("FusedSamplingProcessor"):
+                sampling_processor = FusedSamplingProcessor(
+                    sampler=sampler,
+                    pipeline_config=self._pipeline_config,
+                    context_batch=flat_batch,
+                    num_steps=num_steps,
+                    device=self._devices[0],
+                    bitmask=bitmask,
+                    vocab_size=self.vocab_size,
+                )
 
             batch_processors.append(sampling_processor)
 

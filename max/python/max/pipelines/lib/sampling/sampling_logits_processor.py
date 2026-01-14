@@ -18,10 +18,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
@@ -84,6 +81,7 @@ class FusedSamplingProcessor:
             and self.vocab_size is not None
             and self.bitmask.shape[1] != self.vocab_size
         ):
+            # TODO: migrate bitmask to pinned memory
             bits = 2 ** np.arange(32, dtype=np.int32)
             self.bitmask = (self.bitmask[..., np.newaxis] & bits) != 0
             self.bitmask = self.bitmask.reshape(self.batch_size, -1).astype(
@@ -95,47 +93,83 @@ class FusedSamplingProcessor:
         else:
             self.tensor_bitmask = None
 
+        batch_size = len(context_batch)
+
+        # Allocate input and output tensors on pinned memory for faster async
+        # h2d and d2h transfer speeds. If model is on host, then fall back to
+        # normal pageable memory.
+        pinned = not device.is_host
+
+        # generated_tokens is a tensor of shape (batch_size, 0)
         self.generated_tokens = Tensor(
-            shape=(len(context_batch), 0),
+            shape=(batch_size, 0),
             dtype=DType.int64,
             device=device,
+            pinned=pinned,
         )
 
-        self.temperature = Tensor.from_numpy(
-            np.array(
-                [
-                    context.sampling_params.temperature
-                    for context in context_batch
-                ],
-                dtype=np.float32,
-            )
-        ).to(device)
-
-        top_k_np = np.array(
-            [context.sampling_params.top_k for context in context_batch],
-            dtype=np.int64,
+        # temperature is a tensor of shape (batch_size,)
+        temperature_host = Tensor(
+            shape=(batch_size,),
+            dtype=DType.float32,
+            device=device,
+            pinned=pinned,
         )
-        self.top_k = Tensor.from_numpy(top_k_np).to(device)
+        temperature_np = temperature_host.to_numpy()
+        temperature_np[:] = [
+            context.sampling_params.temperature for context in context_batch
+        ]
+        self.temperature = temperature_host.to(device)
+
+        # top_k is a tensor of shape (batch_size,)
+        top_k_host = Tensor(
+            shape=(batch_size,),
+            dtype=DType.int64,
+            device=device,
+            pinned=pinned,
+        )
+        top_k_np = top_k_host.to_numpy()
+        top_k_np[:] = [
+            context.sampling_params.top_k for context in context_batch
+        ]
+        self.top_k = top_k_host.to(device)
+
+        # max_k is a scalar 0-d tensor. It does not need to be pinned since it
+        # is not copied to the device.
         max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
         self.max_k = Tensor.from_numpy(max_k_np)
 
-        top_p_np = np.array(
-            [context.sampling_params.top_p for context in context_batch],
-            dtype=np.float32,
+        # top_p is a tensor of shape (batch_size,)
+        top_p_host = Tensor(
+            shape=(batch_size,),
+            dtype=DType.float32,
+            device=device,
+            pinned=pinned,
         )
-        self.top_p = Tensor.from_numpy(top_p_np).to(device)
+        top_p_np = top_p_host.to_numpy()
+        top_p_np[:] = [
+            context.sampling_params.top_p for context in context_batch
+        ]
+        self.top_p = top_p_host.to(device)
+
+        # min_top_p is a scalar 0-d tensor. It does not need to be pinned since it
+        # is not copied to the device.
         min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
         self.min_top_p = Tensor.from_numpy(min_top_p_np)
 
-        self.seed = Tensor.from_numpy(
-            np.array(
-                [
-                    context.sampling_params.seed + len(context.tokens)
-                    for context in context_batch
-                ],
-                dtype=np.uint64,
-            )
-        ).to(device)
+        # seed is a tensor of shape (batch_size,)
+        seed_host = Tensor(
+            shape=(batch_size,),
+            dtype=DType.uint64,
+            device=device,
+            pinned=pinned,
+        )
+        seed_np = seed_host.to_numpy()
+        seed_np[:] = [
+            context.sampling_params.seed + len(context.tokens)
+            for context in context_batch
+        ]
+        self.seed = seed_host.to(device)
 
         self.frequency_data: list[FrequencyData] | None = None
         self.frequency_penalty: Tensor | None = None
@@ -143,6 +177,7 @@ class FusedSamplingProcessor:
         self.repetition_penalty: Tensor | None = None
 
         if pipeline_config.sampling_config.enable_penalties:
+            # TODO: migrate penalties to pinned memory
             self.frequency_data = [
                 _build_token_frequency_csr(context_batch, num_steps, device),
                 _build_token_frequency_csr(
