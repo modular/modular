@@ -779,12 +779,14 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     // migration. For now, simply erase every inferred value if inference failed
     // to make it behave the same as before (we probably need to move error
     // diagnose into ParamInfState or as a separate util?).
+    if (diag)
+      return std::move(*diag);
+    if (!inference.unprovableConstraints.empty())
+      return std::move(inference.unprovableConstraints);
+
     for (size_t i = 0, e = signature.getInputParamTypes().size(); i < e; i++)
       inference.evaluator.overwriteIndexBinding(i, nullptr);
   }
-
-  if (diag)
-    return std::move(*diag);
 
   auto [newBindings, bindingFitness] =
       callable.paramBindings.verifyBindings(signature, inference);

@@ -237,13 +237,6 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
       operands.values.push_back(binding);
   }
 
-  if (failed(inference.inferFromParamList(partial))) {
-    // TODO: remove `unprovableConstraints` after fully migrated, we still need
-    // it for error messages that reported in paramBinding.
-    fitness.unprovableConstraints = inference.unprovableConstraints;
-    return {{}, fitness};
-  }
-
   // With that out of the way, we can now get onto normal type checking of
 
   /// We will attempt to find a binding for every expected parameter.
@@ -705,6 +698,10 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
   ParamInf inference(*this, paramTypes, paramList,
                      /*allowImplicitConversions=*/true, getDiag,
                      /*declIfDirect=*/nullptr);
+
+  if (failed(inference.inferFromParamList(partial)))
+    return nullptr;
+
   auto [bindings, _] =
       verifyBindingsImpl(parameters, paramTypes, paramList, inference, partial);
   return bindings;
@@ -766,6 +763,12 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
   };
   ParamInf inference(*this, expectedParamTypes, paramListAttr,
                      /*allowImplicitConversions=*/true, getDiags, declIfKnown);
+
+  if (failed(inference.inferFromParamList(partial))) {
+    return {nullptr, Fitness{std::move(inference.unprovableConstraints)},
+            std::move(diag)};
+  }
+
   auto [bindings, fitness] = verifyBindingsImpl(
       parameters, expectedParamTypes, paramListAttr, inference, partial);
   return {bindings, fitness, std::move(diag)};

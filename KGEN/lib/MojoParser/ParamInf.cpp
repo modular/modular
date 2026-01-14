@@ -1712,13 +1712,6 @@ LogicalResult ParamInf::setInferredValue(size_t paramIdx, TypedAttr paramVal) {
 ///
 /// On failure, this will emit a diagnostic through the 'getDiag' callback.
 LogicalResult ParamInf::inferFromParamList(bool partial) {
-  // NOTE: This is due to weirdness in OverloadFitness where we call
-  // inferForCall (which calls this function and infers params for arguments)
-  // but then also calls verifyBiddings.  When this subsumes verifyBindings,
-  // this should be able to go away.
-  if (inferredForCallRet.has_value())
-    return *inferredForCallRet;
-
   // Notice, but strip out, the ellipsis if present.
   bool hasEllipsis = false;
   CallOperands tmpOperands(getGivenBindings().syntax,
@@ -1948,10 +1941,8 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
                                      const OperandValueList &variadicKwOperands,
                                      bool returnsSelf, bool hasCTADParams) {
   // First try to infer parameters from the already provided bindings.
-  inferredForCallRet = inferFromParamList(/*hasArguments*/ true);
-  if (failed(*inferredForCallRet)) {
+  if (failed(inferFromParamList(/*hasArguments*/ true)))
     return failure();
-  }
 
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be
@@ -2180,9 +2171,8 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
     return failure();
 
   if (hasDeferredGivenParam) {
-    inferredForCallRet = std::nullopt;
-    inferredForCallRet = inferFromParamList(/*hasArguments*/ true);
-    if (failed(*inferredForCallRet))
+    // Simply try it again now that more parameter has been inferred.
+    if (failed(inferFromParamList(/*hasArguments*/ true)))
       return failure();
   }
 
