@@ -200,7 +200,10 @@ from nn.normalization import (
     group_norm,
     layer_norm,
     rms_norm,
+    rms_norm_fused_residual,
     rms_norm_fused_residual_add,
+    _layer_norm_gated_impl,
+    layer_norm_gated_gpu,
 )
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
 from nn.pad_gpu import pad_constant as pad_constant_gpu
@@ -3491,6 +3494,263 @@ struct RMSNorm:
         gamma: InputTensor[dtype=dtype, rank=1],
         epsilon: Scalar[dtype=dtype],
         weight_offset: Scalar[dtype=dtype],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("rms_norm_fused_residual")
+struct RMSNormFusedResidual:
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        residual_output: OutputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[
+            dtype=dtype, rank=rank
+        ],  # Changed from FusedInputTensor for GPU compatibility
+        residual_input: InputTensor[
+            dtype=dtype, rank=rank
+        ],  # Changed from FusedInputTensor for GPU compatibility
+        gamma: InputTensor[dtype=dtype, rank=1],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        dropout_p: Scalar[dtype=dtype],
+        seed: Scalar[dtype = DType.uint64],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        if input.shape() != residual_input.shape():
+            raise Error("Input and residual input buffers are not same shape")
+
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            # Use load instead of _lambda_load to avoid compile-time evaluation issues
+            return input.load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn residual_input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            # Use load instead of _lambda_load to avoid compile-time evaluation issues
+            return residual_input.load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn output_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._fused_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        @parameter
+        @always_inline
+        fn residual_output_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            residual_output._fused_store[
+                width=width, element_alignment=alignment
+            ](
+                rebind[IndexList[residual_output.rank]](coords),
+                rebind[SIMD[residual_output.dtype, width]](val),
+            )
+
+        rms_norm_fused_residual[
+            input_fn,
+            residual_input_fn,
+            output_fn,
+            residual_output_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input.shape(),
+            gamma.to_layout_tensor(),
+            epsilon,
+            weight_offset,
+            ctx,
+            dropout_p,
+            UInt64(seed),
+        )
+
+    @staticmethod
+    fn shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank],
+        residual_input: InputTensor[dtype=dtype, rank=rank],
+        gamma: InputTensor[dtype=dtype, rank=1],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        dropout_p: Scalar[dtype=dtype],
+        seed: Scalar[dtype = DType.uint64],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("layer_norm_gated")
+struct LayerNormGated:
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        has_z: Bool = False,
+        has_bias: Bool = False,
+        is_rms_norm: Bool = False,
+        norm_before_gate: Bool = True,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        input: FusedInputTensor[dtype=dtype, rank=rank],
+        z: FusedInputTensor[dtype=dtype, rank=rank],
+        gamma: InputTensor[dtype=dtype, rank=1],
+        beta: InputTensor[dtype=dtype, rank=1],
+        epsilon: Scalar[dtype=dtype],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        if has_z and z.shape() != input.shape():
+            raise Error(
+                "z tensor shape must match input shape when has_z is True"
+            )
+
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn z_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            # Only load z if has_z is True (z is still required but may be dummy)
+            if has_z:
+                return z._lambda_load[width=width](
+                    rebind[IndexList[input.rank]](coords)
+                )
+            else:
+                # Return zeros when z is not used (shouldn't be called if has_z is False)
+                return SIMD[dtype, width](0)
+
+        @parameter
+        @always_inline
+        fn gamma_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            var col = coords[_rank - 1]
+            return gamma._lambda_load[width=width](
+                rebind[IndexList[1]](IndexList[1](col))
+            )
+
+        @parameter
+        @always_inline
+        fn beta_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            # Only load beta if has_bias is True
+            if has_bias:
+                var col = coords[_rank - 1]
+                return beta._lambda_load[width=width](
+                    rebind[IndexList[1]](IndexList[1](col))
+                )
+            else:
+                # Return zeros when beta is not used
+                return SIMD[dtype, width](0)
+
+        @parameter
+        @always_inline
+        fn output_fn_cpu[
+            width: Int, alignment: Int
+        ](idx: IndexList[rank], val: SIMD[dtype, width]):
+            output._fused_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](idx),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        @parameter
+        @always_inline
+        fn output_fn_gpu[
+            width: Int, rank: Int, alignment: Int
+        ](idx: IndexList[rank], val: SIMD[dtype, width]):
+            output._fused_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](idx),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        @parameter
+        if is_cpu[target]():
+            _layer_norm_gated_impl[
+                dtype,
+                rank,
+                input_fn,
+                z_fn,
+                gamma_fn,
+                beta_fn,
+                output_fn_cpu,
+                target=target,
+                has_z=has_z,
+                has_bias=has_bias,
+                is_rms_norm=is_rms_norm,
+                norm_before_gate=norm_before_gate,
+            ](
+                input.shape(),
+                epsilon,
+                ctx,
+            )
+        elif is_gpu[target]():
+            # For GPU, call the GPU kernel directly with beta tensor
+            var beta_tensor = beta.to_layout_tensor()
+            layer_norm_gated_gpu[
+                input_fn,
+                z_fn,
+                gamma_fn,
+                beta_fn,
+                output_fn_gpu,
+                has_z,
+                has_bias,
+                is_rms_norm,
+                norm_before_gate,
+            ](
+                input.shape(),
+                beta_tensor,
+                epsilon,
+                ctx=ctx.get_device_context(),
+            )
+        else:
+            constrained[False, "unsupported target " + target]()
+
+    @staticmethod
+    fn shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank],
+        z: InputTensor[dtype=dtype, rank=rank],
+        gamma: InputTensor[dtype=dtype, rank=1],
+        beta: InputTensor[dtype=dtype, rank=1],
+        epsilon: Scalar[dtype=dtype],
     ) -> IndexList[rank]:
         return input.shape()
 
