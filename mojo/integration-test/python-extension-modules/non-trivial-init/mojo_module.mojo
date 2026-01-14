@@ -84,7 +84,7 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Representable):
         # Extract positional arguments
         if tuple_len >= 1:
             try:
-                first_val = Int(args[0])
+                first_val = Int(py=args[0])
             except e:
                 raise Error("Failed to convert first argument to integer: ", e)
         else:
@@ -92,7 +92,7 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Representable):
 
         if tuple_len >= 2:
             try:
-                second_val = Int(args[1])
+                second_val = Int(py=args[1])
             except e:
                 raise Error("Failed to convert second argument to integer: ", e)
         else:
@@ -109,11 +109,11 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Representable):
             try:
                 # Check for 'first' keyword argument
                 if "first" in kwargs:
-                    first_val = Int(kwargs[PythonObject("first")])
+                    first_val = Int(py=kwargs[PythonObject("first")])
 
                 # Check for 'second' keyword argument
                 if "second" in kwargs:
-                    second_val = Int(kwargs[PythonObject("second")])
+                    second_val = Int(py=kwargs[PythonObject("second")])
             except e:
                 raise Error("Failed to process keyword arguments: ", e)
 

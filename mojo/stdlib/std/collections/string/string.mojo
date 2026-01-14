@@ -1189,16 +1189,16 @@ struct String(
         """
         return PythonObject(self)
 
-    fn __init__(out self, obj: PythonObject) raises:
+    fn __init__(out self, *, py: PythonObject) raises:
         """Construct a `String` from a PythonObject.
 
         Args:
-            obj: The PythonObject to convert from.
+            py: The PythonObject to convert from.
 
         Raises:
             An error if the conversion failed.
         """
-        var str_obj = obj.__str__()
+        var str_obj = py.__str__()
         self = String(StringSlice(unsafe_borrowed_obj=str_obj))
         # keep python object alive so the copy can occur
         _ = str_obj

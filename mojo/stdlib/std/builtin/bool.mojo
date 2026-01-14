@@ -490,17 +490,17 @@ struct Bool(
         return PythonObject(self)
 
     @doc_private
-    fn __init__(out self, obj: PythonObject) raises:
+    fn __init__(out self, *, py: PythonObject) raises:
         """Construct a `Bool` from a PythonObject.
 
         Args:
-            obj: The Python object to convert from.
+            py: The Python object to convert from.
 
         Raises:
             An error if conversion failed.
         """
-        # TODO: return obj.__bool__() when it no longer fails silently.
-        return Python.is_true(obj)
+        # TODO: return py.__bool__() when it no longer fails silently.
+        return Python.is_true(py)
 
 
 # ===----------------------------------------------------------------------=== #

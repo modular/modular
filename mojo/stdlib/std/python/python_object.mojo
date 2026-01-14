@@ -1617,10 +1617,10 @@ struct PythonObject(
 
         try:
             # TODO: Avoid this intermediate String allocation, if possible.
-            writer.write(String(self))
-        except:
+            writer.write(String(py=self))
+        except e:
             # TODO: make this method raising when we can raise parametrically.
-            abort("failed to write PythonObject to writer")
+            abort(String("failed to write PythonObject to writer: ", e))
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -1667,7 +1667,7 @@ struct PythonObject(
             If the operation fails.
         """
         return UnsafePointer[Scalar[dtype], MutAnyOrigin](
-            unsafe_from_address=Int(self)
+            unsafe_from_address=Int(py=self)
         )
 
     fn downcast_value_ptr[
@@ -1902,19 +1902,12 @@ fn _slice_to_py_object_ptr(slice: Slice) -> PyObjectPtr:
 
 
 __extension SIMD:
-    # TODO(MSTDL-1587): Remove the dummy parameter.
     @always_inline
-    fn __init__[
-        *, `_`: NoneType = None
-    ](out self: Scalar[dtype], obj: PythonObject, /) raises:
+    fn __init__(out self: Scalar[dtype], *, py: PythonObject) raises:
         """Initialize a SIMD value from a PythonObject.
 
-        Parameters:
-            _: A dummy parameter to ensure this overload has lower priority than
-                the others. Its value is ignored.
-
         Args:
-            obj: The PythonObject to convert.
+            py: The PythonObject to convert.
 
         Raises:
             If the conversion to double fails.
@@ -1923,7 +1916,7 @@ __extension SIMD:
         @parameter
         if dtype.is_floating_point():
             ref cpy = Python().cpython()
-            var float_value = cpy.PyFloat_AsDouble(obj._obj_ptr)
+            var float_value = cpy.PyFloat_AsDouble(py._obj_ptr)
             if float_value == -1.0 and cpy.PyErr_Occurred():
                 # Note that -1.0 does not guarantee an error, it just means we
                 # need to check if there was an exception.
@@ -1931,7 +1924,7 @@ __extension SIMD:
             # NOTE: if dtype is not float64, we truncate.
             self = Scalar[dtype](float_value)
         elif dtype.is_integral() and bit_width_of[dtype]() <= 64:
-            self = Int(obj)
+            self = Int(py=py)
         else:
             self = Scalar[dtype]()
             constrained[False, "unsupported dtype"]()

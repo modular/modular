@@ -1702,7 +1702,7 @@ struct CPython(Defaultable, Movable):
 
         var error: String
         try:
-            error = String(PythonObject(from_owned=err_ptr))
+            error = String(py=PythonObject(from_owned=err_ptr))
         except e:
             abort(
                 "internal error: Python exception occurred but cannot be"

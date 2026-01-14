@@ -30,6 +30,6 @@ fn PyInit_mojo_module() -> PythonObject:
 
 fn factorial(py_obj: PythonObject) raises -> PythonObject:
     # Raises an exception if `py_obj` is not convertible to a Mojo `Int`.
-    var n = Int(py_obj)
+    var n = Int(py=py_obj)
 
     return math.factorial(n)

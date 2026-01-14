@@ -41,12 +41,12 @@ trait ConvertibleFromPython(Copyable):
     object.
     """
 
-    fn __init__(out self, obj: PythonObject) raises:
+    fn __init__(out self, *, py: PythonObject) raises:
         """Attempt to construct an instance of this object from a read-only
         Python value.
 
         Args:
-            obj: The Python object to convert from.
+            py: The Python object to convert from.
 
         Raises:
             If conversion was not successful.

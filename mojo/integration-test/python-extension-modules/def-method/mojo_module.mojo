@@ -111,7 +111,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
         py_self: PythonObject, sep: PythonObject
     ) raises -> PythonObject:
         var self_ptr = Self._get_self_ptr(py_self)
-        return Python.list(self_ptr[].name.split(String(sep)))
+        return Python.list(self_ptr[].name.split(String(py=sep)))
 
     @staticmethod
     fn _with(
@@ -131,7 +131,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
     ) -> PythonObject:
         var self_ptr = Self._get_self_ptr(py_self)
         try:
-            return PythonObject(Int(this_year) - self_ptr[].age)
+            return PythonObject(Int(py=this_year) - self_ptr[].age)
         except e:
             abort(String("failed to get birth year: ", e))
 
@@ -141,7 +141,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
     ) -> PythonObject:
         var self_ptr = Self._get_self_ptr(py_self)
         try:
-            self_ptr[].name = String(first_name) + " " + String(last_name)
+            self_ptr[].name = String(py=first_name) + " " + String(py=last_name)
         except e:
             abort(String("failed to set name: ", e))
         return py_self
@@ -158,16 +158,16 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
     fn set_age(py_self: PythonObject, age: PythonObject) raises:
         var self_ptr = Self._get_self_ptr(py_self)
         try:
-            self_ptr[].age = Int(age)
+            self_ptr[].age = Int(py=age)
         except e:
-            raise Error("cannot set age to ", String(age))
+            raise Error("cannot set age to ", String(py=age))
 
     @staticmethod
     fn set_name_and_age(
         py_self: PythonObject, name: PythonObject, age: PythonObject
     ) raises:
         var self_ptr = Self._get_self_ptr(py_self)
-        self_ptr[].name = String(name)
+        self_ptr[].name = String(py=name)
         Self.set_age(py_self, age)
 
     @staticmethod
@@ -180,7 +180,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
     fn set_name(py_self: PythonObject, name: PythonObject):
         # TODO: replace with property once we have them
         try:
-            Self._get_self_ptr(py_self)[].name = String(name)
+            Self._get_self_ptr(py_self)[].name = String(py=name)
         except e:
             abort(String("failed to set name: ", e))
 
@@ -190,7 +190,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
     ):
         var self_ptr = Self._get_self_ptr(py_self)
         try:
-            self_ptr[].age = Int(this_year) - Int(birth_year)
+            self_ptr[].age = Int(py=this_year) - Int(py=birth_year)
         except e:
             abort(String("failed to set age: ", e))
 
@@ -200,7 +200,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
         name: PythonObject,
     ):
         try:
-            self_ptr[].name = String(name)
+            self_ptr[].name = String(py=name)
         except e:
             abort(String("failed to set name: ", e))
 
@@ -215,7 +215,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
         self_ptr: UnsafePointer[Self, MutAnyOrigin],
         increment: PythonObject,
     ) raises -> PythonObject:
-        self_ptr[].age += Int(increment)
+        self_ptr[].age += Int(py=increment)
         return PythonObject(self_ptr[].age)
 
     @staticmethod
@@ -242,7 +242,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
         var total = 0
         if py_kwargs._obj_ptr:
             for entry in py_kwargs.values():
-                total += Int(entry)
+                total += Int(py=entry)
         self_ptr[].age += total
         return PythonObject(self_ptr[].age)
 
@@ -256,7 +256,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
         var total = 0
         for entry in kwargs.items():
             var value = entry.value
-            total += Int(value)
+            total += Int(py=value)
 
         self_ptr[].age += total
         return PythonObject(self_ptr[].age)

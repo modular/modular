@@ -70,7 +70,7 @@ fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
     # Launch the Mandelbrot kernel on the GPU with a 2D grid of thread blocks.
     ctx.enqueue_function_experimental[mandelbrot](
         out_tensor,
-        Int32(iterations),
+        Int32(py=iterations),
         grid_dim=(COL_BLOCKS, ROW_BLOCKS),
         block_dim=(BLOCK_SIZE, BLOCK_SIZE),
     )
@@ -80,7 +80,7 @@ fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
     with dev_buf.map_to_host() as host_buf:
         var host_tensor = LayoutTensor[int_dtype, layout](host_buf)
         # Return the ASCII art string representation to Python.
-        return PythonObject(draw_mandelbrot(host_tensor, Int(iterations)))
+        return PythonObject(draw_mandelbrot(host_tensor, Int(py=iterations)))
 
 
 fn mandelbrot(

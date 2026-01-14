@@ -290,6 +290,12 @@ what we publish.
   `(5, 5, 5)`. This implicit conversion has been removed to improve type safety.
   Use explicit construction instead: `IndexList[3](5)`.
 
+- The `ConvertibleFromPython` trait and associated initializers now have a
+  required keyword argument. Before: `Int(pyObj)`. After: `Int(py=pyObj)`. This
+  avoids ambiguities in cases where either multiple overloads could apply, or
+  where implicit conversions to `PythonObject` could mask that a Python
+  operation was happening.
+
 - The `inlined_assembly` function is now publicly exported from the `sys` module,
   allowing users to embed raw assembly instructions directly into Mojo code.
   This provides fine-grained control over hardware operations using LLVM-style

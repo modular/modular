@@ -163,7 +163,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
         if len(new_name) > len(self0[].name.codepoints()):
             raise Error("cannot make name longer than current name")
 
-        self0[].name = String(new_name)
+        self0[].name = String(py=new_name)
 
         return PythonObject(None)
 

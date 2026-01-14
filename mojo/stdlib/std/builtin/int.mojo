@@ -1076,16 +1076,16 @@ struct Int(
         hasher._update_with_simd(Int64(self))
 
     @doc_private
-    fn __init__(out self, obj: PythonObject) raises:
+    fn __init__(out self, *, py: PythonObject) raises:
         """Construct an `Int` from a PythonObject.
 
         Args:
-            obj: The Python object to convert from.
+            py: The Python object to convert from.
 
         Raises:
             An error if the conversion failed.
         """
-        self = Int(Python.py_long_as_ssize_t(obj.__int__()))
+        self = Int(Python.py_long_as_ssize_t(py.__int__()))
 
     # ===-------------------------------------------------------------------===#
     # Methods

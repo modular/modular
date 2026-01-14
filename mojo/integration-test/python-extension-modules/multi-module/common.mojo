@@ -40,14 +40,14 @@ struct TestStruct(Defaultable, Movable, Representable):
     @staticmethod
     fn set_a(py_self: PythonObject, a: PythonObject):
         try:
-            Self._get_self_ptr(py_self)[].a = Int(a)
+            Self._get_self_ptr(py_self)[].a = Int(py=a)
         except e:
             abort(String("failed to set a: ", a))
 
     @staticmethod
     fn set_b(py_self: PythonObject, b: PythonObject):
         try:
-            Self._get_self_ptr(py_self)[].b = Int(b)
+            Self._get_self_ptr(py_self)[].b = Int(py=b)
         except e:
             abort(String("failed to set b: ", b))
 
