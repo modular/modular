@@ -39,6 +39,12 @@ struct InferenceFailure {
     size_t paramIdx;
   };
 
+  /// This failure happens when parameter is inferred, yet the constraint
+  /// attached on it can not be proved.
+  struct UnprovableConstraints {
+    size_t paramIdx;
+  };
+
   /// This failure hasn't been categorized yet.
   /// FIXME: Remove this.
   struct Unclassified {};
@@ -59,7 +65,8 @@ struct InferenceFailure {
   }
 
 private:
-  SmartVariant<TypeConflict, ValueConflict, DependsOnUnresolved, Unclassified>
+  SmartVariant<TypeConflict, ValueConflict, DependsOnUnresolved, Unclassified,
+               UnprovableConstraints>
       info;
 };
 
@@ -115,7 +122,7 @@ public:
   /// FIXME: This is a temporary flag that will soon go away. This is used to
   /// distinguish parameter inference for overload resolution or struct
   /// parameter binding. We are migrating one part at a time.
-  bool hasInferredForCall = false;
+  std::optional<LogicalResult> inferredForCallRet = std::nullopt;
 
   /// Given an incomplete parameter binding set, try to infer parameters on Self
   /// of a method from the first argument.
@@ -132,6 +139,16 @@ public:
   /// This is the evaluator instance parameter inference uses to progressively
   /// refine dependent types as we infer parameters.
   ParserParameterEvaluator evaluator;
+
+  // A simple wrapper around `overwriteIndexBinding` to ensure sugar is aligned
+  // before overwriting parameter value.
+  // Notable, this method does not check there is no existing parameter inferred
+  // and unconditional overwrite everything.
+  //
+  // Return failure when the constraint attached to the parameter can not be
+  // satisfied, it populates unprovableConstraints too.
+  SmallVector<ConstraintAttr> unprovableConstraints;
+  LogicalResult setInferredValue(size_t paramIdx, TypedAttr paramVal);
 
   /// Cached finder to identify types that contains unbound ParamIndexRefAttrs.
   ParamIndexRefAttrFinder paramFinder;

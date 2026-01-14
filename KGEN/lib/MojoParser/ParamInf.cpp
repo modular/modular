@@ -11,6 +11,7 @@
 #include "ParamBindings.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/Constraints.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
@@ -768,7 +769,8 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
           state.evaluator.getIndexBindings()[parameterIndex];
       // If this is a new parameter we've inferred, huzzah, remember it.
       if (!inferredValue) {
-        state.evaluator.overwriteIndexBinding(parameterIndex, actualAttr);
+        if (failed(state.setInferredValue(parameterIndex, actualAttr)))
+          return error(InferenceFailure::UnprovableConstraints{parameterIndex});
         retryParamIdx = parameterIndex;
         return Retry;
       }
@@ -1599,8 +1601,9 @@ RetryLabel:
     if (auto value = defaultHandler.getDefault(paramIdx)) {
       assert(!evaluator.getIndexBindings()[paramIdx] &&
              "shouldn't have inferred this if we failed because of it");
-      evaluator.overwriteIndexBinding(paramIdx,
-                                      evaluator.getReboundAttribute(value));
+      value = evaluator.getReboundAttribute(value);
+      if (failed(setInferredValue(paramIdx, value)))
+        return failure();
       goto RetryLabel;
     }
   }
@@ -1674,6 +1677,35 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   return failure();
 }
 
+// A simple wrapper around `overwriteIndexBinding` to ensure sugar is aligned
+// before overwriting parameter value.
+// Notable, this method does not check there is no existing parameter inferred
+// and unconditional overwrite everything.
+LogicalResult ParamInf::setInferredValue(size_t paramIdx, TypedAttr paramVal) {
+  ASTType targetType = evaluator.getReboundType(declaredParamTypes[paramIdx]);
+  // Type must be equal
+  assert(targetType.isEqualCanon(paramVal.getType()));
+
+  // now align sugar
+  if (paramVal.getType() != targetType)
+    paramVal = ParamOperatorAttr::getRebind(paramVal, targetType);
+
+  evaluator.overwriteIndexBinding(paramIdx, paramVal);
+
+  ArrayRef<ConstraintAttr> constraints =
+      declaredParamPogs.getPogs()[paramIdx].getConstraints();
+  if (constraints.empty())
+    return success();
+
+  // Verify all constraints are satisfied, collecting unprovable constraints.
+  ConstraintResult result = checkConstraints(
+      declScope, declaredParamPogs, constraints, /*origConstraints=*/{},
+      getDiag, &unprovableConstraints, &evaluator);
+
+  // TODO: how about we just emitting unprovable error here right away?
+  return success(result == ConstraintResult::Satisfied);
+}
+
 /// Infer all of the parameters we can from 'givenBindings'.
 ///
 /// The 'partial' field specifies this is
@@ -1687,8 +1719,8 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
   // inferForCall (which calls this function and infers params for arguments)
   // but then also calls verifyBiddings.  When this subsumes verifyBindings,
   // this should be able to go away.
-  if (hasInferredForCall)
-    return success();
+  if (inferredForCallRet.has_value())
+    return *inferredForCallRet;
 
   // Notice, but strip out, the ellipsis if present.
   bool hasEllipsis = false;
@@ -1754,19 +1786,19 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
 
   // We may have pre-checked and out-of-order inferred parameters.  Avoid
   // stomping on them.
-  auto applyBinding = [&](size_t idx, TypedAttr paramVal) {
+  auto applyBinding = [&](size_t idx, TypedAttr paramVal) -> LogicalResult {
     // Ignore this if the parameter value is deferred.
     if (!paramVal)
-      return;
+      return success();
 
     auto existing = evaluator.getIndexBindings()[idx];
-    if (!existing) {
-      evaluator.overwriteIndexBinding(idx, paramVal);
-      return;
-    }
+    if (!existing)
+      return setInferredValue(idx, paramVal);
 
     assert(isEqualCanon(existing, paramVal) &&
            "inferred to different values but didn't notice");
+
+    return success();
   };
 
   size_t posIdx = 0, numParams = givenBindings.size();
@@ -1797,24 +1829,23 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
 
       // Unpacked variadics (`Tuple[*elts]` where elts is a variadic list) can
       // be passed directly as a whole variadic parameter.
-      auto expectedVariadic = sugarCast<VariadicType>(expectedType);
+      auto expectedVA = sugarCast<VariadicType>(expectedType);
       if (auto unpacked = dyn_cast<UnpackedAttr>(
               givenBindings[posIdx].ir.getIfPValue().get())) {
         // FIXME: Make sure to only unpack *x in pos varargs and **x in kw
         // varargs.
         FailureOr<TypedAttr> paramVal = inferAndEmitOneParam(
-            {unpacked.getValue(), givenBindings[posIdx].expr}, expectedVariadic,
-            idx);
-        if (failed(paramVal)) // Exit if an error was already emitted.
+            {unpacked.getValue(), givenBindings[posIdx].expr}, expectedVA, idx);
+        // Exit if an error was already emitted.
+        if (failed(paramVal) || failed(applyBinding(idx, *paramVal)))
           return failure();
-        applyBinding(idx, *paramVal);
         ++posIdx;
         continue;
       }
 
       // Otherwise, we infer the variadic to be the elements of the variadic
       // list being passed in.
-      Type varArgsEltType = expectedVariadic.getElementType();
+      Type varArgsEltType = expectedVA.getElementType();
       SmallVector<TypedAttr> elements;
       bool isDeferred = false;
       while (posIdx != numParams) {
@@ -1853,9 +1884,10 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
       }
 
       if (!isDeferred) {
-        expectedVariadic =
-            cast<VariadicType>(evaluator.getReboundType(expectedVariadic));
-        applyBinding(idx, VariadicAttr::get(elements, expectedVariadic));
+        expectedVA = cast<VariadicType>(evaluator.getReboundType(expectedVA));
+        auto paramVA = VariadicAttr::get(elements, expectedVA);
+        if (failed(applyBinding(idx, paramVA)))
+          return failure();
       }
       continue;
     }
@@ -1866,10 +1898,9 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
                                pog.getPassingKind() == PassingKind::PosOnly)) {
       FailureOr<TypedAttr> paramVal =
           inferAndEmitOneParam(givenBindings[posIdx], expectedType, idx);
-      if (failed(paramVal)) // Exit if an error was already emitted.
+      // Exit if an error was already emitted.
+      if (failed(paramVal) || failed(applyBinding(idx, *paramVal)))
         return failure();
-
-      applyBinding(idx, *paramVal);
       ++posIdx;
       continue;
     }
@@ -1883,9 +1914,9 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
 
         FailureOr<TypedAttr> paramVal =
             inferAndEmitOneParam(*param, expectedType, idx);
-        if (failed(paramVal)) // Exit if an error was already emitted.
+        // Exit if an error was already emitted.
+        if (failed(paramVal) || failed(applyBinding(idx, *paramVal)))
           return failure();
-        applyBinding(idx, *paramVal);
         continue;
       }
     }
@@ -1904,8 +1935,10 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
     for (size_t i = 0, e = declaredParamTypes.size(); i != e; ++i) {
       if (declaredParamPogs.isPosVarArg(i) &&
           !evaluator.getIndexBindings()[i]) {
-        auto type = evaluator.getReboundType(declaredParamTypes[i]);
-        applyBinding(i, VariadicAttr::get({}, sugarCast<VariadicType>(type)));
+        Type type = evaluator.getReboundType(declaredParamTypes[i]);
+        auto emptyVA = VariadicAttr::get({}, sugarCast<VariadicType>(type));
+        if (failed(applyBinding(i, emptyVA)))
+          return failure();
       }
     }
   }
@@ -1917,9 +1950,10 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
                                      const OperandValueList &variadicKwOperands,
                                      bool returnsSelf, bool hasCTADParams) {
   // First try to infer parameters from the already provided bindings.
-  if (failed(inferFromParamList(/*hasArguments*/ true)))
+  inferredForCallRet = inferFromParamList(/*hasArguments*/ true);
+  if (failed(*inferredForCallRet)) {
     return failure();
-  hasInferredForCall = true;
+  }
 
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be
@@ -2147,10 +2181,10 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
     return failure();
 
   if (hasDeferredGivenParam) {
-    hasInferredForCall = false;
-    if (failed(inferFromParamList(/*hasArguments*/ true)))
+    inferredForCallRet = std::nullopt;
+    inferredForCallRet = inferFromParamList(/*hasArguments*/ true);
+    if (failed(*inferredForCallRet))
       return failure();
-    hasInferredForCall = true;
   }
 
   // Lastly, See if we can fulfill any missing parameters with default values
@@ -2162,7 +2196,8 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
       // FIXME: This isn't rewriting the variadic list for dependent types.
       auto type = declaredParamTypes[i];
       auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
-      evaluator.overwriteIndexBinding(i, empty);
+      if (failed(setInferredValue(i, empty)))
+        return failure();
       break;
     }
   }
