@@ -1306,14 +1306,14 @@ def run_display(
     running = True
     while running:
         # Poll for events
-        event = pygame.event.poll()
-        if event.type == pygame.QUIT:
-            # Quit if the window is closed
-            running = False
-        elif event.type == pygame.KEYDOWN:
-            # Also quit if the user presses <Escape> or 'q'
-            if event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                # Quit if the window is closed
                 running = False
+            elif event.type == pygame.KEYDOWN:
+                # Also quit if the user presses <Escape> or 'q'
+                if event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
+                    running = False
 
         # Clear the window by painting with the background color
         window.fill(background_fill_color)
