@@ -366,12 +366,16 @@ def calculate_metrics(
             itls += outputs[i].itl
             ttfts.append(outputs[i].ttft)
             # Input throughput is fully calculated once we reach the first output token.
-            input_throughputs.append(outputs[i].prompt_len / outputs[i].ttft)
+            if outputs[i].ttft > 0:
+                input_throughputs.append(
+                    outputs[i].prompt_len / outputs[i].ttft
+                )
             # output throughput ignores the first token.
             # It is just timing for the chain of output tokens.
-            output_throughputs.append(
-                (output_len - 1) / (outputs[i].latency - outputs[i].ttft)
-            )
+            if (outputs[i].latency - outputs[i].ttft) > 0:
+                output_throughputs.append(
+                    (output_len - 1) / (outputs[i].latency - outputs[i].ttft)
+                )
             latencies.append(outputs[i].latency)
         else:
             actual_output_lens.append(0)

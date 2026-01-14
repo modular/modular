@@ -379,12 +379,12 @@ class OpenAICompletionsRequestDriver(RequestDriver):
                             else:
                                 data = json.loads(chunk)
 
-                                # NOTE: Some completion API might have a last
-                                # usage summary response without a token so we
-                                # want to check a token was generated
-                                if data["choices"][0]["text"]:
-                                    has_content = True
+                                # Any valid response chunk counts as having received content
+                                has_content = True
 
+                                # Only track timing for chunks with actual text
+                                text_content = data["choices"][0]["text"]
+                                if text_content:
                                     timestamp = time.perf_counter()
                                     # First token
                                     if ttft == 0.0:
@@ -398,7 +398,7 @@ class OpenAICompletionsRequestDriver(RequestDriver):
                                         )
 
                                     most_recent_timestamp = timestamp
-                                    generated_text += data["choices"][0]["text"]
+                                    generated_text += text_content
                         if not has_content:
                             output.error = (
                                 "No content returned, there could be an issue with"
@@ -493,13 +493,16 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
                             if chunk == "[DONE]":
                                 pass
                             else:
-                                timestamp = time.perf_counter()
                                 data = json.loads(chunk)
 
-                                delta = data["choices"][0]["delta"]
-                                if delta.get("content", None):
-                                    has_content = True
+                                # Any valid response chunk counts as having received content
+                                has_content = True
 
+                                delta = data["choices"][0]["delta"]
+                                content = delta.get("content", "")
+                                # Only track timing for chunks with actual content
+                                if content:
+                                    timestamp = time.perf_counter()
                                     # First token
                                     if ttft == 0.0:
                                         ttft = time.perf_counter() - st
@@ -511,9 +514,8 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
                                             timestamp - most_recent_timestamp
                                         )
 
-                                    generated_text += delta["content"]
-
-                                most_recent_timestamp = timestamp
+                                    most_recent_timestamp = timestamp
+                                    generated_text += content
 
                         if not has_content:
                             output.error = (
