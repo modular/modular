@@ -1215,15 +1215,16 @@ interface using a Python library.
 
 Mojo lets you import Python modules, call Python functions, and interact with
 Python objects from Mojo code. To demonstrate this capability, we'll
-use a Python package called [pygame](https://www.pygame.org) to create and
-manage a graphical user interface for our Game of Life program.
+use a Python package called [pygame-ce](https://pyga.me/docs/index.html) to
+create and manage a graphical user interface for our Game of Life program.
 
 First, we need to update our `pixi.toml` file to add a dependency on
-Python and the `pygame` package. In the project directory, execute the
-following command from the terminal:
+Python and the `pygame-ce` package. In the project directory, execute the
+following commands from the terminal:
 
 ```bash
-pixi add "python>=3.11,<3.13" "pygame>=2.6.1,<3"
+pixi add "python>=3.11,<3.15" 
+pixi add --pypi "pygame-ce>=2.5.6,<3"
 ```
 
 :::note

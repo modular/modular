@@ -76,7 +76,7 @@ pixi run test
 ## Dependencies
 
 This project includes an example of using a Python package,
-[pygame](https://www.pygame.org/wiki/about), from Mojo. Building the program
+[pygame-ce](https://pyga.me/docs/index.html), from Mojo. Building the program
 does *not* embed pygame or a Python runtime in the resulting executable.
 Therefore, to run this program your environment must have both a compatible
 Python runtime (Python 3.12) and the pygame package installed.
