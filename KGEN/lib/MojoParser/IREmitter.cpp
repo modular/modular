@@ -152,6 +152,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in 'ref' binding";
   case EC_SynthesizedMethod:
     return " in synthesized method";
+  case EC_ConversionThunk:
+    return " in synthesized conversion thunk call";
   }
   llvm_unreachable("invalid expr context");
 }

@@ -2105,11 +2105,11 @@ ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(
   return wrapper;
 }
 
-FnOp SharedState::getOrCreateFunctionThunk(Attribute key,
-                                           CreateThunkFn create) {
+FnOp SharedState::getOrCreateFunctionThunk(Attribute key, CreateThunkFn create,
+                                           SMLoc useLoc) {
   FnOp &thunk = impl->conversionThunks[key];
   if (!thunk)
-    thunk = create(key, getTopLevelDecl());
+    thunk = create(key, getTopLevelDecl(), useLoc);
   return thunk;
 }
 

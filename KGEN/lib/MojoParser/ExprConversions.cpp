@@ -372,7 +372,8 @@ static std::string generateThunkName(Type expected, Type actual) {
   return name;
 }
 
-static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
+static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
+                                    SMLoc useLoc) {
   auto &shared = moduleDecl.getShared();
   // Don't generate any debuginfo for the thunk. Push a null scope.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -450,7 +451,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   IREmitter emitter(*thunkDecl, b);
 
   // Construct the call operands from the function block arguments.
-  SyntheticNode node(thunkDecl->getLoc());
+  SyntheticNode node(useLoc);
   CallOperands operands(CallSyntax::kMethodCall, &node);
 
   std::optional<size_t> thunkVariadicArgIndexOpt =
@@ -477,16 +478,16 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
 
       auto indexAttr = IntegerAttr::get(IndexType::get(ctx), indexInVariadic);
       CValue indexCValue = emitter.emitInt(
-          ASTExprAnd<PValue>{PValue(indexAttr), &node}, EC_CallParamValue);
+          ASTExprAnd<PValue>{PValue(indexAttr), &node}, EC_ConversionThunk);
       PValue index = indexCValue.getIfPValue();
       assert(index && "Int must be PValue when constructed from int attr");
 
-      SyntheticNode indexSynthNode(moduleDecl.getLoc(), index);
+      SyntheticNode indexSynthNode(useLoc, index);
 
       auto variadicTypeFromFunctionType =
           functionType.getInputs()[thunkVariadicArgIndex];
 
-      ValueDest eltDest(EC_VarArgArgument);
+      ValueDest eltDest(EC_ConversionThunk);
 
       // TODO(MOCO-1106): Use the higher-level emitGetterSetterAccess instead of
       // the below OverloadSet/emitCall directly. It'll require refactoring
@@ -499,15 +500,14 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
           "__getitem__", node, CallSyntax::kDirectCall);
       if (failed(bindParamValuesToDirectCall(
               getItemOv,
-              {Operand(&indexSynthNode, moduleDecl.getLoc(),
-                       Operand::PassKind::kKeyword,
+              {Operand(&indexSynthNode, useLoc, Operand::PassKind::kKeyword,
                        StringAttr::get(ctx, "index"))},
               emitter))) {
         // This should theoretically never happen, because we own VariadicPack.
-        emitter.emitError(moduleDecl.getLoc(),
+        emitter.emitError(useLoc,
                           "Internal error: Couldn't find VariadicPack's "
                           "__getitem__ method for the "
-                          "generated variadic thunk.");
+                          "generated variadic thunk");
         return {};
       }
 
@@ -519,10 +519,9 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
           getItemOv.emitCall(std::move(getItemOperands), eltDest, emitter);
       if (!getItemResult) {
         // This should theoretically never happen, because we own VariadicPack.
-        emitter.emitError(moduleDecl.getLoc(),
-                          "Internal error: Couldn't call "
-                          "VariadicPack.__getitem__[index] in the "
-                          "generated variadic thunk.");
+        emitter.emitError(useLoc, "Internal error: Couldn't call "
+                                  "VariadicPack.__getitem__[index] in the "
+                                  "generated variadic thunk");
         return {};
       }
       argForActual = getItemResult.getMlirValue();
@@ -554,8 +553,10 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
       value = SRValue(argForActual);
       break;
     case ArgConvention::ReadMem:
-    case ArgConvention::Ref:
       value = MBValue(argForActual);
+      break;
+    case ArgConvention::Ref:
+      value = MBPValue(argForActual);
       break;
     }
     operands.add({value, node});
@@ -563,12 +564,12 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
 
   // Allocate the value dest for the call. Set the value dest to the result
   // slot, if there is one, otherwise provide the expected rvalue type.
-  ValueDest dest(EC_Trait);
+  ValueDest dest(EC_ConversionThunk);
   bool hasRegisterResult = false;
   if (thunkSignature.isAsync()) {
     // An async call returns a coroutine we have to await.
   } else if (thunkSignature.hasMemoryOnlyResult()) {
-    dest = ValueDest(MLValue(thunk.getArguments().back()), EC_Trait);
+    dest = ValueDest(MLValue(thunk.getArguments().back()), EC_ConversionThunk);
   } else {
     hasRegisterResult = true;
   }
@@ -624,7 +625,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
 
   // If the callee is async, we got a coroutine. Now await it into the result.
   if (thunkSignature.isAsync()) {
-    ValueDest dest(MLValue(thunk.getArguments().back()), EC_Trait);
+    ValueDest dest(MLValue(thunk.getArguments().back()), EC_ConversionThunk);
     if (!emitter.emitNamedMethodCall(
             "__await__",
             CallOperands(CallSyntax::kMethodCall, &node, {{callResult, node}}),
@@ -636,7 +637,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   // result slot.
   Value retVal;
   if (hasRegisterResult)
-    retVal = emitter.emitSRValue({callResult, node}, EC_Trait);
+    retVal = emitter.emitSRValue({callResult, node}, EC_ConversionThunk);
 
   emitter.emitNormalReturn(mlirLoc, retVal);
   return thunk;
@@ -776,8 +777,8 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   // We can attempt to generate the thunk now.
   Attribute key = ArrayAttr::get(ctx, {TypeAttr::get(reparamActualForThunkKey),
                                        TypeAttr::get(thunkSignature)});
-  FnOp thunk =
-      emitter.shared.getOrCreateFunctionThunk(key, generateConversionThunk);
+  FnOp thunk = emitter.shared.getOrCreateFunctionThunk(
+      key, generateConversionThunk, expr->getLoc());
   if (!thunk) {
     dest.resetForError(emitter);
     return {};

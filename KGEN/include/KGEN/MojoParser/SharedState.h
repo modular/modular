@@ -511,11 +511,12 @@ public:
   /// Function used to create a thunk. This API is limited intentionally to
   /// ensure that the creation is transaction. This is important to retain
   /// invariants with packaging.
-  using CreateThunkFn = FnOp (*)(Attribute, ASTDecl &);
+  using CreateThunkFn = FnOp (*)(Attribute, ASTDecl &moduleDecl, SMLoc useLoc);
 
   /// This gets a function conversion thunk between the two provided function
   /// types within the provided module, or creates one if needed.
-  FnOp getOrCreateFunctionThunk(Attribute key, CreateThunkFn create);
+  FnOp getOrCreateFunctionThunk(Attribute key, CreateThunkFn create,
+                                SMLoc useLoc);
 
   /// Given a scope that refers to a nested function, return the set of captured
   /// values. The name of the capture is paired with the metadata.

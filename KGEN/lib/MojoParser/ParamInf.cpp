@@ -1283,6 +1283,7 @@ RetryLabel:
       if (!paramFinder.hasReferences(expectedType)) {
         if (IREmitter::canZeroCostConvert(valueRefType, expectedType, shared))
           return success();
+        emitWrongTypeDiag(expectedType);
         return failure();
       }
 

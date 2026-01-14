@@ -486,7 +486,8 @@ fn mem_param_with_ref(a: MemParamType[_], ref [AddressSpace(3)]b: MemParamType[3
 
 fn call_mem_param_with_ref(ref [AddressSpace(2)]b: MemParamType[3]):
     var a = MemParamType[1]()
-    # expected-error @below {{invalid call to 'mem_param_with_ref': failed to infer parameter 'p'}}
+    # expected-error @below {{invalid call to 'mem_param_with_ref': value passed to 'b' cannot be converted from 'MemParamType[3]' to ref 'MemParamType[3]'}}
+    # expected-note @below {{operand address space '2' doesn't match expected address space '3'}}
     mem_param_with_ref(a, b)
 
 
