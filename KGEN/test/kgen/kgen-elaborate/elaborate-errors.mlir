@@ -357,3 +357,44 @@ kgen.generator export @illegal_type_name() {
   kgen.param.constant: string = <#kgen.get_type_name<#kgen.struct<> : !kgen.struct<()>, false>>
   kgen.return
 }
+
+// -----
+
+// Test struct_field_index_by_name with nonexistent field.
+
+kgen.struct.generator @FieldTestStruct = struct_inst<"FieldTestStruct"(first: index, second: i32)>
+
+#field_test_struct = #kgen.type<typevalue<:!kgen.type #kgen.genref<@FieldTestStruct>>, struct<(index, i32)>> : !kgen.type
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator @test_field_not_found() {
+  // expected-note @below {{struct '!kgen.struct_inst<"FieldTestStruct"(first: index, second: i32)>' has no field named 'nonexistent'}}
+  kgen.param.constant: index = <#kgen.struct_field_index_by_name<#field_test_struct, "nonexistent">>
+  kgen.return
+}
+
+// -----
+
+// Test struct_field_type_by_name with nonexistent field.
+
+kgen.struct.generator @FieldTypeTestStruct = struct_inst<"FieldTypeTestStruct"(alpha: f32, beta: f64)>
+
+#field_type_test_struct = #kgen.type<typevalue<:!kgen.type #kgen.genref<@FieldTypeTestStruct>>, struct<(f32, f64)>> : !kgen.type
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator @test_field_type_not_found() {
+  // expected-note @below {{struct '!kgen.struct_inst<"FieldTypeTestStruct"(alpha: f32, beta: f64)>' has no field named 'missing'}}
+  kgen.param.constant: type = <#kgen.struct_field_type_by_name<#field_type_test_struct, "missing">>
+  kgen.return
+}
+
+// -----
+
+// Test struct_field_types with non-struct type (passing a primitive type i32).
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator @test_non_struct_type() {
+  // expected-note @+1 {{struct_field_types requires a struct type}}
+  kgen.param.constant: variadic<type> = <#kgen.struct_field_types<i32>>
+  kgen.return
+}

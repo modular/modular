@@ -408,7 +408,6 @@ IREvaluator::evaluateStructFieldTypesAttr(StructFieldTypesAttr attr) {
   // Build variadic of field types
   SmallVector<TypedAttr> fieldTypes;
   for (StructDefFieldAttr field : structType.getFields()) {
-    // Wrap field type as a TypeParamAttr
     fieldTypes.push_back(field.getTypeValue());
   }
 
@@ -496,12 +495,9 @@ IREvaluator::evaluateStructFieldTypeByNameAttr(StructFieldTypeByNameAttr attr) {
   StringRef fieldName = fieldNameAttr.getValue();
 
   // Find field by name
-  for (StructDefFieldAttr field : structType.getFields()) {
-    if (field.getName().getValue() == fieldName) {
-      // Return the field type wrapped in TypeParamAttr
+  for (StructDefFieldAttr field : structType.getFields())
+    if (field.getName().getValue() == fieldName)
       return field.getTypeValue();
-    }
-  }
 
   // Field not found - emit compile error
   emitError({*errorLoc, "struct '" + mlir::debugString(structType) +
