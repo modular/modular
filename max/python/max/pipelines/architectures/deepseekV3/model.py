@@ -576,6 +576,14 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 "Number of replica batches must match data parallel degree"
             )
 
+        # Allocate the model inputs on pinned memory for faster h2d
+        # transfer speeds. If model is on host, then fall back to normal
+        # pageable memory. We initialize these empty max tensors by exporting
+        # to numpy over dlpack and using numpy methods.
+        # TODO: move rest of inputs to pinned memory
+        device0 = self.devices[0]
+        pinned = not device0.is_host
+
         # If we are not in decode only mode, we need to create a list of
         # tensors containing the context length of each batch. Need by MLA
         # prefill.
@@ -597,13 +605,13 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         context_batch = flatten2d(replica_batches)
         # Create tokens
         if len(context_batch) == 0:
-            tokens = Tensor(shape=[0], dtype=DType.int64).to(self.devices[0])
+            tokens = Tensor(shape=[0], dtype=DType.int64).to(device0)
             host_input_row_offsets = Tensor.zeros(shape=[1], dtype=DType.uint32)
         else:
             # Create a ragged token vector of length: sum(len(t) for t in tokens).
             tokens = Tensor.from_numpy(
                 np.concatenate([ctx.tokens.active for ctx in context_batch])
-            ).to(self.devices[0])
+            ).to(device0)
 
             # Create a ragged token vector of length: sum(len(t) for t in tokens).
             # Get input_row_offsets: start and end position of each batch in the
@@ -615,9 +623,11 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 )
             )
 
-        device_input_row_offsets = host_input_row_offsets.to(self.devices[0])
+        device_input_row_offsets = host_input_row_offsets.to(device0)
 
-        data_parallel_splits = compute_data_parallel_splits(replica_batches)
+        data_parallel_splits = compute_data_parallel_splits(
+            replica_batches, device0, pinned
+        )
 
         return DeepseekV3Inputs(
             tokens=tokens,
@@ -628,8 +638,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=Tensor.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
-            ).to(self.devices[0]),
-            data_parallel_splits=Tensor.from_numpy(data_parallel_splits),
+            ).to(device0),
+            data_parallel_splits=data_parallel_splits,
         )
 
     def prepare_next_token_inputs(

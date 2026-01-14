@@ -297,41 +297,66 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
         context_batch = flatten2d(replica_batches)
 
+        # Allocate the model inputs on pinned memory for faster h2d
+        # transfer speeds. If model is on host, then fall back to normal
+        # pageable memory. We initialize these empty max tensors by exporting
+        # to numpy over dlpack and using numpy methods.
+        device0 = self.devices[0]
+        pinned = not device0.is_host
+
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
-        input_row_offsets = np.cumsum(
+        input_row_offsets = Tensor(
+            shape=(len(context_batch) + 1,),
+            dtype=DType.uint32,
+            device=device0,
+            pinned=pinned,
+        )
+        input_row_offsets_np = input_row_offsets.to_numpy()
+        np.cumsum(
             [0] + [ctx.tokens.active_length for ctx in context_batch],
             dtype=np.uint32,
+            out=input_row_offsets_np,
+        )
+
+        # return_n_logits_tensor does not need to be pinned since it is not
+        # copied to the device.
+        return_n_logits_tensor = Tensor.from_numpy(
+            np.array([return_n_logits], dtype=np.int64)
         )
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = Tensor.from_numpy(
-            np.concatenate([ctx.tokens.active for ctx in context_batch])
-        ).to(self.devices[0])
+        num_tokens = sum(ctx.tokens.active_length for ctx in context_batch)
+        tokens = Tensor(
+            shape=(num_tokens,),
+            dtype=DType.int64,
+            device=device0,
+            pinned=pinned,
+        )
+        np.concatenate(
+            [ctx.tokens.active for ctx in context_batch], out=tokens.to_numpy()
+        )
 
         # Constructs splits for the data parallel execution.
         if dp > 1:
-            data_parallel_splits = Tensor.from_numpy(
-                compute_data_parallel_splits(replica_batches)
+            data_parallel_splits = compute_data_parallel_splits(
+                replica_batches, device0, pinned
             )
         else:
             data_parallel_splits = None
 
         inputs = Llama3Inputs(
-            tokens=tokens,
-            input_row_offsets=Tensor.from_numpy(input_row_offsets).to(
-                self.devices[0]
-            ),
+            tokens=tokens.to(device0),
+            input_row_offsets=input_row_offsets.to(device0),
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Tensor.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
+            return_n_logits=return_n_logits_tensor,
             data_parallel_splits=data_parallel_splits,
         )
 
         # Map model names to LoRA graph inputs
         if self._lora_manager:
+            # TODO: Move LORA graph inputs to pinned memory
             (
                 lora_ids,
                 lora_ranks,
@@ -342,7 +367,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
                 lora_ids_kv,
                 lora_grouped_offsets_kv,
             ) = self._lora_manager.get_lora_graph_inputs(
-                context_batch, input_row_offsets, self.devices[0]
+                context_batch, input_row_offsets_np, self.devices[0]
             )
 
             inputs.lora_ids = lora_ids
