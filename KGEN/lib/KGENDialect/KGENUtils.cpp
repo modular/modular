@@ -1602,10 +1602,11 @@ KGEN::parseStructDefFields(AsmParser &p,
   MLIRContext *ctx = p.getContext();
   return p.parseCommaSeparatedList([&]() {
     StringAttr name;
-    Type type;
-    if (parseParamName(p, name) || p.parseColon() || parseKGENType(p, type))
+    TypedAttr typeValue;
+    if (parseParamName(p, name) || p.parseColon() ||
+        parseTypeParamValue(p, typeValue))
       return failure();
-    fields.push_back(StructDefFieldAttr::get(ctx, name, type));
+    fields.push_back(StructDefFieldAttr::get(ctx, name, typeValue));
     return mlir::success();
   });
 }
@@ -1615,7 +1616,7 @@ void KGEN::printStructDefFields(AsmPrinter &p,
   llvm::interleaveComma(fields, p, [&](StructDefFieldAttr field) {
     printParamName(p, field.getName());
     p << ": ";
-    printKGENType(p, field.getType());
+    printTypeParamValue(p, field.getTypeValue());
   });
 }
 

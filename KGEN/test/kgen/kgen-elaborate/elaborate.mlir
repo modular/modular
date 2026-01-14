@@ -1973,15 +1973,18 @@ kgen.generator export @load_from_mem() {
 
 // Test struct generator elaboration.
 
+// CHECK: #[[TYPEVALUE_INDEX:.+]] = #kgen.type<typevalue<#kgen.instref<@"LinkedList,T=index">>, pointer<none>> : !kgen.type
+// CHECK: #[[TYPEVALUE_NONE:.+]] = #kgen.type<typevalue<#kgen.instref<@"LinkedList,T=none">>, pointer<none>> : !kgen.type
+
 // CHECK-LABEL: kgen.struct.instance @"LinkedList,T=index"
-// CHECK-SAME:    struct_inst<"LinkedList"[T]<:type index>(data: index, next: typevalue<#kgen.instref<@"LinkedList,T=index">>)>
+// CHECK-SAME:    struct_inst<"LinkedList"[T]<:type index>(data: index, next: #[[TYPEVALUE_INDEX]])>
 
 // CHECK-LABEL: kgen.struct.instance @"LinkedList,T=none"
-// CHECK-SAME:    struct_inst<"LinkedList"[T]<:type none>(data: none, next: typevalue<#kgen.instref<@"LinkedList,T=none">>)>
+// CHECK-SAME:    struct_inst<"LinkedList"[T]<:type none>(data: none, next: #[[TYPEVALUE_NONE]])>
 kgen.struct.generator @"LinkedList"<T: type> = struct_inst<
   "LinkedList"[T]<:type T>(
-    data: typevalue<T>,
-    next: typevalue<#kgen.genref<@LinkedList<:type T>>>
+    data: [typevalue<T>, !kgen.param<T>],
+    next: [typevalue<#kgen.genref<@LinkedList<:type T>>>, pointer<none>]
   )>
 {
   kgen.conformance @Boolable {
