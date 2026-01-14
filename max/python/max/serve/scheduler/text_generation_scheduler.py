@@ -25,7 +25,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
+from max.interfaces.queue import drain_queue
 from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig, get_paged_manager
@@ -53,7 +53,6 @@ class TokenGenerationScheduler(Scheduler):
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
         paged_manager: PagedKVCacheManager | None = None,
-        offload_queue_draining: bool = False,
         support_empty_batches: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
@@ -76,58 +75,22 @@ class TokenGenerationScheduler(Scheduler):
             * 2
         )
 
-        # We are parameterizing the offload of queue draining to allow for
-        # the use case where we want to drain the queue in the main thread.
-        # This is useful for debugging and testing purposes.
-        self._queue_drainer: (
-            BackgroundQueueDrainer[TextContext | TextAndVisionContext] | None
-        ) = None
-        if offload_queue_draining:
-            # I am setting this to drain at max batch size ce * 2, to ensure we do not drain
-            # forever, but have more than enough to form full batches.
-            self._queue_drainer = BackgroundQueueDrainer[
-                TextContext | TextAndVisionContext
-            ](
-                self.request_queue,
-                max_items_per_drain=self.max_items_per_drain,
-            )
-
     @traced
     def _retrieve_pending_requests(self) -> None:
         """
-        Initiates retrieval of pending requests from the request queue.
+        Retrieves pending requests from the request queue.
 
-        If a background retrieval task is already running, this method returns immediately.
-        Otherwise, it submits a background task to drain the request queue and processes
-        any contexts that have already been retrieved and are pending.
+        This method drains the request queue synchronously and processes
+        any contexts that are available.
 
         This method is responsible for ensuring that new requests are continuously
         fetched and made available for batching and scheduling.
         """
         with Tracer("drain_queue"):
-            # Collect items that were already drained by the background
-            # drainer while the GPU was running.
-            items: list[TextContext | TextAndVisionContext]
-            if self._queue_drainer is not None:
-                items = self._queue_drainer.retrieve_items()
-
-                # If there are no outstanding CE requests, we want to seed the
-                # system as quickly as possible and avoid latency from the
-                # background thread and GIL handoffs. In that case we perform a
-                # blocking drain on the main thread.
-                if len(self.batch_constructor.all_ce_reqs) == 0:
-                    items.extend(
-                        drain_queue(
-                            self.request_queue,
-                            self.max_items_per_drain,
-                        )
-                    )
-            else:
-                # No background drainer configured, drain synchronously.
-                items = drain_queue(
-                    self.request_queue,
-                    max_items=self.max_items_per_drain,
-                )
+            items = drain_queue(
+                self.request_queue,
+                max_items=self.max_items_per_drain,
+            )
 
         with Tracer(f"adding_to_batch_constructor: {len(items)} items"):
             for context in items:
@@ -187,14 +150,8 @@ class TokenGenerationScheduler(Scheduler):
 
     def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Returns the number of terminated requests."""
-        # Execute the batch. When a background drainer is configured we
-        # overlap draining of the request queue with GPU execution; otherwise
-        # we simply run the pipeline synchronously.
-        if self._queue_drainer is not None:
-            with self._queue_drainer.drain_while_gpu():
-                responses = self.pipeline.execute(inputs)
-        else:
-            responses = self.pipeline.execute(inputs)
+        # Execute the batch.
+        responses = self.pipeline.execute(inputs)
 
         # Advance the requests and collect the invalid request IDs
         for (
@@ -250,6 +207,5 @@ def load_text_generation_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
-        offload_queue_draining=pipeline_config.experimental_background_queue,
         support_empty_batches=pipeline_config.execute_empty_batches,
     )

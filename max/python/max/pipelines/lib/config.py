@@ -117,12 +117,6 @@ class PipelineConfig(ConfigFileModel):
     you know what you are doing.
     """
 
-    experimental_background_queue: bool = Field(default=False)
-    """When enabled, offloads queue draining to a background thread for improved performance.
-
-    This is an experimental flag. Use with caution.
-    """
-
     enable_chunked_prefill: bool = Field(default=True)
     """Enable chunked prefill to split context encoding requests into multiple chunks
     based on 'prefill_chunk_size'."""

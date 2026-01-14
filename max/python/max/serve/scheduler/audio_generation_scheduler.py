@@ -31,7 +31,7 @@ from max.interfaces import (
     Scheduler,
     SchedulerResult,
 )
-from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
+from max.interfaces.queue import drain_queue
 from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TTSContext
 from max.pipelines.lib import LoRAManager
@@ -248,7 +248,6 @@ class AudioGenerationScheduler(Scheduler):
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
         paged_manager: PagedKVCacheManager,
-        offload_queue_draining: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -282,23 +281,11 @@ class AudioGenerationScheduler(Scheduler):
 
         self._prev_num_steps = 0
 
-        # Initialize the background queue drainer
-        self._queue_drainer: BackgroundQueueDrainer[TTSContext] | None = None
-        if offload_queue_draining:
-            self._queue_drainer = BackgroundQueueDrainer[TTSContext](
-                self.request_queue,
-                max_items_per_drain=self.scheduler_config.max_batch_size * 2,
-            )
-
     def _retrieve_pending_requests(self) -> None:
-        if self._queue_drainer is not None:
-            self._queue_drainer.start_draining()
-            items = self._queue_drainer.retrieve_items()
-        else:
-            items = drain_queue(
-                self.request_queue,
-                max_items=self.scheduler_config.max_batch_size * 2,
-            )
+        items = drain_queue(
+            self.request_queue,
+            max_items=self.scheduler_config.max_batch_size * 2,
+        )
 
         for context in items:
             self.pending_reqs.append(context)
