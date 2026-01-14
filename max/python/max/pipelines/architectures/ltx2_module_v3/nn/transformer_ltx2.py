@@ -43,8 +43,8 @@ logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
 def apply_interleaved_rotary_emb(
-    x: torch.Tensor, freqs: tuple[torch.Tensor, torch.Tensor]
-) -> torch.Tensor:
+    x: Tensor, freqs: tuple[Tensor, Tensor]
+) -> Tensor:
     cos, sin = freqs
     x_real, x_imag = x.unflatten(2, (-1, 2)).unbind(-1)  # [B, S, C // 2]
     x_rotated = torch.stack([-x_imag, x_real], dim=-1).flatten(2)
@@ -53,8 +53,8 @@ def apply_interleaved_rotary_emb(
 
 
 def apply_split_rotary_emb(
-    x: torch.Tensor, freqs: tuple[torch.Tensor, torch.Tensor]
-) -> torch.Tensor:
+    x: Tensor, freqs: tuple[Tensor, Tensor]
+) -> Tensor:
     cos, sin = freqs
 
     x_dtype = x.dtype
@@ -107,15 +107,15 @@ class AudioVisualModelOutput(BaseOutput):
     Holds the output of an audiovisual model which produces both visual (e.g. video) and audio outputs.
 
     Args:
-        sample (`torch.Tensor` of shape `(batch_size, num_channels, num_frames, height, width)`):
+        sample (`Tensor` of shape `(batch_size, num_channels, num_frames, height, width)`):
             The hidden states output conditioned on the `encoder_hidden_states` input, representing the visual output
             of the model. This is typically a video (spatiotemporal) output.
-        audio_sample (`torch.Tensor` of shape `(batch_size, TODO)`):
+        audio_sample (`Tensor` of shape `(batch_size, TODO)`):
             The audio output of the audiovisual model.
     """
 
-    sample: "torch.Tensor"
-    audio_sample: "torch.Tensor"
+    sample: "Tensor"
+    audio_sample: "Tensor"
 
 
 class LTX2AdaLayerNormSingle(nn.Module):
@@ -150,19 +150,19 @@ class LTX2AdaLayerNormSingle(nn.Module):
             use_additional_conditions=use_additional_conditions,
         )
 
-        self.silu = nn.SiLU()
+        self.silu = SiLU()
         self.linear = nn.Linear(
             embedding_dim, self.num_mod_params * embedding_dim, bias=True
         )
 
     def forward(
         self,
-        timestep: torch.Tensor,
-        added_cond_kwargs: dict[str, torch.Tensor] | None = None,
+        timestep: Tensor,
+        added_cond_kwargs: dict[str, Tensor] | None = None,
         batch_size: int | None = None,
         hidden_dtype: torch.dtype | None = None,
     ) -> tuple[
-        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
+        Tensor, Tensor, Tensor, Tensor, Tensor
     ]:
         # No modulation happening here.
         added_cond_kwargs = added_cond_kwargs or {
@@ -197,12 +197,12 @@ class LTX2AudioVideoAttnProcessor:
     def __call__(
         self,
         attn: "LTX2Attention",
-        hidden_states: torch.Tensor,
-        encoder_hidden_states: torch.Tensor | None = None,
-        attention_mask: torch.Tensor | None = None,
-        query_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
-        key_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
-    ) -> torch.Tensor:
+        hidden_states: Tensor,
+        encoder_hidden_states: Tensor | None = None,
+        attention_mask: Tensor | None = None,
+        query_rotary_emb: tuple[Tensor, Tensor] | None = None,
+        key_rotary_emb: tuple[Tensor, Tensor] | None = None,
+    ) -> Tensor:
         batch_size, sequence_length, _ = (
             hidden_states.shape
             if encoder_hidden_states is None
@@ -213,7 +213,7 @@ class LTX2AudioVideoAttnProcessor:
             attention_mask = attn.prepare_attention_mask(
                 attention_mask, sequence_length, batch_size
             )
-            attention_mask = attention_mask.view(
+            attention_mask = attention_mask.reshape(
                 batch_size, attn.heads, -1, attention_mask.shape[-1]
             )
 
@@ -315,26 +315,26 @@ class LTX2Attention(torch.nn.Module, AttentionModuleMixin):
         self.heads = heads
         self.rope_type = rope_type
 
-        self.norm_q = torch.nn.RMSNorm(
+        self.norm_q = nn.RMSNorm(
             dim_head * heads,
             eps=norm_eps,
             elementwise_affine=norm_elementwise_affine,
         )
-        self.norm_k = torch.nn.RMSNorm(
+        self.norm_k = nn.RMSNorm(
             dim_head * kv_heads,
             eps=norm_eps,
             elementwise_affine=norm_elementwise_affine,
         )
-        self.to_q = torch.nn.Linear(query_dim, self.inner_dim, bias=bias)
-        self.to_k = torch.nn.Linear(
+        self.to_q = nn.Linear(query_dim, self.inner_dim, bias=bias)
+        self.to_k = nn.Linear(
             self.cross_attention_dim, self.inner_kv_dim, bias=bias
         )
-        self.to_v = torch.nn.Linear(
+        self.to_v = nn.Linear(
             self.cross_attention_dim, self.inner_kv_dim, bias=bias
         )
         self.to_out = torch.nn.ModuleList([])
         self.to_out.append(
-            torch.nn.Linear(self.inner_dim, self.out_dim, bias=out_bias)
+            nn.Linear(self.inner_dim, self.out_dim, bias=out_bias)
         )
         self.to_out.append(torch.nn.Dropout(dropout))
 
@@ -344,13 +344,13 @@ class LTX2Attention(torch.nn.Module, AttentionModuleMixin):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        encoder_hidden_states: torch.Tensor | None = None,
-        attention_mask: torch.Tensor | None = None,
-        query_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
-        key_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
+        hidden_states: Tensor,
+        encoder_hidden_states: Tensor | None = None,
+        attention_mask: Tensor | None = None,
+        query_rotary_emb: tuple[Tensor, Tensor] | None = None,
+        key_rotary_emb: tuple[Tensor, Tensor] | None = None,
         **kwargs,
-    ) -> torch.Tensor:
+    ) -> Tensor:
         attn_parameters = set(
             inspect.signature(self.processor.__call__).parameters.keys()
         )
@@ -536,25 +536,25 @@ class LTX2VideoTransformerBlock(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        audio_hidden_states: torch.Tensor,
-        encoder_hidden_states: torch.Tensor,
-        audio_encoder_hidden_states: torch.Tensor,
-        temb: torch.Tensor,
-        temb_audio: torch.Tensor,
-        temb_ca_scale_shift: torch.Tensor,
-        temb_ca_audio_scale_shift: torch.Tensor,
-        temb_ca_gate: torch.Tensor,
-        temb_ca_audio_gate: torch.Tensor,
-        video_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
-        audio_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
-        ca_video_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
-        ca_audio_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
-        encoder_attention_mask: torch.Tensor | None = None,
-        audio_encoder_attention_mask: torch.Tensor | None = None,
-        a2v_cross_attention_mask: torch.Tensor | None = None,
-        v2a_cross_attention_mask: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+        hidden_states: Tensor,
+        audio_hidden_states: Tensor,
+        encoder_hidden_states: Tensor,
+        audio_encoder_hidden_states: Tensor,
+        temb: Tensor,
+        temb_audio: Tensor,
+        temb_ca_scale_shift: Tensor,
+        temb_ca_audio_scale_shift: Tensor,
+        temb_ca_gate: Tensor,
+        temb_ca_audio_gate: Tensor,
+        video_rotary_emb: tuple[Tensor, Tensor] | None = None,
+        audio_rotary_emb: tuple[Tensor, Tensor] | None = None,
+        ca_video_rotary_emb: tuple[Tensor, Tensor] | None = None,
+        ca_audio_rotary_emb: tuple[Tensor, Tensor] | None = None,
+        encoder_attention_mask: Tensor | None = None,
+        audio_encoder_attention_mask: Tensor | None = None,
+        a2v_cross_attention_mask: Tensor | None = None,
+        v2a_cross_attention_mask: Tensor | None = None,
+    ) -> Tensor:
         batch_size = hidden_states.size(0)
 
         # 1. Video and Audio Self-Attention
@@ -819,7 +819,7 @@ class LTX2AudioVideoRotaryPosEmbed(nn.Module):
         width: int,
         device: torch.device,
         fps: float = 25.0,
-    ) -> torch.Tensor:
+    ) -> Tensor:
         """
         Create per-dimension bounds [inclusive start, exclusive end) for each patch with respect to the original pixel
         space video grid (num_frames, height, width). This will ultimately have shape (batch_size, 3, num_patches, 2)
@@ -840,31 +840,31 @@ class LTX2AudioVideoRotaryPosEmbed(nn.Module):
                 Device on which to create the video grid.
 
         Returns:
-            `torch.Tensor`:
+            `Tensor`:
                 Per-dimension patch boundaries tensor of shape [batch_size, 3, num_patches, 2].
         """
 
         # 1. Generate grid coordinates for each spatiotemporal dimension (frames, height, width)
         # Always compute rope in fp32
-        grid_f = torch.arange(
+        grid_f = Tensor.arange(
             start=0,
             end=num_frames,
             step=self.patch_size_t,
-            dtype=torch.float32,
+            dtype=DType.float32,
             device=device,
         )
-        grid_h = torch.arange(
+        grid_h = Tensor.arange(
             start=0,
             end=height,
             step=self.patch_size,
-            dtype=torch.float32,
+            dtype=DType.float32,
             device=device,
         )
-        grid_w = torch.arange(
+        grid_w = Tensor.arange(
             start=0,
             end=width,
             step=self.patch_size,
-            dtype=torch.float32,
+            dtype=DType.float32,
             device=device,
         )
         # indexing='ij' ensures that the dimensions are kept in order as (frames, height, width)
@@ -878,7 +878,7 @@ class LTX2AudioVideoRotaryPosEmbed(nn.Module):
         patch_size_delta = torch.tensor(
             patch_size, dtype=grid.dtype, device=grid.device
         )
-        patch_ends = grid + patch_size_delta.view(3, 1, 1, 1)
+        patch_ends = grid + patch_size_delta.reshape(3, 1, 1, 1)
 
         # Combine the start (grid) and end (patch_ends) coordinates along new trailing dimension
         latent_coords = torch.stack(
@@ -896,7 +896,7 @@ class LTX2AudioVideoRotaryPosEmbed(nn.Module):
         broadcast_shape = [1] * latent_coords.ndim
         broadcast_shape[1] = -1  # This is the (frame, height, width) dim
         # Apply per-axis scaling to convert latent coordinates to pixel space coordinates
-        pixel_coords = latent_coords * scale_tensor.view(*broadcast_shape)
+        pixel_coords = latent_coords * scale_tensor.reshape(*broadcast_shape)
 
         # As the VAE temporal stride for the first frame is 1 instead of self.vae_scale_factors[0], we need to shift
         # and clamp to keep the first-frame timestamps causal and non-negative.
@@ -916,7 +916,7 @@ class LTX2AudioVideoRotaryPosEmbed(nn.Module):
         device: torch.device,
         fps: float = 25.0,
         shift: int = 0,
-    ) -> torch.Tensor:
+    ) -> Tensor:
         """
         Create per-dimension bounds [inclusive start, exclusive end) of start and end timestamps for each latent frame.
         This will ultimately have shape (batch_size, 3, num_patches, 2) where
@@ -935,17 +935,17 @@ class LTX2AudioVideoRotaryPosEmbed(nn.Module):
                 respect to the same underlying latent grid.
 
         Returns:
-            `torch.Tensor`:
+            `Tensor`:
                 Per-dimension patch boundaries tensor of shape [batch_size, 1, num_patches, 2].
         """
 
         # 1. Generate coordinates in the frame (time) dimension.
         # Always compute rope in fp32
-        grid_f = torch.arange(
+        grid_f = Tensor.arange(
             start=shift,
             end=num_frames + shift,
             step=self.patch_size_t,
-            dtype=torch.float32,
+            dtype=DType.float32,
             device=device,
         )
 
@@ -986,9 +986,9 @@ class LTX2AudioVideoRotaryPosEmbed(nn.Module):
 
     def forward(
         self,
-        coords: torch.Tensor,
+        coords: Tensor,
         device: str | torch.device | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[Tensor, Tensor]:
         device = device or coords.device
 
         # Number of spatiotemporal dimensions (3 for video, 1 (temporal) for audio and cross attn)
@@ -1019,7 +1019,7 @@ class LTX2AudioVideoRotaryPosEmbed(nn.Module):
         num_rope_elems = num_pos_dims * 2
 
         # 3. Create a 1D grid of frequencies for RoPE
-        freqs_dtype = torch.float64 if self.double_precision else torch.float32
+        freqs_dtype = torch.float64 if self.double_precision else DType.float32
         pow_indices = torch.pow(
             self.theta,
             torch.linspace(
@@ -1030,7 +1030,7 @@ class LTX2AudioVideoRotaryPosEmbed(nn.Module):
                 device=device,
             ),
         )
-        freqs = (pow_indices * torch.pi / 2.0).to(dtype=torch.float32)
+        freqs = (pow_indices * torch.pi / 2.0).to(dtype=DType.float32)
 
         # 4. Tensor-vector outer product between pos ids tensor of shape (B, 3, num_patches) and freqs vector of shape
         # (self.dim // num_elems,)
@@ -1055,8 +1055,8 @@ class LTX2AudioVideoRotaryPosEmbed(nn.Module):
                 sin_padding = torch.zeros_like(
                     cos_freqs[:, :, : self.dim % num_rope_elems]
                 )
-                cos_freqs = torch.cat([cos_padding, cos_freqs], dim=-1)
-                sin_freqs = torch.cat([sin_padding, sin_freqs], dim=-1)
+                cos_freqs = F.concat([cos_padding, cos_freqs], dim=-1)
+                sin_freqs = F.concat([sin_padding, sin_freqs], dim=-1)
 
         elif self.rope_type == "split":
             expected_freqs = self.dim // 2
@@ -1069,8 +1069,8 @@ class LTX2AudioVideoRotaryPosEmbed(nn.Module):
                 cos_padding = torch.ones_like(cos_freq[:, :, :pad_size])
                 sin_padding = torch.zeros_like(sin_freq[:, :, :pad_size])
 
-                cos_freq = torch.concatenate([cos_padding, cos_freq], axis=-1)
-                sin_freq = torch.concatenate([sin_padding, sin_freq], axis=-1)
+                cos_freq = F.concat([cos_padding, cos_freq], axis=-1)
+                sin_freq = F.concat([sin_padding, sin_freq], axis=-1)
 
             # Reshape freqs to be compatible with multi-head attention
             b = cos_freq.shape[0]
@@ -1349,33 +1349,33 @@ class LTX2VideoTransformer3DModel(
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        audio_hidden_states: torch.Tensor,
-        encoder_hidden_states: torch.Tensor,
-        audio_encoder_hidden_states: torch.Tensor,
+        hidden_states: Tensor,
+        audio_hidden_states: Tensor,
+        encoder_hidden_states: Tensor,
+        audio_encoder_hidden_states: Tensor,
         timestep: torch.LongTensor,
         audio_timestep: torch.LongTensor | None = None,
-        encoder_attention_mask: torch.Tensor | None = None,
-        audio_encoder_attention_mask: torch.Tensor | None = None,
+        encoder_attention_mask: Tensor | None = None,
+        audio_encoder_attention_mask: Tensor | None = None,
         num_frames: int | None = None,
         height: int | None = None,
         width: int | None = None,
         fps: float = 25.0,
         audio_num_frames: int | None = None,
-        video_coords: torch.Tensor | None = None,
-        audio_coords: torch.Tensor | None = None,
+        video_coords: Tensor | None = None,
+        audio_coords: Tensor | None = None,
         attention_kwargs: dict[str, Any] | None = None,
         return_dict: bool = True,
-    ) -> torch.Tensor:
+    ) -> Tensor:
         """
         Forward pass for LTX-2.0 audiovisual video transformer.
 
         Args:
-            hidden_states (`torch.Tensor`):
+            hidden_states (`Tensor`):
                 Input patchified video latents of shape (batch_size, num_video_tokens, in_channels).
-            audio_hidden_states (`torch.Tensor`):
+            audio_hidden_states (`Tensor`):
                 Input patchified audio latents of shape (batch_size, num_audio_tokens, audio_in_channels).
-            encoder_hidden_states (`torch.Tensor`):
+            encoder_hidden_states (`Tensor`):
                 Input text embeddings of shape TODO.
             TODO for the rest.
 
@@ -1479,8 +1479,8 @@ class LTX2VideoTransformer3DModel(
             batch_size=batch_size,
             hidden_dtype=hidden_states.dtype,
         )
-        temb = temb.view(batch_size, -1, temb.size(-1))
-        embedded_timestep = embedded_timestep.view(
+        temb = temb.reshape(batch_size, -1, temb.size(-1))
+        embedded_timestep = embedded_timestep.reshape(
             batch_size, -1, embedded_timestep.size(-1)
         )
 
@@ -1489,8 +1489,8 @@ class LTX2VideoTransformer3DModel(
             batch_size=batch_size,
             hidden_dtype=audio_hidden_states.dtype,
         )
-        temb_audio = temb_audio.view(batch_size, -1, temb_audio.size(-1))
-        audio_embedded_timestep = audio_embedded_timestep.view(
+        temb_audio = temb_audio.reshape(batch_size, -1, temb_audio.size(-1))
+        audio_embedded_timestep = audio_embedded_timestep.reshape(
             batch_size, -1, audio_embedded_timestep.size(-1)
         )
 
@@ -1505,10 +1505,10 @@ class LTX2VideoTransformer3DModel(
             batch_size=batch_size,
             hidden_dtype=hidden_states.dtype,
         )
-        video_cross_attn_scale_shift = video_cross_attn_scale_shift.view(
+        video_cross_attn_scale_shift = video_cross_attn_scale_shift.reshape(
             batch_size, -1, video_cross_attn_scale_shift.shape[-1]
         )
-        video_cross_attn_a2v_gate = video_cross_attn_a2v_gate.view(
+        video_cross_attn_a2v_gate = video_cross_attn_a2v_gate.reshape(
             batch_size, -1, video_cross_attn_a2v_gate.shape[-1]
         )
 
@@ -1522,23 +1522,23 @@ class LTX2VideoTransformer3DModel(
             batch_size=batch_size,
             hidden_dtype=audio_hidden_states.dtype,
         )
-        audio_cross_attn_scale_shift = audio_cross_attn_scale_shift.view(
+        audio_cross_attn_scale_shift = audio_cross_attn_scale_shift.reshape(
             batch_size, -1, audio_cross_attn_scale_shift.shape[-1]
         )
-        audio_cross_attn_v2a_gate = audio_cross_attn_v2a_gate.view(
+        audio_cross_attn_v2a_gate = audio_cross_attn_v2a_gate.reshape(
             batch_size, -1, audio_cross_attn_v2a_gate.shape[-1]
         )
 
         # 4. Prepare prompt embeddings
         encoder_hidden_states = self.caption_projection(encoder_hidden_states)
-        encoder_hidden_states = encoder_hidden_states.view(
+        encoder_hidden_states = encoder_hidden_states.reshape(
             batch_size, -1, hidden_states.size(-1)
         )
 
         audio_encoder_hidden_states = self.audio_caption_projection(
             audio_encoder_hidden_states
         )
-        audio_encoder_hidden_states = audio_encoder_hidden_states.view(
+        audio_encoder_hidden_states = audio_encoder_hidden_states.reshape(
             batch_size, -1, audio_hidden_states.size(-1)
         )
 

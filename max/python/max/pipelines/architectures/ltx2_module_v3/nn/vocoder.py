@@ -63,7 +63,7 @@ class ResBlock(nn.Module):
             ]
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         for conv1, conv2 in zip(self.convs1, self.convs2, strict=False):
             xt = F.leaky_relu(x, negative_slope=self.negative_slope)
             xt = conv1(xt)
@@ -149,13 +149,13 @@ class LTX2Vocoder(ModelMixin, ConfigMixin):
         )
 
     def forward(
-        self, hidden_states: torch.Tensor, time_last: bool = False
-    ) -> torch.Tensor:
+        self, hidden_states: Tensor, time_last: bool = False
+    ) -> Tensor:
         r"""
         Forward pass of the vocoder.
 
         Args:
-            hidden_states (`torch.Tensor`):
+            hidden_states (`Tensor`):
                 Input Mel spectrogram tensor of shape `(batch_size, num_channels, time, num_mel_bins)` if `time_last`
                 is `False` (the default) or shape `(batch_size, num_channels, num_mel_bins, time)` if `time_last` is
                 `True`.
@@ -163,7 +163,7 @@ class LTX2Vocoder(ModelMixin, ConfigMixin):
                 Whether the last dimension of the input is the time/frame dimension or the Mel bins dimension.
 
         Returns:
-            `torch.Tensor`:
+            `Tensor`:
                 Audio waveform tensor of shape (batch_size, out_channels, audio_length)
         """
 
@@ -195,6 +195,6 @@ class LTX2Vocoder(ModelMixin, ConfigMixin):
         # 0.01 (whereas the others usually use a slope of 0.1). Not sure if this is intended
         hidden_states = F.leaky_relu(hidden_states, negative_slope=0.01)
         hidden_states = self.conv_out(hidden_states)
-        hidden_states = torch.tanh(hidden_states)
+        hidden_states = F.tanh(hidden_states)
 
         return hidden_states

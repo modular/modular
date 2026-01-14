@@ -46,8 +46,8 @@ class PerChannelRMSNorm(nn.Module):
         self.eps = eps
 
     def forward(
-        self, x: torch.Tensor, channel_dim: int | None = None
-    ) -> torch.Tensor:
+        self, x: Tensor, channel_dim: int | None = None
+    ) -> Tensor:
         """
         Apply RMS normalization along the configured dimension.
         """
@@ -55,7 +55,7 @@ class PerChannelRMSNorm(nn.Module):
         # Compute mean of squared values along `dim`, keep dimensions for broadcasting.
         mean_sq = torch.mean(x**2, dim=self.channel_dim, keepdim=True)
         # Normalize by the root-mean-square (RMS).
-        rms = torch.sqrt(mean_sq + self.eps)
+        rms = F.sqrt(mean_sq + self.eps)
         return x / rms
 
 
@@ -101,15 +101,15 @@ class LTX2VideoCausalConv3d(nn.Module):
         )
 
     def forward(
-        self, hidden_states: torch.Tensor, causal: bool = True
-    ) -> torch.Tensor:
+        self, hidden_states: Tensor, causal: bool = True
+    ) -> Tensor:
         time_kernel_size = self.kernel_size[0]
 
         if causal:
             pad_left = hidden_states[:, :, :1, :, :].repeat(
                 (1, 1, time_kernel_size - 1, 1, 1)
             )
-            hidden_states = torch.concatenate([pad_left, hidden_states], dim=2)
+            hidden_states = F.concat([pad_left, hidden_states], dim=2)
         else:
             pad_left = hidden_states[:, :, :1, :, :].repeat(
                 (1, 1, (time_kernel_size - 1) // 2, 1, 1)
@@ -117,7 +117,7 @@ class LTX2VideoCausalConv3d(nn.Module):
             pad_right = hidden_states[:, :, -1:, :, :].repeat(
                 (1, 1, (time_kernel_size - 1) // 2, 1, 1)
             )
-            hidden_states = torch.concatenate(
+            hidden_states = F.concat(
                 [pad_left, hidden_states, pad_right], dim=2
             )
 
@@ -201,10 +201,10 @@ class LTX2VideoResnetBlock3d(nn.Module):
         self.per_channel_scale2 = None
         if inject_noise:
             self.per_channel_scale1 = nn.Parameter(
-                torch.zeros(in_channels, 1, 1)
+                Tensor.zeros(in_channels, 1, 1)
             )
             self.per_channel_scale2 = nn.Parameter(
-                torch.zeros(in_channels, 1, 1)
+                Tensor.zeros(in_channels, 1, 1)
             )
 
         self.scale_shift_table = None
@@ -215,11 +215,11 @@ class LTX2VideoResnetBlock3d(nn.Module):
 
     def forward(
         self,
-        inputs: torch.Tensor,
-        temb: torch.Tensor | None = None,
+        inputs: Tensor,
+        temb: Tensor | None = None,
         generator: torch.Generator | None = None,
         causal: bool = True,
-    ) -> torch.Tensor:
+    ) -> Tensor:
         hidden_states = inputs
 
         hidden_states = self.norm1(hidden_states)
@@ -311,9 +311,9 @@ class LTXVideoDownsampler3d(nn.Module):
         )
 
     def forward(
-        self, hidden_states: torch.Tensor, causal: bool = True
-    ) -> torch.Tensor:
-        hidden_states = torch.cat(
+        self, hidden_states: Tensor, causal: bool = True
+    ) -> Tensor:
+        hidden_states = F.concat(
             [hidden_states[:, :, : self.stride[0] - 1], hidden_states], dim=2
         )
 
@@ -371,8 +371,8 @@ class LTXVideoUpsampler3d(nn.Module):
         )
 
     def forward(
-        self, hidden_states: torch.Tensor, causal: bool = True
-    ) -> torch.Tensor:
+        self, hidden_states: Tensor, causal: bool = True
+    ) -> Tensor:
         batch_size, num_channels, num_frames, height, width = (
             hidden_states.shape
         )
@@ -528,11 +528,11 @@ class LTX2VideoDownBlock3D(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        temb: torch.Tensor | None = None,
+        hidden_states: Tensor,
+        temb: Tensor | None = None,
         generator: torch.Generator | None = None,
         causal: bool = True,
-    ) -> torch.Tensor:
+    ) -> Tensor:
         r"""Forward method of the `LTXDownBlock3D` class."""
 
         for i, resnet in enumerate(self.resnets):
@@ -614,11 +614,11 @@ class LTX2VideoMidBlock3d(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        temb: torch.Tensor | None = None,
+        hidden_states: Tensor,
+        temb: Tensor | None = None,
         generator: torch.Generator | None = None,
         causal: bool = True,
-    ) -> torch.Tensor:
+    ) -> Tensor:
         r"""Forward method of the `LTXMidBlock3D` class."""
 
         if self.time_embedder is not None:
@@ -629,7 +629,7 @@ class LTX2VideoMidBlock3d(nn.Module):
                 batch_size=hidden_states.size(0),
                 hidden_dtype=hidden_states.dtype,
             )
-            temb = temb.view(hidden_states.size(0), -1, 1, 1, 1)
+            temb = temb.reshape(hidden_states.size(0), -1, 1, 1, 1)
 
         for i, resnet in enumerate(self.resnets):
             if torch.is_grad_enabled() and self.gradient_checkpointing:
@@ -743,11 +743,11 @@ class LTX2VideoUpBlock3d(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        temb: torch.Tensor | None = None,
+        hidden_states: Tensor,
+        temb: Tensor | None = None,
         generator: torch.Generator | None = None,
         causal: bool = True,
-    ) -> torch.Tensor:
+    ) -> Tensor:
         if self.conv_in is not None:
             hidden_states = self.conv_in(
                 hidden_states, temb, generator, causal=causal
@@ -761,7 +761,7 @@ class LTX2VideoUpBlock3d(nn.Module):
                 batch_size=hidden_states.size(0),
                 hidden_dtype=hidden_states.dtype,
             )
-            temb = temb.view(hidden_states.size(0), -1, 1, 1, 1)
+            temb = temb.reshape(hidden_states.size(0), -1, 1, 1, 1)
 
         if self.upsamplers is not None:
             for upsampler in self.upsamplers:
@@ -889,7 +889,7 @@ class LTX2VideoEncoder3d(nn.Module):
 
         # out
         self.norm_out = PerChannelRMSNorm()
-        self.conv_act = nn.SiLU()
+        self.conv_act = SiLU()
         self.conv_out = LTX2VideoCausalConv3d(
             in_channels=output_channel,
             out_channels=out_channels + 1,
@@ -901,8 +901,8 @@ class LTX2VideoEncoder3d(nn.Module):
         self.gradient_checkpointing = False
 
     def forward(
-        self, hidden_states: torch.Tensor, causal: bool | None = None
-    ) -> torch.Tensor:
+        self, hidden_states: Tensor, causal: bool | None = None
+    ) -> Tensor:
         r"""The forward method of the `LTXVideoEncoder3d` class."""
 
         p = self.patch_size
@@ -955,7 +955,7 @@ class LTX2VideoEncoder3d(nn.Module):
         last_channel = last_channel.repeat(
             1, hidden_states.size(1) - 2, 1, 1, 1
         )
-        hidden_states = torch.cat([hidden_states, last_channel], dim=1)
+        hidden_states = F.concat([hidden_states, last_channel], dim=1)
 
         return hidden_states
 
@@ -1062,7 +1062,7 @@ class LTX2VideoDecoder3d(nn.Module):
 
         # out
         self.norm_out = PerChannelRMSNorm()
-        self.conv_act = nn.SiLU()
+        self.conv_act = SiLU()
         self.conv_out = LTX2VideoCausalConv3d(
             in_channels=output_channel,
             out_channels=self.out_channels,
@@ -1077,7 +1077,7 @@ class LTX2VideoDecoder3d(nn.Module):
         self.timestep_scale_multiplier = None
         if timestep_conditioning:
             self.timestep_scale_multiplier = nn.Parameter(
-                torch.tensor(1000.0, dtype=torch.float32)
+                torch.tensor(1000.0, dtype=DType.float32)
             )
             self.time_embedder = PixArtAlphaCombinedTimestepSizeEmbeddings(
                 output_channel * 2, 0
@@ -1090,10 +1090,10 @@ class LTX2VideoDecoder3d(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        temb: torch.Tensor | None = None,
+        hidden_states: Tensor,
+        temb: Tensor | None = None,
         causal: bool | None = None,
-    ) -> torch.Tensor:
+    ) -> Tensor:
         causal = causal or self.is_causal
 
         hidden_states = self.conv_in(hidden_states, causal=causal)
@@ -1126,7 +1126,7 @@ class LTX2VideoDecoder3d(nn.Module):
                 batch_size=hidden_states.size(0),
                 hidden_dtype=hidden_states.dtype,
             )
-            temb = temb.view(hidden_states.size(0), -1, 1, 1, 1).unflatten(
+            temb = temb.reshape(hidden_states.size(0), -1, 1, 1, 1).unflatten(
                 1, (2, -1)
             )
             temb = temb + self.scale_shift_table[None, ..., None, None, None]
@@ -1271,8 +1271,8 @@ class AutoencoderKLLTX2Video(
             spatial_padding_mode=decoder_spatial_padding_mode,
         )
 
-        latents_mean = torch.zeros((latent_channels,), requires_grad=False)
-        latents_std = torch.ones((latent_channels,), requires_grad=False)
+        latents_mean = Tensor.zeros((latent_channels,), requires_grad=False)
+        latents_std = Tensor.ones((latent_channels,), requires_grad=False)
         self.register_buffer("latents_mean", latents_mean, persistent=True)
         self.register_buffer("latents_std", latents_std, persistent=True)
 
@@ -1364,8 +1364,8 @@ class AutoencoderKLLTX2Video(
         )
 
     def _encode(
-        self, x: torch.Tensor, causal: bool | None = None
-    ) -> torch.Tensor:
+        self, x: Tensor, causal: bool | None = None
+    ) -> Tensor:
         batch_size, num_channels, num_frames, height, width = x.shape
 
         if (
@@ -1387,7 +1387,7 @@ class AutoencoderKLLTX2Video(
     @apply_forward_hook
     def encode(
         self,
-        x: torch.Tensor,
+        x: Tensor,
         causal: bool | None = None,
         return_dict: bool = True,
     ) -> AutoencoderKLOutput | tuple[DiagonalGaussianDistribution]:
@@ -1395,7 +1395,7 @@ class AutoencoderKLLTX2Video(
         Encode a batch of images into latents.
 
         Args:
-            x (`torch.Tensor`): Input batch of images.
+            x (`Tensor`): Input batch of images.
             return_dict (`bool`, *optional*, defaults to `True`):
                 Whether to return a [`~models.autoencoder_kl.AutoencoderKLOutput`] instead of a plain tuple.
 
@@ -1407,7 +1407,7 @@ class AutoencoderKLLTX2Video(
             encoded_slices = [
                 self._encode(x_slice, causal=causal) for x_slice in x.split(1)
             ]
-            h = torch.cat(encoded_slices)
+            h = F.concat(encoded_slices)
         else:
             h = self._encode(x, causal=causal)
         posterior = DiagonalGaussianDistribution(h)
@@ -1418,11 +1418,11 @@ class AutoencoderKLLTX2Video(
 
     def _decode(
         self,
-        z: torch.Tensor,
-        temb: torch.Tensor | None = None,
+        z: Tensor,
+        temb: Tensor | None = None,
         causal: bool | None = None,
         return_dict: bool = True,
-    ) -> DecoderOutput | torch.Tensor:
+    ) -> DecoderOutput | Tensor:
         batch_size, num_channels, num_frames, height, width = z.shape
         tile_latent_min_height = (
             self.tile_sample_min_height // self.spatial_compression_ratio
@@ -1459,16 +1459,16 @@ class AutoencoderKLLTX2Video(
     @apply_forward_hook
     def decode(
         self,
-        z: torch.Tensor,
-        temb: torch.Tensor | None = None,
+        z: Tensor,
+        temb: Tensor | None = None,
         causal: bool | None = None,
         return_dict: bool = True,
-    ) -> DecoderOutput | torch.Tensor:
+    ) -> DecoderOutput | Tensor:
         """
         Decode a batch of images.
 
         Args:
-            z (`torch.Tensor`): Input batch of latent vectors.
+            z (`Tensor`): Input batch of latent vectors.
             return_dict (`bool`, *optional*, defaults to `True`):
                 Whether to return a [`~models.vae.DecoderOutput`] instead of a plain tuple.
 
@@ -1488,7 +1488,7 @@ class AutoencoderKLLTX2Video(
                     self._decode(z_slice, causal=causal).sample
                     for z_slice in z.split(1)
                 ]
-            decoded = torch.cat(decoded_slices)
+            decoded = F.concat(decoded_slices)
         else:
             decoded = self._decode(z, temb, causal=causal).sample
 
@@ -1498,8 +1498,8 @@ class AutoencoderKLLTX2Video(
         return DecoderOutput(sample=decoded)
 
     def blend_v(
-        self, a: torch.Tensor, b: torch.Tensor, blend_extent: int
-    ) -> torch.Tensor:
+        self, a: Tensor, b: Tensor, blend_extent: int
+    ) -> Tensor:
         blend_extent = min(a.shape[3], b.shape[3], blend_extent)
         for y in range(blend_extent):
             b[:, :, :, y, :] = a[:, :, :, -blend_extent + y, :] * (
@@ -1508,8 +1508,8 @@ class AutoencoderKLLTX2Video(
         return b
 
     def blend_h(
-        self, a: torch.Tensor, b: torch.Tensor, blend_extent: int
-    ) -> torch.Tensor:
+        self, a: Tensor, b: Tensor, blend_extent: int
+    ) -> Tensor:
         blend_extent = min(a.shape[4], b.shape[4], blend_extent)
         for x in range(blend_extent):
             b[:, :, :, :, x] = a[:, :, :, :, -blend_extent + x] * (
@@ -1518,8 +1518,8 @@ class AutoencoderKLLTX2Video(
         return b
 
     def blend_t(
-        self, a: torch.Tensor, b: torch.Tensor, blend_extent: int
-    ) -> torch.Tensor:
+        self, a: Tensor, b: Tensor, blend_extent: int
+    ) -> Tensor:
         blend_extent = min(a.shape[-3], b.shape[-3], blend_extent)
         for x in range(blend_extent):
             b[:, :, x, :, :] = a[:, :, -blend_extent + x, :, :] * (
@@ -1528,15 +1528,15 @@ class AutoencoderKLLTX2Video(
         return b
 
     def tiled_encode(
-        self, x: torch.Tensor, causal: bool | None = None
-    ) -> torch.Tensor:
+        self, x: Tensor, causal: bool | None = None
+    ) -> Tensor:
         r"""Encode a batch of images using a tiled encoder.
 
         Args:
-            x (`torch.Tensor`): Input batch of videos.
+            x (`Tensor`): Input batch of videos.
 
         Returns:
-            `torch.Tensor`:
+            `Tensor`:
                 The latent representation of the encoded videos.
         """
         batch_size, num_channels, num_frames, height, width = x.shape
@@ -1598,25 +1598,25 @@ class AutoencoderKLLTX2Video(
                         :tile_latent_stride_width,
                     ]
                 )
-            result_rows.append(torch.cat(result_row, dim=4))
+            result_rows.append(F.concat(result_row, dim=4))
 
-        enc = torch.cat(result_rows, dim=3)[
+        enc = F.concat(result_rows, dim=3)[
             :, :, :, :latent_height, :latent_width
         ]
         return enc
 
     def tiled_decode(
         self,
-        z: torch.Tensor,
-        temb: torch.Tensor | None,
+        z: Tensor,
+        temb: Tensor | None,
         causal: bool | None = None,
         return_dict: bool = True,
-    ) -> DecoderOutput | torch.Tensor:
+    ) -> DecoderOutput | Tensor:
         r"""
         Decode a batch of images using a tiled decoder.
 
         Args:
-            z (`torch.Tensor`): Input batch of latent vectors.
+            z (`Tensor`): Input batch of latent vectors.
             return_dict (`bool`, *optional*, defaults to `True`):
                 Whether or not to return a [`~models.vae.DecoderOutput`] instead of a plain tuple.
 
@@ -1688,9 +1688,9 @@ class AutoencoderKLLTX2Video(
                         : self.tile_sample_stride_width,
                     ]
                 )
-            result_rows.append(torch.cat(result_row, dim=4))
+            result_rows.append(F.concat(result_row, dim=4))
 
-        dec = torch.cat(result_rows, dim=3)[
+        dec = F.concat(result_rows, dim=3)[
             :, :, :, :sample_height, :sample_width
         ]
 
@@ -1700,7 +1700,7 @@ class AutoencoderKLLTX2Video(
         return DecoderOutput(sample=dec)
 
     def _temporal_tiled_encode(
-        self, x: torch.Tensor, causal: bool | None = None
+        self, x: Tensor, causal: bool | None = None
     ) -> AutoencoderKLOutput:
         batch_size, num_channels, num_frames, height, width = x.shape
         latent_num_frames = (
@@ -1744,16 +1744,16 @@ class AutoencoderKLLTX2Video(
                     tile[:, :, : tile_latent_stride_num_frames + 1, :, :]
                 )
 
-        enc = torch.cat(result_row, dim=2)[:, :, :latent_num_frames]
+        enc = F.concat(result_row, dim=2)[:, :, :latent_num_frames]
         return enc
 
     def _temporal_tiled_decode(
         self,
-        z: torch.Tensor,
-        temb: torch.Tensor | None,
+        z: Tensor,
+        temb: Tensor | None,
         causal: bool | None = None,
         return_dict: bool = True,
-    ) -> DecoderOutput | torch.Tensor:
+    ) -> DecoderOutput | Tensor:
         batch_size, num_channels, num_frames, height, width = z.shape
         num_sample_frames = (
             num_frames - 1
@@ -1803,7 +1803,7 @@ class AutoencoderKLLTX2Video(
                     tile[:, :, : self.tile_sample_stride_num_frames + 1, :, :]
                 )
 
-        dec = torch.cat(result_row, dim=2)[:, :, :num_sample_frames]
+        dec = F.concat(result_row, dim=2)[:, :, :num_sample_frames]
 
         if not return_dict:
             return (dec,)
@@ -1811,14 +1811,14 @@ class AutoencoderKLLTX2Video(
 
     def forward(
         self,
-        sample: torch.Tensor,
-        temb: torch.Tensor | None = None,
+        sample: Tensor,
+        temb: Tensor | None = None,
         sample_posterior: bool = False,
         encoder_causal: bool | None = None,
         decoder_causal: bool | None = None,
         return_dict: bool = True,
         generator: torch.Generator | None = None,
-    ) -> torch.Tensor | torch.Tensor:
+    ) -> Tensor | Tensor:
         x = sample
         posterior = self.encode(x, causal=encoder_causal).latent_dist
         if sample_posterior:
