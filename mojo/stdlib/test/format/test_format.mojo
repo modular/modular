@@ -24,6 +24,30 @@ struct TestWritable(Writable):
         writer.write("write_repr_to: ", self.x)
 
 
+# Test structs for reflection-based default write_to
+@fieldwise_init
+struct SimplePoint(ImplicitlyCopyable, Writable):
+    """A simple struct that uses the default reflection-based write_to."""
+
+    var x: Int
+    var y: Int
+
+
+@fieldwise_init
+struct NestedStruct(ImplicitlyCopyable, Writable):
+    """A struct with nested Writable fields."""
+
+    var point: SimplePoint
+    var name: String
+
+
+@fieldwise_init
+struct EmptyStruct(ImplicitlyCopyable, Writable):
+    """A struct with no fields."""
+
+    pass
+
+
 def test_repr():
     var t = TestWritable(42)
     assert_equal(repr(t), "write_repr_to: 42")
@@ -44,6 +68,33 @@ def test_format_string():
     assert_equal(
         StringSlice("{!r}").format(TestWritable(42)), "write_repr_to: 42"
     )
+
+
+def test_default_write_to_simple():
+    """Test the reflection-based default write_to with a simple struct."""
+    var p = SimplePoint(1, 2)
+    # Note: get_type_name returns module-qualified names
+    assert_equal(String(p), "test_format.SimplePoint(x=1, y=2)")
+    assert_equal(repr(p), "test_format.SimplePoint(x=1, y=2)")
+
+
+def test_default_write_to_nested():
+    """Test the reflection-based default write_to with nested structs."""
+    var s = NestedStruct(SimplePoint(3, 4), "test")
+    # Note: String's write_repr_to doesn't add quotes (write_to is same as write_repr_to for String)
+    assert_equal(
+        String(s),
+        (
+            "test_format.NestedStruct(point=test_format.SimplePoint(x=3, y=4),"
+            " name=test)"
+        ),
+    )
+
+
+def test_default_write_to_empty():
+    """Test the reflection-based default write_to with an empty struct."""
+    var e = EmptyStruct()
+    assert_equal(String(e), "test_format.EmptyStruct()")
 
 
 def main():

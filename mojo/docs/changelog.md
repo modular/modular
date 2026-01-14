@@ -257,6 +257,23 @@ what we publish.
 
 ### Library changes
 
+- The `Writable` trait now has a default implementation of `write_to()` that uses
+  reflection to automatically format all struct fields. This means simple structs
+  can conform to `Writable` without implementing any methods:
+
+  ```mojo
+  @fieldwise_init
+  struct Point(Writable):
+      var x: Float64
+      var y: Float64
+
+  var p = Point(1.5, 2.7)
+  print(p)  # Point(x=1.5, y=2.7)
+  ```
+
+  All fields must conform to `Writable`. Override `write_to()` for custom
+  formatting.
+
 - `PythonObject` now supports implicit conversion from `None`, allowing more
   natural Python-like code:
 

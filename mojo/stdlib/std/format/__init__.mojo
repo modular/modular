@@ -24,7 +24,22 @@ output representation, or write formatted data directly to various destinations.
 
 ## Quick Start
 
-To make a type formattable, implement the `Writable` trait:
+The `Writable` trait has a default implementation that uses reflection to
+automatically format all struct fields. Simply declare the trait conformance:
+
+```mojo
+@fieldwise_init
+struct Point(Writable):
+    var x: Float64
+    var y: Float64
+
+var p = Point(1.5, 2.7)
+print(p)  # Point(x=1.5, y=2.7)
+```
+
+## Custom Formatting
+
+Override `write_to()` for custom output:
 
 ```mojo
 @fieldwise_init
@@ -41,7 +56,7 @@ print(p)  # (1.5, 2.7)
 
 ## Debug Formatting
 
-Optionally implement `write_repr_to()` to provide debug output:
+Override `write_repr_to()` to provide different debug output:
 
 ```mojo
 @fieldwise_init
@@ -62,6 +77,7 @@ print(repr(p)) # Point(x=1.5, y=2.7)
 """
 
 from memory import Span
+from reflection import struct_field_names, struct_field_count, get_type_name
 
 
 # ===-----------------------------------------------------------------------===#
@@ -136,7 +152,38 @@ trait Writable:
     that need to convert themselves to text. Types implementing `Writable` write
     directly to a `Writer`, making formatting efficient and allocation-free.
 
-    Example:
+    Both `write_to()` and `write_repr_to()` have default implementations that
+    use reflection to automatically format all fields. This means simple structs
+    can conform to `Writable` without any method implementations:
+
+    ```mojo
+    @fieldwise_init
+    struct Point(Writable):
+        var x: Float64
+        var y: Float64
+
+    var p = Point(1.5, 2.7)
+    print(p)       # Point(x=1.5, y=2.7)
+    print(repr(p)) # Point(x=1.5, y=2.7)
+    ```
+
+    Override `write_to()` for custom formatting:
+
+    ```mojo
+    @fieldwise_init
+    struct Point(Writable):
+        var x: Float64
+        var y: Float64
+
+        fn write_to(self, mut writer: Some[Writer]):
+            writer.write("(", self.x, ", ", self.y, ")")
+
+    var p = Point(1.5, 2.7)
+    print(p)       # (1.5, 2.7)
+    print(repr(p)) # (1.5, 2.7) - uses write_to by default
+    ```
+
+    Override both for different normal and debug output:
 
     ```mojo
     @fieldwise_init
@@ -154,18 +201,18 @@ trait Writable:
     print(p)       # (1.5, 2.7)
     print(repr(p)) # Point(x=1.5, y=2.7)
     ```
-
-    Implement `write_to()` for normal formatting and optionally implement
-    `write_repr_to()` for debug output. If you don't implement
-    `write_repr_to()`, it defaults to calling `write_to()`.
     """
 
     fn write_to(self, mut writer: Some[Writer]):
         """Write this value's text representation to a writer.
 
         This method is called by `print()`, `String()`, and format strings to
-        convert the value to text. Implement this method to define how your type
+        convert the value to text. Override this method to define how your type
         appears when printed or converted to a string.
+
+        The default implementation uses reflection to format all fields as
+        `TypeName(field1=value1, field2=value2, ...)`. All fields must conform
+        to `Writable`.
 
         Args:
             writer: The destination for formatted output.
@@ -177,7 +224,23 @@ trait Writable:
             writer.write("(", self.x, ", ", self.y, ")")
         ```
         """
-        ...
+        # Default implementation using reflection: TypeName(field1=value1, ...)
+        comptime names = struct_field_names[Self]()
+        writer.write_string(get_type_name[Self]())
+        writer.write_string("(")
+
+        @parameter
+        for i in range(names.size):
+
+            @parameter
+            if i > 0:
+                writer.write_string(", ")
+            writer.write_string(names[i])
+            writer.write_string("=")
+            trait_downcast[Writable](__struct_field_ref(i, self)).write_repr_to(
+                writer
+            )
+        writer.write_string(")")
 
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Write this value's debug representation to a writer.
