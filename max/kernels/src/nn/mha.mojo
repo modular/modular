@@ -4995,6 +4995,63 @@ fn mha_gpu_naive[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
+    mha_gpu_naive[sink=sink](
+        q,
+        k,
+        v,
+        MaterializedMask(
+            LayoutTensor[
+                mask_type,
+                Layout.row_major(mask.layout.shape),
+                MutAnyOrigin,
+            ](
+                mask.ptr,
+                RuntimeLayout[Layout.row_major(mask.layout.shape)].row_major(
+                    mask.runtime_layout.shape.value.canonicalize()
+                ),
+            )
+        ),
+        output,
+        scale,
+        batch_size,
+        seq_len,
+        num_keys,
+        num_heads,
+        depth,
+        group,
+        ctx,
+        sink_weights,
+    )
+
+
+fn mha_gpu_naive[
+    q_type: DType,
+    k_type: DType,
+    v_type: DType,
+    output_type: DType,
+    MaskType: MHAMask,
+    //,
+    sink: Bool = False,
+](
+    q: LayoutTensor[q_type, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[k_type, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[v_type, address_space = AddressSpace.GENERIC, ...],
+    mask: MaskType,
+    output: LayoutTensor[
+        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    scale: Float32,
+    batch_size: Int,
+    seq_len: Int,
+    num_keys: Int,
+    num_heads: Int,
+    depth: Int,
+    group: Int,
+    ctx: DeviceContext,
+    sink_weights: OptionalReg[
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
+    ] = None,
+) raises:
     var k_operand = LayoutTensorMHAOperand(
         LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), MutAnyOrigin](
             k.ptr,
@@ -5022,18 +5079,7 @@ fn mha_gpu_naive[
         q,
         k_operand,
         v_operand,
-        MaterializedMask(
-            LayoutTensor[
-                mask_type,
-                Layout.row_major(mask.layout.shape),
-                MutAnyOrigin,
-            ](
-                mask.ptr,
-                RuntimeLayout[Layout.row_major(mask.layout.shape)].row_major(
-                    mask.runtime_layout.shape.value.canonicalize()
-                ),
-            )
-        ),
+        mask,
         output,
         null_valid_length,
         scale,

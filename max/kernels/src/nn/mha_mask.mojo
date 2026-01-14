@@ -1026,13 +1026,21 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
         @parameter
         if (((Self.window_size) // BN) - ((BM + BN - 2) // BN)) > 0:
             return {
-                MaskStrategy.UPPER_TRIANGULAR,
+                MaskStrategy(
+                    MaskStrategy.UPPER_TRIANGULAR._value, Self.window_size
+                ),
                 MaskStrategy.NO_MASK,
                 MaskStrategy.LOWER_TRIANGULAR,
             }
         else:
             return {
-                MaskStrategy.UPPER_TRIANGULAR | MaskStrategy.LOWER_TRIANGULAR
+                MaskStrategy(
+                    (
+                        MaskStrategy.UPPER_TRIANGULAR
+                        | MaskStrategy.LOWER_TRIANGULAR
+                    )._value,
+                    Self.window_size,
+                )
             }
 
 

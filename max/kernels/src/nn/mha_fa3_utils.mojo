@@ -944,12 +944,7 @@ fn _apply_mask[
                         if decoding:
                             bound = IndexList[2, element_type = DType.uint32](
                                 Int(position.num_keys),
-                                Int(
-                                    min(
-                                        BN + kv_tile_start_row,
-                                        position.num_keys,
-                                    )
-                                ),
+                                Int(position.num_keys),
                             )
                             p = _kernel_mask(
                                 IndexList[2, element_type = DType.uint32](

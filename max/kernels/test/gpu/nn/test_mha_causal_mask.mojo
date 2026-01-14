@@ -25,7 +25,7 @@ from gpu.host import DeviceContext
 from gpu.host.info import A100, B200, H100
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import CausalMask
+from nn.mha_mask import CausalMask, MHAMask, SlidingWindowCausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from nn.mha_utils import FlashAttentionAlgorithm, MHAConfig
 from testing import assert_almost_equal, assert_equal
@@ -42,15 +42,19 @@ fn is_benchmark() -> Bool:
 
 
 fn test[
+    MaskType: MHAMask,
+    //,
     qkv_type: DType,
-    mask_type: DType,
     depth: Int,
     num_heads: Int,
+    *,
     group: Int = 1,
 ](
     seq_len: Int,
     num_keys: Int,
+    mask: MaskType,
     ctx: DeviceContext,
+    *,
     is_benchmark: Bool = False,
     num_partitions: OptionalReg[Int] = None,
 ) raises:
@@ -58,8 +62,6 @@ fn test[
     print(
         "qkv_type:",
         qkv_type,
-        "mask_type:",
-        mask_type,
         "depth:",
         depth,
         "num_heads:",
@@ -70,6 +72,8 @@ fn test[
         seq_len,
         "num_keys:",
         num_keys,
+        "mask:",
+        MaskType.name(),
     )
     # Query, key, value dimensions.
     comptime batch_size = 1
@@ -81,13 +85,11 @@ fn test[
     var k_size = batch_size * kv_num_heads * num_keys * depth
     var v_size = k_size
     var o_size = q_size
-    var mask_size = num_heads * seq_len * num_keys
 
     # Allocate memory for all variables.
     var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
     var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
     var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(v_size)
-    var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(mask_size)
     var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
     var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
@@ -111,12 +113,6 @@ fn test[
             Index(batch_size, num_keys, kv_num_heads, depth)
         ),
     )
-    var mask = LayoutTensor[mask_type, layout_4d](
-        mask_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_heads, seq_len, num_keys)
-        ),
-    )
     var output = LayoutTensor[qkv_type, layout_4d](
         output_ptr,
         RuntimeLayout[layout_4d].row_major(
@@ -129,29 +125,16 @@ fn test[
     rand[qkv_type](k_ptr, k_size)
     rand[qkv_type](v_ptr, v_size)
 
-    # Initialize causal mask.
-    for b in range(batch_size):
-        for h in range(num_heads):
-            for q_idx in range(seq_len):
-                for k_idx in range(num_keys):
-                    mask.store(
-                        Index(b, h, q_idx, k_idx),
-                        0 if q_idx + num_keys - seq_len
-                        >= k_idx else min_or_neg_inf[mask_type](),
-                    )
-
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
-    var mask_device_ptr = ctx.enqueue_create_buffer[mask_type](mask_size)
     var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy(q_device_ptr, q_ptr)
     ctx.enqueue_copy(k_device_ptr, k_ptr)
     ctx.enqueue_copy(v_device_ptr, v_ptr)
-    ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
     comptime q_layout = Layout.row_major(
@@ -179,12 +162,6 @@ fn test[
         v_device_ptr.unsafe_ptr(),
         RuntimeLayout[v_layout].row_major(
             Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
-    )
-    var mask4d = LayoutTensor[mask_type, Layout.row_major[4]()](
-        mask_device_ptr.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_heads, seq_len, num_keys)
         ),
     )
     comptime output_layout = Layout.row_major(
@@ -215,7 +192,7 @@ fn test[
             q_device,
             k_device,
             v_device,
-            CausalMask(),
+            mask,
             IdentityScoreMod(),
             scale,
             ctx,
@@ -256,12 +233,11 @@ fn test[
         num_pipeline_stages=2,
         algorithm=FlashAttentionAlgorithm(2),
     )
-
     mha_gpu_naive(
         q_device,
         k_device,
         v_device,
-        mask4d,
+        mask,
         output_device_ref,
         scale,
         batch_size,
@@ -323,7 +299,7 @@ fn test[
             q_device,
             k_device,
             v_device,
-            CausalMask(),
+            mask,
             IdentityScoreMod(),
             scale,
             ctx,
@@ -346,14 +322,12 @@ fn test[
     _ = q_device_ptr
     _ = k_device_ptr
     _ = v_device_ptr
-    _ = mask_device_ptr
     _ = output_device_ptr
     _ = output_ref_device_ptr
 
     q_ptr.free()
     k_ptr.free()
     v_ptr.free()
-    mask_ptr.free()
     output_ptr.free()
     flash_output_ptr.free()
 
@@ -380,220 +354,204 @@ def main():
             @parameter
             if depth <= 128:
                 # fp32 tf32-fp32 mma
-                test[
-                    DType.float32,
-                    DType.float32,
-                    depth,
-                    1,
-                ](128, 128, ctx, is_benchmark())
+                test[DType.float32, depth, 1](
+                    128, 128, CausalMask(), ctx, is_benchmark=is_benchmark()
+                )
 
                 test[
-                    DType.float32,
                     DType.float32,
                     depth,
                     3,
-                ](14, 14, ctx, is_benchmark())
+                ](14, 14, CausalMask(), ctx, is_benchmark=is_benchmark())
 
                 test[
                     DType.float32,
-                    DType.float32,
                     depth,
                     1,
-                ](178, 178, ctx, is_benchmark())
+                ](178, 178, CausalMask(), ctx, is_benchmark=is_benchmark())
 
             # bf16 depth == 128, bf16-fp32 mma
             test[
                 DType.bfloat16,
-                DType.bfloat16,
                 depth=depth,
                 num_heads=1,
-            ](128, 128, ctx)
+            ](128, 128, CausalMask(), ctx)
 
             test[
                 DType.bfloat16,
-                DType.float32,
                 depth=depth,
                 num_heads=1,
-            ](384, 384, ctx)
+            ](384, 384, CausalMask(), ctx)
 
             test[
                 DType.bfloat16,
-                DType.float32,
                 depth,
                 24,
                 group=3,
-            ](1024, 1024, ctx)
+            ](1024, 1024, CausalMask(), ctx)
+
+            test[
+                DType.bfloat16,
+                depth,
+                24,
+                group=3,
+            ](1024, 1024, SlidingWindowCausalMask[128](), ctx)
 
             # BF16 with sequence length not multiple of 128
             test[
                 DType.bfloat16,
-                DType.float32,
                 depth,
                 3,
                 group=3,
-            ](64, 64, ctx)
+            ](64, 64, CausalMask(), ctx)
 
             test[
-                DType.bfloat16,
                 DType.bfloat16,
                 depth,
                 3,
                 group=3,
-            ](102, 102, ctx)
+            ](102, 102, CausalMask(), ctx)
 
             test[
                 DType.bfloat16,
-                DType.float32,
                 depth,
                 1,
-            ](14, 14, ctx)
+            ](14, 14, CausalMask(), ctx)
 
             test[
                 DType.bfloat16,
-                DType.bfloat16,
                 depth,
                 1,
-            ](528, 528, ctx)
+            ](528, 528, CausalMask(), ctx)
 
             # BF16 with different length for prompt and cache.
             test[
                 DType.bfloat16,
-                DType.float32,
                 depth,
                 1,
-            ](128, 256, ctx)
+            ](128, 256, CausalMask(), ctx)
 
             test[
                 DType.bfloat16,
-                DType.float32,
                 depth,
                 3,
                 group=3,
-            ](32, 77, ctx)
+            ](32, 77, CausalMask(), ctx)
 
             test[
                 DType.bfloat16,
-                DType.float32,
                 depth,
                 16,
                 group=8,
-            ](201, 400, ctx)
+            ](201, 400, CausalMask(), ctx)
 
             test[
                 DType.bfloat16,
-                DType.float32,
                 depth,
                 12,
                 group=4,
-            ](1000, 2000, ctx)
+            ](1000, 2000, CausalMask(), ctx)
 
             test[
                 DType.bfloat16,
+                depth,
+                12,
+                group=4,
+            ](1000, 2000, SlidingWindowCausalMask[100](), ctx)
+
+            test[
                 DType.bfloat16,
                 depth,
                 32,
                 group=4,
-            ](201, 600, ctx)
+            ](201, 600, CausalMask(), ctx)
 
             # BF16 token gen
 
             test[
                 DType.bfloat16,
-                DType.bfloat16,
                 depth,
                 32,
-            ](1, 512, ctx, is_benchmark())
+            ](1, 512, CausalMask(), ctx, is_benchmark=is_benchmark())
 
             test[
-                DType.bfloat16,
                 DType.bfloat16,
                 depth,
                 11,
-            ](1, 256, ctx)
+            ](1, 256, CausalMask(), ctx)
 
             test[
                 DType.bfloat16,
-                DType.float32,
                 depth,
                 1,
-            ](1, 11, ctx)
+            ](1, 11, CausalMask(), ctx)
 
             test[
                 DType.bfloat16,
-                DType.float32,
                 depth,
                 1,
-            ](1, 11, ctx, num_partitions=OptionalReg[Int](2))
+            ](1, 11, CausalMask(), ctx, num_partitions=OptionalReg[Int](2))
 
             test[
-                DType.bfloat16,
                 DType.bfloat16,
                 depth,
                 2,
-            ](1, 523, ctx)
+            ](1, 523, CausalMask(), ctx)
 
             test[
                 DType.bfloat16,
-                DType.float32,
                 depth,
                 24,
                 group=3,
-            ](1, 29, ctx)
+            ](1, 29, CausalMask(), ctx)
 
             test[
-                DType.bfloat16,
                 DType.bfloat16,
                 depth,
                 3,
                 group=3,
-            ](1, 156, ctx)
+            ](1, 156, CausalMask(), ctx)
 
             test[
-                DType.bfloat16,
                 DType.bfloat16,
                 depth,
                 3,
                 group=3,
-            ](1, 208, ctx)
+            ](1, 208, CausalMask(), ctx)
 
             test[
-                DType.bfloat16,
                 DType.bfloat16,
                 depth,
                 32,
                 group=4,
-            ](1, 1208, ctx)
+            ](1, 1208, CausalMask(), ctx)
 
             test[
-                DType.bfloat16,
                 DType.bfloat16,
                 depth,
                 32,
                 group=4,
-            ](1, 2008, ctx)
+            ](1, 2008, CausalMask(), ctx)
 
             test[
-                DType.bfloat16,
                 DType.bfloat16,
                 depth,
                 32,
                 group=4,
-            ](1, 5000, ctx)
+            ](1, 5000, CausalMask(), ctx)
 
             test[
-                DType.bfloat16,
                 DType.bfloat16,
                 depth,
                 32,
                 group=4,
-            ](1, 600, ctx)
+            ](1, 600, CausalMask(), ctx)
 
             @parameter
             if ctx.default_device_info == A100 or is_sm90orsm100:
                 test[
                     DType.bfloat16,
-                    DType.bfloat16,
                     depth,
                     32,
                     group=16,
-                ](1, 2008, ctx)
+                ](1, 2008, CausalMask(), ctx)

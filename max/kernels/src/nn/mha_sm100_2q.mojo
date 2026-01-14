@@ -2498,15 +2498,23 @@ fn apply_mask[
                 # window_size + kv_tile_start_row - score_row > 0
                 # window_size + 1 - (1 + score_row - kv_tile_start_row) > 0
                 # window_size + 1 - n_valid > 0
-                # window is number to turn off
-                var window: Int32 = n_valid - (
-                    mask_strategy._upper_triangular_window_size - 31
+                #
+                # ex window_size = 1, score_row == kv_tile_start_row
+                #    n_valid = 1
+                # We should turn off `0`: first is on, and all the rest
+                # ex window_size = 4, score_row == kv_tile_start_row + 5
+                #    n_valid = 6
+                # We should turn off `2`: first two off, all the rest on
+                var mask_off_count: Int32 = (
+                    n_valid - mask_strategy._upper_triangular_window_size
                 )
-                # we want window `1`s
+                # we want mask_off_count `1`s
                 mask_bits = (
-                    mask_bits & (0xFFFF_FFFF << UInt32(window)) if window
+                    (
+                        mask_bits & (0xFFFF_FFFF << UInt32(mask_off_count))
+                    ) if mask_off_count
                     < 32 else 0
-                ) if window > 0 else mask_bits
+                ) if mask_off_count > 0 else mask_bits
 
             @parameter
             for n in range(32 // simd_size):
