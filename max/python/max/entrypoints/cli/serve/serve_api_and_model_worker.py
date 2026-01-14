@@ -48,9 +48,11 @@ def serve_api_server_and_model_worker(
     override_architecture: str | None = None
     # TODO: This is a workaround to support embeddings generation until the
     # changes to tie pipelines to tasks is complete. This will be removed.
-    if (
-        pipeline_config.model.model_path
-        == "sentence-transformers/all-mpnet-base-v2"
+    if pipeline_config.model.model_path in (
+        "sentence-transformers/all-mpnet-base-v2",
+        "Qwen/Qwen3-Embedding-0.6B",
+        "Qwen/Qwen3-Embedding-4B",
+        "Qwen/Qwen3-Embedding-8B",
     ):
         pipeline_task = PipelineTask.EMBEDDINGS_GENERATION
 
