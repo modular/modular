@@ -47,9 +47,7 @@ struct thread_id_converter {
 };
 } // namespace Details
 } // namespace MoodyCamel
-#if defined(__arm__) || defined(_M_ARM) || defined(__aarch64__) ||             \
-    (defined(__APPLE__) && TARGET_OS_IPHONE) || defined(__MVS__) ||            \
-    defined(MOODYCAMEL_NO_THREAD_LOCAL)
+#if defined(__arm__) || defined(_M_ARM) || defined(__aarch64__)
 namespace MoodyCamel {
 namespace Details {
 static_assert(sizeof(std::thread::id) == 4 || sizeof(std::thread::id) == 8,
