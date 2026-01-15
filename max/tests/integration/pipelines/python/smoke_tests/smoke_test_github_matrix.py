@@ -48,7 +48,7 @@ MULTI_GPUS = {"2xH100"}
 #    3b) For reasoning models, add it to the is_reasoning_model check in smoke_test.py
 MODELS = {
     "allenai/olmOCR-2-7B-1025-FP8": [
-        "sglang",
+        "sglang",  # Unimplemented model type: qwen2_5_vl_text
         "multi",
         "max",  # Wait for 26.1
     ],
@@ -64,15 +64,15 @@ MODELS = {
     "mistralai/mistral-nemo-instruct-2407": ["multi"],
     "mistralai/mistral-small-3.1-24b-instruct-2503": ["multi"],
     "opengvlab/internvl3-8b-instruct": [
-        "sglang@B200",
         "multi",
         "max@MI355",  # 26.1
+        "sglang",  # Insufficient multimodal embedding length (internvl3 bug)
     ],
     "opengvlab/internvl3_5-8b-instruct": [
         "multi",
-        "sglang@B200",  # FA3 vision enc not supported on B200
         "vllm@B200",
         "max",
+        "sglang",  # Insufficient multimodal embedding length (internvl3 bug)
     ],
     "qwen/qwen2.5-7b-instruct": ["multi"],
     "qwen/qwen2.5-vl-3b-instruct": [
@@ -88,13 +88,11 @@ MODELS = {
         "max",  # 26.1
         "max-ci@H100",
         "max-ci@2xH100",
-        "sglang@B200",
     ],
     "qwen/qwen3-vl-30b-a3b-thinking": [
         "max",
         "max-ci@H100",
         "max-ci@2xH100",
-        "sglang@B200",
     ],
     "redhatai/gemma-3-27b-it-fp8-dynamic": [],
     "tbmod/gemma-3-4b-it": [
