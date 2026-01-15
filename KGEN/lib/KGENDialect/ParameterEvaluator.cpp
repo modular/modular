@@ -102,35 +102,45 @@ bool KGEN::isParameterizedType(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
-// SymTabEvaluationContext
+// ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
 
-Operation *SymTabEvaluationContext::getStructInstIfResolved(TypedAttr typeVal) {
-  auto genRef = dyn_cast_if_present<TypeGeneratorRefAttr>(typeVal);
-  if (!genRef)
-    return nullptr;
-
-  // Find the struct decl for the instance.
-  return symtab.lookupSymbolIn<StructGeneratorOp>(module, genRef.getSymbol());
+ResolvedStructHandle
+ParameterEvaluationContext::resolveStructOp(TypedAttr /*typeValue*/) {
+  return {};
 }
 
-FailureOr<TypedAttr> SymTabEvaluationContext::evaluateExpression(
+Operation *ParameterEvaluationContext::resolveConformanceForStruct(
+    ResolvedStructHandle /*resolved*/, StringAttr /*traitName*/) {
+  return nullptr;
+}
+
+void ParameterEvaluationContext::withEvaluator(
+    ArrayRef<ParamDeclAttr> /*paramDecls*/, ArrayRef<TypedAttr> /*paramValues*/,
+    llvm::function_ref<void(ParameterEvaluator &)> /*callback*/) {}
+
+FailureOr<TypedAttr> ParameterEvaluationContext::evaluateContextSpecific(
+    ContextuallyEvaluatedAttrInterface /*attr*/) {
+  // Default implementation - no context-specific handling.
+  return failure();
+}
+
+FailureOr<TypedAttr> ParameterEvaluationContext::evaluateExpression(
     ContextuallyEvaluatedAttrInterface attr) {
+  // Let derived classes handle first. If they return success (including null
+  // for retry), use that. Only fall through to base class if they return
+  // failure (meaning they don't handle it).
+  FailureOr<TypedAttr> contextResult = evaluateContextSpecific(attr);
+  if (succeeded(contextResult))
+    return contextResult;
+
   TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
+
+  // Handle GetWitnessAttr using struct resolution.
   if (auto getWitness = sugarDynCast<GetWitnessAttr>(typedAttr))
     return evaluateGetWitness(getWitness);
 
-  if (auto conformsTo = sugarDynCast<TypeConformsToTraitAttr>(typedAttr)) {
-    if (auto decl = getStructInstIfResolved(conformsTo.getTypeRefIfResolved()))
-      return conformsTo.simplify(SymbolTable(decl));
-  }
-
-  if (auto pocAttr = sugarDynCast<ParamOperatorAttr>(typedAttr))
-    return inlineApply(pocAttr);
-
-  if (auto variadicReduce = sugarDynCast<VariadicReduceAttr>(typedAttr))
-    return variadicReduce.evaluateWith(this);
-
+  // Handle struct field reflection attributes.
   if (auto structFieldTypes = sugarDynCast<StructFieldTypesAttr>(typedAttr))
     return evaluateStructFieldTypes(structFieldTypes);
 
@@ -145,8 +155,166 @@ FailureOr<TypedAttr> SymTabEvaluationContext::evaluateExpression(
           sugarDynCast<StructFieldTypeByNameAttr>(typedAttr))
     return evaluateStructFieldTypeByName(structFieldTypeByName);
 
-  // Downcast should have been erased at this point.
-  assert(!sugarIsa<DowncastAttr>(typedAttr));
+  // Handle VariadicReduceAttr - common across contexts.
+  if (auto variadicReduce = sugarDynCast<VariadicReduceAttr>(typedAttr))
+    return variadicReduce.evaluateWith(this);
+
+  return failure();
+}
+
+FailureOr<TypedAttr>
+ParameterEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
+  ResolvedStructHandle resolved = resolveStructOp(getWitness.getTypeValue());
+  if (!resolved)
+    return failure();
+  Operation *conformanceOp =
+      resolveConformanceForStruct(resolved, getWitness.getTraitName());
+  if (!conformanceOp)
+    return failure();
+
+  auto conformance = cast<ConformanceOp>(conformanceOp);
+  FailureOr<TypedAttr> result = failure();
+  withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
+                [&](ParameterEvaluator &evaluator) {
+                  FailureOr<TypedAttr> simplified =
+                      getWitness.simplify(conformance, &evaluator);
+                  if (succeeded(simplified) && simplified.value())
+                    result = simplified.value();
+                });
+  return result;
+}
+
+FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldTypes(
+    StructFieldTypesAttr attr) {
+  ResolvedStructHandle resolved = resolveStructOp(attr.getTypeValue());
+  if (!resolved)
+    return failure();
+  SmallVector<TypedAttr> fieldTypes;
+  resolved.decl.getFieldTypes(fieldTypes);
+
+  FailureOr<TypedAttr> result = failure();
+  withEvaluator(
+      resolved.decl.getInputParams(), resolved.paramValues,
+      [&](ParameterEvaluator &evaluator) {
+        SmallVector<TypedAttr> resultAttrs;
+        for (TypedAttr fieldType : fieldTypes)
+          resultAttrs.push_back(evaluator.getReboundAttribute(fieldType));
+
+        result =
+            cast<TypedAttr>(VariadicAttr::get(resultAttrs, attr.getType()));
+      });
+  return result;
+}
+
+FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldNames(
+    StructFieldNamesAttr attr) {
+  ResolvedStructHandle resolved = resolveStructOp(attr.getTypeValue());
+  if (!resolved)
+    return failure();
+  SmallVector<StringAttr> fieldNames;
+  resolved.decl.getFieldNames(fieldNames);
+
+  SmallVector<TypedAttr> resultAttrs;
+  MLIRContext *ctx = attr.getContext();
+  for (StringAttr name : fieldNames)
+    resultAttrs.push_back(
+        StringAttr::get(name.getValue(), StringType::get(ctx)));
+
+  return cast<TypedAttr>(VariadicAttr::get(resultAttrs, attr.getType()));
+}
+
+FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldIndexByName(
+    StructFieldIndexByNameAttr attr) {
+  auto fieldNameAttr = dyn_cast<StringAttr>(attr.getFieldName());
+  if (!fieldNameAttr)
+    return failure();
+
+  ResolvedStructHandle resolved = resolveStructOp(attr.getTypeValue());
+  if (!resolved)
+    return failure();
+  auto index = resolved.decl.findFieldIndex(fieldNameAttr.getValue());
+  if (!index)
+    return failure();
+  return cast<TypedAttr>(
+      Builder(attr.getType().getContext()).getIndexAttr(*index));
+}
+
+FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldTypeByName(
+    StructFieldTypeByNameAttr attr) {
+  auto fieldNameAttr = dyn_cast<StringAttr>(attr.getFieldName());
+  if (!fieldNameAttr)
+    return failure();
+
+  ResolvedStructHandle resolved = resolveStructOp(attr.getTypeValue());
+  if (!resolved)
+    return failure();
+  TypedAttr fieldType = resolved.decl.getFieldType(fieldNameAttr.getValue());
+  if (!fieldType)
+    return failure();
+  FailureOr<TypedAttr> result = failure();
+  withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
+                [&](ParameterEvaluator &evaluator) {
+                  result = evaluator.getReboundAttribute(fieldType);
+                });
+  return result;
+}
+
+//===----------------------------------------------------------------------===//
+// SymTabEvaluationContext
+//===----------------------------------------------------------------------===//
+
+ResolvedStructHandle
+SymTabEvaluationContext::resolveStructOp(TypedAttr typeValue) {
+  auto genRef = sugarDynCastIfPresent<TypeGeneratorRefAttr>(
+      getTypeRefForTypeValueIfResolved(typeValue));
+  if (!genRef)
+    return {};
+
+  auto structDecl =
+      symtab.lookupSymbolIn<StructGeneratorOp>(module, genRef.getSymbol());
+  if (!structDecl)
+    return {};
+
+  return {cast<StructDeclInterface>(structDecl.getOperation()),
+          genRef.getParamValues(), nullptr};
+}
+
+void SymTabEvaluationContext::withEvaluator(
+    ArrayRef<ParamDeclAttr> paramDecls, ArrayRef<TypedAttr> paramValues,
+    llvm::function_ref<void(ParameterEvaluator &)> callback) {
+  ParameterEvaluator evaluator(paramDecls, paramValues);
+  evaluator.setEvaluationContext(this);
+  callback(evaluator);
+}
+
+Operation *SymTabEvaluationContext::resolveConformanceForStruct(
+    ResolvedStructHandle resolved, StringAttr traitName) {
+  return symtab.lookupSymbolIn<ConformanceOp>(resolved.decl, traitName);
+}
+
+Operation *SymTabEvaluationContext::getStructInstIfResolved(TypedAttr typeVal) {
+  auto genRef = dyn_cast_if_present<TypeGeneratorRefAttr>(typeVal);
+  if (!genRef)
+    return nullptr;
+
+  // Find the struct decl for the instance.
+  return symtab.lookupSymbolIn<StructGeneratorOp>(module, genRef.getSymbol());
+}
+
+FailureOr<TypedAttr> SymTabEvaluationContext::evaluateContextSpecific(
+    ContextuallyEvaluatedAttrInterface attr) {
+  TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
+
+  // Handle TypeConformsToTraitAttr using struct resolution.
+  if (auto conformsTo = sugarDynCast<TypeConformsToTraitAttr>(typedAttr)) {
+    if (auto decl = getStructInstIfResolved(conformsTo.getTypeRefIfResolved()))
+      return conformsTo.simplify(SymbolTable(decl));
+  }
+
+  // Handle inlined apply operations.
+  if (auto pocAttr = sugarDynCast<ParamOperatorAttr>(typedAttr))
+    return inlineApply(pocAttr);
+
   return failure();
 }
 
@@ -190,164 +358,6 @@ SymTabEvaluationContext::inlineApply(ParamOperatorAttr apply) {
   }
 
   return failure();
-}
-
-//===----------------------------------------------------------------------===//
-// ResolvedKGENStructInfo
-//===----------------------------------------------------------------------===//
-
-/// Holds resolved KGEN struct information for field reflection operations.
-struct ResolvedKGENStructInfo {
-  StructGeneratorOp structDecl;
-  StructInstanceType structInstType;
-  ArrayRef<TypedAttr> paramValues;
-
-  /// Try to resolve struct info from a type value. Returns std::nullopt if
-  /// the type cannot be resolved (e.g., parametric or unresolved).
-  static std::optional<ResolvedKGENStructInfo>
-  tryResolve(TypedAttr typeValue, mlir::LockedSymbolTableCollection &symtab,
-             Operation *module) {
-    auto genRef = sugarDynCastIfPresent<TypeGeneratorRefAttr>(
-        getTypeRefForTypeValueIfResolved(typeValue));
-    if (!genRef)
-      return std::nullopt;
-
-    auto structDecl =
-        symtab.lookupSymbolIn<StructGeneratorOp>(module, genRef.getSymbol());
-    if (!structDecl)
-      return std::nullopt;
-
-    auto structInstType =
-        dyn_cast<StructInstanceType>(structDecl.getValueDomainType());
-    if (!structInstType)
-      return std::nullopt;
-
-    return ResolvedKGENStructInfo{structDecl, structInstType,
-                                  genRef.getParamValues()};
-  }
-
-  /// Find a field's index by name. Returns std::nullopt if not found.
-  std::optional<size_t> findFieldIndex(StringRef name) const {
-    size_t index = 0;
-    for (StructDefFieldAttr field : structInstType.getFields()) {
-      if (field.getName().getValue() == name)
-        return index;
-      ++index;
-    }
-    return std::nullopt;
-  }
-
-  /// Find a field by name. Returns nullptr if not found.
-  StructDefFieldAttr findField(StringRef name) const {
-    for (StructDefFieldAttr field : structInstType.getFields())
-      if (field.getName().getValue() == name)
-        return field;
-    return {};
-  }
-
-  /// Create a parameter evaluator for substituting struct parameters.
-  ParameterEvaluator createEvaluator(ParameterEvaluationContext &context) {
-    ParameterEvaluator evaluator(structDecl.getInputParams(), paramValues);
-    evaluator.setEvaluationContext(&context);
-    return evaluator;
-  }
-};
-
-FailureOr<TypedAttr>
-SymTabEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
-  auto info = ResolvedKGENStructInfo::tryResolve(getWitness.getTypeValue(),
-                                                 symtab, module);
-  if (!info)
-    return failure();
-
-  auto conformance = symtab.lookupSymbolIn<ConformanceOp>(
-      info->structDecl, getWitness.getTraitName());
-  if (!conformance)
-    return failure();
-
-  ParameterEvaluator evaluator = info->createEvaluator(*this);
-
-  FailureOr<TypedAttr> simplified =
-      getWitness.simplify(conformance, &evaluator);
-  if (failed(simplified) || !simplified.value())
-    return failure();
-
-  return simplified.value();
-}
-
-//===----------------------------------------------------------------------===//
-// Struct Field Reflection Implementation
-//===----------------------------------------------------------------------===//
-
-FailureOr<TypedAttr>
-SymTabEvaluationContext::evaluateStructFieldTypes(StructFieldTypesAttr attr) {
-  auto info =
-      ResolvedKGENStructInfo::tryResolve(attr.getTypeValue(), symtab, module);
-  if (!info)
-    return failure();
-
-  ParameterEvaluator evaluator = info->createEvaluator(*this);
-
-  SmallVector<TypedAttr> fieldTypes;
-  for (StructDefFieldAttr field : info->structInstType.getFields()) {
-    TypedAttr reboundType = evaluator.getReboundAttribute(field.getTypeValue());
-    fieldTypes.push_back(reboundType);
-  }
-  return cast<TypedAttr>(VariadicAttr::get(fieldTypes, attr.getType()));
-}
-
-FailureOr<TypedAttr>
-SymTabEvaluationContext::evaluateStructFieldNames(StructFieldNamesAttr attr) {
-  auto info =
-      ResolvedKGENStructInfo::tryResolve(attr.getTypeValue(), symtab, module);
-  if (!info)
-    return failure();
-
-  SmallVector<TypedAttr> fieldNames;
-  MLIRContext *ctx = attr.getContext();
-  for (StructDefFieldAttr field : info->structInstType.getFields()) {
-    fieldNames.push_back(
-        StringAttr::get(field.getName().getValue(), StringType::get(ctx)));
-  }
-  return cast<TypedAttr>(VariadicAttr::get(fieldNames, attr.getType()));
-}
-
-FailureOr<TypedAttr> SymTabEvaluationContext::evaluateStructFieldIndexByName(
-    StructFieldIndexByNameAttr attr) {
-  auto fieldNameAttr = dyn_cast<StringAttr>(attr.getFieldName());
-  if (!fieldNameAttr)
-    return failure();
-
-  auto info =
-      ResolvedKGENStructInfo::tryResolve(attr.getTypeValue(), symtab, module);
-  if (!info)
-    return failure();
-
-  auto index = info->findFieldIndex(fieldNameAttr.getValue());
-  if (!index)
-    return failure();
-
-  return cast<TypedAttr>(
-      Builder(attr.getType().getContext()).getIndexAttr(*index));
-}
-
-FailureOr<TypedAttr> SymTabEvaluationContext::evaluateStructFieldTypeByName(
-    StructFieldTypeByNameAttr attr) {
-  auto fieldNameAttr = dyn_cast<StringAttr>(attr.getFieldName());
-  if (!fieldNameAttr)
-    return failure();
-
-  auto info =
-      ResolvedKGENStructInfo::tryResolve(attr.getTypeValue(), symtab, module);
-  if (!info)
-    return failure();
-
-  auto field = info->findField(fieldNameAttr.getValue());
-  if (!field)
-    return failure();
-
-  ParameterEvaluator evaluator = info->createEvaluator(*this);
-  return evaluator.getReboundAttribute(field.getTypeValue());
 }
 
 //===----------------------------------------------------------------------===//

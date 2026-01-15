@@ -68,7 +68,7 @@ FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
           getFlattenedSymbolName(candidateFunc.getInheritedFrom().value_or(
               traitDecl.getSymbolRef())));
       TypedAttr aliasRef =
-          declResolver.shared.getEvaluationContext().getGetWitnessAttr(
+          declResolver.shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
               selfPValue, traitName, nameStringAttr, traitAlias.getType());
       traitAliasReplacer.setDeclBinding(traitAlias.getParamDecl(), aliasRef);
     }
@@ -832,7 +832,7 @@ TypedAttr ParamBindings::getBoundConstAttrForFn(ASTDecl &fnDecl) const {
       StringAttr::get(funcOp.getContext(),
                       getFlattenedSymbolName(funcOp.getInheritedFrom().value_or(
                           traitDecl->getSymbolRef())));
-  TypedAttr fnRef = shared.getEvaluationContext().getGetWitnessAttr(
+  TypedAttr fnRef = shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
       selfExpr, traitName, funcOp.getSymNameAttr(), signature);
 
   if (bindings.empty())

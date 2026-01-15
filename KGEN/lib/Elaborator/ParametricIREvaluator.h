@@ -32,6 +32,10 @@ struct ParametricExpansionGraph;
 /// to concretize parameter expressions and compute symbolic parameter
 /// expressions, such as `apply` on a symbol constant or `get_sizeof` and
 /// `get_alignof` a decl type.
+///
+/// Uses the base class for common struct reflection operations and provides
+/// elaboration-specific handling for ParamOperatorAttr, GetLinkageNameAttr,
+/// etc.
 class ParametricIREvaluator : public ParameterEvaluationContext,
                               public IREvaluatorContext,
                               public ParametricParameterEvaluator,
@@ -42,10 +46,13 @@ public:
   ParametricIREvaluator(ParametricElaborator &elaborator, PImplNode *parent);
   ParametricIREvaluator(const ParametricIREvaluator &other);
 
-  /// Evaluate symbolic expressions using the symbol table.
+protected:
+  /// Handle elaboration-specific attributes (ParamOperator, GetLinkageName,
+  /// etc.)
   FailureOr<TypedAttr>
-  evaluateExpression(ContextuallyEvaluatedAttrInterface attr) override;
+  evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) override;
 
+public:
   /// Given a generic parameter expression, substitute known values for
   /// parameters into it and fold it down to a simple constant. This returns an
   /// error if a simple constant cannot be produced (e.g. because there is some

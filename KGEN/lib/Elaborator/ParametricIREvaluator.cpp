@@ -454,7 +454,7 @@ bool ParametricIREvaluator::getElabErrorIncludePrelude() {
 // Expression Evaluation
 //===----------------------------------------------------------------------===//
 
-FailureOr<TypedAttr> ParametricIREvaluator::evaluateExpression(
+FailureOr<TypedAttr> ParametricIREvaluator::evaluateContextSpecific(
     ContextuallyEvaluatedAttrInterface attr) {
   // Don't try to evaluate a parameter operator that still contains parametric
   // things in it, since it may be transitory.
@@ -528,10 +528,10 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateExpression(
     return failure();
   }
 
-  // Must be a parameter operator then.
+  // Must be a parameter operator then. Otherwise, send back to the base class.
   auto op = dyn_cast<ParamOperatorAttr>(attr);
   if (!op)
-    assert(op && "unknown attribute with ContextuallyEvaluatedAttrInterface");
+    return failure();
 
   // Try to narrow this operator to an expression we can evaluate. We only need
   // to emit an error during the evaluation attempt.

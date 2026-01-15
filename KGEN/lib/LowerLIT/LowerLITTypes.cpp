@@ -126,6 +126,8 @@ using TypeDomain = LowerLITReplacer::TypeDomain;
 //===----------------------------------------------------------------------===//
 
 namespace {
+/// Evaluation context for LowerLIT that maps LIT struct types to KGEN struct
+/// generators via the StructDecls mapping.
 class LowerLITEvaluationContext : public SymTabEvaluationContext {
 public:
   LowerLITEvaluationContext(ModuleOp module,
@@ -133,39 +135,28 @@ public:
                             StructDecls &decls)
       : SymTabEvaluationContext(module, symtab), decls(decls) {}
 
-  FailureOr<TypedAttr>
-  evaluateExpression(ContextuallyEvaluatedAttrInterface attr) override;
-
-  FailureOr<TypedAttr> evaluateGetWitness(GetWitnessAttr attr);
+protected:
+  /// Resolve LIT struct types to KGEN struct generators using the decls
+  /// mapping.
+  ResolvedStructHandle resolveStructOp(TypedAttr typeValue) override;
 
 private:
   StructDecls &decls;
 };
 } // namespace
 
-FailureOr<TypedAttr> LowerLITEvaluationContext::evaluateExpression(
-    ContextuallyEvaluatedAttrInterface attr) {
-  TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
-  if (auto getWitness = sugarDynCastIfPresent<GetWitnessAttr>(typedAttr)) {
-    FailureOr<TypedAttr> simplified = evaluateGetWitness(getWitness);
-    if (succeeded(simplified))
-      return simplified.value();
-  }
-  return failure();
-}
-
-FailureOr<TypedAttr>
-LowerLITEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
-  // We can only simplify if the type reference is resolved already.
-  auto typeParam = sugarDynCast<TypeParamAttr>(getWitness.getTypeValue());
+ResolvedStructHandle
+LowerLITEvaluationContext::resolveStructOp(TypedAttr typeValue) {
+  // We can only resolve if the type reference is a resolved LIT struct type.
+  auto typeParam = sugarDynCast<TypeParamAttr>(typeValue);
   if (!typeParam)
-    return failure();
+    return {};
 
   auto structType = sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
   if (!structType)
-    return failure();
+    return {};
 
-  // Find the struct decl for the instance.
+  // Map LIT struct decl to KGEN struct generator via decls.
   SymbolRefAttr structDeclRef = structType.getSymbol();
   SymbolRefAttr structGenRef =
       decls.structDecls[structDeclRef.getLeafReference()].symRef;
@@ -173,23 +164,10 @@ LowerLITEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
   auto structDecl =
       symtab.lookupSymbolIn<StructGeneratorOp>(module, structGenRef);
   if (!structDecl)
-    return failure();
+    return {};
 
-  auto conformance = symtab.lookupSymbolIn<ConformanceOp>(
-      structDecl, getWitness.getTraitName());
-  if (!conformance)
-    return failure();
-
-  ParameterEvaluator evaluator(structDecl.getInputParams(),
-                               structType.getParamValues());
-  evaluator.setEvaluationContext(this);
-
-  FailureOr<TypedAttr> simplified =
-      getWitness.simplify(conformance, &evaluator);
-  if (failed(simplified) || !simplified.value())
-    return failure();
-
-  return simplified.value();
+  return {cast<StructDeclInterface>(structDecl.getOperation()),
+          structType.getParamValues(), nullptr};
 }
 
 //===----------------------------------------------------------------------===//

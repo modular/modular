@@ -107,7 +107,7 @@ bool IREvaluator::getElabErrorIncludePrelude() {
 //===----------------------------------------------------------------------===//
 
 FailureOr<TypedAttr>
-IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
+IREvaluator::evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) {
   // Don't try to evaluate a parameter operator that still contains parametric
   // things in it, since it may be transitory.
   struct IndexRefFinder : IndexParameterReplacer<IndexRefFinder> {
@@ -166,8 +166,6 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
     return evaluateCompileOffloadClosureAttr(compileOffloadClosureAttr);
   if (auto compileAssemblyAttr = dyn_cast<CompileAssemblyAttr>(attr))
     return evaluateCompileAssemblyAttr(compileAssemblyAttr);
-  if (auto variadicReduceAttr = dyn_cast<VariadicReduceAttr>(attr))
-    return variadicReduceAttr.evaluateWith(this);
   if (auto variadicSizeAttr = dyn_cast<VariadicSizeAttr>(attr))
     return evaluateVariadicSizeAttr(variadicSizeAttr);
 
@@ -183,9 +181,10 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
     return failure();
   }
 
-  // Must be a parameter operator then.
+  // Must be a parameter operator then. Otherwise, send back to the base class.
   auto op = dyn_cast<ParamOperatorAttr>(attr);
-  assert(op && "unknown attribute with ContextuallyEvaluatedAttrInterface");
+  if (!op)
+    return failure();
 
   // Try to narrow this operator to an expression we can evaluate. We only need
   // to emit an error during the evaluation attempt.

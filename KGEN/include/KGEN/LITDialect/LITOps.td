@@ -353,6 +353,7 @@ def LIT_PackageOp : LITOp<"package", [
 def LIT_StructDeclOp : LITOp<"struct.decl", [
     IsolatedFromAbove, Symbol, SymbolTable, DeclInterface, SingleBlock,
     ASTDeclInterface, NoTerminator,
+    DeclareOpInterfaceMethods<StructDeclInterface>,
     DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>
   ]> {
   let summary = "Struct declaration.";
@@ -421,8 +422,6 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     auto field_begin() { return getFieldDecls().begin(); }
     auto field_end() { return getFieldDecls().end(); }
 
-    /// Struct declarations just have input parameters.
-    ArrayRef<ParamDeclAttr> getInputParams() { return getParams(); }
     bool isRegisterPassable() {
       return getConvention() != TypeConvention::MemoryOnly;
     }

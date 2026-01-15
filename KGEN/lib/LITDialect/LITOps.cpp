@@ -22,6 +22,7 @@
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/MDialect/ParserUtils.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/SymbolTable.h"
 
 using namespace M;
 using namespace KGEN;
@@ -999,6 +1000,8 @@ static void printStructParameterSpec(AsmPrinter &p, Operation *op,
 
 bool StructDeclOp::isSynthetic() { return getSynthetic(); }
 
+ArrayRef<ParamDeclAttr> StructDeclOp::getInputParams() { return getParams(); }
+
 LIT::StructType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
   TypeSignatureType sig = getSignature();
@@ -1017,6 +1020,35 @@ LIT::StructType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   // Compute the resultant signature.
   auto newSig = sig.bind(paramValues);
   return LIT::StructType::get(symbol, paramValues, newSig);
+}
+
+std::optional<size_t> StructDeclOp::findFieldIndex(StringRef name) {
+  size_t index = 0;
+  for (StructFieldOp field : getFieldDecls()) {
+    if (field.getName() == name)
+      return index;
+    ++index;
+  }
+  return std::nullopt;
+}
+
+TypedAttr StructDeclOp::getFieldType(StringRef name) {
+  for (StructFieldOp field : getFieldDecls())
+    if (field.getName() == name)
+      return TypeParamAttr::get(field.getType(),
+                                TypeType::get(field.getContext()));
+  return nullptr;
+}
+
+void StructDeclOp::getFieldNames(SmallVectorImpl<StringAttr> &names) {
+  for (StructFieldOp field : getFieldDecls())
+    names.push_back(field.getNameAttr());
+}
+
+void StructDeclOp::getFieldTypes(SmallVectorImpl<TypedAttr> &types) {
+  for (StructFieldOp field : getFieldDecls())
+    types.push_back(
+        TypeParamAttr::get(field.getType(), TypeType::get(field.getContext())));
 }
 
 /// Verify the debuginfo scope of an op that must be a top-level declaration.

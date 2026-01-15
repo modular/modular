@@ -8,9 +8,12 @@
 #define KGEN_KGENDIALECT_PARAMETEREVALUATOR_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENInterfaces.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterReplacer.h"
 #include "Support/ForwardDecls.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/FunctionExtras.h"
 
 namespace mlir {
 class LockedSymbolTableCollection;
@@ -46,9 +49,27 @@ void collectParameterReferences(Type type,
 /// `!pop.scalar<dt>` returns true, but `!pop.scalar<f32>` returns false.
 bool isParameterizedType(Type type);
 
+class ParameterEvaluationContext;
+class ParameterEvaluator;
+
 //===----------------------------------------------------------------------===//
 // ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
+
+/// A generic handle for a resolved StructDeclInterface from a particular
+/// evaluation context.
+struct ResolvedStructHandle {
+  /// The struct declaration operation.
+  StructDeclInterface decl;
+  /// The parameter values for the struct (if any).
+  ArrayRef<TypedAttr> paramValues;
+  /// A context-specific opaque handle for the context to track additional
+  /// state.
+  void *handle = nullptr;
+
+  /// Convenience: treat a resolved handle as "truthy" when it has a decl.
+  explicit operator bool() const { return static_cast<bool>(decl); }
+};
 
 /// This class is used by ParameterEvaluator to evaluate
 /// ContextuallyEvaluatedAttrInterface instances, which are attributes whose
@@ -58,15 +79,58 @@ bool isParameterizedType(Type type);
 /// The use of this separate context/policy provider class allows
 /// ParameterEvaluators, which are stateful and may need to be instantiated
 /// multiple times, to be decoupled from the logic of evaluating attributes.
+///
+/// The base class implements common dispatch logic for evaluating attributes
+/// like GetWitnessAttr, StructFieldTypesAttr, etc. Derived classes provide
+/// context-specific behavior through virtual hooks:
+///   - resolveStructOp(): resolve a type-value to a StructDeclInterface
+///   - withEvaluator(): provide a context-appropriate ParameterEvaluator
+///   - evaluateContextSpecific(): handle context-specific attributes
 class ParameterEvaluationContext {
 public:
   virtual ~ParameterEvaluationContext() = default;
 
-  /// Evaluate the provided attribute. If the attribute is not evaluatable,
-  /// return failure(). This does not indicate an unexpected situation, but
-  /// rather no further evaluation was possible.
+  /// Evaluate the provided attribute. The base implementation handles common
+  /// attribute types (struct reflection, GetWitness, etc.) and falls back to
+  /// evaluateContextSpecific() for context-specific handling.
+  ///
+  /// If the attribute is not evaluatable, returns failure(). This does not
+  /// indicate an unexpected situation, but rather no further evaluation was
+  /// possible.
   virtual FailureOr<TypedAttr>
-  evaluateExpression(ContextuallyEvaluatedAttrInterface attr) = 0;
+  evaluateExpression(ContextuallyEvaluatedAttrInterface attr);
+
+protected:
+  /// Resolve a type value to its struct declaration interface.
+  /// Returns a falsy handle if resolution fails.
+  virtual ResolvedStructHandle resolveStructOp(TypedAttr typeValue);
+
+  /// Resolve the conformance op for a struct and trait name in this context.
+  virtual Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
+                                                 StringAttr traitName);
+
+  /// Create an evaluator configured with the provided parameters.
+  /// The evaluator type can depend on the context.
+  virtual void
+  withEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
+                ArrayRef<TypedAttr> paramValues,
+                llvm::function_ref<void(ParameterEvaluator &)> callback);
+
+  /// Handle context-specific attributes that aren't covered by the base class.
+  /// Returns failure() if the attribute cannot be evaluated, which is the
+  /// normal case for unsupported attributes.
+  virtual FailureOr<TypedAttr>
+  evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr);
+
+private:
+  // Common evaluation methods that use the virtual hooks.
+  FailureOr<TypedAttr> evaluateGetWitness(GetWitnessAttr attr);
+  FailureOr<TypedAttr> evaluateStructFieldTypes(StructFieldTypesAttr attr);
+  FailureOr<TypedAttr> evaluateStructFieldNames(StructFieldNamesAttr attr);
+  FailureOr<TypedAttr>
+  evaluateStructFieldIndexByName(StructFieldIndexByNameAttr attr);
+  FailureOr<TypedAttr>
+  evaluateStructFieldTypeByName(StructFieldTypeByNameAttr attr);
 };
 
 /// An evaluation context that exposes a LockedSymbolTableCollection.
@@ -79,20 +143,25 @@ public:
                           mlir::LockedSymbolTableCollection &symtab)
       : module(module), symtab(symtab) {}
 
+protected:
+  /// Resolve struct info for KGEN dialect structs.
+  ResolvedStructHandle resolveStructOp(TypedAttr typeValue) override;
+
+  /// Resolve conformance using the struct's symbol table.
+  Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
+                                         StringAttr traitName) override;
+
+  /// Provide a ParameterEvaluator configured for the struct parameters.
+  void withEvaluator(
+      ArrayRef<ParamDeclAttr> paramDecls, ArrayRef<TypedAttr> paramValues,
+      llvm::function_ref<void(ParameterEvaluator &)> callback) override;
+
   FailureOr<TypedAttr>
-  evaluateExpression(ContextuallyEvaluatedAttrInterface attr) override;
+  evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) override;
 
 private:
-  FailureOr<TypedAttr> evaluateGetWitness(GetWitnessAttr getWitness);
-  FailureOr<TypedAttr> inlineApply(ParamOperatorAttr getWitness);
+  FailureOr<TypedAttr> inlineApply(ParamOperatorAttr apply);
   Operation *getStructInstIfResolved(TypedAttr typeVal);
-
-  FailureOr<TypedAttr> evaluateStructFieldTypes(StructFieldTypesAttr attr);
-  FailureOr<TypedAttr> evaluateStructFieldNames(StructFieldNamesAttr attr);
-  FailureOr<TypedAttr>
-  evaluateStructFieldIndexByName(StructFieldIndexByNameAttr attr);
-  FailureOr<TypedAttr>
-  evaluateStructFieldTypeByName(StructFieldTypeByNameAttr attr);
 };
 
 //===----------------------------------------------------------------------===//
