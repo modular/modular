@@ -145,3 +145,29 @@ def test_text_generation_request_init() -> None:
                 )
             ],
         )
+
+
+def test_text_generation_request_message_dict_roundtrip() -> None:
+    # Test that messages_dict == dict(TextGenerationRequestMessage(**messages_dict))
+    messages_dict = {
+        "role": "user",
+        "content": [{"type": "text", "text": "hello world"}],
+    }
+
+    message = TextGenerationRequestMessage(**messages_dict)
+    assert messages_dict == message.model_dump()
+
+    # Test with images
+    messages_dict_with_images = {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "describe this"},
+            {"type": "image"},
+            {"type": "image"},
+        ],
+    }
+
+    message_with_images = TextGenerationRequestMessage(
+        **messages_dict_with_images
+    )
+    assert messages_dict_with_images == message_with_images.model_dump()
