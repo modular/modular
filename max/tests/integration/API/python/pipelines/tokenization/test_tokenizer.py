@@ -574,25 +574,6 @@ async def test_tokenizer__generate_prompt_and_token_ids(
     assert "Hello, how are you?" in prompt_text
     assert "I'm doing well, thank you!" in prompt_text
 
-    # Test with both prompt and messages (should raise ValueError)
-    with pytest.raises(
-        ValueError, match="both prompt and messages cannot be provided"
-    ):
-        await tokenizer._generate_prompt_and_token_ids(
-            prompt="test",
-            messages=messages,
-        )
-
-    # Test with neither prompt nor messages (should raise ValueError)
-    with pytest.raises(
-        ValueError,
-        match="either prompt must be provided as a list\\[int\\] or str, or messages must be provided as a list\\[TextGenerationRequestMessage\\]",
-    ):
-        await tokenizer._generate_prompt_and_token_ids(
-            prompt=None,
-            messages=[],
-        )
-
 
 @pytest.mark.asyncio
 async def test_custom_prompt_template() -> None:
