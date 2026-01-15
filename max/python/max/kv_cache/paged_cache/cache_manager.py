@@ -145,6 +145,23 @@ class PagedKVCacheManager:
         )
         return replica_idx
 
+    def get_replica_request_count(self, replica_idx: int) -> int:
+        """Get the number of active requests for a replica.
+
+        This count includes all requests that have been claimed but not yet released.
+        Used by schedulers to implement load-based replica assignment.
+
+        Args:
+            replica_idx: The replica index to query (0 to num_replicas-1)
+
+        Returns:
+            Number of active requests on the specified replica
+
+        Raises:
+            IndexError: If replica_idx is out of range
+        """
+        return self._request_count_per_replica[replica_idx]
+
     def get_pct_used_blocks_after_allocation(
         self, ctx: TextGenerationContext, num_steps: int = 1
     ) -> float:

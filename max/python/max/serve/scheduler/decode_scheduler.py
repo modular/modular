@@ -208,7 +208,9 @@ class DecodeScheduler(Scheduler):
 
             # Claim the slot with the paged manager
             if not self.paged_manager.contains(req_id):
-                replica_idx = self.batch_constructor.get_next_replica_idx()
+                replica_idx = self.batch_constructor.get_next_replica_idx(
+                    use_paged_cache_counts=True
+                )
                 self.paged_manager.claim(req_id, replica_idx=replica_idx)
 
             # Allocate enough memory needed to run the request for one step.

@@ -82,6 +82,17 @@ class NullKVCacheManager:
         """
         return 0
 
+    def get_replica_request_count(self, replica_idx: int) -> int:
+        """Get the number of active requests for a replica.
+
+        Args:
+            replica_idx: The replica index to query
+
+        Returns:
+            Always returns 0 for null cache manager (compile-only mode)
+        """
+        return 0
+
     def get_data_parallel_splits(
         self, batch: Sequence[TextGenerationContext]
     ) -> Sequence[Sequence[int]]:

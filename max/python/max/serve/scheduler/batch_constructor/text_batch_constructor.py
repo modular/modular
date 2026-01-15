@@ -170,14 +170,16 @@ class TextBatchConstructor:
 
     - Each replica maintains its own CE and TG queues and forms batches
       independently using the same policy.
-    - New requests are assigned to replicas in a straightforward round-robin
-      fashion, which keeps load approximately balanced without inspecting
-      per-replica cache state. Round-robin does not account for prompt length,
-      so replicas may become imbalanced if request sizes vary significantly.
-    - When a paged KV cache manager is present, all replicas share the same
-      logical KV memory budget, but the high-level placement policy remains
-      round-robin and budget-based rather than attempting fine-grained
-      load-balancing.
+    - New requests are assigned to replicas using load-based assignment,
+      which selects the replica with the fewest active requests. This
+      provides better load balancing than round-robin, particularly when
+      request sizes vary significantly or when requests complete at
+      different rates.
+    - The replica with the minimum request count is selected based on
+      information from the paged KV cache manager. This accounts for
+      both active processing and queued requests.
+    - All replicas share the same logical KV memory budget through the
+      paged KV cache manager.
 
     **Non-LoRA batch construction**
 
@@ -342,7 +344,7 @@ class TextBatchConstructor:
         pipeline: Pipeline[
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
-        paged_cache: PagedKVCacheManager | None = None,
+        paged_cache: PagedKVCacheManager | None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -364,8 +366,6 @@ class TextBatchConstructor:
 
         self.total_preemption_count: int = 0
         self.last_preemption_logging_time: float = time.monotonic()
-
-        self._round_robin_counter: int = 0
 
     def _create_new_token_budget(self) -> TokenBudgetCollection:
         token_budgets: list[TokenBudget] = [
@@ -392,16 +392,44 @@ class TextBatchConstructor:
             token_budgets=token_budgets,
         )
 
-    def get_next_replica_idx(self) -> int:
-        """Returns the next replica index to assign the request to."""
+    def get_next_replica_idx(self, use_paged_cache_counts: bool = False) -> int:
+        """Returns the next replica index to assign the request to.
 
-        # TODO: Make this decision based on KVCache state.
-        # if self.paged_cache is not None:
-        #     replica_idx = self.paged_cache.get_or_recommend_replica(ctx)
+        Uses load-based assignment by selecting the replica with the fewest
+        active requests. This provides better load balancing than round-robin,
+        especially when request sizes vary or when requests complete at
+        different rates.
 
-        replica_idx = self._round_robin_counter
-        self._round_robin_counter += 1
-        self._round_robin_counter %= self.num_replicas
+        Args:
+            use_paged_cache_counts: If True, count requests claimed in paged cache
+                (used by decode scheduler before enqueue). If False, count requests
+                in CE/TG queues (used during enqueue_new_request). These sources
+                overlap once requests are enqueued, so only one should be used.
+
+        Returns:
+            The replica index that should receive the next request.
+        """
+        if use_paged_cache_counts and self.paged_cache is None:
+            raise ValueError(
+                "use_paged_cache_counts=True requires a paged_cache, but paged_cache is None"
+            )
+
+        if use_paged_cache_counts:
+            # This is already verified to be true above. Assign to local variable for mypy.
+            paged_cache = self.paged_cache
+            assert paged_cache is not None
+            replica_idx = min(
+                range(self.num_replicas),
+                key=lambda idx: paged_cache.get_replica_request_count(idx),
+            )
+        else:
+            replica_idx = min(
+                range(self.num_replicas),
+                key=lambda idx: (
+                    len(self.replicas[idx].ce_reqs)
+                    + len(self.replicas[idx].tg_reqs)
+                ),
+            )
         return replica_idx
 
     def enqueue_new_request(

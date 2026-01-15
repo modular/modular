@@ -962,3 +962,183 @@ def test_mixed_requests_scheduling() -> None:
     )
 
     assert len(lora_manager._active_loras) == 1
+
+
+def test_text_batch_constructor__load_based_replica_assignment_with_paged_cache() -> (
+    None
+):
+    """Test that load-based assignment distributes requests evenly across replicas.
+
+    This is the core test to catch bugs like [2,1,1,1,1,1,1,0] instead of [1,1,1,1,1,1,1,1].
+    """
+    data_parallel_degree = 8
+    num_requests = 8
+
+    # Create a pipeline without LoRA support
+    pipeline = Mock(spec=["release"])
+    pipeline.release = Mock()
+
+    # Create paged cache
+    paged_cache = create_mock_paged_cache()
+    paged_cache.num_replicas = data_parallel_degree
+
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=10,
+        max_forward_steps_tg=10,
+        target_tokens_per_batch_ce=1000,
+        data_parallel_degree=data_parallel_degree,
+    )
+
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        paged_cache=paged_cache,
+    )
+
+    # Enqueue requests - with load-based assignment, all should go to least loaded
+    for _ in range(num_requests):
+        context = TextContext(
+            request_id=RequestID(),
+            tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
+            max_length=100,
+        )
+        batch_constructor.enqueue_new_request(context)
+
+    # Count requests per replica
+    requests_per_replica = [
+        len(batch_constructor.replicas[i].ce_reqs)
+        for i in range(data_parallel_degree)
+    ]
+
+    # With load-based assignment, distribution should be balanced
+    # Each replica should have 1 request (8 requests, 8 replicas)
+    expected_distribution = [1, 1, 1, 1, 1, 1, 1, 1]
+    assert requests_per_replica == expected_distribution, (
+        f"Expected distribution {expected_distribution}, got {requests_per_replica}"
+    )
+
+
+def test_text_batch_constructor__data_parallel_explicit_replica_assignment() -> (
+    None
+):
+    """Test explicit replica_idx assignment used by decode_scheduler.
+
+    This tests the code path where replica_idx is explicitly passed, ensuring
+    requests go to the correct replica.
+    """
+    data_parallel_degree = 8
+
+    # Create a pipeline without LoRA support
+    pipeline = Mock(spec=["release"])
+    pipeline.release = Mock()
+
+    # Create paged cache (required but not used for explicit assignment)
+    paged_cache = create_mock_paged_cache()
+    paged_cache.num_replicas = data_parallel_degree
+    paged_cache.get_replica_request_count = Mock(return_value=0)
+
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=10,
+        max_forward_steps_tg=10,
+        target_tokens_per_batch_ce=1000,
+        data_parallel_degree=data_parallel_degree,
+    )
+
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        paged_cache=paged_cache,
+    )
+
+    # Enqueue one request to each replica explicitly
+    for replica_idx in range(data_parallel_degree):
+        context = TextContext(
+            request_id=RequestID(),
+            tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
+            max_length=100,
+        )
+        batch_constructor.enqueue_new_request(context, replica_idx=replica_idx)
+
+    # Count requests per replica
+    requests_per_replica = [
+        len(batch_constructor.replicas[i].ce_reqs)
+        for i in range(data_parallel_degree)
+    ]
+
+    # Each replica should have exactly 1 request
+    expected_distribution = [1, 1, 1, 1, 1, 1, 1, 1]
+    assert requests_per_replica == expected_distribution, (
+        f"Expected distribution {expected_distribution}, got {requests_per_replica}"
+    )
+
+
+def test_text_batch_constructor__load_based_handles_imbalance() -> None:
+    """Test that load-based assignment prioritizes least loaded replicas.
+
+    This test creates an imbalanced load scenario and verifies that new
+    requests are assigned to the replica with the fewest active requests.
+    """
+    data_parallel_degree = 4
+
+    pipeline = Mock(spec=["release"])
+    pipeline.release = Mock()
+
+    # Create paged cache
+    paged_cache = create_mock_paged_cache()
+    paged_cache.num_replicas = data_parallel_degree
+
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=10,
+        max_forward_steps_tg=10,
+        target_tokens_per_batch_ce=1000,
+        data_parallel_degree=data_parallel_degree,
+    )
+
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        paged_cache=paged_cache,
+    )
+
+    # Create an imbalanced initial load: [5, 2, 8, 1]
+    # Replica 0: 5 requests, Replica 1: 2 requests, Replica 2: 8 requests, Replica 3: 1 request
+    for replica_idx, count in enumerate([5, 2, 8, 1]):
+        for _ in range(count):
+            context = TextContext(
+                request_id=RequestID(),
+                tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
+                max_length=100,
+            )
+            batch_constructor.enqueue_new_request(
+                context, replica_idx=replica_idx
+            )
+
+    # Track request counts before adding new requests
+    requests_before = [
+        len(batch_constructor.replicas[i].ce_reqs)
+        for i in range(data_parallel_degree)
+    ]
+    assert requests_before == [5, 2, 8, 1], (
+        f"Initial load should be [5, 2, 8, 1], got {requests_before}"
+    )
+
+    # Enqueue 4 new requests without specifying replica_idx
+    for _ in range(4):
+        context = TextContext(
+            request_id=RequestID(),
+            tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
+            max_length=100,
+        )
+        batch_constructor.enqueue_new_request(context)
+
+    # Count requests per replica after adding new requests
+    requests_after = [
+        len(batch_constructor.replicas[i].ce_reqs)
+        for i in range(data_parallel_degree)
+    ]
+
+    # Replica 3 had the lowest load (1), so it should receive the first new request → [5, 2, 8, 2]
+    # Replica 1 now has the lowest load (2), so it should receive the second new request → [5, 3, 8, 2]
+    # Replica 3 now tied for lowest (2), so it should receive the third new request → [5, 3, 8, 3]
+    # Replica 1 now tied for lowest (3), so it should receive the fourth new request → [5, 4, 8, 3]
+    assert requests_after == [5, 4, 8, 3]
