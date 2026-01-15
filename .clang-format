@@ -1,2 +1,12 @@
 BasedOnStyle: LLVM
 AlwaysBreakTemplateDeclarations: Yes
+InsertNewlineAtEOF: true
+RemoveSemicolon: true
+---
+
+Language: Json
+DisableFormat: true
+---
+
+Language: JavaScript
+DisableFormat: true

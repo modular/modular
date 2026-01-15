@@ -430,6 +430,11 @@ use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")
 
 http_archive(
     name = "bazel_clang_tidy",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/erenon/bazel_clang_tidy/pull/102
+        "//bazel/public-patches:bazel_clang_tidy_config.patch",
+    ],
     sha256 = "354e13c7a5d0ad69c32c509cc244954e40af98b66ad17136c84a6277afe178d4",
     strip_prefix = "bazel_clang_tidy-496018e020cf0a7d813a2b5a9d246ec55340a7ed",
     url = "https://github.com/erenon/bazel_clang_tidy/archive/496018e020cf0a7d813a2b5a9d246ec55340a7ed.tar.gz",
