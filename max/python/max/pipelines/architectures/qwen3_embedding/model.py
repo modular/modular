@@ -122,7 +122,10 @@ class Qwen3EmbeddingPipelineModel(Qwen3Model):
             state_dict,
             override_quantization_encoding=True,
             weight_alignment=1,
-            strict=not getattr(
+            # For embedding models, we don't need lm_head weights
+            # The smaller variants have tied word embeddings but for the 8B variant
+            # we have to set strict=False to avoid errors
+            strict=getattr(
                 self.huggingface_config, "tie_word_embeddings", False
             ),
         )
