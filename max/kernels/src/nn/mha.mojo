@@ -4663,10 +4663,12 @@ fn mha_splitk_reduce[
             acc += safe_load * type_of(safe_load)(scale)
 
     if depth_idx < depth:
+        # simd_width=8 is based on experimentation
+        # we may want to use a lower value if number of partitions are lower
         vectorize[8](num_partitions, accum_fn)
 
-    acc *= inv_global_exp_sum
-    if depth_idx < depth:
+        acc *= inv_global_exp_sum
+
         var ptr = output.ptr_at_offset(
             IndexList[3](Int(batch_idx), Int(q_head_idx), Int(depth_idx))
         )
