@@ -185,3 +185,17 @@ modular_py_binary(
         requirement("torch"),
     ],
 )
+
+modular_py_binary(
+    name = "compare_tensors",
+    testonly = True,
+    srcs = ["compare_tensors.py"],
+    imports = ["."],
+    main = "compare_tensors.py",
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = [
+        "//max/python/max/driver",
+        requirement("click"),
+        requirement("torch"),
+    ],
+)

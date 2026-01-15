@@ -39,6 +39,23 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_compare_tensors",
+    size = "large",
+    srcs = [
+        "test_compare_tensors.py",
+    ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/tests/integration/tools:compare_tensors",
+        requirement("click"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
     name = "test_debug_model",
     size = "small",
     srcs = ["test_debug_model.py"],
