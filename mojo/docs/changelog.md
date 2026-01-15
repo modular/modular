@@ -672,6 +672,10 @@ what we publish.
 - `StringableRaising` has been deprecated and its usages in the stdlib have
   been removed.
 
+- `Span` now has `find()` and `rfind()` methods which work for any
+  `Span[Scalar[D]]` e.g. `Span[Byte]`. PR [#3548](https://github.com/modularml/mojo/pull/3548)
+  by [@martinvuyk](https://github.com/martinvuyk).
+
 ### Tooling changes
 
 - The Mojo compiler now supports the `-Werror` flag, which treats all warnings
