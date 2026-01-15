@@ -1289,8 +1289,8 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         auto_model_cls=transformers.AutoModel,
         task=PipelineTask.EMBEDDINGS_GENERATION,
         device_encoding_map={
-            "cpu": ["bfloat16"],
-            "gpu": ["bfloat16"],
+            "cpu": ["float32"],
+            "gpu": ["float32", "bfloat16"],
         },
     ),
     # GPTQ llama with perm_idx
