@@ -20,7 +20,7 @@ struct HasBadField(Hashable):
     var field: NotHashable
 
 
-# expected-note @below {{constraint failed: Could not derive Hashable for {{.*}}HasBadField - member field `field: {{.*}}NotHashable` does not implement Hashable}}
+# expected-note @below {{constraint failed: Could not derive Hashable for HasBadField - member field `field: NotHashable` does not implement Hashable}}
 fn main():
     var a = HasBadField(NotHashable(1))
     # expected-error @below {{call expansion failed}}
