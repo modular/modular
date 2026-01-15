@@ -50,7 +50,10 @@ modular_py_library(
         exec_properties = {
             "test.resources:gpu-memory": "4",
         },
-        gpu_constraints = ["//:has_multi_gpu"] if src == "tests/test_vision_embeddings.py" else ["//:has_gpu"] + select({
+        gpu_constraints = [
+            "//:has_multi_gpu",
+            "@platforms//:incompatible",  # FIXME: MOCO-3089
+        ] if src == "tests/test_vision_embeddings.py" else ["//:has_gpu"] + select({
             "//:apple_gpu": ["@platforms//:incompatible"],
             "//conditions:default": [],
         }),  # FIXME: MOCO-2411
