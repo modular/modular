@@ -20,9 +20,9 @@
 
 namespace M {
 
-#if defined(MODULAR_X86_64)
+#if MODULAR_X86_64
 static constexpr size_t kPreferredMemoryAlignment = 64;
-#elif defined(MODULAR_ARM_NEON)
+#elif MODULAR_ARM_NEON
 static constexpr size_t kPreferredMemoryAlignment = 16;
 #else
 static constexpr size_t kPreferredMemoryAlignment = 16;
