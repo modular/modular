@@ -430,7 +430,9 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
     ) -> str:
         """Apply chat template using tokenizer directly (not processor)."""
         templated_message = self.delegate.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
+            [msg.model_dump() for msg in messages],
+            tokenize=False,
+            add_generation_prompt=True,
         )
         assert isinstance(templated_message, str)
         return templated_message

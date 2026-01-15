@@ -20,11 +20,6 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
-    ImageContentPart,
-    TextContentPart,
-    TextGenerationRequestMessage,
-)
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     TextAndVisionTokenizer,
@@ -368,7 +363,7 @@ class InternVLProcessor:
 
     def apply_chat_template(
         self,
-        messages: list[TextGenerationRequestMessage],
+        messages: list[dict[str, str | dict[str, str]]],
         tokenize: bool = False,
         add_generation_prompt: bool = True,
         **kwargs,
@@ -382,8 +377,8 @@ class InternVLProcessor:
         # Convert multimodal messages to text-only for the tokenizer
         text_messages = []
         for message in messages:
-            text_message = {"role": str(message.role)}
-            content = message.content
+            text_message = {"role": str(message["role"])}
+            content = message["content"]
 
             if isinstance(content, str):
                 text_message["content"] = content
@@ -392,12 +387,11 @@ class InternVLProcessor:
                 # where image content appears to match VLMEvalKit behavior.
                 content_parts = []
                 for item in content:
-                    if isinstance(item, TextContentPart):
-                        if item.text:
-                            content_parts.append(item.text)
-                    elif isinstance(item, ImageContentPart):
+                    if item["type"] == "text":
+                        content_parts.append(item["text"])
+                    elif item["type"] == "image":
                         # Insert image placeholder where image content appears.
-                        content_parts.append("<image>")
+                        content_parts.append("<|image|>")
 
                 # Join content parts preserving order.
                 text_message["content"] = " ".join(content_parts)

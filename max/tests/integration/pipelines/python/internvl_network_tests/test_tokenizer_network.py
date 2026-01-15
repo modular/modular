@@ -133,7 +133,9 @@ async def test_internvl_tokenizer_apply_chat_template(
     mock_warning = mocker.patch("max.pipelines.lib.tokenizer.logger.warning")
 
     result = processor.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
+        [msg.model_dump() for msg in messages],
+        tokenize=False,
+        add_generation_prompt=True,
     )
 
     # Verify no warnings were logged.
@@ -164,7 +166,9 @@ async def test_internvl_tokenizer_apply_chat_template(
     ]
 
     result2 = processor.apply_chat_template(
-        text_only_messages, tokenize=False, add_generation_prompt=True
+        [msg.model_dump() for msg in text_only_messages],
+        tokenize=False,
+        add_generation_prompt=True,
     )
 
     # Verify it still works with text-only.
@@ -191,7 +195,9 @@ async def test_internvl_tokenizer_apply_chat_template(
     ]
 
     result3 = processor.apply_chat_template(
-        multi_text_messages, tokenize=False, add_generation_prompt=True
+        [msg.model_dump() for msg in multi_text_messages],
+        tokenize=False,
+        add_generation_prompt=True,
     )
 
     called_messages3 = mock_tokenizer.apply_chat_template.call_args[0][0]
