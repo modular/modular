@@ -15,7 +15,7 @@ import os
 from os.path import expanduser, split
 from pathlib import Path
 
-from builtin._location import __source_location
+from reflection import source_location
 from testing import TestSuite, assert_equal
 
 
@@ -60,8 +60,8 @@ def test_split():
     assert_equal(head, os.path.join("a", "b"))
     assert_equal(tail, "c.txt")
 
-    # Test with __source_location()
-    source_location = String(__source_location().file_name)
+    # Test with source_location()
+    source_location = String(source_location().file_name)
     head, tail = split(source_location)
     assert_equal(head + os.sep + tail, source_location)
 

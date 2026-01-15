@@ -16,7 +16,7 @@ from pathlib import DIR_SEPARATOR, Path, cwd
 from sys import CompilationTarget
 from tempfile import NamedTemporaryFile
 
-from builtin._location import __source_location
+from reflection import source_location
 from testing import (
     assert_equal,
     assert_false,
@@ -46,7 +46,7 @@ def test_path():
 
 def test_path_exists():
     assert_true(
-        Path(__source_location().file_name).exists(), msg="does not exist"
+        Path(source_location().file_name).exists(), msg="does not exist"
     )
 
     assert_false(
@@ -60,7 +60,7 @@ def test_path_isdir():
 
 
 def test_path_isfile():
-    assert_true(Path(__source_location().file_name).is_file())
+    assert_true(Path(source_location().file_name).is_file())
     assert_false(Path("this/file/does/not/exist").is_file())
 
 
@@ -143,7 +143,7 @@ def test_home():
 
 
 def test_stat():
-    var path = Path(__source_location().file_name)
+    var path = Path(source_location().file_name)
     var stat = path.stat()
     assert_equal(
         String(stat),

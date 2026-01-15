@@ -465,6 +465,34 @@ what we publish.
           print("Field", i, "is Copyable")
   ```
 
+- The `reflection` module now provides source location introspection APIs:
+
+  - `SourceLocation` - A struct holding file name, line, and column information
+  - `source_location()` - Returns the location where it's called
+  - `call_location()` - Returns the location where the caller was invoked
+    (requires the caller to be `@always_inline`)
+
+  These were previously internal APIs (`_SourceLocation`, `__source_location`,
+  `__call_location`) in `builtin._location`. The old module has been removed.
+
+  Example:
+
+  ```mojo
+  from reflection import source_location, call_location, SourceLocation
+
+  fn main():
+      var loc = source_location()
+      print(loc)  # main.mojo:5:15
+
+  @always_inline
+  fn log_here():
+      var caller_loc = call_location()
+      print("Called from:", caller_loc)
+  ```
+
+  Note: These APIs do not work correctly in parameter expressions (comptime
+  contexts return placeholder values).
+
 - The `Copyable` trait now refines the `Movable` trait.  This means that structs
   and generic algorithms that already require `Copyable` don't need to also
   mention they require `Movable.

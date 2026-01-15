@@ -34,7 +34,7 @@ from gpu import profiler
 from io.io import _printf
 from time import perf_counter_ns
 
-from builtin._location import __call_location, _SourceLocation
+from reflection import call_location, SourceLocation
 
 
 @fieldwise_init
@@ -52,7 +52,7 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable):
     var name: StaticString
     """Name of the profiling block used for identification in timing output."""
 
-    var loc: _SourceLocation
+    var loc: SourceLocation
     """Source code location information for the profiling block, including file, line, and column."""
 
     var start_time: UInt
@@ -70,10 +70,10 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable):
         @parameter
         if Self.enabled:
             self.name = name
-            self.loc = __call_location()
+            self.loc = call_location()
         else:
             self.name = ""
-            self.loc = _SourceLocation(0, 0, "")
+            self.loc = SourceLocation(0, 0, "")
 
     @always_inline
     fn __enter__(mut self):

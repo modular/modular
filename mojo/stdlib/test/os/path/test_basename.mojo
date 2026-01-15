@@ -14,7 +14,7 @@
 from os.path import basename
 from pathlib import Path
 
-from builtin._location import __source_location
+from reflection import source_location
 from testing import TestSuite, assert_equal
 
 
@@ -78,7 +78,7 @@ def test_basename():
     assert_equal(".hiddenfile", basename("/path/to/.hiddenfile"))
     assert_equal(".hiddenfile", basename("/path/to/dir/.hiddenfile"))
 
-    assert_equal("test_basename.mojo", basename(__source_location().file_name))
+    assert_equal("test_basename.mojo", basename(source_location().file_name))
     assert_equal(
         "some_file.txt", basename(Path.home() / "dir" / "some_file.txt")
     )

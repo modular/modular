@@ -13,42 +13,42 @@
 #
 
 
-from builtin._location import (
-    __call_location,
-    __source_location,
-    _SourceLocation,
+from reflection import (
+    call_location,
+    source_location,
+    SourceLocation,
 )
 from testing import assert_equal, assert_true, TestSuite
 
 
-fn check_source_loc(line: Int, col: Int, source_loc: _SourceLocation) raises:
+fn check_source_loc(line: Int, col: Int, source_loc: SourceLocation) raises:
     """Utility function to help writing source location tests."""
     assert_equal(source_loc.line, line)
     assert_equal(source_loc.col, col)
     assert_true(String(source_loc.file_name).endswith("test_location.mojo"))
 
 
-fn get_locs() -> Tuple[_SourceLocation, _SourceLocation]:
+fn get_locs() -> Tuple[SourceLocation, SourceLocation]:
     return (
-        __source_location(),
+        source_location(),
         source_loc_with_debug(),
     )
 
 
 @always_inline
-fn get_locs_inlined() -> Tuple[_SourceLocation, _SourceLocation]:
+fn get_locs_inlined() -> Tuple[SourceLocation, SourceLocation]:
     return (
-        __source_location(),
+        source_location(),
         source_loc_with_debug(),
     )
 
 
 fn get_four_locs() -> (
     Tuple[
-        _SourceLocation,
-        _SourceLocation,
-        _SourceLocation,
-        _SourceLocation,
+        SourceLocation,
+        SourceLocation,
+        SourceLocation,
+        SourceLocation,
     ]
 ):
     var p1 = get_locs()
@@ -59,10 +59,10 @@ fn get_four_locs() -> (
 @always_inline
 fn get_four_locs_inlined() -> (
     Tuple[
-        _SourceLocation,
-        _SourceLocation,
-        _SourceLocation,
-        _SourceLocation,
+        SourceLocation,
+        SourceLocation,
+        SourceLocation,
+        SourceLocation,
     ]
 ):
     var p1 = get_locs()
@@ -71,12 +71,12 @@ fn get_four_locs_inlined() -> (
 
 
 fn test_builtin_source_loc() raises:
-    var source_loc = __source_location()
-    check_source_loc(74, 39, source_loc)
-    check_source_loc(76, 47, __source_location())
+    var source_loc = source_location()
+    check_source_loc(74, 37, source_loc)
+    check_source_loc(76, 45, source_location())
 
     var l = (33, 34, 41, 42)
-    var c = (26, 30, 26, 30)
+    var c = (24, 30, 24, 30)
     var loc_pair = get_locs()
     check_source_loc(l[0], c[0], loc_pair[0])
     check_source_loc(l[1], c[1], loc_pair[1])
@@ -98,22 +98,22 @@ fn test_builtin_source_loc() raises:
     check_source_loc(l[3], c[3], loc_quad[3])
 
 
-fn get_inner_location_statically() -> _SourceLocation:
-    return __source_location()
+fn get_inner_location_statically() -> SourceLocation:
+    return source_location()
 
 
-fn get_inner_location_statically_with_debug() -> _SourceLocation:
+fn get_inner_location_statically_with_debug() -> SourceLocation:
     return source_loc_with_debug()
 
 
 @always_inline("nodebug")
-fn get_callsite_statically() -> _SourceLocation:
-    return __call_location()
+fn get_callsite_statically() -> SourceLocation:
+    return call_location()
 
 
 fn test_parameter_context() raises:
     # TODO: enable these in parameter contexts
-    comptime sloc = __source_location()
+    comptime sloc = source_location()
     assert_equal(sloc.line, 0)
     assert_equal(sloc.col, 0)
     assert_equal(sloc.file_name, "<unknown location in parameter context>")
@@ -124,32 +124,32 @@ fn test_parameter_context() raises:
     assert_equal(cloc.file_name, "<unknown location in parameter context>")
 
     comptime iloc = get_inner_location_statically()
-    check_source_loc(102, 29, iloc)
+    check_source_loc(102, 27, iloc)
     comptime iloc2 = get_inner_location_statically_with_debug()
     check_source_loc(106, 33, iloc2)
 
 
 @always_inline
-fn capture_call_loc[depth: Int = 1](cond: Bool = False) -> _SourceLocation:
+fn capture_call_loc[depth: Int = 1](cond: Bool = False) -> SourceLocation:
     if (
         not cond
-    ):  # NOTE: we test that __call_location works even in a nested scope.
-        return __call_location[inline_count=depth]()
-    return _SourceLocation(-1, -1, "")
+    ):  # NOTE: we test that call_location works even in a nested scope.
+        return call_location[inline_count=depth]()
+    return SourceLocation(-1, -1, "")
 
 
 @always_inline("nodebug")
 fn capture_call_loc_nodebug[
     depth: Int = 1
-](cond: Bool = False) -> _SourceLocation:
+](cond: Bool = False) -> SourceLocation:
     if (
         not cond
-    ):  # NOTE: we test that __call_location works even in a nested scope.
-        return __call_location[inline_count=depth]()
-    return _SourceLocation(-1, -1, "")
+    ):  # NOTE: we test that call_location works even in a nested scope.
+        return call_location[inline_count=depth]()
+    return SourceLocation(-1, -1, "")
 
 
-fn get_call_locs() -> Tuple[_SourceLocation, _SourceLocation]:
+fn get_call_locs() -> Tuple[SourceLocation, SourceLocation]:
     return (
         capture_call_loc(),
         capture_call_loc_nodebug(),
@@ -159,7 +159,7 @@ fn get_call_locs() -> Tuple[_SourceLocation, _SourceLocation]:
 @always_inline("nodebug")
 fn get_call_locs_inlined[
     depth: Int = 1
-]() -> Tuple[_SourceLocation, _SourceLocation]:
+]() -> Tuple[SourceLocation, SourceLocation]:
     return (
         capture_call_loc[depth](),
         capture_call_loc_nodebug[depth](),
@@ -169,16 +169,16 @@ fn get_call_locs_inlined[
 @always_inline
 fn get_call_locs_inlined_twice[
     depth: Int = 1
-]() -> Tuple[_SourceLocation, _SourceLocation]:
+]() -> Tuple[SourceLocation, SourceLocation]:
     return get_call_locs_inlined[depth]()
 
 
 fn get_four_call_locs() -> (
     Tuple[
-        _SourceLocation,
-        _SourceLocation,
-        _SourceLocation,
-        _SourceLocation,
+        SourceLocation,
+        SourceLocation,
+        SourceLocation,
+        SourceLocation,
     ]
 ):
     var p1 = get_call_locs()
@@ -189,10 +189,10 @@ fn get_four_call_locs() -> (
 @always_inline
 fn get_four_call_locs_inlined() -> (
     Tuple[
-        _SourceLocation,
-        _SourceLocation,
-        _SourceLocation,
-        _SourceLocation,
+        SourceLocation,
+        SourceLocation,
+        SourceLocation,
+        SourceLocation,
     ]
 ):
     var p1 = get_call_locs()
@@ -229,7 +229,7 @@ fn test_builtin_call_loc() raises:
 
 
 @always_inline
-fn source_loc_with_debug() -> _SourceLocation:
+fn source_loc_with_debug() -> SourceLocation:
     var line: __mlir_type.index
     var col: __mlir_type.index
     var file_name: __mlir_type.`!kgen.string`
@@ -242,7 +242,7 @@ fn source_loc_with_debug() -> _SourceLocation:
         ],
     ]()
 
-    return _SourceLocation(
+    return SourceLocation(
         Int(mlir_value=line),
         Int(mlir_value=col),
         StaticString(file_name),
@@ -250,7 +250,7 @@ fn source_loc_with_debug() -> _SourceLocation:
 
 
 fn test_source_location_struct() raises:
-    var source_loc = _SourceLocation(50, 60, "/path/to/some_file.mojo")
+    var source_loc = SourceLocation(50, 60, "/path/to/some_file.mojo")
     assert_equal(String(source_loc), "/path/to/some_file.mojo:50:60")
 
 

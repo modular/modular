@@ -18,6 +18,7 @@ This module provides compile-time reflection capabilities including:
 - Function name and linkage introspection (`get_function_name`, `get_linkage_name`)
 - Struct field reflection (`struct_field_count`, `struct_field_names`, `struct_field_types`)
 - Field lookup by name (`struct_field_index_by_name`, `struct_field_type_by_name`)
+- Source location introspection (`source_location`, `call_location`)
 
 Example:
 ```mojo
@@ -38,6 +39,7 @@ fn main():
 ```
 """
 
+from .location import SourceLocation, source_location, call_location
 from .reflection import (
     # Type and function name introspection
     get_linkage_name,

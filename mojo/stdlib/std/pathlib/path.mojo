@@ -19,7 +19,7 @@ from os import PathLike, listdir, stat_result
 from sys import CompilationTarget, external_call
 from sys.ffi import c_char
 
-from builtin._location import __call_location
+from reflection import call_location
 
 comptime DIR_SEPARATOR = "/"
 """The directory separator character for path operations."""
@@ -56,7 +56,7 @@ fn _dir_of_current_file() raises -> Path:
     Returns:
       The directory the file calling is at.
     """
-    return _dir_of_current_file_impl(__call_location().file_name)
+    return _dir_of_current_file_impl(call_location().file_name)
 
 
 @no_inline

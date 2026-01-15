@@ -14,12 +14,12 @@
 from os.path import isfile
 from pathlib import Path
 
-from builtin._location import __source_location
+from reflection import source_location
 from testing import TestSuite, assert_false, assert_true
 
 
 def test_isfile():
-    assert_true(isfile(__source_location().file_name))
+    assert_true(isfile(source_location().file_name))
     assert_false(isfile("this/file/does/not/exist"))
 
     assert_false(isfile(Path()))

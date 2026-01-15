@@ -14,7 +14,7 @@
 from os.path import isdir
 from pathlib import Path, cwd
 
-from builtin._location import __source_location
+from reflection import source_location
 from testing import TestSuite, assert_false, assert_true
 
 
@@ -22,7 +22,7 @@ def test_isdir():
     assert_true(isdir(Path()))
     assert_true(isdir(String(cwd())))
     assert_false(isdir(String(cwd() / "nonexistent")))
-    assert_false(isdir(__source_location().file_name))
+    assert_false(isdir(source_location().file_name))
 
 
 def main():

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin._location import _SourceLocation
+from reflection import SourceLocation
 from logger import Level, Logger
 from testing import TestSuite
 
@@ -81,7 +81,7 @@ def test_log_with_custom_location():
     comptime log = Logger[Level.TRACE](prefix="", source_location=True)
 
     # CHECK: somefile.mojo:42:999] hello
-    log.trace("hello", location=_SourceLocation(42, 999, "somefile.mojo"))
+    log.trace("hello", location=SourceLocation(42, 999, "somefile.mojo"))
 
 
 # CHECK-LABEL: Test logging with sep/end

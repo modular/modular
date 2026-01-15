@@ -43,7 +43,7 @@ from sys.info import (
 from sys.intrinsics import _type_is_eq
 from sys.param_env import _is_bool_like
 
-from builtin._location import __call_location, _SourceLocation
+from reflection import call_location, SourceLocation
 from builtin.device_passable import DevicePassable
 from builtin.variadics import Variadic
 from compile.compile import CompiledFunctionInfo
@@ -133,10 +133,10 @@ fn _checked(
     err: _ConstCharPtr,
     *,
     msg: String = "",
-    location: OptionalReg[_SourceLocation] = None,
+    location: OptionalReg[SourceLocation] = None,
 ) raises:
     if err:
-        _raise_checked_impl(err, msg, location.or_else(__call_location()))
+        _raise_checked_impl(err, msg, location.or_else(call_location()))
 
 
 @always_inline
@@ -146,7 +146,7 @@ fn _checked_call[
     err: _ConstCharPtr,
     *,
     device_context: DeviceContext,
-    location: _SourceLocation,
+    location: SourceLocation,
 ) raises:
     # Extract the linkage name of the function and strip off everything after
     # the fully qualified name.
@@ -171,7 +171,7 @@ fn _checked_call[
 
 @no_inline
 fn _raise_checked_impl(
-    err_msg: _ConstCharPtr, msg: String, location: _SourceLocation
+    err_msg: _ConstCharPtr, msg: String, location: SourceLocation
 ) raises:
     var err = _string_from_owned_charptr(err_msg)
     raise Error(location.prefix(err + ((" " + msg) if msg else "")))
@@ -180,7 +180,7 @@ fn _raise_checked_impl(
 # Checks that the given `dim` has only positive integers in them.
 fn _check_dim[
     func_name_for_msg: StringLiteral, dim_name_for_msg: StringLiteral
-](dim: Dim, *, location: _SourceLocation) raises:
+](dim: Dim, *, location: SourceLocation) raises:
     if dim.x() <= 0:
         comptime msg = String(
             func_name_for_msg,
@@ -865,7 +865,7 @@ struct DeviceBuffer[dtype: DType](
                     UInt(size),
                     UInt(elem_size),
                 ),
-                location=__call_location(),
+                location=call_location(),
             )
         else:
             raise Error(
@@ -1082,7 +1082,7 @@ struct DeviceBuffer[dtype: DType](
                 UInt(size),
                 UInt(elem_size),
             ),
-            location=__call_location(),
+            location=call_location(),
         )
         return DeviceBuffer[view_type](new_handle, new_device_ptr)
 
@@ -1594,10 +1594,10 @@ struct DeviceStream(ImplicitlyCopyable):
             If the operation fails.
         """
         _check_dim["DeviceStream.enqueue_function", "grid_dim"](
-            grid_dim, location=__call_location()
+            grid_dim, location=call_location()
         )
         _check_dim["DeviceStream.enqueue_function", "block_dim"](
-            block_dim, location=__call_location()
+            block_dim, location=call_location()
         )
 
         self._enqueue_function(
@@ -1625,7 +1625,7 @@ struct DeviceStream(ImplicitlyCopyable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         f._call_with_pack(
             self,
@@ -1636,7 +1636,7 @@ struct DeviceStream(ImplicitlyCopyable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
     @parameter
@@ -1653,7 +1653,7 @@ struct DeviceStream(ImplicitlyCopyable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         f._call_with_pack_checked(
             self,
@@ -1664,7 +1664,7 @@ struct DeviceStream(ImplicitlyCopyable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
 
@@ -2222,7 +2222,7 @@ struct DeviceFunction[
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         *,
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         comptime num_args = len(VariadicList(Ts))
         var num_captures = self._func_impl.num_captures
@@ -2335,7 +2335,7 @@ struct DeviceFunction[
                     dense_args_sizes,
                 ),
                 device_context=self._context,
-                location=location.or_else(__call_location()),
+                location=location.or_else(call_location()),
             )
         else:
             _checked_call[Self.func](
@@ -2371,7 +2371,7 @@ struct DeviceFunction[
                     dense_args_sizes,
                 ),
                 device_context=self._context,
-                location=location.or_else(__call_location()),
+                location=location.or_else(call_location()),
             )
 
         if num_captures > num_captures_static:
@@ -2393,7 +2393,7 @@ struct DeviceFunction[
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         comptime num_args = len(VariadicList(Ts))
         var num_captures = self._func_impl.num_captures
@@ -2469,7 +2469,7 @@ struct DeviceFunction[
                     dense_args_addrs,
                 ),
                 device_context=self._context,
-                location=location.or_else(__call_location()),
+                location=location.or_else(call_location()),
             )
         else:
             _checked_call[Self.func](
@@ -2491,7 +2491,7 @@ struct DeviceFunction[
                     dense_args_addrs,
                 ),
                 device_context=self._context,
-                location=location.or_else(__call_location()),
+                location=location.or_else(call_location()),
             )
 
         if num_captures > num_captures_static:
@@ -2594,7 +2594,7 @@ struct DeviceFunction[
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         comptime num_args = len(VariadicList(Ts))
         var num_captures = self._func_impl.num_captures
@@ -2674,7 +2674,7 @@ struct DeviceFunction[
                     dense_args_addrs,
                 ),
                 device_context=self._context,
-                location=location.or_else(__call_location()),
+                location=location.or_else(call_location()),
             )
         else:
             _checked_call[Self.func](
@@ -2696,7 +2696,7 @@ struct DeviceFunction[
                     dense_args_addrs,
                 ),
                 device_context=self._context,
-                location=location.or_else(__call_location()),
+                location=location.or_else(call_location()),
             )
 
         if num_captures > num_captures_static:
@@ -2716,7 +2716,7 @@ struct DeviceFunction[
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
@@ -2876,7 +2876,7 @@ struct DeviceFunction[
                 dense_args_sizes,
             ),
             device_context=self._context,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
         if num_captures > num_captures_static:
@@ -3155,7 +3155,7 @@ struct DeviceExternalFunction:
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         """Launches the device function with the specified arguments and configuration.
 
@@ -4125,7 +4125,7 @@ struct DeviceContext(ImplicitlyCopyable):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
 
@@ -4185,10 +4185,10 @@ struct DeviceContext(ImplicitlyCopyable):
             If the operation fails.
         """
         _check_dim["DeviceContext.enqueue_function_unchecked", "grid_dim"](
-            grid_dim, location=__call_location()
+            grid_dim, location=call_location()
         )
         _check_dim["DeviceContext.enqueue_function_unchecked", "block_dim"](
-            block_dim, location=__call_location()
+            block_dim, location=call_location()
         )
 
         var gpu_kernel = self.compile_function_unchecked[
@@ -4208,7 +4208,7 @@ struct DeviceContext(ImplicitlyCopyable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
     @parameter
@@ -4225,7 +4225,7 @@ struct DeviceContext(ImplicitlyCopyable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         """Enqueues a compiled function for execution on this device.
 
@@ -4277,10 +4277,10 @@ struct DeviceContext(ImplicitlyCopyable):
             If the operation fails.
         """
         _check_dim["DeviceContext.enqueue_function_unchecked", "grid_dim"](
-            grid_dim, location=__call_location()
+            grid_dim, location=call_location()
         )
         _check_dim["DeviceContext.enqueue_function_unchecked", "block_dim"](
-            block_dim, location=__call_location()
+            block_dim, location=call_location()
         )
 
         __comptime_assert (
@@ -4295,7 +4295,7 @@ struct DeviceContext(ImplicitlyCopyable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
     @parameter
@@ -4312,7 +4312,7 @@ struct DeviceContext(ImplicitlyCopyable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         """Enqueues a pre-compiled checked function for execution on this device.
 
@@ -4352,10 +4352,10 @@ struct DeviceContext(ImplicitlyCopyable):
             If the operation fails.
         """
         _check_dim["DeviceContext.enqueue_function", "grid_dim"](
-            grid_dim, location=__call_location()
+            grid_dim, location=call_location()
         )
         _check_dim["DeviceContext.enqueue_function", "block_dim"](
-            block_dim, location=__call_location()
+            block_dim, location=call_location()
         )
 
         __comptime_assert Bool(
@@ -4370,7 +4370,7 @@ struct DeviceContext(ImplicitlyCopyable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
     @always_inline
@@ -4386,7 +4386,7 @@ struct DeviceContext(ImplicitlyCopyable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         """Enqueues an external device function for execution on this device.
 
@@ -4443,10 +4443,10 @@ struct DeviceContext(ImplicitlyCopyable):
             If the operation fails.
         """
         _check_dim["DeviceContext.enqueue_function", "grid_dim"](
-            grid_dim, location=__call_location()
+            grid_dim, location=call_location()
         )
         _check_dim["DeviceContext.enqueue_function", "block_dim"](
-            block_dim, location=__call_location()
+            block_dim, location=call_location()
         )
 
         self._enqueue_external_function(
@@ -4458,7 +4458,7 @@ struct DeviceContext(ImplicitlyCopyable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
     @parameter
@@ -4484,7 +4484,7 @@ struct DeviceContext(ImplicitlyCopyable):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device with type checking.
 
@@ -4553,10 +4553,10 @@ struct DeviceContext(ImplicitlyCopyable):
             If the operation fails.
         """
         _check_dim["DeviceContext.enqueue_function", "grid_dim"](
-            grid_dim, location=__call_location()
+            grid_dim, location=call_location()
         )
         _check_dim["DeviceContext.enqueue_function", "block_dim"](
-            block_dim, location=__call_location()
+            block_dim, location=call_location()
         )
 
         # If shared_mem_bytes is specified but func_attribute is not,
@@ -4589,7 +4589,7 @@ struct DeviceContext(ImplicitlyCopyable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
     @parameter
@@ -4613,7 +4613,7 @@ struct DeviceContext(ImplicitlyCopyable):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
 
@@ -4673,10 +4673,10 @@ struct DeviceContext(ImplicitlyCopyable):
             If the operation fails.
         """
         _check_dim["DeviceContext.enqueue_function_experimental", "grid_dim"](
-            grid_dim, location=__call_location()
+            grid_dim, location=call_location()
         )
         _check_dim["DeviceContext.enqueue_function_experimental", "block_dim"](
-            block_dim, location=__call_location()
+            block_dim, location=call_location()
         )
 
         # If shared_mem_bytes is specified but func_attribute is not,
@@ -4708,7 +4708,7 @@ struct DeviceContext(ImplicitlyCopyable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
     @parameter
@@ -4734,7 +4734,7 @@ struct DeviceContext(ImplicitlyCopyable):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a capturing kernel for execution on this device with type checking.
 
@@ -4803,10 +4803,10 @@ struct DeviceContext(ImplicitlyCopyable):
             If the operation fails.
         """
         _check_dim["DeviceContext.enqueue_function", "grid_dim"](
-            grid_dim, location=__call_location()
+            grid_dim, location=call_location()
         )
         _check_dim["DeviceContext.enqueue_function", "block_dim"](
-            block_dim, location=__call_location()
+            block_dim, location=call_location()
         )
 
         # If shared_mem_bytes is specified but func_attribute is not,
@@ -4839,7 +4839,7 @@ struct DeviceContext(ImplicitlyCopyable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
     @parameter
@@ -4863,7 +4863,7 @@ struct DeviceContext(ImplicitlyCopyable):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device. This
         overload takes in a function that's `capturing`.
@@ -4924,10 +4924,10 @@ struct DeviceContext(ImplicitlyCopyable):
             If the operation fails.
         """
         _check_dim["DeviceContext.enqueue_function_experimental", "grid_dim"](
-            grid_dim, location=__call_location()
+            grid_dim, location=call_location()
         )
         _check_dim["DeviceContext.enqueue_function_experimental", "block_dim"](
-            block_dim, location=__call_location()
+            block_dim, location=call_location()
         )
 
         # If shared_mem_bytes is specified but func_attribute is not,
@@ -4959,7 +4959,7 @@ struct DeviceContext(ImplicitlyCopyable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
     @parameter
@@ -4980,7 +4980,7 @@ struct DeviceContext(ImplicitlyCopyable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         """Enqueues a compiled function for execution on this device.
 
@@ -5035,10 +5035,10 @@ struct DeviceContext(ImplicitlyCopyable):
             If the operation fails.
         """
         _check_dim["DeviceContext.enqueue_function", "grid_dim"](
-            grid_dim, location=__call_location()
+            grid_dim, location=call_location()
         )
         _check_dim["DeviceContext.enqueue_function", "block_dim"](
-            block_dim, location=__call_location()
+            block_dim, location=call_location()
         )
 
         __comptime_assert Bool(
@@ -5053,7 +5053,7 @@ struct DeviceContext(ImplicitlyCopyable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
     @parameter
@@ -5070,7 +5070,7 @@ struct DeviceContext(ImplicitlyCopyable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         f._call_with_pack(
             self,
@@ -5081,7 +5081,7 @@ struct DeviceContext(ImplicitlyCopyable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
     @parameter
@@ -5098,7 +5098,7 @@ struct DeviceContext(ImplicitlyCopyable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         f._call_with_pack_checked(
             self,
@@ -5109,7 +5109,7 @@ struct DeviceContext(ImplicitlyCopyable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
     @parameter
@@ -5126,7 +5126,7 @@ struct DeviceContext(ImplicitlyCopyable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[_SourceLocation] = None,
+        location: OptionalReg[SourceLocation] = None,
     ) raises:
         f._call_with_pack(
             self,
@@ -5137,7 +5137,7 @@ struct DeviceContext(ImplicitlyCopyable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
     @always_inline
@@ -5987,7 +5987,7 @@ struct DeviceContext(ImplicitlyCopyable):
             ](
                 self._handle,
             ),
-            location=__call_location(),
+            location=call_location(),
         )
 
     fn enqueue_wait_for(self, other: DeviceContext) raises:
@@ -6072,7 +6072,7 @@ struct DeviceContext(ImplicitlyCopyable):
                 UnsafePointer(to=value),
                 self._handle,
             ),
-            location=__call_location(),
+            location=call_location(),
         )
         return Int(value)
 
@@ -6117,7 +6117,7 @@ struct DeviceContext(ImplicitlyCopyable):
                 self._handle,
                 Int(attr._value),
             ),
-            location=__call_location(),
+            location=call_location(),
         )
         return Int(value)
 
@@ -6151,7 +6151,7 @@ struct DeviceContext(ImplicitlyCopyable):
                 ](
                     self._handle,
                 ),
-                location=__call_location(),
+                location=call_location(),
             )
             return True
         except:
@@ -6215,7 +6215,7 @@ struct DeviceContext(ImplicitlyCopyable):
                 _IntPtr,
                 _DeviceContextPtr,
             ](UnsafePointer(to=compute_capability), self._handle),
-            location=__call_location(),
+            location=call_location(),
         )
         return Int(compute_capability)
 
@@ -6287,7 +6287,7 @@ struct DeviceContext(ImplicitlyCopyable):
                 UnsafePointer(to=free),
                 UnsafePointer(to=total),
             ),
-            location=__call_location(),
+            location=call_location(),
         )
 
         return (free, total)
@@ -6341,7 +6341,7 @@ struct DeviceContext(ImplicitlyCopyable):
                 self._handle,
                 peer._handle,
             ),
-            location=__call_location(),
+            location=call_location(),
         )
         return result
 
@@ -6400,7 +6400,7 @@ struct DeviceContext(ImplicitlyCopyable):
                 self._handle,
                 peer._handle,
             ),
-            location=__call_location(),
+            location=call_location(),
         )
 
     @always_inline
@@ -6425,7 +6425,7 @@ struct DeviceContext(ImplicitlyCopyable):
                 UnsafePointer(to=result),
                 self._handle,
             ),
-            location=__call_location(),
+            location=call_location(),
         )
         return result
 

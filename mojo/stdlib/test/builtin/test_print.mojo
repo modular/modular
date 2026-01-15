@@ -13,19 +13,19 @@
 
 from tempfile import NamedTemporaryFile
 
-from builtin._location import __call_location, _SourceLocation
+from reflection import call_location, SourceLocation
 from testing import TestSuite
 
 from utils import IndexList
 
 
 @always_inline
-fn _assert_error[T: Writable](msg: T, loc: _SourceLocation) -> Error:
+fn _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
     return Error(loc.prefix(String("AssertionError: ", msg)))
 
 
 fn _assert_equal_error(
-    lhs: String, rhs: String, msg: String, loc: _SourceLocation
+    lhs: String, rhs: String, msg: String, loc: SourceLocation
 ) -> Error:
     var err = (
         "`left == right` comparison failed:\n   left: "
@@ -41,12 +41,12 @@ fn _assert_equal_error(
 struct PrintChecker(Movable):
     var tmp: NamedTemporaryFile
     var cursor: UInt64
-    var call_location: _SourceLocation
+    var call_location: SourceLocation
 
     @always_inline
     fn __init__(out self) raises:
         self.tmp = NamedTemporaryFile("rw")
-        self.call_location = __call_location()
+        self.call_location = call_location()
         self.cursor = 0
 
     fn __enter__(var self) -> Self:
