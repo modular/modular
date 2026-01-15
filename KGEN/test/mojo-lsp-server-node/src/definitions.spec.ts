@@ -63,7 +63,7 @@ fn print(x: String):
 fn print(x: Bool):
     pass
 
-fn function[type: AnyTrivialRegType](arg: type):
+fn function[type: __TypeOfAllTypes](arg: type):
     print(arg)
 `
     );

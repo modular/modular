@@ -10,7 +10,7 @@
 comptime string = __mlir_type.`!kgen.string`
 comptime float = __mlir_type.`!pop.scalar<f64>`
 
-comptime AnyTrivialRegType = __mlir_type.`!kgen.type`
+comptime __TypeOfAllTypes = __mlir_type.`!kgen.type`
 comptime ImmutOrigin = Origin[mut=False]
 comptime MutOrigin = Origin[mut=True]
 comptime AnyOrigin[*, mut: Bool] = Origin(
@@ -721,7 +721,7 @@ struct Slice:
         return
 
     fn __init__[
-        T0: AnyTrivialRegType, T1: AnyTrivialRegType, T2: AnyTrivialRegType
+        T0: __TypeOfAllTypes, T1: __TypeOfAllTypes, T2: __TypeOfAllTypes
     ](out self, start: T0, end: T1, step: T2):
         pass
 
@@ -862,7 +862,7 @@ trait AnyRPTrivialType:
 
 
 @register_passable("trivial")
-struct VariadicList[type: AnyTrivialRegType]:
+struct VariadicList[type: __TypeOfAllTypes]:
     comptime _mlir_type = __mlir_type[`!kgen.variadic<`, Self.type, `>`]
 
     var value: Self._mlir_type
@@ -1013,7 +1013,7 @@ struct VariadicPack[
 
 @register_passable
 struct __ParameterClosureCaptureList[
-    fn_type: AnyTrivialRegType, fn_ref: fn_type
+    fn_type: __TypeOfAllTypes, fn_ref: fn_type
 ](ImplicitlyCopyable):
     comptime type = __mlir_type.`!kgen.pointer<none>`
     var value: Self.type
@@ -1361,9 +1361,9 @@ struct Optional[T: ImplicitlyCopyable]:
 
 @always_inline("builtin")
 fn rebind[
-    src_type: AnyTrivialRegType,
+    src_type: __TypeOfAllTypes,
     //,
-    dest_type: AnyTrivialRegType,
+    dest_type: __TypeOfAllTypes,
 ](src: src_type) -> dest_type:
     return __mlir_op.`kgen.rebind`[_type=dest_type](src)
 
@@ -1401,7 +1401,7 @@ comptime downcast[_Trait: AnyTrait, T: AnyType] = __mlir_attr[
 
 @always_inline
 fn trait_downcast[
-    T: AnyTrivialRegType, //, Trait: AnyTrait
+    T: __TypeOfAllTypes, //, Trait: AnyTrait
 ](var x: T) -> downcast[Trait, T]:
     return rebind[downcast[Trait, T]](x)
 

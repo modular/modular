@@ -203,7 +203,7 @@ fn passFieldToOwnedInt(var a: MemExample):
 
 
 # Generic type: Issue #14018
-struct MyGenericType[Type: AnyTrivialRegType]:
+struct MyGenericType[Type: __TypeOfAllTypes]:
     var value: Self.Type
 
     @implicit

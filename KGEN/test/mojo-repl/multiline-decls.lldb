@@ -19,7 +19,7 @@ trait TestTrait:
 
 # Will test a struct with multiline declaration
 struct Foo[
-    *Ts: AnyTrivialRegType
+    *Ts: __TypeOfAllTypes
     ](TestTrait):
   fn __init__(out self):
     pass

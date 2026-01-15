@@ -35,29 +35,29 @@ fn test_kw_args_overload(x: Int, y: Int):
 
 
 # COM: test parametric overload in the presence of keyword operands.
-fn take_kw_param_infer[A: AnyTrivialRegType, B: AnyTrivialRegType](a: A, b: B):
+fn take_kw_param_infer[A: __TypeOfAllTypes, B: __TypeOfAllTypes](a: A, b: B):
     pass
 
 
-fn take_kw_param_infer[B: AnyTrivialRegType](a: MyInt, b: B):
+fn take_kw_param_infer[B: __TypeOfAllTypes](a: MyInt, b: B):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_kw_args_param_infer
 fn test_kw_args_param_infer(x: Int, f: __mlir_type.`!pop.scalar<f64>`, s: MyInt):
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:{{.*}}#kgen.type<!Int>, {{.*}}#kgen.type<scalar<f64>>>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[__TypeOfAllTypes,__TypeOfAllTypes]{{.*}}"<:{{.*}}#kgen.type<!Int>, {{.*}}#kgen.type<scalar<f64>>>(%x, %f)
     take_kw_param_infer(x, b=f)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:{{.*}}#kgen.type<!Int>, {{.*}}#kgen.type<scalar<f64>>>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[__TypeOfAllTypes,__TypeOfAllTypes]{{.*}}"<:{{.*}}#kgen.type<!Int>, {{.*}}#kgen.type<scalar<f64>>>(%x, %f)
     take_kw_param_infer[Int](b=f, a=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType,AnyTrivialRegType]{{.*}}"<:{{.*}}#kgen.type<!Int>, {{.*}}#kgen.type<scalar<f64>>>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[__TypeOfAllTypes,__TypeOfAllTypes]{{.*}}"<:{{.*}}#kgen.type<!Int>, {{.*}}#kgen.type<scalar<f64>>>(%x, %f)
     take_kw_param_infer[Int, __mlir_type.`!pop.scalar<f64>`](b=f, a=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType]{{.*}}<:{{.*}}#kgen.type<!Int>>(%s, %x)
+    # CHECK: call {{.*}}@"take_kw_param_infer[__TypeOfAllTypes]{{.*}}<:{{.*}}#kgen.type<!Int>>(%s, %x)
     take_kw_param_infer(s, b=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[AnyTrivialRegType]{{.*}}<:{{.*}}#kgen.type<!Int>>(%s, %x)
+    # CHECK: call {{.*}}@"take_kw_param_infer[__TypeOfAllTypes]{{.*}}<:{{.*}}#kgen.type<!Int>>(%s, %x)
     take_kw_param_infer(b=x, a=s)
 
 

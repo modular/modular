@@ -69,7 +69,7 @@ struct InferredStruct[x: Int, //, y: Int, z: ParamType[x]]:
 
 
 struct InferredStructConversion[
-    x: Int, //, y: AnyTrivialRegType, z: ParamType[x]
+    x: Int, //, y: __TypeOfAllTypes, z: ParamType[x]
 ]:
     pass
 
@@ -112,7 +112,7 @@ fn test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
     # CHECK-NEXT: fully_bound_type{{.*}}<@inferred::@InferredStruct<:!Int x, :!Int {1}, :!lit.struct<#ParamType <:!Int x>> y>>
     comptime fully_bound_type = partially_bound_type[y]
 
-    # CHECK-NEXT: lit.var.decl "inferred_type" var : !lit.ref<!lit.struct<#InferredStructConversion <:!Int x, :!alias_AnyTrivialRegType1 #kgen.type<!Int>, :!lit.struct<#ParamType <:!Int x>> y>>
+    # CHECK-NEXT: lit.var.decl "inferred_type" var : !lit.ref<!lit.struct<#InferredStructConversion <:!Int x, :!alias___TypeOfAllTypes1 #kgen.type<!Int>, :!lit.struct<#ParamType <:!Int x>> y>>
     var inferred_type: InferredStructConversion[Int, y]
 
 

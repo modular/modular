@@ -73,7 +73,7 @@ fn two_variadics(*a: Int, *b: Int):
     pass
 
 # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
-fn two_variadic_packs[*Ts: AnyTrivialRegType](*a: *Ts, *b: *Ts):
+fn two_variadic_packs[*Ts: __TypeOfAllTypes](*a: *Ts, *b: *Ts):
     pass
 
 # expected-error @+1 {{parametric functions may not be used as arguments; consider passing as a parameter instead}}

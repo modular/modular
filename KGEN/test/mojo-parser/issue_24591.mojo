@@ -8,7 +8,7 @@
 comptime NoneType = __mlir_type.`!kgen.none`
 
 @register_passable
-struct Optional[T: AnyTrivialRegType]:
+struct Optional[T: __TypeOfAllTypes]:
     @implicit
     fn __init__(out self, none: NoneType):
         pass

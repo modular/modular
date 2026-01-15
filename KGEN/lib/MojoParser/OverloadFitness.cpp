@@ -113,14 +113,14 @@ MojoInflightDiag DiagEmitter::wrongPosOnlyCount(size_t minRequiredArgs,
 
 MojoInflightDiag DiagEmitter::resultGenericMemType(Type outputType) const {
   return initDiag()
-         << "result cannot bind AnyTrivialRegType type to memory-only type "
+         << "result cannot bind __TypeOfAllTypes type to memory-only type "
          << ASTType(outputType);
 }
 
 MojoInflightDiag DiagEmitter::argGenericMemType(size_t argIdx,
                                                 Type expectedType,
                                                 PogListAttr argListAttr) const {
-  return initDiag() << "cannot bind AnyTrivialRegType type to memory-only type "
+  return initDiag() << "cannot bind __TypeOfAllTypes type to memory-only type "
                     << ASTType(expectedType) << " expected by argument "
                     << argListAttr.getPogs()[argIdx].getName();
 }
@@ -879,7 +879,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     // If the arguments or results got bound to a memory-only type then their
     // argument convention needs to change.  We cannot support this until we get
     // proper type traits.
-    // TODO: Don't let memory types bind to AnyTrivialRegType.
+    // TODO: Don't let memory types bind to __TypeOfAllTypes.
     if (!ASTType(expectedType).isRegisterPassable(callLoc, shared))
       return emitDiagFor.argGenericMemType(expectedArgIdx, expectedType,
                                            argListAttr);

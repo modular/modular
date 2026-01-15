@@ -127,10 +127,10 @@ trait CFMTraitParams:
 
 
 # CHECK-LABEL: lit.struct.decl @CFMStructParams
-struct CFMStructParams[t1: AnyTrivialRegType, t2: AnyTrivialRegType](
+struct CFMStructParams[t1: __TypeOfAllTypes, t2: __TypeOfAllTypes](
     CFMTraitParams
 ):
-    # CHECK: lit.fn @"f1{{.*}}"<x: !CFMTraitParams>[{{.*}}](%self: !lit.ref<!lit.struct<#CFMStructParams <:!alias_AnyTrivialRegType1 t1, :!alias_AnyTrivialRegType1 t2>>{{.*}}> read_mem)
+    # CHECK: lit.fn @"f1{{.*}}"<x: !CFMTraitParams>[{{.*}}](%self: !lit.ref<!lit.struct<#CFMStructParams <:!alias___TypeOfAllTypes1 t1, :!alias___TypeOfAllTypes1 t2>>{{.*}}> read_mem)
     fn f1[x: CFMTraitParams](self):
         pass
 

@@ -726,9 +726,9 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
     // Ignore erroneous children, which have nothing in them.
     if (decls.empty())
       continue;
-    // TODO: make exception for __TypeOfAllType for now.
+    // TODO: make exception for __TypeOfAllTypes for now.
     if (!isFullImport && (name.getValue()[0] == '_' &&
-                          !name.getValue().starts_with("__TypeOfAllType")))
+                          !name.getValue().starts_with("__TypeOfAllTypes")))
       continue;
     if (failed(aliasImportDecls(decls, name, name, moduleName, loc, context,
                                 false)))

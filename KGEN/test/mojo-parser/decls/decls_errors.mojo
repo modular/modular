@@ -187,7 +187,7 @@ fn useBadResultParams():
   _ = BadResultParams[1]()
 
 @fieldwise_init
-struct TestTuple[*Ts: AnyTrivialRegType]:
+struct TestTuple[*Ts: __TypeOfAllTypes]:
     # expected-note @+1 {{function declared here}}
     fn test[i: Int, j: Int](self):
         pass
@@ -269,7 +269,7 @@ fn packArgOverload(x: Int):
 
 
 # expected-note @+1 {{function declared here}}
-fn first_and_rest[T: AnyTrivialRegType, *Ts: AnyType](*values: *Ts):
+fn first_and_rest[T: __TypeOfAllTypes, *Ts: AnyType](*values: *Ts):
     pass
 
 
@@ -298,8 +298,8 @@ struct TestPackErrorMessage[*Ts: AnyType]:
     fn __init__(*args: *Self.Ts):
          pass
 
-# expected-error @+1 {{variadic pack elements declared as 'AnyTrivialRegType' are removed, please declare elements as 'AnyType' instead of 'AnyTrivialRegType'}}
-fn badAnyRegPack[*Ts: AnyTrivialRegType](*args: *Ts):
+# expected-error @+1 {{variadic pack elements declared as '__TypeOfAllTypes' are removed, please declare elements as 'AnyType' instead of '__TypeOfAllTypes'}}
+fn badAnyRegPack[*Ts: __TypeOfAllTypes](*args: *Ts):
   pass
 
 # always_inline("builtin")
@@ -930,7 +930,7 @@ trait EverythingIsWrongTrait:
     struct NestedStruct: # expected-error {{nested struct in a trait not supported here}}
         pass
 
-trait TraitWithParams[T: AnyTrivialRegType]: # expected-error {{TODO: trait declarations do not support parameters yet}}
+trait TraitWithParams[T: __TypeOfAllTypes]: # expected-error {{TODO: trait declarations do not support parameters yet}}
     ...
 
 fn bad_trait_params[T: EverythingIsWrongTrait](x: T):

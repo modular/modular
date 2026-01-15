@@ -194,7 +194,7 @@ fn packBorrowed[*Ts: AnyType](*args: *Ts):
 
 
 # Ensure that parameters can be bound correctly.
-fn variadicParameter[*Ts: AnyTrivialRegType](x: Int):
+fn variadicParameter[*Ts: __TypeOfAllTypes](x: Int):
     pass
 
 
@@ -222,9 +222,9 @@ fn usePacks(x: FloatDyn, y: Int):
 
     packBorrowed(Int(1)._mlir_value, x, y)
 
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<#alias_AnyTrivialRegType> [#kgen.type<!Int>, #kgen.type<!FloatDyn>]>
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<#alias___TypeOfAllTypes> [#kgen.type<!Int>, #kgen.type<!FloatDyn>]>
     variadicParameter[Int, FloatDyn](1)
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<#alias_AnyTrivialRegType> []>
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<#alias___TypeOfAllTypes> []>
     variadicParameter(Int(2))
 
 

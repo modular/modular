@@ -26,15 +26,15 @@ struct Thing:
 
 
 # COM: Test various things related to interfacing with generic types.
-fn anytype[T: AnyTrivialRegType]():
+fn anytype[T: __TypeOfAllTypes]():
     pass
 
 
-fn anytype_arg[T: AnyTrivialRegType](x: T):
+fn anytype_arg[T: __TypeOfAllTypes](x: T):
     pass
 
 
-fn anytype_result[T: AnyTrivialRegType]() -> T:
+fn anytype_result[T: __TypeOfAllTypes]() -> T:
     pass
 
 
@@ -57,15 +57,15 @@ fn metatypes():
     T.bar()
 
     # COM: Test that binding to a generic type works.
-    # CHECK: bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@"anytype[AnyTrivialRegType]()"<:!alias_AnyTrivialRegType1 #kgen.type<!Thing>>>
+    # CHECK: bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@"anytype[__TypeOfAllTypes]()"<:!alias___TypeOfAllTypes1 #kgen.type<!Thing>>>
     comptime bound = anytype[Thing]
 
     # COM: Test that result types are bound correctly.
-    # CHECK: call {{.*}}@"anytype_result[AnyTrivialRegType]()"<:{{.*}} #kgen.type<!Thing>>
+    # CHECK: call {{.*}}@"anytype_result[__TypeOfAllTypes]()"<:{{.*}} #kgen.type<!Thing>>
     var v: Thing = anytype_result[Thing]()
 
     # COM: Test that argument type inference works correctly.
-    # CHECK: call {{.*}}@"anytype_arg[AnyTrivialRegType]($0)"<:{{.*}} #kgen.type<!Thing>>
+    # CHECK: call {{.*}}@"anytype_arg[__TypeOfAllTypes]($0)"<:{{.*}} #kgen.type<!Thing>>
     anytype_arg(v)
 
     # COM: Test inferring from a non-materializable type.
@@ -75,7 +75,7 @@ fn metatypes():
     # CHECK-NEXT: lit.ref.store [[NMVAL]], [[DNMVAL]]
     # CHECK-NEXT: [[IMMUT:%.*]] = lit.ref.immut [[DNMVAL]]
     # CHECK-NEXT: [[MVAL:%.*]] = lit.call {{.*}}@Thing::@"__init__{{.*}}([[IMMUT]])
-    # CHECK-NEXT: call {{.*}}@"anytype_arg[AnyTrivialRegType]($0)"<:{{.*}} #kgen.type<!Thing>>([[MVAL]])
+    # CHECK-NEXT: call {{.*}}@"anytype_arg[__TypeOfAllTypes]($0)"<:{{.*}} #kgen.type<!Thing>>([[MVAL]])
     anytype_arg(nm_alias)
 
 
