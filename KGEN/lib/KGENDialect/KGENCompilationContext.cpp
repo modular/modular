@@ -4,9 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_KGENDIALECT_COMPILATIONCONTEXT_CPP
-#define KGEN_KGENDIALECT_COMPILATIONCONTEXT_CPP
-
 #include "KGEN/KGENDialect/KGENCompilationContext.h"
 
 namespace M::KGEN {
@@ -20,5 +17,3 @@ void CompilationContext::print(llvm::raw_ostream &os) const {
 }
 
 } // namespace M::KGEN
-
-#endif // KGEN_KGENDIALECT_COMPILATIONCONTEXT_CPP
