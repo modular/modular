@@ -672,6 +672,9 @@ what we publish.
 - `StringableRaising` has been deprecated and its usages in the stdlib have
   been removed.
 
+- `assert_equal` and `assert_not_equal` now take in `Writable` arguments instead
+  of `Stringable` ones.
+
 ### Tooling changes
 
 - The Mojo compiler now supports the `-Werror` flag, which treats all warnings
