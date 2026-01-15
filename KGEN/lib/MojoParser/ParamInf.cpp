@@ -38,14 +38,14 @@ using namespace M::KGEN::LIT;
 //===----------------------------------------------------------------------===//
 ParamInf::ParamInf(
     const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
-    PogListAttr declaredParamPogs, bool allowImplicitConversions,
+    PogListAttr declaredParamPogs, bool allowImplicitConversions, bool partial,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     ASTDecl *declIfDirect)
     : paramBindings(paramBinding), declIfKnown(declIfDirect),
       getDiag(std::move(getDiag)), evaluator(paramBinding.shared),
       declaredParamTypes(declaredParamTypes),
       declaredParamPogs(declaredParamPogs),
-      allowImplicitConversions(allowImplicitConversions) {
+      allowImplicitConversions(allowImplicitConversions), partial(partial) {
   size_t finalSize = declaredParamTypes.size();
 
   // Pre-install any "prechecked" bindings.  These come from self arguments like
@@ -662,8 +662,16 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   //
   // if we return nullptr here, ParamInf can not distinguish between T1 and T2,
   // and in both cases, `a` will be bound with the default value.
-  if (isa<UnboundAttr>(bindingVal))
-    return TypedAttr(UnboundAttr::get(expectedType));
+  //
+  // NOTE: in a non-partial binding context, `_` can be also used as a place
+  // holder, in this case we don't infer it to `_`
+  if (isa<UnboundAttr>(bindingVal)) {
+    if (partial)
+      return TypedAttr(UnboundAttr::get(expectedType));
+    // TODO: should we even allow using `_` in a concrete binding context? maybe
+    // just raise an error here to be less ambiguous.
+    return TypedAttr(); // Deferred
+  }
 
   // If the expected type has unresolved bindings, try to infer them from the
   // argument.  This is a non-trivial operation because we support inferring
@@ -756,7 +764,7 @@ LogicalResult ParamInf::setInferredValue(size_t paramIdx, TypedAttr paramVal) {
 /// call.
 ///
 /// On failure, this will emit a diagnostic through the 'getDiag' callback.
-LogicalResult ParamInf::inferFromParamList(bool partial) {
+LogicalResult ParamInf::inferFromParamList() {
   // Notice, but strip out, the ellipsis if present.
   bool hasEllipsis = false;
   CallOperands tmpOperands(getGivenBindings().syntax,
@@ -973,7 +981,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
                                      const OperandValueList &variadicKwOperands,
                                      bool returnsSelf, bool hasCTADParams) {
   // First try to infer parameters from the already provided bindings.
-  if (failed(inferFromParamList(/*hasArguments*/ true)))
+  if (failed(inferFromParamList()))
     return failure();
 
   // Match up the operands provided by the call to the input arguments.  Keep in
@@ -1203,14 +1211,14 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
 
   if (hasDeferredGivenParam) {
     // Simply try it again now that more parameter has been inferred.
-    if (failed(inferFromParamList(/*hasArguments*/ true)))
+    if (failed(inferFromParamList()))
       return failure();
   }
 
   // Lastly, See if we can fulfill any missing parameters with default values
   // for their type (variadic attr always have a default empty value if not
   // inferable).
-  if (failed(inferFromDefaults(true)))
+  if (failed(inferFromDefaults()))
     return failure();
 
   // We succeed iff we inferred a value for this parameter.
@@ -1279,7 +1287,7 @@ LogicalResult ParamInf::inferCTADParams(FnTypeGeneratorType signature,
 
 // Infer any missing parameter from defaulted value (this is supposed to be
 // invoked after both parameter list and argument list has been scanned).
-LogicalResult ParamInf::inferFromDefaults(bool inferEmptyVariadic) {
+LogicalResult ParamInf::inferFromDefaults() {
   // Lastly, See if we can fulfill any missing parameters with default values
   // for their type (variadic attr always have a default empty value if not
   // inferable).
@@ -1340,7 +1348,7 @@ LogicalResult ParamInf::inferFromDefaults(bool inferEmptyVariadic) {
     }
 
     // If not specified/inferrable, variadic always have a default empty value.
-    if (inferEmptyVariadic && declaredParamPogs.isPosVarArg(idx)) {
+    if (!partial && declaredParamPogs.isPosVarArg(idx)) {
       // FIXME: This isn't rewriting the variadic list for dependent types.
       auto type = declaredParamTypes[idx];
       auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));

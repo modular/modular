@@ -35,6 +35,7 @@ public:
   ParamInf(
       const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
       PogListAttr declaredParamPogs, bool allowImplicitConversions,
+      bool partial,
       llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
       ASTDecl *declIfDirect);
 
@@ -46,7 +47,7 @@ public:
   /// call.
   ///
   /// On failure, this will emit a diagnostic through the 'getDiag' callback.
-  LogicalResult inferFromParamList(bool partial);
+  LogicalResult inferFromParamList();
 
   /// Given an incomplete parameter binding set and the arguments for a call to
   /// the specified signature, try to infer the value of the next 'decl'
@@ -67,7 +68,7 @@ public:
 
   // Infer any missing parameter from defaulted value (this is supposed to be
   // invoked after both parameter list and argument list has been scanned).
-  LogicalResult inferFromDefaults(bool inferEmptyVariadic);
+  LogicalResult inferFromDefaults();
 
   // Finalize the inference by making any remaining uninferred parameter to
   // UnboundAttr.
@@ -155,6 +156,8 @@ private:
 
   /// True if implicit conversions in argument lists are permitted.
   const bool allowImplicitConversions;
+  /// True if the inference can lead to unbound attribute.
+  const bool partial;
 };
 
 } // namespace M::KGEN::LIT

@@ -669,10 +669,11 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
 
   // The inference diagnostics will be unused.
   ParamInf inference(*this, paramTypes, paramList,
-                     /*allowImplicitConversions=*/true, getDiag,
+                     /*allowImplicitConversions=*/true, /*partial=*/partial,
+                     getDiag,
                      /*declIfDirect=*/nullptr);
 
-  if (failed(inference.inferFromParamList(partial)))
+  if (failed(inference.inferFromParamList()))
     return nullptr;
 
   // Check to see if we have ... and remove it from the parameter list.
@@ -685,8 +686,7 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
   //
   // FIXME: according to the specification, we should only do this when all
   // other parameter is bound.
-  if (!(hasEllipsis && partial) &&
-      failed(inference.inferFromDefaults(/*inferEmptyVariadic=*/!partial)))
+  if (!(hasEllipsis && partial) && failed(inference.inferFromDefaults()))
     return nullptr;
 
   auto [bindings, _] =
@@ -749,9 +749,10 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
     return *diag;
   };
   ParamInf inference(*this, expectedParamTypes, paramListAttr,
-                     /*allowImplicitConversions=*/true, getDiags, declIfKnown);
+                     /*allowImplicitConversions=*/true, /*partial=*/partial,
+                     getDiags, declIfKnown);
 
-  if (failed(inference.inferFromParamList(partial))) {
+  if (failed(inference.inferFromParamList())) {
     return {nullptr, Fitness{std::move(inference.unprovableConstraints)},
             std::move(diag)};
   }
@@ -766,8 +767,7 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
   //
   // FIXME: according to the specification, we should only do this when all
   // other parameter is bound.
-  if (!(hasEllipsis && partial) &&
-      failed(inference.inferFromDefaults(/*inferEmptyVariadic=*/!partial))) {
+  if (!(hasEllipsis && partial) && failed(inference.inferFromDefaults())) {
     return {nullptr, Fitness{std::move(inference.unprovableConstraints)},
             std::move(diag)};
   }

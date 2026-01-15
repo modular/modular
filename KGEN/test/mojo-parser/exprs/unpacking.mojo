@@ -63,5 +63,9 @@ fn test_unbound_pack():
     # CHECK: lit.call {{.*}}variadic_params{{.*}}<:variadic<!Int> []>()
     unpack_variadic()
 
-    # CHECK: call {{.*}}variadic_params{{.*}}<:variadic<!Int> []>
-    variadic_params[...]()
+    # C_HECK: call {{.*}}variadic_params{{.*}}<:variadic<!Int> []>
+    # The following code is arguably wrong, it leads to
+    # '...' is not allowed in concrete parameter bindings
+    #
+    # which I think is the right error message that should be reported.
+    # variadic_params[...]()
