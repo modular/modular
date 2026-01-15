@@ -194,30 +194,6 @@ modular_py_test(
     ],
 )
 
-modular_py_binary(
-    name = "verify_layers_e2e",
-    testonly = True,
-    srcs = glob(["verify_layers/*.py"]),
-    env = {
-        # PIPELINES_TESTDATA is required by the model scripts.
-        "PIPELINES_TESTDATA": (
-            "max/tests/integration/pipelines/python/llama3/testdata"
-        ),
-    },
-    main = "verify_layers/cli.py",
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
-    deps = [
-        ":verify",
-        "//max/tests/integration/pipelines/python/test_common",
-        "//max/tests/integration/tools:generate_llm_logits",
-        requirement("click"),
-        requirement("numpy"),
-        requirement("torch"),
-        requirement("matplotlib"),
-        requirement("pandas"),
-    ],
-)
-
 modular_py_test(
     name = "test_pipelines_cli",
     size = "enormous",
