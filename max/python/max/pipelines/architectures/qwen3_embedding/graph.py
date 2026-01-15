@@ -65,8 +65,11 @@ def last_token_pool(
     last_token_indices_i32 = ops.cast(last_token_indices, DType.int32)
     
     # Gather the hidden states at the last valid token positions
-    # For batch_size=1, this will give us [1, hidden_size]
+    # For batch_size=1, this will give us [batch_size, hidden_size]
     pooled = ops.gather(hidden_states, last_token_indices_i32, axis=0)
+    
+    # Ensure we have shape [batch_size, hidden_size] by reshaping if needed
+    # The gather returns [batch_size, hidden_size] already
     
     return pooled
 
@@ -173,15 +176,35 @@ def build_graph(
         # outputs is (logits, hidden_states) where hidden_states is [total_seq_len, hidden_size] in ragged format
         logits, hidden_states = outputs
         
-        # Apply last token pooling to get embeddings
-        # Use attention_mask to find the last valid (non-padding) token
-        embeddings = last_token_pool(hidden_states, attention_mask, input_row_offsets)
-        
-        # Cast to float32 for compatibility with numpy/dlpack
-        # bfloat16 is not supported by dlpack's to_numpy conversion
-        embeddings_f32 = ops.cast(embeddings, DType.float32)
-        
-        # Output the embeddings [batch_size, hidden_size]
-        graph.output(embeddings_f32)
+        if pipeline_config.pool_embeddings:
+            # Apply last token pooling to get embeddings
+            # Use attention_mask to find the last valid (non-padding) token
+            embeddings = last_token_pool(hidden_states, attention_mask, input_row_offsets)
+            
+            # Apply L2 normalization: embeddings / ||embeddings||_2
+            # This matches the upstream Qwen3-Embedding implementation which uses F.normalize(embeddings, p=2, dim=1)
+            # Compute squared values
+            embeddings_squared = ops.mul(embeddings, embeddings)
+            # Sum along the last dimension (hidden_size) to get L2 norm squared for each sample
+            # ops.sum keeps dimensions, so result is [batch_size, 1]
+            norm_squared = ops.sum(embeddings_squared, axis=-1)
+            # Compute L2 norm (sqrt of sum of squares) with epsilon for numerical stability
+            epsilon = ops.constant(1e-12, embeddings.dtype, embeddings.device)
+            norm = ops.sqrt(ops.add(norm_squared, epsilon))
+            # Normalize: embeddings / norm
+            # Broadcasting: [batch_size, hidden_size] / [batch_size, 1] -> [batch_size, hidden_size]
+            embeddings_normalized = ops.div(embeddings, norm)
+            
+            # Cast to float32 for compatibility with numpy/dlpack
+            # bfloat16 is not supported by dlpack's to_numpy conversion
+            embeddings_f32 = ops.cast(embeddings_normalized, DType.float32)
+            
+            # Output the pooled and normalized embeddings [batch_size, hidden_size]
+            graph.output(embeddings_f32)
+        else:
+            # Return raw hidden states without pooling [total_seq_len, hidden_size]
+            # Cast to float32 for compatibility with numpy/dlpack
+            hidden_states_f32 = ops.cast(hidden_states, DType.float32)
+            graph.output(hidden_states_f32)
 
     return graph

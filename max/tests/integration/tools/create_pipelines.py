@@ -1283,6 +1283,16 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32"],
         },
     ),
+    "Qwen/Qwen3-Embedding-0.6B": GenericOracle(
+        model_path="Qwen/Qwen3-Embedding-0.6B",
+        config_params={"max_length": 8192, "pool_embeddings": True},
+        auto_model_cls=transformers.AutoModel,
+        task=PipelineTask.EMBEDDINGS_GENERATION,
+        device_encoding_map={
+            "cpu": ["bfloat16"],
+            "gpu": ["bfloat16"],
+        },
+    ),
     # GPTQ llama with perm_idx
     "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4": GenericOracle(
         model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
