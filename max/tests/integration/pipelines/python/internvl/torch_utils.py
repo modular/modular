@@ -101,10 +101,12 @@ def run_text_generation(
             # Resize and split the image into patches.
             pixel_values = preprocess_image_to_tensor(pil_image)
 
+            input_ids_tensor = (
+                torch.tensor(result["input_ids"]).unsqueeze(0).to(device)
+            )
+
             return {
-                "input_ids": torch.tensor(result["input_ids"])
-                .unsqueeze(0)
-                .to(device),
+                "input_ids": input_ids_tensor,
                 "attention_mask": torch.tensor(result["attention_mask"])
                 .unsqueeze(0)
                 .to(device),
@@ -114,6 +116,7 @@ def run_text_generation(
             encoded_prompt = data_processor.encode(
                 request.prompt, return_tensors="pt"
             ).to(device)
+
             return {
                 "input_ids": encoded_prompt,
                 "attention_mask": torch.ones_like(encoded_prompt),

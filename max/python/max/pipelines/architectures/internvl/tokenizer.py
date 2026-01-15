@@ -377,7 +377,7 @@ class InternVLProcessor:
         # Convert multimodal messages to text-only for the tokenizer
         text_messages = []
         for message in messages:
-            text_message = {"role": str(message["role"])}
+            text_message = {"role": message["role"]}
             content = message["content"]
 
             if isinstance(content, str):
@@ -442,9 +442,10 @@ class InternVLProcessor:
             )
 
             # Format text with image tokens
+            num_image_tokens = self.num_image_token * num_patches
             image_tokens = (
                 self.IMG_START_TOKEN
-                + self.IMG_CONTEXT_TOKEN * (self.num_image_token * num_patches)
+                + self.IMG_CONTEXT_TOKEN * num_image_tokens
                 + self.IMG_END_TOKEN
             )
 

@@ -614,9 +614,10 @@ class TextAndVisionTokenizer(
     ) -> str:
         # This converts between the Pydantic TextGenerationRequestMessage
         # to a dict for the HF delegate
-        messages_as_dict = [msg.model_dump() for msg in messages]
         templated_message = self.processor.apply_chat_template(
-            messages_as_dict, tokenize=False, add_generation_prompt=True
+            [msg.model_dump() for msg in messages],
+            tokenize=False,
+            add_generation_prompt=True,
         )
         assert isinstance(templated_message, str)
         return templated_message
