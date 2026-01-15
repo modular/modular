@@ -17,15 +17,6 @@
 #include "llvm/ADT/FunctionExtras.h"
 
 namespace M::Mojo::Jupyter {
-#if (defined(_WIN32) || defined(__CYGWIN__))
-#ifdef MODULAR_BUILDING_JUPYTER_LIBRARY
-#define MODULAR_JUPYTER_VISIBILITY_EXPORT __declspec(dllexport)
-#else
-#define MODULAR_JUPYTER_VISIBILITY_EXPORT __declspec(dllimport)
-#endif
-#else
-#define MODULAR_JUPYTER_VISIBILITY_EXPORT __attribute__((visibility("default")))
-#endif
 
 /// These values were chosen because both `finished` and `error` are 'truthy',
 /// and indicate that the execution has finished. Therefore, only clients that
@@ -41,7 +32,7 @@ enum ExecutionFinishedState : int {
 
 /// This class contains all of the various state needed to run the Mojo Jupyter
 /// kernel.
-class MODULAR_JUPYTER_VISIBILITY_EXPORT MojoKernel {
+class MODULAR_VISIBILITY_EXPORT MojoKernel {
 public:
   /// An output function used to send output to the Jupyter kernel. The first
   /// argument is the output type, and the second is the output string.

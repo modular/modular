@@ -65,12 +65,6 @@ getPersistentExpressionState(const TargetSP &target) {
 }
 
 //===----------------------------------------------------------------------===//
-// Symbol Visibility
-//===----------------------------------------------------------------------===//
-
-#define EXPORT extern "C" MODULAR_JUPYTER_VISIBILITY_EXPORT
-
-//===----------------------------------------------------------------------===//
 // MojoExpressionEvaluationOptions
 //===----------------------------------------------------------------------===//
 
@@ -274,9 +268,10 @@ void MojoKernel::codeComplete(StringRef code, int completionPos,
 // EntryPoint API
 //===----------------------------------------------------------------------===//
 
-EXPORT MojoKernel *initMojoKernel(RawOutputFn outputFn, const char *mojoReplExe,
-                                  const char *workingDirectory,
-                                  const char *lldbInitFile) {
+MODULAR_EXPORT MojoKernel *initMojoKernel(RawOutputFn outputFn,
+                                          const char *mojoReplExe,
+                                          const char *workingDirectory,
+                                          const char *lldbInitFile) {
   std::unique_ptr<MojoKernel> kernel =
       std::make_unique<MojoKernel>([=](StringRef type, StringRef output) {
         outputFn(type.data(), output.data());
@@ -287,28 +282,28 @@ EXPORT MojoKernel *initMojoKernel(RawOutputFn outputFn, const char *mojoReplExe,
   return kernel.release();
 }
 
-EXPORT int startMojoExecution(MojoKernel *kernel, const char *cellId,
-                              const char *code, int storeHistory) {
+MODULAR_EXPORT int startMojoExecution(MojoKernel *kernel, const char *cellId,
+                                      const char *code, int storeHistory) {
   return kernel->startExecution(cellId, code, storeHistory);
 }
 
-EXPORT int checkMojoExecutionFinished(MojoKernel *kernel) {
+MODULAR_EXPORT int checkMojoExecutionFinished(MojoKernel *kernel) {
   return kernel->checkExecutionFinished();
 }
 
-EXPORT void interruptMojoExecution(MojoKernel *kernel) {
+MODULAR_EXPORT void interruptMojoExecution(MojoKernel *kernel) {
   kernel->interruptExecution();
 }
 
-EXPORT void checkMojoCodeComplete(MojoKernel *kernel, const char *code,
-                                  int completionPos,
-                                  RawCompletionFn completionFn) {
+MODULAR_EXPORT void checkMojoCodeComplete(MojoKernel *kernel, const char *code,
+                                          int completionPos,
+                                          RawCompletionFn completionFn) {
   kernel->codeComplete(code, completionPos, [=](StringRef completion) {
     completionFn(completion.data());
   });
 }
 
-EXPORT void destroyMojoKernel(MojoKernel *kernel) { delete kernel; }
+MODULAR_EXPORT void destroyMojoKernel(MojoKernel *kernel) { delete kernel; }
 
 //===----------------------------------------------------------------------===//
 // Initialization
