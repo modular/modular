@@ -18,44 +18,37 @@ from max.graph import TensorValue, ops
 
 def last_token_pool(
     hidden_states: TensorValue,
-    attention_mask: TensorValue,
     input_row_offsets: TensorValue,
 ) -> TensorValue:
     """Apply last token pooling to extract embeddings.
     
-    This function extracts the hidden state of the last non-padding token
+    This function extracts the hidden state of the last token
     for each sequence in the batch, as used by Qwen3-Embedding models.
     
     Args:
         hidden_states: Output from the transformer model in ragged format [total_seq_len, hidden_size]
-        attention_mask: Attention mask [batch_size, seq_len] marking valid tokens (1) vs padding (0)
         input_row_offsets: Row offsets defining sequence boundaries in flattened format [batch_size + 1]
     
     Returns:
         Pooled embeddings [batch_size, hidden_size]
     """
-    # Compute sequence lengths by summing attention mask
-    # attention_mask shape: [batch_size, seq_len]
-    sequence_lengths = ops.sum(attention_mask, axis=1)  # [batch_size], float32
-    
-    # Convert to int64 for indexing
-    sequence_lengths_int = ops.cast(sequence_lengths, DType.int64)
-    
-    # Get starting offsets for each sequence using Python slicing
-    # For batch_size=1: input_row_offsets = [0, total_len], so start_offsets = [0]
+    # Compute sequence lengths from row offsets
+    # For each sequence i: length = row_offsets[i+1] - row_offsets[i]
+    # Get ending offsets for each sequence
+    end_offsets = input_row_offsets[1:]  # Remove first element
+    # Get starting offsets for each sequence  
     start_offsets = input_row_offsets[:-1]  # Remove last element
-    start_offsets_int = ops.cast(start_offsets, DType.int64)
     
-    # Compute the index of the last valid token for each sequence
-    # last_index = start_offset + sequence_length - 1
-    one = ops.constant(1, DType.int64, device=hidden_states.device)
-    last_token_indices = start_offsets_int + sequence_lengths_int - one
+    # Compute last token index for each sequence (end_offset - 1)
+    # Since end_offset is exclusive, the last token is at end_offset - 1
+    one = ops.constant(1, DType.uint32, device=hidden_states.device)
+    last_token_indices = ops.sub(end_offsets, one)
     
-    # Use gather to extract the embeddings - cast to int32 for gather
+    # Cast to int32 for gather operation
     last_token_indices_i32 = ops.cast(last_token_indices, DType.int32)
     
-    # Gather the hidden states at the last valid token positions
-    # For batch_size=1, this will give us [batch_size, hidden_size]
+    # Gather the hidden states at the last token positions
+    # This extracts embeddings for each sequence [batch_size, hidden_size]
     pooled = ops.gather(hidden_states, last_token_indices_i32, axis=0)
     
     return pooled
