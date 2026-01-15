@@ -2,11 +2,11 @@
 
 PACKAGE_VERSION = "26.1.0.dev2026011405"
 
-BASE_URL = "https://dl.modular.com/public/nightly/python"
+BASE_URL = "https://whl.modular.com/nightly"
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
 mojo.toolchain(
-    base_url = BASE_URL,
+    base_url = BASE_URL + "/mojo-compiler",
     use_prebuilt_packages = False,
     version = "0." + PACKAGE_VERSION,
 )
@@ -38,7 +38,7 @@ http_file(
         PACKAGE_VERSION,
     ),
     url = "{}/mblack-{}-py3-none-any.whl".format(
-        BASE_URL,
+        BASE_URL + "/mblack",
         PACKAGE_VERSION,
     ),
 )
