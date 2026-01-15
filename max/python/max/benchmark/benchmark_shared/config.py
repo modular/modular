@@ -101,14 +101,16 @@ class BenchmarkPipelineConfig(ConfigFileModel):
 
     model: str | None = Field(default=None)
     """Name of the model. Required when running benchmark (must be provided via CLI or config)."""
-    seed: int = Field(default=0)
-    """Random seed for reproducibility."""
     weight_path: str | None = Field(default=None)
     """Override the default weights file. Must be in GGUF format."""
     lora_paths: str | None = Field(default=None)
     """Comma-separated list of paths to LoRA adapters."""
-    quantization_encoding: str = Field(default="q4_k")
+    quantization_encoding: str | None = Field(default="q4_k")
     """Quantization encoding to benchmark."""
+    max_length: int | None = Field(default=None)
+    """Maximum length of the sequence."""
+    max_batch_size: int | None = Field(default=None)
+    """Maximum batch size to execute with the model."""
 
 
 class HardwareConfig(ConfigFileModel):
@@ -116,6 +118,13 @@ class HardwareConfig(ConfigFileModel):
 
     devices: str | None = Field(default=None)
     """Hardware device on which model will be executed. Valid values: 'cpu', 'gpu', 'gpu:0,1,2'."""
+
+
+class SamplingConfig(ConfigFileModel):
+    """Configuration class for sampling options."""
+
+    top_k: int | None = Field(default=None)
+    """Limits the sampling to the K most probable tokens. Default: None (no sampling)."""
 
 
 class BenchmarkCommonConfig(ConfigFileModel):
@@ -129,7 +138,7 @@ class BenchmarkCommonConfig(ConfigFileModel):
     """Trust remote code from huggingface."""
 
     # Dataset configuration (common across all benchmark types)
-    dataset_name: str = "sharegpt"
+    dataset_name: str | None = None
     """Name of the dataset to benchmark on."""
 
     dataset_path: str | None = None

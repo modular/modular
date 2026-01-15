@@ -47,6 +47,7 @@ modular_py_binary(
     imports = ["../.."],
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
+        "//max/python/max/config",
         "//max/python/max/entrypoints",
         "//max/python/max/interfaces",
         "//max/python/max/nn",
@@ -55,7 +56,9 @@ modular_py_binary(
         "//max/python/max/serve/pipelines",
         "//max/python/max/serve/scheduler",
         "//max/python/max/serve/telemetry",
+        requirement("cyclopts"),
         requirement("huggingface-hub"),
+        requirement("pydantic"),
         requirement("pyarrow"),
         requirement("tqdm"),
         requirement("transformers"),

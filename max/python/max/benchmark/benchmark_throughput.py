@@ -18,7 +18,6 @@
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import enum
 import json
@@ -27,17 +26,22 @@ import random
 import time
 import warnings
 from collections.abc import Mapping
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any
+from dataclasses import dataclass
 
 import pyarrow.parquet
+from cyclopts import App, Parameter
+from cyclopts.config import Env
 from huggingface_hub import hf_hub_download
-from max.benchmark.benchmark_shared.config import BaseBenchmarkConfig
+from max.benchmark.benchmark_shared.config import (
+    BenchmarkCommonConfig,
+    BenchmarkPipelineConfig,
+    SamplingConfig,
+)
 from max.benchmark.benchmark_shared.datasets import (
     BenchmarkDataset,
     CodeDebugBenchmarkDataset,
 )
+from max.config import ConfigFileModel
 from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import (
     PipelinesFactory,
@@ -48,12 +52,7 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    PipelineConfig,
-    SupportedEncoding,
-    TextTokenizer,
-)
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextTokenizer
 from max.serve.config import Settings
 from max.serve.pipelines.llm import (
     EmbeddingsGenerationOutput,
@@ -63,193 +62,89 @@ from max.serve.pipelines.llm import (
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.scheduler.queues import SchedulerZmqConfigs
 from max.serve.telemetry.metrics import NoopClient
+from pydantic import Field
 from tqdm import tqdm
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+DESCRIPTION = """
+    Synthetic benchmark to measure batched pipeline performance without
+    serving or scheduling overhead.
+"""
 
-@dataclass
-class ThroughputBenchmarkConfig(BaseBenchmarkConfig):
-    """Configuration class for throughput benchmarks (benchmark_throughput.py).
 
-    Inherits from BaseBenchmarkConfig and adds throughput-specific parameters:
-    - Quantization and model loading configuration
-    - Batching and performance parameters
-    - KV Cache configuration
-    - Device and memory configuration
-    - Pipeline configuration
-    - Async engine settings
-    """
+class ThroughputBenchmarkPipelineConfig(BenchmarkPipelineConfig):
+    """Configuration class for throughput benchmark pipeline options."""
 
-    # Backend configuration (throughput-specific)
-    backend: str = field(
-        default="modular",
-        metadata={
-            "group": "Backend Configuration",
-            "group_description": "Backend selection and basic configuration",
-        },
+    quantization_encoding: str | None = Field(default=None)
+    """Quantization encoding to benchmark. Default is None in throughput benchmarks."""
+    max_length: int | None = Field(default=2048)
+    """Maximum length of the sequence."""
+
+
+class ThroughputBenchmarkCommonConfig(BenchmarkCommonConfig):
+    """Configuration class for throughput benchmark common options."""
+
+    num_prompts: int = Field(default=1000)
+    """Number of prompts to process."""
+
+
+@Parameter(name="*")
+class ThroughputBenchmarkConfig(ConfigFileModel):
+    """Configuration class for benchmark options."""
+
+    pipeline: ThroughputBenchmarkPipelineConfig = (
+        ThroughputBenchmarkPipelineConfig()
     )
+    """Configuration class for pipeline options."""
+
+    other: ThroughputBenchmarkCommonConfig = ThroughputBenchmarkCommonConfig()
+    """Configuration class for throughput benchmark common options."""
+
+    sampling: SamplingConfig = SamplingConfig()
+    """Configuration class for sampling options."""
+
+    backend: str = Field(default="modular")
     """Backend (throughput benchmarks typically use modular backend only)."""
 
-    # Model configuration (throughput-specific extensions)
-    quantization_encoding: str | None = field(
-        default=None,
-        metadata={
-            "group": "Model Configuration",
-            "group_description": "Model loading and quantization settings",
-        },
-    )
-    """Quantization encoding. Choices: q4_0, q4_k, q6_k, bfloat16, float32, null"""
-
-    weight_path: str | None = field(
-        default=None, metadata={"group": "Model Configuration"}
-    )
-    """Path for already-downloaded pretrained weight file."""
-
     # Input/Output configuration (throughput-specific)
-    input_len: int | None = field(
-        default=None,
-        metadata={
-            "group": "Input/Output Configuration",
-            "group_description": "Parameters controlling input and output lengths",
-        },
-    )
+    input_len: int | None = Field(default=None)
     """Input prompt length for each request."""
 
-    output_len: int | None = field(
-        default=None, metadata={"group": "Input/Output Configuration"}
-    )
+    output_len: int | None = Field(default=None)
     """Output length for each request (overrides dataset output length)."""
 
-    # Batching and performance configuration (throughput-specific)
-    max_batch_size: int | None = field(
-        default=None,
-        metadata={
-            "group": "Batching and Performance",
-            "group_description": "Parameters controlling batching and performance optimization",
-        },
-    )
-    """Maximum number of requests to include in a single batch."""
-
-    max_num_steps: int = field(
-        default=10, metadata={"group": "Batching and Performance"}
-    )
-    """Maximum number of steps to run per multi-step scheduling call."""
-
-    async_engine: bool = field(
-        default=True, metadata={"group": "Batching and Performance"}
-    )
+    async_engine: bool = Field(default=True)
     """Use Modular async pipeline engine rather than LLM class."""
 
+    # TODO: These have different default values than ones configured via
+    # PipelineConfig constructor.
     # KV Cache configuration (throughput-specific)
-    cache_strategy: KVCacheStrategy = field(
+    cache_strategy: KVCacheStrategy = Field(
         default=KVCacheStrategy.PAGED,
-        metadata={
-            "group": "KV Cache Configuration",
-            "group_description": "Parameters controlling KV cache behavior and memory management",
-        },
     )
     """The KVCache strategy to use."""
 
-    kv_cache_page_size: int | None = field(
-        default=None, metadata={"group": "KV Cache Configuration"}
-    )
+    kv_cache_page_size: int | None = Field(default=None)
     """Number of tokens in a single page in the paged kv cache."""
 
-    enable_prefix_caching: bool = field(
-        default=False, metadata={"group": "KV Cache Configuration"}
-    )
+    enable_prefix_caching: bool = Field(default=False)
     """Enable prefix caching of kv cache entries when using paged attention."""
 
-    enable_kvcache_swapping_to_host: bool = field(
-        default=False, metadata={"group": "KV Cache Configuration"}
-    )
-    """Enable swapping KVCache blocks to host memory."""
-
-    host_kvcache_swap_space_gb: float = field(
-        default=50.0, metadata={"group": "KV Cache Configuration"}
-    )
-    """Amount of host memory for host KVCache in GiB."""
-
-    # Device and memory configuration (throughput-specific)
-    device_memory_utilization: float | None = field(
-        default=None,
-        metadata={
-            "group": "Device and Memory Configuration",
-            "group_description": "Parameters controlling device selection and memory usage",
-        },
-    )
-    """Fraction of available device memory to consume."""
-
-    devices: str | None = field(
-        default=None, metadata={"group": "Device and Memory Configuration"}
-    )
-    """Device ID to target (GPU configuration)."""
+    devices: str | None = Field(default=None)
+    """Device spec string (e.g. cpu, gpu, gpu:0,1). Overrides pipeline devices."""
 
     # Pipeline configuration (throughput-specific)
-    pipeline_task: PipelineTask = field(
+    pipeline_task: PipelineTask = Field(
         default=PipelineTask.TEXT_GENERATION,
-        metadata={
-            "group": "Pipeline Configuration",
-            "group_description": "Parameters controlling pipeline behavior and task execution",
-        },
     )
     """Type of task to complete using the pipeline."""
 
-    max_length: int | None = field(
-        default=None, metadata={"group": "Pipeline Configuration"}
-    )
-    """Maximum length of sequence (including prompt and output)."""
-
-    # Sampling parameters
-    top_k: int | None = None
-
-    # Output configuration (throughput-specific)
-    output_json: str | None = field(
-        default=None,
-        metadata={
-            "group": "Output Configuration",
-            "group_description": "Parameters controlling output format and display",
-        },
-    )
+    output_json: str | None = Field(default=None)
     """Path to save throughput results in JSON format."""
 
-    show_text: bool = field(
-        default=False, metadata={"group": "Output Configuration"}
-    )
+    show_text: bool = Field(default=False)
     """Whether to show generated text."""
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        """Documentation for throughput benchmark config parameters.
-
-        Returns:
-            Dictionary of config options and their descriptions.
-        """
-        # Get base help and extend with throughput-specific parameters
-        base_help = BaseBenchmarkConfig.help()
-        throughput_help = {
-            "backend": "Backend (throughput benchmarks typically use modular backend only).",
-            "quantization_encoding": "Quantization encoding. Choices: q4_0, q4_k, q6_k, bfloat16, float32, null",
-            "weight_path": "Path for already-downloaded pretrained weight file.",
-            "input_len": "Input prompt length for each request.",
-            "output_len": "Output length for each request (overrides dataset output length).",
-            "max_batch_size": "Maximum number of requests to include in a single batch.",
-            "max_num_steps": "Maximum number of steps to run per multi-step scheduling call.",
-            "async_engine": "Use Modular async pipeline engine rather than LLM class.",
-            "cache_strategy": "The KVCache strategy to use.",
-            "kv_cache_page_size": "Number of tokens in a single page in the paged kv cache.",
-            "enable_prefix_caching": "Enable prefix caching of kv cache entries when using paged attention.",
-            "enable_kvcache_swapping_to_host": "Enable swapping KVCache blocks to host memory.",
-            "host_kvcache_swap_space_gb": "Amount of host memory for host KVCache in GiB.",
-            "device_memory_utilization": "Fraction of available device memory to consume.",
-            "devices": "Device ID to target (GPU configuration).",
-            "pipeline_task": "Type of task to complete using the pipeline.",
-            "max_length": "Maximum length of sequence (including prompt and output).",
-            "output_json": "Path to save throughput results in JSON format.",
-            "show_text": "Whether to show generated text.",
-        }
-        return {**base_help, **throughput_help}
 
     @classmethod
     def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
@@ -389,7 +284,7 @@ async def all_tokens(
     """Generate all tokens for a request."""
     prompt = request_payload.prompt
     output_len = request_payload.output_len
-    images = []
+    images: list[bytes] = []
     if request_payload.image:
         images.append(request_payload.image)
 
@@ -534,87 +429,6 @@ async def run_max_async(
         return float(end - start), generated_tokens_len
 
 
-def load_model_config(
-    model_id: str,
-    devices: str | list[int] | None,
-    weight_path: str | None,
-    quantization_encoding: str | None,
-    max_length: int | None,
-    max_batch_size: int | None,
-    kv_cache_page_size: int | None,
-    enable_prefix_caching: bool | None,
-    enable_kvcache_swapping_to_host: bool | None,
-    host_kvcache_swap_space_gb: float | None,
-    device_memory_utilization: float | None,
-    max_num_steps: int | None,
-    trust_remote_code: bool | None,
-    pipeline_task: PipelineTask,
-) -> tuple[PipelinesFactory, PipelineConfig, TextTokenizer]:  # type: ignore[type-arg]  # TODO
-    config_kwargs: dict[str, Any] = {}
-
-    # Match what we already do in max/python/max/entrypoints/cli/config.py
-    if not devices:
-        devices = "cpu"
-    elif isinstance(devices, str) and devices.startswith("gpu:"):
-        devices = [int(id) for id in devices[4:].split(",")]
-    elif devices != "gpu":
-        raise ValueError(
-            f"Invalid devices: {devices}, must be 'cpu', 'gpu' or 'gpu:<id1,id2,...>'"
-        )
-
-    config_kwargs["device_specs"] = DevicesOptionType.device_specs(devices)
-
-    if trust_remote_code:
-        config_kwargs["trust_remote_code"] = trust_remote_code
-
-    if weight_path:
-        if not (
-            os.path.isfile(weight_path) and os.access(weight_path, os.R_OK)
-        ):
-            raise ValueError(f"Invalid path: {weight_path}")
-        config_kwargs["weight_path"] = [Path(weight_path)]
-
-    config_kwargs["model_path"] = model_id
-
-    if quantization_encoding:
-        config_kwargs["quantization_encoding"] = SupportedEncoding(
-            quantization_encoding
-        )
-
-    if max_length:
-        config_kwargs["max_length"] = max_length
-
-    if max_batch_size:
-        config_kwargs["max_batch_size"] = max_batch_size
-
-    if kv_cache_page_size:
-        config_kwargs["kv_cache_page_size"] = kv_cache_page_size
-
-    if enable_prefix_caching:
-        config_kwargs["enable_prefix_caching"] = enable_prefix_caching
-
-    if enable_kvcache_swapping_to_host:
-        config_kwargs["enable_kvcache_swapping_to_host"] = (
-            enable_kvcache_swapping_to_host
-        )
-
-    if host_kvcache_swap_space_gb:
-        config_kwargs["host_kvcache_swap_space_gb"] = host_kvcache_swap_space_gb
-
-    if device_memory_utilization:
-        config_kwargs["device_memory_utilization"] = device_memory_utilization
-
-    if max_num_steps:
-        config_kwargs["max_num_steps"] = max_num_steps
-
-    config = PipelineConfig(**config_kwargs)
-
-    tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
-        config, task=pipeline_task
-    )
-    return pipeline_factory, config, tokenizer  # type: ignore
-
-
 def fetch_dataset_from_hf(dataset_name: str) -> str:
     if dataset_name == "sharegpt":
         return hf_hub_download(
@@ -638,38 +452,68 @@ def fetch_dataset_from_hf(dataset_name: str) -> str:
         raise ValueError(f"Unknown dataset: {dataset_name}")
 
 
-def main(args: argparse.Namespace) -> None:
-    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
-        os.chdir(directory)
+def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
+    """Run the throughput benchmark."""
 
-    random.seed(args.seed)
+    random.seed(benchmark_config.other.seed)
+
+    # TODO: This is mostly a translation layer to convert the benchmark_config.pipeline
+    # to a PipelineConfig. We should just use the PipelineConfig class directly
+    # instead of this translation layer.
+    pipeline_config_dict = benchmark_config.pipeline.model_dump()
+    if pipeline_config_dict.get("devices") is not None:
+        pipeline_config_dict["device_specs"] = DevicesOptionType.device_specs(
+            pipeline_config_dict["devices"]
+        )
+    if pipeline_config_dict.get("kv_cache_page_size") is not None:
+        pipeline_config_dict["kv_cache_page_size"] = pipeline_config_dict[
+            "kv_cache_page_size"
+        ]
+    if pipeline_config_dict.get("cache_strategy") is not None:
+        pipeline_config_dict["cache_strategy"] = pipeline_config_dict[
+            "cache_strategy"
+        ]
+    if pipeline_config_dict.get("enable_prefix_caching") is not None:
+        pipeline_config_dict["enable_prefix_caching"] = pipeline_config_dict[
+            "enable_prefix_caching"
+        ]
+    if pipeline_config_dict.get("weight_path") is None:
+        pipeline_config_dict.pop("weight_path", None)
+    elif isinstance(pipeline_config_dict["weight_path"], str):
+        pipeline_config_dict["weight_path"] = [
+            pipeline_config_dict["weight_path"]
+        ]
+
+    pipeline_config = PipelineConfig(**pipeline_config_dict)
 
     tokenizer = AutoTokenizer.from_pretrained(
-        args.tokenizer,
-        model_max_length=args.model_max_length,
-        trust_remote_code=args.trust_remote_code,
+        benchmark_config.other.tokenizer or pipeline_config.model.model_path,
+        model_max_length=benchmark_config.other.model_max_length,
+        trust_remote_code=benchmark_config.other.trust_remote_code,
     )
 
     # TODO: benchmark_throughput.py should be refactored to use the BenchmarkDataset class.
     # and not use its own fetch_dataset_from_hf() here.
-    if args.dataset_name:
-        dataset_path = fetch_dataset_from_hf(args.dataset_name)
-    elif args.dataset_path:
-        dataset_path = args.dataset_path
+    if benchmark_config.other.dataset_name:
+        dataset_path = fetch_dataset_from_hf(
+            benchmark_config.other.dataset_name
+        )
+    elif benchmark_config.other.dataset_path:
+        dataset_path = benchmark_config.other.dataset_path
     else:
         dataset_path = None
 
     # Sample the requests.
     if dataset_path:
         optional_kwargs = {}
-        optional_kwargs["fixed_output_len"] = args.output_len
+        optional_kwargs["fixed_output_len"] = benchmark_config.output_len
 
         # TODO: benchmark_throughput.py should be refactored to use the BenchmarkDataset class.
         # Some of the fetch_dataset_from_hf() logic have different filenames
         # than the ones defined in benchmark_shared.datasets. These should be reconciled.
-        if args.dataset_name == "code_debug":
+        if benchmark_config.other.dataset_name == "code_debug":
             benchmark_dataset = BenchmarkDataset.from_flags(
-                dataset_name=args.dataset_name,
+                dataset_name=benchmark_config.other.dataset_name,
                 dataset_path=dataset_path,
             )
             assert isinstance(benchmark_dataset, CodeDebugBenchmarkDataset), (
@@ -707,70 +551,64 @@ def main(args: argparse.Namespace) -> None:
 
         else:
             sample_requests_func = sample_requests  # type: ignore
-            optional_kwargs["max_length"] = args.max_length
+            optional_kwargs["max_length"] = pipeline_config.max_length
 
         requests = sample_requests_func(
             dataset_path=dataset_path,
-            num_requests=args.num_prompts,
+            num_requests=benchmark_config.other.num_prompts,
             tokenizer=tokenizer,
             **optional_kwargs,
         )
     else:
         # Synthesize a prompt with the given input length.
-        prompt = "hi" * (args.input_len - 1)
+        assert benchmark_config.input_len is not None
+        assert benchmark_config.output_len is not None
+        prompt = "hi" * (benchmark_config.input_len - 1)
         requests = [
-            RequestPayload(prompt, args.input_len, args.output_len, None)
-            for _ in range(args.num_prompts)
+            RequestPayload(
+                prompt=prompt,
+                prompt_len=benchmark_config.input_len,
+                output_len=benchmark_config.output_len,
+                image=None,
+            )
+            for _ in range(benchmark_config.other.num_prompts)
         ]
 
-    if args.backend == "modular":
+    if benchmark_config.backend == "modular":
         print("\nLoading...")
-        load_kwargs = dict(
-            model_id=args.model,
-            devices=args.devices,
-            weight_path=args.weight_path,
-            quantization_encoding=args.quantization_encoding,
-            max_length=args.max_length,
-            max_batch_size=args.max_batch_size,
-            kv_cache_page_size=args.kv_cache_page_size,
-            enable_prefix_caching=args.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=args.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=args.host_kvcache_swap_space_gb,
-            device_memory_utilization=args.device_memory_utilization,
-            max_num_steps=args.max_num_steps,
-            trust_remote_code=args.trust_remote_code,
-            pipeline_task=args.pipeline_task,
+        model_tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
+            pipeline_config, task=benchmark_config.pipeline_task
         )
-        model_factory, config, model_tokenizer = load_model_config(
-            **load_kwargs
-        )
-        print(f"INFO: MODEL config = {config}")
+        print(f"INFO: MODEL config = {pipeline_config}")
 
         run_kwargs = dict(
-            model_name=args.model,
+            model_name=pipeline_config.model.model_name,
             requests=requests,
-            config=config,
+            config=pipeline_config,
             model_factory=model_factory,
             tokenizer=model_tokenizer,
-            show_text=args.show_text,
-            pipeline_task=args.pipeline_task,
-            top_k=args.top_k,
+            show_text=benchmark_config.show_text,
+            pipeline_task=benchmark_config.pipeline_task,
+            top_k=benchmark_config.sampling.top_k,
         )
 
         print("\nExecuting...")
-        if args.async_engine:
+        if benchmark_config.async_engine:
             elapsed_time, generated_tokens_len = asyncio.run(
                 run_max_async(**run_kwargs)
             )
         else:
             raise ValueError("Non-async LLM Engine not supported yet")
     else:
-        raise ValueError(f"Unknown backend: {args.backend}")
+        raise ValueError(f"Unknown backend: {benchmark_config.backend}")
 
     total_num_input_tokens = sum(request.prompt_len for request in requests)
     total_num_output_tokens = sum(generated_tokens_len)
 
-    if args.show_text and args.pipeline_task == PipelineTask.TEXT_GENERATION:
+    if (
+        benchmark_config.show_text
+        and benchmark_config.pipeline_task == PipelineTask.TEXT_GENERATION
+    ):
         print("\nPrompt Size [Input, Output_Real(Output_Expected)]:")
         for i, request in enumerate(requests):
             prompt_len = request.prompt_len
@@ -779,11 +617,14 @@ def main(args: argparse.Namespace) -> None:
             print(
                 f"task#{i}: [{prompt_len}, {output_real}({output_len})]", end=""
             )
-            if output_real + prompt_len >= config.max_length:
+            if (
+                pipeline_config.max_length is not None
+                and output_real + prompt_len >= pipeline_config.max_length
+            ):
                 print(
                     (
                         "  # [WARNING] limited by maximum sequence length"
-                        f" ({config.max_length}) from the model config."
+                        f" ({pipeline_config.max_length}) from the pipeline config."
                     ),
                     end="",
                 )
@@ -810,8 +651,8 @@ def main(args: argparse.Namespace) -> None:
 
     print()
     # Output JSON results if specified
-    if args.output_json:
-        output_filename = args.output_json
+    if benchmark_config.output_json:
+        output_filename = benchmark_config.output_json
         if not output_filename.endswith(".json"):
             output_filename += ".json"
         print(
@@ -823,41 +664,71 @@ def main(args: argparse.Namespace) -> None:
         print("DONE")
 
 
-if __name__ == "__main__":
-    # Load configuration from YAML file and create argument parser
-    config_path = os.path.join(
-        os.path.dirname(__file__),
-        "configs",
-        "throughput_config.yaml",
+def main() -> None:
+    """Main entry point for the pipeline latency benchmark."""
+    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
+        os.chdir(directory)
+
+    # Create cyclopts app with environment variable config source
+    # This must be set early so that --help can display MODULAR_ env vars
+    app = App(
+        name="benchmark_throughput",
+        help=DESCRIPTION,
+        help_formatter="plain",
+        config=[
+            # Load from environment variables with MODULAR_ prefix
+            # Environment variable names follow pattern: MODULAR_<PARAM_NAME>
+            Env(prefix="MODULAR_"),
+        ],
     )
-    config = ThroughputBenchmarkConfig.from_config_file(config_path)
-    parser = config.cli_arg_parsers()
 
-    args = parser.parse_args()
-    if args.tokenizer is None:
-        args.tokenizer = args.model
-
-    if (
-        args.enable_prefix_caching
-        and args.cache_strategy != KVCacheStrategy.PAGED
-    ):
-        raise ValueError(
-            "prefix caching is only supported with paged attention"
-        )
-
-    if args.dataset_name is None and args.dataset_path is None:
-        if args.input_len is None:
-            raise ValueError("Unknown input length to synthetic prompts")
-        if args.output_len is None:
-            raise ValueError("Unknown output length for each request")
-    else:
-        if args.input_len is not None:
+    # Define benchmark command with cyclopts
+    @app.default
+    def benchmark(
+        benchmark_config: ThroughputBenchmarkConfig = ThroughputBenchmarkConfig(),
+    ) -> None:
+        """Run the pipeline latency benchmark."""
+        # Validate that model is provided (required for benchmark).
+        if not benchmark_config.pipeline.model:
             raise ValueError(
-                "Unable to set input length. The input length will be derived"
-                " from the dataset"
+                "model is required. Please provide --pipeline.model argument, set it in the config file, "
+                "or set MODULAR_PIPELINE_MODEL environment variable."
             )
 
-    if __debug__:
-        print(f"\nINFO: args = {args}")
+        if benchmark_config.other.tokenizer is None:
+            benchmark_config.other.tokenizer = benchmark_config.pipeline.model
 
-    main(args)
+        # Validate cache strategy
+        if (
+            benchmark_config.enable_prefix_caching
+            and benchmark_config.cache_strategy != KVCacheStrategy.PAGED
+        ):
+            raise ValueError(
+                "prefix caching is only supported with paged attention"
+            )
+
+        if (
+            benchmark_config.other.dataset_name is None
+            and benchmark_config.other.dataset_path is None
+        ):
+            if benchmark_config.input_len is None:
+                raise ValueError("Unknown input length to synthetic prompts")
+            if benchmark_config.output_len is None:
+                raise ValueError("Unknown output length for each request")
+        else:
+            if benchmark_config.input_len is not None:
+                raise ValueError(
+                    "Unable to set input length. The input length will be derived"
+                    " from the dataset"
+                )
+
+        if __debug__:
+            print(f"\nINFO: benchmark_config = {benchmark_config}")
+
+        run(benchmark_config=benchmark_config)
+
+    app()
+
+
+if __name__ == "__main__":
+    main()
