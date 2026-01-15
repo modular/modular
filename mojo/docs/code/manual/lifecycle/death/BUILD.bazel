@@ -20,10 +20,6 @@ MOJO_SRCS = glob(["*.mojo"])
         name = src.split(".")[0] + "_test",
         size = "small",
         binary = src.split(".")[0],
-        target_compatible_with = select({
-            "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: DOCS-1439
-            "//conditions:default": [],
-        }) if src == "explicit_destroy.mojo" else [],
     )
     for src in MOJO_SRCS
 ]
