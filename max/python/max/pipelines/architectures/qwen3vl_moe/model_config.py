@@ -271,19 +271,13 @@ class Qwen3VLConfig(MAXModelConfigBase):
         text_config = huggingface_config.text_config
 
         # Handle both MoE (e.g., 30B) and dense (e.g., VL 2B 4B etc) variants.
-        num_experts = getattr(text_config, "num_experts", 1)
+        # For dense models, num_experts=0 ensures the decoder always uses MLP layers
+        num_experts = getattr(text_config, "num_experts", 0)
         num_experts_per_tok = getattr(text_config, "num_experts_per_tok", 1)
         moe_intermediate_size = getattr(
             text_config, "moe_intermediate_size", text_config.intermediate_size
         )
-        default_mlp_only_layers = (
-            list(range(text_config.num_hidden_layers))
-            if num_experts == 1
-            else []
-        )
-        mlp_only_layers = getattr(
-            text_config, "mlp_only_layers", default_mlp_only_layers
-        )
+        mlp_only_layers = getattr(text_config, "mlp_only_layers", [])
         norm_topk_prob = getattr(text_config, "norm_topk_prob", False)
         decoder_sparse_step = getattr(text_config, "decoder_sparse_step", 1)
 
