@@ -12,63 +12,6 @@
 #include "ParserEvaluationContext.h"
 
 namespace M::KGEN::LIT {
-class ExprNode;
-class ParamInf;
-
-//===----------------------------------------------------------------------===//
-// InferenceFailure
-//===----------------------------------------------------------------------===//
-
-/// These are the different failure modes that we know happen.
-struct InferenceFailure {
-  /// This failure happens when a parameter is found of the wrong type.
-  struct TypeConflict {
-    size_t paramIdx; // TODO: Render this name.
-    ASTType paramType, argParamType;
-  };
-
-  /// This failure happens when a parameter is inferred to two different values.
-  struct ValueConflict {
-    size_t paramIdx;
-    TypedAttr v1, v2;
-  };
-
-  /// This failure happens when merge* is called, but the expected type/value
-  /// still has an unresolved dependent type which can't be inferred.
-  struct DependsOnUnresolved {
-    size_t paramIdx;
-  };
-
-  /// This failure happens when parameter is inferred, yet the constraint
-  /// attached on it can not be proved.
-  struct UnprovableConstraints {
-    size_t paramIdx;
-  };
-
-  /// This failure hasn't been categorized yet.
-  /// FIXME: Remove this.
-  struct Unclassified {};
-
-  template <typename Failure>
-  InferenceFailure(Failure info) : info(info) {}
-
-  // Describe what went wrong.
-  void addExplanation(MojoInflightDiag &diag) const;
-
-  /// If this failure is due to an unresolved parameter, return the index of the
-  /// parameter.
-  std::optional<size_t> getIfDependentOnUnresolved() const {
-    if (isa<DependsOnUnresolved>(info)) {
-      return cast<DependsOnUnresolved>(info).paramIdx;
-    }
-    return std::nullopt;
-  }
-
-private:
-  SmartVariant<TypeConflict, ValueConflict, DependsOnUnresolved, Unclassified,
-               UnprovableConstraints>
-      info;
-};
 
 //===----------------------------------------------------------------------===//
 // ParamInf
