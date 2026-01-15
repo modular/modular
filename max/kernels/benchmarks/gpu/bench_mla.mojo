@@ -383,7 +383,7 @@ fn bench_prefill[
         output_device,
     )
     fn kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_prefill[rank = q.rank, use_fa4=True](
+        flare_mla_prefill[rank = q.rank](
             output_device,
             q_device,
             k_device,
