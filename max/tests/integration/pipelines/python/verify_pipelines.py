@@ -1050,11 +1050,20 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen3-Embedding-0.6B",
             encoding="bfloat16",
-            # Embedding model using last token pooling + L2 normalization
-            # Cosine distance reflects bfloat16 precision accumulation through
-            # 30+ transformer layers, which is expected for reduced precision.
+            # It looks like the larger variants are much closer to the transformers implementation.
             cos_dist_threshold=2.5e-1,
-            kl_div_threshold=3.0e-4,  # KL div not ideal for embeddings but set to observed max
+            kl_div_threshold=3.0e-4,
+        ),
+    ),
+    "Qwen/Qwen3-Embedding-4B-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        run=_make_pipeline_runner(
+            pipeline="Qwen/Qwen3-Embedding-4B",
+            encoding="bfloat16",
+            relative_tolerance=2.0,
+            absolute_tolerance=1.0e-4,
+            cos_dist_threshold=3.2e-02,
+            kl_div_threshold=9.4e-06,
         ),
     ),
     # Qwen2.VL-FP8

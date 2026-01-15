@@ -181,26 +181,25 @@ def build_graph(
             # Use attention_mask to find the last valid (non-padding) token
             embeddings = last_token_pool(hidden_states, attention_mask, input_row_offsets)
             
+            # Cast to float32 BEFORE normalization for better numerical precision
+            embeddings_f32 = ops.cast(embeddings, DType.float32)
+            
             # Apply L2 normalization: embeddings / ||embeddings||_2
             # This matches the upstream Qwen3-Embedding implementation which uses F.normalize(embeddings, p=2, dim=1)
             # Compute squared values
-            embeddings_squared = ops.mul(embeddings, embeddings)
+            embeddings_squared = ops.mul(embeddings_f32, embeddings_f32)
             # Sum along the last dimension (hidden_size) to get L2 norm squared for each sample
             # ops.sum keeps dimensions, so result is [batch_size, 1]
             norm_squared = ops.sum(embeddings_squared, axis=-1)
             # Compute L2 norm (sqrt of sum of squares) with epsilon for numerical stability
-            epsilon = ops.constant(1e-12, embeddings.dtype, embeddings.device)
+            epsilon = ops.constant(1e-12, DType.float32, embeddings_f32.device)
             norm = ops.sqrt(ops.add(norm_squared, epsilon))
             # Normalize: embeddings / norm
             # Broadcasting: [batch_size, hidden_size] / [batch_size, 1] -> [batch_size, hidden_size]
-            embeddings_normalized = ops.div(embeddings, norm)
-            
-            # Cast to float32 for compatibility with numpy/dlpack
-            # bfloat16 is not supported by dlpack's to_numpy conversion
-            embeddings_f32 = ops.cast(embeddings_normalized, DType.float32)
+            embeddings_normalized = ops.div(embeddings_f32, norm)
             
             # Output the pooled and normalized embeddings [batch_size, hidden_size]
-            graph.output(embeddings_f32)
+            graph.output(embeddings_normalized)
         else:
             # Return raw hidden states without pooling [total_seq_len, hidden_size]
             # Cast to float32 for compatibility with numpy/dlpack
