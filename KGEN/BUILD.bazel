@@ -5,6 +5,7 @@ load(
     "ALLOW_UNUSED_TAG",
     "ASYNCRT_PROFILING_LOCAL_DEFINES",
     "CONFIG_SECTION_LOCAL_DEFINES",
+    "KERNEL_PROFILING_LOCAL_DEFINES",
 )
 load("//max/python/max/_core/internal/mlir_nanobind:tblgen.bzl", "mlir_nanobind")  # buildifier: disable=bzl-visibility
 
@@ -848,14 +849,10 @@ modular_cc_library(
     name = "KGENDialect",
     srcs = glob(["lib/KGENDialect/*.cpp"]),
     hdrs = glob(["include/KGEN/KGENDialect/*.h"]),
-    local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES + selects.with_or({
+    local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES + KERNEL_PROFILING_LOCAL_DEFINES + selects.with_or({
         ("//:modular_config_debug_modular", "//:modular_config_debug_everything"): ["BUILD_TYPE=debug"],
         ("//:modular_config_default", "//:modular_config_asan", "//:modular_config_tsan", "//:modular_config_ubsan"): ["BUILD_TYPE=relwithdebinfo"],
         ("//:modular_config_ci_build", "//:modular_config_release", "//:modular_config_production"): ["BUILD_TYPE=release"],
-    }) + select({
-        "//:kernel_e2e_gpu_profiling_setting": ["MODULAR_ENABLE_GPU_PROFILING"],
-        "//:kernel_e2e_gpu_profiling_detailed_setting": ["MODULAR_ENABLE_GPU_PROFILING_DETAILED"],
-        "//conditions:default": [],
     }),
     deps = [
         ":HLCFDialect",
