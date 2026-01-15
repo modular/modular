@@ -136,7 +136,7 @@ struct TestReport(Copyable, Writable):
     var result: TestResult
     """The result code of the test."""
 
-    var error: Error
+    var error: Optional[Error]
     """The error associated with a failing test."""
 
     @staticmethod
@@ -194,7 +194,7 @@ struct TestReport(Copyable, Writable):
         var name: String,
         duration_ns: UInt,
         result: TestResult,
-        var error: Error = {},
+        var error: Optional[Error] = {},
     ):
         self.name = name^
         self.duration_ns = duration_ns

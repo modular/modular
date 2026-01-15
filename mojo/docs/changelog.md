@@ -697,6 +697,11 @@ what we publish.
   wait on processes. These use `posix_spawn` and do not go through the
   system shell.
 
+- The `Error` type no longer conforms to `Boolable` or `Defaultable`. Errors
+  must now be constructed with meaningful context, and optionality should be
+  expressed through `Optional[Error]` rather than treating errors as boolean
+  values.
+
 - `Writer` and `Writable` have been moved into a new `format` module and out of
   `io`. These traits are not directly related to binary i/o, but are rather
   closely tied to type/value string formatting.

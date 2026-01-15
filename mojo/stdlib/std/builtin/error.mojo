@@ -220,7 +220,7 @@ fn _make_opaque[T: AnyType, //](ref t: T) -> OpaquePointer[MutAnyOrigin]:
 
 # TODO: Add inlined error support if sizeof(ErrorType) < sizeof(Pointer) and
 # it is trivially movable.
-struct _TypeErasedError(Boolable, Copyable, Writable):
+struct _TypeErasedError(Copyable, Writable):
     """A type-erased error using manual vtable dispatch and `ArcPointer` for storage.
 
     ## Key Design Elements
@@ -255,12 +255,6 @@ struct _TypeErasedError(Boolable, Copyable, Writable):
         Self._VTableOutput,
     )
     """Function pointer specialized for the concrete error type, dispatches operations."""
-
-    @always_inline
-    fn __init__(out self):
-        """Default constructor for an empty error."""
-        self._error = {}
-        self._vtable = Self._vtable_default
 
     @always_inline
     fn __init__[
@@ -315,10 +309,6 @@ struct _TypeErasedError(Boolable, Copyable, Writable):
         )
 
     @always_inline
-    fn __bool__(self) -> Bool:
-        return Bool(self._error)
-
-    @always_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Write the error via vtable dispatch."""
         var erased = _TypeErasedWriter(writer)
@@ -357,15 +347,6 @@ struct _TypeErasedError(Boolable, Copyable, Writable):
             Self._copy_impl[ErrorType](input, output)
         elif op == _VTableErrorOp.WRITE_TO:
             Self._write_to_impl[ErrorType](input, output)
-
-    @staticmethod
-    fn _vtable_default(
-        op: _VTableErrorOp,
-        input: Self._VTableInput,
-        output: Self._VTableOutput,
-    ):
-        """No-op vtable for empty errors."""
-        pass
 
     @staticmethod
     @always_inline
@@ -413,9 +394,7 @@ struct _TypeErasedError(Boolable, Copyable, Writable):
 
 
 struct Error(
-    Boolable,
     Copyable,
-    Defaultable,
     Representable,
     Stringable,
     Writable,
@@ -453,12 +432,6 @@ struct Error(
         """
         self._error = _TypeErasedError(value^)
         self._stack_trace = StackTrace.collect_if_enabled(depth)
-
-    @always_inline
-    fn __init__(out self):
-        """Default constructor."""
-        self._error = _TypeErasedError()
-        self._stack_trace = StackTrace.collect_if_enabled(-1)
 
     @always_inline
     @implicit
@@ -501,14 +474,6 @@ struct Error(
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __bool__(self) -> Bool:
-        """Returns True if the error is set and false otherwise.
-
-        Returns:
-          True if the error object contains a value and False otherwise.
-        """
-        return self._error.__bool__()
-
     @no_inline
     fn __str__(self) -> String:
         """Converts the Error to string representation.
@@ -526,8 +491,6 @@ struct Error(
         Args:
             writer: The object to write to.
         """
-        if not self:
-            return
         self._error.write_to(writer)
 
     @no_inline

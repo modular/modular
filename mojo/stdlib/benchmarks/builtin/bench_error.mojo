@@ -100,7 +100,7 @@ fn bench_error_catch_no_print_depth3(mut b: Bencher) raises:
             try:
                 create_error_depth_3()
             except e:
-                keep(Bool(e))
+                keep(e)
 
     b.iter[call_fn]()
 
@@ -116,7 +116,7 @@ fn bench_error_catch_depth1(mut b: Bencher) raises:
             try:
                 create_error_depth_1()
             except e:
-                keep(Bool(e))
+                keep(e)
 
     b.iter[call_fn]()
 
@@ -132,7 +132,7 @@ fn bench_error_catch_depth5(mut b: Bencher) raises:
             try:
                 create_error_depth_5()
             except e:
-                keep(Bool(e))
+                keep(e)
 
     b.iter[call_fn]()
 
@@ -148,7 +148,7 @@ fn bench_error_catch_depth10(mut b: Bencher) raises:
             try:
                 create_error_depth_10()
             except e:
-                keep(Bool(e))
+                keep(e)
 
     b.iter[call_fn]()
 
@@ -162,7 +162,7 @@ fn bench_error_create_only(mut b: Bencher) raises:
     fn call_fn():
         for _ in range(100):
             var e = Error("test error")
-            keep(Bool(e))
+            keep(e)
 
     b.iter[call_fn]()
 
