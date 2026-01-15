@@ -1077,38 +1077,60 @@ struct LayoutTensor[
     fn _offset(self, m: Int, n: Int) -> Int:
         """Calculate the memory offset for a 2D tensor element.
 
-        Computes the linear memory offset based on the tensor's stride
-        configuration.
+        Delegates to the IndexList overload for consistent behavior.
 
         Args:
-            m: The row index.
-            n: The column index.
+            m: The row index (dimension 0).
+            n: The column index (dimension 1).
 
         Returns:
             The calculated memory offset as an integer.
         """
-        return Self.stride[0]() * m + Self.stride[1]() * n
+        return self._offset(Index(m, n))
 
     @always_inline
     fn _offset(self, coords: IndexList) -> Int:
-        """Calculate the memory offset for a row-major tensor element.
+        """Calculate the memory offset for a tensor element.
 
-        Computes the linear memory offset based on the tensor's stride
-        configuration.
+        Computes the linear memory offset for the given coordinates based on
+        the tensor's stride configuration. Uses a per-dimension approach:
+        for each dimension, if the compile-time stride is known (not
+        UNKNOWN_VALUE), uses the static stride to enable constant folding;
+        otherwise falls back to the runtime stride for that dimension.
+
+        This approach allows tensors with partially known strides to benefit
+        from constant folding where possible, while correctly handling view
+        tensors where some strides depend on runtime values.
 
         Args:
-            coords: The coordinates for the index.
+            coords: The coordinates for the index. Must have the same size as
+                the tensor's rank.
 
         Returns:
             The calculated memory offset as an integer.
         """
-        return Int(
-            self.runtime_layout(
-                RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](
-                    coords
-                )
-            )
-        )
+        __comptime_assert self.rank == coords.size
+
+        # Use per-dimension approach: compile-time stride if known,
+        # runtime stride if UNKNOWN_VALUE
+        comptime static_strides = Self._to_static[
+            Self.layout.stride, Self.linear_idx_type
+        ]()
+        var offset = 0
+
+        @parameter
+        for i in range(Self.rank):
+
+            @parameter
+            if static_strides[i] == UNKNOWN_VALUE:
+                # Use runtime stride for unknown dimensions
+                offset += Int(self.runtime_layout.stride.value[i]) * coords[i]
+            else:
+                # Use compile-time stride for known dimensions (enables
+                # constant folding)
+                offset += static_strides[i] * coords[i]
+
+        return offset
 
     @always_inline("nodebug")
     fn ptr_at_offset(
@@ -2229,11 +2251,9 @@ struct LayoutTensor[
         __comptime_assert self.rank == coords.size
         debug_assert(Int(self.runtime_layout.stride.value[self.rank - 1]) == 1)
 
-        var idx = self.runtime_layout(
-            RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](coords)
+        return self.ptr.load[width=width, alignment = Self.alignment](
+            self._offset(coords)
         )
-
-        return self.ptr.load[width=width, alignment = Self.alignment](idx)
 
     @always_inline
     fn prefetch(self, m: Int, n: Int):
@@ -2387,11 +2407,10 @@ struct LayoutTensor[
             to be valid.
         """
         __comptime_assert self.rank == coords.size
-        var idx = self.runtime_layout(
-            RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](coords)
-        )
         comptime _alignment = align_of[SIMD[Self.dtype, width]]()
-        return self.ptr.load[width=width, alignment=_alignment](idx)
+        return self.ptr.load[width=width, alignment=_alignment](
+            self._offset(coords)
+        )
 
     @always_inline("nodebug")
     fn store[
@@ -2503,11 +2522,9 @@ struct LayoutTensor[
         __comptime_assert self.rank == coords.size
         debug_assert(Int(self.runtime_layout.stride.value[self.rank - 1]) == 1)
 
-        var idx = self.runtime_layout(
-            RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](coords)
+        return self.ptr.store[alignment = Self.alignment](
+            self._offset(coords), val
         )
-
-        return self.ptr.store[alignment = Self.alignment](idx, val)
 
     @always_inline("nodebug")
     fn aligned_store[
