@@ -124,8 +124,9 @@ inline thread_id_t thread_id() {
 #endif
 
 #ifndef MOODYCAMEL_CPP11_THREAD_LOCAL_SUPPORTED
-#if (defined(__APPLE__) || defined(__arm__) || defined(_M_ARM) ||              \
-     defined(__aarch64__))
+// clang-format off
+#if (defined(__APPLE__) || defined(__arm__) || defined(_M_ARM) || defined(__aarch64__))
+// clang-format on
 // Some arm platforms may have dubious TLS support.
 // Thread local plumbing should be revisited once we
 // verify this will be properly handled on all supported targets

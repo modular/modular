@@ -11,15 +11,15 @@
 #ifndef SUPPORT_PLATFORM_UTILS_H
 #define SUPPORT_PLATFORM_UTILS_H
 
-#if defined(__x86_64__) || defined(__x86_64) || defined(_M_AMD64) ||           \
-    defined(_M_X64)
+// clang-format off
+// allow long #if lines for easier linting
+#if defined(__x86_64__) || defined(__x86_64) || defined(_M_AMD64) || defined(_M_X64)
 #define MODULAR_X86_64 1
 #elif defined(__ARM_NEON__) || defined(__ARM_NEON)
 #define MODULAR_ARM_NEON 1
 #endif
 
-#if defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64) ||           \
-    defined(_M_ARM)
+#if defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64) || defined(_M_ARM)
 #define MODULAR_ARM 1
 #endif
 
