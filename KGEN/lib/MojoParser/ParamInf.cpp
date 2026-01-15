@@ -1621,8 +1621,19 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   assert(bindingVal && "Parameters are always PValue's");
 
   // We don't typecheck the '_' magic parameter, we propagate it.
+  //
+  // NOTE: we have to return a `_` here to mark the parameter has been
+  // explicitly unbound instead of `nullptr` (maybe unless we know this is not a
+  // partial binding?). Consider the following cases
+  //
+  // struct T[a : Int = 1] : pass
+  // comptime T1 = T[_]
+  // comptime T2 = T[]
+  //
+  // if we return nullptr here, ParamInf can not distinguish between T1 and T2,
+  // and in both cases, `a` will be bound with the default value.
   if (isa<UnboundAttr>(bindingVal))
-    return TypedAttr(); // Defer.
+    return TypedAttr(UnboundAttr::get(expectedType));
 
   // If the expected type has unresolved bindings, try to infer them from the
   // argument.  This is a non-trivial operation because we support inferring
@@ -1679,6 +1690,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
 // Notable, this method does not check there is no existing parameter inferred
 // and unconditional overwrite everything.
 LogicalResult ParamInf::setInferredValue(size_t paramIdx, TypedAttr paramVal) {
+  paramVal = evaluator.getReboundAttribute(paramVal);
   ASTType targetType = evaluator.getReboundType(declaredParamTypes[paramIdx]);
   // Type must be equal
   assert(targetType.isEqualCanon(paramVal.getType()));
@@ -1688,6 +1700,9 @@ LogicalResult ParamInf::setInferredValue(size_t paramIdx, TypedAttr paramVal) {
     paramVal = ParamOperatorAttr::getRebind(paramVal, targetType);
 
   evaluator.overwriteIndexBinding(paramIdx, paramVal);
+
+  if (isa<UnboundAttr>(paramVal))
+    return success();
 
   ArrayRef<ConstraintAttr> constraints =
       declaredParamPogs.getPogs()[paramIdx].getConstraints();
@@ -1920,19 +1935,6 @@ LogicalResult ParamInf::inferFromParamList(bool partial) {
     // TODO: Handle default parameters etc when not "partial".
   }
 
-  // If we had a variadic parameter that is unspecified, and no arguments to
-  // infer it from, it must be because of an empty variadic list.
-  if (!partial) {
-    for (size_t i = 0, e = declaredParamTypes.size(); i != e; ++i) {
-      if (declaredParamPogs.isPosVarArg(i) &&
-          !evaluator.getIndexBindings()[i]) {
-        Type type = evaluator.getReboundType(declaredParamTypes[i]);
-        auto emptyVA = VariadicAttr::get({}, sugarCast<VariadicType>(type));
-        if (failed(applyBinding(i, emptyVA)))
-          return failure();
-      }
-    }
-  }
   return success();
 }
 
@@ -1960,9 +1962,9 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
 
     // Note that 'signature' changes the type as we go, so don't use
     // llvm::enumerate on the argument type list!
-    Type expectedType = signature.getArgument(expectedArgIdx);
+    Type expectedType =
+        evaluator.getReboundType(signature.getArgument(expectedArgIdx));
     if (signature.isKwVarArg(expectedArgIdx)) {
-      expectedType = evaluator.getReboundType(expectedType);
       Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
       auto refValType = RefType::getAnyOrigin(valTy, /*isMut=*/true);
       for (auto operand : variadicKwOperands) {
@@ -1985,7 +1987,6 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
     // If we have a varargs argument, then it will eat the rest of the
     // arguments, but we have to check each of them.
     if (signature.isPosVarArg(expectedArgIdx)) {
-      expectedType = evaluator.getReboundType(expectedType);
       auto expectedVariadic = sugarCast<VariadicType>(expectedType);
       auto varArgsEltType = expectedVariadic.getElementType();
       while (posOperandIdx != numOperands) {
@@ -2179,17 +2180,8 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
   // Lastly, See if we can fulfill any missing parameters with default values
   // for their type (variadic attr always have a default empty value if not
   // inferable).
-  for (size_t i = 0, e = declaredParamTypes.size(); i != e; ++i) {
-    if (!evaluator.getIndexBindings()[i] &&
-        signature.getParamListAttrs().isPosVarArg(i)) {
-      // FIXME: This isn't rewriting the variadic list for dependent types.
-      auto type = declaredParamTypes[i];
-      auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
-      if (failed(setInferredValue(i, empty)))
-        return failure();
-      break;
-    }
-  }
+  if (failed(inferFromDefaults(true)))
+    return failure();
 
   // We succeed iff we inferred a value for this parameter.
   return success();
@@ -2253,4 +2245,95 @@ LogicalResult ParamInf::inferCTADParams(FnTypeGeneratorType signature,
   auto argPogs = signature.getArgListAttrs();
   return inferOneOperand(operands[0], /*argIdx*/ 0, selfType, selfConvention,
                          argPogs, operands.syntax);
+}
+
+// Infer any missing parameter from defaulted value (this is supposed to be
+// invoked after both parameter list and argument list has been scanned).
+LogicalResult ParamInf::inferFromDefaults(bool inferEmptyVariadic) {
+  // Lastly, See if we can fulfill any missing parameters with default values
+  // for their type (variadic attr always have a default empty value if not
+  // inferable).
+
+  DefaultValueHandler defaultHandler(declaredParamPogs);
+  for (size_t idx = 0, e = declaredParamTypes.size(); idx != e; ++idx) {
+    if (evaluator.getIndexBindings()[idx])
+      continue;
+
+    // If available, we use a default parameter value.
+    // FIXME: Shouldn't this go into inference itself like empty variadic
+    // binding is?
+    if (TypedAttr defaultParam = defaultHandler.getDefault(idx);
+        defaultParam && !sugarIsa<UnknownAttr>(defaultParam)) {
+
+      // Skip anything that is prechecked
+      // TODO: move this out the if condition: this is crazy that we still need
+      // to infer a empty variadic (even when there is a prechecked unbound
+      // attribute). This probably means that something is wrong in
+      // ParamBindings.
+      if (idx < paramBindings.getNumPreCheckedParams())
+        continue;
+
+      // Default parameter values may reference other parameter values, so we
+      // need to evaluate these.
+      // If the default value is dependent, and we can not fully resolve all its
+      // dependencies, do not try to set the value of it.
+      defaultParam = evaluator.getReboundAttribute(defaultParam);
+      if (!paramFinder.hasReferences(defaultParam)) {
+        if (failed(setInferredValue(idx, defaultParam)))
+          return failure();
+      }
+    }
+
+    // FIXME: this need a more systematical fix.
+    // Determine if we can use a default parameter for CTAD
+    if (paramBindings.ctadPogs.size() > idx) {
+      PassingKind passingKind = paramBindings.ctadPogs[idx].getPassingKind();
+      ArrayRef<TypedAttr> defaults;
+      unsigned numCtadParams;
+      unsigned normalizedIdx;
+      if (passingKind == PassingKind::KwOnly) {
+        defaults = paramBindings.defaultKwTypeParams;
+        numCtadParams = paramBindings.numKwOnlyCtadParams;
+        normalizedIdx = idx - paramBindings.numPosCtadParams;
+      } else {
+        defaults = paramBindings.defaultPosTypeParams;
+        numCtadParams = paramBindings.numPosCtadParams;
+        normalizedIdx = idx;
+      }
+
+      size_t defaultStartIdx = numCtadParams - defaults.size();
+      if (normalizedIdx < numCtadParams && normalizedIdx >= defaultStartIdx) {
+        TypedAttr defaultCTAD = defaults[normalizedIdx - defaultStartIdx];
+        if (failed(setInferredValue(idx, defaultCTAD)))
+          return failure();
+      }
+    }
+
+    // If not specified/inferrable, variadic always have a default empty value.
+    if (inferEmptyVariadic && declaredParamPogs.isPosVarArg(idx)) {
+      // FIXME: This isn't rewriting the variadic list for dependent types.
+      auto type = declaredParamTypes[idx];
+      auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
+      if (failed(setInferredValue(idx, empty)))
+        return failure();
+    }
+  }
+
+  return success();
+}
+
+// TODO: We probably don't have to do this? This is just to make sure we reached
+// the same end state as the old parameter inference. Understand why.
+void ParamInf::finalizeWithUnbound() {
+  // This is the end of parameter inference, replace any fail-to-infer parameter
+  // to unboundAttr.
+  for (size_t idx = 0, e = declaredParamTypes.size(); idx != e; ++idx) {
+    TypedAttr inferred = evaluator.getIndexBindings()[idx];
+    if (!inferred || sugarIsa<UnboundAttr>(inferred)) {
+      Type targetType = evaluator.getReboundType(declaredParamTypes[idx]);
+      inferred = UnboundAttr::get(targetType);
+
+      evaluator.overwriteIndexBinding(idx, inferred);
+    }
+  }
 }

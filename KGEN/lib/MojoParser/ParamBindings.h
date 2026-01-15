@@ -175,6 +175,8 @@ private:
   /// The number of pre-type-checked positional arguments.
   /// FIXME: Remove this, why is this needed?
   size_t numPreTypeChecked = 0;
+
+  friend class ParamInf;
 };
 
 FnTypeGeneratorType substituteTraitAliasesIntoSignature(
