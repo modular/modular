@@ -13,6 +13,7 @@
 #include "DebugInfo.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
+#include "MojoUtils.h"
 #include "ParserEvaluationContext.h"
 #include "Signatures.h"
 
@@ -705,9 +706,7 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
       auto [loc, isFullImport] = locAndIsFullImport;
 
       // Don't try wildcard imports if we wouldn't import this name anyways.
-      // TODO: make exception for __TypeOfAllTypes for now.
-      if (!isFullImport &&
-          (name.starts_with("_") && !name.starts_with("__TypeOfAllTypes"))) {
+      if (!isFullImport && isInternalName(name)) {
         ++i;
         continue;
       }
@@ -841,9 +840,7 @@ auto SharedState::lookupAllDeclsWithName(StringRef name, SMLoc loc,
         auto [importLoc, isFullImport] = locAndIsFullImport;
 
         // Don't try wildcard imports if we wouldn't import this name anyways.
-        // TODO: make exception for __TypeOfAllTypes for now.
-        if (!isFullImport &&
-            (name.starts_with("_") && !name.starts_with("__TypeOfAllTypes"))) {
+        if (!isFullImport && isInternalName(name)) {
           ++i; // Skip this import, leave it intact.
           continue;
         }
