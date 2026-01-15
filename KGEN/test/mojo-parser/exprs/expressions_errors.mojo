@@ -81,7 +81,7 @@ fn trait_var():
     var type = SomeTrait
 
 
-fn reg_type_func() -> AnyTrivialRegType:
+fn reg_type_func() -> __TypeOfAllTypes:
     # expected-error @below {{dynamic type values not permitted yet}}
     return Int
 
@@ -91,7 +91,7 @@ fn mem_type_func() -> AnyType:
     return SomeType
 
 
-fn takes_reg_type(t: AnyTrivialRegType):
+fn takes_reg_type(t: __TypeOfAllTypes):
     pass
 
 
@@ -198,8 +198,8 @@ fn test_func_type():
     comptime float6: fn[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
     # expected-error @below {{'fn[Ts: Variadic[AnyType]](var * *Ts) capturing -> None'}}
     comptime float6a: fn[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{fn[T: AnyTrivialRegType](mut *T) capturing -> None}}
-    comptime float7: fn[T: AnyTrivialRegType](mut *T) capturing -> None = test_func_type
+    # expected-error @below {{fn[T: __TypeOfAllTypes](mut *T) capturing -> None}}
+    comptime float7: fn[T: __TypeOfAllTypes](mut *T) capturing -> None = test_func_type
 
     # expected-error @below {{unnamed argument cannot follow named argument}}
     comptime f1: fn (a: Int, Int) -> Int
@@ -256,7 +256,7 @@ struct MemoryOnlyPair:
 struct NonCopyable:
   fn __init__(out self): pass
 
-fn generic_on_type_ok[T: AnyTrivialRegType](): pass
+fn generic_on_type_ok[T: __TypeOfAllTypes](): pass
 
 def testLValuesRvalues() -> None:
   # Test with lvalues
@@ -294,8 +294,8 @@ def testLValuesRvalues() -> None:
 
   var mpPair = MemoryOnlyPair()
 
-  # expected-error @+1 {{cannot implicitly convert 'AnyStruct[MemoryOnlyPair]' value to 'AnyTrivialRegType' in alias initializer}}
-  comptime T: AnyTrivialRegType = MemoryOnlyPair
+  # expected-error @+1 {{cannot implicitly convert 'AnyStruct[MemoryOnlyPair]' value to '__TypeOfAllTypes' in alias initializer}}
+  comptime T: __TypeOfAllTypes = MemoryOnlyPair
 
 # expected-note @+1 {{function declared here}}
 fn badRef(mut val: Int):

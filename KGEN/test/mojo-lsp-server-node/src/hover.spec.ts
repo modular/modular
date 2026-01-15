@@ -609,7 +609,7 @@ fn print(x: StringLiteral):
 fn print(x: Bool):
     pass
 
-fn function[type: AnyTrivialRegType](arg: type):
+fn function[type: __TypeOfAllTypes](arg: type):
     print("string")
     print(arg)
 `

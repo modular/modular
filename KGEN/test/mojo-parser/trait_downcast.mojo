@@ -20,8 +20,8 @@ trait ToCastInto:
 
 
 # CHECK-LABEL: lit.fn @"trait_downcast_reg_type
-fn trait_downcast_reg_type[T: AnyTrivialRegType](x: T):
-    # CHECK: lit.var.decl "y" var : !lit.ref<:!ToCastInto downcast(:!alias_AnyTrivialRegType1 T), mut *"y`1">
+fn trait_downcast_reg_type[T: __TypeOfAllTypes](x: T):
+    # CHECK: lit.var.decl "y" var : !lit.ref<:!ToCastInto downcast(:!alias___TypeOfAllTypes1 T), mut *"y`1">
     var y = trait_downcast[ToCastInto](x)
     y.test()
 

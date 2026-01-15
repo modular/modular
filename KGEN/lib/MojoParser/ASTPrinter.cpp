@@ -1343,7 +1343,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     os << ' ';
     ASTType(reboundBody).print(os, diagShared);
   } else if (isa<TypeType>(type)) {
-    os << "AnyTrivialRegType";
+    os << "__TypeOfAllTypes";
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
     os << "fn (";
     llvm::interleaveComma(fnType.getInputs(), os, [&](Type type) {

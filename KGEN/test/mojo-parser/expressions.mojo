@@ -206,17 +206,17 @@ struct RegPassable(ImplicitlyCopyable):
   fn __rmatmul__(lhs, rhs: Self) -> Self: pass
 
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam<comparator: !lit.generator
-# CHECK-SAME: <"T": !alias_AnyTrivialRegType1>(!kgen.param<:!alias_AnyTrivialRegType1 *(0,0)>, |)
-struct StructWithFuncParam[comparator: fn[T: AnyTrivialRegType] (T) -> None]:
+# CHECK-SAME: <"T": !alias___TypeOfAllTypes1>(!kgen.param<:!alias___TypeOfAllTypes1 *(0,0)>, |)
+struct StructWithFuncParam[comparator: fn[T: __TypeOfAllTypes] (T) -> None]:
     # CHECK-LABEL: lit.fn @"f
-    # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.generator<<"T": !alias_AnyTrivialRegType1>(!kgen.param<:!alias_AnyTrivialRegType1 *(0,0)>
+    # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.generator<<"T": !alias___TypeOfAllTypes1>(!kgen.param<:!alias___TypeOfAllTypes1 *(0,0)>
     fn f(self):
         pass
 
     # CHECK-LABEL: lit.fn @"g
     fn g(self):
-        # CHECK: lit.call {{.*}}[imm *"self`2x"]<:!lit.generator<<"T": !alias_AnyTrivialRegType1>(!kgen.param<:!alias_AnyTrivialRegType1 *(0,0)>, |)
-        # CHECK-SAME: !lit.ref<{{.*}}<"T": !alias_AnyTrivialRegType1>(!kgen.param<:!alias_AnyTrivialRegType1 *(0,0)>, |)
+        # CHECK: lit.call {{.*}}[imm *"self`2x"]<:!lit.generator<<"T": !alias___TypeOfAllTypes1>(!kgen.param<:!alias___TypeOfAllTypes1 *(0,0)>, |)
+        # CHECK-SAME: !lit.ref<{{.*}}<"T": !alias___TypeOfAllTypes1>(!kgen.param<:!alias___TypeOfAllTypes1 *(0,0)>, |)
         self.f()
 
 # CHECK-LABEL: lit.fn @"simpleMath

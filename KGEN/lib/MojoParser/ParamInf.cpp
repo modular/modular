@@ -69,7 +69,7 @@ void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
     if (auto anyStruct = sugarDynCast<StructMetaType>(failure.argParamType)) {
       diag << ", argument type " << ASTType(anyStruct.getType())
            << " is not a '@register_passable(\"trivial\")' type, so "
-              "does not satisfy AnyTrivialRegType";
+              "does not satisfy __TypeOfAllTypes";
       return;
     }
   }
@@ -370,7 +370,7 @@ ParamMatcher::ResultCode ParamMatcher::matchTypes(Type actualType,
   if (auto expectedParamRef = dyn_cast<ParamType>(expectedType)) {
     // If this is a non-materializable type (like IntLiteral), infer it like its
     // materializable type (like Int), for example:
-    //    fn example[T: AnyTrivialRegType](a: T): ...
+    //    fn example[T: __TypeOfAllTypes](a: T): ...
     //    example(1) # T should be Int, not IntLiteral.
     // TODO: Why is this here?  Seems like a strange place to do this.
     if (ASTType nmTarget =
