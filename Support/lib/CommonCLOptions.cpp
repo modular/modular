@@ -25,6 +25,10 @@ using namespace M;
 #define _X_STRINGIFY(str) _STRINGIFY(str)
 #define STRINGIFY_MAX_CONFIG(path) _X_STRINGIFY(MAX_CONFIG_SECTION) path
 
+#ifndef MAX_CONFIG_SECTION // NOLINT(ifdef), Wundef doesn't handle the define
+#error "Expected MAX_CONFIG_SECTION to be set"
+#endif
+
 /// Helper function that creates a directory, finds a unique filename (adding
 /// numerical suffix if needed), and opens the file for writing.
 static std::unique_ptr<llvm::ToolOutputFile>
