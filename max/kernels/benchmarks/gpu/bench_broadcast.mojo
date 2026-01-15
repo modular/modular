@@ -18,10 +18,8 @@ from sys import env_get_dtype, env_get_int, size_of, simd_width_of
 from benchmark import (
     Bench,
     Bencher,
-    BenchmarkInfo,
     BenchId,
     BenchMetric,
-    Report,
     ThroughputMeasure,
 )
 from buffer import NDBuffer
@@ -33,7 +31,6 @@ from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import arg_parse, human_readable_size
 
 from testing import assert_true
-from algorithm import sync_parallelize
 
 
 @always_inline
@@ -72,6 +69,7 @@ fn bench_broadcast[
     *,
     cache_busting: Bool,
 ](
+    mut b: Bench,
     list_of_ctx: List[DeviceContext],
     num_bytes: Int,
     root: Int,
@@ -151,70 +149,46 @@ fn bench_broadcast[
     for i in range(ngpus):
         list_of_ctx[i].enqueue_memset(out_bufs_list[i], 0)
 
-    # Necessary to fill this InlineArray w/ default BenchmarkInfo
-    # otherwise each thread attempts to free uninitialized BenchmarkInfo
-    # when copying below
-    var default_info = BenchmarkInfo(
-        name="",
-        result=Report(),
-        measures=List[ThroughputMeasure](),
-    )
-    var results_b = InlineArray[BenchmarkInfo, ngpus](fill=default_info)
-
     @parameter
-    fn per_gpu(i: Int) raises:
+    @always_inline
+    fn bench_iter(
+        mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
+    ) raises:
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher) raises:
+        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+            # Offset the input buffer if cache_busting
+            var offset = 0
+
             @parameter
-            @always_inline
-            fn call_fn(ctx: DeviceContext, cache_iter: Int) raises:
-                # Offset the input buffer if cache_busting
-                var offset = 0
+            if cache_busting:
+                offset = (cache_iter * stride) % cache_elems
 
-                @parameter
-                if cache_busting:
-                    offset = (cache_iter * stride) % cache_elems
+            var in_buf_offset = NDBuffer[dtype, rank, MutAnyOrigin](
+                in_buf_dev.unsafe_ptr() + offset,
+                DimList(length),
+            )
 
-                var in_buf_offset = NDBuffer[dtype, rank, MutAnyOrigin](
-                    in_buf_dev.unsafe_ptr() + offset,
-                    DimList(length),
-                )
+            # Run broadcast - root's input goes to all outputs
+            broadcast[ngpus](
+                in_buf_offset,
+                out_bufs[ctx_idx],
+                rank_sigs,
+                ctx_inner,
+                root,
+                max_num_blocks,
+            )
 
-                # Run broadcast - root's input goes to all outputs
-                broadcast[ngpus](
-                    in_buf_offset,
-                    out_bufs[i],
-                    rank_sigs,
-                    ctx,
-                    root,
-                    max_num_blocks,
-                )
+        bencher.iter_custom[call_fn](ctx)
 
-            b.iter_custom[call_fn](list_of_ctx[i])
+    b.bench_multicontext[bench_iter](
+        list_of_ctx,
+        BenchId(name),
+        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
+    )
+    b.dump_report()
 
-        var b = Bench()
-        b.bench_function[bench_iter](
-            BenchId(name),
-            [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
-        )
-        results_b[i] = b.info_vec[0].copy()
-
-    sync_parallelize[per_gpu](ngpus)
-
-    var max_time = 0.0
-    var max_loc = 0
-
-    for i in range(ngpus):
-        var val = results_b[i].result.mean(unit="ms")
-        if val > max_time:
-            max_time = val
-            max_loc = i
-
-    var b_final = Bench()
-    b_final.info_vec.append(results_b[max_loc].copy())
-    b_final.dump_report()
-
+    var max_time = b.info_vec[0].result.mean(unit="ms")
     var gbps = num_bytes / (max_time * 1000 * 1000)
     # For broadcast, busbw = algbw (factor of 1).
     # All data must leave the root, which is the bottleneck.
@@ -250,7 +224,7 @@ fn bench_broadcast[
 
     # Run one broadcast for verification
     @parameter
-    fn verify_broadcast(i: Int) raises:
+    for i in range(ngpus):
         broadcast[ngpus](
             in_buf_verify,
             out_bufs[i],
@@ -259,8 +233,6 @@ fn bench_broadcast[
             root,
             max_num_blocks,
         )
-
-    sync_parallelize[verify_broadcast](ngpus)
 
     # Copy results back and verify - reuse host_buffer for each GPU
     @parameter
@@ -298,6 +270,8 @@ def main():
     if max_nb > 0:
         max_num_blocks = Optional[Int](max_nb)
 
+    var m = Bench()
+
     var num_gpus_found = DeviceContext.number_of_devices()
     assert_true(
         num_gpus_found >= num_gpus,
@@ -320,4 +294,4 @@ def main():
         rank=rank,
         ngpus=num_gpus,
         cache_busting=cache_busting,
-    ](ctx, num_bytes, root, max_num_blocks)
+    ](m, ctx, num_bytes, root, max_num_blocks)

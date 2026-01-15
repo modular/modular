@@ -27,6 +27,7 @@ from sys.arg import argv
 from gpu.host import DeviceContext
 
 from utils.numerics import FlushDenormals
+from algorithm import sync_parallelize
 
 from .benchmark import _run_impl, _run_impl_fixed, _RunOptions
 
@@ -741,6 +742,76 @@ struct Bench(Stringable, Writable):
             bench_fn(b, input)
 
         self.bench_function[input_closure](bench_id, measures)
+
+    @always_inline
+    fn bench_multicontext[
+        bench_fn: fn (mut Bencher, DeviceContext, Int) raises capturing [
+            _
+        ] -> None,
+    ](
+        mut self,
+        list_of_ctx: List[DeviceContext],
+        bench_id: BenchId,
+        measures: List[ThroughputMeasure] = {},
+    ) raises:
+        """Benchmarks or Tests an input function across multiple device contexts.
+
+        The metric returned represents the *slowest* performing device.
+
+        Parameters:
+            bench_fn: The function to be benchmarked.
+
+        Args:
+            list_of_ctx: A list of device contexts on which the bench_fn is run in parallel.
+            bench_id: The benchmark Id object used for identification.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
+        """
+
+        var num_ctxs = len(list_of_ctx)
+        debug_assert(
+            num_ctxs > 1, "list_of_ctx must contain at least 2 DeviceContexts"
+        )
+        # Some initial setup work:
+        # Necessary to fill this List w/ default BenchmarkInfo
+        # otherwise each thread attempts to free uninitialized BenchmarkInfo
+        # when copying below
+        var default_info = BenchmarkInfo(
+            name="",
+            result=Report(),
+            measures=List[ThroughputMeasure](),
+        )
+        var results_b = List[BenchmarkInfo](length=num_ctxs, fill=default_info)
+
+        # This closure runs in parallel on the host, 1 host thread per context
+        @parameter
+        fn per_gpu(i: Int) raises:
+            @parameter
+            fn context_closure(mut b: Bencher) raises:
+                bench_fn(b, list_of_ctx[i], i)
+
+            var b = Bench()
+            b.bench_function[context_closure](
+                bench_id,
+                measures,
+            )
+            results_b[i] = b.info_vec[0].copy()
+
+        sync_parallelize[per_gpu](num_ctxs)
+
+        # Collect and print the worst-case GPU time
+        var max_time = 0.0
+        var max_loc = 0
+
+        for i in range(num_ctxs):
+            var val = results_b[i].result.mean()
+            if val > max_time:
+                max_time = val
+                max_loc = i
+
+        self.info_vec.append(results_b[max_loc].copy())
 
     @always_inline
     fn bench_function[
