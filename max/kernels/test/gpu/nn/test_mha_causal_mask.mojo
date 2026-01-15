@@ -538,7 +538,21 @@ def main():
                 depth,
                 32,
                 group=4,
+            ](1, 2008, SlidingWindowCausalMask[77](), ctx)
+
+            test[
+                DType.bfloat16,
+                depth,
+                32,
+                group=4,
             ](1, 5000, CausalMask(), ctx)
+
+            test[
+                DType.bfloat16,
+                depth,
+                32,
+                group=4,
+            ](1, 5000, SlidingWindowCausalMask[89](), ctx)
 
             test[
                 DType.bfloat16,

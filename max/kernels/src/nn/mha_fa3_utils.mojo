@@ -377,19 +377,22 @@ struct MHAPosition[
 
     @always_inline
     fn get_start_and_end_for_partitions[
-        partition_t: MHAPartitionScheme,
-        //,
-    ](self, partition: partition_t) -> Tuple[UInt32, UInt32]:
+        PartitionType: MHAPartitionScheme, MaskType: MHAMask, //, page_size: Int
+    ](self, partition: PartitionType, mask: MaskType) -> Tuple[UInt32, UInt32]:
+        var start_col: UInt32 = mask.start_column[Self.BM, Self.BN, page_size](
+            self.get_score_row()
+        )
+
         @parameter
-        if partition_t.do_partition:
+        if PartitionType.do_partition:
             start, end = get_start_and_end_for_partitions[Self.BN](
-                Int(self.num_keys),
+                Int(self.num_keys - start_col),
                 Int(partition.num_partitions()),
                 Int(self.prompt_offset),
             )
-            return (UInt32(start), UInt32(end))
+            return (UInt32(start) + start_col, UInt32(end) + start_col)
         else:
-            return (UInt32(0), self.num_keys)
+            return (start_col, self.num_keys)
 
     @staticmethod
     @always_inline
@@ -1234,7 +1237,9 @@ fn produce[
 
     @parameter
     if PartitionType.do_partition:
-        startend = position.get_start_and_end_for_partitions(partition)
+        startend = position.get_start_and_end_for_partitions[
+            page_size = KVLUTType.page_size
+        ](partition, mask)
         start = startend[0]
         end = startend[1]
         if start >= end:
@@ -1279,7 +1284,9 @@ fn produce[
 
     @parameter
     if not PartitionType.do_partition:
-        startend = position.get_start_and_end_for_partitions(partition)
+        startend = position.get_start_and_end_for_partitions[
+            page_size = KVLUTType.page_size
+        ](partition, mask)
         start = startend[0]
         end = startend[1]
     var kv_tile_start_row: UInt32 = start
@@ -1367,9 +1374,9 @@ fn produce[
                         )
 
                 kv_head_idx = position.kv_head_idx()
-                start, new_end = position.get_start_and_end_for_partitions(
-                    partition
-                )
+                start, new_end = position.get_start_and_end_for_partitions[
+                    page_size = KVLUTType.page_size
+                ](partition, mask)
                 kv_tile_start_row = start
                 end = new_end
             else:

@@ -91,7 +91,6 @@ from nn.mha_utils import (
     MHAPartitionScheme,
     OptionallyStaticInt,
     _is_decoding,
-    get_start_and_end_for_partitions,
 )
 from nn.softmax import (
     _online_softmax_correction,
@@ -1650,7 +1649,9 @@ fn _mha_sm90[
                 accum_smem_tile.vectorize[1, simd_size](),
             )
 
-        startend = position.get_start_and_end_for_partitions(partition)
+        startend = position.get_start_and_end_for_partitions[
+            page_size = KVLUTType.page_size
+        ](partition, mask)
         var kv_tile_start_row: UInt32 = startend[0]
         var end: UInt32 = startend[1]
 
@@ -1932,9 +1933,9 @@ fn _mha_sm90[
                 if not docontinue:
                     break
                 position = get_position(docontinue.value())
-                start, new_end = position.get_start_and_end_for_partitions(
-                    partition
-                )
+                start, new_end = position.get_start_and_end_for_partitions[
+                    page_size = KVLUTType.page_size
+                ](partition, mask)
                 kv_tile_start_row = start
                 end = new_end
             else:
