@@ -143,7 +143,7 @@ fn debug_assert[
         cpu_only: If true, only run the assert on CPU.
 
     Args:
-        messages: A set of [`Writable`](/mojo/std/io/write/Writable/)
+        messages: A set of [`Writable`](/mojo/std/format/Writable/)
             arguments to convert to a `String` message.
     """
 
@@ -254,7 +254,7 @@ fn debug_assert[
 
     Args:
         cond: The bool value to assert.
-        messages: A set of [`Writable`](/mojo/std/io/write/Writable/)
+        messages: A set of [`Writable`](/mojo/std/format/Writable/)
             arguments to convert to a `String` message.
     """
 
