@@ -31,7 +31,6 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout, LayoutTensor
 from layout.tma_async import TMATensorTile
 
-from linalg.matmul.gpu.sm100.config import MatmulConfig
 from linalg.structuring import SMemTileArrayType
 from linalg.utils import elementwise_compute_lambda_type
 
@@ -61,15 +60,19 @@ struct TileWriter[
     c_layout: Layout,
     c_desc_layout: Layout,
     //,
-    # From MatmulConfig
+    # Explicit config parameters (works with any config type)
     a_type: DType,
-    b_type: DType,
-    transpose_b: Bool,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    accum_type: DType,
+    block_tile_shape: IndexList[3],
+    mma_shape: IndexList[3],
+    cta_group: Int,
+    num_accum_pipeline_stages: Int,
+    c_swizzle: TensorMapSwizzle,
+    transpose_c: Bool,
     # Kernel-level parameters
     c_smem_layout: Layout,
     num_output_stages: Int,
-    stage_stride_cols: UInt,
+    stage_stride_cols: Int,  # Must match OutputTilePipeline's stage_stride_cols type
     num_output_warps: UInt,
     max_tmem_cols: UInt = 512,
     elementwise_compute_lambda_fn: OptionalReg[
@@ -80,18 +83,10 @@ struct TileWriter[
     """Output tile writer for SM100 matmul epilogue.
 
     Stores pointer to TMA descriptor. SMEM tiles passed per-call.
-    """
 
-    # From config
-    comptime cta_group = Self.config.cta_group
-    comptime mma_shape = Self.config.mma_shape
-    comptime block_tile_shape = Self.config.block_tile_shape
-    comptime accum_type = Self.config.accum_type
-    comptime num_accum_pipeline_stages = Int(
-        Self.config.num_accum_pipeline_stages
-    )
-    comptime c_swizzle = Self.config.c_swizzle
-    comptime transpose_c = Self.config.AB_swapped
+    Parameters are passed explicitly to work with both MatmulConfig
+    and BlockScaledMatmulConfig.
+    """
 
     # Type aliases
     comptime TmaOp = TMATensorTile[
@@ -103,7 +98,7 @@ struct TileWriter[
     ]
     comptime Stage = OutputStage[
         Self.num_accum_pipeline_stages,
-        Int(Self.stage_stride_cols),
+        Self.stage_stride_cols,  # Now Int, matches OutputTilePipeline
         Self.cta_group,
     ]
 

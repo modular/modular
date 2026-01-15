@@ -128,7 +128,7 @@ from .matmul import (
 )
 
 # Feature flag: set MODULAR_USE_STRUCTURED_SM100=True to use sm100_structured
-comptime _USE_STRUCTURED = env_get_bool["MODULAR_USE_STRUCTURED_SM100", False]()
+comptime _USE_STRUCTURED = env_get_bool["MODULAR_USE_STRUCTURED_SM100", True]()
 
 
 struct B200BlockScaledMatmulSmem[
@@ -1120,7 +1120,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 ) raises:
     # Feature flag: use sm100_structured implementation when enabled
     @parameter
-    if _USE_STRUCTURED and sfa_dtype == sfb_dtype == MXFP8_SF_DTYPE:
+    if _USE_STRUCTURED:
         from ..sm100_structured.block_scaled_matmul import (
             blackwell_block_scaled_matmul_tma_umma_warp_specialized as structured_impl,
         )

@@ -30,7 +30,6 @@ from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
-    MXFP8_SF_VECTOR_SIZE,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.structuring import SMemTileArrayType, SMemArrayType
@@ -84,12 +83,21 @@ struct BlockScaledSmem[
 
     comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
 
+    # SF_K_GROUP_SIZE = SF_ATOM_K * vec_sf_size
+    # This determines how many K elements each scaling factor covers
+    comptime SF_K_GROUP_SIZE = SF_ATOM_K * Self.config.vec_sf_size
+
+    # SF layouts use config.vec_sf_size (MXFP8=32, NVFP4=16) and num_sf_k_tiles
     comptime sfa_smem_layout = tile_sf_layout_k_major[
-        Self.BM, Self.BK, MXFP8_SF_VECTOR_SIZE
+        Self.BM,
+        Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
+        Self.config.vec_sf_size,
     ]()
 
     comptime sfb_smem_layout = tile_sf_layout_k_major[
-        Self.MMA_N, Self.BK, MXFP8_SF_VECTOR_SIZE
+        Self.MMA_N,
+        Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
+        Self.config.vec_sf_size,
     ]()
 
     # ========== Tile Array Type Aliases ==========
@@ -212,6 +220,24 @@ struct BlockScaledSmem[
     fn tmem_addr(ref [AddressSpace.SHARED]self) -> Self.TmemAddr:
         return Self.TmemAddr(self.tmem_addr_storage)
 
+    # ========== Standard API Aliases ==========
+    # These match the standard Smem API from matmul_kernels.mojo for code reuse
+
+    @always_inline
+    fn input_barriers(ref [AddressSpace.SHARED]self) -> Self.InputBarriers:
+        """Alias for tma_mma_mbars() to match standard Smem API."""
+        return self.tma_mma_mbars()
+
+    @always_inline
+    fn accum_barriers(ref [AddressSpace.SHARED]self) -> Self.AccumBarriers:
+        """Alias for accum_mbars() to match standard Smem API."""
+        return self.accum_mbars()
+
+    @always_inline
+    fn tmem_dealloc(ref [AddressSpace.SHARED]self) -> Self.TmemDealloc:
+        """Alias for tmem_dealloc_mbar() to match standard Smem API."""
+        return self.tmem_dealloc_mbar()
+
     # ========== Size Utilities ==========
     @staticmethod
     @always_inline
@@ -260,10 +286,11 @@ fn get_sfa_smem_layout[
     ],
 ]() -> Layout:
     """Get the SMEM layout for A scaling factors."""
+    comptime SF_K_GROUP_SIZE = SF_ATOM_K * config.vec_sf_size
     return tile_sf_layout_k_major[
         config.block_tile_shape[0],
-        config.block_tile_shape[2],
-        MXFP8_SF_VECTOR_SIZE,
+        SF_K_GROUP_SIZE * config.num_sf_k_tiles,
+        config.vec_sf_size,
     ]()
 
 
@@ -280,10 +307,11 @@ fn get_sfb_smem_layout[
     ],
 ]() -> Layout:
     """Get the SMEM layout for B scaling factors."""
+    comptime SF_K_GROUP_SIZE = SF_ATOM_K * config.vec_sf_size
     return tile_sf_layout_k_major[
         config.mma_shape[1],
-        config.block_tile_shape[2],
-        MXFP8_SF_VECTOR_SIZE,
+        SF_K_GROUP_SIZE * config.num_sf_k_tiles,
+        config.vec_sf_size,
     ]()
 
 

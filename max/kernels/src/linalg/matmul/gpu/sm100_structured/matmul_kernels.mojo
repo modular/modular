@@ -83,6 +83,12 @@ from linalg.matmul.gpu.sm100.config import MatmulConfig
 from .pipeline import ProducerConsumerPipeline
 from .tile_pipeline import (
     TilePipeline,
+    InputTilePipeline,
+    StandardTilePayload,
+    InputProducerStage,
+    InputConsumerStage,
+    TileProducer,
+    TileConsumer,
     ProducerStage,
     ConsumerStage,
     OutputTilePipeline,
@@ -673,13 +679,17 @@ struct BlackwellMatmulSM100Kernel[
     ]
 
     # ========== Tile Pipeline Type ==========
+    # Uses generic TilePipeline with StandardTilePayload for composition
 
-    comptime InputTilePipeline = TilePipeline[
+    comptime TilePayload = StandardTilePayload[
         Self.a_type,
         Self.b_type,
         Self.SmemType.a_smem_layout,
         Self.SmemType.b_smem_layout,
         Self.SmemType.num_pipeline_stages,
+    ]
+    comptime InputTilePipeline = InputTilePipeline[
+        Self.TilePayload,
         Self.SmemType.num_group_pipeline_stages,
         Int(Self.config.k_group_size),
     ]
@@ -777,13 +787,20 @@ struct BlackwellMatmulSM100Kernel[
     ]
 
     # ========== Output Tile Writer ==========
-    # Instance-based TileWriter - config provides most params
+    # Instance-based TileWriter with explicit config parameters
     # tma_origin, c_type, c_layout, c_desc_layout inferred from constructor arg
     comptime TileWriterType = TileWriter[
-        config = Self.config,
+        a_type = Self.a_type,
+        accum_type = Self.accum_type,
+        block_tile_shape = Self.config.block_tile_shape,
+        mma_shape = Self.config.mma_shape,
+        cta_group = Self.cta_group,
+        num_accum_pipeline_stages = Int(Self.config.num_accum_pipeline_stages),
+        c_swizzle = Self.config.c_swizzle,
+        transpose_c = Self.config.AB_swapped,
         c_smem_layout = Self.SmemType.c_smem_layout,
         num_output_stages = Self.SmemType.num_output_stages,
-        stage_stride_cols = UInt(Self.stage_stride_cols),
+        stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
         max_tmem_cols = Self.max_tmem_cols,
         elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
@@ -890,9 +907,17 @@ struct BlackwellMatmulSM100Kernel[
 
     @staticmethod
     @always_inline
-    fn mma(
+    fn mma[
+        tiles_origin: MutOrigin,
+        //,
+    ](
         tmem_stage: Self.OutputPipeline.Stage.Tmem,
-        tiles: ConsumerStage,
+        tiles: InputConsumerStage[
+            tiles_origin,
+            Self.TilePayload,
+            Self.SmemType.num_group_pipeline_stages,
+            Int(Self.config.k_group_size),
+        ],
         mma_op: MmaOpSM100_SS,
         elect_one_warp: Bool,
         iter_idx: UInt32,
@@ -908,7 +933,7 @@ struct BlackwellMatmulSM100Kernel[
 
         Args:
             tmem_stage: TMEM stage for accumulators.
-            tiles: ConsumerStage context with encapsulated tile access.
+            tiles: InputConsumerStage context with encapsulated tile access.
             mma_op: The MMA operation instance.
             elect_one_warp: Whether this warp should execute.
             iter_idx: K iteration index.
@@ -921,7 +946,10 @@ struct BlackwellMatmulSM100Kernel[
 
             @parameter
             for j in range(Int(Self.config.k_group_size)):
-                var a_tile, b_tile = tiles.get_tile(j)
+                # Get tiles using payload accessor
+                var a_tile, b_tile = tiles.payload().get_tile[
+                    Int(Self.config.k_group_size)
+                ](tiles.stage(), j)
                 var is_first_k = (iter_idx + j) == k_start
                 mma_op.mma(
                     a_tile, b_tile, UInt32(accum.offset()), init_c=is_first_k
@@ -950,13 +978,9 @@ struct BlackwellMatmulSM100Kernel[
             Self.b_desc_layout,
             cta_group = Self.cta_group,
         ],
-        tiles: ProducerStage[
+        tiles: InputProducerStage[
             tiles_origin,
-            Self.a_type,
-            Self.b_type,
-            Self.SmemType.a_smem_layout,
-            Self.SmemType.b_smem_layout,
-            Self.SmemType.num_pipeline_stages,
+            Self.TilePayload,
             Self.SmemType.num_group_pipeline_stages,
             Int(Self.config.k_group_size),
         ],
@@ -976,7 +1000,7 @@ struct BlackwellMatmulSM100Kernel[
         Args:
             a_loader: TileLoaderTMA for A matrix.
             b_loader: TileLoaderTMA for B matrix.
-            tiles: ProducerStage context with encapsulated tile access.
+            tiles: InputProducerStage context with encapsulated tile access.
             iter_idx: K iteration index (base index).
             work_m_coord: M coordinate of the output tile.
             work_n_coord: N coordinate of the output tile.
@@ -1007,7 +1031,10 @@ struct BlackwellMatmulSM100Kernel[
 
             @parameter
             for j in range(Int(Self.config.k_group_size)):
-                var a_tile, b_tile = tiles.get_tile(j)
+                # Get tiles using payload accessor
+                var a_tile, b_tile = tiles.payload().get_tile[
+                    Int(Self.config.k_group_size)
+                ](tiles.stage(), j)
 
                 # Peer CTA slice using pointer arithmetic (not tile[]).
                 # The tile[] method uses SMEM layout strides which can differ from
@@ -1049,9 +1076,10 @@ struct BlackwellMatmulSM100Kernel[
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
-        # Create input pipeline for TMA→MMA synchronization
+        # Create input pipeline for TMA→MMA synchronization (with payload)
+        var tile_payload = Self.TilePayload(smem.a_tiles(), smem.b_tiles())
         var input_pipeline = Self.InputTilePipeline(
-            smem.input_barriers(), smem.a_tiles(), smem.b_tiles()
+            smem.input_barriers(), tile_payload
         )
 
         comptime accum_type = get_accum_type[Self.a_type]()
@@ -1278,9 +1306,10 @@ struct BlackwellMatmulSM100Kernel[
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
-        # Create input pipeline for TMA→MMA synchronization
+        # Create input pipeline for TMA→MMA synchronization (with payload)
+        var tile_payload = Self.TilePayload(smem.a_tiles(), smem.b_tiles())
         var input_pipeline = Self.InputTilePipeline(
-            smem.input_barriers(), smem.a_tiles(), smem.b_tiles()
+            smem.input_barriers(), tile_payload
         )
 
         comptime max_tmem_cols = 512

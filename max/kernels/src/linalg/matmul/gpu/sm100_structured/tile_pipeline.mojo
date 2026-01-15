@@ -41,6 +41,7 @@ Usage:
         # Automatically signals completion on exit
 """
 
+from layout import Layout
 from layout.tma_async import SharedMemBarrier
 from .pipeline import ProducerConsumerPipeline
 from .tmem import TmemAllocation, TmemStage
@@ -48,6 +49,470 @@ from linalg.structuring import SMemPtr, SMemTileArrayType, SMemArrayType
 
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
+
+
+# ============================================================================
+# Tile Payloads - Data containers for pipeline tile arrays
+# ============================================================================
+
+
+@register_passable("trivial")
+trait TilePayload:
+    """Trait for tile payload types. Must be @register_passable("trivial")."""
+
+    pass
+
+
+@register_passable("trivial")
+struct StandardTilePayload[
+    a_type: DType,
+    b_type: DType,
+    a_tile_layout: Layout,
+    b_tile_layout: Layout,
+    num_pipeline_stages: Int,
+](TilePayload):
+    """Tile payload for standard matmul (A and B tiles)."""
+
+    comptime ATileArray = SMemTileArrayType[
+        Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
+    ]
+    comptime BTileArray = SMemTileArrayType[
+        Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
+    ]
+    comptime ATile = Self.ATileArray.Tile
+    comptime BTile = Self.BTileArray.Tile
+
+    var a_tiles: Self.ATileArray
+    var b_tiles: Self.BTileArray
+
+    @always_inline
+    fn __init__(out self, a_tiles: Self.ATileArray, b_tiles: Self.BTileArray):
+        self.a_tiles = a_tiles
+        self.b_tiles = b_tiles
+
+    @always_inline
+    fn get_tile[
+        k_group_size: Int
+    ](self, stage: UInt32, k_idx: Int) -> Tuple[Self.ATile, Self.BTile]:
+        """Get A and B tiles at the specified stage and k-group index."""
+        var idx = stage * k_group_size + k_idx
+        return (self.a_tiles[idx], self.b_tiles[idx])
+
+    @always_inline
+    fn get_a_tile[
+        k_group_size: Int
+    ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
+        """Get A tile at the specified stage and k-group index."""
+        return self.a_tiles[stage * k_group_size + k_idx]
+
+    @always_inline
+    fn get_b_tile[
+        k_group_size: Int
+    ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
+        """Get B tile at the specified stage and k-group index."""
+        return self.b_tiles[stage * k_group_size + k_idx]
+
+
+@register_passable("trivial")
+struct BlockScaledTilePayload[
+    a_type: DType,
+    b_type: DType,
+    sfa_type: DType,
+    sfb_type: DType,
+    a_tile_layout: Layout,
+    b_tile_layout: Layout,
+    sfa_tile_layout: Layout,
+    sfb_tile_layout: Layout,
+    num_pipeline_stages: Int,
+](TilePayload):
+    """Tile payload for block-scaled matmul (A, B, SFA, SFB tiles)."""
+
+    comptime ATileArray = SMemTileArrayType[
+        Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
+    ]
+    comptime BTileArray = SMemTileArrayType[
+        Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
+    ]
+    comptime SFATileArray = SMemTileArrayType[
+        Self.sfa_type,
+        Self.sfa_tile_layout,
+        Self.num_pipeline_stages,
+        alignment=128,
+    ]
+    comptime SFBTileArray = SMemTileArrayType[
+        Self.sfb_type,
+        Self.sfb_tile_layout,
+        Self.num_pipeline_stages,
+        alignment=128,
+    ]
+    comptime ATile = Self.ATileArray.Tile
+    comptime BTile = Self.BTileArray.Tile
+    comptime SFATile = Self.SFATileArray.Tile
+    comptime SFBTile = Self.SFBTileArray.Tile
+
+    var a_tiles: Self.ATileArray
+    var b_tiles: Self.BTileArray
+    var sfa_tiles: Self.SFATileArray
+    var sfb_tiles: Self.SFBTileArray
+
+    @always_inline
+    fn __init__(
+        out self,
+        a_tiles: Self.ATileArray,
+        b_tiles: Self.BTileArray,
+        sfa_tiles: Self.SFATileArray,
+        sfb_tiles: Self.SFBTileArray,
+    ):
+        self.a_tiles = a_tiles
+        self.b_tiles = b_tiles
+        self.sfa_tiles = sfa_tiles
+        self.sfb_tiles = sfb_tiles
+
+    @always_inline
+    fn get_tile[
+        k_group_size: Int
+    ](self, stage: UInt32, k_idx: Int) -> Tuple[
+        Self.ATile, Self.BTile, Self.SFATile, Self.SFBTile
+    ]:
+        """Get A, B, SFA, SFB tiles at the specified stage and k-group index."""
+        var idx = stage * k_group_size + k_idx
+        return (
+            self.a_tiles[idx],
+            self.b_tiles[idx],
+            self.sfa_tiles[idx],
+            self.sfb_tiles[idx],
+        )
+
+    @always_inline
+    fn get_a_tile[
+        k_group_size: Int
+    ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
+        """Get A tile at the specified stage and k-group index."""
+        return self.a_tiles[stage * k_group_size + k_idx]
+
+    @always_inline
+    fn get_b_tile[
+        k_group_size: Int
+    ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
+        """Get B tile at the specified stage and k-group index."""
+        return self.b_tiles[stage * k_group_size + k_idx]
+
+    @always_inline
+    fn get_sfa_tile[
+        k_group_size: Int
+    ](self, stage: UInt32, k_idx: Int) -> Self.SFATile:
+        """Get SFA tile at the specified stage and k-group index."""
+        return self.sfa_tiles[stage * k_group_size + k_idx]
+
+    @always_inline
+    fn get_sfb_tile[
+        k_group_size: Int
+    ](self, stage: UInt32, k_idx: Int) -> Self.SFBTile:
+        """Get SFB tile at the specified stage and k-group index."""
+        return self.sfb_tiles[stage * k_group_size + k_idx]
+
+
+# ============================================================================
+# InputTilePipeline - Generic pipeline parameterized by payload type
+# ============================================================================
+
+
+@register_passable("trivial")
+struct InputTilePipeline[
+    Payload: TilePayload,
+    num_group_stages: Int,
+    k_group_size: Int,
+]:
+    """Tile pipeline with configurable payload type.
+
+    Separates synchronization from tile storage. The Payload parameter
+    (e.g., StandardTilePayload or BlockScaledTilePayload) holds tile arrays.
+    """
+
+    comptime Pipeline = ProducerConsumerPipeline[Self.num_group_stages]
+    comptime BarrierArray = SMemArrayType[
+        SharedMemBarrier, Self.num_group_stages * 2
+    ]
+
+    var pipeline: Self.Pipeline
+    var payload: Self.Payload
+
+    @staticmethod
+    @always_inline
+    fn init_barriers(
+        storage_ptr: MbarPtr,
+        producer_arv_count: Int32,
+        consumer_arv_count: Int32,
+    ):
+        """Initialize pipeline barriers. Called once by elect_one thread."""
+        var pipeline = Self.Pipeline(storage_ptr)
+        pipeline.init_mbars(producer_arv_count, consumer_arv_count)
+
+    @always_inline
+    fn __init__(out self, barriers: Self.BarrierArray, payload: Self.Payload):
+        """Initialize from typed barrier array and payload."""
+        self.pipeline = Self.Pipeline(barriers.ptr)
+        self.payload = payload
+
+    @always_inline
+    fn acquire_producer(mut self) -> Tuple[UInt32, MbarPtr]:
+        """Wait for slot availability and return (stage, barrier)."""
+        self.pipeline.wait_consumer()
+        var stage = self.pipeline.producer_stage()
+        return (stage, self.pipeline.producer_mbar(stage))
+
+    @always_inline
+    fn release_producer(mut self):
+        """Signal completion and advance producer stage."""
+        self.pipeline.producer_step()
+
+    @always_inline
+    fn acquire_consumer(mut self) -> Tuple[UInt32, MbarPtr]:
+        """Wait for data availability and return (stage, barrier)."""
+        self.pipeline.wait_producer()
+        var stage = self.pipeline.consumer_stage()
+        return (stage, self.pipeline.consumer_mbar(stage))
+
+    @always_inline
+    fn release_consumer(mut self):
+        """Signal completion and advance consumer stage."""
+        self.pipeline.consumer_step()
+
+    @always_inline
+    fn producer_stage(self) -> UInt32:
+        return self.pipeline.producer_stage()
+
+    @always_inline
+    fn consumer_stage(self) -> UInt32:
+        return self.pipeline.consumer_stage()
+
+    @always_inline
+    fn producer_mbar(self, stage: UInt32) -> MbarPtr:
+        return self.pipeline.producer_mbar(stage)
+
+    @always_inline
+    fn consumer_mbar(self, stage: UInt32) -> MbarPtr:
+        return self.pipeline.consumer_mbar(stage)
+
+    @always_inline
+    fn producer[
+        mut_origin: MutOrigin
+    ](ref [mut_origin]self) -> TileProducer[
+        mut_origin, Self.Payload, Self.num_group_stages, Self.k_group_size
+    ]:
+        """Get producer view for TMA Load warp."""
+        return TileProducer(pipeline_ptr=Pointer(to=self))
+
+    @always_inline
+    fn consumer[
+        mut_origin: MutOrigin
+    ](ref [mut_origin]self) -> TileConsumer[
+        mut_origin, Self.Payload, Self.num_group_stages, Self.k_group_size
+    ]:
+        """Get consumer view for MMA warp."""
+        return TileConsumer(pipeline_ptr=Pointer(to=self))
+
+
+# ============================================================================
+# InputProducerStage/InputConsumerStage - Context managers for tile access
+# ============================================================================
+
+
+@register_passable("trivial")
+struct InputProducerStage[
+    origin: MutOrigin,
+    Payload: TilePayload,
+    num_group_stages: Int,
+    k_group_size: Int,
+]:
+    """Producer stage context manager. Released on scope exit."""
+
+    comptime PipelineType = InputTilePipeline[
+        Self.Payload, Self.num_group_stages, Self.k_group_size
+    ]
+
+    var pipeline_ptr: Pointer[Self.PipelineType, Self.origin]
+    var _stage: UInt32
+    var _barrier: MbarPtr
+
+    @always_inline
+    fn __init__(
+        out self,
+        pipeline_ptr: Pointer[Self.PipelineType, Self.origin],
+        stage: UInt32,
+        barrier: MbarPtr,
+    ):
+        self.pipeline_ptr = pipeline_ptr
+        self._stage = stage
+        self._barrier = barrier
+
+    @always_inline
+    fn __enter__(mut self) -> Self:
+        return self
+
+    @always_inline
+    fn __exit__(mut self):
+        self.pipeline_ptr[].release_producer()
+
+    @always_inline
+    fn payload(self) -> Self.Payload:
+        """Get the tile payload for direct access."""
+        return self.pipeline_ptr[].payload
+
+    @always_inline
+    fn stage(self) -> UInt32:
+        """Get the current stage index."""
+        return self._stage
+
+    @always_inline
+    fn expect_bytes(self, num_bytes: Int):
+        """Set expected bytes on the barrier for TMA loads."""
+        self._barrier[0].expect_bytes(num_bytes)
+
+    @always_inline
+    fn barrier(self) -> MbarPtr:
+        """Get the barrier pointer for TMA multicast loads."""
+        return self._barrier
+
+
+@register_passable("trivial")
+struct InputConsumerStage[
+    origin: MutOrigin,
+    Payload: TilePayload,
+    num_group_stages: Int,
+    k_group_size: Int,
+]:
+    """Consumer stage context manager. Released on scope exit."""
+
+    comptime PipelineType = InputTilePipeline[
+        Self.Payload, Self.num_group_stages, Self.k_group_size
+    ]
+
+    var pipeline_ptr: Pointer[Self.PipelineType, Self.origin]
+    var _stage: UInt32
+    var _mbar: MbarPtr
+
+    @always_inline
+    fn __init__(
+        out self,
+        pipeline_ptr: Pointer[Self.PipelineType, Self.origin],
+        stage: UInt32,
+        mbar: MbarPtr,
+    ):
+        self.pipeline_ptr = pipeline_ptr
+        self._stage = stage
+        self._mbar = mbar
+
+    @always_inline
+    fn __enter__(mut self) -> Self:
+        return self
+
+    @always_inline
+    fn __exit__(mut self):
+        self.pipeline_ptr[].release_consumer()
+
+    @always_inline
+    fn payload(self) -> Self.Payload:
+        """Get the tile payload for direct access."""
+        return self.pipeline_ptr[].payload
+
+    @always_inline
+    fn stage(self) -> UInt32:
+        """Get the current stage index."""
+        return self._stage
+
+    @always_inline
+    fn mbar(self) -> MbarPtr:
+        """Get the barrier pointer."""
+        return self._mbar
+
+
+# ============================================================================
+# TileProducer/TileConsumer - Wrapper types with acquire()
+# ============================================================================
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct TileProducer[
+    origin: MutOrigin,
+    Payload: TilePayload,
+    num_group_stages: Int,
+    k_group_size: Int,
+]:
+    """Producer view for TMA Load warp. Use acquire() to get stages."""
+
+    comptime PipelineType = InputTilePipeline[
+        Self.Payload, Self.num_group_stages, Self.k_group_size
+    ]
+
+    var pipeline_ptr: Pointer[Self.PipelineType, Self.origin]
+
+    @always_inline
+    fn __enter__(mut self) -> Self:
+        return self
+
+    @always_inline
+    fn __exit__(mut self):
+        pass
+
+    @always_inline
+    fn drain(mut self):
+        """Drain pipeline to prevent CTA exit while peer is still working."""
+
+        @parameter
+        for _ in range(Self.num_group_stages):
+            self.pipeline_ptr[].pipeline.wait_consumer()
+            self.pipeline_ptr[].pipeline.producer_step()
+
+    @always_inline
+    fn acquire(
+        mut self,
+    ) -> InputProducerStage[
+        Self.origin, Self.Payload, Self.num_group_stages, Self.k_group_size
+    ]:
+        """Acquire next stage, waiting for slot availability."""
+        var stage, barrier = self.pipeline_ptr[].acquire_producer()
+        return InputProducerStage(
+            pipeline_ptr=self.pipeline_ptr, stage=stage, barrier=barrier
+        )
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct TileConsumer[
+    origin: MutOrigin,
+    Payload: TilePayload,
+    num_group_stages: Int,
+    k_group_size: Int,
+]:
+    """Consumer view for MMA warp. Use acquire() to get stages."""
+
+    comptime PipelineType = InputTilePipeline[
+        Self.Payload, Self.num_group_stages, Self.k_group_size
+    ]
+
+    var pipeline_ptr: Pointer[Self.PipelineType, Self.origin]
+
+    @always_inline
+    fn __enter__(mut self) -> Self:
+        return self
+
+    @always_inline
+    fn __exit__(mut self):
+        pass
+
+    @always_inline
+    fn acquire(
+        mut self,
+    ) -> InputConsumerStage[
+        Self.origin, Self.Payload, Self.num_group_stages, Self.k_group_size
+    ]:
+        """Acquire next stage, waiting for tiles to be ready."""
+        var stage, mbar = self.pipeline_ptr[].acquire_consumer()
+        return InputConsumerStage(
+            pipeline_ptr=self.pipeline_ptr, stage=stage, mbar=mbar
+        )
 
 
 # ============================================================================
@@ -538,6 +1003,28 @@ struct OutputStage[
         self.index = index
         self.tmem = tmem
         self.pipeline = pipeline
+
+    @staticmethod
+    @always_inline
+    fn from_raw(
+        pipeline: Self.Pipeline,
+        stage_index: UInt32,
+        tmem_offset: UInt32,
+    ) -> Self:
+        """Create OutputStage from raw pipeline, stage index, and TMEM offset.
+
+        Useful when not using OutputTilePipeline's consumer() context manager.
+
+        Args:
+            pipeline: The ProducerConsumerPipeline for barrier signaling.
+            stage_index: Current pipeline stage index.
+            tmem_offset: Pre-computed TMEM offset for this stage.
+
+        Returns:
+            OutputStage with the given parameters.
+        """
+        var tmem = Self.Tmem.from_offset(Int(tmem_offset), Int(stage_index))
+        return Self(stage_index, tmem, pipeline)
 
 
 @register_passable("trivial")

@@ -179,3 +179,29 @@ struct ProducerConsumerPipeline[num_stages: Int]:
         for i in range(Self.num_stages):
             self.full[i].init(producer_arrive_count)
             self.empty[i].init(consumer_arrive_count)
+
+    @always_inline
+    fn producer_signal_and_step(mut self):
+        """Wait for consumer, signal production, and advance stage.
+
+        Combined operation for CLC throttling (Load warp):
+        1. Wait for consumer to finish with current stage
+        2. Signal that producer has new data
+        3. Advance to next stage
+        """
+        self.wait_consumer()
+        _ = self.full[self._producer_stage].arrive()
+        self.producer_step()
+
+    @always_inline
+    fn consumer_signal_and_step(mut self):
+        """Wait for producer, signal consumption, and advance stage.
+
+        Combined operation for CLC throttling (Scheduler warp):
+        1. Wait for producer to have data ready
+        2. Signal that consumer has consumed data
+        3. Advance to next stage
+        """
+        self.wait_producer()
+        _ = self.empty[self._consumer_stage].arrive()
+        self.consumer_step()
