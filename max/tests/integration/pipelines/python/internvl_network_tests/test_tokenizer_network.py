@@ -66,11 +66,19 @@ async def test_internvl_tokenizer_with_image() -> None:
             prompt=test_text,
         )
     )
+
+    # Messages must be provided when images are provided.
+    messages = [
+        TextGenerationRequestMessage(
+            role="user",
+            content=[{"type": "text", "text": test_text}, {"type": "image"}],
+        )
+    ]
     image_context = await max_tokenizer.new_context(
         TextGenerationRequest(
             request_id=RequestID(),
             model_name=model_id,
-            prompt=test_text,
+            messages=messages,
             images=[test_image],
         )
     )
