@@ -4571,18 +4571,18 @@ fn mha_splitk_reduce[
         num_partitions <= WARP_SIZE,
         "number of partitions should be less than or equal to the warp_size",
     )
-    var partition_idx = lane_id()
+    var partition_idx = thread_idx.x
+
+    var qk_max_offset = (
+        num_heads * batch_idx
+        + num_heads * UInt(batch_size) * partition_idx
+        + q_head_idx
+    )
     var l = min_or_neg_inf[accum_type]()
     if partition_idx < UInt(num_partitions):
-        var qk_max_offset = (
-            num_heads * batch_idx
-            + num_heads * UInt(batch_size) * partition_idx
-            + q_head_idx
-        )
         l = qk_max_ptr[qk_max_offset]
 
-    # TODO: use warp.lane_group_max since partition is going to be much smaller than WARP_SIZE
-    var qk_max = warp.shuffle_idx(warp.max(l), 0)
+    var qk_max = warp.lane_group_max_and_broadcast[WARP_SIZE](l)
 
     # since num_partitions <= WARP_SIZE, allocate buffer using WARP_SIZE
     var exp_sums = LayoutTensor[
@@ -4614,55 +4614,65 @@ fn mha_splitk_reduce[
     var rescaled_exp_sum: Scalar[accum_type] = 0
     comptime exp_fn = _exp2_concrete if use_exp2 else _exp_concrete
     if partition_idx < UInt(num_partitions):
-        var qk_max_offset = (
-            num_heads * batch_idx
-            + num_heads * UInt(batch_size) * partition_idx
-            + q_head_idx
-        )
         rescaled_exp_sum = exp_sum_ptr[qk_max_offset] * exp_fn(l - qk_max)
         exp_sums[partition_idx] = rescaled_exp_sum
 
     # ensure exp_sums is written to before reading
     barrier()
 
-    # TODO: use warp.lane_group_sum since partition is going to be much smaller than WARP_SIZE
     var exp_sum = warp.shuffle_idx(warp.sum(rescaled_exp_sum), 0)
 
     var inv_global_exp_sum = 1.0 / exp_sum
-    # TODO: vectorize load and store operations
-    comptime width = Int(ceildiv(depth, num_threads))
-    acc = (
-        LayoutTensor[
-            accum_type,
-            Layout(width),
-            MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0)
-    )
-    for partition_idx in range(num_partitions):
-        var partition_exp_sum = exp_sums[partition_idx]
-        if partition_exp_sum > 0:
 
-            @parameter
-            for w in range(width):
-                d = thread_idx.x + UInt(w) * num_threads
-                if d < depth:
-                    var x = (
-                        intermediate_output[
-                            partition_idx, batch_idx, q_head_idx, d
-                        ].cast[accum_type]()
-                        * inv_global_exp_sum
-                        * partition_exp_sum
-                    )
-                    acc[w] += x[0]
+    comptime width = next_power_of_two(ceildiv(depth, num_threads))
+    constrained[depth % width == 0, "depth must be divisible by width"]()
+    constrained[
+        width * num_threads >= depth,
+        "width * num_threads must be greater than or equal to depth",
+    ]()
+
+    var acc = SIMD[accum_type, Int(width)](0)
+    var depth_idx = thread_idx.x * width
+
+    # Precompute base pointer and partition stride to avoid ptr_at_offset in inner loop
+    # Layout is [num_partitions, batch_size, num_heads, depth] in row-major
+    var partition_stride = Int(batch_size) * Int(num_heads) * Int(depth)
+    var base_offset = (
+        Int(batch_idx) * Int(num_heads) * Int(depth)
+        + Int(q_head_idx) * Int(depth)
+        + Int(depth_idx)
+    )
+    var base_ptr = intermediate_output.ptr + base_offset
 
     @parameter
-    for w in range(width):
-        d = thread_idx.x + UInt(w) * num_threads
-        if d < depth:
-            output[batch_idx, q_head_idx, d] = acc[w].cast[output_type]()
+    fn accum_fn[simd_width: Int](partition_idx: Int) unified {mut}:
+        var partition_exp_sum = exp_sums.vectorize[simd_width]()[
+            partition_idx // simd_width
+        ]
+
+        @parameter
+        for i in range(simd_width):
+            var ptr = base_ptr + (partition_idx + i) * partition_stride
+            var x_load = ptr.load[
+                width = Int(width),
+                alignment = Int(width) * size_of[output_type](),
+            ]().cast[accum_type]()
+            var scale = partition_exp_sum[i]
+            var mask = SIMD[DType.bool, Int(width)](fill=scale > 0)
+            var safe_load = mask.select(x_load, type_of(x_load)(0))
+            acc += safe_load * type_of(safe_load)(scale)
+
+    if depth_idx < depth:
+        vectorize[8](num_partitions, accum_fn)
+
+    acc *= inv_global_exp_sum
+    if depth_idx < depth:
+        var ptr = output.ptr_at_offset(
+            IndexList[3](Int(batch_idx), Int(q_head_idx), Int(depth_idx))
+        )
+        ptr.store[alignment = Int(width) * size_of[output_type](),](
+            acc.cast[output_type]()
+        )
 
 
 # ===-----------------------------------------------------------------------===#
