@@ -36,7 +36,7 @@ from typing import Any, TypeAlias, TypeVar, overload
 from typing_extensions import ParamSpec
 
 from .. import driver
-from ..graph import BufferValue, Graph, TensorValue, ops
+from ..graph import BufferValue, Graph, TensorValue, TensorValueLike, ops
 from . import realization_context as rc
 from . import tensor
 
@@ -248,12 +248,44 @@ allgather = functional(ops.allgather)
 #: Sum values from multiple devices.
 #: See :func:`max.graph.ops.allreduce.sum` for details.
 allreduce_sum = functional(ops.allreduce.sum)
-#: Returns the indices of the maximum values along an axis.
-#: See :func:`max.graph.ops.argmax` for details.
-argmax = functional(ops.argmax)
-#: Returns the indices of the minimum values along an axis.
-#: See :func:`max.graph.ops.argmin` for details.
-argmin = functional(ops.argmin)
+
+
+@functional
+def argmax(x: TensorValueLike, axis: int | None = -1) -> TensorValue:
+    """Returns the indices of the maximum values along an axis.
+
+    Args:
+        x: The input tensor.
+        axis: The axis along which to find the maximum indices. If None,
+            finds the index of the maximum across all elements (flattened).
+
+    Returns:
+        A tensor containing the indices of the maximum values.
+    """
+    if axis is None:
+        x = TensorValue(x).reshape([-1])
+        axis = 0
+    return ops.argmax(x, axis=axis)
+
+
+@functional
+def argmin(x: TensorValueLike, axis: int | None = -1) -> TensorValue:
+    """Returns the indices of the minimum values along an axis.
+
+    Args:
+        x: The input tensor.
+        axis: The axis along which to find the minimum indices. If None,
+            finds the index of the minimum across all elements (flattened).
+
+    Returns:
+        A tensor containing the indices of the minimum values.
+    """
+    if axis is None:
+        x = TensorValue(x).reshape([-1])
+        axis = 0
+    return ops.argmin(x, axis=axis)
+
+
 #: Returns the indices that would sort a tensor along an axis.
 #: See :func:`max.graph.ops.argsort` for details.
 argsort = functional(ops.argsort)
@@ -395,18 +427,87 @@ masked_scatter = functional(ops.masked_scatter)
 #: Performs matrix multiplication.
 #: See :func:`max.graph.ops.matmul` for details.
 matmul = functional(ops.matmul)
-#: Returns the maximum values along an axis.
-#: See :func:`max.graph.ops.max` for details.
-max = functional(ops.max)
+
+
+@functional
+def max(
+    x: TensorValueLike,
+    y: TensorValueLike | None = None,
+    /,
+    axis: int | None = -1,
+) -> TensorValue:
+    """Returns the maximum values along an axis, or elementwise maximum of two tensors.
+
+    Args:
+        x: The input tensor.
+        y: Optional second tensor for elementwise maximum.
+        axis: The axis along which to compute the maximum (only for reduction).
+            If None, computes the maximum across all elements (flattened).
+
+    Returns:
+        A tensor containing the maximum values.
+    """
+    if y is not None:
+        # Elementwise max
+        return ops.elementwise.max(x, y)
+    # Reduction max
+    if axis is None:
+        x = TensorValue(x).reshape([-1])
+        axis = 0
+    return ops.reduction.max(x, axis=axis)
+
+
 #: Applies 2D max pooling.
 #: See :func:`max.graph.ops.max_pool2d` for details.
 max_pool2d = functional(ops.max_pool2d)
-#: Computes the mean along specified axes.
-#: See :func:`max.graph.ops.mean` for details.
-mean = functional(ops.mean)
-#: Returns the minimum values along an axis.
-#: See :func:`max.graph.ops.min` for details.
-min = functional(ops.min)
+
+
+@functional
+def mean(x: TensorValueLike, axis: int | None = -1) -> TensorValue:
+    """Computes the mean along specified axes.
+
+    Args:
+        x: The input tensor.
+        axis: The axis along which to compute the mean. If None,
+            computes the mean across all elements (flattened).
+
+    Returns:
+        A tensor containing the mean values.
+    """
+    if axis is None:
+        x = TensorValue(x).reshape([-1])
+        axis = 0
+    return ops.mean(x, axis=axis)
+
+
+@functional
+def min(
+    x: TensorValueLike,
+    y: TensorValueLike | None = None,
+    /,
+    axis: int | None = -1,
+) -> TensorValue:
+    """Returns the minimum values along an axis, or elementwise minimum of two tensors.
+
+    Args:
+        x: The input tensor.
+        y: Optional second tensor for elementwise minimum.
+        axis: The axis along which to compute the minimum (only for reduction).
+            If None, computes the minimum across all elements (flattened).
+
+    Returns:
+        A tensor containing the minimum values.
+    """
+    if y is not None:
+        # Elementwise min
+        return ops.elementwise.min(x, y)
+    # Reduction min
+    if axis is None:
+        x = TensorValue(x).reshape([-1])
+        axis = 0
+    return ops.reduction.min(x, axis=axis)
+
+
 #: Computes the modulo operation element-wise.
 #: See :func:`max.graph.ops.mod` for details.
 mod = functional(ops.mod)
@@ -540,9 +641,26 @@ stack = functional(ops.stack)
 #: Subtracts two tensors element-wise.
 #: See :func:`max.graph.ops.sub` for details.
 sub = functional(ops.sub)
-#: Computes the sum along specified axes.
-#: See :func:`max.graph.ops.sum` for details.
-sum = functional(ops.sum)
+
+
+@functional
+def sum(x: TensorValueLike, axis: int | None = -1) -> TensorValue:
+    """Computes the sum along specified axes.
+
+    Args:
+        x: The input tensor.
+        axis: The axis along which to compute the sum. If None,
+            computes the sum across all elements (flattened).
+
+    Returns:
+        A tensor containing the sum values.
+    """
+    if axis is None:
+        x = TensorValue(x).reshape([-1])
+        axis = 0
+    return ops.sum(x, axis=axis)
+
+
 #: Computes the hyperbolic tangent element-wise.
 #: See :func:`max.graph.ops.tanh` for details.
 tanh = functional(ops.tanh)

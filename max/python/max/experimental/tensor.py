@@ -1193,7 +1193,7 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         return F.transfer_to(self, device)
 
-    def argmax(self, axis: int = -1) -> Tensor:
+    def argmax(self, axis: int | None = -1) -> Tensor:
         """Finds the indices of the maximum values along an axis.
 
         Returns a tensor containing the indices of the maximum values along
@@ -1214,16 +1214,21 @@ class Tensor(DLPackArray, HasTensorValue):
             indices = x.argmax(axis=-1)
             # Result: [1, 2] (index 1 in first row, index 2 in second row)
 
+            # Find argmax over all elements
+            index = x.argmax(axis=None)
+            # Result: 6 (flattened index of maximum value 4.2)
+
         Args:
             axis: The axis along which to find the maximum indices. Defaults
-                to -1 (the last axis).
+                to -1 (the last axis). If None, finds the index of the maximum
+                value across all elements.
 
         Returns:
             Tensor: A tensor containing the indices of the maximum values.
         """
         return F.argmax(self, axis=axis)
 
-    def max(self, axis: int = -1) -> Tensor:
+    def max(self, axis: int | None = -1) -> Tensor:
         """Computes the maximum values along an axis.
 
         Returns a tensor containing the maximum values along the specified axis.
@@ -1247,16 +1252,20 @@ class Tensor(DLPackArray, HasTensorValue):
             col_max = x.max(axis=0)
             # Result: [2.3, 3.5, 4.2, 3.1]
 
+            # Find max over all elements
+            overall_max = x.max(axis=None)
+            # Result: 4.2 (maximum value across all elements)
+
         Args:
             axis: The axis along which to compute the maximum. Defaults to -1
-                (the last axis).
+                (the last axis). If None, computes the maximum across all elements.
 
         Returns:
             Tensor: A tensor containing the maximum values along the specified axis.
         """
         return F.max(self, axis=axis)
 
-    def mean(self, axis: int = -1) -> Tensor:
+    def mean(self, axis: int | None = -1) -> Tensor:
         """Computes the mean values along an axis.
 
         Returns a tensor containing the arithmetic mean of values along the
@@ -1281,16 +1290,20 @@ class Tensor(DLPackArray, HasTensorValue):
             col_mean = x.mean(axis=0)
             # Result: [1.5, 3.5, 5.5, 7.5] (mean of each column)
 
+            # Compute mean over all elements
+            overall_mean = x.mean(axis=None)
+            # Result: 4.5 (mean of all elements)
+
         Args:
             axis: The axis along which to compute the mean. Defaults to -1
-                (the last axis).
+                (the last axis). If None, computes the mean across all elements.
 
         Returns:
             Tensor: A tensor containing the mean values along the specified axis.
         """
         return F.mean(self, axis=axis)
 
-    def sum(self, axis: int = -1) -> Tensor:
+    def sum(self, axis: int | None = -1) -> Tensor:
         """Computes the sum of values along an axis.
 
         Returns a tensor containing the sum of values along the specified axis.
@@ -1315,9 +1328,13 @@ class Tensor(DLPackArray, HasTensorValue):
             col_sum = x.sum(axis=0)
             # Result: [5.0, 7.0, 9.0] (sum of each column)
 
+            # Sum over all elements
+            total = x.sum(axis=None)
+            # Result: 21.0 (sum of all elements)
+
         Args:
             axis: The axis along which to compute the sum. Defaults to -1
-                (the last axis).
+                (the last axis). If None, computes the sum across all elements.
 
         Returns:
             Tensor: A tensor containing the sum along the specified axis.
@@ -1357,7 +1374,7 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             Tensor: A tensor containing the values clipped to the specified range.
         """
-        x = self
+        x: Tensor = self
         if min is not None:
             x = F.max(x, min)
         if max is not None:

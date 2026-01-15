@@ -611,3 +611,54 @@ def test_invert() -> None:
     )
     result = ~a
     assert result.real
+
+
+def test_max_axis_none() -> None:
+    """Test that tensor.max with axis=None reduces over all dimensions."""
+    data = [[1.2, 3.5, 2.1], [2.3, 1.9, 4.2]]
+    tensor = Tensor.constant(
+        data,
+        dtype=DType.float32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    result = tensor.max(axis=None)
+    result._sync_realize()
+    assert result.shape == [1]
+    expected_max = 4.2
+    result_value = result.item()
+    assert abs(result_value - expected_max) < 1e-5
+
+
+def test_mean_axis_none() -> None:
+    """Test that tensor.mean with axis=None reduces over all dimensions."""
+    data = [[2.0, 4.0, 6.0], [8.0, 10.0, 12.0]]
+    tensor = Tensor.constant(
+        data,
+        dtype=DType.float32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    result = tensor.mean(axis=None)
+    result._sync_realize()
+    assert result.shape == [1]
+    # Mean of [2, 4, 6, 8, 10, 12] = 42/6 = 7.0
+    expected_mean = 7.0
+    result_value = result.item()
+    assert abs(result_value - expected_mean) < 1e-5
+
+
+def test_argmax_axis_none() -> None:
+    """Test that tensor.argmax with axis=None returns flattened index."""
+    data = [[1.2, 3.5, 2.1], [2.3, 1.9, 4.2]]
+    tensor = Tensor.constant(
+        data,
+        dtype=DType.float32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    result = tensor.argmax(axis=None)
+    result._sync_realize()
+    assert result.shape == [1]
+    # The maximum value 4.2 is at position [1, 2]
+    # Flattened index = 1*3 + 2 = 5
+    expected_index = 5
+    result_value = result.item()
+    assert result_value == expected_index

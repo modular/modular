@@ -405,3 +405,68 @@ def test_functional_returns_tensor() -> None:
 
     result = returns_tensor()
     assert result.real
+
+
+def test_sum_axis_none() -> None:
+    """Test that F.sum with axis=None reduces over all dimensions."""
+    data = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+    tensor = Tensor.constant(data, dtype=DType.float32, device=DEVICE)
+    result = F.sum(tensor, axis=None)
+    assert isinstance(result, Tensor)
+    result._sync_realize()
+    assert result.shape == [1]
+    expected_sum = sum(sum(row) for row in data)  # 21.0
+    result_value = result.item()
+    assert abs(result_value - expected_sum) < 1e-5
+
+
+def test_min_axis_none() -> None:
+    """Test that F.min with axis=None reduces over all dimensions."""
+    data = [[1.2, 3.5, 2.1], [2.3, 1.9, 4.2]]
+    tensor = Tensor.constant(data, dtype=DType.float32, device=DEVICE)
+    result = F.min(tensor, axis=None)
+    assert isinstance(result, Tensor)
+    result._sync_realize()
+    assert result.shape == [1]
+    expected_min = 1.2
+    result_value = result.item()
+    assert abs(result_value - expected_min) < 1e-5
+
+
+def test_argmin_axis_none() -> None:
+    """Test that F.argmin with axis=None returns flattened index."""
+    data = [[1.2, 3.5, 2.1], [2.3, 1.9, 4.2]]
+    tensor = Tensor.constant(data, dtype=DType.float32, device=DEVICE)
+    result = F.argmin(tensor, axis=None)
+    assert isinstance(result, Tensor)
+    result._sync_realize()
+    assert result.shape == [1]
+    # The minimum value 1.2 is at position [0, 0]
+    # Flattened index = 0*3 + 0 = 0
+    expected_index = 0
+    result_value = result.item()
+    assert result_value == expected_index
+
+
+def test_axis_none_preserves_default_behavior() -> None:
+    """Test that default axis=-1 behavior is unchanged."""
+    data = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+    tensor = Tensor.constant(data, dtype=DType.float32, device=DEVICE)
+    # Default behavior (axis=-1)
+    result_default = F.sum(tensor)
+    assert isinstance(result_default, Tensor)
+    result_default._sync_realize()
+    # Explicit axis=-1
+    result_explicit = F.sum(tensor, axis=-1)
+    assert isinstance(result_explicit, Tensor)
+    result_explicit._sync_realize()
+    # Both should give same result: [6.0, 15.0]
+    assert result_default.shape == result_explicit.shape == [2, 1]
+    # Should be different from axis=None
+    result_none = F.sum(tensor, axis=None)
+    assert isinstance(result_none, Tensor)
+    result_none._sync_realize()
+    assert result_none.shape == [1]
+    assert result_none.shape != result_default.shape
+    # Verify axis=None gives total sum
+    assert abs(result_none.item() - 21.0) < 1e-5
