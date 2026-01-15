@@ -257,6 +257,14 @@ what we publish.
 
 ### Library changes
 
+- [Issue #5734](https://github.com/modular/modular/issues/5734): Added
+  `is_struct_type[T]()` function to the `reflection` module. This function
+  returns `True` if `T` is a Mojo struct type, `False` otherwise. It is useful
+  for guarding reflection code that uses struct-specific APIs like
+  `struct_field_count` or `struct_field_names` to avoid compiler errors on
+  non-struct types (such as MLIR primitive types). Use `@parameter if` with this
+  function since the guarded reflection APIs are evaluated at compile time.
+
 - The `Hashable` trait now has a default implementation of
   `__hash__[H: Hasher](self, mut hasher: H)` that uses
   reflection to automatically hash all struct fields.

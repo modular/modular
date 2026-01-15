@@ -16,6 +16,7 @@ This module provides compile-time reflection capabilities including:
 
 - Type name introspection (`get_type_name`)
 - Function name and linkage introspection (`get_function_name`, `get_linkage_name`)
+- Type checking (`is_struct_type`)
 - Struct field reflection (`struct_field_count`, `struct_field_names`, `struct_field_types`)
 - Field lookup by name (`struct_field_index_by_name`, `struct_field_type_by_name`)
 - Source location introspection (`source_location`, `call_location`)
@@ -45,6 +46,8 @@ from .reflection import (
     get_linkage_name,
     get_function_name,
     get_type_name,
+    # Type checking
+    is_struct_type,
     # Struct field reflection (works with generics)
     struct_field_count,
     struct_field_names,

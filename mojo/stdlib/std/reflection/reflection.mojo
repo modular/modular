@@ -439,3 +439,56 @@ fn struct_field_names[
         result[i] = StaticString(raw[i])
 
     return result^
+
+
+fn is_struct_type[T: AnyType]() -> Bool:
+    """Returns `True` if `T` is a Mojo struct type, `False` otherwise.
+
+    This function distinguishes between Mojo struct types and MLIR primitive
+    types (such as `__mlir_type.index` or `__mlir_type.i64`). This is useful
+    when iterating over struct fields that may contain MLIR types, allowing
+    you to guard calls to struct-specific reflection APIs like
+    `struct_field_count`, `struct_field_names`, or `struct_field_types`
+    which produce compile errors when used on MLIR types.
+
+    Note: Since all reflection functions take `[T: AnyType]` parameters, you
+    can only pass types to them. Attempting to pass a trait, function, or
+    comptime value would result in a compiler error regardless of this check.
+
+    Note: When using this function as a guard, you must use `@parameter if`
+    (not a runtime `if` statement) because the guarded reflection APIs are
+    evaluated at compile time. A runtime `if` would still cause a compile
+    error since the compiler evaluates both branches.
+
+    Note: When an MLIR type like `__mlir_type.index` is passed directly as a
+    type parameter, it returns `True` because it gets wrapped as a Mojo type.
+    However, when the same MLIR type is obtained via `struct_field_types`
+    (e.g., from a struct field declared as `var x: __mlir_type.index`), it
+    returns `False`. This is the expected behavior for the primary use case of
+    guarding reflection APIs when iterating over struct fields. When you obtain
+    types via `struct_field_types` and pass them to a generic function, this
+    function correctly identifies the MLIR types.
+
+    Parameters:
+        T: A type to check (either a Mojo struct type or an MLIR type).
+
+    Returns:
+        `True` if `T` is a Mojo struct type, `False` if it is an MLIR type.
+
+    Example:
+        ```mojo
+        fn process_type[T: AnyType]():
+            @parameter
+            if is_struct_type[T]():
+                # Safe to use struct reflection APIs
+                comptime count = struct_field_count[T]()
+                print("Struct with", count, "fields")
+            else:
+                print("Non-struct type:", get_type_name[T]())
+        ```
+    """
+    return __mlir_attr[
+        `#kgen.is_struct_type<`,
+        T,
+        `> : i1`,
+    ]

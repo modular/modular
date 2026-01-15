@@ -17,6 +17,7 @@ from reflection import (
     get_linkage_name,
     get_type_name,
     get_function_name,
+    is_struct_type,
     struct_field_index_by_name,
     struct_field_type_by_name,
     struct_field_count,
@@ -24,7 +25,7 @@ from reflection import (
     struct_field_types,
 )
 from reflection.reflection import _unqualified_type_name
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, assert_false
 from testing import TestSuite
 
 
@@ -503,6 +504,142 @@ def test_reflection_on_nonetype():
     assert_equal(
         _get_type_name_generic[NoneType](), "std.builtin.none.NoneType"
     )
+
+
+# ===----------------------------------------------------------------------=== #
+# is_struct_type Tests
+# ===----------------------------------------------------------------------=== #
+
+
+# Dedicated struct with explicit MLIR-typed field for testing is_struct_type.
+@register_passable("trivial")
+struct StructWithMLIRField:
+    """A struct with an explicit MLIR-typed field for testing purposes."""
+
+    var mojo_field: Int
+    var mlir_field: __mlir_type.index
+
+
+def test_is_struct_type_with_user_structs():
+    assert_true(is_struct_type[Bar[2]]())
+    assert_true(is_struct_type[Foo[Bar[2](y=3, z=0.125), True]]())
+    assert_true(is_struct_type[StructWithMLIRField]())
+
+
+def test_is_struct_type_with_stdlib_structs():
+    assert_true(is_struct_type[Int]())
+    assert_true(is_struct_type[String]())
+    assert_true(is_struct_type[Float64]())
+    assert_true(is_struct_type[List[Int]]())
+    assert_true(is_struct_type[Optional[String]]())
+
+
+def test_is_struct_type_with_empty_struct():
+    assert_true(is_struct_type[EmptyStruct]())
+
+
+fn _is_struct_generic[T: AnyType]() -> Bool:
+    """Helper function to test is_struct_type through generic parameter."""
+    return is_struct_type[T]()
+
+
+def test_is_struct_type_through_generic_function():
+    """Test is_struct_type works correctly through a generic function."""
+    # Mojo struct types should return True
+    assert_true(_is_struct_generic[Int]())
+    assert_true(_is_struct_generic[String]())
+    assert_true(_is_struct_generic[Bar[2]]())
+    assert_true(_is_struct_generic[SIMD[DType.float32, 4]]())
+    assert_true(_is_struct_generic[EmptyStruct]())
+
+    # Note: When __mlir_type.index is passed directly as a type parameter,
+    # it returns True. However, when the same MLIR type is obtained via
+    # struct_field_types (as in test_is_struct_type_with_mlir_primitive_types),
+    # it returns False. This difference is because direct instantiation wraps
+    # the MLIR type differently than reflection retrieval.
+    assert_true(_is_struct_generic[__mlir_type.index]())
+
+
+def test_is_struct_type_field_types_through_generic():
+    """Test is_struct_type with field types passed through a generic function.
+
+    This tests the scenario where you get field types from a struct using
+    struct_field_types and then pass those types to a generic function that
+    calls is_struct_type. This is a key use case to ensure is_struct_type
+    correctly identifies MLIR types obtained via reflection.
+    """
+    comptime field_types = struct_field_types[StructWithMLIRField]()
+
+    # First field (Int) should be a struct type even through a generic function
+    assert_true(_is_struct_generic[field_types[0]]())
+
+    # Second field (__mlir_type.index) should NOT be a struct type through a
+    # generic function. This is the critical case that ensures is_struct_type
+    # works correctly when guarding reflection APIs in generic contexts.
+    assert_false(_is_struct_generic[field_types[1]]())
+
+
+fn safe_field_count[T: AnyType]() -> Int:
+    """Safe field count that returns -1 for non-struct types.
+
+    Note: Use `@parameter if` (not runtime `if`) since `is_struct_type` must
+    be evaluated at compile time to guard compile-time reflection APIs.
+    """
+
+    @parameter
+    if is_struct_type[T]():
+        return struct_field_count[T]()
+    else:
+        return -1
+
+
+def test_is_struct_type_as_guard():
+    """Test using is_struct_type as a guard before calling reflection APIs."""
+    # User-defined struct should have field count > 0
+    assert_equal(safe_field_count[Bar[2]]() >= 0, True)
+
+    # Stdlib structs should also work
+    assert_equal(safe_field_count[Int]() >= 0, True)
+
+    # Empty structs should return 0
+    assert_equal(safe_field_count[EmptyStruct](), 0)
+
+
+def test_is_struct_type_with_mlir_primitive_types():
+    """Test is_struct_type returns False for MLIR primitive types.
+
+    This is the key use case from issue #5734: when iterating over struct fields,
+    we may encounter MLIR primitive types that are not Mojo structs and would
+    cause errors if passed to struct reflection APIs.
+    """
+    comptime field_types = struct_field_types[StructWithMLIRField]()
+    assert_true(is_struct_type[field_types[0]]())
+    assert_false(is_struct_type[field_types[1]]())
+
+
+def test_is_struct_type_guard_with_mlir_types():
+    """Test using is_struct_type to safely iterate over mixed field types.
+
+    This demonstrates the use case from issue #5734: safely iterating over
+    struct fields where some fields may be MLIR primitive types.
+    """
+    var struct_field_count_found = 0
+    var non_struct_field_count_found = 0
+
+    # StructWithMLIRField has one Mojo struct field and one MLIR type field
+    @parameter
+    for i in range(struct_field_count[StructWithMLIRField]()):
+        comptime field_type = struct_field_types[StructWithMLIRField]()[i]
+
+        @parameter
+        if is_struct_type[field_type]():
+            struct_field_count_found += 1
+        else:
+            non_struct_field_count_found += 1
+
+    # One struct field (Int), one MLIR type field
+    assert_equal(struct_field_count_found, 1)
+    assert_equal(non_struct_field_count_found, 1)
 
 
 # ===----------------------------------------------------------------------=== #
