@@ -450,9 +450,9 @@ fn _colorize_diff_string[color: Color](s: String, other: String) -> String:
         A string with differences highlighted in the specified color.
     """
     var result = String()
-    for i in range(len(s)):
+    for i in range(s.byte_length()):
         var char = s[byte=i]
-        if i < len(other) and char == other[byte=i]:
+        if i < other.byte_length() and char == other[byte=i]:
             # Characters match - no color
             result += char
         else:

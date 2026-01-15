@@ -672,6 +672,9 @@ what we publish.
 - `StringableRaising` has been deprecated and its usages in the stdlib have
   been removed.
 
+- `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
+  or `String.count_codepoints()`.
+
 ### Tooling changes
 
 - The Mojo compiler now supports the `-Werror` flag, which treats all warnings

@@ -53,19 +53,19 @@ def test_file_read_bytes_multi():
         var bytes1 = f.read_bytes(12)
         assert_equal(len(bytes1), 12, "12 bytes")
         var string1 = String(unsafe_from_utf8=bytes1)
-        assert_equal(len(string1), 12, "12 chars")
+        assert_equal(string1.byte_length(), 12, "12 chars")
         assert_equal(string1, "Lorem ipsum ")
 
         var bytes2 = f.read_bytes(6)
         assert_equal(len(bytes2), 6, "6 bytes")
         var string2 = String(unsafe_from_utf8=bytes2)
-        assert_equal(len(string2), 6, "6 chars")
+        assert_equal(string2.byte_length(), 6, "6 chars")
         assert_equal(string2, "dolor ")
 
         # Read where N is greater than the number of bytes in the file.
         var s: String = f.read(1_000_000_000)
 
-        assert_equal(len(s), 936)
+        assert_equal(s.byte_length(), 936)
         assert_true(s.startswith("sit amet, consectetur adipiscing elit."))
 
 
@@ -173,7 +173,7 @@ def test_file_read_all():
         "r",
     ) as f:
         var all = f.read(-1)
-        assert_equal(len(all), Int(DUMMY_FILE_SIZE))
+        assert_equal(all.byte_length(), Int(DUMMY_FILE_SIZE))
 
 
 def test_file_read_path():
@@ -286,7 +286,7 @@ def test_file_seek():
         assert_equal(pos, 6)
 
         comptime expected_msg1 = "ipsum dolor sit amet, consectetur adipiscing elit."
-        assert_equal(f.read(len(expected_msg1)), expected_msg1)
+        assert_equal(f.read(expected_msg1.byte_length()), expected_msg1)
 
         # Seek from the end of the file
         pos = f.seek(-16, os.SEEK_END)
@@ -303,7 +303,7 @@ def test_file_seek():
             _ = f.seek(-12)
         except e:
             comptime expected_msg = "Failed to seek"
-            assert_equal(String(e)[: len(expected_msg)], expected_msg)
+            assert_equal(String(e)[: expected_msg.byte_length()], expected_msg)
 
 
 def test_file_open_nodir():

@@ -62,8 +62,10 @@ def test_mojobench():
             BenchId("bench2", String(i)),
             input_val,
             [
-                ThroughputMeasure(BenchMetric.elements, len(input_val)),
-                ThroughputMeasure(BenchMetric.flops, len(input_val)),
+                ThroughputMeasure(
+                    BenchMetric.elements, input_val.byte_length()
+                ),
+                ThroughputMeasure(BenchMetric.flops, input_val.byte_length()),
             ],
         )
 

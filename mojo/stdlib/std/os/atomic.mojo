@@ -121,7 +121,7 @@ struct Consistency(
             A string representation of this consistency.
         """
 
-        comptime prefix_len = len("Consistency.")
+        comptime prefix_len = "Consistency.".byte_length()
         return self.as_string_slice()[prefix_len:]
 
     fn as_string_slice(self) -> StaticString:
