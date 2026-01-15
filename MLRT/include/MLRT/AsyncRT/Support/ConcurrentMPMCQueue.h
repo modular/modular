@@ -428,15 +428,6 @@ static inline auto deref_noexcept(It &it) noexcept -> decltype(*it) {
   return *it;
 }
 
-#if defined(__clang__) || !defined(__GNUC__) || __GNUC__ > 4 ||                \
-    (__GNUC__ == 4 && __GNUC_MINOR__ >= 8)
-template <typename T>
-struct is_trivially_destructible : std::is_trivially_destructible<T> {};
-#else
-template <typename T>
-struct is_trivially_destructible : std::has_trivial_destructor<T> {};
-#endif
-
 #ifdef MOODYCAMEL_CPP11_THREAD_LOCAL_SUPPORTED
 class ThreadExitNotifier;
 
