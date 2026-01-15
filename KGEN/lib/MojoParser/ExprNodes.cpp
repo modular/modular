@@ -1035,7 +1035,10 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     // We don't maintain sugar for aliases whose name start with _, because that
     // is assumed to be an internal implementation detail. This also covers
     // important things like _mlir_type.
-    if (result && !param.getParamDecl().getName().strref().starts_with('_')) {
+    // TODO: make exception for __TypeOfAllType for now.
+    StringRef name = param.getParamDecl().getName().strref();
+    if (result &&
+        (!name.starts_with('_') || name.starts_with("__TypeOfAllType"))) {
       auto sugared = ParamDeclRefAttr::get(param.getParamDecl());
       // Some param refs (eg to unqualified parameters of structs) are already
       // fully sugared.
@@ -2043,7 +2046,9 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
       // Propagate failures, never sugar aliases that start with an _.  These
       // are internal implementation details of types and eliding this
       // chops gigabytes of IR out of .mlir files for the std.
-      if (!value || spelling.starts_with('_'))
+      // TODO: make exception for __TypeOfAllType for now.
+      if (!value || (spelling.starts_with('_') &&
+                     !spelling.starts_with("__TypeOfAllType")))
         return value;
 
       auto memberName = StringAttr::get(emitter.getContext(), spelling);

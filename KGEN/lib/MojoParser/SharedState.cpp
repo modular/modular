@@ -705,7 +705,9 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
       auto [loc, isFullImport] = locAndIsFullImport;
 
       // Don't try wildcard imports if we wouldn't import this name anyways.
-      if (!isFullImport && name.starts_with("_")) {
+      // TODO: make exception for __TypeOfAllType for now.
+      if (!isFullImport &&
+          (name.starts_with("_") && !name.starts_with("__TypeOfAllType"))) {
         ++i;
         continue;
       }
@@ -839,7 +841,9 @@ auto SharedState::lookupAllDeclsWithName(StringRef name, SMLoc loc,
         auto [importLoc, isFullImport] = locAndIsFullImport;
 
         // Don't try wildcard imports if we wouldn't import this name anyways.
-        if (!isFullImport && name.starts_with("_")) {
+        // TODO: make exception for __TypeOfAllType for now.
+        if (!isFullImport &&
+            (name.starts_with("_") && !name.starts_with("__TypeOfAllType"))) {
           ++i; // Skip this import, leave it intact.
           continue;
         }
