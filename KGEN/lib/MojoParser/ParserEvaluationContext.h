@@ -10,46 +10,48 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include <utility>
 
 namespace M::KGEN::LIT {
 class SharedState;
 
 /// An evaluation context that uses the parser's SharedState to evaluate
-/// expressions.
+/// expressions. Inherits common dispatch logic from the base class and
+/// provides parser-specific struct resolution and context handling.
 class ParserEvaluationContext : public ParameterEvaluationContext {
 public:
-  FailureOr<TypedAttr>
-  evaluateExpression(ContextuallyEvaluatedAttrInterface attr) override;
+  /// Creates an attribute and immediately tries to simplify it via
+  /// evaluateExpression. Returns the simplified result if successful,
+  /// otherwise returns the original attribute.
+  template <typename AttrT, typename... Args>
+  TypedAttr getAndFold(Args &&...args) {
+    auto attr = AttrT::get(std::forward<Args>(args)...);
+    auto simplified = evaluateExpression(attr);
+    if (succeeded(simplified) && simplified.value())
+      return simplified.value();
+    return attr;
+  }
 
-  /// Simplifying getters for evaluatable attributes. These should be used
-  /// instead of directly creating attributes so that immediately simplifiable
-  /// attributes do not need to be created in the first place.
-  TypedAttr getGetWitnessAttr(TypedAttr typeParam, StringAttr traitName,
-                              StringAttr witnessName, Type type);
-  TypedAttr getStructFieldTypesAttr(TypedAttr typeValue, VariadicType type);
-  TypedAttr getStructFieldNamesAttr(TypedAttr typeValue, VariadicType type);
-  TypedAttr getStructFieldIndexByNameAttr(TypedAttr typeValue,
-                                          TypedAttr fieldName, IndexType type);
-  TypedAttr getStructFieldTypeByNameAttr(TypedAttr typeValue,
-                                         TypedAttr fieldName, TypeType type);
+protected:
+  /// Resolve struct info using the parser's SharedState.
+  ResolvedStructHandle resolveStructOp(TypedAttr typeValue) override;
+
+  /// Resolve conformance using ASTDecl lookup in the parser context.
+  Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
+                                         StringAttr traitName) override;
+
+  /// Provide a ParameterEvaluator configured for the struct parameters.
+  void withEvaluator(
+      ArrayRef<ParamDeclAttr> paramDecls, ArrayRef<TypedAttr> paramValues,
+      llvm::function_ref<void(ParameterEvaluator &)> callback) override;
+
+  /// Handle parser-specific attributes (TypeConformsToTrait, Downcast).
+  FailureOr<TypedAttr>
+  evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) override;
 
 private:
   friend class SharedState;
   ParserEvaluationContext(SharedState &shared) : shared(shared) {}
-
-  FailureOr<TypedAttr> evaluateGetWitness(TypedAttr typeParam,
-                                          StringAttr traitName,
-                                          StringAttr witnessName, Type type);
-  FailureOr<TypedAttr> evaluateStructFieldTypes(TypedAttr typeValue,
-                                                VariadicType type);
-  FailureOr<TypedAttr> evaluateStructFieldNames(TypedAttr typeValue,
-                                                VariadicType type);
-  FailureOr<TypedAttr> evaluateStructFieldIndexByName(TypedAttr typeValue,
-                                                      TypedAttr fieldName,
-                                                      IndexType type);
-  FailureOr<TypedAttr> evaluateStructFieldTypeByName(TypedAttr typeValue,
-                                                     TypedAttr fieldName,
-                                                     TypeType type);
 
   SharedState &shared;
 };

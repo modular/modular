@@ -85,6 +85,42 @@ def DeclInterface : OpInterface<"DeclInterface"> {
 }
 
 //===----------------------------------------------------------------------===//
+// StructDeclInterface
+
+def StructDeclInterface : OpInterface<"StructDeclInterface"> {
+  let description = [{
+    Interface for struct declaration operations. Provides common field access
+    methods for both KGEN's StructGeneratorOp and LIT's StructDeclOp.
+  }];
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<
+      "Find a field's index by name. Returns std::nullopt if not found.",
+      "std::optional<size_t>", "findFieldIndex", (ins "StringRef":$name)
+    >,
+    InterfaceMethod<
+      "Get a field's type by name. Returns nullptr if not found.",
+      "TypedAttr", "getFieldType", (ins "StringRef":$name)
+    >,
+    InterfaceMethod<
+      "Get all field names.",
+      "void", "getFieldNames",
+      (ins "SmallVectorImpl<StringAttr> &":$names)
+    >,
+    InterfaceMethod<
+      "Get all field types.",
+      "void", "getFieldTypes",
+      (ins "SmallVectorImpl<TypedAttr> &":$types)
+    >,
+    InterfaceMethod<
+      "Get the input parameter declarations for this struct.",
+      "ArrayRef<ParamDeclAttr>", "getInputParams"
+    >,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // FuncInterface
 
 def FuncInterface : OpInterface<"FuncInterface"> {

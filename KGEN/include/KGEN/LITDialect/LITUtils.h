@@ -366,43 +366,23 @@ FailureOr<TypedAttr>
 simplifyConformsToAgainstTypeValue(TypeConformsToTraitAttr conformsTo,
                                    TraitType traitToCheck);
 
-/// Holds resolved LIT struct information for field reflection operations.
-/// Provides common helpers for field lookup that can be reused by both
-/// LIT context evaluation and parser-time evaluation.
-struct ResolvedLITStructInfo {
-  StructDeclOp structDecl;
-  LIT::StructType structType;
-
-  /// Try to resolve struct info from a type value using a symbol table.
-  /// Returns std::nullopt if the type cannot be resolved.
-  static std::optional<ResolvedLITStructInfo>
-  tryResolve(TypedAttr typeValue, mlir::LockedSymbolTableCollection &symtab,
-             Operation *module);
-
-  /// Find a field's index by name. Returns std::nullopt if not found.
-  std::optional<size_t> findFieldIndex(StringRef name);
-
-  /// Find a field by name. Returns nullptr if not found.
-  StructFieldOp findField(StringRef name);
-
-  /// Create a parameter evaluator for substituting struct parameters.
-  ParameterEvaluator createEvaluator(ParameterEvaluationContext &context);
-};
-
+/// LIT dialect evaluation context. Resolves LIT struct declarations for struct
+/// reflection operations. Inherits common dispatch from base class.
 class LITSymTabEvaluationContext : public SymTabEvaluationContext {
 public:
   using SymTabEvaluationContext::SymTabEvaluationContext;
 
-  FailureOr<TypedAttr>
-  evaluateExpression(ContextuallyEvaluatedAttrInterface attr) override;
+protected:
+  /// Resolve struct info for LIT dialect structs with fallback to KGEN.
+  ResolvedStructHandle resolveStructOp(TypedAttr typeValue) override;
 
-  FailureOr<TypedAttr> evaluateGetWitness(GetWitnessAttr attr);
-  FailureOr<TypedAttr> evaluateStructFieldTypes(StructFieldTypesAttr attr);
-  FailureOr<TypedAttr> evaluateStructFieldNames(StructFieldNamesAttr attr);
+  /// Resolve conformance using the struct's symbol table.
+  Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
+                                         StringAttr traitName) override;
+
+  /// Handle LIT-specific attributes (Downcast, TypeConformsToTrait).
   FailureOr<TypedAttr>
-  evaluateStructFieldIndexByName(StructFieldIndexByNameAttr attr);
-  FailureOr<TypedAttr>
-  evaluateStructFieldTypeByName(StructFieldTypeByNameAttr attr);
+  evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) override;
 };
 
 //===----------------------------------------------------------------------===//

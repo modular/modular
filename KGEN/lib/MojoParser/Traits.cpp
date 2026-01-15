@@ -1038,7 +1038,7 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared,
 
   ASTDecl *parentTraitDecl = entry.getParentDecl();
   MLIRContext *ctx = parentTraitDecl->getContext();
-  return shared.getEvaluationContext().getGetWitnessAttr(
+  return shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
       PValue(type),
       StringAttr::get(ctx,
                       getFlattenedSymbolName(parentTraitDecl->getSymbolRef())),

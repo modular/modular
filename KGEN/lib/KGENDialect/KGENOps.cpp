@@ -22,6 +22,7 @@
 #include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/APFloat.h"
@@ -663,6 +664,37 @@ ExportKind StructGeneratorOp::getExportKind() {
 void StructGeneratorOp::setExportKind(ExportKind kind) {
   assert(kind == ExportKind::NotExported &&
          "StructGeneratorOp is not exported");
+}
+
+std::optional<size_t> StructGeneratorOp::findFieldIndex(StringRef name) {
+  auto structType = cast<StructInstanceType>(getValueDomainType());
+  size_t index = 0;
+  for (StructDefFieldAttr field : structType.getFields()) {
+    if (field.getName().getValue() == name)
+      return index;
+    ++index;
+  }
+  return std::nullopt;
+}
+
+TypedAttr StructGeneratorOp::getFieldType(StringRef name) {
+  auto structType = cast<StructInstanceType>(getValueDomainType());
+  for (StructDefFieldAttr field : structType.getFields())
+    if (field.getName().getValue() == name)
+      return field.getTypeValue();
+  return nullptr;
+}
+
+void StructGeneratorOp::getFieldNames(SmallVectorImpl<StringAttr> &names) {
+  auto structType = cast<StructInstanceType>(getValueDomainType());
+  for (StructDefFieldAttr field : structType.getFields())
+    names.push_back(field.getName());
+}
+
+void StructGeneratorOp::getFieldTypes(SmallVectorImpl<TypedAttr> &types) {
+  auto structType = cast<StructInstanceType>(getValueDomainType());
+  for (StructDefFieldAttr field : structType.getFields())
+    types.push_back(field.getTypeValue());
 }
 
 //===----------------------------------------------------------------------===//

@@ -298,7 +298,8 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
 
 def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [Symbol, SymbolTable, DeclInterface, SingleBlock,
     NoTerminator, KGEN_GeneratorOpInterface,
-    DeclareOpInterfaceMethods<ExportInterface>]> {
+    DeclareOpInterfaceMethods<ExportInterface>,
+    DeclareOpInterfaceMethods<StructDeclInterface>]> {
   let summary = "Struct generator definition.";
   let description = [{
     The `kgen.struct.generator` operation defines a type-value generator. It is
