@@ -10,14 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+import max.nn.module_v3 as nn
+from max.experimental.tensor import Tensor
 
-
-import torch
-import torch.nn as nn
-
-from ...configuration_utils import ConfigMixin, register_to_config
+from ...configuration_utils import ConfigMixin
 from ...loaders import FromOriginalModelMixin
-from ...utils.accelerate_utils import apply_forward_hook
 from ..activations import get_activation
 from ..embeddings import PixArtAlphaCombinedTimestepSizeEmbeddings
 from ..modeling_outputs import AutoencoderKLOutput
@@ -41,19 +38,16 @@ class PerChannelRMSNorm(nn.Module):
             dim: Dimension along which to compute the RMS (typically channels).
             eps: Small constant added for numerical stability.
         """
-        super().__init__()
         self.channel_dim = channel_dim
         self.eps = eps
 
-    def forward(
-        self, x: Tensor, channel_dim: int | None = None
-    ) -> Tensor:
+    def forward(self, x: Tensor, channel_dim: int | None = None) -> Tensor:
         """
         Apply RMS normalization along the configured dimension.
         """
         channel_dim = channel_dim or self.channel_dim
         # Compute mean of squared values along `dim`, keep dimensions for broadcasting.
-        mean_sq = torch.mean(x**2, dim=self.channel_dim, keepdim=True)
+        mean_sq = F.mean(x**2, dim=self.channel_dim, keepdim=True)
         # Normalize by the root-mean-square (RMS).
         rms = F.sqrt(mean_sq + self.eps)
         return x / rms
@@ -71,8 +65,6 @@ class LTX2VideoCausalConv3d(nn.Module):
         groups: int = 1,
         spatial_padding_mode: str = "zeros",
     ):
-        super().__init__()
-
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = (
@@ -89,7 +81,7 @@ class LTX2VideoCausalConv3d(nn.Module):
         width_pad = self.kernel_size[2] // 2
         padding = (0, height_pad, width_pad)
 
-        self.conv = nn.Conv3d(
+        self.conv = Conv3d(
             in_channels,
             out_channels,
             self.kernel_size,
@@ -100,9 +92,7 @@ class LTX2VideoCausalConv3d(nn.Module):
             padding_mode=spatial_padding_mode,
         )
 
-    def forward(
-        self, hidden_states: Tensor, causal: bool = True
-    ) -> Tensor:
+    def forward(self, hidden_states: Tensor, causal: bool = True) -> Tensor:
         time_kernel_size = self.kernel_size[0]
 
         if causal:
@@ -160,8 +150,6 @@ class LTX2VideoResnetBlock3d(nn.Module):
         timestep_conditioning: bool = False,
         spatial_padding_mode: str = "zeros",
     ) -> None:
-        super().__init__()
-
         out_channels = out_channels or in_channels
 
         self.nonlinearity = get_activation(non_linearity)
@@ -175,7 +163,7 @@ class LTX2VideoResnetBlock3d(nn.Module):
         )
 
         self.norm2 = PerChannelRMSNorm()
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = Dropout(dropout)
         self.conv2 = LTX2VideoCausalConv3d(
             in_channels=out_channels,
             out_channels=out_channels,
@@ -189,8 +177,8 @@ class LTX2VideoResnetBlock3d(nn.Module):
             self.norm3 = nn.LayerNorm(
                 in_channels, eps=eps, elementwise_affine=True, bias=True
             )
-            # LTX 2.0 uses a normal nn.Conv3d here rather than LTXVideoCausalConv3d
-            self.conv_shortcut = nn.Conv3d(
+            # LTX 2.0 uses a normal Conv3d here rather than LTXVideoCausalConv3d
+            self.conv_shortcut = Conv3d(
                 in_channels=in_channels,
                 out_channels=out_channels,
                 kernel_size=1,
@@ -200,16 +188,16 @@ class LTX2VideoResnetBlock3d(nn.Module):
         self.per_channel_scale1 = None
         self.per_channel_scale2 = None
         if inject_noise:
-            self.per_channel_scale1 = nn.Parameter(
+            self.per_channel_scale1 = Tensor.constant(
                 Tensor.zeros(in_channels, 1, 1)
             )
-            self.per_channel_scale2 = nn.Parameter(
+            self.per_channel_scale2 = Tensor.constant(
                 Tensor.zeros(in_channels, 1, 1)
             )
 
         self.scale_shift_table = None
         if timestep_conditioning:
-            self.scale_shift_table = nn.Parameter(
+            self.scale_shift_table = Tensor.constant(
                 torch.randn(4, in_channels) / in_channels**0.5
             )
 
@@ -289,8 +277,6 @@ class LTXVideoDownsampler3d(nn.Module):
         stride: int | tuple[int, int, int] = 1,
         spatial_padding_mode: str = "zeros",
     ) -> None:
-        super().__init__()
-
         self.stride = (
             stride if isinstance(stride, tuple) else (stride, stride, stride)
         )
@@ -310,9 +296,7 @@ class LTXVideoDownsampler3d(nn.Module):
             spatial_padding_mode=spatial_padding_mode,
         )
 
-    def forward(
-        self, hidden_states: Tensor, causal: bool = True
-    ) -> Tensor:
+    def forward(self, hidden_states: Tensor, causal: bool = True) -> Tensor:
         hidden_states = F.concat(
             [hidden_states[:, :, : self.stride[0] - 1], hidden_states], dim=2
         )
@@ -350,8 +334,6 @@ class LTXVideoUpsampler3d(nn.Module):
         upscale_factor: int = 1,
         spatial_padding_mode: str = "zeros",
     ) -> None:
-        super().__init__()
-
         self.stride = (
             stride if isinstance(stride, tuple) else (stride, stride, stride)
         )
@@ -370,10 +352,8 @@ class LTXVideoUpsampler3d(nn.Module):
             spatial_padding_mode=spatial_padding_mode,
         )
 
-    def forward(
-        self, hidden_states: Tensor, causal: bool = True
-    ) -> Tensor:
-        batch_size, num_channels, num_frames, height, width = (
+    def forward(self, hidden_states: Tensor, causal: bool = True) -> Tensor:
+        batch_size, _num_channels, num_frames, height, width = (
             hidden_states.shape
         )
 
@@ -450,8 +430,6 @@ class LTX2VideoDownBlock3D(nn.Module):
             Whether this layer behaves causally (future frames depend only on past frames) or not.
     """
 
-    _supports_gradient_checkpointing = True
-
     def __init__(
         self,
         in_channels: int,
@@ -464,8 +442,6 @@ class LTX2VideoDownBlock3D(nn.Module):
         downsample_type: str = "conv",
         spatial_padding_mode: str = "zeros",
     ):
-        super().__init__()
-
         out_channels = out_channels or in_channels
 
         resnets = []
@@ -480,11 +456,11 @@ class LTX2VideoDownBlock3D(nn.Module):
                     spatial_padding_mode=spatial_padding_mode,
                 )
             )
-        self.resnets = nn.ModuleList(resnets)
+        self.resnets = nn.sequential.ModuleList(resnets)
 
         self.downsamplers = None
         if spatio_temporal_scale:
-            self.downsamplers = nn.ModuleList()
+            self.downsamplers = nn.sequential.ModuleList()
 
             if downsample_type == "conv":
                 self.downsamplers.append(
@@ -524,8 +500,6 @@ class LTX2VideoDownBlock3D(nn.Module):
                     )
                 )
 
-        self.gradient_checkpointing = False
-
     def forward(
         self,
         hidden_states: Tensor,
@@ -535,15 +509,10 @@ class LTX2VideoDownBlock3D(nn.Module):
     ) -> Tensor:
         r"""Forward method of the `LTXDownBlock3D` class."""
 
-        for i, resnet in enumerate(self.resnets):
-            if torch.is_grad_enabled() and self.gradient_checkpointing:
-                hidden_states = self._gradient_checkpointing_func(
-                    resnet, hidden_states, temb, generator, causal
-                )
-            else:
-                hidden_states = resnet(
-                    hidden_states, temb, generator, causal=causal
-                )
+        for resnet in self.resnets:
+            hidden_states = resnet(
+                hidden_states, temb, generator, causal=causal
+            )
 
         if self.downsamplers is not None:
             for downsampler in self.downsamplers:
@@ -573,8 +542,6 @@ class LTX2VideoMidBlock3d(nn.Module):
             Whether this layer behaves causally (future frames depend only on past frames) or not.
     """
 
-    _supports_gradient_checkpointing = True
-
     def __init__(
         self,
         in_channels: int,
@@ -586,8 +553,6 @@ class LTX2VideoMidBlock3d(nn.Module):
         timestep_conditioning: bool = False,
         spatial_padding_mode: str = "zeros",
     ) -> None:
-        super().__init__()
-
         self.time_embedder = None
         if timestep_conditioning:
             self.time_embedder = PixArtAlphaCombinedTimestepSizeEmbeddings(
@@ -608,9 +573,7 @@ class LTX2VideoMidBlock3d(nn.Module):
                     spatial_padding_mode=spatial_padding_mode,
                 )
             )
-        self.resnets = nn.ModuleList(resnets)
-
-        self.gradient_checkpointing = False
+        self.resnets = nn.sequential.ModuleList(resnets)
 
     def forward(
         self,
@@ -631,15 +594,10 @@ class LTX2VideoMidBlock3d(nn.Module):
             )
             temb = temb.reshape(hidden_states.size(0), -1, 1, 1, 1)
 
-        for i, resnet in enumerate(self.resnets):
-            if torch.is_grad_enabled() and self.gradient_checkpointing:
-                hidden_states = self._gradient_checkpointing_func(
-                    resnet, hidden_states, temb, generator, causal
-                )
-            else:
-                hidden_states = resnet(
-                    hidden_states, temb, generator, causal=causal
-                )
+        for resnet in self.resnets:
+            hidden_states = resnet(
+                hidden_states, temb, generator, causal=causal
+            )
 
         return hidden_states
 
@@ -669,8 +627,6 @@ class LTX2VideoUpBlock3d(nn.Module):
             Whether this layer behaves causally (future frames depend only on past frames) or not.
     """
 
-    _supports_gradient_checkpointing = True
-
     def __init__(
         self,
         in_channels: int,
@@ -686,8 +642,6 @@ class LTX2VideoUpBlock3d(nn.Module):
         upscale_factor: int = 1,
         spatial_padding_mode: str = "zeros",
     ):
-        super().__init__()
-
         out_channels = out_channels or in_channels
 
         self.time_embedder = None
@@ -711,7 +665,7 @@ class LTX2VideoUpBlock3d(nn.Module):
 
         self.upsamplers = None
         if spatio_temporal_scale:
-            self.upsamplers = nn.ModuleList(
+            self.upsamplers = nn.sequential.ModuleList(
                 [
                     LTXVideoUpsampler3d(
                         out_channels * upscale_factor,
@@ -737,9 +691,7 @@ class LTX2VideoUpBlock3d(nn.Module):
                     spatial_padding_mode=spatial_padding_mode,
                 )
             )
-        self.resnets = nn.ModuleList(resnets)
-
-        self.gradient_checkpointing = False
+        self.resnets = nn.sequential.ModuleList(resnets)
 
     def forward(
         self,
@@ -767,15 +719,10 @@ class LTX2VideoUpBlock3d(nn.Module):
             for upsampler in self.upsamplers:
                 hidden_states = upsampler(hidden_states, causal=causal)
 
-        for i, resnet in enumerate(self.resnets):
-            if torch.is_grad_enabled() and self.gradient_checkpointing:
-                hidden_states = self._gradient_checkpointing_func(
-                    resnet, hidden_states, temb, generator, causal
-                )
-            else:
-                hidden_states = resnet(
-                    hidden_states, temb, generator, causal=causal
-                )
+        for resnet in self.resnets:
+            hidden_states = resnet(
+                hidden_states, temb, generator, causal=causal
+            )
 
         return hidden_states
 
@@ -792,13 +739,13 @@ class LTX2VideoEncoder3d(nn.Module):
             Number of input channels.
         out_channels (`int`, defaults to 128):
             Number of latent channels.
-        block_out_channels (`Tuple[int, ...]`, defaults to `(256, 512, 1024, 2048)`):
+        block_out_channels (`tuple[int, ...]`, defaults to `(256, 512, 1024, 2048)`):
             The number of output channels for each block.
-        spatio_temporal_scaling (`Tuple[bool, ...], defaults to `(True, True, True, True)`:
+        spatio_temporal_scaling (`tuple[bool, ...], defaults to `(True, True, True, True)`:
             Whether a block should contain spatio-temporal downscaling layers or not.
-        layers_per_block (`Tuple[int, ...]`, defaults to `(4, 6, 6, 2, 2)`):
+        layers_per_block (`tuple[int, ...]`, defaults to `(4, 6, 6, 2, 2)`):
             The number of layers per block.
-        downsample_type (`Tuple[str, ...]`, defaults to `("spatial", "temporal", "spatiotemporal", "spatiotemporal")`):
+        downsample_type (`tuple[str, ...]`, defaults to `("spatial", "temporal", "spatiotemporal", "spatiotemporal")`):
             The spatiotemporal downsampling pattern per block. Per-layer values can be
                 - `"spatial"` (downsample spatial dims by 2x)
                 - `"temporal"` (downsample temporal dim by 2x)
@@ -838,8 +785,6 @@ class LTX2VideoEncoder3d(nn.Module):
         is_causal: bool = True,
         spatial_padding_mode: str = "zeros",
     ):
-        super().__init__()
-
         self.patch_size = patch_size
         self.patch_size_t = patch_size_t
         self.in_channels = in_channels * patch_size**2
@@ -857,7 +802,7 @@ class LTX2VideoEncoder3d(nn.Module):
 
         # down blocks
         num_block_out_channels = len(block_out_channels)
-        self.down_blocks = nn.ModuleList([])
+        self.down_blocks = nn.sequential.ModuleList([])
         for i in range(num_block_out_channels):
             input_channel = output_channel
             output_channel = block_out_channels[i]
@@ -898,8 +843,6 @@ class LTX2VideoEncoder3d(nn.Module):
             spatial_padding_mode=spatial_padding_mode,
         )
 
-        self.gradient_checkpointing = False
-
     def forward(
         self, hidden_states: Tensor, causal: bool | None = None
     ) -> Tensor:
@@ -932,20 +875,10 @@ class LTX2VideoEncoder3d(nn.Module):
         )
         hidden_states = self.conv_in(hidden_states, causal=causal)
 
-        if torch.is_grad_enabled() and self.gradient_checkpointing:
-            for down_block in self.down_blocks:
-                hidden_states = self._gradient_checkpointing_func(
-                    down_block, hidden_states, None, None, causal
-                )
+        for down_block in self.down_blocks:
+            hidden_states = down_block(hidden_states, causal=causal)
 
-            hidden_states = self._gradient_checkpointing_func(
-                self.mid_block, hidden_states, None, None, causal
-            )
-        else:
-            for down_block in self.down_blocks:
-                hidden_states = down_block(hidden_states, causal=causal)
-
-            hidden_states = self.mid_block(hidden_states, causal=causal)
+        hidden_states = self.mid_block(hidden_states, causal=causal)
 
         hidden_states = self.norm_out(hidden_states)
         hidden_states = self.conv_act(hidden_states)
@@ -971,11 +904,11 @@ class LTX2VideoDecoder3d(nn.Module):
             Number of latent channels.
         out_channels (`int`, defaults to 3):
             Number of output channels.
-        block_out_channels (`Tuple[int, ...]`, defaults to `(128, 256, 512, 512)`):
+        block_out_channels (`tuple[int, ...]`, defaults to `(128, 256, 512, 512)`):
             The number of output channels for each block.
-        spatio_temporal_scaling (`Tuple[bool, ...], defaults to `(True, True, True, False)`:
+        spatio_temporal_scaling (`tuple[bool, ...], defaults to `(True, True, True, False)`:
             Whether a block should contain spatio-temporal upscaling layers or not.
-        layers_per_block (`Tuple[int, ...]`, defaults to `(4, 3, 3, 3, 4)`):
+        layers_per_block (`tuple[int, ...]`, defaults to `(4, 3, 3, 3, 4)`):
             The number of layers per block.
         patch_size (`int`, defaults to `4`):
             The size of spatial patches.
@@ -1006,8 +939,6 @@ class LTX2VideoDecoder3d(nn.Module):
         upsample_factor: tuple[bool, ...] = (2, 2, 2),
         spatial_padding_mode: str = "reflect",
     ) -> None:
-        super().__init__()
-
         self.patch_size = patch_size
         self.patch_size_t = patch_size_t
         self.out_channels = out_channels * patch_size**2
@@ -1040,7 +971,7 @@ class LTX2VideoDecoder3d(nn.Module):
 
         # up blocks
         num_block_out_channels = len(block_out_channels)
-        self.up_blocks = nn.ModuleList([])
+        self.up_blocks = nn.sequential.ModuleList([])
         for i in range(num_block_out_channels):
             input_channel = output_channel // upsample_factor[i]
             output_channel = block_out_channels[i] // upsample_factor[i]
@@ -1076,17 +1007,15 @@ class LTX2VideoDecoder3d(nn.Module):
         self.scale_shift_table = None
         self.timestep_scale_multiplier = None
         if timestep_conditioning:
-            self.timestep_scale_multiplier = nn.Parameter(
+            self.timestep_scale_multiplier = Tensor.constant(
                 torch.tensor(1000.0, dtype=DType.float32)
             )
             self.time_embedder = PixArtAlphaCombinedTimestepSizeEmbeddings(
                 output_channel * 2, 0
             )
-            self.scale_shift_table = nn.Parameter(
+            self.scale_shift_table = Tensor.constant(
                 torch.randn(2, output_channel) / output_channel**0.5
             )
-
-        self.gradient_checkpointing = False
 
     def forward(
         self,
@@ -1101,20 +1030,10 @@ class LTX2VideoDecoder3d(nn.Module):
         if self.timestep_scale_multiplier is not None:
             temb = temb * self.timestep_scale_multiplier
 
-        if torch.is_grad_enabled() and self.gradient_checkpointing:
-            hidden_states = self._gradient_checkpointing_func(
-                self.mid_block, hidden_states, temb, None, causal
-            )
+        hidden_states = self.mid_block(hidden_states, temb, causal=causal)
 
-            for up_block in self.up_blocks:
-                hidden_states = self._gradient_checkpointing_func(
-                    up_block, hidden_states, temb, None, causal
-                )
-        else:
-            hidden_states = self.mid_block(hidden_states, temb, causal=causal)
-
-            for up_block in self.up_blocks:
-                hidden_states = up_block(hidden_states, temb, causal=causal)
+        for up_block in self.up_blocks:
+            hidden_states = up_block(hidden_states, temb, causal=causal)
 
         hidden_states = self.norm_out(hidden_states)
 
@@ -1139,7 +1058,7 @@ class LTX2VideoDecoder3d(nn.Module):
         p = self.patch_size
         p_t = self.patch_size_t
 
-        batch_size, num_channels, num_frames, height, width = (
+        batch_size, _num_channels, num_frames, height, width = (
             hidden_states.shape
         )
         hidden_states = hidden_states.reshape(
@@ -1172,11 +1091,11 @@ class AutoencoderKLLTX2Video(
             Number of output channels.
         latent_channels (`int`, defaults to `128`):
             Number of latent channels.
-        block_out_channels (`Tuple[int, ...]`, defaults to `(128, 256, 512, 512)`):
+        block_out_channels (`tuple[int, ...]`, defaults to `(128, 256, 512, 512)`):
             The number of output channels for each block.
-        spatio_temporal_scaling (`Tuple[bool, ...], defaults to `(True, True, True, False)`:
+        spatio_temporal_scaling (`tuple[bool, ...], defaults to `(True, True, True, False)`:
             Whether a block should contain spatio-temporal downscaling or not.
-        layers_per_block (`Tuple[int, ...]`, defaults to `(4, 3, 3, 3, 4)`):
+        layers_per_block (`tuple[int, ...]`, defaults to `(4, 3, 3, 3, 4)`):
             The number of layers per block.
         patch_size (`int`, defaults to `4`):
             The size of spatial patches.
@@ -1197,9 +1116,6 @@ class AutoencoderKLLTX2Video(
             Whether the decoder should behave causally (future frames depend only on past frames) or not.
     """
 
-    _supports_gradient_checkpointing = True
-
-    @register_to_config
     def __init__(
         self,
         in_channels: int = 3,
@@ -1235,11 +1151,9 @@ class AutoencoderKLLTX2Video(
         decoder_causal: bool = True,
         encoder_spatial_padding_mode: str = "zeros",
         decoder_spatial_padding_mode: str = "reflect",
-        spatial_compression_ratio: int = None,
-        temporal_compression_ratio: int = None,
+        spatial_compression_ratio: int | None = None,
+        temporal_compression_ratio: int | None = None,
     ) -> None:
-        super().__init__()
-
         self.encoder = LTX2VideoEncoder3d(
             in_channels=in_channels,
             out_channels=latent_channels,
@@ -1363,10 +1277,8 @@ class AutoencoderKLLTX2Video(
             tile_sample_stride_num_frames or self.tile_sample_stride_num_frames
         )
 
-    def _encode(
-        self, x: Tensor, causal: bool | None = None
-    ) -> Tensor:
-        batch_size, num_channels, num_frames, height, width = x.shape
+    def _encode(self, x: Tensor, causal: bool | None = None) -> Tensor:
+        _batch_size, _num_channels, num_frames, height, width = x.shape
 
         if (
             self.use_framewise_decoding
@@ -1384,7 +1296,6 @@ class AutoencoderKLLTX2Video(
 
         return enc
 
-    @apply_forward_hook
     def encode(
         self,
         x: Tensor,
@@ -1423,7 +1334,7 @@ class AutoencoderKLLTX2Video(
         causal: bool | None = None,
         return_dict: bool = True,
     ) -> DecoderOutput | Tensor:
-        batch_size, num_channels, num_frames, height, width = z.shape
+        _batch_size, _num_channels, num_frames, height, width = z.shape
         tile_latent_min_height = (
             self.tile_sample_min_height // self.spatial_compression_ratio
         )
@@ -1456,7 +1367,6 @@ class AutoencoderKLLTX2Video(
 
         return DecoderOutput(sample=dec)
 
-    @apply_forward_hook
     def decode(
         self,
         z: Tensor,
@@ -1497,9 +1407,7 @@ class AutoencoderKLLTX2Video(
 
         return DecoderOutput(sample=decoded)
 
-    def blend_v(
-        self, a: Tensor, b: Tensor, blend_extent: int
-    ) -> Tensor:
+    def blend_v(self, a: Tensor, b: Tensor, blend_extent: int) -> Tensor:
         blend_extent = min(a.shape[3], b.shape[3], blend_extent)
         for y in range(blend_extent):
             b[:, :, :, y, :] = a[:, :, :, -blend_extent + y, :] * (
@@ -1507,9 +1415,7 @@ class AutoencoderKLLTX2Video(
             ) + b[:, :, :, y, :] * (y / blend_extent)
         return b
 
-    def blend_h(
-        self, a: Tensor, b: Tensor, blend_extent: int
-    ) -> Tensor:
+    def blend_h(self, a: Tensor, b: Tensor, blend_extent: int) -> Tensor:
         blend_extent = min(a.shape[4], b.shape[4], blend_extent)
         for x in range(blend_extent):
             b[:, :, :, :, x] = a[:, :, :, :, -blend_extent + x] * (
@@ -1517,9 +1423,7 @@ class AutoencoderKLLTX2Video(
             ) + b[:, :, :, :, x] * (x / blend_extent)
         return b
 
-    def blend_t(
-        self, a: Tensor, b: Tensor, blend_extent: int
-    ) -> Tensor:
+    def blend_t(self, a: Tensor, b: Tensor, blend_extent: int) -> Tensor:
         blend_extent = min(a.shape[-3], b.shape[-3], blend_extent)
         for x in range(blend_extent):
             b[:, :, x, :, :] = a[:, :, -blend_extent + x, :, :] * (
@@ -1527,9 +1431,7 @@ class AutoencoderKLLTX2Video(
             ) + b[:, :, x, :, :] * (x / blend_extent)
         return b
 
-    def tiled_encode(
-        self, x: Tensor, causal: bool | None = None
-    ) -> Tensor:
+    def tiled_encode(self, x: Tensor, causal: bool | None = None) -> Tensor:
         r"""Encode a batch of images using a tiled encoder.
 
         Args:
@@ -1539,7 +1441,7 @@ class AutoencoderKLLTX2Video(
             `Tensor`:
                 The latent representation of the encoded videos.
         """
-        batch_size, num_channels, num_frames, height, width = x.shape
+        _batch_size, _num_channels, _num_frames, height, width = x.shape
         latent_height = height // self.spatial_compression_ratio
         latent_width = width // self.spatial_compression_ratio
 
@@ -1626,7 +1528,7 @@ class AutoencoderKLLTX2Video(
                 returned.
         """
 
-        batch_size, num_channels, num_frames, height, width = z.shape
+        _batch_size, _num_channels, _num_frames, height, width = z.shape
         sample_height = height * self.spatial_compression_ratio
         sample_width = width * self.spatial_compression_ratio
 
@@ -1702,7 +1604,7 @@ class AutoencoderKLLTX2Video(
     def _temporal_tiled_encode(
         self, x: Tensor, causal: bool | None = None
     ) -> AutoencoderKLOutput:
-        batch_size, num_channels, num_frames, height, width = x.shape
+        _batch_size, _num_channels, num_frames, height, width = x.shape
         latent_num_frames = (
             num_frames - 1
         ) // self.temporal_compression_ratio + 1
@@ -1754,7 +1656,7 @@ class AutoencoderKLLTX2Video(
         causal: bool | None = None,
         return_dict: bool = True,
     ) -> DecoderOutput | Tensor:
-        batch_size, num_channels, num_frames, height, width = z.shape
+        _batch_size, _num_channels, num_frames, _height, _width = z.shape
         num_sample_frames = (
             num_frames - 1
         ) * self.temporal_compression_ratio + 1

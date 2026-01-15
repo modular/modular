@@ -17,7 +17,6 @@ import torch
 from max.experimental.tensor import Tensor
 
 from ...configuration_utils import ConfigMixin, register_to_config
-from ...utils.accelerate_utils import apply_forward_hook
 from ..modeling_outputs import AutoencoderKLOutput
 from ..modeling_utils import ModelMixin
 from .vae import AutoencoderMixin, DecoderOutput, DiagonalGaussianDistribution
@@ -261,7 +260,9 @@ class LTX2AudioResnetBlock(nn.Module):
         h = self.conv1(h)
 
         if temb is not None:
-            h = h + self.temb_proj(self.non_linearity(temb)).unsqueeze(-1).unsqueeze(-1)
+            h = h + self.temb_proj(self.non_linearity(temb)).unsqueeze(
+                -1
+            ).unsqueeze(-1)
 
         h = self.norm2(h)
         h = self.non_linearity(h)
@@ -921,8 +922,9 @@ class AutoencoderKLLTX2Audio(ModelMixin, AutoencoderMixin, ConfigMixin):
     def _encode(self, x: Tensor) -> Tensor:
         return self.encoder(x)
 
-    @apply_forward_hook
-    def encode(self, x: Tensor, return_dict: bool = True):
+    def encode(
+        self, x: Tensor, return_dict: bool = True
+    ) -> AutoencoderKLOutput | tuple[DiagonalGaussianDistribution]:
         if self.use_slicing and x.shape[0] > 1:
             encoded_slices = [self._encode(x_slice) for x_slice in x.split(1)]
             h = F.concat(encoded_slices)
@@ -937,7 +939,6 @@ class AutoencoderKLLTX2Audio(ModelMixin, AutoencoderMixin, ConfigMixin):
     def _decode(self, z: Tensor) -> Tensor:
         return self.decoder(z)
 
-    @apply_forward_hook
     def decode(
         self, z: Tensor, return_dict: bool = True
     ) -> Union[DecoderOutput, Tensor]:

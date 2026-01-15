@@ -13,11 +13,10 @@
 
 import math
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import max.nn.module_v3 as nn
+from max.experimental.tensor import Tensor
 
-from ...configuration_utils import ConfigMixin, register_to_config
+from ...configuration_utils import ConfigMixin
 from ...models.modeling_utils import ModelMixin
 
 
@@ -31,13 +30,12 @@ class ResBlock(nn.Module):
         leaky_relu_negative_slope: float = 0.1,
         padding_mode: str = "same",
     ):
-        super().__init__()
         self.dilations = dilations
         self.negative_slope = leaky_relu_negative_slope
 
-        self.convs1 = nn.ModuleList(
+        self.convs1 = nn.sequential.ModuleList(
             [
-                nn.Conv1d(
+                Conv1d(
                     channels,
                     channels,
                     kernel_size,
@@ -49,9 +47,9 @@ class ResBlock(nn.Module):
             ]
         )
 
-        self.convs2 = nn.ModuleList(
+        self.convs2 = nn.sequential.ModuleList(
             [
-                nn.Conv1d(
+                Conv1d(
                     channels,
                     channels,
                     kernel_size,
@@ -78,20 +76,22 @@ class LTX2Vocoder(ModelMixin, ConfigMixin):
     LTX 2.0 vocoder for converting generated mel spectrograms back to audio waveforms.
     """
 
-    @register_to_config
     def __init__(
         self,
         in_channels: int = 128,
         hidden_channels: int = 1024,
         out_channels: int = 2,
-        upsample_kernel_sizes: list[int] = [16, 15, 8, 4, 4],
-        upsample_factors: list[int] = [6, 5, 2, 2, 2],
-        resnet_kernel_sizes: list[int] = [3, 7, 11],
-        resnet_dilations: list[list[int]] = [[1, 3, 5], [1, 3, 5], [1, 3, 5]],
+        upsample_kernel_sizes: tuple[int, ...] = (16, 15, 8, 4, 4),
+        upsample_factors: tuple[int, ...] = (6, 5, 2, 2, 2),
+        resnet_kernel_sizes: tuple[int, ...] = (3, 7, 11),
+        resnet_dilations: tuple[tuple[int, ...], ...] = (
+            (1, 3, 5),
+            (1, 3, 5),
+            (1, 3, 5),
+        ),
         leaky_relu_negative_slope: float = 0.1,
         output_sampling_rate: int = 24000,
     ):
-        super().__init__()
         self.num_upsample_layers = len(upsample_kernel_sizes)
         self.resnets_per_upsample = len(resnet_kernel_sizes)
         self.out_channels = out_channels
@@ -110,19 +110,19 @@ class LTX2Vocoder(ModelMixin, ConfigMixin):
                 f" {len(self.resnets_per_upsample)} and {len(resnet_dilations)}, respectively."
             )
 
-        self.conv_in = nn.Conv1d(
+        self.conv_in = Conv1d(
             in_channels, hidden_channels, kernel_size=7, stride=1, padding=3
         )
 
-        self.upsamplers = nn.ModuleList()
-        self.resnets = nn.ModuleList()
+        self.upsamplers = nn.sequential.ModuleList()
+        self.resnets = nn.sequential.ModuleList()
         input_channels = hidden_channels
-        for i, (stride, kernel_size) in enumerate(
-            zip(upsample_factors, upsample_kernel_sizes, strict=False)
+        for stride, kernel_size in zip(
+            upsample_factors, upsample_kernel_sizes, strict=False
         ):
             output_channels = input_channels // 2
             self.upsamplers.append(
-                nn.ConvTranspose1d(
+                ConvTranspose1d(
                     input_channels,  # hidden_channels // (2 ** i)
                     output_channels,  # hidden_channels // (2 ** (i + 1))
                     kernel_size,
@@ -144,13 +144,11 @@ class LTX2Vocoder(ModelMixin, ConfigMixin):
                 )
             input_channels = output_channels
 
-        self.conv_out = nn.Conv1d(
+        self.conv_out = Conv1d(
             output_channels, out_channels, 7, stride=1, padding=3
         )
 
-    def forward(
-        self, hidden_states: Tensor, time_last: bool = False
-    ) -> Tensor:
+    def forward(self, hidden_states: Tensor, time_last: bool = False) -> Tensor:
         r"""
         Forward pass of the vocoder.
 
@@ -189,7 +187,7 @@ class LTX2Vocoder(ModelMixin, ConfigMixin):
                 dim=0,
             )
 
-            hidden_states = torch.mean(resnet_outputs, dim=0)
+            hidden_states = F.mean(resnet_outputs, dim=0)
 
         # NOTE: unlike the first leaky ReLU, this leaky ReLU is set to use the default F.leaky_relu negative slope of
         # 0.01 (whereas the others usually use a slope of 0.1). Not sure if this is intended
