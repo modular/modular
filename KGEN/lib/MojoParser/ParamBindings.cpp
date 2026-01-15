@@ -288,46 +288,6 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
     if (hasEllipsis && partial)
       return UnboundAttr::get(requestedType);
 
-    // If the parameter decl is a variadic parameter list, and do not have
-    // pack operands that could be used to infer those parameters, then we can
-    // fulfill it with an empty list.  We know it must be the last parameter
-    // decl. If this isn't actually a variadic type, then we simply reached
-    // the end of the parameter list.
-    size_t idx = newBindings.size();
-
-    // If available, we use a default parameter value.
-    // FIXME: Shouldn't this go into inference itself like empty variadic
-    // binding is?
-    if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
-      // Default parameter values may reference other parameter values, so we
-      // need to evaluate these.
-      return evaluator.getReboundAttribute(defaultOr);
-    }
-
-    // Determine if we can use a default parameter for CTAD
-    if (ctadPogs.size() <= idx)
-      return {};
-
-    PassingKind passingKind = ctadPogs[idx].getPassingKind();
-    ArrayRef<TypedAttr> defaults;
-    unsigned numCtadParams;
-    unsigned normalizedIdx;
-    if (passingKind == PassingKind::KwOnly) {
-      defaults = defaultKwTypeParams;
-      numCtadParams = numKwOnlyCtadParams;
-      normalizedIdx = idx - numPosCtadParams;
-    } else {
-      defaults = defaultPosTypeParams;
-      numCtadParams = numPosCtadParams;
-      normalizedIdx = idx;
-    }
-
-    size_t defaultStartIdx = numCtadParams - defaults.size();
-    if (normalizedIdx < numCtadParams && normalizedIdx >= defaultStartIdx) {
-      return evaluator.getReboundAttribute(
-          defaults[normalizedIdx - defaultStartIdx]);
-    }
-
     return {};
   };
 
@@ -553,7 +513,14 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
     // If this value was already bound and checked, use it.
     /// FIXME: Remove this, why is this needed?
     if (posBindingIdx < numPreTypeChecked) {
-      if (failed(setParamValueAndVerify(bindingVal, requestedType)))
+      TypedAttr pValue = inference.getInferredValue(newBindings.size());
+      // ParamInfState does not install `UnboundAttr`: we should not do it
+      // here either now that evaluator support a sparse set of parameter
+      // being bound.
+      if (!pValue)
+        pValue = UnboundAttr::get(expectedType);
+
+      if (failed(setParamValueAndVerify(pValue, requestedType)))
         return {{}, fitness};
       ++posBindingIdx;
       continue;
@@ -672,7 +639,13 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
     return {{}, fitness};
   }
 
-  return {ParameterExprArrayAttr::get(emitter.getContext(), newBindings),
+  // Simply return all the binding from the inference.
+  //
+  // TODO: we are very very close to delete the entire code above, but we still
+  // need to handle error correctly!!!!
+  inference.finalizeWithUnbound();
+  return {ParameterExprArrayAttr::get(emitter.getContext(),
+                                      inference.evaluator.getIndexBindings()),
           fitness};
 }
 
@@ -700,6 +673,20 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
                      /*declIfDirect=*/nullptr);
 
   if (failed(inference.inferFromParamList(partial)))
+    return nullptr;
+
+  // Check to see if we have ... and remove it from the parameter list.
+  bool hasEllipsis = llvm::any_of(parameters.values, [](OperandValue binding) {
+    return isa<EllipsisAttr>(binding.ir.getIfPValue().get());
+  });
+
+  // If we had a variadic parameter that is unspecified, and no arguments to
+  // infer it from, it must be because of an empty variadic list.
+  //
+  // FIXME: according to the specification, we should only do this when all
+  // other parameter is bound.
+  if (!(hasEllipsis && partial) &&
+      failed(inference.inferFromDefaults(/*inferEmptyVariadic=*/!partial)))
     return nullptr;
 
   auto [bindings, _] =
@@ -765,6 +752,22 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
                      /*allowImplicitConversions=*/true, getDiags, declIfKnown);
 
   if (failed(inference.inferFromParamList(partial))) {
+    return {nullptr, Fitness{std::move(inference.unprovableConstraints)},
+            std::move(diag)};
+  }
+
+  // Check to see if we have ... and remove it from the parameter list.
+  bool hasEllipsis = llvm::any_of(parameters.values, [](OperandValue binding) {
+    return isa<EllipsisAttr>(binding.ir.getIfPValue().get());
+  });
+
+  // If we had a variadic parameter that is unspecified, and no arguments to
+  // infer it from, it must be because of an empty variadic list.
+  //
+  // FIXME: according to the specification, we should only do this when all
+  // other parameter is bound.
+  if (!(hasEllipsis && partial) &&
+      failed(inference.inferFromDefaults(/*inferEmptyVariadic=*/!partial))) {
     return {nullptr, Fitness{std::move(inference.unprovableConstraints)},
             std::move(diag)};
   }

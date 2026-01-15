@@ -122,6 +122,14 @@ public:
   LogicalResult inferCTADParams(FnTypeGeneratorType signature,
                                 const CallOperands &callOperands);
 
+  // Infer any missing parameter from defaulted value (this is supposed to be
+  // invoked after both parameter list and argument list has been scanned).
+  LogicalResult inferFromDefaults(bool inferEmptyVariadic);
+
+  // Finalize the inference by making any remaining uninferred parameter to
+  // UnboundAttr.
+  void finalizeWithUnbound();
+
   /// After inferring parameter values, this allows access to the results.
   TypedAttr getInferredValue(size_t idx) const {
     return evaluator.getIndexBindings()[idx];
