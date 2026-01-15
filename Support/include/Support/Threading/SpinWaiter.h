@@ -7,6 +7,8 @@
 #ifndef SUPPORT_THREADING_SPINWAITER_H
 #define SUPPORT_THREADING_SPINWAITER_H
 
+#include "Support/PlatformUtils.h"
+
 #include <chrono>
 #include <cstddef>
 #include <optional>
@@ -66,11 +68,11 @@ public:
         // The client can disable the more expensive yielding mechanisms below
         // by setting "shouldYieldToOS" to true.
         !shouldYieldToOS) {
-#ifdef _MSC_VER
+#if MODULAR_WINDOWS
       _mm_pause();
-#elif defined __i386__ || defined __x86_64__
+#elif MODULAR_X86_64
       __builtin_ia32_pause();
-#elif __ARM_ARCH_7A__ || __aarch64__
+#elif MODULAR_ARM
       // The isb instruction is the closest to the original x86 pause
       // instruction. Unlike the x86 pause instruction which delays execution by
       // O(100) cycles, the isb will typically delay execution by about 50
@@ -80,6 +82,7 @@ public:
       // Hail mary to slow this thread down so other threads can make progress
       // without us fully occupying the load/store unit.
       __asm volatile("nop; nop; nop; nop" : : : "memory");
+#error "Unexpected architecture for SpinWaiter"
 #endif
       return true;
     }
