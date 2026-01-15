@@ -411,6 +411,7 @@ def bench_max(
         num_tests=100,
         suppress_kineto_output=True,
         flush_l2=True,
+        with_multiple_kernels=True,
     )
     assert isinstance(time_s, float)  # Single kernel_name returns float
 
