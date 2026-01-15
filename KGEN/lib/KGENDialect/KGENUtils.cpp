@@ -1518,12 +1518,12 @@ KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx,
   envAttrs.set("MODULAR_PRODUCTION", IntegerAttr::get(IndexType::get(ctx), 1));
 #endif // MODULAR_PRODUCTION
 
-#ifdef MODULAR_ENABLE_GPU_PROFILING
+#if MODULAR_ENABLE_GPU_PROFILING
   envAttrs.set("MODULAR_ENABLE_GPU_PROFILING",
                IntegerAttr::get(IndexType::get(ctx), 1));
 #endif // MODULAR_ENABLE_GPU_PROFILING
 
-#ifdef MODULAR_ENABLE_GPU_PROFILING_DETAILED
+#if MODULAR_ENABLE_GPU_PROFILING_DETAILED
   envAttrs.set("MODULAR_ENABLE_GPU_PROFILING_DETAILED",
                IntegerAttr::get(IndexType::get(ctx), 1));
 #endif // MODULAR_ENABLE_GPU_PROFILING_DETAILED
