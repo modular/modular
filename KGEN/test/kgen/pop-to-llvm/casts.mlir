@@ -1,4 +1,4 @@
-// RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm),lower-kgen-to-llvm,canonicalize)' %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(kgen.func(legalize-pop-operations,lower-pop-to-llvm),lower-kgen-to-llvm,canonicalize)' %s | FileCheck %s
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 

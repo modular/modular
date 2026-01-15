@@ -668,59 +668,6 @@ private:
     return success();
   }
 
-  /// Convert scalar or vector of FP8 (F8E4M3FN or F8E5M2) to a scalar or vector
-  /// of F32 on NVPTX. The conversion relies on NVPTX-specific instructions to
-  /// perform the conversion, therefore no need to rely on `fast` attribute on a
-  /// `pop.cast`.
-  LogicalResult
-  convertF8ToF32OnNVPTX(ConversionPatternRewriter &rewriter, CastOp op,
-                        Value value, APFloat::Semantics fromFloatSemantics,
-                        APFloat::Semantics toFloatSemantics) const {
-    Value res = convertF8ToF16OnNVPTXHelper(
-        rewriter, op, value, fromFloatSemantics, toFloatSemantics);
-    rewriter.replaceOpWithNewOp<LLVM::FPExtOp>(op, convertType(op.getType()),
-                                               res);
-    return success();
-  }
-
-  /// Convert scalar or vector of FP8 (F8E4M3FN or F8E5M2) to a scalar or vector
-  /// of BF16 on NVPTX.
-  /// Since NVPTX has no instruction to do this directly, do this with a
-  /// sequence FP8 -> F32 -> BF16
-  LogicalResult
-  convertF8ToBF16OnNVPTX(ConversionPatternRewriter &rewriter, CastOp op,
-                         Value value, APFloat::Semantics fromFloatSemantics,
-                         APFloat::Semantics toFloatSemantics) const {
-    Value f16Result = convertF8ToF16OnNVPTXHelper(
-        rewriter, op, value, fromFloatSemantics, toFloatSemantics);
-    auto simdF32 =
-        SIMDType::get(rewriter.getContext(),
-                      /*size=*/*op.getType().getResolvedSize(), KGENDType::f32);
-    Value f32Result = LLVM::FPExtOp::create(rewriter, op.getLoc(),
-                                            convertType(simdF32), f16Result);
-
-    rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(op, convertType(op.getType()),
-                                                 f32Result);
-    return success();
-  }
-
-  /// Convert scalar or vector of BF16 to a scalar or vector of FP8 (F8E4M3FN or
-  /// F8E5M2) on NVPTX. Since NVPTX has no instruction to do this directly, do
-  /// this with a sequence BF16 -> F32 -> FP8
-  LogicalResult
-  convertBF16toF8OnNVPTX(ConversionPatternRewriter &rewriter, CastOp op,
-                         Value value, APFloat::Semantics fromFloatSemantics,
-                         APFloat::Semantics toFloatSemantics) const {
-    auto simdF32 =
-        SIMDType::get(rewriter.getContext(),
-                      /*size=*/*op.getType().getResolvedSize(), KGENDType::f32);
-    Value f32Result = LLVM::FPExtOp::create(rewriter, op.getLoc(),
-                                            convertType(simdF32), value);
-
-    return convertF32ToF8OnNVPTX(rewriter, op, f32Result, fromFloatSemantics,
-                                 toFloatSemantics);
-  }
-
   Value getClampedFloatValue(ConversionPatternRewriter &rewriter, Location loc,
                              Value value, APFloat::Semantics floatSemantics,
                              size_t size, Type outType) const {
@@ -1109,11 +1056,6 @@ private:
       // NVPTX backend of getting SM version and expecting targeted GPU has at
       // least that version.
       if (simd) {
-        if (isNVPTX_HopperAndAbove(target)) {
-          return convertF8ToF32OnNVPTX(rewriter, cast, value,
-                                       fromFloatSemantics, toFloatSemantics);
-        }
-
         if (target.getTriple().isAMDGPU()) {
           // Convert F8 (either e4m3fn or e5m2) to F32 on amd mi355x and newer.
           return convertF8ToF32OnAMDGPU(rewriter, cast, value,
@@ -1140,15 +1082,6 @@ private:
     if ((fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN ||
          fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2) &&
         toFloatSemantics == llvm::APFloat::Semantics::S_BFloat) {
-      // This might not be ideal to check the targeted GPU by the name, but it's
-      // what stdlib does for now. Might be better to use approach similar to
-      // NVPTX backend of getting SM version and expecting targeted GPU has at
-      // least that version.
-      if (simd && isNVPTX_HopperAndAbove(target)) {
-        return convertF8ToBF16OnNVPTX(rewriter, cast, value, fromFloatSemantics,
-                                      toFloatSemantics);
-      }
-
       // For AMD gfx950+ GPUs, convert FP8 -> F32 -> BF16
       if (simd && isAMDGPU(target, {"gfx950"})) {
         // First convert FP8 to F32 using AMD intrinsics
@@ -1165,21 +1098,6 @@ private:
         return success();
       }
 
-      return failure();
-    }
-
-    // Convert BF16 to F8 (either e4m3fn or e5m2)
-    if (fromFloatSemantics == llvm::APFloat::Semantics::S_BFloat &&
-        (toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN ||
-         toFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2)) {
-      // This might not be ideal to check the targeted GPU by the name, but it's
-      // what stdlib does for now. Might be better to use approach similar to
-      // NVPTX backend of getting SM version and expecting targeted GPU has at
-      // least that version.
-      if (simd && isNVPTX_HopperAndAbove(target)) {
-        return convertBF16toF8OnNVPTX(rewriter, cast, value, fromFloatSemantics,
-                                      toFloatSemantics);
-      }
       return failure();
     }
     return failure();
