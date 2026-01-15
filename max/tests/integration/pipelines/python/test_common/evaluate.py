@@ -183,7 +183,9 @@ def run_model(
                 )
                 print(
                     "Output:",
-                    tokenizer.delegate.decode(outputs[j].tokens),
+                    tokenizer.delegate.decode(
+                        outputs[j].tokens, skip_special_tokens=True
+                    ),
                 )
 
     results: list[dict[str, Any]] = []
