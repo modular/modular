@@ -37,7 +37,7 @@ from .info import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, size_of
 @always_inline("nodebug")
 fn llvm_intrinsic[
     intrin: StaticString,
-    type: AnyTrivialRegType,
+    type: __TypeOfAllTypes,
     *types: AnyType,
     has_side_effect: Bool = True,
 ](*args: *types) -> type:
@@ -745,7 +745,7 @@ fn strided_store[
 # ===-------------------------------------------------------------------===#
 
 
-fn _mlirtype_is_eq[t1: AnyTrivialRegType, t2: AnyTrivialRegType]() -> Bool:
+fn _mlirtype_is_eq[t1: __TypeOfAllTypes, t2: __TypeOfAllTypes]() -> Bool:
     """Compares the two type for equality.
 
     Parameters:
@@ -821,7 +821,7 @@ fn _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
 
 
 @register_passable("trivial")
-struct _RegisterPackType[*a: AnyTrivialRegType]:
+struct _RegisterPackType[*a: __TypeOfAllTypes]:
     comptime _mlir_type = __mlir_type[`!kgen.pack<`, Self.a, `>`]
 
     var _mlir_value: Self._mlir_type
@@ -847,7 +847,7 @@ struct _RegisterPackType[*a: AnyTrivialRegType]:
 
 
 @always_inline("nodebug")
-fn expect[T: AnyTrivialRegType, //, expected_val: T](val: T) -> T:
+fn expect[T: __TypeOfAllTypes, //, expected_val: T](val: T) -> T:
     """Provides information about expected (the most probable) value of `val`,
     which can be used by optimizers.
 
@@ -975,7 +975,7 @@ fn readfirstlane(value: Int32) -> Int32:
     return llvm_intrinsic["llvm.amdgcn.readfirstlane.i32", Int32, Int32](value)
 
 
-# TODO: this can be parameterized for AnyTrivialRegType but I am hitting compiler errors so skipping for now
+# TODO: this can be parameterized for __TypeOfAllTypes but I am hitting compiler errors so skipping for now
 @always_inline
 fn readfirstlane(value: UnsafePointer) -> type_of(value):
     """

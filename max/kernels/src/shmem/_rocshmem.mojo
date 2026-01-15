@@ -81,7 +81,7 @@ fn _init_rocshmem_dylib() -> OwnedDLHandle:
 
 @always_inline
 fn _get_rocshmem_function[
-    func_name: StaticString, result_type: AnyTrivialRegType
+    func_name: StaticString, result_type: __TypeOfAllTypes
 ]() -> result_type:
     try:
         return _get_dylib_function[

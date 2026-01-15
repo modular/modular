@@ -329,7 +329,7 @@ fn _extract_tensor_spec[
 
 @no_inline
 fn rebuild_static_tensor_specs_with_input_lambda[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     dtype: DType,
     rank: Int,
@@ -351,7 +351,7 @@ fn rebuild_static_tensor_specs_with_input_lambda[
 
 @no_inline
 fn rebuild_static_tensor_specs_with_output_lambda[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     dtype: DType,
     rank: Int,
@@ -373,7 +373,7 @@ fn rebuild_static_tensor_specs_with_output_lambda[
 
 @no_inline
 fn rebuild_static_tensor_specs_with_compute_output_lambda[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     dtype: DType,
     rank: Int,
@@ -569,7 +569,7 @@ fn _mixed_precision_compute_output_fusion_hook_impl[
 )
 @no_inline
 fn rebuild_mix_precision_static_tensor_specs_with_input_lambda[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     src_dtype: DType,
     dst_dtype: DType,

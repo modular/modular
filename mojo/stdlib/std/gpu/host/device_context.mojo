@@ -141,7 +141,7 @@ fn _checked(
 
 @always_inline
 fn _checked_call[
-    func: Some[AnyTrivialRegType]
+    func: Some[__TypeOfAllTypes]
 ](
     err: _ConstCharPtr,
     *,
@@ -1832,7 +1832,7 @@ fn _is_path_like(ss: StringSlice) -> Bool:
 
 
 struct DeviceFunction[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     func: func_type,
     declared_arg_types: Optional[Variadic.TypesOfTrait[AnyType]],
@@ -3664,7 +3664,7 @@ struct DeviceContext(ImplicitlyCopyable):
 
     @always_inline
     fn compile_function_unchecked[
-        func_type: AnyTrivialRegType,
+        func_type: __TypeOfAllTypes,
         //,
         func: func_type,
         *,
@@ -3737,7 +3737,7 @@ struct DeviceContext(ImplicitlyCopyable):
 
     @always_inline
     fn compile_function[
-        func_type: AnyTrivialRegType,
+        func_type: __TypeOfAllTypes,
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
@@ -3888,7 +3888,7 @@ struct DeviceContext(ImplicitlyCopyable):
 
     @always_inline
     fn compile_function[
-        func_type: AnyTrivialRegType,
+        func_type: __TypeOfAllTypes,
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
@@ -4039,7 +4039,7 @@ struct DeviceContext(ImplicitlyCopyable):
         ]()
 
     fn load_function[
-        func_type: AnyTrivialRegType,
+        func_type: __TypeOfAllTypes,
         //,
         func: func_type,
     ](
@@ -4107,7 +4107,7 @@ struct DeviceContext(ImplicitlyCopyable):
     @parameter
     @always_inline
     fn enqueue_function_unchecked[
-        func_type: AnyTrivialRegType,
+        func_type: __TypeOfAllTypes,
         //,
         func: func_type,
         *Ts: AnyType,
@@ -4464,7 +4464,7 @@ struct DeviceContext(ImplicitlyCopyable):
     @parameter
     @always_inline
     fn enqueue_function[
-        func_type: AnyTrivialRegType,
+        func_type: __TypeOfAllTypes,
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
@@ -4714,7 +4714,7 @@ struct DeviceContext(ImplicitlyCopyable):
     @parameter
     @always_inline
     fn enqueue_function[
-        func_type: AnyTrivialRegType,
+        func_type: __TypeOfAllTypes,
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
@@ -4965,7 +4965,7 @@ struct DeviceContext(ImplicitlyCopyable):
     @parameter
     @always_inline
     fn enqueue_function_experimental[
-        func_type: AnyTrivialRegType,
+        func_type: __TypeOfAllTypes,
         //,
         func: func_type,
         declared_arg_types: Optional[Variadic.TypesOfTrait[AnyType]],

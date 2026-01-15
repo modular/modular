@@ -373,7 +373,7 @@ struct Variadic:
 
 
 @fieldwise_init
-struct _VariadicListIter[type: AnyTrivialRegType](
+struct _VariadicListIter[type: __TypeOfAllTypes](
     ImplicitlyCopyable, Iterable, Iterator
 ):
     """Const Iterator for VariadicList.
@@ -408,7 +408,7 @@ struct _VariadicListIter[type: AnyTrivialRegType](
 
 
 @register_passable("trivial")
-struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
+struct VariadicList[type: __TypeOfAllTypes](Iterable, Sized):
     """A utility class to access homogeneous variadic function arguments.
 
     `VariadicList` is used when you need to accept variadic arguments where all
@@ -931,7 +931,7 @@ struct VariadicPack[
     # ===-------------------------------------------------------------------===#
 
     comptime _kgen_element_types = rebind[
-        Variadic.ValuesOfType[AnyTrivialRegType]
+        Variadic.ValuesOfType[__TypeOfAllTypes]
     ](Self.element_types)
     """This is the element_types list lowered to `variadic<type>` type for kgen.
     """
@@ -939,7 +939,7 @@ struct VariadicPack[
         `#kgen.param.expr<variadic_ptr_map, `,
         Self._kgen_element_types,
         `, 0: index>: `,
-        Variadic.ValuesOfType[AnyTrivialRegType],
+        Variadic.ValuesOfType[__TypeOfAllTypes],
     ]
     """Use variadic_ptr_map to construct the type list of the !kgen.pack that
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
@@ -961,7 +961,7 @@ struct VariadicPack[
         `#kgen.param.expr<variadic_ptrremove_map, `,
         Self._variadic_pointer_types,
         `>: `,
-        Variadic.ValuesOfType[AnyTrivialRegType],
+        Variadic.ValuesOfType[__TypeOfAllTypes],
     ]
     comptime _loaded_kgen_pack_type = __mlir_type[
         `!kgen.pack<:variadic<type> `, Self._variadic_with_pointers_removed, `>`

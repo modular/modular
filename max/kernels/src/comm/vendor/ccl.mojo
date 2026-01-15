@@ -104,7 +104,7 @@ comptime CCL_LIBRARY = _Global["CCL_LIBRARY", _init_ccl_dylib]
 
 @always_inline
 fn _get_ccl_function[
-    func_name: StaticString, result_type: AnyTrivialRegType
+    func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
     return _ffi_get_dylib_function[CCL_LIBRARY(), func_name, result_type]()
 

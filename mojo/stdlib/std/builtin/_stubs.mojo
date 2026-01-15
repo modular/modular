@@ -19,7 +19,7 @@ from os import abort
 
 
 @register_passable("trivial")
-struct __MLIRType[T: AnyTrivialRegType](ImplicitlyCopyable):
+struct __MLIRType[T: __TypeOfAllTypes](ImplicitlyCopyable):
     var value: Self.T
     comptime __del__is_trivial = True
     comptime __moveinit__is_trivial = True

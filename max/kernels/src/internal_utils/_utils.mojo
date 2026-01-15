@@ -107,7 +107,7 @@ struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
 
 # TODO: refactor the following to run exactly once.
 fn bench_compile_time[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     func: func_type,
     emission_kind: StaticString = "asm",

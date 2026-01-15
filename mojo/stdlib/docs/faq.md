@@ -22,13 +22,13 @@ your issues resolved.
 
 ## Standard library code
 
-### 1. Why do we have both `AnyTrivialRegType` and `AnyType`?
+### 1. Why do we have both `__TypeOfAllTypes` and `AnyType`?
 
-This is largely a historical thing as the library only worked on `AnyTrivialRegType`
+This is largely a historical thing as the library only worked on `__TypeOfAllTypes`
 when it was first written. As we introduced the notion of memory-only types and
 traits, `AnyType` was born. At this point, most of the standard library operates
 on `AnyType` or some other trait-bound type. A few low-level things will always
-need to operate at the `AnyTrivialRegType` type level, such as when interacting
+need to operate at the `__TypeOfAllTypes` type level, such as when interacting
 with MLIR attributes.
 
 ### 2. Are the MLIR dialects private?

@@ -1202,7 +1202,7 @@ fn get_int_from_shape[
 @register_internal("rebuild_static_tensor_specs_with_output_compute_lambda")
 @no_inline
 fn rebuild_static_tensor_specs_with_output_compute_lambda[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     dtype: DType,
     rank: Int,
@@ -1432,7 +1432,7 @@ fn mogg_async_del(async_ptr: UnsafePointer[AnyAsyncValueRefPtr], size: Int):
 
 @register_internal("mogg.async.unpack")
 @no_inline
-fn mogg_async_unpack[T: AnyTrivialRegType](async_ptr: AnyAsyncValueRefPtr) -> T:
+fn mogg_async_unpack[T: __TypeOfAllTypes](async_ptr: AnyAsyncValueRefPtr) -> T:
     """
     Returns the value stored in the AnyAsyncValueRef.
     """
@@ -1854,7 +1854,7 @@ fn get_buffer_mem_storage_handle(
 
 @register_internal("pop.select")
 @always_inline
-fn select[T: AnyTrivialRegType](cond: Bool, true_case: T, false_case: T) -> T:
+fn select[T: __TypeOfAllTypes](cond: Bool, true_case: T, false_case: T) -> T:
     if cond:
         return true_case
 
@@ -1864,6 +1864,6 @@ fn select[T: AnyTrivialRegType](cond: Bool, true_case: T, false_case: T) -> T:
 @register_internal("pop.simd.select")
 @always_inline
 fn simd_select[
-    T: AnyTrivialRegType
+    T: __TypeOfAllTypes
 ](cond: Bool, true_case: T, false_case: T) -> T:
     return select(cond, true_case, false_case)

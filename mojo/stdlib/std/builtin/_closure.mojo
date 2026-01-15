@@ -14,7 +14,7 @@
 
 @register_passable
 struct __ParameterClosureCaptureList[
-    fn_type: AnyTrivialRegType, fn_ref: fn_type
+    fn_type: __TypeOfAllTypes, fn_ref: fn_type
 ](ImplicitlyCopyable):
     var value: __mlir_type.`!kgen.pointer<none>`
 

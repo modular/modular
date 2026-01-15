@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-comptime AnyTrivialRegType = __mlir_type.`!kgen.type`
+comptime __TypeOfAllTypes = __mlir_type.`!kgen.type`
 """Represents any register passable Mojo data type."""
 
 comptime ImmutOrigin = Origin[mut=False]

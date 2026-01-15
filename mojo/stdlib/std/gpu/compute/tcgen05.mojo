@@ -218,7 +218,7 @@ fn tcgen05_ld[
 
     @parameter
     @always_inline("nodebug")
-    fn call_ld_intrinsic[pack_type: AnyTrivialRegType]() -> SIMD[dtype, width]:
+    fn call_ld_intrinsic[pack_type: __TypeOfAllTypes]() -> SIMD[dtype, width]:
         var r = inlined_assembly[
             "tcgen05.ld.sync.aligned."
             + shape_str

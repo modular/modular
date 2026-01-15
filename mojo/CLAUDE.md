@@ -116,7 +116,7 @@ MODULAR_MOJO_MAX_IMPORT_PATH=bazel-bin/mojo/stdlib/std mojo main.mojo
 
 - Follow value semantics and ownership conventions
 - Use `Reference` types and lifetimes in APIs
-- Prefer `AnyType` over `AnyTrivialRegType` (except for MLIR interactions)
+- Prefer `AnyType` over `__TypeOfAllTypes` (except for MLIR interactions)
 
 ## Development Workflow
 

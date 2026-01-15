@@ -135,7 +135,7 @@ fn get_function_name[func_type: AnyType, //, func: func_type]() -> StaticString:
 
 
 fn get_type_name[
-    type_type: AnyTrivialRegType,
+    type_type: __TypeOfAllTypes,
     //,
     type: type_type,
     *,

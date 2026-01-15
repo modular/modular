@@ -41,7 +41,7 @@ fn _static_tuple_construction_checks[size: Int]():
 
 
 @register_passable("trivial")
-struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
+struct StaticTuple[element_type: __TypeOfAllTypes, size: Int](
     Defaultable, DevicePassable, ImplicitlyCopyable, Sized
 ):
     """A statically sized tuple type which contains elements of homogeneous types.

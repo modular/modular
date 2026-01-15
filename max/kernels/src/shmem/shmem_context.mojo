@@ -411,7 +411,7 @@ struct SHMEMContext(ImplicitlyCopyable):
     @always_inline
     @parameter
     fn enqueue_function_collective_checked[
-        func_type: AnyTrivialRegType,
+        func_type: __TypeOfAllTypes,
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
