@@ -1591,7 +1591,7 @@ fn matmul_Q4_K[
     __comptime_assert c.rank == 2
     _matmul_Qb_K[
         group_size = _block_Q4_K.group_size,
-        b_type=_block_Q4_K_packed,
+        b_type = _block_Q4_K_packed[],
         columns_fn=_matmul_Q4_K_columns,
         interleave_group_sums=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1610,7 +1610,7 @@ fn matmul_Q6_K[
     __comptime_assert c.rank == 2
     _matmul_Qb_K[
         group_size = _block_Q6_K.group_size,
-        b_type=_block_Q6_K_packed,
+        b_type = _block_Q6_K_packed[],
         columns_fn=_matmul_Q6_K_columns,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ](a, b, c)

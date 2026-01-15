@@ -83,11 +83,11 @@ def test_maybe_uninitialized_move_from_pointer():
 
 
 def test_maybe_uninitialized_copy():
-    var a = UnsafeMaybeUninitialized[CopyCounter]()
+    var a = UnsafeMaybeUninitialized[CopyCounter[]]()
     a.write(CopyCounter())
     assert_equal(a.assume_initialized().copy_count, 0)
 
-    var b = UnsafeMaybeUninitialized[CopyCounter]()
+    var b = UnsafeMaybeUninitialized[CopyCounter[]]()
     assert_equal(a.assume_initialized().copy_count, 0)
 
     # b is uninitialized here.

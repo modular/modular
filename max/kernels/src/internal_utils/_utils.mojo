@@ -223,7 +223,7 @@ fn static[d: Int]() -> ValOrDim[d]:
     return ValOrDim[d]()
 
 
-fn dynamic(d: Int) -> ValOrDim:
+fn dynamic(d: Int) -> ValOrDim[]:
     return ValOrDim(d)
 
 

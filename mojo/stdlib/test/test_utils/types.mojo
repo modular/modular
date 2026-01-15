@@ -454,7 +454,7 @@ struct AbortOnDel(ImplicitlyCopyable):
 struct CopyCountedStruct(ImplicitlyCopyable):
     """Struct that tracks the number of times it has been copied."""
 
-    var counter: CopyCounter
+    var counter: CopyCounter[]
     """Counter tracking copy operations."""
     var value: String
     """String value payload."""

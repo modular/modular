@@ -290,7 +290,7 @@ def test_move():
 
     # === 2. Check that the copy constructor is not called when moving. ===
 
-    var arr2 = InlineArray[CopyCounter, 3]({}, {}, {})
+    var arr2 = InlineArray[CopyCounter[], 3]({}, {}, {})
     for i in range(len(arr2)):
         # The elements were moved into the array and not copied
         assert_equal(arr2[i].copy_count, 0)

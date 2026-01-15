@@ -34,7 +34,7 @@ def test_basic_ref():
 
 def test_from_unsafe_pointer_constructor():
     var deleted = False
-    var unsafe_ptr = alloc[ObservableDel](1)
+    var unsafe_ptr = alloc[ObservableDel[]](1)
     unsafe_ptr.init_pointee_move(
         ObservableDel(UnsafePointer(to=deleted).as_any_origin())
     )

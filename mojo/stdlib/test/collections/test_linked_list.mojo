@@ -104,7 +104,7 @@ def test_pop():
 
 
 def test_pop_copies():
-    var l1 = LinkedList[CopyCounter](
+    var l1 = LinkedList[CopyCounter[]](
         CopyCounter(),
         CopyCounter(),
         CopyCounter(),
@@ -259,7 +259,7 @@ def test_list_variadic_constructor():
     # Test variadic construct copying behavior
     #
 
-    var l2 = LinkedList[CopyCounter](
+    var l2 = LinkedList[CopyCounter[]](
         CopyCounter(), CopyCounter(), CopyCounter()
     )
 
@@ -456,7 +456,7 @@ def test_2d_dynamic_list():
 
 
 def test_list_explicit_copy():
-    var list = LinkedList[CopyCounter]()
+    var list = LinkedList[CopyCounter[]]()
     list.append(CopyCounter())
     var list_copy = list.copy()
     assert_equal(0, list[0].copy_count)

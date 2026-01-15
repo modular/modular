@@ -760,7 +760,7 @@ fn _int_tuple_product_flatten[t: IntTuple]() -> IntTuple:
 fn coalesce_nested_tuple[
     t: IntTuple,
     out_t: IntTuple = _int_tuple_product_flatten[t](),
-](tuple: RuntimeTuple[t, ...]) -> RuntimeTuple[out_t, ...]:
+](tuple: RuntimeTuple[t, ...]) -> RuntimeTuple[out_t]:
     """Coalesces a nested `RuntimeTuple` into a single-level `RuntimeTuple`, by multiplying all the
     values together.
 

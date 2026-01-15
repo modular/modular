@@ -4904,9 +4904,6 @@ struct ConvTranspose:
         @parameter
         if is_cpu[target]():
             conv_transposed_cpu[
-                _,
-                _,
-                _,
                 input.dtype,
                 filter.dtype,  # Filter dtype.
                 output.dtype,  # Output dtype.
@@ -4943,9 +4940,6 @@ struct ConvTranspose:
                 pad_tuple[1] = pad_w[0]
 
             conv_transposed_gpu[
-                _,
-                _,
-                _,
                 input.dtype,
                 filter.dtype,
                 output.dtype,

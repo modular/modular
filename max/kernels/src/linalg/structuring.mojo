@@ -499,5 +499,5 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
 
 
 comptime NVIDIASharedMemoryManager = SharedMemoryManager[
-    NVIDIASharedMemoryBasePtr
+    NVIDIASharedMemoryBasePtr[]
 ]
