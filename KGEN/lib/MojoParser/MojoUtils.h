@@ -99,6 +99,9 @@ void emitTooManyPositional(MojoInflightDiag &diag, size_t numMaxAllowed,
 /// Return a printable name for an anonymous positional-only argument/parameter.
 std::string nameForPosOnly(size_t idx, const Twine &argOrParam);
 
+/// Check if a name is for an internal decl or not.
+bool isInternalName(StringRef name);
+
 } // namespace M::KGEN::LIT
 
 #endif // MOJOPARSER_MOJOUTILS_H
