@@ -758,7 +758,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   ParamInf inference(callable.paramBindings, signature.getInputParamTypes(),
                      signature.getParamListAttrs(), allowImplicitConversions,
-                     getDiag, funcIfDirect);
+                     /*partial=*/false, getDiag, funcIfDirect);
 
   // TODO: inferForCall will eventually be separated. We will eventually blend
   // parameter inference into overload resolution have something like:
