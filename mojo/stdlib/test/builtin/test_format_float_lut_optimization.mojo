@@ -84,5 +84,5 @@ fn main():
 
     # We don't actually need to print the results for the test,
     # but we need to use them so they don't get optimized away
-    if len(f32_results) > 0 and len(f64_results) > 0:
+    if f32_results.byte_length() > 0 and f64_results.byte_length() > 0:
         pass

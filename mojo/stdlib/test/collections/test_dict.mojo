@@ -132,7 +132,7 @@ def test_dict_string_representation_string_int():
     dict_as_string = some_dict.__str__()
     assert_true(
         some_dict._minimum_size_of_string_representation()
-        <= len(dict_as_string)
+        <= dict_as_string.byte_length()
     )
     assert_equal(dict_as_string, "{'a': 1, 'b': 2}")
 
@@ -146,7 +146,8 @@ def test_dict_string_representation_int_int():
     dict_as_string = some_dict.__str__()
     # one char per key and value, we should have the minimum size of string possible
     assert_equal(
-        some_dict._minimum_size_of_string_representation(), len(dict_as_string)
+        some_dict._minimum_size_of_string_representation(),
+        dict_as_string.byte_length(),
     )
     assert_equal(dict_as_string, "{3: 1, 4: 2, 5: 3, 6: 4}")
 
@@ -161,7 +162,7 @@ def test_dict_string_representation_custom_hasher():
     # Just check that __str__ is callable and produces something
     assert_true(
         some_dict._minimum_size_of_string_representation()
-        <= len(dict_as_string)
+        <= dict_as_string.byte_length()
     )
 
 

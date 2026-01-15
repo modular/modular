@@ -24,7 +24,7 @@ def test_getsize():
         assert_equal(getsize(file_path), 0)
         var data_to_write = "test"
         tmp_file.write(data_to_write)
-        assert_equal(getsize(file_path), len(data_to_write))
+        assert_equal(getsize(file_path), data_to_write.byte_length())
 
 
 def main():

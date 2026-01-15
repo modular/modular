@@ -171,7 +171,7 @@ fn parse_shape[name: StaticString]() -> List[Int]:
     var sum: Int = 0
 
     @parameter
-    for i in range(len(name)):
+    for i in range(name.byte_length()):
         comptime diff = Int(name_unsafe_ptr[i] - zero)
         __comptime_assert Bool(name_unsafe_ptr[i] == x_ptr) or Bool(
             0 <= diff <= 9
