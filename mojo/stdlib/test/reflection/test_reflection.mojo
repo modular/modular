@@ -23,6 +23,7 @@ from reflection import (
     struct_field_names,
     struct_field_types,
 )
+from reflection.reflection import _unqualified_type_name
 from testing import assert_equal, assert_true
 from testing import TestSuite
 
@@ -80,6 +81,27 @@ def test_get_function_name_parameterized():
 
     var name2 = get_function_name[your_func[7]]()
     assert_equal(name2, "your_func")
+
+
+struct WhatsMyName:
+    pass
+
+
+struct ImGeneric[T: AnyType]:
+    pass
+
+
+def test_unqualified_type_name():
+    assert_equal(_unqualified_type_name[WhatsMyName](), "WhatsMyName")
+    assert_equal(_unqualified_type_name[Int](), "Int")
+    assert_equal(_unqualified_type_name[String](), "String")
+    assert_equal(_unqualified_type_name[Int8](), "SIMD[DType.int8, 1]")
+
+    # TODO: strip the module name from the inner type name
+    assert_equal(
+        _unqualified_type_name[ImGeneric[WhatsMyName]](),
+        "ImGeneric[test_reflection.WhatsMyName]",
+    )
 
 
 def test_get_type_name():

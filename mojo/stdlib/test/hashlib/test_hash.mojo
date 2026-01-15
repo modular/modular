@@ -21,6 +21,8 @@ from hashlib import default_comp_time_hasher
 from testing import assert_equal, assert_not_equal, assert_true
 from testing import TestSuite
 
+from test_utils.reflection import SimplePoint, NestedStruct, EmptyStruct
+
 
 def same_low_bits(i1: UInt64, i2: UInt64, bits: Int = 5) -> UInt8:
     var mask = (1 << bits) - 1
@@ -181,44 +183,12 @@ def test_default_conformance_deterministic():
     assert_equal(hash(b), hash(b))
 
 
-# Test structs for reflection-based default __hash__
-@fieldwise_init
-struct SimpleHashable(Equatable, Hashable, ImplicitlyCopyable):
-    """A simple struct that uses the default reflection-based __hash__."""
-
-    var x: Int
-    var y: Int
-
-    # Uses default reflection-based __hash__ from Hashable trait
-    # Uses default reflection-based __eq__ from Equatable trait
-
-
-@fieldwise_init
-struct NestedHashable(Equatable, Hashable):
-    """A struct with nested fields using default __hash__."""
-
-    var point: SimpleHashable
-    var name: String
-
-    # Uses default reflection-based __hash__ from Hashable trait
-    # Uses default reflection-based __eq__ from Equatable trait
-
-
-@fieldwise_init
-struct EmptyHashable(Equatable, Hashable):
-    """A struct with no fields."""
-
-    pass
-    # Uses default reflection-based __hash__ from Hashable trait
-    # Uses default reflection-based __eq__ from Equatable trait
-
-
 def test_default_hash_simple():
     """Test the reflection-based default __hash__ with a simple struct."""
-    var p1 = SimpleHashable(1, 2)
-    var p2 = SimpleHashable(1, 2)
-    var p3 = SimpleHashable(1, 3)
-    var p4 = SimpleHashable(2, 2)
+    var p1 = SimplePoint(1, 2)
+    var p2 = SimplePoint(1, 2)
+    var p3 = SimplePoint(1, 3)
+    var p4 = SimplePoint(2, 2)
 
     # Equal values must have equal hashes
     assert_equal(hash(p1), hash(p2))
@@ -233,10 +203,10 @@ def test_default_hash_simple():
 
 def test_default_hash_nested():
     """Test the reflection-based default __hash__ with nested structs."""
-    var s1 = NestedHashable(SimpleHashable(1, 2), "hello")
-    var s2 = NestedHashable(SimpleHashable(1, 2), "hello")
-    var s3 = NestedHashable(SimpleHashable(1, 2), "world")
-    var s4 = NestedHashable(SimpleHashable(3, 4), "hello")
+    var s1 = NestedStruct(SimplePoint(1, 2), "hello")
+    var s2 = NestedStruct(SimplePoint(1, 2), "hello")
+    var s3 = NestedStruct(SimplePoint(1, 2), "world")
+    var s4 = NestedStruct(SimplePoint(3, 4), "hello")
 
     # Equal values must have equal hashes
     assert_equal(hash(s1), hash(s2))
@@ -248,8 +218,8 @@ def test_default_hash_nested():
 
 def test_default_hash_empty():
     """Test the reflection-based default __hash__ with an empty struct."""
-    var e1 = EmptyHashable()
-    var e2 = EmptyHashable()
+    var e1 = EmptyStruct()
+    var e2 = EmptyStruct()
 
     # Empty structs should hash to the same value
     assert_equal(hash(e1), hash(e2))
@@ -257,9 +227,9 @@ def test_default_hash_empty():
 
 def test_default_hash_equatable_consistency():
     """Test that default __hash__ is consistent with default __eq__."""
-    var p1 = SimpleHashable(42, 99)
-    var p2 = SimpleHashable(42, 99)
-    var p3 = SimpleHashable(42, 100)
+    var p1 = SimplePoint(42, 99)
+    var p2 = SimplePoint(42, 99)
+    var p3 = SimplePoint(42, 100)
 
     # If p1 == p2, then hash(p1) == hash(p2)
     assert_true(p1 == p2)

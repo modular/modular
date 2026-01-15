@@ -86,6 +86,7 @@ fn print_all_fields[T: AnyType](ref s: T):
 """
 
 from sys.info import _current_target, _TargetType
+from collections.string.string_slice import get_static_string
 
 
 fn get_linkage_name[
@@ -159,6 +160,20 @@ fn get_type_name[
         `> : !kgen.string`,
     ]
     return StaticString(res)
+
+
+# TODO: This currently does not strip the module name from the inner type name.
+# For example, Generic[Foo] should return "Generic[Foo]" but currently returns
+# "Generic[module_name.Foo]".
+fn _unqualified_type_name[type: AnyType]() -> StaticString:
+    comptime name = get_type_name[type]()
+    comptime parameter_list_start = name.find("[")
+    if parameter_list_start == -1:
+        return name.split(".")[-1]
+    else:
+        comptime base_name = name[:parameter_list_start].split(".")[-1]
+        comptime parameters = name[parameter_list_start:]
+        return get_static_string[base_name, parameters]()
 
 
 fn struct_field_index_by_name[

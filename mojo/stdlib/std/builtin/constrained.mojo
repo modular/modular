@@ -20,6 +20,7 @@ from reflection import (
     struct_field_names,
     struct_field_types,
 )
+from reflection.reflection import _unqualified_type_name
 
 
 @always_inline("nodebug")
@@ -142,8 +143,8 @@ fn _constrained_field_conforms_to[
     comptime types = struct_field_types[Parent]()
     comptime field_name = names[FieldIndex]
     comptime FieldType = types[FieldIndex]
-    comptime parent_type_name = get_type_name[Parent]()
-    comptime field_type_name = get_type_name[FieldType]()
+    comptime parent_type_name = _unqualified_type_name[Parent]()
+    comptime field_type_name = _unqualified_type_name[FieldType]()
 
     # Construct a message like:
     #     Could not derive Equatable for Point - member field `x: Int` does not
