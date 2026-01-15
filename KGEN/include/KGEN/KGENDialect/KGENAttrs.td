@@ -1023,6 +1023,40 @@ def KGEN_StructFieldTypeByNameAttr : KGEN_ExprAttr<"StructFieldTypeByName",
 }
 
 //===----------------------------------------------------------------------===//
+// IsStructTypeAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_IsStructTypeAttr : KGENAttr<"IsStructType", "is_struct_type",
+    [TypedAttrInterface, ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Check if a type value refers to a struct type.";
+  let description = [{
+    The `#kgen.is_struct_type` attribute returns true if the given type value
+    refers to a Mojo struct type, false otherwise. This is useful for guarding
+    reflection code that needs to avoid compiler errors on non-struct types.
+
+    Example:
+
+    ```mlir
+    #kgen.is_struct_type<#MyStruct> : i1
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$typeValue,
+    AttributeSelfTypeParameter<"", "IntegerType">:$type
+  );
+
+  let assemblyFormat = "`<` custom<TypeParamValue>($typeValue) `>`";
+
+  let extraClassDeclaration = [{
+    /// Get the type of the attribute. It is always i1 type.
+    static IntegerType getResultType(MLIRContext *ctx) {
+      return IntegerType::get(ctx, 1);
+    }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // BindParams
 //===----------------------------------------------------------------------===//
 

@@ -509,6 +509,8 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateContextSpecific(
     return evaluateStructFieldTypeByNameAttr(structFieldTypeByNameAttr);
   if (auto typeConformToTraitAttr = dyn_cast<TypeConformsToTraitAttr>(attr))
     return evaluateTypeConformToTraitAttr(typeConformToTraitAttr);
+  if (auto isStructTypeAttr = dyn_cast<IsStructTypeAttr>(attr))
+    return evaluateIsStructTypeAttr(isStructTypeAttr);
 
   if (auto compileOffloadClosureAttr =
           dyn_cast<CompileOffloadClosureAttr>(attr))

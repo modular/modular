@@ -2162,6 +2162,15 @@ kgen.generator @gen_structs() {
   // CHECK-NEXT: kgen.param.constant: type = <array<[[SIZEOF:.+]], index>>
   kgen.param.apply test_struct_field_type_by_name = [() -> !kgen.type: @get_struct_field_type_by_name<:type #weird_struct>]()
   kgen.param.constant: type = <test_struct_field_type_by_name>
+
+  // Test is_struct_type returns true for Mojo struct types
+  // CHECK-NEXT: kgen.param.constant: i1 = <1>
+  kgen.param.constant: i1 = <#kgen.is_struct_type<#weird_struct>>
+
+  // Test is_struct_type returns false for MLIR primitive types (e.g., index)
+  // CHECK-NEXT: kgen.param.constant: i1 = <0>
+  kgen.param.constant: i1 = <#kgen.is_struct_type<index>>
+
   kgen.return
 }
 

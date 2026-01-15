@@ -193,6 +193,7 @@ protected:
   FailureOr<TypedAttr> evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr);
   FailureOr<TypedAttr> evaluateTypeConformToTraitAttr(
       TypeConformsToTraitAttr typeConformToTraitAttr);
+  FailureOr<TypedAttr> evaluateIsStructTypeAttr(IsStructTypeAttr attr);
   FailureOr<TypedAttr> evaluateCompileOffloadClosureAttr(
       CompileOffloadClosureAttr compileOffloadClosureAttr);
   FailureOr<TypedAttr> evaluateCompileAssemblyAttr(CompileAssemblyAttr attr);

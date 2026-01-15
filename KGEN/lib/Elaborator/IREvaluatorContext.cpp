@@ -160,6 +160,31 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateTypeConformToTraitAttr(
   return typeConformToTraitAttr.simplify(SymbolTable(genOp));
 }
 
+FailureOr<TypedAttr>
+IREvaluatorContext::evaluateIsStructTypeAttr(IsStructTypeAttr attr) {
+  MLIRContext *ctx = attr.getContext();
+
+  // Unwrap the type value to get the underlying reference.
+  TypedAttr typeRef = getTypeRefForTypeValueIfResolved(attr.getTypeValue());
+
+  // Check if it's a TypeInstanceRefAttr (concrete type instance).
+  // Returns false for:
+  // - MLIR primitive types (index, i64, etc.) - these are TypeAttr, not refs
+  // - TypeGeneratorRefAttr (unbound generics) - can't reflect on unbound types
+  // - nullptr/unresolved types
+  auto instanceRef = dyn_cast_if_present<TypeInstanceRefAttr>(typeRef);
+  if (!instanceRef)
+    return {BoolAttr::get(ctx, false)};
+
+  // Look up the symbol to verify it's a StructGeneratorOp.
+  // Returns false for non-struct type generators (e.g., trait types).
+  ParamNodeBase *genNode = lookupParamNodeBase(instanceRef.getSymbol());
+  if (!isa<StructGeneratorOp>(genNode->gen))
+    return {BoolAttr::get(ctx, false)};
+
+  return {BoolAttr::get(ctx, true)};
+}
+
 static void emitDiagnosticToStream(raw_ostream &os, Diagnostic &diag) {
   os << "\n" << diag.getLocation() << ": " << diag;
   for (Diagnostic &note : diag.getNotes())
