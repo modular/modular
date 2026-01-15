@@ -285,6 +285,9 @@ modular_cc_library(
     name = "CrashReporting",
     srcs = glob(["lib/CrashReporting/*.cpp"]),
     hdrs = glob(["include/Support/CrashReporting/*.h"]),
+    copts = [
+        "-Wno-undef",  # Silence warnings from crashpad headers
+    ],
     deps = [
         ":Base",
         ":Configuration",
