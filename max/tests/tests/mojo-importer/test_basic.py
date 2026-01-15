@@ -11,19 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import sys
 import unittest
 
-import mojo.importer  # noqa
-import numpy as np
-
-# Put the current directory (containing mojo_module.mojo) on the Python module
-# lookup path.
-sys.path.insert(0, "")
-
+import mojo.importer  # noqa: F401
 
 # Imports from 'mojo_module.mojo'
-import mojo_module  # type: ignore
+import mojo_module  # type: ignore[import-not-found]
+import numpy as np
 
 
 class TestMojoPythonInterop(unittest.TestCase):

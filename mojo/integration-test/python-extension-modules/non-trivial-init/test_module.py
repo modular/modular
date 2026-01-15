@@ -13,15 +13,9 @@
 
 """Test non-trivial initialization of MojoPair from Python."""
 
-import sys
-
-import pytest
-
-# Put the current directory (containing .so) on the Python module lookup path.
-sys.path.insert(0, "")
-
 # Imports from 'mojo_module.so'
-import mojo_module
+import mojo_module  # type: ignore[import-not-found]
+import pytest
 
 
 def test_non_trivial_initialization() -> None:

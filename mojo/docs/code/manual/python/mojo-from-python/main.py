@@ -11,16 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-import sys
-
-# get directory of current file
-current_dir = os.path.dirname(os.path.abspath(__file__))
-
-sys.path.insert(0, current_dir)
-
 # Install mojo import hook
 import mojo.importer  # noqa: F401
-import mojo_module  # type: ignore
+import mojo_module  # type: ignore[import-not-found]
 
 print(mojo_module.factorial(5))

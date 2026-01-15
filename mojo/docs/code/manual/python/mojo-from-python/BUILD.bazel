@@ -6,6 +6,7 @@ modular_py_binary(
     name = "factorial",
     srcs = ["main.py"],
     data = ["mojo_module.mojo"],
+    imports = ["."],
     main = "main.py",
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
