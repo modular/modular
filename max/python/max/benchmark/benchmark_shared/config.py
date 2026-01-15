@@ -118,6 +118,41 @@ class HardwareConfig(ConfigFileModel):
     """Hardware device on which model will be executed. Valid values: 'cpu', 'gpu', 'gpu:0,1,2'."""
 
 
+class BenchmarkCommonConfig(ConfigFileModel):
+    tokenizer: str | None = None
+    """Name or path of the tokenizer, if not using the default tokenizer."""
+
+    model_max_length: int | None = None
+    """Override for tokenizer max length. Needed if server has a lower max length than the tokenizer."""
+
+    trust_remote_code: bool = False
+    """Trust remote code from huggingface."""
+
+    # Dataset configuration (common across all benchmark types)
+    dataset_name: str = "sharegpt"
+    """Name of the dataset to benchmark on."""
+
+    dataset_path: str | None = None
+    """Path to the dataset."""
+
+    dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE
+    """Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub)."""
+
+    # Basic workload parameters
+    num_prompts: int | None = None
+    """Number of prompts to process."""
+
+    seed: int = 0
+    """Random seed for reproducibility."""
+
+    # Control flags
+    disable_tqdm: bool = False
+    """Specify to disable tqdm progress bar."""
+
+    print_inputs_and_outputs: bool = False
+    """Print all input and outputs to console."""
+
+
 # TODO: This whole class should be converted to a pydantic model.
 # As of this writing, the current plan is to migrate these fields over to
 # individual pydantic BaseModel classes such as the ones above, then delete this
