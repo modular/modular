@@ -123,9 +123,8 @@ def test_devicetensor_wrong_shape(
     tensor = tensor.to(model.input_devices[0])
     with pytest.raises(
         ValueError,
-        match=(
-            r"Shape mismatch at position 0: expected tensor dimension "
-            r"to be 5 at axis 0 but found dimension to be 6 instead"
+        match=re.escape(
+            "Input at position 0: Tensor of type [(6), f32] does not match expected type [(5), f32]",
         ),
     ):
         model.execute(tensor)
@@ -146,9 +145,8 @@ def test_devicetensor_wrong_rank(
     tensor = tensor.to(model.input_devices[0])
     with pytest.raises(
         ValueError,
-        match=(
-            r"Rank mismatch: expected a tensor of rank 1 at position 0 "
-            r"but got a tensor of rank 2 instead."
+        match=re.escape(
+            "Input at position 0: Tensor of type [(5, 2), f32] does not match expected type [(5), f32]"
         ),
     ):
         model.execute(tensor)
@@ -160,16 +158,16 @@ def test_devicetensor_wrong_dtype(
     # The engine should throw a ValueError when executing a tensor with
     # the wrong dtype.
     model = session.load(mo_model_path)
-    tensor = Tensor(DType.int32, (6,))
+    tensor = Tensor(DType.int32, (5,))
     # Ensure that tensors are initialized
-    for i in range(6):
+    for i in range(5):
         tensor[i] = i
 
     tensor = tensor.to(model.input_devices[0])
     with pytest.raises(
         ValueError,
-        match=(
-            r"DType mismatch: expected f32 at position 0 but got si32 instead."
+        match=re.escape(
+            "Input at position 0: Tensor of type [(5), si32] does not match expected type [(5), f32]"
         ),
     ):
         model.execute(tensor)
