@@ -9,6 +9,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLVMAccessorHelper.h"
 #include "MCLinker.h"
+#include "LLVM/Transforms/InstructionRewrite.h"
 #include "LLVM/Transforms/LLVMIRDowngradePass.h"
 #include "LLVM/Transforms/MetalAIRPass.h"
 #include "LLVM/Transforms/MetalRewriteDebugInfo.h"
@@ -384,6 +385,10 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
 
   // Add Metal AIR transformation pass at the very end for Metal GPU targets
   if (isMetalBackend(options)) {
+    FunctionPassManager fpm;
+    // Rewrite all Metal-unsupported LLVM IR intrinsics and instructions
+    fpm.addPass(InstructionRewritePass());
+    mpm.addPass(createModuleToFunctionPassAdaptor(std::move(fpm)));
     // Run MetalAIRPass to do address space conversions
     mpm.addPass(MetalAIRPass());
     // Run PointerRewriter to add bitcasts for typed IR
@@ -564,6 +569,10 @@ static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
 
   // Add Metal AIR transformation pass at the very end for Metal GPU targets
   if (isMetalBackend(options)) {
+    FunctionPassManager fpm;
+    // Rewrite all Metal-unsupported LLVM IR intrinsics and instructions
+    fpm.addPass(InstructionRewritePass());
+    mpm.addPass(createModuleToFunctionPassAdaptor(std::move(fpm)));
     // Run MetalAIRPass to do address space conversions
     mpm.addPass(MetalAIRPass());
     // Run PointerRewriter to add bitcasts for typed IR
