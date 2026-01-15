@@ -106,11 +106,12 @@ fn create_error_async_values_and_destruct_error(
     var err: Error,
 ):
     """Indicates to the C++ runtime that the kernel has failed."""
+    var error_message = String(err)
     external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
         async_ptr,
         async_len,
-        err.data.as_string_slice().unsafe_ptr(),
-        err.data.byte_length(),
+        error_message.as_c_string_slice().unsafe_ptr(),
+        error_message.byte_length(),
     )
 
 
@@ -1653,10 +1654,11 @@ fn mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
 @no_inline
 fn mogg_async_error(async_ptr: AnyAsyncValueRefPtr, err: Error):
     """Indicates to the C++ runtime that the kernel has failed."""
+    var error_message = String(err)
     external_call["MGP_RT_AsyncRT_CreateAsync_Error", NoneType](
         async_ptr,
-        err.data.as_string_slice().unsafe_ptr(),
-        err.data.byte_length(),
+        error_message.as_c_string_slice().unsafe_ptr(),
+        error_message.byte_length(),
     )
 
 
