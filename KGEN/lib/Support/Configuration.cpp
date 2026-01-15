@@ -15,7 +15,7 @@ using namespace M::KGEN;
 #define _X_STRINGIFY(str) _STRINGIFY(str)
 #define STRINGIFY_MOJO_CONFIG(path) _X_STRINGIFY(MOJO_CONFIG_SECTION) path
 
-#ifndef MOJO_CONFIG_SECTION
+#ifndef MOJO_CONFIG_SECTION // NOLINT(ifdef), Wundef doesn't handle the define
 #error "Expected MOJO_CONFIG_SECTION to be set"
 #endif
 
