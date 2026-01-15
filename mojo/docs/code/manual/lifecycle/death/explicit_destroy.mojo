@@ -43,7 +43,10 @@ struct FileBuffer:
 
 
 fn main() raises:
-    var path = gettempdir().or_else("/tmp/") + "test-write.txt"
+    var path = String(
+        Path(gettempdir().or_else("/tmp/")).joinpath("tempfile.txt")
+    )
+
     var buffer = FileBuffer(path)
     buffer.write("Hello from FileBuffer\n")
     buffer^.save_and_close()  # Comment out for compiler error
