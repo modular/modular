@@ -219,16 +219,16 @@ async def test_llm_new_context_value_error_stream(
 
 
 @pytest.mark.asyncio
-async def test_ttft_recorded_once_per_batch() -> None:
-    """Test that TTFT is recorded exactly once per request, with ITL per batch."""
+async def test_ttft_recorded_once_per_chunk() -> None:
+    """Test that TTFT is recorded exactly once per request, with ITL per chunk."""
     from max.serve.pipelines.llm import TokenGeneratorPipeline
 
     mock_metrics = MagicMock()
 
     # Create 3 chunks with 2, 3, 2 tokens = 7 total
-    # Expect: 1 TTFT (first batch), 2 ITLs (remaining 2 batches)
+    # Expect: 1 TTFT (first chunk), 2 ITLs (remaining 2 chunks)
     test_request_id = RequestID(value="test-request")
-    chunks = [
+    scheduler_responses = [
         TextGenerationOutput(
             request_id=test_request_id,
             tokens=[101, 102],
@@ -249,8 +249,8 @@ async def test_ttft_recorded_once_per_batch() -> None:
     async def mock_stream(
         request_id: str, context: Any
     ) -> AsyncGenerator[TextGenerationOutput, None]:
-        for chunk in chunks:
-            yield chunk
+        for response in scheduler_responses:
+            yield response
 
     # Mock context returned by tokenizer
     # Create mock tokens with proper __len__ and active_length
@@ -268,32 +268,32 @@ async def test_ttft_recorded_once_per_batch() -> None:
     pipeline = Mock()
     pipeline.tokenizer.new_context = AsyncMock(return_value=mock_context)
     # Mock decode to return combined tokens text
-    pipeline.tokenizer.decode = AsyncMock(return_value="batch_text")
+    pipeline.tokenizer.decode = AsyncMock(return_value="chunk_text")
     pipeline.engine_queue.stream = mock_stream
     pipeline.debug_logging = False
 
-    # Patch METRICS and call the real next_token_batch method.
+    # Patch METRICS and call the real next_token_chunk method.
     # Binding lets us test real method logic with our mock pipeline.
     with patch("max.serve.pipelines.llm.METRICS", mock_metrics):
-        bound_method = TokenGeneratorPipeline.next_token_batch.__get__(
+        bound_method = TokenGeneratorPipeline.next_token_chunk.__get__(
             pipeline, type(pipeline)
         )
-        batches = [batch async for batch in bound_method(mock_request)]
+        chunks = [chunk async for chunk in bound_method(mock_request)]
 
-    # Verify TTFT called exactly once, ITL called for remaining 2 batches
+    # Verify TTFT called exactly once, ITL called for remaining 2 chunks
     assert mock_metrics.ttft.call_count == 1
     assert mock_metrics.itl.call_count == 2
-    assert len(batches) == 3
+    assert len(chunks) == 3
 
     # Verify token counts are preserved
-    total_tokens = sum(batch.token_count for batch in batches)
+    total_tokens = sum(chunk.token_count for chunk in chunks)
     assert total_tokens == 7
 
-    # Verify each batch has the expected token count
-    assert batches[0].token_count == 2
-    assert batches[1].token_count == 3
-    assert batches[2].token_count == 2
+    # Verify each chunk has the expected token count
+    assert chunks[0].token_count == 2
+    assert chunks[1].token_count == 3
+    assert chunks[2].token_count == 2
 
-    # Verify decoded_tokens is set for each batch
-    for batch in batches:
-        assert batch.decoded_tokens == "batch_text"
+    # Verify decoded_tokens is set for each chunk
+    for chunk in chunks:
+        assert chunk.decoded_tokens == "chunk_text"

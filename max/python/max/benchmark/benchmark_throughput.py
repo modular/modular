@@ -320,9 +320,9 @@ def print_results(
             output_text = str(outputs.embeddings)
         else:
             output_text = "".join(
-                batch.decoded_tokens
-                for batch in outputs
-                if batch.decoded_tokens is not None
+                chunk.decoded_tokens
+                for chunk in outputs
+                if chunk.decoded_tokens is not None
             )
         print(f'task#{i}: {{"{requests[int(i)].prompt}", "{output_text}"}}')
 

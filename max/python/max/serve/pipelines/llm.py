@@ -58,17 +58,17 @@ OutputType = TypeVar("OutputType", bound=PipelineOutput)
 
 @dataclass(frozen=True)
 class TokenGeneratorOutput:
-    """Output from token generation - can contain batched tokens.
+    """Output from token generation - can contain a chunk of tokens.
 
-    When yielded from next_token_batch(), contains combined decoded text from
-    all tokens in a single scheduler response. The batch size equals
+    When yielded from next_token_chunk(), contains combined decoded text from
+    all tokens in a single scheduler response. The chunk size equals
     len(response.tokens) from the model worker.
     """
 
     status: GenerationStatus
-    # Combined decoded text from all tokens in this batch
+    # Combined decoded text from all tokens in this chunk
     decoded_tokens: str | None = None
-    # Number of tokens in this batch (1 for single token, N for batch)
+    # Number of tokens in this chunk (1 for single token, N for chunk)
     token_count: int = 1
     token_log_probabilities: list[float] | None = None
     top_log_probabilities: list[dict[str, float]] | None = None
@@ -171,16 +171,16 @@ class TokenGeneratorPipeline(
 
         return (token_log_probabilities, top_log_probabilities)
 
-    async def next_token_batch(
+    async def next_token_chunk(
         self, request: TextGenerationRequest
     ) -> AsyncGenerator[TokenGeneratorOutput, None]:
-        """Generates and streams token batches for the provided request.
+        """Generates and streams token chunks for the provided request.
 
-        Yields batches of tokens aligned with scheduler responses. Each batch
+        Yields chunks of tokens aligned with scheduler responses. Each chunk
         contains all tokens from a single model worker response (size depends
         on max_num_steps config). Benefits:
-        - Single tokenizer.decode() call per batch instead of per token
-        - Callers can amortize Pydantic/SSE overhead across the batch
+        - Single tokenizer.decode() call per chunk instead of per token
+        - Callers can amortize Pydantic/SSE overhead across the chunk
         """
         itl = StopWatch()
         total_sw = StopWatch()
@@ -194,8 +194,8 @@ class TokenGeneratorPipeline(
         # (EOS tokens like <|im_end|> should not appear in the text response)
         skip_special_tokens = True
 
-        # Track whether we've yielded the first batch (for TTFT metric)
-        first_batch_yielded = False
+        # Track whether we've yielded the first chunk (for TTFT metric)
+        first_chunk_yielded = False
 
         try:
             with record_ms(METRICS.input_time):
@@ -221,8 +221,8 @@ class TokenGeneratorPipeline(
                         )
                         continue
 
-                    # Batch decode all tokens at once - single decode call
-                    with Tracer("tokenizer.decode_batch"):
+                    # Decode all tokens in chunk at once - single decode call
+                    with Tracer("tokenizer.decode_chunk"):
                         decoded_tokens = await self.tokenizer.decode(
                             np.array(response.tokens),
                             skip_special_tokens=skip_special_tokens,
@@ -260,10 +260,10 @@ class TokenGeneratorPipeline(
                                 all_token_log_probs.extend(token_probs)
                                 all_top_log_probs.extend(top_probs)
 
-                    # Record metrics - one TTFT/ITL per batch
-                    if not first_batch_yielded:
+                    # Record metrics - one TTFT/ITL per chunk
+                    if not first_chunk_yielded:
                         METRICS.ttft(itl.elapsed_ms)
-                        first_batch_yielded = True
+                        first_chunk_yielded = True
                     else:
                         METRICS.itl(itl.elapsed_ms)
                     itl.reset()
@@ -288,8 +288,8 @@ class TokenGeneratorPipeline(
     async def all_tokens(
         self, request: TextGenerationRequest
     ) -> list[TokenGeneratorOutput]:
-        """Generates all token batches for the provided request."""
-        return [batch async for batch in self.next_token_batch(request)]
+        """Generates all token chunks for the provided request."""
+        return [chunk async for chunk in self.next_token_chunk(request)]
 
     async def encode(
         self, request: TextGenerationRequest
