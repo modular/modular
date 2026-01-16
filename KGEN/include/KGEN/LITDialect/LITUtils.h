@@ -374,7 +374,8 @@ public:
 
 protected:
   /// Resolve struct info for LIT dialect structs with fallback to KGEN.
-  ResolvedStructHandle resolveStructOp(TypedAttr typeValue) override;
+  FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
+                                                  bool acceptAsync) override;
 
   /// Resolve conformance using the struct's symbol table.
   Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,

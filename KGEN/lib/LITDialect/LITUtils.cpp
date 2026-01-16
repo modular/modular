@@ -1201,18 +1201,24 @@ static LIT::StructType getStructTypeForTypeValue(TypedAttr typeValue) {
   return sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
 }
 
-ResolvedStructHandle
-LITSymTabEvaluationContext::resolveStructOp(TypedAttr typeValue) {
+FailureOr<ResolvedStructHandle>
+LITSymTabEvaluationContext::resolveStructOp(TypedAttr typeValue,
+                                            bool acceptAsync) {
+  // LITSymTabEvaluationContext does not support async concretization, so
+  // acceptAsync is ignored - we always return the generator.
+
   // First try to resolve a LIT struct decl.
   if (auto structType = getStructTypeForTypeValue(typeValue)) {
     if (auto decl = symtab.lookupSymbolIn<StructDeclOp>(
             module, structType.getSymbol())) {
-      return {cast<StructDeclInterface>(decl.getOperation()),
-              structType.getParamValues(), nullptr};
+      return ResolvedStructHandle{
+          cast<StructDeclInterface>(decl.getOperation()),
+          structType.getParamValues(), nullptr,
+          /*instance=*/nullptr};
     }
   }
   // Otherwise, fall back to KGEN struct resolution.
-  return SymTabEvaluationContext::resolveStructOp(typeValue);
+  return SymTabEvaluationContext::resolveStructOp(typeValue, acceptAsync);
 }
 
 Operation *LITSymTabEvaluationContext::resolveConformanceForStruct(
@@ -1228,11 +1234,12 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
   // Handle TypeConformsToTraitAttr with LIT-specific logic.
   if (auto conformsTo =
           sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
-    if (ResolvedStructHandle resolved =
-            resolveStructOp(conformsTo.getTypeValue())) {
-      return conformsTo.simplify(SymbolTable(resolved.decl.getOperation()));
-    }
-    // Try fold tighter trait types.
+    FailureOr<ResolvedStructHandle> resolvedOr =
+        resolveStructOp(conformsTo.getTypeValue(), /*acceptAsync=*/false);
+    if (succeeded(resolvedOr))
+      return conformsTo.simplify(SymbolTable(resolvedOr->decl.getOperation()));
+
+    // Resolution failed, try fold tighter trait types.
     auto typeValue = dyn_cast<TypeParamAttr>(conformsTo.getTypeValue());
     if (!typeValue)
       return failure();

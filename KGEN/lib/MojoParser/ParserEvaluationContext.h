@@ -34,7 +34,8 @@ public:
 
 protected:
   /// Resolve struct info using the parser's SharedState.
-  ResolvedStructHandle resolveStructOp(TypedAttr typeValue) override;
+  FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
+                                                  bool acceptAsync) override;
 
   /// Resolve conformance using ASTDecl lookup in the parser context.
   Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,

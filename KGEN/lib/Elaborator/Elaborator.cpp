@@ -520,13 +520,14 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
 
 ErrorTreeOr<StructInstanceOp>
 Elaborator::getConcreteStructTypeInstance(ImplNode *parent, Location loc,
-                                          TypeInstanceRefAttr instref) {
+                                          TypeInstanceRefAttr instref,
+                                          bool addWaiter) {
   ImplNode *implNode = lookupImplNode(instref.getSymbol());
   assert(implNode && "the existence of an instance reference implies the "
                      "struct instance must have been created already");
 
   ElaborationState result =
-      specializeGenerator(parent, implNode->parent, loc, true);
+      specializeGenerator(parent, implNode->parent, loc, addWaiter);
   if (result.shouldSkipNode())
     return StructInstanceOp();
   if (result.isError())

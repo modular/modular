@@ -105,9 +105,11 @@ bool KGEN::isParameterizedType(Type type) {
 // ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
 
-ResolvedStructHandle
-ParameterEvaluationContext::resolveStructOp(TypedAttr /*typeValue*/) {
-  return {};
+FailureOr<ResolvedStructHandle>
+ParameterEvaluationContext::resolveStructOp(TypedAttr /*typeValue*/,
+                                            bool /*acceptAsync*/) {
+  // Base class cannot resolve anything.
+  return failure();
 }
 
 Operation *ParameterEvaluationContext::resolveConformanceForStruct(
@@ -123,6 +125,11 @@ FailureOr<TypedAttr> ParameterEvaluationContext::evaluateContextSpecific(
     ContextuallyEvaluatedAttrInterface /*attr*/) {
   // Default implementation - no context-specific handling.
   return failure();
+}
+
+void ParameterEvaluationContext::emitEvaluationError(
+    const Twine & /*message*/) {
+  // Base class does nothing - derived classes can override to emit diagnostics.
 }
 
 FailureOr<TypedAttr> ParameterEvaluationContext::evaluateExpression(
@@ -164,31 +171,44 @@ FailureOr<TypedAttr> ParameterEvaluationContext::evaluateExpression(
 
 FailureOr<TypedAttr>
 ParameterEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
-  ResolvedStructHandle resolved = resolveStructOp(getWitness.getTypeValue());
-  if (!resolved)
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      resolveStructOp(getWitness.getTypeValue(), /*acceptAsync=*/false);
+  if (failed(resolvedOr))
     return failure();
+  ResolvedStructHandle resolved = *resolvedOr;
   Operation *conformanceOp =
       resolveConformanceForStruct(resolved, getWitness.getTraitName());
-  if (!conformanceOp)
+  if (!conformanceOp) {
+    emitEvaluationError(
+        "struct '" +
+        SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
+        "' does not have witness table for trait '" +
+        getWitness.getTraitName().getValue() + "'");
     return failure();
+  }
 
   auto conformance = cast<ConformanceOp>(conformanceOp);
   FailureOr<TypedAttr> result = failure();
   withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
                 [&](ParameterEvaluator &evaluator) {
-                  FailureOr<TypedAttr> simplified =
-                      getWitness.simplify(conformance, &evaluator);
-                  if (succeeded(simplified) && simplified.value())
-                    result = simplified.value();
+                  result = getWitness.simplify(conformance, &evaluator);
                 });
+  if (failed(result)) {
+    emitEvaluationError("failed to locate witness entry '" +
+                        getWitness.getWitnessName().getValue() +
+                        "' for trait '" + getWitness.getTraitName().getValue() +
+                        "'");
+  }
   return result;
 }
 
 FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldTypes(
     StructFieldTypesAttr attr) {
-  ResolvedStructHandle resolved = resolveStructOp(attr.getTypeValue());
-  if (!resolved)
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      resolveStructOp(attr.getTypeValue(), /*acceptAsync=*/false);
+  if (failed(resolvedOr))
     return failure();
+  ResolvedStructHandle resolved = *resolvedOr;
   SmallVector<TypedAttr> fieldTypes;
   resolved.decl.getFieldTypes(fieldTypes);
 
@@ -208,9 +228,11 @@ FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldTypes(
 
 FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldNames(
     StructFieldNamesAttr attr) {
-  ResolvedStructHandle resolved = resolveStructOp(attr.getTypeValue());
-  if (!resolved)
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      resolveStructOp(attr.getTypeValue(), /*acceptAsync=*/false);
+  if (failed(resolvedOr))
     return failure();
+  ResolvedStructHandle resolved = *resolvedOr;
   SmallVector<StringAttr> fieldNames;
   resolved.decl.getFieldNames(fieldNames);
 
@@ -229,9 +251,11 @@ FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldIndexByName(
   if (!fieldNameAttr)
     return failure();
 
-  ResolvedStructHandle resolved = resolveStructOp(attr.getTypeValue());
-  if (!resolved)
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      resolveStructOp(attr.getTypeValue(), /*acceptAsync=*/false);
+  if (failed(resolvedOr))
     return failure();
+  ResolvedStructHandle resolved = *resolvedOr;
   auto index = resolved.decl.findFieldIndex(fieldNameAttr.getValue());
   if (!index)
     return failure();
@@ -245,9 +269,11 @@ FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldTypeByName(
   if (!fieldNameAttr)
     return failure();
 
-  ResolvedStructHandle resolved = resolveStructOp(attr.getTypeValue());
-  if (!resolved)
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      resolveStructOp(attr.getTypeValue(), /*acceptAsync=*/false);
+  if (failed(resolvedOr))
     return failure();
+  ResolvedStructHandle resolved = *resolvedOr;
   TypedAttr fieldType = resolved.decl.getFieldType(fieldNameAttr.getValue());
   if (!fieldType)
     return failure();
@@ -263,20 +289,27 @@ FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldTypeByName(
 // SymTabEvaluationContext
 //===----------------------------------------------------------------------===//
 
-ResolvedStructHandle
-SymTabEvaluationContext::resolveStructOp(TypedAttr typeValue) {
+FailureOr<ResolvedStructHandle>
+SymTabEvaluationContext::resolveStructOp(TypedAttr typeValue,
+                                         bool /*acceptAsync*/) {
+  // SymTabEvaluationContext does not support async concretization, so
+  // acceptAsync is ignored - we always return the generator.
   auto genRef = sugarDynCastIfPresent<TypeGeneratorRefAttr>(
       getTypeRefForTypeValueIfResolved(typeValue));
   if (!genRef)
-    return {};
+    return failure();
 
   auto structDecl =
       symtab.lookupSymbolIn<StructGeneratorOp>(module, genRef.getSymbol());
   if (!structDecl)
-    return {};
+    return failure();
 
-  return {cast<StructDeclInterface>(structDecl.getOperation()),
-          genRef.getParamValues(), nullptr};
+  // Return the generator. instance is null since SymTabEvaluationContext
+  // doesn't support async concretization.
+  return ResolvedStructHandle{
+      cast<StructDeclInterface>(structDecl.getOperation()),
+      genRef.getParamValues(), nullptr,
+      /*instance=*/nullptr};
 }
 
 void SymTabEvaluationContext::withEvaluator(
