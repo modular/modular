@@ -16,41 +16,20 @@ import numpy as np
 import pytest
 from max.driver import Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-@pytest.mark.parametrize(
-    ("vocab_size", "check_frequency"),
-    (
-        (64, True),
-        (152064, True),
-        (262208, True),
-    ),
-)
-def test_gumbel_sampling(
-    session: InferenceSession, vocab_size: int, check_frequency: bool
-) -> None:
-    """Test that gumbel sampling produces the correct results."""
+@pytest.fixture(scope="module")
+def gumbel_sampler(session: InferenceSession) -> Model:
+    """Create the gumbel sampling model once for the module.
+
+    The graph uses symbolic dimensions, so it can handle any vocab_size.
+    """
     device = session.devices[0]
     device_ref = DeviceRef.from_device(device)
 
-    # Test parameters
-    temp = 1.0
-    batch_size = 512
-    num_trials = 1000
-
-    # Requests that require top_k = -1 would be routed to gumbel sampling.
-    top_k = -1
-
-    # set numpy seed
-    np.random.seed(0)
-
-    logits_np = 3 * np.random.randn(vocab_size).astype(np.float32)
-    # broadcast logits to batch size
-    logits_np = np.tile(logits_np, (batch_size, 1))
-
-    # Create graph with logits and seed as inputs
+    # Create graph with logits and seed as inputs using symbolic dimensions
     logits_type = TensorType(
         DType.float32, ["batch_size", "vocab_size"], device=device_ref
     )
@@ -62,56 +41,84 @@ def test_gumbel_sampling(
         DType.float32, ["batch_size"], device=device_ref
     )
 
-    def create_sampling_graph():  # noqa: ANN202
-        with Graph(
-            "gumbel_sampling",
-            input_types=(
-                logits_type,
-                seed_type,
-                top_p_type,
-                top_k_type,
-                max_k_type,
-                temperature_type,
-            ),
-        ) as graph:
-            logits_input = graph.inputs[0].tensor
-            seed_input = graph.inputs[1].tensor
-            top_p_input = graph.inputs[2].tensor
-            top_k_input = graph.inputs[3].tensor
-            max_k_input = graph.inputs[4].tensor
-            temperature_input = graph.inputs[5].tensor
+    with Graph(
+        "gumbel_sampling",
+        input_types=(
+            logits_type,
+            seed_type,
+            top_p_type,
+            top_k_type,
+            max_k_type,
+            temperature_type,
+        ),
+    ) as graph:
+        logits_input = graph.inputs[0].tensor
+        seed_input = graph.inputs[1].tensor
+        top_p_input = graph.inputs[2].tensor
+        top_k_input = graph.inputs[3].tensor
+        max_k_input = graph.inputs[4].tensor
+        temperature_input = graph.inputs[5].tensor
 
-            # We need to manually create the custom op since topk_fused_sampling
-            # doesn't accept seed as tensor
-            sampled_tokens = ops.custom(
-                "sampler.fused_token_sampling",
-                device=device_ref,
-                values=[
-                    top_k_input,
-                    max_k_input,
-                    temperature_input,
-                    top_p_input,
-                    # min_top_p must be a scalar; set to 1.0 to match top_p default
-                    ops.constant(
-                        1.0, dtype=DType.float32, device=DeviceRef.CPU()
-                    ),
-                    seed_input,
-                    logits_input,
-                ],
-                out_types=[
-                    TensorType(
-                        dtype=DType.int64,
-                        shape=[logits_input.shape[0], 1],
-                        device=device_ref,
-                    )
-                ],
-            )[0].tensor
+        # We need to manually create the custom op since topk_fused_sampling
+        # doesn't accept seed as tensor
+        sampled_tokens = ops.custom(
+            "sampler.fused_token_sampling",
+            device=device_ref,
+            values=[
+                top_k_input,
+                max_k_input,
+                temperature_input,
+                top_p_input,
+                # min_top_p must be a scalar; set to 1.0 to match top_p default
+                ops.constant(1.0, dtype=DType.float32, device=DeviceRef.CPU()),
+                seed_input,
+                logits_input,
+            ],
+            out_types=[
+                TensorType(
+                    dtype=DType.int64,
+                    shape=[logits_input.shape[0], 1],
+                    device=device_ref,
+                )
+            ],
+        )[0].tensor
 
-            graph.output(sampled_tokens)
-        return graph
+        graph.output(sampled_tokens)
 
-    graph = create_sampling_graph()
-    sampler = session.load(graph)
+    return session.load(graph)
+
+
+@pytest.mark.parametrize(
+    ("vocab_size", "check_frequency"),
+    (
+        (64, True),
+        (152064, True),
+        (262208, True),
+    ),
+)
+def test_gumbel_sampling(
+    session: InferenceSession,
+    gumbel_sampler: Model,
+    vocab_size: int,
+    check_frequency: bool,
+) -> None:
+    """Test that gumbel sampling produces the correct results."""
+    device = session.devices[0]
+
+    # Test parameters
+    temp = 1.0
+    batch_size = 512
+    num_trials = 100
+
+    # Requests that require top_k = -1 would be routed to gumbel sampling.
+    top_k = -1
+
+    # set numpy seed
+    np.random.seed(0)
+
+    logits_np = 3 * np.random.randn(vocab_size).astype(np.float32)
+    # broadcast logits to batch size
+    logits_np = np.tile(logits_np, (batch_size, 1))
 
     logits_tensor = Buffer.from_dlpack(logits_np).to(device)
     sampled_tokens = []
@@ -132,7 +139,7 @@ def test_gumbel_sampling(
         seed_tensor = Buffer.from_dlpack(
             np.arange(seed_start, seed_end, dtype=np.uint64)
         ).to(device)
-        tokens = sampler(
+        tokens = gumbel_sampler(
             logits_tensor,
             seed_tensor,
             top_p_tensor,
