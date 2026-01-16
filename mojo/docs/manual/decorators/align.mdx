@@ -1,0 +1,29 @@
+---
+title: '@align'
+description: Specifies a minimum alignment for a struct.
+codeTitle: true
+---
+
+Add the `@align(N)` decorator on a struct to specify the minimum alignment in
+bytes. The value `N` must be a positive power of 2.
+
+For example, adding `@align(64)` on a struct containing an `Int` (8-byte
+aligned) aligns the struct to 64 bytes:
+
+```mojo
+from sys import align_of
+
+@align(64)
+struct CacheAligned:
+    var data: Int
+
+fn main():
+    print(align_of[CacheAligned]())  # Prints 64
+```
+
+The actual alignment will be `max(N, natural_alignment)`, because you cannot
+reduce alignment below the struct's natural alignment. For example, `@align(1)`
+on a struct containing an `Int` (8-byte aligned) will emit a warning and the
+struct will remain 8-byte aligned.
+
+Both stack and heap allocations respect `@align`.

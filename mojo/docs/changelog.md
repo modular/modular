@@ -21,6 +21,27 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now supports the `@align(N)` decorator to specify minimum alignment for
+  structs, similar to C++'s `alignas` and Rust's `#[repr(align(N))]`. The value
+  `N` must be a positive power of 2 and specifies the minimum alignment in
+  bytes. The actual alignment will be `max(N, natural_alignment)` - you cannot
+  use `@align` to reduce alignment below the struct's natural alignment. For
+  example, `@align(1)` on a struct containing an `Int` (8-byte aligned) will
+  emit a warning and the struct will remain 8-byte aligned.
+
+  ```mojo
+  from sys import align_of
+
+  @align(64)
+  struct CacheAligned:
+      var data: Int
+
+  fn main():
+      print(align_of[CacheAligned]())  # Prints 64
+  ```
+
+  Both stack and heap allocations respect `@align`.
+
 - Mojo now supports raising "typed errors", where a function can specify a
   what type it raises instead of defaulting to the `Error` type. This is done by
   specifying it after the `raises` keyword, e.g.

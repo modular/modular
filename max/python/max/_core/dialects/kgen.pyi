@@ -4570,12 +4570,21 @@ class StructType(max._core.Type):
     def __init__(self, types: Sequence[max._core.Type]) -> None: ...
     @overload
     def __init__(
-        self, element_types: Sequence[max._core.Type], is_memory_only: bool
+        self, types: Sequence[max._core.Type], is_memory_only: bool
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        element_types: Sequence[max._core.Type],
+        is_memory_only: bool,
+        min_alignment: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def element_types(self) -> Sequence[max._core.Type]: ...
     @property
     def is_memory_only(self) -> bool: ...
+    @property
+    def min_alignment(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class TargetType(max._core.Type):
     """
