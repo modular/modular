@@ -1462,8 +1462,7 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
     arch = "x86_64";
 
   StringRef linkerFlavor = "gnu";
-  if (llvm::Triple(options.targetTriple).getObjectFormat() ==
-      llvm::Triple::MachO) {
+  if (triple.getObjectFormat() == llvm::Triple::MachO) {
     linkerFlavor = "darwin";
   }
 
@@ -1474,8 +1473,7 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
   //  ld64.lld -platform_version macos 16.0 16.0 -arch arm64
   //           -dylib tmp.o -o tmp.so -undefined dynamic_lookup
   SmallVector<StringRef> lldArgs = [&]() -> SmallVector<StringRef> {
-    if (llvm::Triple(options.targetTriple).getObjectFormat() ==
-        llvm::Triple::MachO) {
+    if (triple.getObjectFormat() == llvm::Triple::MachO) {
       return {linker,
               "-flavor",
               linkerFlavor,
@@ -1492,24 +1490,54 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
               "-o",
               sharedObjPath.c_str()};
     }
-    return {linker,
-            "-flavor",
-            linkerFlavor,
-            "-shared",
-            objFilePath.c_str(),
-            "-o",
-            sharedObjPath.c_str()};
+    // Build ELF linker args. For AMDGPU add --no-undefined to catch undefined
+    // symbols at link time instead of getting a generic hipErrorNoBinaryForGpu
+    // error at runtime.
+    SmallVector<StringRef> args = {linker, "-flavor", linkerFlavor};
+    if (isAMDGPUBackend(options))
+      args.push_back("--no-undefined");
+    args.push_back("-shared");
+    args.push_back(objFilePath.c_str());
+    args.push_back("-o");
+    args.push_back(sharedObjPath.c_str());
+    return args;
   }();
 
   std::string errorMsg;
+  ErrorOr<TempFile> linkerErrorFileOr =
+      TempFile::create("linker-error-%%%%%%.log");
+  std::optional<TempFile> linkerErrorFile;
+  if (!linkerErrorFileOr.isError()) {
+    linkerErrorFile.emplace(std::move(*linkerErrorFileOr));
+  }
+  // If we couldn't create the error file, continue anyway - it's not critical.
+
   int linkExitCode = llvm::sys::ExecuteAndWait(
-      lldArgs[0], lldArgs, /*Env=*/std::nullopt, /*Redirects=*/{},
+      lldArgs[0], lldArgs, /*Env=*/std::nullopt,
+      /*Redirects=*/
+      {/*stdin=*/std::nullopt, /*stdout=*/std::nullopt,
+       /*stderr=*/
+       linkerErrorFile ? std::make_optional(linkerErrorFile->getPath().string())
+                       : std::nullopt},
       /*SecondsToWait=*/0, /*MemoryLimit=*/0, /*ErrMsg=*/&errorMsg);
 
   if (linkExitCode) {
     if (!errorMsg.empty())
       errorMsg.insert(0, ": ");
-    return Error(Twine("failed to generate shared object binary: ") + errorMsg);
+    StringRef errorPrefix =
+        isAMDGPUBackend(options)
+            ? "failed to generate AMDGPU shared object binary"
+            : "failed to generate shared object binary";
+    if (linkerErrorFile) {
+      std::string linkerOutput =
+          llvm::MemoryBuffer::getFile(linkerErrorFile->getPath().string())
+              .get()
+              ->getBuffer()
+              .str();
+      if (!linkerOutput.empty())
+        return Error(Twine(errorPrefix) + errorMsg + ":\n" + linkerOutput);
+    }
+    return Error(Twine(errorPrefix) + errorMsg);
   }
 
   // Read linked dynamic library in to memory.
