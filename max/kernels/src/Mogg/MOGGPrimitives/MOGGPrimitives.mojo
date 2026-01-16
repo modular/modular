@@ -17,6 +17,7 @@ from sys import external_call, size_of, align_of
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
+from collections import InlineArray
 from gpu.host import DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
@@ -216,16 +217,15 @@ fn create_tensor_spec_async[
     # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
     # and pass it back to C++ -- However, this is an issue for the heap allocated dims.
     # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
-    var shape_ptr = UnsafePointer[Int].alloc(spec_rank)
+    var storage = InlineArray[Int, spec_rank](uninitialized=True)
 
     @parameter
     for i in range(spec_rank):
-        shape_ptr[i] = spec[i]
+        storage[i] = spec[i]
 
     external_call["MGP_RT_CreateAsyncTensorShape", NoneType](
-        shape_ptr, spec_rank, async_ptr
+        UnsafePointer[Int](storage.unsafe_ptr()), spec_rank, async_ptr
     )
-    shape_ptr.free()
 
 
 @register_internal("builtin.create_tensor_with_borrow_async")
@@ -402,18 +402,17 @@ fn unpack_tensor[
 fn unpack_tensor_spec[
     spec_rank: Int
 ](async_ptr: OpaquePointer) -> IndexList[spec_rank]:
-    var shape_ptr = UnsafePointer[Int].alloc(spec_rank)
+    var storage = InlineArray[Int, spec_rank](uninitialized=True)
     external_call[
         "MGP_RT_GetTensorShapeFromAsync",
         NoneType,
-    ](shape_ptr, spec_rank, async_ptr)
+    ](UnsafePointer[Int](storage.unsafe_ptr()), spec_rank, async_ptr)
     var shape = IndexList[spec_rank]()
 
     @parameter
     for i in range(spec_rank):
-        shape[i] = Int(shape_ptr[i])
+        shape[i] = Int(storage[i])
 
-    shape_ptr.free()
     return shape
 
 
@@ -1161,10 +1160,7 @@ fn to_managed_tensor_slice[
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
 
-    return ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
-    ](data, shape_tuple, stride_tuple)
+    return {data, shape_tuple, stride_tuple}
 
 
 # Extract a scalar from a managed tensor slice.
@@ -1243,10 +1239,7 @@ fn _to_managed_tensor_slice_index_list_shape[
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
 
-    return ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
-    ](data, shape_tuple, stride_tuple)
+    return {data, shape_tuple, stride_tuple}
 
 
 # Helper method used by compiler to reconcile MGP list with dtype Mojo expects.
@@ -1256,12 +1249,13 @@ fn to_managed_tensor_slice_list[
     dtype: DType, rank: Int, mut: Bool, input: IO
 ](
     raw_list_ptr: OpaquePointer,
-) -> List[
-    ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
-    ]
-]:
+    out out_list: List[
+        ManagedTensorSlice[
+            io_spec = IOSpec[mut, input](),
+            static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+        ]
+    ],
+):
     var num_elements = external_call["MGP_RT_ListSize", Int64](
         raw_list_ptr
     ).__int__()
@@ -1276,12 +1270,7 @@ fn to_managed_tensor_slice_list[
 
     # TODO: revisit the use of unknown here
     # Create output list
-    var out_list = List[
-        ManagedTensorSlice[
-            io_spec = IOSpec[mut, input](),
-            static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
-        ]
-    ](capacity=num_elements)
+    out_list = type_of(out_list)(capacity=num_elements)
 
     # Convert individual elements of the input list into NDBuffer, and
     # accumulate the results to output list.
@@ -1298,8 +1287,6 @@ fn to_managed_tensor_slice_list[
             dtype, rank, mut, input
         ](data, dims)
         out_list.append(buffer)
-
-    return out_list^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1625,20 +1612,7 @@ fn mogg_tensor_init[
     """
     Helper for constructing a ManagedTensorSlice.
     """
-    comptime static_spec = StaticTensorSpec[dtype, rank](
-        static_shape,
-        static_stride,
-        alignment,
-        AddressSpace.GENERIC,
-        exclusive,
-        None,
-        None,
-        None,
-    )
-    return ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec=static_spec,
-    ](ptr.bitcast[Scalar[dtype]](), shape)
+    return {ptr.bitcast[Scalar[dtype]](), shape}
 
 
 @register_internal("mogg.async.ready")
@@ -1685,19 +1659,7 @@ fn tmp_reshape_contiguous_buffer[
     """
     Constructs a new ManagedTensorSlice with with a new shape and static spec.
     """
-    return ManagedTensorSlice[
-        io_spec = buffer.io_spec,
-        static_spec = StaticTensorSpec[buffer.dtype, new_rank](
-            static_shape,
-            static_stride,
-            1,
-            AddressSpace.GENERIC,
-            True,
-            None,
-            None,
-            None,
-        ),
-    ](buffer._ptr, shape)
+    return {buffer._ptr, shape}
 
 
 # ===-----------------------------------------------------------------------===#
