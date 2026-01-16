@@ -307,11 +307,25 @@ class TokenGeneratorPipeline(
                 context = await self.tokenizer.new_context(request)
 
             with record_ms(METRICS.output_time):
+                # For embeddings tasks, the model worker runs an EmbeddingsPipeline which
+                # returns EmbeddingsGenerationOutput. The EngineQueue correctly deserializes
+                # this based on the scheduler_zmq_configs pipeline_task.
                 async for response in self.engine_queue.stream(
                     request.request_id, context
                 ):
-                    assert isinstance(response, EmbeddingsGenerationOutput)
-                    return response
+                    # At runtime, response should be EmbeddingsGenerationOutput for embeddings tasks
+                    # Cast to handle the generic type parameter mismatch
+                    if isinstance(response, EmbeddingsGenerationOutput):
+                        return response
+                    self.logger.error(
+                        f"Unexpected response type for embeddings task: {type(response).__name__}, "
+                        f"expected EmbeddingsGenerationOutput. Response: {response}"
+                    )
+                    raise RuntimeError(
+                        f"Expected EmbeddingsGenerationOutput for embeddings task but got "
+                        f"{type(response).__name__}. This may indicate a mismatch between "
+                        f"the API server pipeline task and the model worker pipeline."
+                    )
 
                 raise RuntimeError(
                     f"No embeddings were generated for request {request.request_id}"

@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy as np
 import numpy.typing as npt
+from huggingface_hub import model_info
 from max.driver import load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
@@ -63,6 +64,32 @@ from .tokenizer import TextTokenizer
 logger = logging.getLogger("max.pipelines")
 
 PipelineTypes: TypeAlias = Pipeline[Any, Any]
+
+
+def _infer_task_from_hf_pipeline_tag(
+    pipeline_tag: str | None,
+) -> PipelineTask | None:
+    """Map HuggingFace pipeline tag to MAX PipelineTask.
+
+    Args:
+        pipeline_tag: The pipeline tag from HuggingFace Hub model info.
+
+    Returns:
+        The corresponding PipelineTask or None if no mapping exists.
+    """
+    if pipeline_tag is None:
+        return None
+
+    # Map HF pipeline tags to MAX tasks
+    tag_to_task = {
+        "text-generation": PipelineTask.TEXT_GENERATION,
+        "feature-extraction": PipelineTask.EMBEDDINGS_GENERATION,
+        "sentence-similarity": PipelineTask.EMBEDDINGS_GENERATION,
+        "audio-generation": PipelineTask.AUDIO_GENERATION,
+        # Add more mappings as needed
+    }
+
+    return tag_to_task.get(pipeline_tag)
 
 
 def get_pipeline_for_task(
@@ -237,7 +264,12 @@ class SupportedArchitecture:
 
 class PipelineRegistry:
     def __init__(self, architectures: list[SupportedArchitecture]) -> None:
+        # Primary lookup by architecture name
         self.architectures = {arch.name: arch for arch in architectures}
+        # Secondary lookup for architectures with duplicate names, keyed by (name, task)
+        self._architectures_by_task: dict[
+            tuple[str, PipelineTask], SupportedArchitecture
+        ] = {}
         self._cached_huggingface_configs: dict[HuggingFaceRepo, AutoConfig] = {}
         self._cached_huggingface_tokenizers: dict[
             HuggingFaceRepo, PreTrainedTokenizer | PreTrainedTokenizerFast
@@ -249,21 +281,63 @@ class PipelineRegistry:
         *,
         allow_override: bool = False,
     ) -> None:
-        """Add new architecture to registry."""
-        if architecture.name in self.architectures:
-            if not allow_override:
-                raise ValueError(
-                    f"Refusing to override existing architecture for '{architecture.name}'"
-                )
-            logger.warning(
-                f"Overriding existing architecture for '{architecture.name}'"
-            )
+        """Add new architecture to registry.
 
-        self.architectures[architecture.name] = architecture
+        If multiple architectures share the same name but have different tasks,
+        they are registered in a secondary lookup table keyed by (name, task).
+        """
+        task_key = (architecture.name, architecture.task)
+
+        if architecture.name in self.architectures:
+            existing_arch = self.architectures[architecture.name]
+
+            # If same task, this is a true conflict
+            if existing_arch.task == architecture.task:
+                if not allow_override:
+                    raise ValueError(
+                        f"Refusing to override existing architecture for '{architecture.name}' "
+                        f"with task {architecture.task}"
+                    )
+                logger.warning(
+                    f"Overriding existing architecture for '{architecture.name}' with task {architecture.task}"
+                )
+                self.architectures[architecture.name] = architecture
+                self._architectures_by_task[task_key] = architecture
+            else:
+                # Different tasks - store both, using task-based lookup
+                logger.info(
+                    f"Registering multiple architectures with name '{architecture.name}': "
+                    f"{existing_arch.task} and {architecture.task}"
+                )
+                # Move existing arch to task-based lookup if not already there
+                existing_key = (existing_arch.name, existing_arch.task)
+                if existing_key not in self._architectures_by_task:
+                    self._architectures_by_task[existing_key] = existing_arch
+                # Add new arch to task-based lookup
+                self._architectures_by_task[task_key] = architecture
+        else:
+            # First registration of this name
+            self.architectures[architecture.name] = architecture
+            self._architectures_by_task[task_key] = architecture
 
     def retrieve_architecture(
-        self, huggingface_repo: HuggingFaceRepo, use_module_v3: bool = False
+        self,
+        huggingface_repo: HuggingFaceRepo,
+        use_module_v3: bool = False,
+        task: PipelineTask | None = None,
     ) -> SupportedArchitecture | None:
+        """Retrieve architecture matching the HuggingFace model config.
+
+        Args:
+            huggingface_repo: The HuggingFace repository to match against.
+            use_module_v3: Whether to append "_ModuleV3" suffix to architecture name.
+            task: Optional task to disambiguate when multiple architectures share the same name.
+                  If not provided and multiple architectures share the same name, the task will
+                  be inferred from the HuggingFace Hub's pipeline_tag.
+
+        Returns:
+            The matching SupportedArchitecture or None if no match found.
+        """
         # Retrieve model architecture names
         hf_config = self.get_active_huggingface_config(
             huggingface_repo=huggingface_repo
@@ -279,6 +353,45 @@ class PipelineRegistry:
         for architecture_name in architecture_names:
             if use_module_v3:
                 architecture_name += "_ModuleV3"
+
+            # If task not provided, check if we need to infer it
+            inferred_task = task
+            if task is None:
+                # Check if multiple architectures share this name
+                matching_tasks = [
+                    arch_task
+                    for arch_name, arch_task in self._architectures_by_task
+                    if arch_name == architecture_name
+                ]
+
+                # If multiple architectures share the name, infer task from pipeline_tag
+                if len(matching_tasks) > 1:
+                    try:
+                        hf_model_info = model_info(
+                            huggingface_repo.repo_id,
+                            revision=huggingface_repo.revision,
+                        )
+                        inferred_task = _infer_task_from_hf_pipeline_tag(
+                            hf_model_info.pipeline_tag
+                        )
+                        if inferred_task is not None:
+                            logger.debug(
+                                f"Inferred task '{inferred_task}' from pipeline_tag "
+                                f"'{hf_model_info.pipeline_tag}' for {huggingface_repo.repo_id}"
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to infer task from HuggingFace Hub: {e}. "
+                            f"Using first registered architecture."
+                        )
+
+            # Try task-specific lookup first
+            if inferred_task is not None:
+                task_key = (architecture_name, inferred_task)
+                if task_key in self._architectures_by_task:
+                    return self._architectures_by_task[task_key]
+
+            # Fall back to name-only match
             if architecture_name in self.architectures:
                 return self.architectures[architecture_name]
 
@@ -435,6 +548,7 @@ class PipelineRegistry:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
                 use_module_v3=pipeline_config.use_module_v3,
+                task=task,
             )
 
         # Load HuggingFace Config
@@ -503,6 +617,7 @@ class PipelineRegistry:
             draft_arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.draft_model.huggingface_weight_repo,
                 use_module_v3=pipeline_config.use_module_v3,
+                task=task,
             )
             if draft_arch is None:
                 raise ValueError(
@@ -593,6 +708,7 @@ class PipelineRegistry:
 
     def reset(self) -> None:
         self.architectures.clear()
+        self._architectures_by_task.clear()
 
 
 PIPELINE_REGISTRY = PipelineRegistry([])
