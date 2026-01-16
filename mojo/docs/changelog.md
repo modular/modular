@@ -649,6 +649,9 @@ what we publish.
   - `InlineArray` now conforms to `Writable`, `Stringable`, and `Representable`.
   - `LinkedList` now conforms to `Writable`, `Stringable`, and `Representable`.
   - `Iterator` no longer requires its type to be `Copyable`.
+  - `Pointer` now conforms to `Writable`.
+  - `ArcPointer` now conforms to `Writable`.
+  - `OwnedPointer` now conforms to `Writable`.
 
   - The following types no longer require their elements to be `Copyable`.
     - `Iterator`

@@ -16,6 +16,7 @@ from test_utils import (
     MoveCounter,
     ObservableDel,
     ObservableMoveOnly,
+    check_write_to,
 )
 from testing import (
     assert_equal,
@@ -488,6 +489,51 @@ def test_unsafe_origin_cast():
     var ptr = LegacyUnsafePointer(to=x)
     _ref_to[origin_of(x)](ptr[])
     _ref_to[origin_of(y)](ptr.unsafe_origin_cast[origin_of(y)]()[])
+
+
+def test_write_to():
+    check_write_to(
+        LegacyUnsafePointer[Int, origin=MutAnyOrigin](),
+        expected="0x0",
+        is_repr=False,
+    )
+
+    var x = 42
+    check_write_to(LegacyUnsafePointer(to=x), contains="0x", is_repr=False)
+
+    var s = String("hello")
+    check_write_to(LegacyUnsafePointer(to=s), contains="0x", is_repr=False)
+
+
+def test_write_repr_to():
+    check_write_to(
+        LegacyUnsafePointer[Int, origin=MutAnyOrigin](),
+        expected=(
+            "LegacyUnsafePointer[mut=True, Int,"
+            " address_space=AddressSpace.GENERIC](0x0)"
+        ),
+        is_repr=True,
+    )
+
+    var x = 42
+    check_write_to(
+        LegacyUnsafePointer(to=x),
+        contains=(
+            "LegacyUnsafePointer[mut=True, Int,"
+            " address_space=AddressSpace.GENERIC](0x"
+        ),
+        is_repr=True,
+    )
+
+    var s = String("hello")
+    check_write_to(
+        LegacyUnsafePointer(to=s),
+        contains=(
+            "LegacyUnsafePointer[mut=True, String,"
+            " address_space=AddressSpace.GENERIC](0x"
+        ),
+        is_repr=True,
+    )
 
 
 def main():

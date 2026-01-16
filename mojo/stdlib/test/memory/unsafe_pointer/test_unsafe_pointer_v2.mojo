@@ -20,6 +20,7 @@ from test_utils import (
     MoveCounter,
     ObservableDel,
     ObservableMoveOnly,
+    check_write_to,
 )
 from testing import (
     assert_equal,
@@ -585,6 +586,64 @@ def test_unsafe_from_address():
 
     var ptr3 = UnsafePointer[Int, MutExternalOrigin](unsafe_from_address=42)
     assert_true(ptr3)
+
+
+def test_write_to():
+    check_write_to(
+        UnsafePointer[Int, MutAnyOrigin](), expected="0x0", is_repr=False
+    )
+
+    var x = 42
+    check_write_to(UnsafePointer(to=x), contains="0x", is_repr=False)
+
+    var s = String("hello")
+    check_write_to(UnsafePointer(to=s), contains="0x", is_repr=False)
+
+
+def test_write_repr_to():
+    check_write_to(
+        UnsafePointer[Int, MutAnyOrigin](),
+        expected=(
+            "UnsafePointer[mut=True, Int,"
+            " address_space=AddressSpace.GENERIC](0x0)"
+        ),
+        is_repr=True,
+    )
+
+    var x = 42
+    check_write_to(
+        UnsafePointer(to=x),
+        contains=(
+            "UnsafePointer[mut=True, Int,"
+            " address_space=AddressSpace.GENERIC](0x"
+        ),
+        is_repr=True,
+    )
+    check_write_to(
+        UnsafePointer(to=x).as_immutable(),
+        contains=(
+            "UnsafePointer[mut=False, Int,"
+            " address_space=AddressSpace.GENERIC](0x"
+        ),
+        is_repr=True,
+    )
+    check_write_to(
+        UnsafePointer(to=x).address_space_cast[AddressSpace.SHARED](),
+        contains=(
+            "UnsafePointer[mut=True, Int, address_space=AddressSpace.SHARED](0x"
+        ),
+        is_repr=True,
+    )
+
+    var s = String("hello")
+    check_write_to(
+        UnsafePointer(to=s),
+        contains=(
+            "UnsafePointer[mut=True, String,"
+            " address_space=AddressSpace.GENERIC](0x"
+        ),
+        is_repr=True,
+    )
 
 
 def main():

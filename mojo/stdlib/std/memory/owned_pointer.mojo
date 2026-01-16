@@ -21,10 +21,11 @@ from memory import OwnedPointer
 
 from builtin.constrained import _constrained_conforms_to
 from builtin.rebind import downcast, trait_downcast
+from reflection.reflection import _unqualified_type_name
 
 
 @register_passable
-struct OwnedPointer[T: AnyType]:
+struct OwnedPointer[T: AnyType](Writable):
     """A safe, owning, smart pointer.
 
     This smart pointer is designed for cases where there is clear ownership
@@ -227,3 +228,39 @@ struct OwnedPointer[T: AnyType]:
             The pointer owned by this instance.
         """
         return self._inner
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Formats this pointer's value to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+
+        Constraints:
+            `T` must conform to Writable.
+        """
+        _constrained_conforms_to[
+            conforms_to(Self.T, Writable),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="Writable",
+        ]()
+        trait_downcast[Writable](self[]).write_to(writer)
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the `OwnedPointer`.
+
+        Args:
+            writer: The object to write to.
+
+        Constraints:
+            `T` must conform to Writable.
+        """
+        _constrained_conforms_to[
+            conforms_to(Self.T, Writable),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="Writable",
+        ]()
+        writer.write("OwnedPointer[", _unqualified_type_name[Self.T](), "](")
+        trait_downcast[Writable](self[]).write_repr_to(writer)
+        writer.write_string(")")

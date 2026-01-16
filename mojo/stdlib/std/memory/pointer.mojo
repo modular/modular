@@ -19,6 +19,8 @@ from memory import Pointer
 ```
 """
 
+from reflection.reflection import _unqualified_type_name
+
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
 # ===-----------------------------------------------------------------------===#
@@ -132,6 +134,14 @@ struct AddressSpace(
         else:
             writer.write("AddressSpace(", self.value(), ")")
 
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the AddressSpace.
+
+        Args:
+            writer: The object to write to.
+        """
+        self.write_to(writer)
+
 
 # ===-----------------------------------------------------------------------===#
 # Deprecated aliases for backward compatibility
@@ -158,7 +168,7 @@ struct Pointer[
     type: AnyType,
     origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](ImplicitlyCopyable, Stringable):
+](ImplicitlyCopyable, Stringable, Writable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
@@ -300,6 +310,32 @@ struct Pointer[
             The string representation of the Pointer.
         """
         return String(UnsafePointer(to=self[]))
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Formats this pointer address to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        UnsafePointer(to=self[]).write_to(writer)
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the Pointer.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write(
+            "Pointer[mut=",
+            Self.mut,
+            ", ",
+            _unqualified_type_name[Self.type](),
+            ", address_space=",
+            Self.address_space,
+            "](",
+            self,
+            ")",
+        )
 
     @always_inline("nodebug")
     fn __merge_with__[

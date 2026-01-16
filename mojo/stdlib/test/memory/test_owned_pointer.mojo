@@ -17,6 +17,7 @@ from test_utils import (
     ImplicitCopyOnly,
     MoveOnly,
     ObservableDel,
+    check_write_to,
 )
 from testing import (
     assert_equal,
@@ -140,6 +141,22 @@ def test_steal_data():
     assert_false(deleted)
 
     _ = OwnedPointer(unsafe_from_raw_pointer=ptr)
+
+
+def test_write_to():
+    check_write_to(OwnedPointer(42), expected="42", is_repr=False)
+    check_write_to(OwnedPointer("hello"), expected="hello", is_repr=False)
+
+
+def test_write_repr_to():
+    check_write_to(
+        OwnedPointer(42), expected="OwnedPointer[Int](Int(42))", is_repr=True
+    )
+    check_write_to(
+        OwnedPointer("hello"),
+        expected="OwnedPointer[String]('hello')",
+        is_repr=True,
+    )
 
 
 def main():
