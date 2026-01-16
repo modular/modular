@@ -476,6 +476,10 @@ class HuggingFaceRepo:
                                 supported_encodings.add(
                                     SupportedEncoding.float8_e4m3fn
                                 )
+                            elif weight_dtype == "U8":
+                                supported_encodings.add(
+                                    SupportedEncoding.float4_e2m1fnx2
+                                )
                             else:
                                 logger.warning(
                                     f"unknown dtype found in safetensors file: {weight_dtype}"
@@ -492,12 +496,20 @@ class HuggingFaceRepo:
                     r"FP8|fp8", self.repo_id, re.IGNORECASE
                 ):
                     supported_encodings.add(SupportedEncoding.float8_e4m3fn)
+                if safetensors_info is None and re.search(
+                    r"FP4|fp4", self.repo_id, re.IGNORECASE
+                ):
+                    supported_encodings.add(SupportedEncoding.float4_e2m1fnx2)
 
                 if safetensors_info:
                     for params in safetensors_info.parameters:
                         if "F8_E4M3" in params:
                             supported_encodings.add(
                                 SupportedEncoding.float8_e4m3fn
+                            )
+                        elif "U8" in params:
+                            supported_encodings.add(
+                                SupportedEncoding.float4_e2m1fnx2
                             )
                         elif "BF16" in params:
                             supported_encodings.add(SupportedEncoding.bfloat16)

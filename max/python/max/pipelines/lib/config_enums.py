@@ -95,6 +95,7 @@ class SupportedEncoding(str, Enum):
     q4_0 = "q4_0"
     q6_k = "q6_k"
     float8_e4m3fn = "float8_e4m3fn"
+    float4_e2m1fnx2 = "float4_e2m1fnx2"
     gptq = "gptq"
 
     @classmethod
@@ -116,6 +117,10 @@ class SupportedEncoding(str, Enum):
         elif "f8" in name or "fp8" in name or "float8" in name:
             # For now, default float8 to e4m3. It is the dtype is used for inference.
             return SupportedEncoding.float8_e4m3fn
+        elif (
+            "fp4" in name or "f4" in name or "float4" in name or "nvfp4" in name
+        ):
+            return SupportedEncoding.float4_e2m1fnx2
         else:
             return None
 
@@ -160,6 +165,7 @@ _SUPPORTED_ENCODING_TO_DTYPE = {
     SupportedEncoding.float32: DType.float32,
     SupportedEncoding.bfloat16: DType.bfloat16,
     SupportedEncoding.float8_e4m3fn: DType.float8_e4m3fn,
+    SupportedEncoding.float4_e2m1fnx2: DType.uint8,
     SupportedEncoding.q4_k: DType.uint8,
     SupportedEncoding.q4_0: DType.uint8,
     SupportedEncoding.q6_k: DType.uint8,
@@ -171,6 +177,7 @@ _SUPPORTED_ENCODING_TO_CACHE_DTYPE = {
     SupportedEncoding.float32: DType.float32,
     SupportedEncoding.bfloat16: DType.bfloat16,
     SupportedEncoding.float8_e4m3fn: DType.bfloat16,
+    SupportedEncoding.float4_e2m1fnx2: DType.float8_e4m3fn,
     SupportedEncoding.q4_k: DType.float32,
     SupportedEncoding.q4_0: DType.float32,
     SupportedEncoding.q6_k: DType.float32,
@@ -181,6 +188,7 @@ _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING = {
     SupportedEncoding.float32: None,
     SupportedEncoding.bfloat16: None,
     SupportedEncoding.float8_e4m3fn: None,
+    SupportedEncoding.float4_e2m1fnx2: None,
     SupportedEncoding.q4_k: QuantizationEncoding.Q4_K,
     SupportedEncoding.q4_0: QuantizationEncoding.Q4_0,
     SupportedEncoding.q6_k: QuantizationEncoding.Q6_K,
@@ -193,6 +201,7 @@ _SUPPORTED_DEVICES: dict[SupportedEncoding, tuple[str, ...]] = {
     SupportedEncoding.float32: ("cpu", "gpu"),
     SupportedEncoding.bfloat16: ("gpu",),
     SupportedEncoding.float8_e4m3fn: ("gpu",),
+    SupportedEncoding.float4_e2m1fnx2: ("gpu",),
     SupportedEncoding.q4_k: ("cpu",),
     SupportedEncoding.q4_0: ("cpu",),
     SupportedEncoding.q6_k: ("cpu",),

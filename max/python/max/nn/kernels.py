@@ -3138,7 +3138,7 @@ def dynamic_block_scaled_matmul_fp4(
     b: TensorValue,
     a_scales: TensorValue,
     b_scales: TensorValue,
-    tensor_sf: float,
+    tensor_sf: TensorValue | float,
     sf_vector_size: int = 16,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
@@ -3150,6 +3150,7 @@ def dynamic_block_scaled_matmul_fp4(
         b: The second tensor to multiply, must be transposed.
         a_scales: The scaling factors for the first tensor.
         b_scales: The scaling factors for the second tensor.
+        tensor_sf: Tensor-wise scaling factor equal to weight_scale_2 * input_scale (non-inverted).
 
     Returns:
         The result of the matmul operation.
@@ -3233,7 +3234,9 @@ def dynamic_block_scaled_matmul_fp4(
             b,
             a_scales,
             b_scales,
-            ops.constant(tensor_sf, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(tensor_sf, DType.float32, device=DeviceRef.CPU())
+            if isinstance(tensor_sf, float)
+            else tensor_sf,
         ],
         out_types=[
             TensorType(
@@ -3250,7 +3253,7 @@ def dynamic_block_scaled_matmul_fp4(
 
 def quantize_dynamic_block_scaled_fp4(
     input: TensorValue,
-    tensor_sf: float,
+    tensor_sf: TensorValue | float,
     sf_vector_size: int = 16,
     scales_type: DType = DType.float8_e4m3fn,
     out_type: DType = DType.uint8,  # fp4-e2m1fnX2
@@ -3260,7 +3263,7 @@ def quantize_dynamic_block_scaled_fp4(
 
     Args:
         input: The input tensor to quantize. Shape: [seq_len, hidden_size]
-        tensor_sf: The tensor-wise scale factor.
+        tensor_sf: The tensor-wise scale factor (inverted as per quantization kernel requirement).
         sf_vector_size: The block size for the scaling factors.
         out_type: The type of the output tensor.
         scales_type: The type of the scales tensor.
@@ -3306,7 +3309,9 @@ def quantize_dynamic_block_scaled_fp4(
         device=input.device,
         values=[
             input,
-            ops.constant(tensor_sf, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(tensor_sf, DType.float32, device=DeviceRef.CPU())
+            if isinstance(tensor_sf, float)
+            else tensor_sf,
         ],
         out_types=[
             TensorType(

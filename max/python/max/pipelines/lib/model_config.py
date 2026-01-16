@@ -733,7 +733,11 @@ class MAXModelConfig(MAXModelConfigBase):
             ):
                 # TODO(AITLIB-137): replace this with more full featured logic.
                 # If we are running on an accelerator and the quantiziation encoding is not set, override to bfloat16.
-                if SupportedEncoding.float8_e4m3fn in supported_encodings:
+                if SupportedEncoding.float4_e2m1fnx2 in supported_encodings:
+                    self.quantization_encoding = (
+                        SupportedEncoding.float4_e2m1fnx2
+                    )
+                elif SupportedEncoding.float8_e4m3fn in supported_encodings:
                     self.quantization_encoding = SupportedEncoding.float8_e4m3fn
                 elif SupportedEncoding.bfloat16 in supported_encodings:
                     self.quantization_encoding = SupportedEncoding.bfloat16

@@ -181,6 +181,9 @@ class Float8Config:
     quant_method: str | None = None
     """The quantization method used (e.g., "fbgemm_fp8")."""
 
+    quant_algo: str | None = None
+    """Additional differentiator within same quant_method e.g. modelopt NVFP4 vs FP8"""
+
     @property
     def scales_granularity_mnk(self) -> tuple[int, int, int]:
         """Returns the weight and input scale granularities on M, N and K axis."""
