@@ -1,5 +1,7 @@
 # Inferring Parameters from Other Parameters
 
+**Status**: Implemented.
+
 A common feature in programming language with generics is the ability to infer
 the value of generics/templates/parameters from the argument types. Consider
 C++:

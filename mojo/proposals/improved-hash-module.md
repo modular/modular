@@ -1,4 +1,6 @@
-# Improve hash module
+# Improve Hash Module
+
+**Status**: Implemented.
 
 Current implementation of the hash module in standard library reflex the
 implementation of the Python hash module, which by itself is a good idea,

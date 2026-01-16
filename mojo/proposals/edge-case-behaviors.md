@@ -1,6 +1,6 @@
-# Edge cases in the Mojo language and standard library
+# Edge Cases in the Mojo Language and Standard Library
 
-Status: Draft, living document
+**Status**: Draft (living document).
 
 This doc proposal serves as a place to define and explain behaviors that
 may be puzzling or differ from user's expectation.

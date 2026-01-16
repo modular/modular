@@ -1,6 +1,8 @@
-# Upgrading “Trivial”
+# Upgrading "Trivial"
 
-April 2025. Status: Proposed, not implemented.
+**Status**: Partially Implemented.
+
+Date: April 2025
 
 The `@register_passable("trivial")` decorator on struct declarations were added
 early in the evolution of Mojo as a way to bring up the language, when

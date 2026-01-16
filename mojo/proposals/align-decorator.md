@@ -1,10 +1,10 @@
 # `@align(N)` Decorator for Struct Alignment
 
+**Status**: Accepted.
+
 Author: Joe Loser
 
 Date: January 5, 2026
-
-Status: Accepted
 
 ## Summary
 

@@ -1,8 +1,10 @@
-# Canonicalize APIs around Int
+# Canonicalize APIs around `Int`
+
+**Status**: Partially Implemented.
 
 Author: Laszlo Kindrat
-Date: Dec 15, 2025
-Status: Proposal.
+
+Date: December 15, 2025
 
 ## Background
 

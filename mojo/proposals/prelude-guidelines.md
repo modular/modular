@@ -1,8 +1,10 @@
 # What goes in the Mojo prelude (and why)?
 
+**Status**: Implemented (living policy document).
+
 Author: Connor Gray, Laszlo Kindrat, Joe Loser
+
 Date: July 15, 2025
-Status: Living policy document.
 
 ## Background
 

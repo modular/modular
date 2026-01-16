@@ -1,5 +1,7 @@
 # `UnsafePointer` v2
 
+**Status**: Partially Implemented.
+
 ## Motivation
 
 As Mojo’s standard library matures, a few foundational types need to be

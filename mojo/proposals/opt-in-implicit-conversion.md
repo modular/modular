@@ -1,5 +1,7 @@
 # Opt-in Implicit Conversion
 
+**Status**: Implemented.
+
 ## Background
 
 `Conversion`: Any mechanism which allows a value of type `S` to be treated as a

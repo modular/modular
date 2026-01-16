@@ -1,5 +1,7 @@
 # Trait Composition
 
+**Status**: Implemented.
+
 ## Motivation
 
 Implicit conformance currently serves as a workaround for trait composition in
