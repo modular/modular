@@ -57,6 +57,28 @@ from .ep_kernels import (
 logger = logging.getLogger("max.pipelines")
 
 
+def get_ep_local_sync_counters_size(n_experts: int) -> int:
+    """Returns the total size in Int32 elements needed for EP sync counters.
+
+    This must match the EPLocalSyncCounters.total_size() in ep_comm.mojo.
+
+    Memory Layout (all sizes in Int32 elements):
+    - dispatch: 2 * n_experts (offset 0)
+    - dispatch_cb/combine: 2 * n_experts (offset 2 * n_experts)
+    - combine_cb: 2 * n_experts (offset 4 * n_experts)
+
+    Args:
+        n_experts: Number of experts in the model.
+
+    Returns:
+        Total size in Int32 elements needed for all EP sync counters.
+    """
+    dispatch_size = 2 * n_experts
+    dispatch_cb_size = 2 * n_experts
+    combine_cb_size = 2 * n_experts
+    return dispatch_size + dispatch_cb_size + combine_cb_size
+
+
 class EPBatchManager:
     """Batch manager for Expert Parallelism (EP).
 
@@ -156,7 +178,7 @@ class EPBatchManager:
         return [
             BufferType(
                 DType.int32,
-                [2 * self.config.n_experts],
+                [get_ep_local_sync_counters_size(self.config.n_experts)],
                 device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
             )
             for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
@@ -472,8 +494,10 @@ class EPCommInitializer:
             config: EP configuration.
         """
         self.config = config
-        # Each expert needs 2 atomic counters
-        self.atomic_counter_size = 2 * self.config.n_experts
+        # Allocated based on the EPLocalSyncCounters struct in ep_comm.mojo
+        self.atomic_counter_size = get_ep_local_sync_counters_size(
+            self.config.n_experts
+        )
 
         # Create atomic counters for each GPU in each buffer group
         self.atomic_counters = [
@@ -495,12 +519,14 @@ class EPCommInitializer:
         Returns:
             Graph: Computation graph for EP initialization.
         """
+
+        atomic_counter_shape = self.atomic_counters[0].shape
         with Graph(
             "ep_init",
             input_types=[
                 BufferType(
                     DType.int32,
-                    [2 * self.config.n_experts],
+                    atomic_counter_shape,
                     device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
                 )
                 for i in range(NUM_GROUPS * self.config.n_gpus_per_node)

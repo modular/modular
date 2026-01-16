@@ -39,6 +39,11 @@ def verify_ep_dispatch_results(
     atomic_counters_torch = [
         torch.from_dlpack(counter) for counter in atomic_counters
     ]
+    # dispatch_cb counters start at offset dispatch_size = 2 * n_experts
+    dispatch_size = 2 * config.n_experts
+    dispatch_cb_counters_torch = [
+        counter[dispatch_size:] for counter in atomic_counters_torch
+    ]
 
     # Parse results according to layout:
     # (tokens, row_offsets, expert_ids, dummy, src_token_info) * num_devices
@@ -57,7 +62,7 @@ def verify_ep_dispatch_results(
         row_offsets_torch = torch.from_dlpack(row_offsets)
         expert_ids_torch = torch.from_dlpack(expert_ids)
         src_token_info_torch = torch.from_dlpack(src_token_info)
-        atomic_counter_torch = atomic_counters_torch[device_idx]
+        dispatch_cb_counter_torch = dispatch_cb_counters_torch[device_idx]
 
         # Verify outputs for each expert on this device
         for expert_idx in range(n_local_experts):
@@ -73,7 +78,7 @@ def verify_ep_dispatch_results(
                 # Find which remote rank this token came from using atomic counters
                 while (
                     remote_rank < n_devices
-                    and atomic_counter_torch[
+                    and dispatch_cb_counter_torch[
                         2 * (curr_local_expert * n_devices + remote_rank)
                     ]
                     <= token_idx + EP_DATA_READY_FLAG

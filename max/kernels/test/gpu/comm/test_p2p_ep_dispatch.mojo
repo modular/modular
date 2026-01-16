@@ -40,6 +40,7 @@ from layout.runtime_layout import RuntimeLayout
 from shmem.ep_comm import (
     BF16TokenFormat,
     EP_DATA_READY_FLAG,
+    EPLocalSyncCounters,
     dispatch_cb_kernel,
     dispatch_kernel,
 )
@@ -129,7 +130,9 @@ fn test_dispatch[
         send_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[DType.uint8](n_slots * n_tokens_per_rank * msg_bytes))
         recv_bufs_list.append(ctx.enqueue_create_buffer[DType.uint8](n_slots * max_recv_num_tokens * msg_bytes))
         recv_count_bufs_list.append(ctx.enqueue_create_buffer[DType.uint64](n_slots * n_experts))
-        atomic_counters_list.append(ctx.enqueue_create_buffer[DType.int32](n_slots * 2 * n_experts))
+        atomic_counters_list.append(ctx.enqueue_create_buffer[DType.int32](
+            n_slots * EPLocalSyncCounters[n_experts].total_size()
+        ))
         ctx.enqueue_memset(atomic_counters_list[i], Int32(0))
         ctx.enqueue_memset(recv_count_bufs_list[i], UInt64.MAX_FINITE)
 
@@ -203,8 +206,8 @@ fn test_dispatch[
 
     @always_inline
     @parameter
-    fn get_atomic_counters_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[Int32, MutExternalOrigin]) raises:
-        return type_of(result)(atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * 2 * n_experts)
+    fn get_atomic_counters(dev_idx: Int, slot_idx: Int, out result: EPLocalSyncCounters[n_experts]) raises:
+        return EPLocalSyncCounters[n_experts](atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * EPLocalSyncCounters[n_experts].total_size())
 
     @always_inline
     @parameter
@@ -311,7 +314,7 @@ fn test_dispatch[
             get_send_buf_ptr(dev_idx, slot_idx),
             recv_bufs_inputs[slot_idx],
             recv_count_bufs_inputs[slot_idx],
-            get_atomic_counters_ptr(dev_idx, slot_idx),
+            get_atomic_counters(dev_idx, slot_idx),
             Int32(dev_idx),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -328,7 +331,7 @@ fn test_dispatch[
             get_src_token_info_tensor(dev_idx, slot_idx),
             recv_bufs_inputs[slot_idx][dev_idx],
             recv_count_bufs_inputs[slot_idx][dev_idx],
-            get_atomic_counters_ptr(dev_idx, slot_idx),
+            get_atomic_counters(dev_idx, slot_idx),
             Int32(dev_idx),
             OptionalReg[
                 LayoutTensor[input_type, Layout.row_major[2](), ImmutAnyOrigin]
@@ -518,7 +521,9 @@ fn test_dispatch[
         var host_src_token_info = alloc[Int32](
             n_slots * max_recv_num_tokens * 2
         )
-        var host_atomic_counter = alloc[Int32](n_slots * 2 * n_experts)
+        var host_atomic_counter = alloc[Int32](
+            n_slots * EPLocalSyncCounters[n_experts].total_size()
+        )
 
         # Copy device outputs to host
         ctx.enqueue_copy(host_output, device_output_bufs_list[dev_idx])
@@ -545,9 +550,10 @@ fn test_dispatch[
             var slot_src_token_info = (
                 host_src_token_info + slot_idx * max_recv_num_tokens * 2
             )
-            var slot_atomic_counter = (
-                host_atomic_counter + slot_idx * 2 * n_experts
-            )
+            var slot_dispatch_cb_counter = EPLocalSyncCounters[n_experts](
+                host_atomic_counter
+                + slot_idx * EPLocalSyncCounters[n_experts].total_size()
+            ).get_dispatch_cb_ptr()
 
             # Check if we have received the correct number of tokens
             var expert_start_idx = n_local_experts * dev_idx
@@ -590,7 +596,7 @@ fn test_dispatch[
                 ):
                     # Find the remote rank that sent this token
                     while (
-                        slot_atomic_counter[
+                        slot_dispatch_cb_counter[
                             2 * (curr_local_expert * n_ranks + remote_rank)
                         ]
                         <= token_idx + EP_DATA_READY_FLAG

@@ -35,6 +35,7 @@ from shmem import *
 from shmem.ep_comm import (
     BlockwiseFP8TokenFormat,
     EP_DATA_READY_FLAG,
+    EPLocalSyncCounters,
     dispatch_cb_kernel,
     dispatch_kernel,
 )
@@ -148,7 +149,9 @@ fn test_dispatch[
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )
-    var atomic_counter = ctx.enqueue_create_buffer[DType.int32](2 * n_experts)
+    var atomic_counter = ctx.enqueue_create_buffer[DType.int32](
+        EPLocalSyncCounters[n_experts].total_size()
+    )
 
     ctx.enqueue_memset(recv_count_buf, UInt64.MAX_FINITE)
     ctx.enqueue_memset(atomic_counter, Int32(0))
@@ -305,7 +308,7 @@ fn test_dispatch[
             send_buf,
             recv_buf_ptrs,
             recv_count_ptrs,
-            atomic_counter,
+            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
             Int32(my_rank),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -322,7 +325,7 @@ fn test_dispatch[
             src_token_info_tensor,
             recv_buf,
             recv_count,
-            atomic_counter,
+            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
             Int32(my_rank),
             OptionalReg[
                 LayoutTensor[input_type, Layout.row_major[2](), ImmutAnyOrigin]
@@ -407,8 +410,13 @@ fn test_dispatch[
             var host_src_token_info = alloc[Int32](max_recv_tokens * 2)
             ctx.enqueue_copy(host_src_token_info, device_src_token_info_buf)
 
-            var host_atomic_counter = alloc[Int32](2 * n_experts)
+            var host_atomic_counter = alloc[Int32](
+                EPLocalSyncCounters[n_experts].total_size()
+            )
             ctx.enqueue_copy(host_atomic_counter, atomic_counter)
+            var host_dispatch_cb_counter = EPLocalSyncCounters[n_experts](
+                host_atomic_counter
+            ).get_dispatch_cb_ptr()
 
             ctx.synchronize()
 
@@ -466,7 +474,7 @@ fn test_dispatch[
                     host_row_offsets[expert_idx + 1],
                 ):
                     while (
-                        host_atomic_counter[
+                        host_dispatch_cb_counter[
                             2 * (curr_local_expert * n_ranks + remote_rank)
                         ]
                         <= Int32(token_idx) + EP_DATA_READY_FLAG

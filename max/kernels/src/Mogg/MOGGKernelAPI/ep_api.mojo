@@ -49,6 +49,7 @@ from shmem import (
 from shmem.ep_comm import (
     BF16TokenFormat,
     BlockwiseFP8TokenFormat,
+    EPLocalSyncCounters,
     dispatch_kernel,
     dispatch_cb_kernel,
     combine_kernel,
@@ -190,6 +191,10 @@ struct Struct_ep_init:
 
         # Initialize atomic counters to zero for synchronization
         # These counters coordinate work between different thread blocks.
+        __comptime_assert (
+            atomic_counters_0.static_spec.to_layout().size()
+            == EPLocalSyncCounters[n_experts].total_size()
+        ), "Atomic counters 0 size doesn't match expected size."
         var atomic_counters_0_buf = DeviceBuffer(
             gpu_ctx,
             atomic_counters_0._ptr,
@@ -197,6 +202,11 @@ struct Struct_ep_init:
             owning=False,
         )
         gpu_ctx.enqueue_memset(atomic_counters_0_buf, Int32(0))
+
+        __comptime_assert (
+            atomic_counters_1.static_spec.to_layout().size()
+            == EPLocalSyncCounters[n_experts].total_size()
+        ), "Atomic counters 1 size doesn't match expected size."
         var atomic_counters_1_buf = DeviceBuffer(
             gpu_ctx,
             atomic_counters_1._ptr,
@@ -269,7 +279,7 @@ struct Struct_ep_dispatch:
         //,
         target: StaticString,
     ](
-        atomic_counters_0: MutableInputTensor[dtype = DType.int32, rank=1],
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
         input_tokens: InputTensor[dtype=input_dtype, rank=2],
         topk_ids: InputTensor[dtype = DType.int32, rank=2],
         send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
@@ -295,8 +305,7 @@ struct Struct_ep_dispatch:
             target: Target.
 
         Arguments:
-            atomic_counters_0: Synchronization counters for buffer group 0.
-                Used to coordinate between different thread blocks.
+            atomic_counters: EP kernel synchronization counters.
             input_tokens: Tokens to dispatch to experts.
             topk_ids: Expert assignments from router.
             send_ptrs: Send buffer pointers for each local GPU.
@@ -397,8 +406,8 @@ struct Struct_ep_dispatch:
                 UnsafePointer[UInt64, MutExternalOrigin], n_gpus_per_node
             ](fill={})
 
-            var atomic_counters_ptr = UnsafePointer[Int32, MutExternalOrigin](
-                atomic_counters_0._ptr
+            var ep_counters = EPLocalSyncCounters[n_experts](
+                atomic_counters._ptr
             )
 
             @parameter
@@ -417,7 +426,7 @@ struct Struct_ep_dispatch:
                 send_ptr,
                 recv_ptrs_arr,
                 recv_count_ptrs_arr,
-                atomic_counters_ptr,
+                ep_counters,
                 my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -444,7 +453,7 @@ struct Struct_ep_dispatch_cb:
         expert_ids: OutputTensor[dtype = DType.int32, rank=1],
         expert_usage_stats_host: OutputTensor[dtype = DType.uint32, rank=1],
         src_info: OutputTensor[dtype = DType.int32, rank=2],
-        atomic_counters_0: MutableInputTensor[dtype = DType.int32, rank=1],
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
         recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
         recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
         context: DeviceContextPtr,
@@ -473,7 +482,7 @@ struct Struct_ep_dispatch_cb:
             expert_ids: Local expert IDs for grouped matmul.
             expert_usage_stats_host: Statistics for grouped matmul kernel.
             src_info: Source routing information for combine phase.
-            atomic_counters_0: Synchronization counters from dispatch phase.
+            atomic_counters: EP kernel synchronization counters.
             recv_ptrs: Receive buffer pointers for each local GPU.
             recv_count_ptrs: Receive count buffer pointers for each local GPU.
             context: Device context pointer
@@ -551,8 +560,8 @@ struct Struct_ep_dispatch_cb:
             var recv_count_ptr = UnsafePointer[UInt64, MutExternalOrigin](
                 unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
-            var atomic_counters_ptr = UnsafePointer[Int32, MutExternalOrigin](
-                atomic_counters_0._ptr
+            var ep_counters = EPLocalSyncCounters[n_experts](
+                atomic_counters._ptr
             )
 
             gpu_ctx.enqueue_function[dispatch_cb, dispatch_cb](
@@ -562,7 +571,7 @@ struct Struct_ep_dispatch_cb:
                 src_info_tensor,
                 recv_buf_ptr,
                 recv_count_ptr,
-                atomic_counters_ptr,
+                ep_counters,
                 my_rank,
                 OptionalReg[
                     LayoutTensor[
@@ -603,7 +612,7 @@ struct Struct_ep_dispatch_cb_fused_shared_expert:
         expert_ids: OutputTensor[dtype = DType.int32, rank=1],
         expert_usage_stats_host: OutputTensor[dtype = DType.uint32, rank=1],
         src_info: OutputTensor[dtype = DType.int32, rank=2],
-        atomic_counters_0: MutableInputTensor[dtype = DType.int32, rank=1],
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
         recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
         recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
         input_tokens: InputTensor[dtype=shared_expert_input_dtype, rank=2],
@@ -635,7 +644,7 @@ struct Struct_ep_dispatch_cb_fused_shared_expert:
             expert_ids: Local expert IDs for grouped matmul.
             expert_usage_stats_host: Statistics for grouped matmul kernel.
             src_info: Source routing information for combine phase.
-            atomic_counters_0: Synchronization counters from dispatch phase.
+            atomic_counters: EP kernel synchronization counters.
             recv_ptrs: Receive buffer pointers for each local GPU.
             recv_count_ptrs: Receive count buffer pointers for each local GPU.
             input_tokens: Input tokens for the shared experts.
@@ -728,8 +737,8 @@ struct Struct_ep_dispatch_cb_fused_shared_expert:
             var recv_count_ptr = UnsafePointer[UInt64, MutExternalOrigin](
                 unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
-            var atomic_counters_ptr = UnsafePointer[Int32, MutExternalOrigin](
-                atomic_counters_0._ptr
+            var ep_counters = EPLocalSyncCounters[n_experts](
+                atomic_counters._ptr
             )
 
             gpu_ctx.enqueue_function[dispatch_cb, dispatch_cb](
@@ -739,7 +748,7 @@ struct Struct_ep_dispatch_cb_fused_shared_expert:
                 src_info_tensor,
                 recv_buf_ptr,
                 recv_count_ptr,
-                atomic_counters_ptr,
+                ep_counters,
                 my_rank,
                 maybe_input_tokens,
                 grid_dim=hw_info.sm_count,
@@ -773,7 +782,7 @@ struct Struct_ep_dispatch_fp8:
         //,
         target: StaticString,
     ](
-        atomic_counters_0: MutableInputTensor[dtype = DType.int32, rank=1],
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
         input_tokens: InputTensor[dtype=input_dtype, rank=2],
         topk_ids: InputTensor[dtype = DType.int32, rank=2],
         send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
@@ -802,8 +811,7 @@ struct Struct_ep_dispatch_fp8:
             target: Target.
 
         Arguments:
-            atomic_counters_0: Synchronization counters for buffer group 0.
-                Used to coordinate between different thread blocks.
+            atomic_counters: EP kernel synchronization counters.
             input_tokens: Tokens to dispatch to experts.
             topk_ids: Expert assignments from router.
             send_ptrs: Send buffer pointers for each local GPU.
@@ -916,8 +924,8 @@ struct Struct_ep_dispatch_fp8:
                 UnsafePointer[UInt64, MutExternalOrigin], n_gpus_per_node
             ](fill={})
 
-            var atomic_counters_ptr = UnsafePointer[Int32, MutExternalOrigin](
-                atomic_counters_0._ptr
+            var ep_counters = EPLocalSyncCounters[n_experts](
+                atomic_counters._ptr
             )
 
             @parameter
@@ -936,7 +944,7 @@ struct Struct_ep_dispatch_fp8:
                 send_buf,
                 recv_ptrs_arr,
                 recv_count_ptrs_arr,
-                atomic_counters_ptr,
+                ep_counters,
                 my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -966,7 +974,7 @@ struct Struct_ep_dispatch_cb_fp8:
         expert_ids: OutputTensor[dtype = DType.int32, rank=1],
         expert_usage_stats_host: OutputTensor[dtype = DType.uint32, rank=1],
         src_info: OutputTensor[dtype = DType.int32, rank=2],
-        atomic_counters_0: MutableInputTensor[dtype = DType.int32, rank=1],
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
         recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
         recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
         context: DeviceContextPtr,
@@ -998,7 +1006,7 @@ struct Struct_ep_dispatch_cb_fp8:
             expert_ids: Local expert IDs for grouped matmul.
             expert_usage_stats_host: Statistics for grouped matmul kernel.
             src_info: Source routing information for combine phase.
-            atomic_counters_0: Synchronization counters from dispatch phase.
+            atomic_counters: EP kernel synchronization counters.
             recv_ptrs: Receive buffer pointers for each local GPU.
             recv_count_ptrs: Receive count buffer pointers for each local GPU.
             context: Device context pointer
@@ -1086,8 +1094,8 @@ struct Struct_ep_dispatch_cb_fp8:
             var recv_count_ptr = UnsafePointer[UInt64, MutExternalOrigin](
                 unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
-            var atomic_counters_ptr = UnsafePointer[Int32, MutExternalOrigin](
-                atomic_counters_0._ptr
+            var ep_counters = EPLocalSyncCounters[n_experts](
+                atomic_counters._ptr
             )
 
             gpu_ctx.enqueue_function[dispatch_cb, dispatch_cb](
@@ -1097,7 +1105,7 @@ struct Struct_ep_dispatch_cb_fp8:
                 src_info_tensor,
                 recv_buf_ptr,
                 recv_count_ptr,
-                atomic_counters_ptr,
+                ep_counters,
                 my_rank,
                 OptionalReg[
                     LayoutTensor[
@@ -1141,7 +1149,7 @@ struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
         expert_ids: OutputTensor[dtype = DType.int32, rank=1],
         expert_usage_stats_host: OutputTensor[dtype = DType.uint32, rank=1],
         src_info: OutputTensor[dtype = DType.int32, rank=2],
-        atomic_counters_0: MutableInputTensor[dtype = DType.int32, rank=1],
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
         recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
         recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
         input_tokens: InputTensor[dtype=shared_expert_input_dtype, rank=2],
@@ -1176,7 +1184,7 @@ struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
             expert_ids: Local expert IDs for grouped matmul.
             expert_usage_stats_host: Statistics for grouped matmul kernel.
             src_info: Source routing information for combine phase.
-            atomic_counters_0: Synchronization counters from dispatch phase.
+            atomic_counters: EP kernel synchronization counters.
             recv_ptrs: Receive buffer pointers for each local GPU.
             recv_count_ptrs: Receive count buffer pointers for each local GPU.
             input_tokens: Input tokens for the shared experts.
@@ -1280,8 +1288,8 @@ struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
             var recv_count_ptr = UnsafePointer[UInt64, MutExternalOrigin](
                 unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
-            var atomic_counters_ptr = UnsafePointer[Int32, MutExternalOrigin](
-                atomic_counters_0._ptr
+            var ep_counters = EPLocalSyncCounters[n_experts](
+                atomic_counters._ptr
             )
 
             gpu_ctx.enqueue_function[dispatch_cb, dispatch_cb](
@@ -1291,7 +1299,7 @@ struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
                 src_info_tensor,
                 recv_buf_ptr,
                 recv_count_ptr,
-                atomic_counters_ptr,
+                ep_counters,
                 my_rank,
                 maybe_input_tokens,
                 grid_dim=hw_info.sm_count,
@@ -1327,7 +1335,7 @@ struct Struct_ep_combine:
         //,
         target: StaticString,
     ](
-        atomic_counters_1: MutableInputTensor[dtype = DType.int32, rank=1],
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
         input_tokens: InputTensor[dtype=combine_dtype, rank=2],
         src_info: InputTensor[dtype = DType.int32, rank=2],
         send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
@@ -1354,7 +1362,7 @@ struct Struct_ep_combine:
             target: Target.
 
         Arguments:
-            atomic_counters_1: Synchronization counters for buffer group 1.
+            atomic_counters: EP kernel synchronization counters.
                 Used to coordinate between different thread blocks.
             input_tokens: Expert output tokens to send back to original devices.
             src_info: Source routing information from dispatch phase.
@@ -1442,8 +1450,8 @@ struct Struct_ep_combine:
                 UnsafePointer[UInt64, MutExternalOrigin], n_gpus_per_node
             ](fill={})
 
-            var atomic_counters_1_ptr = UnsafePointer[Int32, MutExternalOrigin](
-                atomic_counters_1._ptr
+            var ep_counters = EPLocalSyncCounters[n_experts](
+                atomic_counters._ptr
             )
 
             @parameter
@@ -1462,7 +1470,7 @@ struct Struct_ep_combine:
                 send_ptr,
                 recv_ptrs_arr,
                 recv_count_ptrs_arr,
-                atomic_counters_1_ptr,
+                ep_counters,
                 my_rank,
                 OptionalReg[
                     LayoutTensor[
@@ -1490,7 +1498,7 @@ struct Struct_ep_combine_fused_shared_expert:
         target: StaticString,
     ](
         output_tokens: OutputTensor[dtype=combine_dtype, rank=2],
-        atomic_counters_1: MutableInputTensor[dtype = DType.int32, rank=1],
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
         input_tokens: InputTensor[dtype=combine_dtype, rank=2],
         src_info: InputTensor[dtype = DType.int32, rank=2],
         send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
@@ -1519,7 +1527,7 @@ struct Struct_ep_combine_fused_shared_expert:
 
         Arguments:
             output_tokens: Output tokens for the shared experts.
-            atomic_counters_1: Synchronization counters for buffer group 1.
+            atomic_counters: EP kernel synchronization counters.
                 Used to coordinate between different thread blocks.
             input_tokens: Expert output tokens to send back to original devices.
             src_info: Source routing information from dispatch phase.
@@ -1622,8 +1630,8 @@ struct Struct_ep_combine_fused_shared_expert:
                 UnsafePointer[UInt64, MutExternalOrigin], n_gpus_per_node
             ](fill={})
 
-            var atomic_counters_1_ptr = UnsafePointer[Int32, MutExternalOrigin](
-                atomic_counters_1._ptr
+            var ep_counters = EPLocalSyncCounters[n_experts](
+                atomic_counters._ptr
             )
 
             @parameter
@@ -1642,7 +1650,7 @@ struct Struct_ep_combine_fused_shared_expert:
                 send_ptr,
                 recv_ptrs_arr,
                 recv_count_ptrs_arr,
-                atomic_counters_1_ptr,
+                ep_counters,
                 my_rank,
                 maybe_output_tokens,
                 grid_dim=hw_info.sm_count,
@@ -1669,7 +1677,7 @@ struct Struct_ep_combine_cb:
         target: StaticString,
     ](
         output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2],
-        atomic_counters_1: MutableInputTensor[dtype = DType.int32, rank=1],
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
         recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
         recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
         router_weights: InputTensor[dtype=router_weights_dtype, rank=2],
@@ -1696,7 +1704,8 @@ struct Struct_ep_combine_cb:
 
         Arguments:
             output_tokens: Final output tensor with expert results.
-            atomic_counters_1: Synchronization counters from combine phase.
+            atomic_counters: EP kernel synchronization counters.
+                Used to coordinate between different thread blocks.
             recv_ptrs: Receive buffer pointers for each local GPU.
             recv_count_ptrs: Receive count buffer pointers for each local GPU.
             router_weights: Router weights for the current device.
@@ -1786,15 +1795,15 @@ struct Struct_ep_combine_cb:
             var recv_count_ptr = UnsafePointer[UInt64, MutExternalOrigin](
                 unsafe_from_address=Int(recv_count_ptrs[gpu_id])
             )
-            var atomic_counters_1_ptr = UnsafePointer[Int32, MutExternalOrigin](
-                atomic_counters_1._ptr
+            var ep_counters = EPLocalSyncCounters[n_experts](
+                atomic_counters._ptr
             )
 
             gpu_ctx.enqueue_function[combine_cb, combine_cb](
                 output_tokens_tensor,
                 recv_buf_ptr,
                 recv_count_ptr,
-                atomic_counters_1_ptr,
+                ep_counters,
                 my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,

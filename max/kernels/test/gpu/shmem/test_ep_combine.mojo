@@ -35,6 +35,7 @@ from shmem import *
 from shmem._mpi import MPI_Finalize
 from shmem.ep_comm import (
     BF16TokenFormat,
+    EPLocalSyncCounters,
     combine_cb_kernel,
     combine_kernel,
     dispatch_cb_kernel,
@@ -138,7 +139,9 @@ fn test_combine[
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )
-    var atomic_counter = ctx.enqueue_create_buffer[DType.int32](2 * n_experts)
+    var atomic_counter = ctx.enqueue_create_buffer[DType.int32](
+        EPLocalSyncCounters[n_experts].total_size()
+    )
 
     ctx.enqueue_memset(recv_count_buf, UInt64.MAX_FINITE)
     ctx.enqueue_memset(atomic_counter, Int32(0))
@@ -327,7 +330,7 @@ fn test_combine[
             send_buf,
             recv_buf_ptrs,
             recv_count_ptrs,
-            atomic_counter,
+            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
             Int32(my_rank),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -340,7 +343,7 @@ fn test_combine[
             src_token_info_tensor,
             recv_buf,
             recv_count,
-            atomic_counter,
+            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
             Int32(my_rank),
             OptionalReg[
                 LayoutTensor[input_type, Layout.row_major[2](), ImmutAnyOrigin]
@@ -370,7 +373,7 @@ fn test_combine[
             recv_buf,
             combine_recv_buf_ptrs,
             combine_recv_count_ptrs,
-            atomic_counter,
+            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
             Int32(my_rank),
             OptionalReg[
                 LayoutTensor[input_type, Layout.row_major[2](), MutAnyOrigin]
@@ -387,7 +390,7 @@ fn test_combine[
             output_2_tensor,
             send_buf,
             recv_count,
-            atomic_counter,
+            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
             Int32(my_rank),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,

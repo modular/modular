@@ -496,6 +496,125 @@ struct BlockwiseFP8TokenFormat[
             )
 
 
+# ===-----------------------------------------------------------------------===#
+# EP Atomic Counters
+# ===-----------------------------------------------------------------------===#
+
+
+@register_passable("trivial")
+struct EPLocalSyncCounters[n_experts: Int](DevicePassable):
+    """Manages atomic counters for EP kernel synchronization within a device.
+
+    This struct provides dedicated atomic counter space for each of the four
+    EP kernels: dispatch, dispatch_cb, combine, and combine_cb. Each kernel
+    has its own memory region to avoid conflicts, except dispatch_cb and combine
+    which must share memory since combine reads data that dispatch_cb writes.
+
+    The struct is used to synchronize between thread blocks within the same device.
+
+    Memory Layout (all sizes in Int32 elements):
+    - dispatch: 2 * n_experts
+    - dispatch_cb/combine: 2 * n_experts
+    - combine_cb: 2 * n_experts
+    """
+
+    var ptr: UnsafePointer[Int32, MutExternalOrigin]
+    """Base pointer to the allocated atomic counter memory."""
+
+    comptime device_type: AnyType = Self
+
+    @always_inline
+    fn __init__(out self, ptr: UnsafePointer[Int32]):
+        self.ptr = UnsafePointer[Int32, MutExternalOrigin](ptr)
+
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
+        """Convert the host type object to a device_type and store it at the
+        target address.
+
+        Args:
+            target: The target address to store the device type.
+        """
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return String("EPLocalSyncCounters[n_experts=", Self.n_experts, "]")
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
+
+    @always_inline
+    @staticmethod
+    fn dispatch_size() -> Int:
+        """Returns the size in Int32 elements needed by dispatch kernel."""
+        return 2 * Self.n_experts
+
+    @always_inline
+    @staticmethod
+    fn dispatch_cb_size() -> Int:
+        """Returns the size in Int32 elements needed by dispatch_cb kernel."""
+        return 2 * Self.n_experts
+
+    @always_inline
+    @staticmethod
+    fn combine_size() -> Int:
+        """Returns the size in Int32 elements needed by combine kernel."""
+        return 2 * Self.n_experts
+
+    @always_inline
+    @staticmethod
+    fn combine_cb_size() -> Int:
+        """Returns the size in Int32 elements needed by combine_cb kernel."""
+        return 2 * Self.n_experts
+
+    @always_inline
+    @staticmethod
+    fn total_size() -> Int:
+        """Returns the total size in Int32 elements needed for all counters."""
+
+        __comptime_assert (
+            Self.combine_size() == Self.dispatch_cb_size()
+        ), "combine_size must be equal to dispatch_cb_size"
+
+        # The combine_size it omitted because the combine kernel reuse the
+        # counters of dispatch_cb kernel.
+        return (
+            Self.dispatch_size()
+            + Self.dispatch_cb_size()
+            + Self.combine_cb_size()
+        )
+
+    @always_inline
+    fn get_dispatch_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
+        """Returns pointer to dispatch kernel atomic counters.
+
+        Layout:
+            [0, n_experts): reserved counters per expert
+            [n_experts, 2*n_experts): finished counters per expert
+        """
+        return self.ptr
+
+    @always_inline
+    fn get_dispatch_cb_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
+        """Returns pointer to dispatch_cb kernel atomic counters."""
+        return self.ptr + Self.dispatch_size()
+
+    @always_inline
+    fn get_combine_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
+        """Returns pointer to combine kernel atomic counters.
+
+        Note: Returns the same pointer as get_dispatch_cb_ptr() because
+        combine_kernel reads the offset/count data that dispatch_cb_kernel writes.
+        """
+        return self.ptr + Self.dispatch_size()
+
+    @always_inline
+    fn get_combine_cb_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
+        """Returns pointer to combine_cb kernel atomic counters."""
+        return self.ptr + Self.dispatch_size() + Self.dispatch_cb_size()
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
 )
@@ -522,7 +641,7 @@ fn dispatch_kernel[
     recv_count_ptrs: InlineArray[
         UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
     ],
-    atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
+    ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
 ):
     """
@@ -561,7 +680,7 @@ fn dispatch_kernel[
             each device in the p2p world. Each buffer is of shape
             `(n_local_experts, n_ranks)`. Need to be allocated using
             `shmem_alloc` if `use_shmem` is True.
-        atomic_counter: The pointer to the atomic counter.
+        ep_counters: EP atomic counters for kernel synchronization.
         my_rank: The rank of the current device.
     """
 
@@ -605,6 +724,7 @@ fn dispatch_kernel[
 
     # The reserved counter is incremented once a warp is ready to send.
     # The finished counter is incremented once the token is sent.
+    var atomic_counter = ep_counters.get_dispatch_ptr()
     var expert_reserved_counter = atomic_counter
     var expert_finished_counter = atomic_counter + n_experts
 
@@ -817,7 +937,7 @@ fn dispatch_cb_kernel[
     src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
     recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
     recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
-    atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
+    ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
     maybe_input_tokens: OptionalReg[
         LayoutTensor[
@@ -868,12 +988,13 @@ fn dispatch_cb_kernel[
         recv_count_p: The pointer to the receive count buffer. Need to be allocated using
             `shmem_alloc`. The underlying buffer is of shape
             `(n_local_experts, n_ranks)`.
-        atomic_counter: The pointer to the atomic counter.
+        ep_counters: EP atomic counters for kernel synchronization.
         my_rank: The rank of the current device.
         maybe_input_tokens: The optional input tokens for the shared experts.
             If fused_shared_expert is True, this will be used to load the
             input tokens for the shared experts.
     """
+    var atomic_counter = ep_counters.get_dispatch_cb_ptr()
     comptime n_local_experts = n_experts // n_ranks
     comptime n_warps = num_threads // WARP_SIZE
     comptime n_comm_sms = n_sms - n_aux_sms
@@ -1160,7 +1281,7 @@ fn combine_kernel[
     recv_count_ptrs: InlineArray[
         UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
     ],
-    atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
+    ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
     maybe_output_tokens: OptionalReg[
         LayoutTensor[input_type, Layout.row_major[2](), MutAnyOrigin]
@@ -1203,12 +1324,13 @@ fn combine_kernel[
         recv_count_ptrs: An array of pointers to the receive count buffers for
             each device in the p2p world. Each buffer is of shape
             `(n_local_experts, n_ranks)`.
-        atomic_counter: The pointer to the atomic counter.
+        ep_counters: EP atomic counters for kernel synchronization.
         my_rank: The rank of the current device.
         maybe_output_tokens: The optional output for the shared experts.
             If fused_shared_expert is True, this will be used to store the
             output tokens for the shared experts.
     """
+    var atomic_counter = ep_counters.get_combine_ptr()
     comptime n_local_experts = n_experts // n_ranks
     comptime n_warps = num_threads // WARP_SIZE
 
@@ -1427,7 +1549,7 @@ fn combine_cb_kernel[
     ],
     recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
     recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
-    atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
+    ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
 ):
     """
@@ -1458,9 +1580,10 @@ fn combine_cb_kernel[
         recv_count_p: The pointer to the receive count buffer. Need to be allocated using
             `shmem_alloc`. The underlying buffer is of shape
             `(n_local_experts, n_ranks)`.
-        atomic_counter: The pointer to the atomic counter.
+        ep_counters: EP atomic counters for kernel synchronization.
         my_rank: The rank of the current device.
     """
+    var atomic_counter = ep_counters.get_combine_cb_ptr()
 
     comptime n_local_experts = n_experts // n_ranks
     comptime n_warps = num_threads // WARP_SIZE
