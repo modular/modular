@@ -306,7 +306,7 @@ class TextTokenizer(
 
         try:
             templated_message = self.delegate.apply_chat_template(
-                [msg.model_dump() for msg in messages],
+                [message.flatten_content() for message in messages],
                 tokenize=False,
                 tools=tools,
                 **chat_template_options,

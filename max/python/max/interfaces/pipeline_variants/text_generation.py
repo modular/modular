@@ -163,6 +163,23 @@ class TextGenerationRequestMessage(BaseModel):
 
         return normalized
 
+    def flatten_content(self) -> dict[str, str]:
+        if isinstance(self.content, str):
+            return {"role": str(self.role), "content": self.content}
+
+        content_str = ""
+        for content in self.content:
+            if isinstance(content, TextContentPart):
+                if content_str != "":
+                    content_str += "\n"
+
+                content_str += content.text
+
+            else:
+                raise ValueError("only text content can be flattened.")
+
+        return {"role": str(self.role), "content": content_str}
+
     @cached_property
     def number_of_images(self) -> int:
         """Returns the number of ImageContentPart instances in the message content."""
