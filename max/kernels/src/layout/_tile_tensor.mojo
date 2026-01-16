@@ -242,21 +242,21 @@ struct TileTensor[
 
     @always_inline("nodebug")
     fn load[
-        width: Int
+        width: Int, alignment: Int = 1
     ](self, tuple: Coord) -> SIMD[Self.dtype, width] where Variadic.size(
         tuple.element_types
     ) == Variadic.size(Self.shape_types):
-        return self.ptr.load[width=width](
+        return self.ptr.load[width=width, alignment=alignment](
             self.layout[linear_idx_type = Self.linear_idx_type](tuple)
         )
 
     @always_inline("nodebug")
     fn store[
-        width: Int
+        width: Int, alignment: Int = 1
     ](self, tuple: Coord, value: SIMD[Self.dtype, width]) where (
         tuple.rank == Self.rank
     ) & Self.mut:
-        self.ptr.mut_cast[True]().store(
+        self.ptr.mut_cast[True]().store[alignment=alignment](
             self.layout[linear_idx_type = Self.linear_idx_type](tuple), value
         )
 
