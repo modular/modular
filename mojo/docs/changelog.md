@@ -786,6 +786,9 @@ what we publish.
 - `StringableRaising` has been deprecated and its usages in the stdlib have
   been removed.
 
+- `StringSlice.char_length()` has been renamed `count_codepoints()`. The same
+  function was added to `String` and `StringLiteral`.
+
 ### Tooling changes
 
 - The Mojo compiler now supports the `-Werror` flag, which treats all warnings

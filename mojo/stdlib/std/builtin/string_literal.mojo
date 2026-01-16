@@ -323,6 +323,57 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return Int(mlir_value=__mlir_op.`pop.string.size`(self.value))
 
+    @always_inline
+    fn count_codepoints(self) -> Int:
+        """Calculates the length in Unicode codepoints encoded in the
+        UTF-8 representation of this string.
+
+        This is an O(n) operation, where n is the length of the string, as it
+        requires scanning the full string contents.
+
+        Returns:
+            The length in Unicode codepoints.
+
+        Examples:
+
+            Query the length of a string, in bytes and Unicode codepoints:
+
+            ```mojo
+            %# from testing import assert_equal
+
+            var s = StringSlice("ನಮಸ್ಕಾರ")
+            assert_equal(s.count_codepoints(), 7)
+            assert_equal(s.byte_length(), 21)
+            ```
+
+            Strings containing only ASCII characters have the same byte and
+            Unicode codepoint length:
+
+            ```mojo
+            %# from testing import assert_equal
+
+            var s = StringSlice("abc")
+            assert_equal(s.count_codepoints(), 3)
+            assert_equal(s.byte_length(), 3)
+            ```
+
+            The character length of a string with visual combining characters is
+            the length in Unicode codepoints, not grapheme clusters:
+
+            ```mojo
+            %# from testing import assert_equal
+
+            var s = StringSlice("á")
+            assert_equal(s.count_codepoints(), 2)
+            assert_equal(s.byte_length(), 3)
+            ```
+
+        Notes:
+            This method needs to traverse the whole string to count, so it has
+            a performance hit compared to using the byte length.
+        """
+        return self.as_string_slice().count_codepoints()
+
     @always_inline("nodebug")
     fn unsafe_ptr(
         self,

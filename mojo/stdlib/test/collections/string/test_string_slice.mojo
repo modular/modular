@@ -309,30 +309,30 @@ fn test_slice_len() raises:
     assert_equal(len(s1.codepoints()), 3)
 
 
-fn test_slice_char_length() raises:
+fn test_slice_count_codepoints() raises:
     var s0 = StringSlice("")
     assert_equal(s0.byte_length(), 0)
-    assert_equal(s0.char_length(), 0)
+    assert_equal(s0.count_codepoints(), 0)
 
     var s1 = StringSlice("foo")
     assert_equal(s1.byte_length(), 3)
-    assert_equal(s1.char_length(), 3)
+    assert_equal(s1.count_codepoints(), 3)
 
     # This string contains 1-, 2-, 3-, and 4-byte codepoint sequences.
     var s2 = EVERY_CODEPOINT_LENGTH_STR
     assert_equal(s2.byte_length(), 13)
-    assert_equal(s2.char_length(), 5)
+    assert_equal(s2.count_codepoints(), 5)
 
     # Just a bit of Zalgo text.
     var s3 = StringSlice("H̵͙̖̼̬̬̲̱͊̇̅͂̍͐͌͘͜͝")
     assert_equal(s3.byte_length(), 37)
-    assert_equal(s3.char_length(), 19)
+    assert_equal(s3.count_codepoints(), 19)
 
     # Character length is codepoints, not graphemes
     # This is thumbs up + a skin tone modifier codepoint.
     var s4 = StringSlice("👍🏻")
     assert_equal(s4.byte_length(), 8)
-    assert_equal(s4.char_length(), 2)
+    assert_equal(s4.count_codepoints(), 2)
     # TODO: assert_equal(s4.grapheme_count(), 1)
 
 
@@ -956,7 +956,7 @@ def test_chars_iter():
     # sequence of 2 codepoints.
     var s2 = StringSlice("á")
     assert_equal(s2.byte_length(), 3)
-    assert_equal(s2.char_length(), 2)
+    assert_equal(s2.count_codepoints(), 2)
 
     var iter = s2.codepoints()
     assert_equal(iter.__next__(), Codepoint.ord("a"))
@@ -969,7 +969,7 @@ def test_chars_iter():
     # sequences.
     var s3 = EVERY_CODEPOINT_LENGTH_STR
     assert_equal(s3.byte_length(), 13)
-    assert_equal(s3.char_length(), 5)
+    assert_equal(s3.count_codepoints(), 5)
     var s3_iter = s3.codepoints()
 
     # Iterator __len__ returns length in codepoints, not bytes.
