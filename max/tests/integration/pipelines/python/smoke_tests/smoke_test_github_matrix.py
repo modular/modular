@@ -53,16 +53,30 @@ MODELS = {
         "max",  # Wait for 26.1
     ],
     # E2EOPT-571: DeepSeek v2 lite chat not working on MAX
-    "deepseek-ai/deepseek-v2-lite-chat": ["max-ci", "max", "multi"],
-    "google/gemma-3-1b-it": ["multi"],
+    "deepseek-ai/deepseek-v2-lite-chat": [
+        "max-ci",
+        "max",
+        "multi",
+        "vllm@B200",
+    ],  # vLLM 0.13.0 FlashInfer MLA issue
+    "google/gemma-3-1b-it": [
+        "multi",
+        "vllm@B200",
+    ],  # FlashInfer block_size 16 + head_size 256 bug
     "google/gemma-3-12b-it": ["multi"],
     "google/gemma-3-27b-it": [],
     "meta-llama/llama-3.1-8b-instruct": ["multi"],
     "meta-llama/llama-3.2-1b-instruct": ["multi"],
     "microsoft/phi-3.5-mini-instruct": ["multi"],
     "microsoft/phi-4": ["multi"],
-    "mistralai/mistral-nemo-instruct-2407": ["multi"],
-    "mistralai/mistral-small-3.1-24b-instruct-2503": ["multi"],
+    "mistralai/mistral-nemo-instruct-2407": [
+        "multi",
+        "vllm",
+    ],  # vLLM 0.13.0 server crash
+    "mistralai/mistral-small-3.1-24b-instruct-2503": [
+        "multi",
+        "vllm",
+    ],  # vLLM 0.13.0 server crash
     "opengvlab/internvl3-8b-instruct": [
         "multi",
         "max@MI355",  # 26.1
@@ -70,7 +84,6 @@ MODELS = {
     ],
     "opengvlab/internvl3_5-8b-instruct": [
         "multi",
-        "vllm@B200",
         "max",
         "sglang",  # Insufficient multimodal embedding length (internvl3 bug)
     ],
