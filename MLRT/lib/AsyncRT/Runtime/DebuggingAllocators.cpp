@@ -10,6 +10,7 @@
 
 #include "MLRT/AsyncRT/Runtime/Allocator.h"
 #include "Support/ADT/ConcurrentAppendingVector.h"
+#include "Support/Configuration.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Process.h"
@@ -36,6 +37,63 @@ constexpr bool kCaptureMalloc = true;
 
 using namespace M;
 using namespace AsyncRT;
+
+AllocatorOptions AllocatorOptions::fromStr(StringRef str) {
+  AllocatorOptions allocatorOptions;
+  SmallVector<StringRef, 2> parts;
+  str.trim().split(parts, ':');
+  switch (parts.size()) {
+  case 1:
+    if (parts[0] == "malloc")
+      allocatorOptions.baseAllocator = AllocatorOptions::kMallocAllocator;
+    else if (parts[0] == "tcmalloc")
+      allocatorOptions.baseAllocator = AllocatorOptions::kTcMallocAllocator;
+    else if (parts[0] == "use-after-free")
+      allocatorOptions.baseAllocator = AllocatorOptions::kUseAfterFreeAllocator;
+    else if (parts[0] == "leak-checker")
+      allocatorOptions.wrapperAllocator =
+          AllocatorOptions::kLeakCheckerAllocator;
+    else if (parts[0] == "profiler")
+      allocatorOptions.wrapperAllocator = AllocatorOptions::kProfilerAllocator;
+    else
+      llvm_unreachable(
+          "Invalid AllocatorOptions, expected one of 'malloc', 'tcmalloc', "
+          "'use-after-free', 'leak-checker' or 'profiler'");
+    break;
+  case 2:
+    allocatorOptions.baseAllocator =
+        llvm::StringSwitch<BaseAllocator>(parts[0])
+            .Case("malloc", AllocatorOptions::kMallocAllocator)
+            .Case("tcmalloc", AllocatorOptions::kTcMallocAllocator)
+            .Case("use-after-free", AllocatorOptions::kUseAfterFreeAllocator)
+            .DefaultUnreachable(
+                "Invalid AllocatorOptions, expected '<base>' to be one of "
+                "'malloc', 'tcmalloc' or 'use-after-free'");
+    allocatorOptions.wrapperAllocator =
+        llvm::StringSwitch<WrapperAllocator>(parts[1])
+            .Case("leak-checker", AllocatorOptions::kLeakCheckerAllocator)
+            .Case("profiler", AllocatorOptions::kProfilerAllocator)
+            .DefaultUnreachable(
+                "Invalid AllocatorOptions, expected '<wrapper>' to be either "
+                "'leak-checker' or 'profiler'");
+    break;
+  default:
+    llvm_unreachable("Invalid AllocatorOptions, expected fromat of '<any>' "
+                     "or '<base>:<wrapper>'");
+  }
+  return allocatorOptions;
+}
+
+AllocatorOptions AllocatorOptions::fromConfig() {
+  AllocatorOptions allocatorOptions;
+  if (auto config = Config::open(); !config.isError()) {
+    StringRef debugHostAllocator = config->getValue("debug.host_allocator");
+    if (!debugHostAllocator.empty()) {
+      allocatorOptions = AllocatorOptions::fromStr(debugHostAllocator);
+    }
+  }
+  return allocatorOptions;
+}
 
 //===----------------------------------------------------------------------===//
 // Leak Checking Allocator

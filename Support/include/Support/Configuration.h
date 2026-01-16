@@ -82,6 +82,13 @@ public:
   /// cannot be interpreted as a boolean.
   bool getValueAsBool(StringRef key, bool defaultValue);
 
+  /// Get a vector of strings with possible override from the environment.
+  void getValueAsList(StringRef key, SmallVectorImpl<StringRef> &values,
+                      StringRef sep = ",");
+
+  /// Check if a value is present in a list.
+  bool isValueInList(StringRef key, StringRef value, StringRef sep = ",");
+
   /// Set a value - this will override anything that was already set for that
   /// key.
   void setValue(StringRef key, StringRef value);

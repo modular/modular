@@ -27,6 +27,28 @@ using MemCopyProfilerEntry =
 using MemAllocFreeProfilerEntry =
     ProfilerEntry<Trace::EnableTrace(Trace::kMem, 2), Trace::kMem>;
 
+/// This struct exposes configuration of which allocators to enable.
+struct AllocatorOptions {
+  /// Base allocators actually allocate memory.
+  enum BaseAllocator {
+    kMallocAllocator,
+    kTcMallocAllocator,
+    kUseAfterFreeAllocator,
+  };
+  /// Wrapper allocators extend base allocators with additional functionality.
+  enum WrapperAllocator {
+    kNoWrappedAllocator,
+    kLeakCheckerAllocator,
+    kProfilerAllocator,
+  };
+
+  BaseAllocator baseAllocator = kTcMallocAllocator;
+  WrapperAllocator wrapperAllocator = kNoWrappedAllocator;
+
+  static AllocatorOptions fromStr(StringRef str);
+  static AllocatorOptions fromConfig();
+};
+
 /// This class defines an abstract interface for custom allocators to implement.
 /// This is intended for use by large object allocations (e.g. tensor data), not
 /// for use by every single small allocation that happens in the execution of a

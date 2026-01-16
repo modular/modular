@@ -243,6 +243,17 @@ bool Config::getValueAsBool(StringRef key, bool defaultValue) {
       .Default(defaultValue);
 }
 
+void Config::getValueAsList(StringRef key, SmallVectorImpl<StringRef> &values,
+                            StringRef sep) {
+  getValue(key).split(values, sep);
+}
+
+bool Config::isValueInList(StringRef key, StringRef value, StringRef sep) {
+  SmallVector<StringRef, 16> values;
+  getValueAsList(key, values, sep);
+  return std::find(values.begin(), values.end(), value) != values.end();
+}
+
 void Config::setValue(StringRef key, StringRef value) {
   kv[key.lower()] = value;
 }

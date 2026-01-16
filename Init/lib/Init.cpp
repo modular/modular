@@ -73,7 +73,7 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
     AsyncRT::CompactRuntimePtr runtimePtr =
         AsyncRT::CompactRuntimePtr::reserve();
     std::unique_ptr<Allocator> allocator =
-        AsyncRT::getAllocator(options.runtimeOptions->getAllocatorOptions());
+        AsyncRT::getAllocator(options.runtimeOptions->allocatorOptions);
     std::unique_ptr<AsyncRT::WorkQueue> workQueue =
         options.runtimeOptions->singleThreaded
             ? AsyncRT::createSingleThreadWorkQueue(runtimePtr)
