@@ -1584,6 +1584,7 @@ def main(args: argparse.Namespace) -> None:
                 distribution_type=args.random_distribution_type,
                 first_turn_ratio=args.random_first_turn_ratio,
                 random_state=random_state,
+                use_synthetic_tokens=(args.dataset_name == "synthetic"),
             )
         else:
             input_requests = benchmark_dataset.sample_requests(
@@ -1598,6 +1599,7 @@ def main(args: argparse.Namespace) -> None:
                 image_size=args.random_image_size,
                 image_count=args.random_image_count,
                 random_state=random_state,
+                use_synthetic_tokens=(args.dataset_name == "synthetic"),
             )
     elif isinstance(benchmark_dataset, AxolotlBenchmarkDataset):
         input_requests = benchmark_dataset.sample_requests(
