@@ -15,7 +15,7 @@ from collections import OptionalReg
 from math import ceildiv, exp2, recip, align_up, align_down, gcd
 from math.constants import log2e
 from sys import align_of, simd_width_of, size_of, env_get_int
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from algorithm.functional import unswitch
 from bit import prev_power_of_two, pop_count
 from buffer import NDBuffer
@@ -30,14 +30,14 @@ from gpu import (
 )
 from nn.mha_utils import DynamicInt, NoPartition
 from gpu.globals import WARPGROUP_SIZE, WARP_SIZE
-from gpu.cluster import elect_one_sync
+from gpu.primitives.cluster import elect_one_sync
 from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc, Scope
 from gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
-from gpu.mma import MMAOperandDescriptor
-from gpu.mma_sm100 import (
+from gpu.compute.mma import MMAOperandDescriptor
+from gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptor,
     UMMAInsDescriptor,
     UMMAKind,
@@ -53,7 +53,7 @@ from gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )
-from gpu.tcgen05 import (
+from gpu.compute.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,

@@ -19,7 +19,7 @@ from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import lane_id
 from gpu.memory import fence_async_view_proxy
-from gpu.mma import st_matrix
+from gpu.compute.mma import st_matrix
 from gpu.sync import named_barrier
 from layout import IntTuple, Layout, LayoutTensor
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple

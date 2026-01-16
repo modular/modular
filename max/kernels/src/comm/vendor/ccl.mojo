@@ -31,7 +31,7 @@ from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
 from comm import MAX_GPUS
 from comm.allreduce import elementwise_epilogue_type
-from gpu.grid_controls import PDLLevel
+from gpu.primitives.grid_controls import PDLLevel
 
 comptime ncclComm_t = OpaquePointer
 

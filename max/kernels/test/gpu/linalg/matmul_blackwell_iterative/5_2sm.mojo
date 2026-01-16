@@ -19,14 +19,18 @@ from sys import argv, size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
-from gpu.cluster import block_rank_in_cluster, cluster_sync, elect_one_sync
+from gpu.primitives.cluster import (
+    block_rank_in_cluster,
+    cluster_sync,
+    elect_one_sync,
+)
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx, warp_id
 from gpu.memory import fence_async_view_proxy, external_memory
-from gpu.mma import st_matrix
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
+from gpu.compute.mma import st_matrix
+from gpu.compute.arch.mma_nvidia_sm100 import *
+from gpu.compute.tcgen05 import *
 from internal_utils import assert_almost_equal
 from memory import LegacyUnsafePointer
 

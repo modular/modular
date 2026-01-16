@@ -16,7 +16,7 @@ from math import align_up, ceildiv
 from os.atomic import Atomic, Consistency
 from sys.info import align_of, simd_width_of, size_of
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from gpu import (
     PDL,
     MAX_THREADS_PER_BLOCK_METADATA,

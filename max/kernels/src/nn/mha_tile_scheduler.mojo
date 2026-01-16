@@ -20,7 +20,7 @@ comptime OpaquePointer = LegacyUnsafePointer[
 ]
 from os.atomic import Atomic
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from builtin.device_passable import DevicePassable
 from gpu.host.info import H100
 from gpu import block_idx, thread_idx

@@ -39,7 +39,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, size_of
 
 from gpu import WARP_SIZE, barrier, warp_id
-from gpu.cluster import (
+from gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
@@ -53,14 +53,14 @@ from gpu.memory import (
     external_memory,
     fence_mbarrier_init,
 )
-from gpu.mma_sm100 import *
+from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.primitives.grid_controls import (
     launch_dependent_grids,
     PDLLevel,
     wait_on_dependent_grids,
 )
 from gpu.sync import syncwarp
-from gpu.tcgen05 import *
+from gpu.compute.tcgen05 import *
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout.int_tuple import IntTuple
 from layout.swizzle import Swizzle

@@ -15,9 +15,9 @@ from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import thread_idx, warp_id
-from gpu.mma_sm100 import *
+from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.sync import barrier
-from gpu.tcgen05 import *
+from gpu.compute.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from memory import stack_allocation

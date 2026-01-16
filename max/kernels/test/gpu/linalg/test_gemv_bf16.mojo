@@ -13,7 +13,7 @@
 
 from math import ceildiv
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor

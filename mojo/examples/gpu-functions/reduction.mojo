@@ -25,7 +25,8 @@ from benchmark import (
     ThroughputMeasure,
 )
 from bit import log2_floor
-from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx, warp
+from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
+from gpu.primitives import warp
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.memory import AddressSpace
 from memory import stack_allocation

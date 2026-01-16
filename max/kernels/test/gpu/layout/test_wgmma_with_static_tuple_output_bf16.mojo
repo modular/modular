@@ -16,7 +16,7 @@ from buffer import DimList, NDBuffer
 from gpu import barrier, warp_id, lane_id
 from gpu.host import DeviceContext
 from gpu import thread_idx
-from gpu.mma import (
+from gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,

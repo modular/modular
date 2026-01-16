@@ -31,7 +31,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
     MXFP8_SF_VECTOR_SIZE,
 )
-from gpu.mma_sm100 import UMMAKind
+from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 @fieldwise_init

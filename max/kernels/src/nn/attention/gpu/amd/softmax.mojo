@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from bit import log2_floor
 from gpu import WARP_SIZE, barrier, lane_id, thread_idx, warp_id as get_warp_id
 from layout import Layout, LayoutTensor

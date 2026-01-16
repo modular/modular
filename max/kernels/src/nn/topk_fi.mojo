@@ -16,16 +16,15 @@ from collections import OptionalReg
 from gpu import (
     WARP_SIZE,
     barrier,
-    block,
     block_dim,
     block_idx,
     grid_dim,
     lane_id,
     thread_idx,
     warp_id,
-    warp,
 )
-from gpu.grid_controls import PDL, pdl_launch_attributes
+from gpu.primitives import block, warp
+from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.host.dim import Dim
 from gpu.memory import AddressSpace, external_memory

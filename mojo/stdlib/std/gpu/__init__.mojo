@@ -35,10 +35,6 @@ and thread index. Import these directly from `gpu`:
 from gpu import block_dim, block_idx, thread_idx, global_idx
 ```
 
-Note: The [`gpu.id`](/mojo/std/gpu/id) module is deprecated but still supported
-for backward compatibility. New code should import these symbols directly from the
-`gpu` package as shown above.
-
 For an example of launching a GPU kernel from a MAX custom operation, see the
 [vector addition example](https://github.com/modular/modular/blob/main/examples/custom_ops/kernels/vector_addition.mojo)
 in the MAX repo.

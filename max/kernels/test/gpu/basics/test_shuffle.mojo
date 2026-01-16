@@ -11,11 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from sys import has_amd_gpu_accelerator
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from gpu import barrier, thread_idx
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
-from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
+from gpu.primitives.warp import (
+    shuffle_down,
+    shuffle_idx,
+    shuffle_up,
+    shuffle_xor,
+)
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]

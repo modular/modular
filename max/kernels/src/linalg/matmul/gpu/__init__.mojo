@@ -28,7 +28,7 @@ from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import barrier, block_dim, global_idx, thread_idx
-from gpu.grid_controls import PDLLevel
+from gpu.primitives.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import A100, B200, H100, MI355X, GPUInfo
 from layout import LayoutTensor, RuntimeLayout

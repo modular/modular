@@ -16,8 +16,8 @@ from random import random_si64
 
 from gpu import WARP_SIZE, block_idx
 from gpu.host import DeviceContext
-from gpu.mma import mma
-from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
+from gpu.compute.mma import mma
+from gpu.compute.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from linalg.matmul.gpu import matmul_kernel_naive

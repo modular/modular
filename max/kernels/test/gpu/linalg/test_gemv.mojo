@@ -15,7 +15,7 @@ from math import ceildiv
 from random import randn, seed
 from sys import has_nvidia_gpu_accelerator
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from buffer import NDBuffer
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext

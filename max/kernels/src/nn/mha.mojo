@@ -29,7 +29,7 @@ from sys import (
     size_of,
 )
 from sys.info import _cdna_4_or_newer
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from algorithm import elementwise
 from algorithm.functional import tile_and_unswitch, unswitch, vectorize
 from bit import next_power_of_two

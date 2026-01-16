@@ -22,7 +22,7 @@ from bit import next_power_of_two, prev_power_of_two
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
-from gpu.cluster import (
+from gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
@@ -39,8 +39,8 @@ from gpu.memory import (
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from gpu.mma import st_matrix
-from gpu.mma_sm100 import *
+from gpu.compute.mma import st_matrix
+from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.primitives.grid_controls import (
     launch_dependent_grids,
     pdl_launch_attributes,
@@ -54,7 +54,7 @@ from gpu.sync import (
     umma_arrive_leader_cta,
     mbarrier_arrive,
 )
-from gpu.tcgen05 import *
+from gpu.compute.tcgen05 import *
 from layout import (
     UNKNOWN_VALUE,
     Layout,

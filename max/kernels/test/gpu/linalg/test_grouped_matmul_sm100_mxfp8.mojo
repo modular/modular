@@ -51,7 +51,7 @@ from layout import (
     IntTuple,
     UNKNOWN_VALUE,
 )
-from gpu.mma_sm100 import UMMAKind
+from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 fn simple_init() -> Bool:

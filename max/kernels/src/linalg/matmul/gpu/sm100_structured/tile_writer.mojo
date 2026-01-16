@@ -141,7 +141,7 @@ fn store_fragment_to_smem[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](vec: SIMD, dst: SMemTileType, warp_offset: UInt32 = 0):
     """Store fragment to SMEM via st.matrix instruction."""
-    from gpu.mma import st_matrix
+    from gpu.compute.mma import st_matrix
     from memory import bitcast
     from gpu import lane_id as get_lane_id
 

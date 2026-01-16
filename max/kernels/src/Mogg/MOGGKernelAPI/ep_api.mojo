@@ -18,7 +18,7 @@ Expert Parallelism (EP) Communication Kernel.
 from collections import OptionalReg
 
 import compiler_internal as compiler
-from gpu.grid_controls import pdl_launch_attributes
+from gpu.primitives.grid_controls import pdl_launch_attributes
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from gpu.host.info import is_gpu
 from layout import Layout, LayoutTensor, RuntimeLayout

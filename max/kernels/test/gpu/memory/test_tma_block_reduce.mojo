@@ -16,7 +16,7 @@ from random import rand
 from sys import argv
 from sys.info import simd_width_of, size_of
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from buffer import NDBuffer
 from gpu import WARP_SIZE, lane_id
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target

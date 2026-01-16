@@ -17,7 +17,7 @@ from sys import size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.globals import WARPGROUP_SIZE
-from gpu.grid_controls import pdl_launch_attributes
+from gpu.primitives.grid_controls import pdl_launch_attributes
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import H100

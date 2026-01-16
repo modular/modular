@@ -15,7 +15,7 @@ from io.io import _printf
 from math import erf
 from sys.info import is_nvidia_gpu, simd_width_of
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from algorithm.functional import elementwise
 from bit import log2_floor
 from gpu import (

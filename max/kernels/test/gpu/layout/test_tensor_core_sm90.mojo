@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from gpu.mma import mma
+from gpu.compute.mma import mma
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core import TensorCore

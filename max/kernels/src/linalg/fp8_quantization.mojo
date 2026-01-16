@@ -16,7 +16,7 @@ from collections.string.string_slice import get_static_string
 from math import ceildiv
 from sys import simd_width_of, has_nvidia_gpu_accelerator
 from sys import align_of, size_of
-import gpu.block
+import gpu.primitives.block
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
@@ -27,7 +27,7 @@ from gpu import (
     global_idx,
     thread_idx,
 )
-from gpu.grid_controls import PDL, pdl_launch_attributes
+from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import B200, H100
 from layout import IntTuple, Layout, LayoutTensor

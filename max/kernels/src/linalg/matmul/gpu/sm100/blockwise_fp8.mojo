@@ -17,14 +17,14 @@ from sys import align_of, size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
-from gpu.cluster import block_rank_in_cluster
+from gpu.primitives.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_idx, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.memory import external_memory
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
+from gpu.compute.arch.mma_nvidia_sm100 import *
+from gpu.compute.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple

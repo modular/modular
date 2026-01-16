@@ -18,7 +18,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from algorithm import sync_parallelize, vectorize
 from algorithm._gpu.reduction import block_reduce, row_reduce
 from algorithm.reduction import (

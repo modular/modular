@@ -24,7 +24,7 @@ from gpu import (
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import Layout, LayoutTensor
 from logger import Logger
-from gpu.warp import shuffle_xor
+from gpu.primitives.warp import shuffle_xor
 from math import recip
 from .fp4_utils import (
     cast_fp32_to_fp4e2m1,

@@ -26,7 +26,7 @@ from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
 from gpu.intrinsics import AMDBufferResource
 from gpu.memory import AddressSpace
-from gpu.mma import mma
+from gpu.compute.mma import mma
 from sys import llvm_intrinsic
 from gpu.sync import barrier, schedule_barrier, s_waitcnt
 from memory import LegacyUnsafePointer

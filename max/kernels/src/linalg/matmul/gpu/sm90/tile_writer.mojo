@@ -47,7 +47,7 @@ from layout.layout import coalesce
 from layout import Layout
 from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 
-from gpu.mma import st_matrix
+from gpu.compute.mma import st_matrix
 from memory import bitcast
 from layout import RuntimeLayout, RuntimeTuple, IntTuple
 from layout.tensor_core_async import st_matrix_n_layout

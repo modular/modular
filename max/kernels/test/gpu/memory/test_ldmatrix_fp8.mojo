@@ -15,8 +15,8 @@ from math import ceildiv
 
 from gpu import WARP_SIZE, barrier, lane_id
 from gpu.host import DeviceContext
-from gpu.mma import ld_matrix, mma
-from gpu.mma_util import store_matrix_d
+from gpu.compute.mma import ld_matrix, mma
+from gpu.compute.mma_util import store_matrix_d
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import get_fragment_size, get_mma_shape

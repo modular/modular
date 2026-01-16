@@ -35,7 +35,7 @@ from gpu.host import (
     DeviceMulticastBuffer,
     get_gpu_target,
 )
-from gpu.grid_controls import PDLLevel
+from gpu.primitives.grid_controls import PDLLevel
 from internal_utils import (
     InitializationType,
     arg_parse,

@@ -22,7 +22,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from bit import next_power_of_two, prev_power_of_two
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
-from gpu.cluster import (
+from gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
@@ -34,10 +34,10 @@ from gpu.host.info import B200
 from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.memory import fence_async_view_proxy, external_memory
-from gpu.mma import st_matrix
-from gpu.mma_sm100 import *
+from gpu.compute.mma import st_matrix
+from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.sync import named_barrier
-from gpu.tcgen05 import *
+from gpu.compute.tcgen05 import *
 from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static

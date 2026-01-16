@@ -14,7 +14,7 @@
 from math import ceildiv, iota
 from sys.info import simd_width_of
 
-import gpu.block as block
+import gpu.primitives.block as block
 from algorithm.functional import elementwise
 from gpu import block_idx, thread_idx
 from gpu.host.info import is_gpu

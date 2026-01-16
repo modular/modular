@@ -13,7 +13,8 @@
 
 from math import ceildiv
 
-from gpu import block, global_idx, warp
+from gpu import global_idx
+from gpu.primitives import block, warp
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
 from memory import LegacyUnsafePointer

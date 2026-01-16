@@ -24,7 +24,7 @@ from sys import (
     size_of,
 )
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from buffer.dimlist import Dim
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -41,7 +41,7 @@ from gpu.memory import (
     async_copy_wait_group,
     external_memory,
 )
-from gpu.mma import mma
+from gpu.compute.mma import mma
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,

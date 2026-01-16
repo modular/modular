@@ -14,7 +14,7 @@
 
 from gpu.host import get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.mma import mma
+from gpu.compute.mma import mma
 from testing import *
 
 

@@ -23,7 +23,7 @@ from sys import (
 
 from algorithm import elementwise
 from buffer.buffer import NDBuffer
-from gpu.grid_controls import PDLLevel
+from gpu.primitives.grid_controls import PDLLevel
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200

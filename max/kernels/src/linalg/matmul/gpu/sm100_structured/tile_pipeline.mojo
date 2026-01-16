@@ -1080,8 +1080,11 @@ struct OutputTilePipeline[
     @always_inline
     fn release_from_mma(mut self, stage: Self.Stage):
         """Signal MMA completion using mma_arrive (1-SM) or multicast (2-SM)."""
-        from gpu.cluster import elect_one_sync
-        from gpu.mma_sm100 import mma_arrive, mma_arrive_multicast
+        from gpu.primitives.cluster import elect_one_sync
+        from gpu.compute.arch.mma_nvidia_sm100 import (
+            mma_arrive,
+            mma_arrive_multicast,
+        )
 
         if elect_one_sync():
 

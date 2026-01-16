@@ -20,7 +20,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 
 from gpu import warp_id
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from algorithm.functional import unswitch
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -31,14 +31,14 @@ from gpu import (
     thread_idx,
     block_idx,
 )
-from gpu.cluster import elect_one_sync
+from gpu.primitives.cluster import elect_one_sync
 from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import external_memory
-from gpu.mma import MMAOperandDescriptor
-from gpu.mma_sm100 import (
+from gpu.compute.mma import MMAOperandDescriptor
+from gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptor,
     UMMAInsDescriptor,
     UMMAKind,
@@ -46,7 +46,7 @@ from gpu.mma_sm100 import (
     mma_arrive,
 )
 from gpu.sync import named_barrier
-from gpu.tcgen05 import (
+from gpu.compute.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,

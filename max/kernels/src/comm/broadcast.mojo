@@ -23,7 +23,7 @@ from gpu import (
     grid_dim,
     thread_idx,
 )
-from gpu.grid_controls import (
+from gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,

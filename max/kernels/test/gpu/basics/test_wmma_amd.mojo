@@ -16,10 +16,10 @@ from random import random_si64
 
 from gpu import WARP_SIZE, block_idx
 from gpu.host import DeviceContext
-from gpu.mma import mma
-from gpu.mma_util import load_matrix_a_amd as load_matrix_a
-from gpu.mma_util import load_matrix_b_amd as load_matrix_b
-from gpu.mma_util import store_matrix_d
+from gpu.compute.mma import mma
+from gpu.compute.mma_util import load_matrix_a_amd as load_matrix_a
+from gpu.compute.mma_util import load_matrix_b_amd as load_matrix_b
+from gpu.compute.mma_util import store_matrix_d
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]

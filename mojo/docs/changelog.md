@@ -889,6 +889,20 @@ or removed in future releases.
   new_ptr = ptr + n
   ```
 
+- The following deprecated GPU compatibility modules have been removed:
+  - `gpu.id` - Use `from gpu import block_idx, thread_idx, ...` instead
+  - `gpu.block` - Use `from gpu.primitives.block import ...` instead
+  - `gpu.warp` - Use `from gpu.primitives.warp import ...` instead
+  - `gpu.cluster` - Use `from gpu.primitives.cluster import ...` instead
+  - `gpu.grid_controls` - Use `from gpu.primitives.grid_controls import ...` instead
+  - `gpu.mma` - Use `from gpu.compute.mma import ...` instead
+  - `gpu.mma_operand_descriptor` - Use
+    `from gpu.compute.mma_operand_descriptor import ...` instead
+  - `gpu.mma_util` - Use `from gpu.compute.mma_util import ...` instead
+  - `gpu.mma_sm100` - Use `from gpu.compute.arch.mma_nvidia_sm100 import ...` instead
+  - `gpu.semaphore` - Use `from gpu.sync.semaphore import ...` instead
+  - `gpu.tcgen05` - Use `from gpu.compute.tcgen05 import ...` instead
+
 ### 🛠️ Fixed
 
 - Mojo no longer complains about "cannot infer parameter X" when unrelated type

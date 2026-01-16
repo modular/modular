@@ -21,7 +21,11 @@ from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
-from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
+from gpu.primitives.cluster import (
+    cluster_sync,
+    cluster_sync_relaxed,
+    elect_one_sync,
+)
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
@@ -39,10 +43,10 @@ from gpu import (
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import external_memory, fence_mbarrier_init
-from gpu.grid_controls import PDLLevel
+from gpu.primitives.grid_controls import PDLLevel
 
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
+from gpu.compute.arch.mma_nvidia_sm100 import *
+from gpu.compute.tcgen05 import *
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import LayoutTensorIter

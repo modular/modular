@@ -78,7 +78,7 @@ from layout.swizzle import make_swizzle
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.layout import Layout, blocked_product
 from layout.layout_tensor import LayoutTensor
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,
@@ -107,7 +107,7 @@ from nn.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
 )
-from gpu.tcgen05 import *
+from gpu.compute.tcgen05 import *
 from linalg.arch.sm100.mma import smem_descriptor
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple

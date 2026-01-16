@@ -16,7 +16,7 @@ from random import random_si64
 
 from gpu import WARP_SIZE, barrier, lane_id, thread_idx
 from gpu.host import DeviceContext
-from gpu.mma import ld_matrix, mma, st_matrix
+from gpu.compute.mma import ld_matrix, mma, st_matrix
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import get_fragment_size, get_mma_shape

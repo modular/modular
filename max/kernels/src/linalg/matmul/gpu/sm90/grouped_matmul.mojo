@@ -17,7 +17,11 @@ from sys import simd_width_of, size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
-from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
+from gpu.primitives.cluster import (
+    cluster_sync,
+    cluster_sync_relaxed,
+    elect_one_sync,
+)
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle

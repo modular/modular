@@ -19,7 +19,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, env_get_int, simd_width_of, size_of
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,

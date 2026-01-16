@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from gpu import barrier, global_idx, grid_dim
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext

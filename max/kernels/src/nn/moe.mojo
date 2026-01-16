@@ -20,7 +20,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os.atomic import Atomic
 from sys.info import simd_width_of
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from bit import pop_count, log2_floor
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -31,7 +31,7 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.grid_controls import PDL, pdl_launch_attributes
+from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host.info import is_gpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.asyncrt import DeviceContextPtr
