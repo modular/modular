@@ -16,14 +16,20 @@
 import os
 
 from max import engine
-from max.driver import CPU
+from max.driver import Accelerator
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
 
 
 def build_graph() -> None:
+    # Build the graph for the accelerator
+    device = Accelerator()
+
+    # Input tensors are expected on the accelerator
     input_type = TensorType(
-        dtype=DType.float32, shape=(8,), device=DeviceRef.CPU()
+        dtype=DType.float32,
+        shape=(8,),
+        device=DeviceRef.from_device(device),
     )
 
     # We'll just do simple one-operation vector addition for our graph
@@ -34,8 +40,8 @@ def build_graph() -> None:
 
         graph.output(output)
 
-    # Cmopile the graph
-    session = engine.InferenceSession(devices=[CPU()])
+    # Compile the graph for the accelerator
+    session = engine.InferenceSession(devices=[device])
     model = session.load(graph)
 
     # Save the graph to a MEF file
