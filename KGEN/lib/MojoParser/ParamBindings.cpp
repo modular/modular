@@ -263,12 +263,27 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
     return isa<EllipsisAttr>(binding.ir.getIfPValue().get());
   });
 
+  // FIXME: we also allow using `_` (UnboundAttr) in a very unprincipled
+  // way: it can either be used to unbound a particular positional parameter or
+  // as a placeholder (unknown value to be inferred). This creates a lot of
+  // subtlety in the compiler, we should probably only allow `_` in partial
+  // binding context too.
+  // For the second use case (placeholder for unknown), we can, e.g., allow
+  // users to type
+  //
+  // var c : ParamType[ , p1, , p2]
+  // # instead of
+  // var c : ParamType[_, p1, _, p2]
+
+  // ParamInf should have already complained and returned.
+  assert(!hasEllipsis || partial && "`...` used in full binding context");
+
   // If we had a variadic parameter that is unspecified, and no arguments to
   // infer it from, it must be because of an empty variadic list.
   //
   // FIXME: according to the specification, we should only do this when all
   // other parameter is bound.
-  if (!(hasEllipsis && partial) && failed(inference.inferFromDefaults()))
+  if (!hasEllipsis && failed(inference.inferFromDefaults()))
     return nullptr;
 
   auto [bindings, _] =
@@ -349,7 +364,7 @@ ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
   //
   // FIXME: according to the specification, we should only do this when all
   // other parameter is bound.
-  if (!(hasEllipsis && partial) && failed(inference.inferFromDefaults())) {
+  if (!hasEllipsis && failed(inference.inferFromDefaults())) {
     return {nullptr, Fitness{std::move(inference.unprovableConstraints)},
             std::move(diag)};
   }
