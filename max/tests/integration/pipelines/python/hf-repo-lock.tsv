@@ -45,6 +45,7 @@ allenai/olmOCR-2-7B-1025-FP8	19133a8e683f7203f37c49000377c11a896c8d9b
 bartowski/Meta-Llama-3-8B-Instruct-GGUF	4ebc4aa83d60a5d6f9e1e1e9272a4d6306d770c1
 bartowski/Meta-Llama-3.1-8B-Instruct-GGUF	bf5b95e96dac0462e2a09145ec66cae9a3f12067
 deepseek-ai/DeepSeek-R1	56d4cbbb4d29f4355bab4b9a39ccb717a14ad5ad
+deepseek-ai/DeepSeek-R1-0528	4236a6af538feda4548eca9ab308586007567f52
 deepseek-ai/DeepSeek-R1-Distill-Llama-8B	6a6f4aa4197940add57724a7707d069478df56b1
 deepseek-ai/DeepSeek-V2-Lite-Chat	85864749cd611b4353ce1decdb286193298f64c7
 fausap/peft-smollm2-lora-gtx1660	6b3a770dc8dceb01b1d1f4c593f1d516a03882c2
