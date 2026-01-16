@@ -76,12 +76,32 @@ config to your internal format.
 
 ## Testing your architecture
 
-Test your custom architecture locally using the `--custom-architectures` flag:
+While developing locally, use the `--custom-architectures` flag to test your
+architecture before it's registered:
 
 ```bash
 max serve \
   --model your-org/your-model-name \
   --custom-architectures path/to/your/architecture
+```
+
+Once your architecture is [registered](__init__.py) alongside the other models,
+this flag is no longer needed.
+
+## Expected usage
+
+Once registered, models using your architecture should work with the standard
+`max serve` command:
+
+```bash
+max serve --model-path your-org/your-model-name
+```
+
+For models that require custom code execution (e.g., custom tokenizers or model
+implementations on Hugging Face), users can add the `--trust-remote-code` flag:
+
+```bash
+max serve --model-path your-org/your-model-name --trust-remote-code
 ```
 
 ## Validating model accuracy
@@ -148,7 +168,11 @@ uvx --from 'lm-eval[api]' lm_eval \
 
 ### Interpreting results
 
-The evaluation outputs an accuracy score (e.g., 0.85 means 85% correct).
+The evaluation outputs an accuracy score (e.g., 0.85 means 85% correct):
+
+- **gsm8k_cot_llama**: Use `exact_match,flexible-extract`
+- **chartqa**: Use `relaxed_accuracy,none`
+
 Compare your score against the same model running on vLLM or SGLang. The pass
 criteria is achieving at least 95% of the reference implementation's score.
 
@@ -200,9 +224,9 @@ documentation](https://docs.modular.com).
 
 This directory contains various architecture families you can use as reference:
 
-- **LLaMA family**: `llama/` - Popular open-source language models.
-- **Gemma family**: `gemma/` - Google's Gemma models.
-- **Qwen family**: `qwen/` - Alibaba's Qwen models.
+- **LLaMA family**: `llama3/` - Popular open-source language models.
+- **Gemma family**: `gemma3/` - Google's Gemma models.
+- **Qwen family**: `qwen3/` - Alibaba's Qwen models.
 
 Each subdirectory represents a different model family with its own implementation
 that you can study and adapt for your custom architecture.
