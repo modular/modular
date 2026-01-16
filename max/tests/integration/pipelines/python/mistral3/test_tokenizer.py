@@ -28,11 +28,12 @@
 
 import json
 from typing import Any
-from unittest.mock import MagicMock, mock_open
+from unittest.mock import MagicMock, NonCallableMock, mock_open
 
 import pytest
 from max.pipelines.architectures.mistral3.tokenizer import Mistral3Tokenizer
 from pytest_mock import MockerFixture
+from transformers import MistralConfig
 
 
 @pytest.fixture
@@ -40,7 +41,8 @@ def mock_pipeline_config() -> MagicMock:
     """Create a mock PipelineConfig for testing."""
     mock_model_config = MagicMock()
     mock_model_config.huggingface_model_revision = None
-    mock_model_config.huggingface_config = MagicMock()
+    # Use spec to ensure only real MistralConfig attributes are accessible
+    mock_model_config.huggingface_config = NonCallableMock(spec=MistralConfig)
 
     pipeline_config = MagicMock()
     pipeline_config.model = mock_model_config

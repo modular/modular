@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, NonCallableMock
 
 import numpy as np
 import pytest
@@ -50,6 +50,7 @@ from max.pipelines.architectures.qwen2_5vl.model import Qwen2_5VLModel
 from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
 from max.pipelines.core import TextAndVisionContext
 from pytest_mock import MockerFixture
+from transformers import Qwen2_5_VLConfig
 
 
 def create_mock_qwen_model(mocker: MockerFixture) -> Qwen2_5VLModel:
@@ -292,6 +293,37 @@ def qwen_vision_config_mock(mocker: MockerFixture) -> MagicMock:
     return cfg
 
 
+def _create_mock_huggingface_config(
+    qwen_token_ids: dict[str, int],
+) -> NonCallableMock:
+    """Create a mock HuggingFace config with spec=Qwen2_5_VLConfig.
+
+    Using spec ensures that ONLY attributes present on the real Qwen2_5_VLConfig
+    are accessible. This prevents tests from passing when code incorrectly
+    accesses attributes that don't exist on the real config type.
+    """
+    mock_hf_config = NonCallableMock(spec=Qwen2_5_VLConfig)
+
+    # Set up required attributes that the tokenizer accesses from HuggingFace config
+    mock_hf_config.image_token_id = qwen_token_ids["image_token_id"]
+    mock_hf_config.video_token_id = qwen_token_ids["video_token_id"]
+    mock_hf_config.vision_start_token_id = qwen_token_ids[
+        "vision_start_token_id"
+    ]
+    mock_hf_config.eos_token_id = 2
+
+    # Create vision config
+    vision_config = NonCallableMock()
+    vision_config.patch_size = 14
+    vision_config.temporal_patch_size = 2
+    vision_config.spatial_merge_size = 2
+    vision_config.window_size = 448
+    vision_config.tokens_per_second = 2
+    mock_hf_config.vision_config = vision_config
+
+    return mock_hf_config
+
+
 @pytest.fixture
 def mock_pipeline_config(qwen_token_ids: dict[str, int]) -> MagicMock:
     """Create a mock PipelineConfig for Qwen2.5VL tests.
@@ -299,21 +331,8 @@ def mock_pipeline_config(qwen_token_ids: dict[str, int]) -> MagicMock:
     Provides a mock pipeline config with HuggingFace config containing
     the required token IDs and vision config.
     """
-    # Create mock huggingface config
-    hf_config = MagicMock()
-    hf_config.image_token_id = qwen_token_ids["image_token_id"]
-    hf_config.video_token_id = qwen_token_ids["video_token_id"]
-    hf_config.vision_start_token_id = qwen_token_ids["vision_start_token_id"]
-    hf_config.eos_token_id = 2
-
-    # Create vision config
-    vision_config = MagicMock()
-    vision_config.patch_size = 14
-    vision_config.temporal_patch_size = 2
-    vision_config.spatial_merge_size = 2
-    vision_config.window_size = 448
-    vision_config.tokens_per_second = 2
-    hf_config.vision_config = vision_config
+    # Create mock huggingface config with spec to validate interface
+    hf_config = _create_mock_huggingface_config(qwen_token_ids)
 
     # Create mock KV cache config
     kv_cache_config = MagicMock()

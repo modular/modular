@@ -14,7 +14,7 @@
 """Tests for InternVL tokenizer."""
 
 import io
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
 import pytest
@@ -24,20 +24,57 @@ from max.interfaces import (
     TextGenerationRequestMessage,
 )
 from max.pipelines.architectures.internvl.tokenizer import InternVLTokenizer
+from max.pipelines.lib import KVCacheConfig
 from PIL import Image
 from pytest_mock import MockerFixture
 
 
+def _create_mock_huggingface_config(
+    include_vision_config: bool = False,
+    max_dynamic_patch: int = 12,
+) -> NonCallableMock:
+    """Create a mock HuggingFace config .
+
+    Args:
+        include_vision_config: If True, include vision_config with image processing attributes.
+        max_dynamic_patch: Value for max_dynamic_patch attribute (default 12).
+    """
+    mock_hf_config = NonCallableMock()
+
+    # Set up required attributes that the tokenizer accesses from HuggingFace config
+    mock_hf_config.img_context_token_id = 151667
+    mock_hf_config.eos_token_id = 2
+
+    # Set up llm_config attributes needed for _get_image_context_token_id
+    mock_llm_config = NonCallableMock()
+    mock_llm_config.model_type = "internvl"
+    mock_llm_config.architectures = []  # Must be a list, not a Mock
+    mock_hf_config.llm_config = mock_llm_config
+
+    if include_vision_config:
+        # Set up vision config attributes needed for image processing tests
+        mock_vision_config = NonCallableMock()
+        mock_vision_config.image_size = 448
+        mock_vision_config.patch_size = 14
+        mock_hf_config.vision_config = mock_vision_config
+        mock_hf_config.max_dynamic_patch = max_dynamic_patch
+        mock_hf_config.downsample_ratio = 0.5
+
+    return mock_hf_config
+
+
 @pytest.fixture
 def mock_pipeline_config() -> MagicMock:
-    """Create a mock PipelineConfig for InternVL tests."""
-    # Create mock huggingface config
-    hf_config = MagicMock()
-    hf_config.img_context_token_id = 151667
-    hf_config.eos_token_id = 2
+    """Create a mock PipelineConfig for InternVL tests.
 
-    # Create mock KV cache config
-    kv_cache_config = MagicMock()
+    Includes vision_config by default since most InternVL tests involve image processing.
+    """
+    # Create mock huggingface config with spec to validate interface
+    # Include vision_config for image processing tests
+    hf_config = _create_mock_huggingface_config(include_vision_config=True)
+
+    # Create mock KV cache config with spec to validate interface
+    kv_cache_config = NonCallableMock(spec=KVCacheConfig)
     kv_cache_config.enable_prefix_caching = False
 
     # Create mock model config
@@ -150,13 +187,6 @@ async def test_internvl_tokenizer_image_token_indices(
         return_value=mock_tokenizer,
     )
 
-    # Add vision config to mock pipeline config
-    mock_pipeline_config.model.huggingface_config.vision_config = MagicMock()
-    mock_pipeline_config.model.huggingface_config.vision_config.image_size = 448
-    mock_pipeline_config.model.huggingface_config.vision_config.patch_size = 14
-    mock_pipeline_config.model.huggingface_config.max_dynamic_patch = 12
-    mock_pipeline_config.model.huggingface_config.downsample_ratio = 0.5
-
     tokenizer = InternVLTokenizer("test-model", mock_pipeline_config)
 
     # Mock the processor to return input_ids with image token
@@ -233,12 +263,8 @@ async def test_internvl_tokenizer_image_placement(
         return_value=mock_tokenizer,
     )
 
-    # Add vision config to mock pipeline config
-    mock_pipeline_config.model.huggingface_config.vision_config = MagicMock()
-    mock_pipeline_config.model.huggingface_config.vision_config.image_size = 448
-    mock_pipeline_config.model.huggingface_config.vision_config.patch_size = 14
+    # Override max_dynamic_patch for this test (fixture sets it to 12 by default)
     mock_pipeline_config.model.huggingface_config.max_dynamic_patch = 1
-    mock_pipeline_config.model.huggingface_config.downsample_ratio = 0.5
 
     # Use the real tokenizer to exercise the processor logic, but with a mocked delegate.
     tokenizer = InternVLTokenizer("test-model", mock_pipeline_config)

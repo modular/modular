@@ -20,5 +20,6 @@ modular_py_test(
     deps = [
         "//max/python/max/pipelines/architectures",
         requirement("pytest-mock"),
+        requirement("transformers"),
     ],
 )
