@@ -33,15 +33,15 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
-    MXFP8_SF_DTYPE,
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
-    MXFP8_SF_VECTOR_SIZE,
+    NVFP4_SF_DTYPE,
+    NVFP4_SF_VECTOR_SIZE,
     set_scale_factor,
 )
 from random import random_ui64, seed, rand
-from builtin.simd import _convert_f32_to_float8_ue8m0
+from builtin.simd import _convert_f32_to_float8_scalar
 from layout import (
     LayoutTensor,
     Layout,
@@ -79,7 +79,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     benchmark: Bool = False,
     swapAB: Bool = False,
     k_group_size: UInt = 1,
-    SF_VECTOR_SIZE: Int = MXFP8_SF_VECTOR_SIZE,
+    SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -135,17 +135,19 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         )
     )
 
-    comptime static_a_shape = DimList(Dim(), expert_shape[1])
+    comptime static_a_shape = DimList(Dim(), expert_shape[1] // 2)
     comptime static_b_shape = DimList(
-        num_experts, expert_shape[0], expert_shape[1]
+        num_experts, expert_shape[0], expert_shape[1] // 2
     )
     comptime static_c_shape = DimList(Dim(), expert_shape[0])
-    var dynamic_a_shape = DimList(total_num_tokens, K)
-    var dynamic_b_shape = DimList(num_experts, expert_shape[0], expert_shape[1])
+    var dynamic_a_shape = DimList(total_num_tokens, K // 2)
+    var dynamic_b_shape = DimList(
+        num_experts, expert_shape[0], expert_shape[1] // 2
+    )
     var dynamic_c_shape = DimList(total_num_tokens, expert_shape[0])
 
-    var a_size = total_num_tokens * K
-    var b_size = num_experts * expert_shape[0] * expert_shape[1]
+    var a_size = total_num_tokens * K // 2
+    var b_size = num_experts * expert_shape[0] * expert_shape[1] // 2
     var c_size = total_num_tokens * expert_shape[0]
 
     var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
@@ -311,15 +313,15 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # Initialize matmul operands
     if simple_init():
         for m in range(M):
-            for k in range(K):
-                a_host[m, k] = random_ui64(0, 1).cast[a_type]()
+            for k in range(K // 2):
+                a_host[m, k] = UInt8(m).cast[a_type]()
         for e in range(num_experts):
             for n in range(N):
-                for k in range(K):
-                    b_host[e, n, k] = random_ui64(0, 1).cast[b_type]()
+                for k in range(K // 2):
+                    b_host[e, n, k] = UInt8(n).cast[b_type]()
     else:
-        rand(a_host.data, a_host.num_elements())
-        rand(b_host.data, b_host.num_elements())
+        rand(a_host.data, a_host.num_elements(), min=0, max=255)
+        rand(b_host.data, b_host.num_elements(), min=0, max=255)
 
     comptime scales_5d_layout[layout: Layout] = Layout.row_major(
         layout.shape[0].value(),
@@ -371,6 +373,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     for i in range(a_scales_host.num_elements()):
         a_scales_host.data[i] = Scalar[scales_dtype](0.0)
+    rand(b_scales_host.data, b_scales_host.num_elements())
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
     effective_n = expert_shape[0]
     effective_k = expert_shape[1]
@@ -390,7 +393,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 SF_VECTOR_SIZE,
             ):
                 if idx1 < effective_k:
-                    var scale_value = _convert_f32_to_float8_ue8m0[
+                    var scale_value = _convert_f32_to_float8_scalar[
                         scales_dtype
                     ]((1 << random_ui64(0, 2)).cast[DType.float32]())
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
@@ -432,14 +435,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 align_up(effective_k, SF_VECTOR_SIZE * SF_ATOM_K),
                 SF_VECTOR_SIZE,
             ):
-                if idx0 < effective_n and idx1 < effective_k:
-                    var scale_value = _convert_f32_to_float8_ue8m0[
-                        scales_dtype
-                    ]((1 << random_ui64(0, 2)).cast[DType.float32]())
-                    set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                        b_scales_tensor_expert_slice, idx0, idx1, scale_value
-                    )
-                else:
+                if idx0 >= effective_n or idx1 >= effective_k:
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         b_scales_tensor_expert_slice,
                         idx0,
@@ -459,7 +455,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime matmul_config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ](
-        scaling_kind=UMMAKind.KIND_MXF8F6F4,
+        scaling_kind=UMMAKind.KIND_MXF4NVF4,
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
@@ -496,8 +492,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ]()
 
     comptime new_c_layout = Layout.row_major(UNKNOWN_VALUE, expert_shape[0])
-    comptime new_a_layout = Layout.row_major(UNKNOWN_VALUE, expert_shape[1])
-    comptime new_b_layout = Layout.row_major(expert_shape[0], expert_shape[1])
+    comptime new_a_layout = Layout.row_major(
+        UNKNOWN_VALUE, expert_shape[1] // 2
+    )
+    comptime new_b_layout = Layout.row_major(
+        expert_shape[0], expert_shape[1] // 2
+    )
     comptime new_b_scales_layout = Layout.row_major(
         b_scales_tensor.layout.shape[1].value(),
         b_scales_tensor.layout.shape[2].value(),
@@ -529,7 +529,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             RuntimeLayout[new_a_layout].row_major(
                 IndexList[2](
                     end - start,
-                    Int(expert_shape[1]),
+                    Int(expert_shape[1] // 2),
                 ),
             ),
         )
@@ -629,10 +629,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
 def main():
     with DeviceContext() as ctx:
-        comptime dtype = DType.float8_e4m3fn
+        comptime dtype = DType.uint8  # TODO: (KERN-2238): Replace with float4-e2m1fn
         comptime out_dtype = DType.bfloat16
-        comptime scale_dtype = MXFP8_SF_DTYPE
-        comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
+        comptime scale_dtype = NVFP4_SF_DTYPE
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
@@ -653,12 +652,12 @@ def main():
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
-            num_experts=4,
+            num_experts=6,
             expert_shape = Index(2048, 1024),
         ](
-            3,
-            [128, 512, 1024],
-            [0, 1, 1],
+            4,
+            [512, 1000, 2000, 3000],
+            [0, 3, 2, 4],
             ctx,
         )
 
@@ -695,11 +694,11 @@ def main():
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
-            num_experts=6,
+            num_experts=4,
             expert_shape = Index(2048, 1024),
         ](
-            4,
-            [512, 1000, 2000, 3000],
-            [0, 3, 2, 4],
+            3,
+            [128, 256, 1024],
+            [2, 0, 1],
             ctx,
         )
