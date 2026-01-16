@@ -187,6 +187,17 @@ struct NonRPStruct(NonRPParamDefaultTrait):
     pass
 
 
+# MOCO-2540: Test variadic packs in default trait methods.
+trait VariadicPackTrait:
+    fn variadic_method[*Ts: AnyType](self, *args: *Ts):
+        print("variadic default called with", args.__len__(), "args")
+
+
+@fieldwise_init
+struct VariadicPackStruct(VariadicPackTrait):
+    pass
+
+
 def main():
     var b = Bar(-20)
 
@@ -286,3 +297,12 @@ def main():
     var bag = Bag[22](3)
     # CHECK: 25
     print(default_struct.sum_bag[22](bag))
+
+    # MOCO-2540: Test variadic packs in default trait methods
+    var variadic_struct = VariadicPackStruct()
+    # CHECK: variadic default called with 3 args
+    variadic_struct.variadic_method(1, 2.5, "hello")
+    # CHECK: variadic default called with 0 args
+    variadic_struct.variadic_method()
+    # CHECK: variadic default called with 1 args
+    variadic_struct.variadic_method(42)

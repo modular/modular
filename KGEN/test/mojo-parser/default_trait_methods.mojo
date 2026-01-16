@@ -187,3 +187,21 @@ struct FooA_FooB_Struct(FooB):
 # CHECK-DAG:   kgen.witness "foo($0)"
 # CHECK-DAG:   kgen.witness "bar($0)"
 # CHECK: }
+
+
+# COM: Fix for MOCO-2540: Test variadic packs in default trait methods.
+# COM: The wrapper forwards the pack argument directly (as a BlockArgument) rather
+# COM: than constructing it via RefPackCreateOp, which origin tracking must handle.
+trait DefaultWithVariadicPack:
+    fn variadic_method[*Ts: AnyType](self, *args: *Ts):
+        pass
+
+
+# CHECK-LABEL: lit.struct.decl @UsingDefaultWithVariadicPack
+@fieldwise_init
+struct UsingDefaultWithVariadicPack(DefaultWithVariadicPack):
+    # CHECK: lit.fn @"variadic_method[*::AnyType](default_trait_methods::UsingDefaultWithVariadicPack
+    # CHECK: lit.call @default_trait_methods::@DefaultWithVariadicPack::@"variadic_method
+    # CHECK: kgen.conformance{{.*}}DefaultWithVariadicPack
+    # CHECK-DAG: kgen.witness "variadic_method{{.*}}"
+    pass
