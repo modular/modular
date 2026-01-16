@@ -36,17 +36,18 @@ logger = logging.getLogger(__name__)
 MAX_CONTEXT_USAGE_RATIO = 0.95
 
 
-def _parse_percentile_spec(spec: str) -> dict[float, int]:
+def _parse_percentile_spec(spec: str) -> dict[int, int]:
     """Parse a percentile specification string into a dictionary.
 
     Args:
         spec: A string like "p5:10,p25:30,p75:91,p95:190"
 
     Returns:
-        A dictionary mapping percentile (float) to value (int),
-        e.g., {0.05: 10, 0.25: 30, 0.75: 91, 0.95: 190}
+        A dictionary mapping percentile (int) to value (int),
+        e.g., {5: 10, 25: 30, 75: 91, 95: 190}
+        Note: Fractional percentiles are truncated to integers.
     """
-    result: dict[float, int] = {}
+    result: dict[int, int] = {}
     for pair in spec.split(","):
         pair = pair.strip()
         if not pair:
@@ -62,7 +63,8 @@ def _parse_percentile_spec(spec: str) -> dict[float, int]:
                 f"Invalid percentile key: '{key}'. Must start with 'p'."
             )
         try:
-            percentile = float(key[1:]) / 100.0
+            # Fractional part is dropped when converting to int.
+            percentile = int(float(key[1:]))
             value = int(raw_value.strip())
         except ValueError as e:
             raise ValueError(
@@ -73,7 +75,7 @@ def _parse_percentile_spec(spec: str) -> dict[float, int]:
 
 
 def _fit_gamma_parameters(
-    percentiles: dict[float, int],
+    percentiles: dict[int, int],
 ) -> tuple[float, float]:
     """Fit gamma distribution parameters (shape k, scale theta) from percentile specs.
 
@@ -81,9 +83,9 @@ def _fit_gamma_parameters(
     gamma distribution parameters that best match the given percentile targets.
 
     Args:
-        percentiles: A dictionary mapping percentile (0-1) to target value.
-            e.g., {0.05: 70, 0.25: 85, 0.50: 100, 0.75: 140, 0.95: 190}
-            Must contain keys 0.05, 0.5, and 0.95.
+        percentiles: A dictionary mapping percentile (int) to target value.
+            e.g., {5: 70, 25: 85, 50: 100, 75: 140, 95: 190}
+            Must contain keys 5, 50, and 95.
 
     Returns:
         A tuple (k, theta) representing the fitted gamma distribution parameters.
@@ -93,18 +95,15 @@ def _fit_gamma_parameters(
         1000  # use log-space when median percentile is above this value
     )
 
-    if not all(k in percentiles for k in (0.05, 0.5, 0.95)):
-        raise ValueError("Percentiles must contain keys 0.05, 0.5, and 0.95.")
+    if not all(k in percentiles for k in (5, 50, 95)):
+        raise ValueError("Percentiles must contain keys 5, 50, and 95.")
     # Gamma distribution is always right-skewed.
     # Validate that the upper tail (50->95) is longer than the lower tail (5->50).
-    if (
-        percentiles[0.95] - percentiles[0.5]
-        <= percentiles[0.5] - percentiles[0.05]
-    ):
+    if percentiles[95] - percentiles[50] <= percentiles[50] - percentiles[5]:
         raise ValueError(
             "Target percentiles are not right-skewed, which is incompatible with"
             " a gamma distribution. "
-            f"(p5: {percentiles[0.05]}, p50: {percentiles[0.5]}, p95: {percentiles[0.95]})"
+            f"(p5: {percentiles[5]}, p50: {percentiles[50]}, p95: {percentiles[95]})"
         )
     # Validate that values are non-decreasing with increasing percentile.
     ordered_pct = sorted(percentiles.items())
@@ -127,7 +126,7 @@ def _fit_gamma_parameters(
         if np.any(q_model == 0):
             return 1e9
 
-        if percentiles[0.5] > OBJECTIVE_SWITCH_THRESHOLD:
+        if percentiles[50] > OBJECTIVE_SWITCH_THRESHOLD:
             errors = np.log(q_model) - np.log(q_target)
         else:
             errors = (q_model - q_target) / q_target
@@ -135,13 +134,13 @@ def _fit_gamma_parameters(
 
     # Initial guess from mean and variance estimates
     # Use p50 for mean guess
-    mean_guess = percentiles[0.5]
+    mean_guess = percentiles[50]
     # Estimate variance from p5-p95 range (covers ~90% of distribution)
     # In a normal distribution, p5 and p95 lie at -/+ 1.645 standard deviations
     # from the mean, so the total width (p95 - p5) is about 3.29 * sigma.
     # We divide by 4.0 (a conservative approximation for skewed distributions)
     # to get an initial sigma estimate, then square it to obtain variance.
-    var_guess = ((percentiles[0.95] - percentiles[0.05]) / 4.0) ** 2
+    var_guess = ((percentiles[95] - percentiles[5]) / 4.0) ** 2
 
     # Gamma distribution: mean = k*theta, var = k*theta^2
     # So: theta = var/mean and k = mean/theta = mean^2/var
@@ -168,7 +167,7 @@ def _fit_gamma_parameters(
 
 
 def _sample_gamma_lengths(
-    percentiles: dict[float, int],
+    percentiles: dict[int, int],
     num_samples: int,
     min_len: int,
     random_state: np.random.Generator,
@@ -176,9 +175,9 @@ def _sample_gamma_lengths(
     """Sample integer lengths from a gamma distribution fitted to percentile specs.
 
     Args:
-        percentiles: A dictionary mapping percentile (0-1) to target value.
-            e.g., {0.05: 10, 0.50: 50, 0.95: 190}
-            Must at least contain keys 0.05, 0.5, and 0.95.
+        percentiles: A dictionary mapping percentile (int) to target value.
+            e.g., {5: 10, 50: 50, 95: 190}
+            Must at least contain keys 5, 50, and 95.
         num_samples: Number of samples to generate.
         min_len: Minimum allowed length.
         random_state: Random state for reproducibility.
@@ -199,10 +198,7 @@ def _sample_gamma_lengths(
     samples_int = np.maximum(np.round(samples).astype(int), min_len)
 
     # Log empirical percentiles from sampled integer lengths
-    # np.percentile expects values in [0, 100], so multiply by 100
-    empirical_percentiles = np.percentile(
-        samples_int, [p * 100 for p in percentile_keys]
-    )
+    empirical_percentiles = np.percentile(samples_int, percentile_keys)
     logger.info(
         f"Empirical percentiles {percentile_keys}: "
         f"{empirical_percentiles.tolist()}"
@@ -485,8 +481,8 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             input_percentiles = _parse_percentile_spec(input_spec)
             output_percentiles = _parse_percentile_spec(output_spec)
             # Add P50 to the input and output percentiles.
-            input_percentiles[0.5] = input_len
-            output_percentiles[0.5] = output_len
+            input_percentiles[50] = input_len
+            output_percentiles[50] = output_len
 
             # Sample input and output lengths from gamma distributions fit to percentiles.
             assert random_state is not None, (
