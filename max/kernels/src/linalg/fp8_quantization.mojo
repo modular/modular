@@ -1220,10 +1220,8 @@ fn blockwise_scaled_fp8_with_epilogue[
     //,
     *,
     scales_granularity_mnk: IndexList[3],
-    BLOCK_DIM: Int = 16,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    accum_type: DType = get_accum_type[c_type](),
 ](
     c: LayoutTensor[c_type, _, _, address_space = AddressSpace.GENERIC, ...],
     a: LayoutTensor[a_type, _, _, address_space = AddressSpace.GENERIC, ...],
