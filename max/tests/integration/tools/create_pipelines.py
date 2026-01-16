@@ -105,6 +105,19 @@ class TorchModelAndDataProcessor:
     )
 
 
+@dataclass
+class VLLMPipeline:
+    """Configuration to run a vLLM pipeline.
+
+    We do not instantiate the LLM engine here to avoid CUDA context initialization
+    in the main process.
+    """
+
+    model_path: str
+    trust_remote_code: bool = False
+    encoding: str | None = None
+
+
 class PipelineOracle(ABC):
     """Knows about a kind of pipeline.
 
@@ -142,6 +155,25 @@ class PipelineOracle(ABC):
     ) -> TorchModelAndDataProcessor:
         """Instantiate a Torch pipeline for the given encoding/device."""
         raise NotImplementedError
+
+    def create_vllm_pipeline(
+        self, *, encoding: str | None, device_specs: list[driver.DeviceSpec]
+    ) -> VLLMPipeline:
+        """Instantiate a vLLM pipeline config."""
+        path = getattr(self, "model_path", None)
+        # We shouldn't hit this; we only have it because using the string
+        # `model_path` is standard practice rather than enforced behavior.
+        if not path:
+            raise ValueError(
+                f"Cannot find `model_path` for {self.__class__.__name__}"
+            )
+        config = getattr(self, "config_params", {})
+        return VLLMPipeline(
+            model_path=path,
+            trust_remote_code=config.get("trust_remote_code", False)
+            or getattr(self, "trust_remote_code", False),
+            encoding=encoding,
+        )
 
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
@@ -268,6 +300,15 @@ class InternVLPipelineOracle(PipelineOracle):
             num_steps=num_steps,
             print_outputs=True,
             # Omit `use_cache` since the InternVL code hardcodes it.
+        )
+
+    def create_vllm_pipeline(
+        self, *, encoding: str | None, device_specs: list[driver.DeviceSpec]
+    ) -> VLLMPipeline:
+        return VLLMPipeline(
+            model_path=self.model_path,
+            trust_remote_code=True,
+            encoding=encoding,
         )
 
 

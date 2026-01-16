@@ -27,6 +27,7 @@ from create_pipelines import (
     MaxPipelineAndTokenizer,
     PipelineOracle,
     TorchModelAndDataProcessor,
+    VLLMPipeline,
 )
 from max import driver, pipelines
 from max.interfaces import PipelineTask
@@ -35,6 +36,7 @@ from test_common import (
     evaluate,
     evaluate_embeddings,
     torch_utils,
+    vllm_utils,
 )
 from test_common.evaluate import ModelOutput
 from typing_extensions import ParamSpec
@@ -276,6 +278,41 @@ def run_torch_model(
     else:
         raise ValueError(
             f"Evaluating task {pipeline_oracle.task} is not supported."
+        )
+
+    return results
+
+
+def run_vllm_model(
+    *,
+    pipeline_oracle: PipelineOracle,
+    vllm_pipeline: VLLMPipeline,
+    inputs: list[Any],
+    num_steps: int,
+    max_batch_size: int | None = None,
+) -> Any:
+    """Runs the model using the vLLM engine.
+
+    NOTE: Unlike the Torch runner, this execution path treats the model as a
+    black box. It does not support `TorchPrintHook` or intermediate layer
+    inspection for debugging. This is not by choice; it's due to some
+    limitations in the vLLM API.
+    """
+    if pipeline_oracle.task == PipelineTask.TEXT_GENERATION:
+        # Note: vllm_pipeline is just a config object.
+        # The heavy lifting happens inside vllm_utils.
+        results = vllm_utils.run_text_generation(
+            model_path=vllm_pipeline.model_path,
+            textgen_requests=inputs,
+            num_steps=num_steps,
+            print_outputs=True,
+            encoding_name=vllm_pipeline.encoding,
+            trust_remote_code=vllm_pipeline.trust_remote_code,
+            max_batch_size=max_batch_size,
+        )
+    else:
+        raise NotImplementedError(
+            f"Task {pipeline_oracle.task} not yet supported for vLLM runner."
         )
 
     return results

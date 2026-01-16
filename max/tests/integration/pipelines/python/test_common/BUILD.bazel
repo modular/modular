@@ -42,7 +42,10 @@ modular_py_library(
         ":torch_hooks",
         ":torch_utils",
         ":verify_utils",
-    ],
+    ] + select({
+        "//:nvidia_gpu": [":vllm_utils"],
+        "//conditions:default": [],
+    }),
 )
 
 modular_py_library(
@@ -206,6 +209,22 @@ modular_py_library(
         requirement("torch"),
         requirement("transformers"),
     ],
+)
+
+modular_py_library(
+    name = "vllm_utils",
+    testonly = True,
+    srcs = ["vllm_utils.py"],
+    imports = [".."],
+    deps = [
+        ":test_data",
+        requirement("numpy"),
+    ] + select({
+        "//:nvidia_gpu": [
+            requirement("vllm"),
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 modular_py_library(

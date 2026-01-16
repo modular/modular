@@ -99,8 +99,9 @@ modular_py_library(
         ":create_pipelines",
         "//max/python/max/pipelines/architectures",
         "//max/tests/integration/pipelines/python/test_common",
-        requirement("torch"),
+        "//max/tests/integration/pipelines/python/test_common:vllm_utils",
         requirement("requests"),
+        requirement("torch"),
     ],
 )
 
