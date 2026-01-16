@@ -159,7 +159,7 @@ def call_lm_eval(
 ) -> tuple[LmEvalResults, LmEvalSamples]:
     extra_gen_kwargs = ""
     is_reasoning_model = any(
-        kw in model for kw in ("qwen3", "gpt-oss", "internvl3_5")
+        kw in model for kw in ("academic-ds", "gpt-oss", "internvl3_5", "qwen3")
     )
     # Reasoning models needs extra tokens for .. reasoning
     if is_reasoning_model:
