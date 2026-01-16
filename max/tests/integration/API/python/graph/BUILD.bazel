@@ -20,6 +20,7 @@ _AMD_ONLY_TESTS = [
 _CPU_ONLY_TESTS = [
     "test_matmul_packed.py",
     "test_reduce_add.py",
+    "test_symbolic_dimension_validation.py",
 ]
 
 modular_py_library(
@@ -142,6 +143,7 @@ modular_py_test(
         "conftest.py",
         "test_matmul_packed.py",
         "test_reduce_add.py",
+        "test_symbolic_dimension_validation.py",
     ],
     mojo_deps = select({
         "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
