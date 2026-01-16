@@ -456,6 +456,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # Create the model
         config = self._create_model_config(state_dict)
 
+        n_devices = len(self.devices)
+        if n_devices > 1 and self.pipeline_config.ep_size != n_devices:
+            raise ValueError("Only the EP strategy is supported.")
+
         self.ep_comm_initializer: EPCommInitializer | None = None
         if config.ep_config is not None:
             self.ep_comm_initializer = EPCommInitializer(config.ep_config)
