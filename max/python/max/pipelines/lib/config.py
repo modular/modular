@@ -28,6 +28,7 @@ from max.config import ConfigFileModel
 from max.driver import DeviceSpec, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
+from max.interfaces import PipelineTask
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from pydantic import (
     Field,
@@ -943,6 +944,11 @@ class PipelineConfig(ConfigFileModel):
         # memory estimations.
         arch.pipeline_model.finalize_pipeline_config(self)
 
+        if arch.task == PipelineTask.IMAGE_GENERATION:
+            # diffusion pipeline does not use KV cache,
+            # so we can skip profile run.
+            return
+
         MemoryEstimator.estimate_memory_footprint(
             self,
             arch.pipeline_model,
@@ -1173,12 +1179,14 @@ class PipelineConfig(ConfigFileModel):
         pipeline_class = get_pipeline_for_task(task, self)
 
         # Get reserved memory info from KVCache config
-        kv_config = self.model.kv_cache
-        if kv_config._available_cache_memory is None:
-            raise ValueError(
-                "KVCache config is not available after config resolution."
-            )
-        memory_str = to_human_readable_bytes(kv_config._available_cache_memory)
+        memory_str = None
+        if task != PipelineTask.PIXEL_GENERATION:
+            kv_config = self.model._kv_cache
+            if kv_config._available_cache_memory is None:
+                raise ValueError(
+                    "KVCache config is not available after config resolution."
+                )
+            memory_str = to_human_readable_bytes(kv_config._available_cache_memory)
 
         devices_str = ", ".join(
             f"{d.device_type}[{d.id}]" for d in self.model.device_specs

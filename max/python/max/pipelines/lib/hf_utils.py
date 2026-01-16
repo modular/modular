@@ -310,7 +310,7 @@ def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
             )
             time.sleep(delay_in_seconds)
 
-    assert False, (  # noqa: B011
+    raise AssertionError(
         "This should never be reached due to the raise in the last attempt"
     )
 
@@ -385,20 +385,18 @@ class HuggingFaceRepo:
 
     @cached_property
     def weight_files(self) -> dict[WeightsFormat, list[str]]:
-        safetensor_search_pattern = "*.safetensors"
-        gguf_search_pattern = "*.gguf"
-        pytorch_search_pattern = "*.bin"
+        safetensor_search_pattern = "**/*.safetensors"
+        gguf_search_pattern = "**/*.gguf"
 
         weight_files = {}
         if self.repo_type == RepoType.local:
             safetensor_paths = glob.glob(
-                os.path.join(self.repo_id, safetensor_search_pattern)
+                os.path.join(self.repo_id, safetensor_search_pattern),
+                recursive=True,
             )
             gguf_paths = glob.glob(
-                os.path.join(self.repo_id, gguf_search_pattern)
-            )
-            pytorch_paths = glob.glob(
-                os.path.join(self.repo_id, pytorch_search_pattern)
+                os.path.join(self.repo_id, gguf_search_pattern),
+                recursive=True,
             )
         elif self.repo_type == RepoType.online:
             fs = huggingface_hub.HfFileSystem()
@@ -408,9 +406,6 @@ class HuggingFaceRepo:
             )
             gguf_paths = cast(
                 list[str], fs.glob(f"{self.repo_id}/{gguf_search_pattern}")
-            )
-            pytorch_paths = cast(
-                list[str], fs.glob(f"{self.repo_id}/{pytorch_search_pattern}")
             )
         else:
             raise ValueError(f"Unsupported repo type: {self.repo_type}")
@@ -646,14 +641,47 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
     Raises:
         FileNotFoundError: If the model is not found in the local cache
     """
-    try:
-        return huggingface_hub.snapshot_download(
-            repo_id=repo_id,
-            revision=revision,
-            local_files_only=True,
-        )
-    except huggingface_hub.utils.LocalEntryNotFoundError as e:
-        raise FileNotFoundError(
-            f"Model path does not exist: HF cache for '{repo_id}' "
-            f"(revision: {revision}) not found."
-        ) from e
+    # Convert repo_id to format used in local path
+    temp_model_path = repo_id.replace("/", "--")
+    # Build full path with revision hash and expand user directory
+    path = (
+        Path(os.environ.get("HF_HOME", "~/.cache/huggingface"))
+        / "hub"
+        / f"models--{temp_model_path}"
+        / "snapshots"
+        / revision
+    ).expanduser()
+
+    if not path.is_dir():
+        raise FileNotFoundError(f"Model path does not exist: {path}")
+    return str(path)
+
+
+def get_model_index_path_for_diffusers(
+    huggingface_repo: HuggingFaceRepo,
+) -> str | None:
+    model_index_path: str | None = None
+
+    if huggingface_repo.repo_type == RepoType.local:
+        local_index = Path(huggingface_repo.repo_id) / "model_index.json"
+        if local_index.exists():
+            model_index_path = str(local_index)
+        else:
+            raise ValueError(
+                f"Failed to find model_index.json in {huggingface_repo.repo_id}."
+            )
+    else:
+        try:
+            if huggingface_hub.file_exists(
+                huggingface_repo.repo_id,
+                "model_index.json",
+                revision=huggingface_repo.revision,
+            ):
+                model_index_path = huggingface_hub.hf_hub_download(
+                    huggingface_repo.repo_id,
+                    "model_index.json",
+                    revision=huggingface_repo.revision,
+                )
+        except Exception:
+            model_index_path = None
+    return model_index_path

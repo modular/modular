@@ -471,7 +471,6 @@ class MAXModelConfig(MAXModelConfigBase):
         are consistent.
 
         Args:
-            weight_path: The path to the weight file.
             default_encoding: The default encoding to use if no encoding is provided.
         """
 
@@ -544,6 +543,7 @@ class MAXModelConfig(MAXModelConfigBase):
         Note: We currently only support float32 to bfloat16 weight type casting.
 
         Args:
+            from_encoding: The source encoding to cast from.
             to_encoding: The desired encoding to cast to.
 
         Raises:
@@ -772,6 +772,9 @@ class MAXModelConfig(MAXModelConfigBase):
                     encoding=self._applied_dtype_cast_from
                 )
 
+            if not weight_files:
+                weight_files = self.huggingface_weight_repo.weight_files
+
             if default_weight_files := weight_files.get(
                 default_weights_format, []
             ):
@@ -910,6 +913,7 @@ class MAXModelConfig(MAXModelConfigBase):
         # NOTE(bduke): do this even for online repositories, because upstream
         # code originating from `huggingface_hub.hf_hub_download` returns
         # absolute paths for cached files.
+        relative_path = Path(relative_path)
         if relative_path.exists() and relative_path.is_file():
             return str(relative_path.resolve())
 

@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import argparse
 import enum
+import json
 import logging
+import os
 import types
 from abc import abstractmethod
 from collections.abc import Mapping
@@ -506,6 +508,7 @@ def _extract_max_config_data(
         config_dict: The loaded YAML configuration dictionary.
         config_class: The config class we're extracting data for.
         section_name: Optional specific section name to look for.
+        config_file_path: Path to the config file for resolving inheritance.
 
     Returns:
         Configuration data for the specific config class.
@@ -854,9 +857,9 @@ class MAXConfig:
         ):
             # For enums, use the string value as default but we'll need to convert back
             arg_kwargs = {
-                "default": field_value.value
-                if field_value
-                else field_obj.default
+                "default": (
+                    field_value.value if field_value else field_obj.default
+                )
             }
         else:
             arg_kwargs = {"default": field_value}
@@ -1069,6 +1072,19 @@ class MAXConfig:
 
         # Return the wrapped parser
         return MAXConfigArgumentParser(parser, self)
+
+
+def load_config(config_path: str | os.PathLike) -> dict:
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            config_dict = json.loads(f.read())
+    except Exception as e:
+        raise ValueError(
+            f"Failed to load configuration from {config_path}: {e}"
+        ) from e
+    return config_dict
 
 
 all = [
