@@ -147,6 +147,9 @@ modular_py_test(
         "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
         "//conditions:default": [],
     }),
+    tags = [
+        "external-exclusive",  # Times out if run with too many other tests (only test_matmul_packed)
+    ],
     deps = [
         ":modular_graph_test",
         "//max/python/max/driver",
