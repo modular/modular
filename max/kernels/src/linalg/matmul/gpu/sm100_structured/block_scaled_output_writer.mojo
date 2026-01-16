@@ -82,6 +82,10 @@ struct BlockScaledTileWriter[
     All operations use structured building blocks from tile_writer.mojo.
 
     Parameters are passed explicitly to work with BlockScaledMatmulConfig.
+
+    The stage_stride_cols parameter must match the value used when
+    constructing the OutputTilePipeline that provides OutputStage
+    instances to the write() method.
     """
 
     # Type aliases
@@ -181,6 +185,10 @@ struct BlockScaledTileWriter[
     @always_inline
     fn __init__(out self, c_tma_op: Self.TmaOpPtr):
         """Initialize with pointer to TMA descriptor."""
+        constrained[
+            Self.stage_stride_cols > 0,
+            "stage_stride_cols must be positive",
+        ]()
         self.c_tma_op = c_tma_op
 
     @always_inline

@@ -972,8 +972,6 @@ struct BlackwellBlockScaledMatmulKernel[
                 while work_iter.has_work():
                     with work_iter.next() as current:
                         with MatmulProfilerType[3](workspace, tile_idx):
-                            # Use legacy epilogue with inner pipeline
-                            # TODO: TileWriter integration blocked - see docs
                             Self.epilogue(
                                 c_tiles,
                                 c_tma_op,
@@ -991,4 +989,3 @@ struct BlackwellBlockScaledMatmulKernel[
                             epi_ctx.output_pipeline.pipeline.consumer_step()
 
                     tile_idx += 1
-            # epi_ctx.__exit__ signals dealloc barrier

@@ -292,7 +292,13 @@ struct TMAStoreCoords[
         self.coord_b = UInt(0)
 
         # SMEM tile offset
-        var cg2_smem_m = UInt(0 if Self.MMA_M == 256 else Int(warp_id // 2))
+        var cg2_smem_m: UInt
+
+        @parameter
+        if Self.MMA_M == 256:
+            cg2_smem_m = 0
+        else:
+            cg2_smem_m = UInt(warp_id // 2)
         self.c_smem_coord_m = cg2_smem_m if Self.cta_group == 2 else UInt(0)
 
     @always_inline
@@ -318,7 +324,13 @@ struct TMAStoreCoords[
         self.coord_b = UInt(c_coord[2])
 
         # SMEM tile offset
-        var cg2_smem_m = UInt(0 if Self.MMA_M == 256 else Int(warp_id // 2))
+        var cg2_smem_m: UInt
+
+        @parameter
+        if Self.MMA_M == 256:
+            cg2_smem_m = 0
+        else:
+            cg2_smem_m = UInt(warp_id // 2)
         self.c_smem_coord_m = cg2_smem_m if Self.cta_group == 2 else UInt(0)
 
 

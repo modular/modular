@@ -72,7 +72,7 @@ struct TileWriter[
     # Kernel-level parameters
     c_smem_layout: Layout,
     num_output_stages: Int,
-    stage_stride_cols: Int,  # Must match OutputTilePipeline's stage_stride_cols type
+    stage_stride_cols: Int,  # Must match OutputTilePipeline's stage_stride_cols
     num_output_warps: UInt,
     max_tmem_cols: UInt = 512,
     elementwise_compute_lambda_fn: OptionalReg[
@@ -86,6 +86,10 @@ struct TileWriter[
 
     Parameters are passed explicitly to work with both MatmulConfig
     and BlockScaledMatmulConfig.
+
+    The stage_stride_cols parameter must match the value used when
+    constructing the OutputTilePipeline that provides OutputStage
+    instances to the write() method.
     """
 
     # Type aliases
@@ -98,7 +102,7 @@ struct TileWriter[
     ]
     comptime Stage = OutputStage[
         Self.num_accum_pipeline_stages,
-        Self.stage_stride_cols,  # Now Int, matches OutputTilePipeline
+        Self.stage_stride_cols,
         Self.cta_group,
     ]
 
@@ -152,6 +156,10 @@ struct TileWriter[
     @always_inline
     fn __init__(out self, c_tma_op: Self.TmaOpPtr):
         """Initialize with pointer to TMA descriptor."""
+        constrained[
+            Self.stage_stride_cols > 0,
+            "stage_stride_cols must be positive",
+        ]()
         self.c_tma_op = c_tma_op
 
     @always_inline
