@@ -79,7 +79,6 @@ INDIRECT_DEPENDENCIES = [
     "AsyncRTRuntimeGlobals",
     "KGENCompilerRTShared",
     "MGPRT",
-    "MOGGLoader",
     "MSupportGlobals",
 ]
 

@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "mojo_kgen_lib", "mojo_library")
+load("//bazel:api.bzl", "mojo_library")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -13,12 +13,6 @@ mogg_lib_deps = [
     "//max:shmem",
     "@mojo//:std",
 ]
-
-mojo_kgen_lib(
-    name = "MOGGKernelAPILib",
-    srcs = glob(["**/*.mojo"]),
-    deps = mogg_lib_deps + ["//max:MOGGPrimitives"],
-)
 
 mojo_library(
     name = "MOGGKernelAPI",
