@@ -792,6 +792,8 @@ LogicalResult ParamInf::inferFromParamList() {
 
   // Do basic validation of the argument list using shared logic.
   // TODO: Integrate this into the logic below.
+  // FIXME: why the verification here does not guarantee there is no parameter
+  // number mismatch/missing kw error below?
   OperandValueList variadicKwOperands;
   auto [kwDiagRes, kwDiagNames] = givenBindings.diagnoseKeywordOperands(
       declaredParamPogs, variadicKwOperands, /*allowMissingKwOnly=*/true);
@@ -969,8 +971,30 @@ LogicalResult ParamInf::inferFromParamList() {
     // leave it unbound even if it has a default.
     if (hasEllipsis)
       continue;
+  }
 
-    // TODO: Handle default parameters etc when not "partial".
+  // Check and complain if we have bindings that didn't get used.
+  // FIXME: why do we still need this? should it has already been verified
+  // above?
+  if (posIdx != numParams) {
+    // Hide the implicit trait parameter from the diagnostic.
+    size_t hidden = 0;
+    if (declIfKnown)
+      if (auto fn = dyn_cast<FnOp>(declIfKnown->getIfOperation()))
+        hidden = isa_and_nonnull<TraitDeclOp>(fn->getParentOp());
+
+    size_t numExpected = countNumPositional(declaredParamPogs) - hidden;
+    auto &diag = getDiag({});
+    if (declIfKnown)
+      diag << "'" << *declIfKnown->getUserNameIfOperation() << "'";
+    else
+      diag << "parametric value";
+    emitWrongArgOrParamCount(diag, /*minRequired=*/numExpected,
+                             /*maxAllowed=*/numExpected,
+                             paramBindings.getParameters().getNumPositional() -
+                                 hidden,
+                             "positional parameter");
+    return failure();
   }
 
   return success();
@@ -1347,7 +1371,8 @@ LogicalResult ParamInf::inferFromDefaults() {
       }
     }
 
-    // If not specified/inferrable, variadic always have a default empty value.
+    // If not specified/inferrable, variadic always have a default empty
+    // value.
     if (!partial && declaredParamPogs.isPosVarArg(idx)) {
       // FIXME: This isn't rewriting the variadic list for dependent types.
       auto type = declaredParamTypes[idx];
@@ -1362,16 +1387,68 @@ LogicalResult ParamInf::inferFromDefaults() {
 
 // TODO: We probably don't have to do this? This is just to make sure we reached
 // the same end state as the old parameter inference. Understand why.
-void ParamInf::finalizeWithUnbound() {
+LogicalResult ParamInf::finalizeWithUnbound() {
+  // All kw-only parameter that is not inferrable.
+  SmallVector<StringAttr> kwDiagNames;
+
+  auto emitInferenceFailure = [&](size_t paramIdx) {
+    assert(!partial && "parameter deduction failure in a context that "
+                       "doesn't allow deduction");
+    MojoInflightDiag &diag = getDiag(paramBindings.getExprLoc());
+    if (declIfKnown && isa<StructDeclOp>(declIfKnown->getIfOperation()))
+      diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
+
+    {
+      // The parameter name is scoped to 'declScope'.
+      DeclResolver::DeclScopeChanger x(&paramBindings.declScope);
+      diag << "failed to infer parameter "
+           << ParamDeclRefAttr::get(declaredParamPogs.getName(paramIdx),
+                                    declaredParamTypes[paramIdx]);
+    }
+
+    // If this is a method on a struct and we couldn't infer something from
+    // its self parameters, complain about the struct.
+    if (declIfKnown && isa<FnOp>(declIfKnown->getIfOperation())) {
+      if (auto structOp = dyn_cast<StructDeclOp>(
+              cast<FnOp>(declIfKnown->getIfOperation())->getParentOp())) {
+        auto structSig = structOp.getSignature();
+        if (paramIdx < structSig.getNumParams()) {
+          diag << " of parent struct '" << structOp.getDeclName().getValue()
+               << "'";
+          diag.attachNote(structOp.getLoc()) << " struct declared here";
+          return;
+        }
+      }
+    }
+  };
+
   // This is the end of parameter inference, replace any fail-to-infer parameter
   // to unboundAttr.
-  for (size_t idx = 0, e = declaredParamTypes.size(); idx != e; ++idx) {
+  for (auto [idx, pog] : llvm::enumerate(declaredParamPogs.getPogs())) {
     TypedAttr inferred = evaluator.getIndexBindings()[idx];
     if (!inferred || sugarIsa<UnboundAttr>(inferred)) {
-      Type targetType = evaluator.getReboundType(declaredParamTypes[idx]);
-      inferred = UnboundAttr::get(targetType);
+      if (partial) {
+        Type targetType = evaluator.getReboundType(declaredParamTypes[idx]);
+        inferred = UnboundAttr::get(targetType);
+        evaluator.overwriteIndexBinding(idx, inferred);
+      } else {
+        // We don't allow any unbound parameter in a non-partial evaluation
+        // context.
+        if (pog.getPassingKind() != PassingKind::KwOnly) {
+          emitInferenceFailure(idx);
+          return failure();
+        }
 
-      evaluator.overwriteIndexBinding(idx, inferred);
+        // Collect all missing keyword-only and report.
+        kwDiagNames.push_back(pog.getName());
+      }
     }
   }
+
+  if (!kwDiagNames.empty()) {
+    emitMissing(getDiag({}), kwDiagNames, "keyword-only parameter");
+    return failure();
+  }
+
+  return success();
 }
