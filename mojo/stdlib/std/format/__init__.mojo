@@ -81,7 +81,7 @@ from reflection import (
     struct_field_count,
     get_type_name,
 )
-from reflection.reflection import _unqualified_type_name
+from reflection.type_info import _unqualified_type_name
 
 
 # ===-----------------------------------------------------------------------===#

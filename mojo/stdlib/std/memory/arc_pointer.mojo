@@ -21,7 +21,7 @@ from memory import ArcPointer
 
 from os.atomic import Atomic, Consistency, fence
 from sys.info import size_of
-from reflection.reflection import _unqualified_type_name
+from reflection.type_info import _unqualified_type_name
 from builtin.constrained import _constrained_conforms_to
 
 

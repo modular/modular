@@ -21,7 +21,7 @@ from sys.intrinsics import gather, scatter, strided_load, strided_store
 from builtin.rebind import downcast
 from builtin.simd import _simd_construction_checks
 from builtin.variadics import Variadic
-from reflection.reflection import _unqualified_type_name
+from reflection.type_info import _unqualified_type_name
 from memory import memcpy
 from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized

@@ -33,7 +33,7 @@ from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from os import abort
 from python import PythonObject
-from reflection.reflection import _unqualified_type_name
+from reflection.type_info import _unqualified_type_name
 
 from builtin.device_passable import DevicePassable
 

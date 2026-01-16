@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,13 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-from sys.info import CompilationTarget, _current_target
+"""Tests for struct field reflection and introspection APIs."""
 
 from reflection import (
-    get_linkage_name,
     get_type_name,
-    get_function_name,
     is_struct_type,
     struct_field_index_by_name,
     struct_field_type_by_name,
@@ -24,182 +21,52 @@ from reflection import (
     struct_field_names,
     struct_field_types,
 )
-from reflection.reflection import _unqualified_type_name
 from testing import assert_equal, assert_true, assert_false
 from testing import TestSuite
 
 
-fn my_func() -> Int:
-    return 0
+# ===----------------------------------------------------------------------=== #
+# Helper structs for testing
+# ===----------------------------------------------------------------------=== #
 
 
-def test_get_linkage_name():
-    var name = get_linkage_name[my_func]()
-    assert_equal(name, "test_reflection::my_func()")
+# Simple test struct for field reflection
+struct SimpleStruct:
+    var x: Int
+    var y: Float64
 
 
-def test_get_linkage_name_nested():
-    fn nested_func(x: Int) -> Int:
-        return x
-
-    var name = get_linkage_name[nested_func]()
-    assert_equal(
-        name,
-        "test_reflection::test_get_linkage_name_nested()_nested_func(::Int)",
-    )
+# Struct with nested struct field
+struct Inner:
+    var a: Int
+    var b: Int
 
 
-fn your_func[x: Int]() raises -> Int:
-    return x
+struct Outer:
+    var name: String
+    var inner: Inner
+    var count: Int
 
 
-def test_get_linkage_name_parameterized():
-    var name = get_linkage_name[your_func[7]]()
-    assert_equal(name, "test_reflection::your_func[::Int](),x=7")
-
-
-def test_get_linkage_name_on_itself():
-    var name = get_linkage_name[_current_target]()
-    assert_equal(name, "std::sys::info::_current_target()")
-
-
-def test_get_function_name():
-    var name = get_function_name[my_func]()
-    assert_equal(name, "my_func")
-
-
-def test_get_function_name_nested():
-    fn nested_func(x: Int) -> Int:
-        return x
-
-    var name2 = get_function_name[nested_func]()
-    assert_equal(name2, "nested_func")
-
-
-def test_get_function_name_parameterized():
-    var name = get_function_name[your_func]()
-    assert_equal(name, "your_func")
-
-    var name2 = get_function_name[your_func[7]]()
-    assert_equal(name2, "your_func")
-
-
-struct WhatsMyName:
+# Empty struct
+struct EmptyStruct:
     pass
 
 
-struct ImGeneric[T: AnyType]:
-    pass
+# Struct with private-like naming (all fields included)
+struct MixedVisibility:
+    var public_field: Int
+    var _private_field: Float64
+    var __dunder_field: Bool
 
 
-def test_unqualified_type_name():
-    assert_equal(_unqualified_type_name[WhatsMyName](), "WhatsMyName")
-    assert_equal(_unqualified_type_name[Int](), "Int")
-    assert_equal(_unqualified_type_name[String](), "String")
-    assert_equal(_unqualified_type_name[Int8](), "SIMD[DType.int8, 1]")
+# Dedicated struct with explicit MLIR-typed field for testing is_struct_type.
+@register_passable("trivial")
+struct StructWithMLIRField:
+    """A struct with an explicit MLIR-typed field for testing purposes."""
 
-    # TODO: strip the module name from the inner type name
-    assert_equal(
-        _unqualified_type_name[ImGeneric[WhatsMyName]](),
-        "ImGeneric[test_reflection.WhatsMyName]",
-    )
-
-
-def test_get_type_name():
-    var name = get_type_name[Int]()
-    assert_equal(name, "Int")
-
-    name = get_type_name[Int, qualified_builtins=True]()
-    assert_equal(name, "std.builtin.int.Int")
-
-
-def test_get_type_name_nested():
-    fn nested_func[T: AnyType]() -> StaticString:
-        return get_type_name[T]()
-
-    var name = nested_func[String]()
-    assert_equal(name, "String")
-
-
-def test_get_type_name_simd():
-    var name = get_type_name[Float32]()
-    assert_equal(name, "SIMD[DType.float32, 1]")
-
-    name = get_type_name[SIMD[DType.uint16, 4], qualified_builtins=True]()
-    assert_equal(
-        name, "std.builtin.simd.SIMD[std.builtin.dtype.DType.uint16, 4]"
-    )
-
-
-@fieldwise_init
-struct Bar[x: Int, f: Float32 = 1.3](Intable):
-    fn __int__(self) -> Int:
-        return self.x
-
-    var y: Int
-    var z: Float64
-
-
-@fieldwise_init
-struct Foo[
-    T: Intable, //, b: T, c: Bool, d: NoneType = None, e: StaticString = "hello"
-]:
-    pass
-
-
-def test_get_type_name_non_scalar_simd_value():
-    var name = get_type_name[
-        Foo[SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0), True]
-    ]()
-    assert_equal(
-        name,
-        (
-            "test_reflection.Foo[SIMD[DType.float32, 4], "
-            '[1, 2, 3, 4] : SIMD[DType.float32, 4], True, None, {"hello\0", 5}]'
-        ),
-    )
-
-    name = get_type_name[
-        Foo[SIMD[DType.bool, 4](True, False, True, False), True]
-    ]()
-    assert_equal(
-        name,
-        (
-            "test_reflection.Foo[SIMD[DType.bool, 4], "
-            "[True, False, True, False] : SIMD[DType.bool, 4], "
-            'True, None, {"hello\0", 5}]'
-        ),
-    )
-
-
-def test_get_type_name_struct():
-    var name = get_type_name[Foo[Bar[2](y=3, z=4.1), True]]()
-    assert_equal(
-        name,
-        (
-            "test_reflection.Foo["
-            "test_reflection.Bar[2, 1.29999995 : SIMD[DType.float32, 1]], "
-            "{3, 4.0999999999999996 : SIMD[DType.float64, 1]}, "
-            'True, None, {"hello\0", 5}]'
-        ),
-    )
-
-
-def test_get_type_name_partially_bound_type():
-    var name = get_type_name[Foo[Bar[2](y=3, z=0.125)]]()
-    assert_equal(
-        name,
-        (
-            "test_reflection.Foo["
-            "test_reflection.Bar[2, 1.29999995 : SIMD[DType.float32, 1]], "
-            '{3, 0.125 : SIMD[DType.float64, 1]}, ?, None, {"hello\0", 5}]'
-        ),
-    )
-
-
-def test_get_type_name_unprintable():
-    var name = get_type_name[CompilationTarget[_current_target()]]()
-    assert_equal(name, "std.sys.info.CompilationTarget[<unprintable>]")
+    var mojo_field: Int
+    var mlir_field: __mlir_type.index
 
 
 # Generic struct for testing types with constructor calls in parameters
@@ -228,56 +95,6 @@ struct StructWithMemoryOnlyCtorParam:
     var field: WrapperWithValue[MemoryOnlyParam(True)]
 
 
-def test_get_type_name_ctor_param_from_field_types():
-    """Ensure get_type_name works with constructor calls in type params.
-
-    Issue #5732: using get_type_name on types with constructor calls (like
-    A[B(True)]) extracted via struct_field_types would crash the compiler.
-    """
-    comptime types = struct_field_types[StructWithCtorParam]()
-    var name = get_type_name[types[0]]()
-    assert_equal(
-        name,
-        "test_reflection.WrapperWithValue[test_reflection.SimpleParam, True]",
-    )
-
-
-def test_get_type_name_memory_only_ctor_param_from_field_types():
-    """Ensure memory-only types with constructor calls work.
-
-    Memory-only types use `apply_result_slot` instead of `apply`, which was also
-    affected by issue #5732.
-    """
-    comptime types = struct_field_types[StructWithMemoryOnlyCtorParam]()
-    var name = get_type_name[types[0]]()
-    assert_equal(
-        name,
-        (
-            "test_reflection.WrapperWithValue[test_reflection.MemoryOnlyParam,"
-            " {True}]"
-        ),
-    )
-
-
-def test_get_type_name_ctor_param_direct():
-    """Test that direct usage of types with constructor calls works.
-
-    This demonstrates that the issue is specifically with types extracted via
-    struct_field_types, not with constructor call parameters in general.
-    """
-    # Direct usage works fine - the constructor is evaluated
-    var name = get_type_name[WrapperWithValue[SimpleParam(True)]]()
-    assert_equal(
-        name,
-        "test_reflection.WrapperWithValue[test_reflection.SimpleParam, True]",
-    )
-
-
-# ===----------------------------------------------------------------------=== #
-# Nested Parametric Type Tests (Issue #5723)
-# ===----------------------------------------------------------------------=== #
-
-
 # Generic struct for testing nested parametric types
 struct GenericWrapper[T: AnyType]:
     pass
@@ -293,57 +110,6 @@ struct NestedParametricStruct:
 struct DeeplyNestedStruct:
     var single: GenericWrapper[Int]
     var double: GenericWrapper[GenericWrapper[Int]]
-
-
-def test_get_type_name_nested_parametric_from_field_types():
-    """Test that get_type_name works with nested parametric types from struct_field_types.
-    """
-    # Both fields should work
-    comptime types = struct_field_types[NestedParametricStruct]()
-    var name0 = get_type_name[types[0]]()
-    assert_equal(name0, "test_reflection.GenericWrapper[String]")
-
-    # Nested parametric type should work too
-    var name1 = get_type_name[types[1]]()
-    assert_equal(name1, "test_reflection.GenericWrapper[List[String]]")
-
-
-def test_get_type_name_deeply_nested_parametric_from_field_types():
-    """Test deeply nested parametric types from struct_field_types works.
-
-    This tests the case where we have GenericWrapper[GenericWrapper[T]] - both
-    single and double nested types should work.
-    """
-    comptime types = struct_field_types[DeeplyNestedStruct]()
-
-    # Single level parametric from struct_field_types
-    var name0 = get_type_name[types[0]]()
-    assert_equal(name0, "test_reflection.GenericWrapper[Int]")
-
-    # Double nested should work too
-    var name1 = get_type_name[types[1]]()
-    assert_equal(
-        name1,
-        "test_reflection.GenericWrapper[test_reflection.GenericWrapper[Int]]",
-    )
-
-
-def test_get_type_name_nested_parametric_direct():
-    """Test that directly using nested parametric types works (not from struct_field_types).
-
-    This demonstrates that the issue is specifically with types extracted via
-    struct_field_types, not with nested parametric types in general.
-    """
-    # Direct usage works fine
-    var name = get_type_name[GenericWrapper[List[String]]]()
-    assert_equal(name, "test_reflection.GenericWrapper[List[String]]")
-
-    # Deeply nested direct usage also works
-    name = get_type_name[GenericWrapper[GenericWrapper[Int]]]()
-    assert_equal(
-        name,
-        "test_reflection.GenericWrapper[test_reflection.GenericWrapper[Int]]",
-    )
 
 
 # Additional edge case structs for issue #5723
@@ -373,151 +139,25 @@ struct TripleNested:
     var triple: GenericWrapper[GenericWrapper[GenericWrapper[Int]]]
 
 
-def test_get_type_name_multiple_type_params_from_field_types():
-    """Test parametric types with multiple type parameters from struct_field_types.
-    """
-    comptime types = struct_field_types[StructWithPair]()
-    var name = get_type_name[types[0]]()
-    assert_equal(name, "test_reflection.Pair[String, List[Int]]")
+@fieldwise_init
+struct Bar[x: Int, f: Float32 = 1.3](Intable):
+    fn __int__(self) -> Int:
+        return self.x
+
+    var y: Int
+    var z: Float64
 
 
-def test_get_type_name_various_stdlib_parametric_from_field_types():
-    """Test various stdlib parametric types (List, Optional, SIMD) from struct_field_types.
-    """
-    comptime types = struct_field_types[StructWithMultipleParametricFields]()
-
-    var name0 = get_type_name[types[0]]()
-    assert_equal(name0, "List[Int]")
-
-    var name1 = get_type_name[types[1]]()
-    assert_equal(name1, "std.collections.optional.Optional[String]")
-
-    # SIMD[DType.float32, 4] - value parameters (not type parameters) print correctly
-    var name2 = get_type_name[types[2]]()
-    assert_equal(name2, "SIMD[DType.float32, 4]")
-
-
-def test_get_type_name_triple_nested_from_field_types():
-    """Test three levels of nesting from struct_field_types."""
-    comptime types = struct_field_types[TripleNested]()
-    var name = get_type_name[types[0]]()
-    assert_equal(
-        name,
-        "test_reflection.GenericWrapper[test_reflection.GenericWrapper[test_reflection.GenericWrapper[Int]]]",
-    )
-
-
-def test_iterate_parametric_field_types_no_crash():
-    """Test that iterating over parametric field types in a loop doesn't crash.
-
-    This tests the common pattern of using struct_field_types in a @parameter for loop.
-    """
-    var count = 0
-
-    @parameter
-    for i in range(struct_field_count[StructWithMultipleParametricFields]()):
-        comptime field_type = struct_field_types[
-            StructWithMultipleParametricFields
-        ]()[i]
-        # Getting type name in a loop should not crash
-        var name = get_type_name[field_type]()
-        _ = name
-        count += 1
-
-    assert_equal(count, 3)
-
-
-def test_get_type_name_alias():
-    comptime T = Bar[5]
-    var name = get_type_name[T]()
-    assert_equal(
-        name, "test_reflection.Bar[5, 1.29999995 : SIMD[DType.float32, 1]]"
-    )
-
-    # Also test parametric aliases (i.e. unbound parameters).
-    comptime R = Bar[_]
-    name = get_type_name[R]()
-    assert_equal(
-        name, "test_reflection.Bar[?, 1.29999995 : SIMD[DType.float32, 1]]"
-    )
-
-
-fn _count_fields_generic[T: AnyType]() -> Int:
-    """Helper function to test struct_field_count through generic parameter."""
-    return struct_field_count[T]()
-
-
-fn _get_field_names_generic[T: AnyType]() -> StaticString:
-    """Helper function to test struct_field_names through generic parameter."""
-    return struct_field_names[T]()[0]
-
-
-fn _get_type_name_generic[T: AnyType]() -> StaticString:
-    """Helper function to test get_type_name through generic parameter."""
-    return get_type_name[T]()
-
-
-def test_reflection_on_int():
-    """Test that reflection functions work on Int (issue #5731).
-
-    Int is a struct with one field (_mlir_value). Previously passing Int
-    through a generic parameter to reflection functions would crash the
-    compiler.
-    """
-    assert_equal(struct_field_count[Int](), 1)
-    assert_equal(_count_fields_generic[Int](), 1)
-
-    assert_equal(struct_field_names[Int]()[0], "_mlir_value")
-    assert_equal(_get_field_names_generic[Int](), "_mlir_value")
-
-    # get_type_name through generic (direct is tested elsewhere)
-    assert_equal(_get_type_name_generic[Int](), "Int")
-
-
-def test_reflection_on_origin():
-    """Test that reflection functions work on Origin (issue #5731).
-
-    Origin is a struct with one field (_mlir_origin). Previously this would
-    crash the compiler when passed through generic parameters.
-    """
-    assert_equal(_count_fields_generic[Origin[mut=True]](), 1)
-    assert_equal(_count_fields_generic[Origin[mut=False]](), 1)
-
-    assert_equal(_get_field_names_generic[Origin[mut=True]](), "_mlir_origin")
-
-    assert_equal(
-        _get_type_name_generic[Origin[mut=True]](),
-        "std.builtin.type_aliases.Origin[True]",
-    )
-
-
-def test_reflection_on_nonetype():
-    """Test that reflection functions work on NoneType (issue #5731).
-
-    NoneType is a struct with one field (_value). Previously this would crash
-    the compiler when passed through generic parameters.
-    """
-    assert_equal(_count_fields_generic[NoneType](), 1)
-
-    assert_equal(_get_field_names_generic[NoneType](), "_value")
-
-    assert_equal(
-        _get_type_name_generic[NoneType](), "std.builtin.none.NoneType"
-    )
+@fieldwise_init
+struct Foo[
+    T: Intable, //, b: T, c: Bool, d: NoneType = None, e: StaticString = "hello"
+]:
+    pass
 
 
 # ===----------------------------------------------------------------------=== #
 # is_struct_type Tests
 # ===----------------------------------------------------------------------=== #
-
-
-# Dedicated struct with explicit MLIR-typed field for testing is_struct_type.
-@register_passable("trivial")
-struct StructWithMLIRField:
-    """A struct with an explicit MLIR-typed field for testing purposes."""
-
-    var mojo_field: Int
-    var mlir_field: __mlir_type.index
 
 
 def test_is_struct_type_with_user_structs():
@@ -647,36 +287,6 @@ def test_is_struct_type_guard_with_mlir_types():
 # ===----------------------------------------------------------------------=== #
 
 
-# Simple test struct for field reflection
-struct SimpleStruct:
-    var x: Int
-    var y: Float64
-
-
-# Struct with nested struct field
-struct Inner:
-    var a: Int
-    var b: Int
-
-
-struct Outer:
-    var name: String
-    var inner: Inner
-    var count: Int
-
-
-# Empty struct
-struct EmptyStruct:
-    pass
-
-
-# Struct with private-like naming (all fields included)
-struct MixedVisibility:
-    var public_field: Int
-    var _private_field: Float64
-    var __dunder_field: Bool
-
-
 def test_struct_field_count_simple():
     comptime count = struct_field_count[SimpleStruct]()
     assert_equal(count, 2)
@@ -801,7 +411,7 @@ def test_struct_field_type_by_index_nested():
     # Test that nested struct fields return the struct type, not flattened
     comptime inner_idx = struct_field_index_by_name[Outer, "inner"]()
     comptime inner_type = struct_field_types[Outer]()[inner_idx]
-    assert_equal(get_type_name[inner_type](), "test_reflection.Inner")
+    assert_equal(get_type_name[inner_type](), "test_struct_fields.Inner")
 
 
 def test_struct_field_index_consistent():
@@ -844,7 +454,7 @@ def test_struct_field_type_by_name_simple():
 def test_struct_field_type_by_name_nested():
     # Test that nested struct fields return the struct type, not flattened
     comptime inner_type = struct_field_type_by_name[Outer, "inner"]()
-    assert_equal(get_type_name[inner_type.T](), "test_reflection.Inner")
+    assert_equal(get_type_name[inner_type.T](), "test_struct_fields.Inner")
 
 
 def test_struct_field_type_by_name_matches_index():
@@ -873,7 +483,7 @@ def test_struct_field_type_by_name_as_type_annotation():
 def test_struct_field_type_by_name_nested_struct():
     # Test that ReflectedType.T works with nested struct types.
     comptime inner_type = struct_field_type_by_name[Outer, "inner"]()
-    assert_equal(get_type_name[inner_type.T](), "test_reflection.Inner")
+    assert_equal(get_type_name[inner_type.T](), "test_struct_fields.Inner")
 
     # Also verify we can use the count field type as an annotation
     comptime count_type = struct_field_type_by_name[Outer, "count"]()
@@ -1013,6 +623,201 @@ def test_generic_with_parametric_struct():
     # Test generic function instantiated with different parameter values
     assert_equal(generic_parametric_inspector[Int, 5](), 2)
     assert_equal(generic_parametric_inspector[Float64, 100](), 2)
+
+
+# ===----------------------------------------------------------------------=== #
+# get_type_name with struct_field_types Integration Tests
+# ===----------------------------------------------------------------------=== #
+
+
+def test_get_type_name_ctor_param_from_field_types():
+    """Ensure get_type_name works with constructor calls in type params.
+
+    Issue #5732: using get_type_name on types with constructor calls (like
+    A[B(True)]) extracted via struct_field_types would crash the compiler.
+    """
+    comptime types = struct_field_types[StructWithCtorParam]()
+    var name = get_type_name[types[0]]()
+    assert_equal(
+        name,
+        (
+            "test_struct_fields.WrapperWithValue[test_struct_fields.SimpleParam,"
+            " True]"
+        ),
+    )
+
+
+def test_get_type_name_memory_only_ctor_param_from_field_types():
+    """Ensure memory-only types with constructor calls work.
+
+    Memory-only types use `apply_result_slot` instead of `apply`, which was also
+    affected by issue #5732.
+    """
+    comptime types = struct_field_types[StructWithMemoryOnlyCtorParam]()
+    var name = get_type_name[types[0]]()
+    assert_equal(
+        name,
+        (
+            "test_struct_fields.WrapperWithValue[test_struct_fields.MemoryOnlyParam,"
+            " {True}]"
+        ),
+    )
+
+
+def test_get_type_name_nested_parametric_from_field_types():
+    """Test that get_type_name works with nested parametric types from struct_field_types.
+    """
+    # Both fields should work
+    comptime types = struct_field_types[NestedParametricStruct]()
+    var name0 = get_type_name[types[0]]()
+    assert_equal(name0, "test_struct_fields.GenericWrapper[String]")
+
+    # Nested parametric type should work too
+    var name1 = get_type_name[types[1]]()
+    assert_equal(name1, "test_struct_fields.GenericWrapper[List[String]]")
+
+
+def test_get_type_name_deeply_nested_parametric_from_field_types():
+    """Test deeply nested parametric types from struct_field_types works.
+
+    This tests the case where we have GenericWrapper[GenericWrapper[T]] - both
+    single and double nested types should work.
+    """
+    comptime types = struct_field_types[DeeplyNestedStruct]()
+
+    # Single level parametric from struct_field_types
+    var name0 = get_type_name[types[0]]()
+    assert_equal(name0, "test_struct_fields.GenericWrapper[Int]")
+
+    # Double nested should work too
+    var name1 = get_type_name[types[1]]()
+    assert_equal(
+        name1,
+        "test_struct_fields.GenericWrapper[test_struct_fields.GenericWrapper[Int]]",
+    )
+
+
+def test_get_type_name_multiple_type_params_from_field_types():
+    """Test parametric types with multiple type parameters from struct_field_types.
+    """
+    comptime types = struct_field_types[StructWithPair]()
+    var name = get_type_name[types[0]]()
+    assert_equal(name, "test_struct_fields.Pair[String, List[Int]]")
+
+
+def test_get_type_name_various_stdlib_parametric_from_field_types():
+    """Test various stdlib parametric types (List, Optional, SIMD) from struct_field_types.
+    """
+    comptime types = struct_field_types[StructWithMultipleParametricFields]()
+
+    var name0 = get_type_name[types[0]]()
+    assert_equal(name0, "List[Int]")
+
+    var name1 = get_type_name[types[1]]()
+    assert_equal(name1, "std.collections.optional.Optional[String]")
+
+    # SIMD[DType.float32, 4] - value parameters (not type parameters) print correctly
+    var name2 = get_type_name[types[2]]()
+    assert_equal(name2, "SIMD[DType.float32, 4]")
+
+
+def test_get_type_name_triple_nested_from_field_types():
+    """Test three levels of nesting from struct_field_types."""
+    comptime types = struct_field_types[TripleNested]()
+    var name = get_type_name[types[0]]()
+    assert_equal(
+        name,
+        "test_struct_fields.GenericWrapper[test_struct_fields.GenericWrapper[test_struct_fields.GenericWrapper[Int]]]",
+    )
+
+
+def test_iterate_parametric_field_types_no_crash():
+    """Test that iterating over parametric field types in a loop doesn't crash.
+
+    This tests the common pattern of using struct_field_types in a @parameter for loop.
+    """
+    var count = 0
+
+    @parameter
+    for i in range(struct_field_count[StructWithMultipleParametricFields]()):
+        comptime field_type = struct_field_types[
+            StructWithMultipleParametricFields
+        ]()[i]
+        # Getting type name in a loop should not crash
+        var name = get_type_name[field_type]()
+        _ = name
+        count += 1
+
+    assert_equal(count, 3)
+
+
+# ===----------------------------------------------------------------------=== #
+# Reflection on Builtin Types Tests
+# ===----------------------------------------------------------------------=== #
+
+
+fn _count_fields_generic[T: AnyType]() -> Int:
+    """Helper function to test struct_field_count through generic parameter."""
+    return struct_field_count[T]()
+
+
+fn _get_field_names_generic[T: AnyType]() -> StaticString:
+    """Helper function to test struct_field_names through generic parameter."""
+    return struct_field_names[T]()[0]
+
+
+fn _get_type_name_generic[T: AnyType]() -> StaticString:
+    """Helper function to test get_type_name through generic parameter."""
+    return get_type_name[T]()
+
+
+def test_reflection_on_int():
+    """Test that reflection functions work on Int (issue #5731).
+
+    Int is a struct with one field (_mlir_value). Previously passing Int
+    through a generic parameter to reflection functions would crash the
+    compiler.
+    """
+    assert_equal(struct_field_count[Int](), 1)
+    assert_equal(_count_fields_generic[Int](), 1)
+
+    assert_equal(struct_field_names[Int]()[0], "_mlir_value")
+    assert_equal(_get_field_names_generic[Int](), "_mlir_value")
+
+    # get_type_name through generic (direct is tested elsewhere)
+    assert_equal(_get_type_name_generic[Int](), "Int")
+
+
+def test_reflection_on_origin():
+    """Test that reflection functions work on Origin (issue #5731).
+
+    Origin is a struct with one field (_mlir_origin). Previously this would
+    crash the compiler when passed through generic parameters.
+    """
+    assert_equal(_count_fields_generic[Origin[mut=True]](), 1)
+    assert_equal(_count_fields_generic[Origin[mut=False]](), 1)
+
+    assert_equal(_get_field_names_generic[Origin[mut=True]](), "_mlir_origin")
+
+    assert_equal(
+        _get_type_name_generic[Origin[mut=True]](),
+        "std.builtin.type_aliases.Origin[True]",
+    )
+
+
+def test_reflection_on_nonetype():
+    """Test that reflection functions work on NoneType (issue #5731).
+
+    NoneType is a struct with one field (_value). Previously this would crash
+    the compiler when passed through generic parameters.
+    """
+    assert_equal(_count_fields_generic[NoneType](), 1)
+
+    assert_equal(_get_field_names_generic[NoneType](), "_value")
+
+    assert_equal(
+        _get_type_name_generic[NoneType](), "std.builtin.none.NoneType"
+    )
 
 
 # ===----------------------------------------------------------------------=== #

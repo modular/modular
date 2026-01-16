@@ -20,7 +20,7 @@ from reflection import (
     struct_field_names,
     struct_field_types,
 )
-from reflection.reflection import _unqualified_type_name
+from reflection.type_info import _unqualified_type_name
 
 
 @always_inline("nodebug")

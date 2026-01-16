@@ -41,20 +41,17 @@ fn main():
 """
 
 from .location import SourceLocation, source_location, call_location
-from .reflection import (
-    # Type and function name introspection
+from .type_info import (
     get_linkage_name,
     get_function_name,
     get_type_name,
-    # Type checking
+)
+from .struct_fields import (
     is_struct_type,
-    # Struct field reflection (works with generics)
     struct_field_count,
     struct_field_names,
     struct_field_types,
-    # Field lookup by name
     struct_field_index_by_name,
     struct_field_type_by_name,
-    # Wrapper types for reflection results
     ReflectedType,
 )

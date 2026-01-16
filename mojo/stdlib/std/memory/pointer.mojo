@@ -19,7 +19,7 @@ from memory import Pointer
 ```
 """
 
-from reflection.reflection import _unqualified_type_name
+from reflection.type_info import _unqualified_type_name
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace

@@ -265,6 +265,12 @@ what we publish.
   non-struct types (such as MLIR primitive types). Use `@parameter if` with this
   function since the guarded reflection APIs are evaluated at compile time.
 
+- The `reflection` module has been reorganized into `type_info` and
+  `struct_fields` submodules. The public API via `from reflection import ...`
+  remains unchanged. Users who were importing internal symbols directly from
+  `reflection.reflection` should update their imports to use
+  `reflection.type_info` or `reflection.struct_fields` as appropriate.
+
 - The `Hashable` trait now has a default implementation of
   `__hash__[H: Hasher](self, mut hasher: H)` that uses
   reflection to automatically hash all struct fields.
