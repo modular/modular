@@ -1866,7 +1866,7 @@ struct DeviceFunction[
         pass
 
     var ctx = DeviceContext()
-    var kernel = ctx.compile_function_experimental[my_kernel]()
+    var kernel = ctx.compile_function[my_kernel, my_kernel]()
     ctx.enqueue_function(kernel, grid_dim=(1,1,1), block_dim=(32,1,1))
     ```
     """
@@ -3290,7 +3290,7 @@ struct DeviceContext(ImplicitlyCopyable):
         print("hello from thread:", thread_idx.x, thread_idx.y, thread_idx.z)
 
     with DeviceContext() as ctx:
-        ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=(2, 2, 2))
+        ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=(2, 2, 2))
         ctx.synchronize()
     ```
 
@@ -3305,7 +3305,7 @@ struct DeviceContext(ImplicitlyCopyable):
         @staticmethod
         fn execute(ctx_ptr: DeviceContextPtr) raises:
             var ctx = ctx_ptr.get_device_context()
-            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=(2, 2, 2))
+            ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=(2, 2, 2))
             ctx.synchronize()
     ```
     """
@@ -3714,6 +3714,14 @@ struct DeviceContext(ImplicitlyCopyable):
 
         Raises:
             If the operation fails.
+
+        Notes:
+
+        - This method doesn't perform compile-time type-checking of the kernel
+          function arguments. You will encounter run-time errors if the values
+          you pass don't conform to the expected argument types.
+        - This method will be deprecated and eventually removed.
+          Use `compile_function()` instead for type-checked kernel compilation.
         """
         debug_assert(
             not func_attribute
@@ -4183,6 +4191,14 @@ struct DeviceContext(ImplicitlyCopyable):
 
         Raises:
             If the operation fails.
+
+        Notes:
+
+        - This method doesn't perform compile-time type-checking of the kernel
+          function arguments. You will encounter run-time errors if the values
+          you pass don't conform to the expected argument types.
+        - This method will be deprecated and eventually removed.
+          Use `enqueue_function()` instead for type-checked kernel execution.
         """
         _check_dim["DeviceContext.enqueue_function_unchecked", "grid_dim"](
             grid_dim, location=call_location()
@@ -4275,6 +4291,14 @@ struct DeviceContext(ImplicitlyCopyable):
 
         Raises:
             If the operation fails.
+
+        Notes:
+
+        - This method doesn't perform compile-time type-checking of the kernel
+          function arguments. You will encounter run-time errors if the values
+          you pass don't conform to the expected argument types.
+        - This method will be deprecated and eventually removed.
+          Use `enqueue_function()` instead for type-checked kernel execution.
         """
         _check_dim["DeviceContext.enqueue_function_unchecked", "grid_dim"](
             grid_dim, location=call_location()
@@ -4344,7 +4368,8 @@ struct DeviceContext(ImplicitlyCopyable):
             print("Value:", x)
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function_experimental[kernel](compiled_func, 42, grid_dim=1, block_dim=1)
+            var compiled_func = ctx.compile_function[kernel, kernel]()
+            ctx.enqueue_function(compiled_func, 42, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4541,7 +4566,7 @@ struct DeviceContext(ImplicitlyCopyable):
         with DeviceContext() as ctx:
             # Create tensors a, b, c...
             # Most parameters are inferred automatically:
-            ctx.enqueue_function_experimental[vector_add](
+            ctx.enqueue_function[vector_add, vector_add](
                 a, b, c,
                 grid_dim=4,
                 block_dim=256
@@ -4791,7 +4816,7 @@ struct DeviceContext(ImplicitlyCopyable):
 
                 # Create tensor 'data'...
                 # Most parameters are inferred:
-                ctx.enqueue_function_experimental[scale_kernel](
+                ctx.enqueue_function[scale_kernel, scale_kernel](
                     data,
                     grid_dim=1,
                     block_dim=256
@@ -5026,8 +5051,8 @@ struct DeviceContext(ImplicitlyCopyable):
 
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function_experimental[kernel]()
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_experimental(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_experimental(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -5363,7 +5388,7 @@ struct DeviceContext(ImplicitlyCopyable):
 
         fn benchmark_kernel(ctx: DeviceContext, i: Int) raises capturing [_] -> None:
             # Run kernel with different parameters based on iteration
-            ctx.enqueue_function[my_kernel](grid_dim=Dim(i), block_dim=Dim(256))
+            ctx.enqueue_function[my_kernel, my_kernel](grid_dim=Dim(i), block_dim=Dim(256))
 
         with DeviceContext() as ctx:
             # Measure execution time with iteration awareness
