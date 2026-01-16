@@ -199,10 +199,11 @@ def run_embeddings_generation(  # noqa: ANN201
             embeddings = last_token_pool(
                 output.last_hidden_state, encoded_input["attention_mask"]
             )
-            # Apply L2 normalization as per upstream Qwen3-Embedding implementation
+            # Apply L2 normalization
             embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
             embeddings = embeddings.cpu().detach().to(torch.float32).numpy()
-            # embeddings is now [batch_size=1, hidden_dim], keep 2D for consistency with MAX
+            # Squeeze batch dimension to match MAX output shape: [batch_size=1, hidden_dim] -> [hidden_dim]
+            embeddings = embeddings.squeeze(0)
         else:
             # Return raw hidden states without pooling [batch_size, seq_len, hidden_dim]
             embeddings = output.last_hidden_state.cpu().detach().to(torch.float32).numpy()
