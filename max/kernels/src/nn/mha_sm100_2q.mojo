@@ -17,7 +17,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from collections import OptionalReg
 from math import ceildiv, exp2, recip, align_up, align_down, gcd, iota
 from math.constants import log2e
-from sys import align_of, simd_width_of, size_of
+from sys import align_of, simd_width_of, size_of, _RegisterPackType
 import gpu.primitives.warp as warp
 from bit import prev_power_of_two, pop_count
 from buffer import NDBuffer
@@ -117,7 +117,7 @@ from nn.mha_utils import (
     _is_decoding,
 )
 from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf
+from utils.numerics import min_or_neg_inf
 from utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 from kv_cache.types import swizzle_granularity
@@ -1151,6 +1151,92 @@ fn elect() -> Int32:
         Int32,
         constraints="=r,r",
     ](-1)
+
+
+@always_inline
+fn sub_ftz(a: Float32, b: Float32) -> Float32:
+    return inlined_assembly[
+        """
+        sub.ftz.f32 $0, $1, $2;
+        """,
+        Float32,
+        constraints="=f,f,f",
+    ](a, b)
+
+
+@always_inline
+fn sub_ftz(
+    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
+) -> SIMD[DType.float32, 2]:
+    ret = inlined_assembly[
+        """{
+        .reg .b64 %ra;
+        .reg .b64 %rb;
+        .reg .b64 %rc;
+        mov.b64 %ra, {$2, $3};
+        mov.b64 %rb, {$4, $5};
+        sub.ftz.f32x2 %rc, %ra, %rb;
+        mov.b64 {$0, $1}, %rc;
+        }""",
+        _RegisterPackType[Float32, Float32],
+        constraints="=f,=f,f,f,f,f",
+    ](a[0], a[1], b[0], b[1])
+    return {ret[0], ret[1]}
+
+
+@always_inline
+fn add_ftz(a: Float32, b: Float32) -> Float32:
+    return inlined_assembly[
+        """
+        add.ftz.f32 $0, $1, $2;
+        """,
+        Float32,
+        constraints="=f,f,f",
+    ](a, b)
+
+
+@always_inline
+fn add_ftz(
+    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
+) -> SIMD[DType.float32, 2]:
+    ret = inlined_assembly[
+        """{
+        .reg .b64 %ra;
+        .reg .b64 %rb;
+        .reg .b64 %rc;
+        mov.b64 %ra, {$2, $3};
+        mov.b64 %rb, {$4, $5};
+        add.ftz.f32x2 %rc, %ra, %rb;
+        mov.b64 {$0, $1}, %rc;
+        }""",
+        _RegisterPackType[Float32, Float32],
+        constraints="=f,=f,f,f,f,f",
+    ](a[0], a[1], b[0], b[1])
+    return {ret[0], ret[1]}
+
+
+@always_inline
+fn fma_ftz(
+    a: SIMD[DType.float32, 2],
+    b: SIMD[DType.float32, 2],
+    c: SIMD[DType.float32, 2],
+) -> SIMD[DType.float32, 2]:
+    ret = inlined_assembly[
+        """{
+        .reg .b64 %ra;
+        .reg .b64 %rb;
+        .reg .b64 %rc;
+        .reg .b64 %rd;
+        mov.b64 %ra, {$2, $3};
+        mov.b64 %rb, {$4, $5};
+        mov.b64 %rc, {$6, $7};
+        fma.rn.ftz.f32x2 %rd, %ra, %rb, %rc;
+        mov.b64 {$0, $1}, %rd;
+        }""",
+        _RegisterPackType[Float32, Float32],
+        constraints="=f,=f,f,f,f,f,f,f",
+    ](a[0], a[1], b[0], b[1], c[0], c[1])
+    return {ret[0], ret[1]}
 
 
 @always_inline
@@ -2435,6 +2521,7 @@ fn apply_oob_mask[
             iota[DType.int32, simd_width](score_col)
             .lt(num_keys)
             .select(s, MASK_VALUE)
+            # .select(s, min_or_neg_inf[dtype]())
         )
 
     return s
@@ -2688,7 +2775,7 @@ struct SM100MHA2Q[
     PartitionType: MHAPartitionScheme,
 ]:
     comptime qkv_type = Self.KVLUTType.dtype
-    comptime accum_type = get_accum_type[Self.qkv_type]()
+    comptime accum_type = DType.float32
     comptime simd_size: Int = simd_width_of[Self.qkv_type]()
 
     comptime cta_group = 1  # TODO: support 2
@@ -3267,7 +3354,7 @@ struct SM100MHA2Q[
         @always_inline
         fn load_mask_max[
             *, mask_strategy: MaskStrategy
-        ](kv_row: UInt32) -> Scalar[Self.accum_type]:
+        ](kv_row: UInt32) -> Float32:
             # break up into sets of 32
             # minimize wait time by using smallest first
             comptime BM = Self.config.BM // 2
@@ -3282,7 +3369,7 @@ struct SM100MHA2Q[
                 s_tmem + first_cols
             ).load_async()
             mask_row[mask_strategy=mask_strategy](s0, kv_row)
-            vrow_max = maximum[width = Self.simd_size](s0)
+            vrow_max = maximum[width=8](s0)
 
             s.ptr.store(s0.ptr.load[width=first_cols]())
             # i = 0
@@ -3379,11 +3466,11 @@ struct SM100MHA2Q[
 
             return vrow_max.reduce_max()
 
+        comptime f32x2 = SIMD[DType.float32, 2]
+
         @parameter
         @always_inline
-        fn store_exp(
-            row_max: Scalar[Self.accum_type],
-        ) -> SIMD[Self.accum_type, 2]:
+        fn store_exp[correction: Bool = True](row_max: Float32) -> f32x2:
             comptime exp_simd = 2
             comptime vs_len = Self.config.BN // exp_simd  # 128 // 2 = 64
             comptime batch_size = 32
@@ -3413,20 +3500,43 @@ struct SM100MHA2Q[
             # in registers until after we write.
             # The optimal solution for the number to do in advance is also
             # independent of the number of batches.
-            comptime AccType = SIMD[Self.accum_type, exp_simd]
-            var acc: AccType = exp2(rebind[AccType](vs[0]) - row_max)
+            var vrow_max: f32x2 = f32x2(row_max)
+            var acc: f32x2 = exp2(sub_ftz(rebind[f32x2](vs[0]), vrow_max))
             vs[0] = rebind[vs.element_type](acc)
+            vsi = exp2(sub_ftz(rebind[f32x2](vs[1]), vrow_max))
+            vs[1] = rebind[vs.element_type](vsi)
+            acc = add_ftz(acc, vsi)
 
             @parameter
-            for i in range(1, batch_size // 2):
-                vsi = exp2(rebind[AccType](vs[i]) - row_max)
+            for i in range(2, 8):
+                vs[i] = rebind[vs.element_type](
+                    sub_ftz(rebind[f32x2](vs[i]), vrow_max)
+                )
+
+            @parameter
+            if correction:
+                tcgen05_store_wait()
+                tcgen05_fence_before()
+                pipeline_c.commit()
+
+            @parameter
+            for i in range(2, 8):
+                vsi = exp2(rebind[f32x2](vs[i]))
                 vs[i] = rebind[vs.element_type](vsi)
-                acc += vsi
+                acc = add_ftz(acc, vsi)
+
+            @parameter
+            for i in range(8, batch_size // 2):
+                vsi = exp2(sub_ftz(rebind[f32x2](vs[i]), vrow_max))
+                vs[i] = rebind[vs.element_type](vsi)
+                acc = add_ftz(acc, vsi)
 
             # at this point, we need 32 fewer fp32 registers but 16 more u32
             @parameter
             for i in range(batch_size // 2, batch_size):
-                vs[i] = exp2(vs[i] - row_max)
+                vs[i] = rebind[vs.element_type](
+                    exp2(sub_ftz(rebind[f32x2](vs[i]), vrow_max))
+                )
 
             BatchTileType(p_tmem).store(
                 LocalTensor[
@@ -3440,7 +3550,9 @@ struct SM100MHA2Q[
 
                 @parameter
                 for i in range(offset, offset + batch_size):
-                    vs[i] = exp2(vs[i] - row_max)
+                    vs[i] = rebind[vs.element_type](
+                        exp2(sub_ftz(rebind[f32x2](vs[i]), vrow_max))
+                    )
 
                 comptime el_offset = offset * exp_simd
                 comptime tmem_offset = (
@@ -3458,7 +3570,9 @@ struct SM100MHA2Q[
 
                 @parameter
                 for i in range(offset, offset + remainder):
-                    vs[i] = exp2(vs[i] - row_max)
+                    vs[i] = rebind[vs.element_type](
+                        exp2(sub_ftz(rebind[f32x2](vs[i]), vrow_max))
+                    )
 
                 comptime el_offset = offset * exp_simd
                 comptime tmem_offset = (
@@ -3474,17 +3588,20 @@ struct SM100MHA2Q[
             tcgen05_fence_before()
             pipeline_s.release()
             # now we can sum the remaining elements of `acc`
-            acc0 = vs[batch_size // 2]
-            acc1 = vs[batch_size // 2 + 1]
-            acc2 = vs[batch_size // 2 + 2] + vs[batch_size // 2 + 3]
+            var acc0: f32x2 = rebind[f32x2](vs[batch_size // 2])
+            var acc1: f32x2 = rebind[f32x2](vs[batch_size // 2 + 1])
+            var acc2: f32x2 = add_ftz(
+                rebind[f32x2](vs[batch_size // 2 + 2]),
+                rebind[f32x2](vs[batch_size // 2 + 3]),
+            )
 
             @parameter
             for i in range(batch_size // 2 + 4, vs_len, 4):
-                acc += rebind[AccType](vs[i])
-                acc0 += vs[i + 1]
-                acc1 += vs[i + 2]
-                acc2 += vs[i + 3]
-            return (acc + rebind[AccType](acc0)) + rebind[AccType](acc1 + acc2)
+                acc = add_ftz(acc, rebind[f32x2](vs[i]))
+                acc0 = add_ftz(acc0, rebind[f32x2](vs[i + 1]))
+                acc1 = add_ftz(acc1, rebind[f32x2](vs[i + 2]))
+                acc2 = add_ftz(acc2, rebind[f32x2](vs[i + 3]))
+            return add_ftz(add_ftz(acc, acc0), add_ftz(acc1, acc2))
 
         var kv_row: UInt32 = mask.start_column[
             Self.BM, Self.BN, Self.page_size
@@ -3497,7 +3614,7 @@ struct SM100MHA2Q[
 
         pipeline_s.wait()
         tcgen05_fence_after()
-        var row_max: Scalar[Self.accum_type]
+        var row_max: Float32
         var mask_iters: StaticTuple[UInt32, num_sets] = {}
 
         @parameter
@@ -3563,7 +3680,7 @@ struct SM100MHA2Q[
             sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
             sink_weight = 0.0
 
-        var row_sum: SIMD[Self.accum_type, 2] = store_exp(row_max)
+        var row_sum: f32x2 = store_exp[False](row_max)
 
         var o_phase: UInt32 = 0  # initial wait is phase 0
 
@@ -3582,7 +3699,7 @@ struct SM100MHA2Q[
                 comptime mask_strategy = mask_strategies[i]
                 var iters: UInt32
 
-                iters = mask_iters[i]
+                iters = warp.broadcast(mask_iters[i])
                 while iters != 0:
                     iters -= 1
                     kv_row += Self.config.BN
@@ -3590,13 +3707,11 @@ struct SM100MHA2Q[
                     tcgen05_fence_after()
                     # calculate rowmax
                     old_max = row_max
-                    var new_row_max: Scalar[Self.accum_type]
-
-                    new_row_max = load_mask_max[mask_strategy=mask_strategy](
-                        kv_row
-                    )
+                    var new_row_max: Float32 = load_mask_max[
+                        mask_strategy=mask_strategy
+                    ](kv_row)
                     row_max = max(old_max, new_row_max)
-                    correction = exp2(old_max - row_max)
+                    correction = exp2(sub_ftz(old_max, row_max))
                     pipeline_c.acquire()
                     tcgen05_st[
                         datapaths=32,
@@ -3604,10 +3719,9 @@ struct SM100MHA2Q[
                         repeat=1,
                         pack=False,
                     ](c_tmem, correction)
-                    pipeline_c.commit()
                     # update s->p
                     local_rowsum = store_exp(row_max)
-                    row_sum = row_sum.fma(correction, local_rowsum)
+                    row_sum = fma_ftz(row_sum, f32x2(correction), local_rowsum)
                     o_phase ^= 1
         else:
             while True:
@@ -3631,7 +3745,7 @@ struct SM100MHA2Q[
                         mask_strategy = MaskStrategy.OUT_OF_BOUNDS
                     ](kv_row)
                 row_max = max(old_max, new_row_max)
-                correction = exp2(old_max - row_max)
+                correction = exp2(sub_ftz(old_max, row_max))
                 pipeline_c.acquire()
                 tcgen05_st[
                     datapaths=32,
@@ -3639,10 +3753,9 @@ struct SM100MHA2Q[
                     repeat=1,
                     pack=False,
                 ](c_tmem, correction)
-                pipeline_c.commit()
                 # update s->p
                 local_rowsum = store_exp(row_max)
-                row_sum = row_sum.fma(correction, local_rowsum)
+                row_sum = fma_ftz(row_sum, f32x2(correction), local_rowsum)
                 o_phase ^= 1
         # Do the final correction and write
         inv_row_sum = recip(row_sum.reduce_add())
