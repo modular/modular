@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 import pytest
 import torch.utils.dlpack
-from max.driver import CPU, Tensor
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, ops
@@ -25,7 +25,7 @@ from max.graph import DeviceRef, Dim, Graph, TensorType, ops
 
 def to_numpy(x: Any) -> np.ndarray:
     """Convert model output to numpy array."""
-    if isinstance(x, Tensor):
+    if isinstance(x, Buffer):
         return x.to_numpy()
     return torch.utils.dlpack.from_dlpack(x).numpy()
 
@@ -51,8 +51,8 @@ def test_same_symbolic_dimension_mismatch() -> None:
     model = session.load(graph)
 
     # Create inputs with different seq_len values (10 vs 12)
-    input0 = Tensor.from_numpy(np.zeros((10, 768), dtype=np.float32)).to(cpu)
-    input1 = Tensor.from_numpy(np.zeros((12, 768), dtype=np.float32)).to(cpu)
+    input0 = Buffer.from_numpy(np.zeros((10, 768), dtype=np.float32)).to(cpu)
+    input1 = Buffer.from_numpy(np.zeros((12, 768), dtype=np.float32)).to(cpu)
 
     with pytest.raises(Exception, match="symbolic dimension"):
         model(input0, input1)
@@ -80,7 +80,7 @@ def test_algebraic_dimension_fails_constraints() -> None:
     model = session.load(graph)
 
     # Create input with dim=63 (not divisible by 4)
-    input_data = Tensor.from_numpy(np.zeros((8, 63), dtype=np.float32)).to(cpu)
+    input_data = Buffer.from_numpy(np.zeros((8, 63), dtype=np.float32)).to(cpu)
 
     with pytest.raises(Exception, match="rebind shape check failed"):
         model(input_data)
@@ -107,7 +107,7 @@ def test_algebraic_dimension_meets_constraints() -> None:
     model = session.load(graph)
 
     # Create input with dim=64 (divisible by 4)
-    input_data = Tensor.from_numpy(np.zeros((8, 64), dtype=np.float32)).to(cpu)
+    input_data = Buffer.from_numpy(np.zeros((8, 64), dtype=np.float32)).to(cpu)
 
     results = model(input_data)
     result_np = to_numpy(results[0])
@@ -135,8 +135,8 @@ def test_same_symbolic_dimension_matches() -> None:
     model = session.load(graph)
 
     # Create inputs with the same seq_len value (10)
-    input0 = Tensor.from_numpy(np.ones((10, 768), dtype=np.float32)).to(cpu)
-    input1 = Tensor.from_numpy(np.ones((10, 768), dtype=np.float32) * 2).to(cpu)
+    input0 = Buffer.from_numpy(np.ones((10, 768), dtype=np.float32)).to(cpu)
+    input1 = Buffer.from_numpy(np.ones((10, 768), dtype=np.float32) * 2).to(cpu)
 
     results = model(input0, input1)
     result_np = to_numpy(results[0])
