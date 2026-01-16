@@ -57,7 +57,8 @@ def BuildInfoType : DialectType<(type)>;
 
 def StructType : DialectType<(type
   TypeArray:$elementTypes,
-  Bool:$isMemoryOnly
+  Bool:$isMemoryOnly,
+  TypedAttr:$minAlignment
 )>;
 
 def StructInstanceType : DialectType<(type

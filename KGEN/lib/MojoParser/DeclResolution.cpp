@@ -33,6 +33,7 @@
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Regex.h"
 #include "llvm/Support/SourceMgr.h"
 
@@ -2511,6 +2512,12 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
         traits.push_back(decl->getSymbolRef());
       return success();
     }
+    // @align without parentheses is an error
+    if (declRef->spelling == "align") {
+      shared.emitError(decorator->getLoc(),
+                       "@align requires exactly one argument");
+      return success();
+    }
     // We don't process @explicit_destroy here, we do it in resolveSignature.
   }
 
@@ -2541,6 +2548,56 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
             return success();
           }
         }
+      }
+
+      // @align(N) - specify minimum alignment for the struct
+      if (declRef->spelling == "align") {
+        if (callNode->operands.size() != 1) {
+          shared.emitError(decorator->getLoc(),
+                           "@align requires exactly one argument");
+          return success();
+        }
+
+        auto alignExpr = callNode->operands[0].expr;
+        if (auto intLit = dyn_cast<IntLiteralNode>(alignExpr)) {
+          APInt value = Lexer::getIntegerLiteralValue(intLit->spelling);
+          int64_t alignVal = value.getSExtValue();
+
+          // Validate: must be positive power of 2
+          if (alignVal <= 0 || !llvm::isPowerOf2_64(alignVal)) {
+            shared.emitError(intLit->getLoc(),
+                             "@align value must be a positive power of 2");
+            return success();
+          }
+
+          // Validate: must not exceed reasonable upper bound (2^29 bytes =
+          // 512MB). This matches common compiler limits and avoids overflow
+          // issues.
+          constexpr int64_t kMaxAlignment = 1LL << 29;
+          if (alignVal > kMaxAlignment) {
+            shared.emitError(intLit->getLoc(),
+                             "@align value exceeds maximum alignment (2^29)");
+            return success();
+          }
+
+          structOp.setMinAlignmentAttr(IntegerAttr::get(
+              IntegerType::get(shared.getContext(), 64), alignVal));
+          return success();
+        }
+
+        // Check for negative literal like @align(-1) - parsed as unary negation
+        if (auto unaryOp = dyn_cast<UnaryOpNode>(alignExpr)) {
+          if (unaryOp->kind == ExprNode::kNeg &&
+              isa<IntLiteralNode>(unaryOp->subExpr)) {
+            shared.emitError(alignExpr->getLoc(),
+                             "@align value must be a positive power of 2");
+            return success();
+          }
+        }
+
+        shared.emitError(alignExpr->getLoc(),
+                         "@align requires a compile-time integer literal");
+        return success();
       }
     }
   }
