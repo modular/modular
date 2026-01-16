@@ -18,7 +18,7 @@ import logging
 from typing import Any
 
 import numpy as np
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
@@ -180,7 +180,7 @@ class DeepseekV32Model(DeepseekV3Model):
         dp_size = self.pipeline_config.model.data_parallel_degree
         max_batch_size *= dp_size
 
-        self._host_input_row_offsets_prealloc = Tensor.from_numpy(
+        self._host_input_row_offsets_prealloc = Buffer.from_numpy(
             np.arange(max_batch_size + 1, dtype=np.uint32)
         )
         self._device_input_row_offsets_prealloc = (
@@ -189,7 +189,7 @@ class DeepseekV32Model(DeepseekV3Model):
 
         # create batch context lengths tensor for each device
         self._batch_context_lengths_prealloc_cpu = [
-            Tensor.zeros(shape=[1], dtype=DType.int32)
+            Buffer.zeros(shape=[1], dtype=DType.int32)
             for _ in range(len(self.devices))
         ]
 
