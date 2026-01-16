@@ -73,7 +73,7 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
     @staticmethod
     @always_inline
     fn get_q_offset[q_depth: UInt]() -> UInt32:
-        return (
+        return UInt32(
             q_depth
             * (
                 block_idx.x
@@ -124,7 +124,7 @@ __extension Attention:
                 self.k.block_paged_ptr[Int(Self.BN)](
                     self.get_batch_idx(),
                     kv_tile_start_row,
-                    Self.kv_head_idx(),
+                    UInt32(Self.kv_head_idx()),
                     0,
                 ),
                 kv_tile_num_rows,
@@ -134,7 +134,7 @@ __extension Attention:
                 self.v.block_paged_ptr[Int(Self.BN)](
                     self.get_batch_idx(),
                     kv_tile_start_row,
-                    Self.kv_head_idx(),
+                    UInt32(Self.kv_head_idx()),
                     0,
                 ),
                 kv_tile_num_rows,
@@ -249,7 +249,7 @@ __extension Attention:
             self.mma_pv(v_buffer)
 
         for i in range(UInt32(0), UInt32(self.num_keys), UInt32(Self.BN)):
-            var end = min(i + Self.BN, self.num_keys)
+            var end = min(i + UInt32(Self.BN), self.num_keys)
             loop_over_kvcache[Int(Self.BN)](i, end, end != self.num_keys)
 
         self.out_reg_buffer.apply_softmax_denominator(
