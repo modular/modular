@@ -902,6 +902,24 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return Self(unsafe_from_utf8=self._slice[span])
 
+    @always_inline
+    fn __getitem__(self, *, bytes: ContiguousSlice) -> Self:
+        """Gets the sequence of characters at the specified positions.
+
+        Args:
+            bytes: A slice that specifies positions of the new substring.
+
+        Returns:
+            A new StringSlice containing the substring at the specified positions.
+        """
+        var sliced = Self(unsafe_from_utf8=self._slice[bytes])
+
+        if not sliced.is_codepoint_boundary(0):
+            abort("incorrectly sliced a multi-byte sequence at the start")
+        elif not sliced.is_codepoint_boundary(UInt(sliced.byte_length())):
+            abort("incorrectly sliced a multi-byte sequence at the end")
+        return sliced
+
     fn to_python_object(var self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
