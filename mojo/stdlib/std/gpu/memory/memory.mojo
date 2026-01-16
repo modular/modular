@@ -2133,6 +2133,81 @@ fn multimem_st[
         )
 
 
+fn multimem_st[
+    dtype: DType,
+    *,
+    simd_width: Int,
+    scope: Scope,
+    consistency: Consistency,
+](
+    addr: UnsafePointer[
+        mut=True, Scalar[dtype], address_space = AddressSpace.GLOBAL
+    ],
+    value: SIMD[dtype, simd_width],
+):
+    """Simplified multimem_st that automatically calculates optimal packing.
+
+    This wrapper automatically determines the optimal width and count
+    parameters based on the requested simd_width and data type, using 32-bit
+    word packing for efficiency.
+
+    Parameters:
+        dtype: Data type of the elements to store (must be a floating point type).
+        simd_width: Total number of elements to store (must be 1, 2, 4, or 8).
+        scope: Memory scope for the operation.
+        consistency: Memory consistency model to use.
+
+    Args:
+        addr: Multimem address in global address space pointing to multiple
+            locations.
+        value: SIMD vector containing simd_width elements to store.
+
+    Constraints:
+        - Only supported on SM90+ GPUs.
+        - dtype must be 4 bytes or smaller (float32, float16, bfloat16, etc.).
+          For float64, use the explicit width/count overload.
+        - simd_width must be 1, 2, 4, or 8.
+        - Total bit width (count * width * size_of[dtype] * 8) must be 32, 64, or 128 bits.
+        - Type must be a floating point type.
+    """
+    __comptime_assert (
+        _is_sm_9x_or_newer()
+    ), "multimem is only supported on SM90+ GPUs"
+    __comptime_assert size_of[dtype]() <= 4, (
+        "dtype must be 4 bytes or smaller (use explicit width/count overload"
+        " for float64)"
+    )
+    comptime width = 4 // size_of[dtype]()
+    comptime count = simd_width // width
+    __comptime_assert simd_width in (
+        1,
+        2,
+        4,
+        8,
+    ), "simd_width must be 1, 2, 4, or 8"
+    comptime total_bits = count * width * size_of[dtype]() * 8
+    __comptime_assert total_bits in (
+        32,
+        64,
+        128,
+    ), "total bit width must be 32, 64, or 128 bits"
+
+    # Unpack SIMD vector into StaticTuple format
+    var values = StaticTuple[SIMD[dtype, width], count]()
+
+    @parameter
+    for i in range(count):
+        values[i] = value.slice[width, offset = i * width]()
+
+    multimem_st[
+        dtype,
+        count=count,
+        scope=scope,
+        consistency=consistency,
+        width=width,
+    ](addr, values)
+
+
 # ===-----------------------------------------------------------------------===#
 # Utilities
 # ===-----------------------------------------------------------------------===#
