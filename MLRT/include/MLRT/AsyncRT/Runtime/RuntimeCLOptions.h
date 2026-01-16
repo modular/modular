@@ -55,26 +55,6 @@ private:
       llvm::cl::location(options.workQueueType),
       llvm::cl::cat(RuntimeOptionsCategory)};
 
-  // Enable HostAllocator types to be specified on the command line.
-  M::cl::MOpt<RuntimeOptions::AllocatorType, true> allocatorType{
-      "allocator", llvm::cl::desc("Specify allocator type:"),
-      llvm::cl::values(
-
-          clEnumValN(RuntimeOptions::AllocatorType::kMalloc, "malloc",
-                     "System malloc/free"),
-          clEnumValN(RuntimeOptions::AllocatorType::kTCMalloc, "tcmalloc",
-                     "TCMalloc new/delete. Not available on all targets"),
-          clEnumValN(RuntimeOptions::AllocatorType::kLeakChecker,
-                     "leak-checker", "Allocator with leak checking"),
-          clEnumValN(RuntimeOptions::AllocatorType::kProfiler, "profiler",
-                     "Allocator with profiling and leak checking"),
-          clEnumValN(RuntimeOptions::AllocatorType::kUseAfterFree,
-                     "use-after-free",
-                     "Allocator to detect use-after-free errors. Not available "
-                     "on all targets.")),
-      llvm::cl::location(options.allocatorType),
-      llvm::cl::cat(RuntimeOptionsCategory)};
-
   // Specify the number of threads. If `thread==1`, then we automatically set
   // our work queue to `WorkQueueType::kSingleThread`. Otherwise, we assume
   // the work queue is using a thread pool. The default number of threads is
