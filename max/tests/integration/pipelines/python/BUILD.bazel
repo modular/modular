@@ -44,7 +44,6 @@ modular_py_test(
     srcs = [
         "test_compare_tensors.py",
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/driver",
         "//max/python/max/engine",
@@ -73,12 +72,10 @@ modular_py_test(
     name = "test_hf_config_overrides",
     size = "small",
     srcs = ["test_hf_config_overrides.py"],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/tools:hf_config_overrides",
-        requirement("pytest-mock"),
         requirement("transformers"),
     ],
 )
@@ -87,12 +84,10 @@ modular_py_test(
     name = "test_hf_repo_lock",
     size = "small",
     srcs = ["test_hf_repo_lock.py"],
-    tags = [
-        "no-pydeps",  # TODO: Fix and re-enable
-    ],
     deps = [
         ":hf_repo_lock",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:mocks",
+        "//max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
         requirement("pytest-mock"),
     ],
 )
@@ -198,12 +193,14 @@ modular_py_test(
     name = "test_pipelines_cli",
     size = "enormous",
     srcs = ["test_pipelines_cli.py"],
+    data = [
+        "//max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
+    ],
     env = {
         "PIPELINES_CUSTOM_ARCHITECTURE": "max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
     },
     tags = [
         "manual",  # TODO(SERVOPT-900)
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
         "run-in-hf-workflow",  # TODO(SERVOPT-900)
@@ -216,9 +213,6 @@ modular_py_test(
         ":hf_repo_lock",
         "//max/python/max/entrypoints:pipelines",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration/pipelines/python/test_common",
-        requirement("transformers"),
-        requirement("gguf"),
     ],
 )
 
@@ -236,7 +230,6 @@ modular_py_test(
     tags = [
         "gpu",
         "manual",  # TODO(SERVOPT-900)
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
         "run-in-hf-workflow",  # TODO(SERVOPT-900)
@@ -244,11 +237,8 @@ modular_py_test(
     deps = [
         ":hf_repo_lock",
         "//max/python/max/entrypoints:pipelines",
-        "//max/tests/integration/pipelines/python/test_common",
-        requirement("transformers"),
-        requirement("gguf"),
-        requirement("safetensors"),
-        requirement("torch"),
+        "//max/tests/integration/pipelines/python/test_common:graph_utils",
+        "//max/tests/integration/pipelines/python/test_common:lora_utils",
     ],
 )
 
@@ -285,7 +275,6 @@ modular_py_test(
 modular_py_test(
     name = "test_pipelines_cli_help",
     srcs = ["test_pipelines_cli_help.py"],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/entrypoints:pipelines",
         requirement("click"),
@@ -359,6 +348,7 @@ modular_py_binary(
         "run_lm_eval.py",
         "//max/tests/integration/pipelines/python/eval_tasks",
     ],
+    imports = ["."],
     main = "pipelines_lm_eval.py",
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
@@ -378,7 +368,6 @@ modular_py_test(
     size = "medium",
     srcs = ["test_pipelines_lm_eval.py"],
     tags = [
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],

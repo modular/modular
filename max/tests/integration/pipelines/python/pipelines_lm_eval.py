@@ -53,7 +53,7 @@ class PipelineSitter:
     """Owns the pipelines process and manages its startup/shutdown."""
 
     _args: Sequence[str]
-    _proc: subprocess.Popen | None  # type: ignore
+    _proc: subprocess.Popen | None
 
     def __init__(self, args: Sequence[str]) -> None:
         self._args = args
