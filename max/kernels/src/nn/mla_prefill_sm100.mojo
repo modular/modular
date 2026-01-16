@@ -107,7 +107,7 @@ from nn.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
 )
-from gpu.compute.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from linalg.arch.sm100.mma import smem_descriptor
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple

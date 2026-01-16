@@ -24,7 +24,7 @@ shared memory. This module provides type-safe abstractions:
 from layout import Layout
 
 from gpu import syncwarp
-from gpu.compute.tcgen05 import (
+from gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_ld,

@@ -18,7 +18,7 @@ from gpu.memory import AddressSpace
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_id_in_cluster
 from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.compute.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import coalesce

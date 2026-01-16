@@ -37,7 +37,7 @@ from gpu.memory import fence_async_view_proxy, external_memory
 from gpu.compute.mma import st_matrix
 from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.sync import named_barrier
-from gpu.compute.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static

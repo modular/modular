@@ -26,7 +26,7 @@ from gpu import (
 )
 from gpu.primitives.cluster import elect_one_sync
 from gpu.globals import WARPGROUP_SIZE
-from gpu.compute.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from gpu.sync import named_barrier
 from memory import LegacyUnsafePointer
 

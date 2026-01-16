@@ -50,7 +50,7 @@ from gpu.sync import (
 )
 from gpu.memory import fence_async_view_proxy
 from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from gpu.compute.tcgen05 import (
+from gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,

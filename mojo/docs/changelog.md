@@ -901,7 +901,7 @@ or removed in future releases.
   - `gpu.mma_util` - Use `from gpu.compute.mma_util import ...` instead
   - `gpu.mma_sm100` - Use `from gpu.compute.arch.mma_nvidia_sm100 import ...` instead
   - `gpu.semaphore` - Use `from gpu.sync.semaphore import ...` instead
-  - `gpu.tcgen05` - Use `from gpu.compute.tcgen05 import ...` instead
+  - `gpu.tcgen05` - Use `from gpu.compute.arch.tcgen05 import ...` instead
 
 ### 🛠️ Fixed
 

@@ -46,7 +46,7 @@ from gpu.sync import (
     syncwarp,
     umma_arrive_leader_cta,
 )
-from gpu.compute.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
 from random import rand
 from layout import (

@@ -26,7 +26,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx, warp_id
 from gpu.memory import external_memory
 from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.compute.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor

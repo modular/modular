@@ -25,7 +25,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_idx, lane_id, thread_idx
 from gpu.memory import external_memory
 from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.compute.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]

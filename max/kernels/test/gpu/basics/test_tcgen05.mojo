@@ -14,7 +14,7 @@
 from gpu.host import get_gpu_target
 from gpu.host.compile import _compile_code
 from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
-from gpu.compute.tcgen05 import (
+from gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_cp,
     tcgen05_dealloc,

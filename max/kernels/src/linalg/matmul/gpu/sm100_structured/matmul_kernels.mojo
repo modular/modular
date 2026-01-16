@@ -60,7 +60,7 @@ from gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
 )
 from gpu.sync import syncwarp
-from gpu.compute.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout.int_tuple import IntTuple
 from layout.swizzle import Swizzle

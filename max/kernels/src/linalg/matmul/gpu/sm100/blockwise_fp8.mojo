@@ -24,7 +24,7 @@ from gpu import block_idx, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.memory import external_memory
 from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.compute.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple

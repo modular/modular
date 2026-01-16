@@ -46,7 +46,7 @@ from gpu.compute.arch.mma_nvidia_sm100 import (
     mma_arrive,
 )
 from gpu.sync import named_barrier
-from gpu.compute.tcgen05 import (
+from gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,

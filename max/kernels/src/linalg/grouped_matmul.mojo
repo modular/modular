@@ -46,7 +46,7 @@ from gpu.memory import external_memory, fence_mbarrier_init
 from gpu.primitives.grid_controls import PDLLevel
 
 from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.compute.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import LayoutTensorIter

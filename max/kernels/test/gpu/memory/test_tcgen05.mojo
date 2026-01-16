@@ -17,7 +17,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import thread_idx, warp_id
 from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.sync import barrier
-from gpu.compute.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from memory import stack_allocation
