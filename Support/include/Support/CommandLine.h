@@ -15,6 +15,7 @@
 #ifndef SUPPORT_COMMANDLINE_H
 #define SUPPORT_COMMANDLINE_H
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/CommandLine.h"
 
@@ -89,7 +90,7 @@ class MOpt : public llvm::cl::opt<DataType, ExternalStorage, ParserClass> {
 public:
   using llvm::cl::opt<DataType, ExternalStorage, ParserClass>::opt;
   ~MOpt() {
-    llvm::StringMap<llvm::cl::Option *> &entries =
+    llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &entries =
         llvm::cl::getRegisteredOptions();
     entries.erase(this->ArgStr);
   }
@@ -101,7 +102,7 @@ class MListOpt : public llvm::cl::list<DataType, StorageClass, ParserClass> {
 public:
   using llvm::cl::list<DataType, StorageClass, ParserClass>::list;
   ~MListOpt() {
-    llvm::StringMap<llvm::cl::Option *> &entries =
+    llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &entries =
         llvm::cl::getRegisteredOptions();
     entries.erase(this->ArgStr);
   }
@@ -113,7 +114,7 @@ class MBitsOpt : public llvm::cl::bits<DataType, Storage, ParserClass> {
 public:
   using llvm::cl::bits<DataType, Storage, ParserClass>::bits;
   ~MBitsOpt() {
-    llvm::StringMap<llvm::cl::Option *> &entries =
+    llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &entries =
         llvm::cl::getRegisteredOptions();
     entries.erase(this->ArgStr);
   }
