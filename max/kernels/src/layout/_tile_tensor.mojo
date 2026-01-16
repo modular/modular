@@ -29,7 +29,7 @@ from layout._fillers import BATCH_SIZE
 
 from .swizzle import Swizzle, make_ldmatrix_swizzle
 
-from ._layout import Layout
+from ._layout import Layout, _RowMajor
 from ._coord import (
     ComptimeInt,
     RuntimeInt,
@@ -55,8 +55,12 @@ struct TileTensor[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     linear_idx_type: DType = _get_index_type(address_space),
+    element_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
+        ComptimeInt[1]
+    ],
 ](Copyable, DevicePassable, Writable):
     comptime rank = Variadic.size(Self.shape_types)
+    comptime element_size = Coord[*Self.element_shape_types].STATIC_PRODUCT
     comptime SHAPE_KNOWN = Coord[*Self.shape_types].ALL_DIMS_KNOWN
     comptime STRIDE_KNOWN = Coord[*Self.shape_types].ALL_DIMS_KNOWN
     comptime ALL_DIMS_KNOWN = Self.SHAPE_KNOWN and Self.STRIDE_KNOWN
@@ -341,6 +345,7 @@ struct TileTensor[
         origin = Self.origin,
         address_space = Self.address_space,
         linear_idx_type = Self.linear_idx_type,
+        element_shape_types = Self.element_shape_types,
     ]:
         return _tile(self, coord[*tile_sizes](), coordinates)
 
@@ -354,6 +359,7 @@ struct TileTensor[
         origin = Self.origin,
         address_space = Self.address_space,
         linear_idx_type = Self.linear_idx_type,
+        element_shape_types = Self.element_shape_types,
     ] where Self.ALL_DIMS_KNOWN:
         return _distribute[thread_layout](self, thread_id)
 
@@ -465,6 +471,7 @@ struct TileTensor[
         Self.origin,
         address_space = Self.address_space,
         linear_idx_type = Self.linear_idx_type,
+        element_shape_types = Self.element_shape_types,
     ] where (Variadic.size(slices) == Self.rank and Self.ALL_DIMS_KNOWN):
         """Extract a slice from the tensor using slice objects.
 
@@ -559,6 +566,7 @@ struct TileTensor[
             Self.origin,
             address_space = Self.address_space,
             linear_idx_type = Self.linear_idx_type,
+            element_shape_types = Self.element_shape_types,
         ](self.ptr + offset, new_layout^)
 
     # ===------------------------------------------------------------------=== #
@@ -576,6 +584,7 @@ struct TileTensor[
         origin = Self.origin,
         address_space = Self.address_space,
         linear_idx_type = Self.linear_idx_type,
+        element_shape_types = _IntToComptimeInt[*vector_shape],
     ]
     """Type alias for vectorized tensor types.
 
@@ -599,9 +608,7 @@ struct TileTensor[
         transformation is particularly useful for SIMD (Single Instruction
         Multiple Data) operations and hardware acceleration.
 
-        Unlike `LayoutTensor.vectorize`, this simplified implementation does not
-        track the vector shape in an `element_layout`. Users must manually handle
-        loading SIMD vectors from each logical element position.
+        The vector shape is tracked in `element_shape_types`.
 
         Parameters:
             vector_shape: The dimensions of each vector unit along each axis of
@@ -611,7 +618,8 @@ struct TileTensor[
         Returns:
             A view of the tensor with a vectorized layout, where each element in
             the resulting tensor represents the start of a vector block from the
-            original tensor.
+            original tensor. The element layout is tracked via
+            `element_shape_types` (the vector shape).
 
         Constraints:
             All dimensions must be statically known (`ALL_DIMS_KNOWN`).
@@ -644,6 +652,75 @@ struct TileTensor[
             last dimension stride equals the SIMD width for the tensor's dtype.
         """
         return self.vectorize[1, simd_width_of[Self.dtype]()]()
+
+    # ===------------------------------------------------------------------=== #
+    # Coalescing
+    # ===------------------------------------------------------------------=== #
+
+    comptime CoalescedType = TileTensor[
+        shape_types = Variadic.types[
+            ComptimeInt[Coord[*Self.shape_types].STATIC_PRODUCT]
+        ],
+        stride_types = Variadic.types[ComptimeInt[1]],
+        dtype = Self.dtype,
+        origin = Self.origin,
+        address_space = Self.address_space,
+        linear_idx_type = Self.linear_idx_type,
+        element_shape_types = Variadic.types[
+            ComptimeInt[Coord[*Self.element_shape_types].STATIC_PRODUCT]
+        ],
+    ]
+    """Type alias for coalesced (flattened to rank-1) tensor types.
+
+    The coalesced tensor has:
+    - shape: product of all original dimensions
+    - stride: 1 (contiguous)
+    - element shape: product of all original element dimensions
+    - element stride: 1 (contiguous)
+    """
+
+    comptime IS_ROW_MAJOR = _IsRowMajor[Self.shape_types, Self.stride_types]
+    """True if the tensor has row-major (contiguous) strides."""
+
+    @always_inline("nodebug")
+    fn coalesce(
+        self,
+    ) -> Self.CoalescedType where Self.ALL_DIMS_KNOWN and Self.IS_ROW_MAJOR:
+        """Creates a rank-1 tensor by flattening all dimensions.
+
+        Coalescing combines all dimensions into a single contiguous dimension.
+        This is useful for operations that need to iterate over all elements
+        sequentially.
+
+        Returns:
+            A rank-1 tensor with shape equal to the product of all original
+            dimensions and stride 1. Element layout is also coalesced.
+
+        Constraints:
+            All dimensions must be statically known (`ALL_DIMS_KNOWN`).
+            The tensor must have row-major (contiguous) strides (`IS_ROW_MAJOR`).
+
+        Example:
+
+        For a 4x4 tensor, `coalesce()` produces a 16-element rank-1 tensor.
+        For a vectorized tensor with shape (4, 4) and element shape (4, 4),
+        coalescing produces shape (16,) with element shape (16,).
+
+        Performance:
+
+        - Creates a view without copying data.
+        - Enables simple sequential iteration over all elements.
+        - Zero-cost abstraction at compile time.
+        """
+        comptime total_size = Coord[*Self.shape_types].STATIC_PRODUCT
+        comptime element_size = Coord[*Self.element_shape_types].STATIC_PRODUCT
+
+        var new_layout = Layout(
+            Coord(ComptimeInt[total_size]()),
+            Coord(ComptimeInt[1]()),
+        )
+
+        return Self.CoalescedType(self.ptr, new_layout^)
 
     @always_inline("nodebug")
     fn to_layout_tensor(
@@ -775,6 +852,7 @@ fn _distribute[
     data_layout_tensor.origin,
     address_space = data_layout_tensor.address_space,
     linear_idx_type = data_layout_tensor.linear_idx_type,
+    element_shape_types = data_layout_tensor.element_shape_types,
 ]:
     """A simplified implementation of LayoutTensor.distribute on TileTensor."""
 
@@ -808,6 +886,7 @@ fn _distribute[
         data_layout_tensor.origin,
         address_space = data_layout_tensor.address_space,
         linear_idx_type = data_layout_tensor.linear_idx_type,
+        element_shape_types = data_layout_tensor.element_shape_types,
     ](
         UnsafePointer(to=data_layout_tensor.ptr[offset]),
         layout^,
@@ -821,10 +900,15 @@ fn _tile[
     stride_types: Variadic.TypesOfTrait[CoordLike],
     coord_types: Variadic.TypesOfTrait[CoordLike],
     tile_shape_types: Variadic.TypesOfTrait[CoordLike],
+    element_shape_types: Variadic.TypesOfTrait[CoordLike],
     //,
 ](
     data_layout_tensor: TileTensor[
-        shape_types=shape_types, stride_types=stride_types, dtype, ...
+        shape_types=shape_types,
+        stride_types=stride_types,
+        dtype,
+        element_shape_types=element_shape_types,
+        ...,
     ],
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
@@ -835,6 +919,7 @@ fn _tile[
     data_layout_tensor.origin,
     address_space = data_layout_tensor.address_space,
     linear_idx_type = data_layout_tensor.linear_idx_type,
+    element_shape_types=element_shape_types,
 ]:
     """Extract a tile (sub-tensor) from a TileTensor at specified coordinates.
 
@@ -856,6 +941,7 @@ fn _tile[
         stride_types: Stride types of the source tensor (inferred from tensor argument).
         coord_types: Types of the tile coordinates (inferred from coordinates argument).
         tile_shape_types: Types of the tile dimensions (inferred from tile_shape argument).
+        element_shape_types: Element layout shape types (inferred from tensor argument).
 
     Args:
         data_layout_tensor: The source tensor to extract the tile from.
@@ -865,7 +951,7 @@ fn _tile[
     Returns:
         A TileTensor representing a view into the specified tile region.
         The returned tensor has the tile_shape as its dimensions and shares memory
-        with the original tensor.
+        with the original tensor. Element types are propagated from the source tensor.
     """
 
     var offset: UInt = 0
@@ -890,6 +976,7 @@ fn _tile[
         data_layout_tensor.origin,
         address_space = data_layout_tensor.address_space,
         linear_idx_type = data_layout_tensor.linear_idx_type,
+        element_shape_types=element_shape_types,
     ](
         UnsafePointer(to=data_layout_tensor.ptr[offset]),
         tile_layout,
@@ -915,12 +1002,14 @@ fn _vectorize[
     data_layout_tensor.origin,
     address_space = data_layout_tensor.address_space,
     linear_idx_type = data_layout_tensor.linear_idx_type,
+    element_shape_types=vector_shape_types,
 ]:
     """Create a vectorized view of a TileTensor.
 
     This function creates a new view where the shape is divided by the vector
     shape (ceiling division) and strides are multiplied by the vector shape.
-    This effectively groups elements into vector-sized blocks.
+    This effectively groups elements into vector-sized blocks. The element
+    layout is tracked via element_shape_types.
 
     Parameters:
         dtype: Data type of the tensor elements.
@@ -935,6 +1024,8 @@ fn _vectorize[
     Returns:
         A TileTensor representing a vectorized view. Each logical element
         in the result corresponds to a vector block in the original tensor.
+        The element layout shape and strides are set to the vector shape
+        with row-major strides.
     """
     comptime NewShapeTypes = _CeilDiv[shape_types, vector_shape_types]
     comptime NewStrideTypes = _Multiply[stride_types, vector_shape_types]
@@ -954,6 +1045,7 @@ fn _vectorize[
         data_layout_tensor.origin,
         address_space = data_layout_tensor.address_space,
         linear_idx_type = data_layout_tensor.linear_idx_type,
+        element_shape_types=vector_shape_types,
     ](data_layout_tensor.ptr, new_layout^)
 
 
@@ -1078,3 +1170,41 @@ comptime _Slice[
     VariadicType=element_types,
     Mapper = _SliceMapper[slices=slices],
 ]
+
+
+comptime _IsRowMajorMapper[
+    expected_strides: Variadic.TypesOfTrait[CoordLike],
+    element_types: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = ComptimeInt[
+    1 if element_types[idx].STATIC_VALUE
+    == expected_strides[idx].STATIC_VALUE else 0
+]
+"""Check if stride at index matches expected row-major stride."""
+
+
+comptime _IsRowMajorHelper[
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+] = _MapVariadicAndIdxToType[
+    To=CoordLike,
+    VariadicType=stride_types,
+    Mapper = _IsRowMajorMapper[expected_strides = _RowMajor[*shape_types]],
+]
+"""Returns variadic of ComptimeInt[1] if strides match, ComptimeInt[0] if not."""
+
+
+comptime _IsRowMajor[
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+] = Coord[*_IsRowMajorHelper[shape_types, stride_types]].STATIC_PRODUCT == (
+    1 if Variadic.size(shape_types)
+    == 0 else Coord[
+        *_Splatted[ComptimeInt[1], Variadic.size(shape_types)]
+    ].STATIC_PRODUCT
+)
+"""Check if stride_types match row-major strides for shape_types.
+
+Returns True if all strides match the expected row-major pattern,
+False otherwise. For row-major, stride[i] = product(shape[i+1:]).
+"""

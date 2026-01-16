@@ -382,3 +382,120 @@ def test_to_layout_tensor_3d_dynamic():
         ),
         std.utils.IndexList[3](64, 8, 4),
     )
+
+
+fn test_coalesce_2d() raises:
+    """Test coalescing a 2D tensor to rank-1."""
+    var data = InlineArray[Int32, 16](uninitialized=True)
+
+    # Initialize with sequential values
+    for i in range(16):
+        data[i] = i
+
+    # Create 4x4 tensor
+    var tensor = TileTensor[dtype = DType.int32](data, row_major[4, 4]())
+
+    # Coalesce to rank-1
+    var coalesced = tensor.coalesce()
+
+    # Verify coalesced tensor shape: 4*4 = 16
+    assert_equal(coalesced.layout.shape[0].value(), 16)
+
+    # Verify coalesced tensor stride: 1
+    assert_equal(coalesced.layout.stride[0].value(), 1)
+
+    # Verify elements are accessible in order
+    for i in range(16):
+        assert_equal(coalesced[(Idx(i),)], i)
+
+
+fn test_coalesce_3d() raises:
+    """Test coalescing a 3D tensor to rank-1."""
+    var data = InlineArray[Int32, 24](uninitialized=True)
+
+    for i in range(24):
+        data[i] = i
+
+    # Create 2x3x4 tensor
+    var tensor = TileTensor[dtype = DType.int32](data, row_major[2, 3, 4]())
+
+    # Coalesce to rank-1
+    var coalesced = tensor.coalesce()
+
+    # Verify coalesced tensor shape: 2*3*4 = 24
+    assert_equal(coalesced.layout.shape[0].value(), 24)
+
+    # Verify coalesced tensor stride: 1
+    assert_equal(coalesced.layout.stride[0].value(), 1)
+
+    # Verify elements are accessible in order
+    for i in range(24):
+        assert_equal(coalesced[(Idx(i),)], i)
+
+
+fn test_coalesce_1d() raises:
+    """Test coalescing a 1D tensor (should be no-op effectively)."""
+    var data = InlineArray[Int32, 8](uninitialized=True)
+
+    for i in range(8):
+        data[i] = i
+
+    # Create 8-element 1D tensor
+    var tensor = TileTensor[dtype = DType.int32](data, row_major[8]())
+
+    # Coalesce (should maintain rank-1)
+    var coalesced = tensor.coalesce()
+
+    # Verify shape and stride unchanged
+    assert_equal(coalesced.layout.shape[0].value(), 8)
+    assert_equal(coalesced.layout.stride[0].value(), 1)
+
+    # Verify elements
+    for i in range(8):
+        assert_equal(coalesced[(Idx(i),)], i)
+
+
+fn test_coalesce_element_size() raises:
+    """Test that coalesce properly tracks element_size."""
+    var data = InlineArray[Int32, 16](uninitialized=True)
+
+    for i in range(16):
+        data[i] = i
+
+    # Create 4x4 tensor
+    var tensor = TileTensor[dtype = DType.int32](data, row_major[4, 4]())
+
+    # Verify element_size is 1 for non-vectorized tensor
+    assert_equal(tensor.element_size, 1)
+
+    # Coalesce the tensor
+    var coalesced = tensor.coalesce()
+
+    # Verify coalesced shape: 4*4 = 16
+    assert_equal(coalesced.layout.shape[0].value(), 16)
+    assert_equal(coalesced.layout.stride[0].value(), 1)
+
+    # Verify element_size is still 1 (coalesced from 1)
+    assert_equal(coalesced.element_size, 1)
+
+    # Verify all elements accessible
+    for i in range(16):
+        assert_equal(coalesced[(Idx(i),)], i)
+
+
+fn test_coalesce_rejected_for_non_contiguous() raises:
+    """Test that coalesce is rejected at compile-time for non-contiguous tensors.
+
+    This test documents the expected behavior: vectorized and tiled tensors
+    cannot be coalesced because they have non-row-major strides.
+
+    To verify this works, try uncommenting the code below - it should fail to compile:
+
+    ```
+    var tensor = TileTensor[dtype = DType.int32](data, row_major[8, 8]())
+    var vectorized = tensor.vectorize[2, 2]()
+    # This would fail: vectorized.coalesce()  # Error: violated constraint
+    ```
+    """
+    # This test just documents the behavior - actual verification is at compile time
+    pass
