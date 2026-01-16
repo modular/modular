@@ -203,7 +203,8 @@ def run_embeddings_generation(  # noqa: ANN201
             embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
             embeddings = embeddings.cpu().detach().to(torch.float32).numpy()
             # Squeeze batch dimension to match MAX output shape: [batch_size=1, hidden_dim] -> [hidden_dim]
-            embeddings = embeddings.squeeze(0)
+            if embeddings.shape[0] == 1:
+                embeddings = embeddings.squeeze(0)
         else:
             # Return raw hidden states without pooling [batch_size, seq_len, hidden_dim]
             embeddings = (

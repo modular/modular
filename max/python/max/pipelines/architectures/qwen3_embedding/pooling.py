@@ -36,8 +36,6 @@ def last_token_pool(
     # For each sequence i: length = row_offsets[i+1] - row_offsets[i]
     # Get ending offsets for each sequence
     end_offsets = input_row_offsets[1:]  # Remove first element
-    # Get starting offsets for each sequence
-    start_offsets = input_row_offsets[:-1]  # Remove last element
 
     # Compute last token index for each sequence (end_offset - 1)
     # Since end_offset is exclusive, the last token is at end_offset - 1
