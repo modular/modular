@@ -11,5 +11,4 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from . import dtype_extension
-from .dtype import DType
+from .model import ClipModel

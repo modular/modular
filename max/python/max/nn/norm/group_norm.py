@@ -45,6 +45,7 @@ class GroupNorm(Module):
         eps: float = 1e-5,
         affine: bool = True,
         device: DeviceRef = DeviceRef.GPU(),
+        dtype: DType = DType.float32,
     ) -> None:
         super().__init__()
         self.num_groups = num_groups
@@ -65,13 +66,13 @@ class GroupNorm(Module):
             self.weight = Weight(
                 name="weight",
                 shape=(self.num_channels,),
-                dtype=DType.float32,
+                dtype=dtype,
                 device=device,
             )
             self.bias = Weight(
                 name="bias",
                 shape=(self.num_channels,),
-                dtype=DType.float32,
+                dtype=dtype,
                 device=device,
             )
 

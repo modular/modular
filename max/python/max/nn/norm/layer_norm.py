@@ -36,37 +36,56 @@ class LayerNorm(Module, Shardable):
         dtype: DType,
         eps: float = 1e-5,
         use_bias: bool = True,
+        keep_dtype: bool = False,
+        elementwise_affine: bool = True,
     ) -> None:
         super().__init__()
         self.devices = devices
-        self.weight = Weight("weight", dtype, (dims,), device=self.devices[0])
-        self.bias = (
-            Weight("bias", dtype, (dims,), device=self.devices[0])
-            if use_bias
-            else None
-        )
+        if elementwise_affine:
+            self.weight = Weight(
+                "weight", dtype, (dims,), device=self.devices[0]
+            )
+            self.bias = (
+                Weight("bias", dtype, (dims,), device=self.devices[0])
+                if use_bias
+                else None
+            )
+        else:
+            self.weight = None
+            self.bias = None
         self.eps = eps
         self.dim = dims
         self.dtype = dtype
+        self.keep_dtype = keep_dtype
         self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, input: TensorValue):
         # TODO: AIPIPE-95 Replace with a broadcasting rmo.layer_norm
         bias = (
-            ops.cast(self.bias, DType.float32)
+            self.bias
             if self.bias
             # If bias wasn't passed then use bias-less layer norm (beta = 0).
             else ops.broadcast_to(
-                ops.constant(0.0, DType.float32, self.weight.device),
+                ops.constant(0.0, self.dtype, input.device),
                 shape=(input.shape[-1],),
             )
         )
-        return ops.layer_norm(
-            input.cast(DType.float32),
-            gamma=ops.cast(self.weight, DType.float32),
-            beta=bias,
+        gamma = (
+            self.weight
+            if self.weight
+            else ops.broadcast_to(
+                ops.constant(1.0, self.dtype, input.device),
+                shape=(input.shape[-1],),
+            )
+        )
+
+        output = ops.layer_norm(
+            input=input if self.keep_dtype else input.cast(DType.float32),
+            gamma=gamma if self.keep_dtype else ops.cast(gamma, DType.float32),
+            beta=bias if self.keep_dtype else ops.cast(bias, DType.float32),
             epsilon=self.eps,
-        ).cast(input.dtype)
+        )
+        return output if self.keep_dtype else output.cast(input.dtype)
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
