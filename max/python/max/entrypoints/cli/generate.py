@@ -19,6 +19,7 @@ import asyncio
 import dataclasses
 import logging
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -158,3 +159,41 @@ def generate_text_for_pipeline(
                 print_tokens=True,
             )
         )
+
+
+def generate_image(
+    pipeline_config: PipelineConfig,
+    prompt: str,
+    height: int,
+    width: int,
+    num_inference_steps: int,
+    guidance_scale: float,
+    num_images_per_prompt: int,
+    output: Path,
+) -> None:
+    from ..diffusion import DiffusionPipeline
+
+    pipeline = DiffusionPipeline(pipeline_config)
+    result = pipeline(
+        prompt=prompt,
+        height=height,
+        width=width,
+        num_inference_steps=num_inference_steps,
+        guidance_scale=guidance_scale,
+        num_images_per_prompt=num_images_per_prompt,
+    )
+
+    images = result.images
+    assert images, "Expected at least one generated image."
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if num_images_per_prompt == 1:
+        images[0].save(output)
+        logger.info(f"Image saved to: {output}")
+    else:
+        stem = output.stem
+        suffix = output.suffix
+        for i, image in enumerate(images):
+            numbered_path = output.parent / f"{stem}_{i + 1}{suffix}"
+            image.save(numbered_path)
+        logger.info(f"{len(images)} images saved to: {output.parent}")

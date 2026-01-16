@@ -91,6 +91,42 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "pipelines_diffusion",
+    srcs = [
+        "pipelines_diffusion.py",
+    ],
+    data = [
+        "@nvshmem_prebuilt//:host",
+    ],
+    env = {
+        "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    mojo_deps = select({
+        "//:emit_mojo_enabled": PROD_MOJOPKGS,
+        "//conditions:default": [],
+    }),
+    deps = [
+        # Provides the `max.entrypoints.pipelines` module for the wrapper to import.
+        ":_pipelines",
+        ":entrypoints",
+        "//max/python/max:_core",
+        "//max/python/max/benchmark:benchmark_serving_lib",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/telemetry",
+        requirement("typing-extensions"),
+        requirement("click"),
+    ] + select({
+        "//:nvidia_gpu": [
+            requirement("torch"),
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+modular_py_binary(
     name = "replay_recording",
     srcs = ["replay_recording.py"],
     deps = [

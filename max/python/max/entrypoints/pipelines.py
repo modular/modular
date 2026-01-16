@@ -18,6 +18,7 @@ import logging
 import os
 import sys
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any, TypeVar
 
 import click
@@ -414,6 +415,118 @@ def cli_pipeline(
         image_urls=image_url,
         num_warmups=num_warmups,
     )
+
+
+@main.group(name="diffusion", cls=ModelGroup)
+def diffusion_group() -> None:
+    """Commands for diffusion-based image/video generation pipelines."""
+
+
+@diffusion_group.command(name="generate", cls=WithLazyPipelineOptions)
+@click.option(
+    "--prompt",
+    type=str,
+    default="A cat holding a sign that says hello world",
+    help="The text prompt to use for image generation.",
+)
+@click.option(
+    "--height",
+    type=click.IntRange(min=64),
+    default=1024,
+    show_default=True,
+    help="Generated image height in pixels.",
+)
+@click.option(
+    "--width",
+    type=click.IntRange(min=64),
+    default=1024,
+    show_default=True,
+    help="Generated image width in pixels.",
+)
+@click.option(
+    "--num-inference-steps",
+    type=click.IntRange(min=1),
+    default=50,
+    show_default=True,
+    help="Number of denoising steps to run.",
+)
+@click.option(
+    "--guidance-scale",
+    type=float,
+    default=3.5,
+    show_default=True,
+    help="Classifier-free guidance scale.",
+)
+@click.option(
+    "--num-images-per-prompt",
+    type=click.IntRange(min=1),
+    default=1,
+    show_default=True,
+    help="Number of images to generate for a single prompt.",
+)
+@click.option(
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default="output.png",
+    show_default=True,
+    help="Output image path (numbered if multiple images are generated).",
+)
+@click.option(
+    "--use-torch-randn/--no-use-torch-randn",
+    default=False,
+    show_default=True,
+    help=(
+        "Use torch-based random latents (set USE_TORCH_RANDN and SEED env vars)."
+    ),
+)
+@click.option(
+    "--seed",
+    type=int,
+    default=42,
+    show_default=True,
+    help="Random seed for torch-based latent initialization.",
+)
+def diffusion_generate(
+    prompt: str,
+    height: int,
+    width: int,
+    num_inference_steps: int,
+    guidance_scale: float,
+    num_images_per_prompt: int,
+    output: Path,
+    use_torch_randn: bool,
+    seed: int,
+    **config_kwargs: Any,
+) -> None:
+    """Generate images using a diffusion pipeline."""
+    from max.entrypoints.cli.generate import generate_image
+    from max.pipelines import PipelineConfig
+
+    if use_torch_randn:
+        os.environ["USE_TORCH_RANDN"] = "1"
+        os.environ["SEED"] = str(seed)
+
+    pipeline_config = PipelineConfig(**config_kwargs)
+    pipeline_config.log_basic_config()
+
+    try:
+        generate_image(
+            pipeline_config=pipeline_config,
+            prompt=prompt,
+            height=height,
+            width=width,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            num_images_per_prompt=num_images_per_prompt,
+            output=output,
+        )
+    except Exception as exc:
+        logger.exception(
+            "Diffusion generation failed for model %s with prompt %r",
+            pipeline_config.model.model_path,
+            prompt,
+        )
+        raise click.ClickException("Diffusion generation failed.") from exc
 
 
 @main.command(name="encode", cls=WithLazyPipelineOptions)
