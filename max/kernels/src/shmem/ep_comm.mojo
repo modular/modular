@@ -64,6 +64,10 @@ comptime elementwise_epilogue_type = fn[
 
 comptime EP_DATA_READY_FLAG = 1 << 10
 
+# Maximum number of GPUs per node for P2P signaling.
+# Used to track per-rank expert completion.
+comptime MAX_GPUS_PER_NODE = 8
+
 
 @always_inline
 fn block_memcpy[
@@ -97,7 +101,7 @@ fn block_memcpy[
 @always_inline
 @parameter
 fn ep_signal_completion[
-    p2p_world_size: Int, //, use_shmem: Bool
+    p2p_world_size: Int, //, use_shmem: Bool, n_experts_per_device: Int = 0
 ](
     my_rank: Int32,
     dst_rank: Int32,
@@ -106,11 +110,16 @@ fn ep_signal_completion[
     ],
     signal_offset: Int32,
     signal: UInt64,
+    rank_completion_counter: UnsafePointer[Int32, MutExternalOrigin],
 ) -> None:
     """
     Signals the completion of the communication by writing to the receive count
     buffer. Will use direct memory access if the target device is on the same
     node, and use the SHMEM API if the target device is on a different node.
+
+    For same-node signaling, uses normal stores and only issues a store_release
+    when the last expert for a destination rank is completed. This reduces the
+    number of store_release operations from n_experts to p2p_world_size.
     """
 
     var my_p2p_world, my_p2p_rank = divmod(my_rank, p2p_world_size)
@@ -120,10 +129,23 @@ fn ep_signal_completion[
     # receive count buffer.
     if my_p2p_world == dst_p2p_world:
         var dst_p2p_ptr = recv_count_ptrs[dst_p2p_rank] + signal_offset
-        store_release[scope = Scope.SYSTEM](
-            dst_p2p_ptr,
-            signal,
+        var old_count = Atomic[DType.int32].fetch_add(
+            rank_completion_counter + Int(dst_p2p_rank), 1
         )
+
+        # If this is the last expert for this destination rank,
+        # use store_release to flush all pending stores.
+        if old_count < n_experts_per_device - 1:
+            dst_p2p_ptr[] = signal
+        else:
+            # Technically, this store_release only guarantees the arrival of
+            # all experts' messages to the target device. It doesn't guarantee
+            # the the arrival of the previous experts' signals to the target
+            # device. However, this does not matter as we will check the
+            # arrival signal individually in the dispatch_cb/combine_cb kernel.
+            store_release[scope = Scope.SYSTEM](dst_p2p_ptr, signal)
+            # Reset counter for next kernel invocation.
+            rank_completion_counter[dst_p2p_rank] = 0
     else:
 
         @parameter
@@ -513,8 +535,8 @@ struct EPLocalSyncCounters[n_experts: Int](DevicePassable):
     The struct is used to synchronize between thread blocks within the same device.
 
     Memory Layout (all sizes in Int32 elements):
-    - dispatch: 2 * n_experts
-    - dispatch_cb/combine: 2 * n_experts
+    - dispatch: 2 * n_experts + MAX_GPUS_PER_NODE
+    - dispatch_cb/combine: 2 * n_experts + MAX_GPUS_PER_NODE
     - combine_cb: 2 * n_experts
     """
 
@@ -548,19 +570,19 @@ struct EPLocalSyncCounters[n_experts: Int](DevicePassable):
     @staticmethod
     fn dispatch_size() -> Int:
         """Returns the size in Int32 elements needed by dispatch kernel."""
-        return 2 * Self.n_experts
+        return 2 * Self.n_experts + MAX_GPUS_PER_NODE
 
     @always_inline
     @staticmethod
     fn dispatch_cb_size() -> Int:
         """Returns the size in Int32 elements needed by dispatch_cb kernel."""
-        return 2 * Self.n_experts
+        return 2 * Self.n_experts + MAX_GPUS_PER_NODE
 
     @always_inline
     @staticmethod
     fn combine_size() -> Int:
         """Returns the size in Int32 elements needed by combine kernel."""
-        return 2 * Self.n_experts
+        return 2 * Self.n_experts + MAX_GPUS_PER_NODE
 
     @always_inline
     @staticmethod
@@ -727,6 +749,10 @@ fn dispatch_kernel[
     var atomic_counter = ep_counters.get_dispatch_ptr()
     var expert_reserved_counter = atomic_counter
     var expert_finished_counter = atomic_counter + n_experts
+    # Per-rank completion counter for same-node signaling.
+    # Tracks how many experts have been signaled for each destination rank
+    # on this device.
+    var rank_completion_counter = atomic_counter + 2 * n_experts
 
     var my_p2p_world, my_p2p_rank = divmod(my_rank, p2p_world_size)
 
@@ -760,12 +786,15 @@ fn dispatch_kernel[
                     RtTuple_2(Int(dst_expert_local_idx), Int(my_rank))
                 )
 
-                ep_signal_completion[use_shmem](
+                ep_signal_completion[
+                    use_shmem, n_experts_per_device=n_local_experts
+                ](
                     my_rank,
                     dst_rank,
                     recv_count_ptrs,
                     signal_offset,
                     UInt64(expert_count),
+                    rank_completion_counter,
                 )
 
                 expert_reserved_counter[expert_idx] = 0
@@ -1102,6 +1131,11 @@ fn dispatch_cb_kernel[
             prefix_sum_arr[scan_round - 1], (n_ranks - 1) % WARP_SIZE
         )
 
+        # Only the last expert from a remote rank would actually use
+        # acquire/release pattern to guarantee the order of memory operations.
+        # Waits until we receive all experts' signals.
+        barrier()
+
         @parameter
         if expert_m_padding != 0:
             local_expert_token_count = align_up(
@@ -1331,6 +1365,10 @@ fn combine_kernel[
             output tokens for the shared experts.
     """
     var atomic_counter = ep_counters.get_combine_ptr()
+    # Per-rank completion counter for same-node signaling.
+    # Tracks how many experts have been signaled for each destination rank
+    # on this device.
+    var rank_completion_counter = atomic_counter + 2 * n_experts
     comptime n_local_experts = n_experts // n_ranks
     comptime n_warps = num_threads // WARP_SIZE
 
@@ -1497,12 +1535,15 @@ fn combine_kernel[
             if lane_id() == 0:
                 var signal_offset = my_rank * n_local_experts + local_expert_id
 
-                ep_signal_completion[use_shmem](
+                ep_signal_completion[
+                    use_shmem, n_experts_per_device=n_local_experts
+                ](
                     my_rank,
                     target_rank,
                     recv_count_ptrs,
                     signal_offset,
                     UInt64(token_end - token_start),
+                    rank_completion_counter,
                 )
 
                 atomic_counter.store[

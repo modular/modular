@@ -25,6 +25,8 @@ from test_common.graph_utils import is_b100_b200, is_h100_h200
 # EP_DATA_READY_FLAG constant from ep_comm.mojo
 EP_DATA_READY_FLAG = 1 << 10  # 1024
 
+MAX_GPUS_PER_NODE = 8
+
 
 def verify_ep_dispatch_results(
     results: list,
@@ -39,8 +41,8 @@ def verify_ep_dispatch_results(
     atomic_counters_torch = [
         torch.from_dlpack(counter) for counter in atomic_counters
     ]
-    # dispatch_cb counters start at offset dispatch_size = 2 * n_experts
-    dispatch_size = 2 * config.n_experts
+    # dispatch_cb counters start at offset dispatch_size = 2 * n_experts + MAX_GPUS_PER_NODE
+    dispatch_size = 2 * config.n_experts + MAX_GPUS_PER_NODE
     dispatch_cb_counters_torch = [
         counter[dispatch_size:] for counter in atomic_counters_torch
     ]

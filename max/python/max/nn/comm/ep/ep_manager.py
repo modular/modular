@@ -63,9 +63,9 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
     This must match the EPLocalSyncCounters.total_size() in ep_comm.mojo.
 
     Memory Layout (all sizes in Int32 elements):
-    - dispatch: 2 * n_experts (offset 0)
-    - dispatch_cb/combine: 2 * n_experts (offset 2 * n_experts)
-    - combine_cb: 2 * n_experts (offset 4 * n_experts)
+    - dispatch: 2 * n_experts + MAX_GPUS_PER_NODE
+    - dispatch_cb/combine: 2 * n_experts + MAX_GPUS_PER_NODE
+    - combine_cb: 2 * n_experts
 
     Args:
         n_experts: Number of experts in the model.
@@ -73,8 +73,11 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
     Returns:
         Total size in Int32 elements needed for all EP sync counters.
     """
-    dispatch_size = 2 * n_experts
-    dispatch_cb_size = 2 * n_experts
+
+    MAX_GPUS_PER_NODE = 8
+
+    dispatch_size = 2 * n_experts + MAX_GPUS_PER_NODE
+    dispatch_cb_size = 2 * n_experts + MAX_GPUS_PER_NODE
     combine_cb_size = 2 * n_experts
     return dispatch_size + dispatch_cb_size + combine_cb_size
 
