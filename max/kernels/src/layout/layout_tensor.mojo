@@ -8633,7 +8633,7 @@ struct LayoutTensorIter[
             idx=Int(self.idx),
         )
 
-    comptime BitcasType[
+    comptime BitcastType[
         new_type: DType,
         *,
         address_space: AddressSpace = Self.address_space,
@@ -8663,7 +8663,7 @@ struct LayoutTensorIter[
         *,
         target_address_space: AddressSpace = Self.address_space,
         target_alignment: Int = Self.alignment,
-    ](self) -> Self.BitcasType[
+    ](self) -> Self.BitcastType[
         new_type, address_space = Self.address_space, alignment = Self.alignment
     ]:
         """Reinterpret the iterator's underlying pointer as a different data
@@ -8683,7 +8683,7 @@ struct LayoutTensorIter[
         Returns:
             A new LayoutTensorIter with the same layout but different data type.
         """
-        return Self.BitcasType[
+        return Self.BitcastType[
             new_type,
             address_space = Self.address_space,
             alignment = Self.alignment,
