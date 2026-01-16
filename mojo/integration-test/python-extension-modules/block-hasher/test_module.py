@@ -16,7 +16,7 @@ import time
 import timeit
 
 # Imports from 'mojo_module.so'
-import mojo_module
+import mojo_module  # type: ignore[import-not-found]
 import numpy as np
 
 

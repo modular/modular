@@ -87,7 +87,7 @@ def _pydeps_test_impl(ctx):
     for dep in ctx.attr.data:
         for file in dep[DefaultInfo].files.to_list():
             if (
-                file.short_path.endswith(".so") and "cpython" in file.short_path
+                file.short_path.endswith(".so") and ("cpython" in file.short_path or "mojo" in file.short_path)
             ) or file.short_path.endswith(".mojo"):
                 data_sources.append(file.short_path)
 

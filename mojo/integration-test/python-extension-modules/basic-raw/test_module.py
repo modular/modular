@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # Imports from 'mojo_module.so'
-import mojo_module
+import mojo_module  # type: ignore[import-not-found]
 
 
 def test_basic_raw() -> None:
