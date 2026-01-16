@@ -34,8 +34,57 @@ using namespace M::KGEN::LIT;
 #define DEBUG_TYPE "PARAMINF"
 
 //===----------------------------------------------------------------------===//
+// File-local utils
+//===----------------------------------------------------------------------===//
+
+/// Calculate the minimum required and maximum allowed number of positional
+/// operands for a signature, assuming that the signature has a variadic pack;
+static std::optional<std::pair<size_t, size_t>>
+calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature,
+                                     ASTType variadicPackType) {
+  // This function heavily assumes that a signature has at most
+  // one pack variadic argument and that variadics are always the last
+  // positional args.
+  size_t numPosArgs = countNumPositional(signature.getArgListAttrs());
+
+  // We don't require any positional operands (because this function does not
+  // check for passing kinds).
+  if (!numPosArgs)
+    return std::make_pair(0, numPosArgs);
+
+  // The caller should ensure that the signature takes a variadic pack (and the
+  // provided `variadicPackType` is the rebound type during this inference
+  // session).
+  size_t lastPosIdx = numPosArgs - 1;
+  assert(!signature.isPosVarArg(lastPosIdx) &&
+         signature.getIfVariadicPack(lastPosIdx));
+
+  // If we have a non-empty variadic pack argument, we do require a certain
+  // number of positional operands (since the value of positional packs cannot
+  // be provided by keyword operands).
+  // NOTE: in this case, it doesn't matter if there are preceding positional
+  // arguments with default values: the pack cannot have a default value and
+  // _must_ be provided positional operands explicitly, and therefore the
+  // preceding defaults won't be used anyway.
+  VariadicAttr packed = // See if resolved.
+      sugarDynCast<VariadicAttr>(variadicPackType.getVariadicPackTypeList());
+
+  // The caller should know the concrete type list unless we binded the pack
+  // directly as a parameter.  This is an unpack like situation.
+  // TODO: This happens in error cases and needs to be re-evaluated.
+  if (!packed)
+    return std::nullopt;
+
+  // NOTE: we adjust the number of user declared pos args since that
+  // includes the pack itself (hence the "-1").
+  size_t packSize = packed.getValues().size();
+  return std::make_pair(numPosArgs - 1 + packSize, numPosArgs - 1 + packSize);
+}
+
+//===----------------------------------------------------------------------===//
 // ParameterInference
 //===----------------------------------------------------------------------===//
+
 ParamInf::ParamInf(
     const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
     PogListAttr declaredParamPogs, bool allowImplicitConversions, bool partial,
@@ -1004,6 +1053,8 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
                                      const CallOperands &operands,
                                      const OperandValueList &variadicKwOperands,
                                      bool returnsSelf, bool hasCTADParams) {
+  assert(!partial && "overload resolution must be a full binding context");
+
   // First try to infer parameters from the already provided bindings.
   if (failed(inferFromParamList()))
     return failure();
@@ -1152,17 +1203,40 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
           sugarCast<VariadicType>(packType.getVariadic().getType());
 
       // If there are no arguments for the pack, use the location of the call.
-      if (packArgExpr)
+      if (!packArgExpr)
         packArgExpr = getGivenBindings().getExpr();
       ParamMatcher matcher(packArgExpr, *this);
-      switch (matcher.matchParams(VariadicAttr::get(types, variadicType),
-                                  packType.getVariadic())) {
+      auto actualVA = VariadicAttr::get(types, variadicType);
+      switch (matcher.matchParams(actualVA, packType.getVariadic())) {
       case ParamMatcher::Retry:
         goto RetryLabel;
       case ParamMatcher::Match:
         continue;
-      case ParamMatcher::Error:
-        return failure();
+      case ParamMatcher::Error: {
+        // Figure out why:
+        std::optional<std::pair<size_t, size_t>> posNumBoundOr =
+            calculateRequiredPosOperandsForPacks(signature, variadicPackType);
+        // This means that we can not determine a concrete number of packed
+        // arguments, this is always an error.
+        MojoInflightDiag &diag = getDiag({packArgExpr->getLoc()});
+        if (!posNumBoundOr) {
+          diag << "assigning " << numOperands << " operand"
+               << plural(numOperands)
+               << " to an unresolvable variadic pack argument";
+          return failure();
+        }
+
+        auto [minPosOperands, maxPosOperands] = *posNumBoundOr;
+        size_t numPosOperands = operands.getNumPositional();
+        if (numPosOperands < minPosOperands ||
+            maxPosOperands < numPosOperands) {
+          diag << "callee with non-empty variadic pack argument";
+          emitWrongArgOrParamCount(diag, minPosOperands, maxPosOperands,
+                                   numOperands, "positional operand");
+          return failure();
+        }
+        llvm_unreachable("unhandled variadic pack failure?");
+      }
       }
     }
 
@@ -1243,6 +1317,11 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
   // for their type (variadic attr always have a default empty value if not
   // inferable).
   if (failed(inferFromDefaults()))
+    return failure();
+
+  // See if we still have any unbound attr, if so, report error. (This must be a
+  // full binding context).
+  if (failed(finalizeWithUnbound()))
     return failure();
 
   // We succeed iff we inferred a value for this parameter.

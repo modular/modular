@@ -100,12 +100,6 @@ public:
     SmallVector<ConstraintAttr> unprovableConstraints;
   };
 
-  /// Verify the full parameter bindings for the given generator. If the
-  /// signature doesn't match, the provided DiagEmitter will be used to emit
-  /// diagnostics. A parameter inference must must be provided.
-  std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(LITGeneratorType sig, ParamInf &inference) const;
-
   /// Attempt to bind the current set of parameters to the provided parameter
   /// types and list. This applies parameter inference and any default values to
   /// form a full binding set, which is returned along with the binding fitness.
