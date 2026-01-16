@@ -31,12 +31,14 @@ comptime myRenamedCurriedIntAdd2 = myRenamedCurriedIntAdd[x=2]
 # expected-error @below {{'Int' is not subscriptable}}
 comptime mySix = myCurriedIntAdd[2][4][6]
 
-# expected-error @below {{parametric value expects 2 parameters, but 3 were specified}}
+# expected-error @below {{parametric value expects 2 positional parameters, but 3 were specified}}
 comptime myIntAddTooManyParams = myIntAdd[1, 2, 3]
+
 
 # COM: A type with dependent parameters.
 struct Dep[T: AnyType, v: T]:
     pass
+
 
 comptime MyDep[T: AnyType, v: T] = Dep[T, v]
 

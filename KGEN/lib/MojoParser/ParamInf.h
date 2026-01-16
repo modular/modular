@@ -72,7 +72,7 @@ public:
 
   // Finalize the inference by making any remaining uninferred parameter to
   // UnboundAttr.
-  void finalizeWithUnbound();
+  LogicalResult finalizeWithUnbound();
 
   /// After inferring parameter values, this allows access to the results.
   TypedAttr getInferredValue(size_t idx) const {

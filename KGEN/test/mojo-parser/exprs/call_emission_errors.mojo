@@ -109,21 +109,17 @@ fn test_missing_kw_only_param[x: Int]():
 
 
 # expected-note @below {{declared here}}
-fn missing_keyword_only_params_tricky[
-    a: Int, /, *, b: Int, c: Int = 3
-]():
+fn missing_keyword_only_params_tricky[a: Int, /, *, b: Int, c: Int = 3]():
     pass
 
 
 fn test_missing_keyword_only_params_tricky[x: Int]():
-    # expected-error @below {{expects 1 positional parameter, but 3 were specified}}
+    # expected-error @below {{'missing_keyword_only_params_tricky' expects 1 positional parameter, but 3 were specified}}
     missing_keyword_only_params_tricky[x, x, x]
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_kw_only_args(
-    a: Int, b: Int, *args: Int, c: Int, d: Int = 2
-):
+fn takes_kw_only_args(a: Int, b: Int, *args: Int, c: Int, d: Int = 2):
     pass
 
 
@@ -153,7 +149,9 @@ fn mutateInt(mut a: Int):
 
 
 fn initialize_in_addrspace(
-    memptr: UnsafePointer[MemExample, MutAnyOrigin, address_space = AddressSpace(1)],
+    memptr: UnsafePointer[
+        MemExample, MutAnyOrigin, address_space = AddressSpace(1)
+    ],
     regptr: UnsafePointer[Int, MutAnyOrigin, address_space = AddressSpace(1)],
 ):
     # expected-error @+1 {{value of type 'MemExample' cannot be copied or moved into a non-default address space}}
@@ -163,7 +161,9 @@ fn initialize_in_addrspace(
 
 
 fn mutate_in_addrspace(
-    memptr: UnsafePointer[MemExample, MutAnyOrigin, address_space = AddressSpace(1)],
+    memptr: UnsafePointer[
+        MemExample, MutAnyOrigin, address_space = AddressSpace(1)
+    ],
     regptr: UnsafePointer[Int, MutAnyOrigin, address_space = AddressSpace(1)],
 ):
     # expected-error @+1 {{non-trivial value cannot be copied from a non-default address space}}
@@ -173,7 +173,9 @@ fn mutate_in_addrspace(
 
 
 fn variadic_addr_space(
-    memptr: UnsafePointer[MemExample, MutAnyOrigin, address_space = AddressSpace(1)],
+    memptr: UnsafePointer[
+        MemExample, MutAnyOrigin, address_space = AddressSpace(1)
+    ],
     regptr: UnsafePointer[Int, MutAnyOrigin, address_space = AddressSpace(1)],
 ):
     # expected-error @below {{non-trivial value cannot be copied from a non-default address space}}
@@ -222,9 +224,7 @@ struct MyStruct(ImplicitlyCopyable):
     var b: Int
 
 
-fn exclusivity[
-    spanlife: MutOrigin
-](mut x: MyStruct, span: MyMutSpan[spanlife]):
+fn exclusivity[spanlife: MutOrigin](mut x: MyStruct, span: MyMutSpan[spanlife]):
     # Compiler injects a temporary to make this ok.
     x = x
 
@@ -249,17 +249,15 @@ fn mutate_one_read_one[A: AnyType, B: AnyType](mut a: A, b: B):
     pass
 
 
-fn mutate_two_AnyLifetime(
-    ref [MutAnyOrigin]a: Int, ref [MutAnyOrigin]b: Int
-):
+fn mutate_two_AnyLifetime(ref [MutAnyOrigin]a: Int, ref [MutAnyOrigin]b: Int):
     pass
 
 
-fn mutate_variadic_any[T: AnyType](mut*values: T):
+fn mutate_variadic_any[T: AnyType](mut *values: T):
     pass
 
 
-fn mutate_pack[*Ts: AnyType](mut*strs: *Ts):
+fn mutate_pack[*Ts: AnyType](mut *strs: *Ts):
     pass
 
 
