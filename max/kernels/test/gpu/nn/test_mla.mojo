@@ -592,7 +592,7 @@ fn test_prefill[
         output_device,
     )
     fn kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_prefill[rank = q.rank](
+        flare_mla_prefill[rank = q.rank, use_fa4=True](
             output_device,
             q_device,
             k_device,
@@ -1000,7 +1000,7 @@ fn test_mla_prefill[
         cache_depth=576,
         cache_num_heads=1,
         batch_size=batch_size,
-    ](1179, 1179, ctx)
+    ](140, 140, ctx)
     test_prefill[
         DType.bfloat16,
         depth=192,
