@@ -148,12 +148,16 @@ fn quantize_dynamic_scaled_fp8[
     ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
 
     comptime group_size = num_cols if group_size_or_per_token == -1 else group_size_or_per_token
-    comptime simd_width = simd_width_of[in_dtype, target = get_gpu_target()]()
+    comptime simd_width = 16 if group_size % 16 == 0 else 8 if group_size % 8 == 0 else 4
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime warps_per_block = min(
         ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block
     )
     comptime num_threads = warps_per_block * WARP_SIZE
+
+    __comptime_assert (
+        group_size % simd_width == 0
+    ), "group size must be multiple of simd size"
 
     with Trace[TraceLevel.OP, target = StaticString("gpu")](
         "quantize_dynamic_scaled_fp8",
@@ -169,6 +173,7 @@ fn quantize_dynamic_scaled_fp8[
             input_fn,
             num_threads,
             group_size,
+            simd_width,
         ]
 
         ctx.enqueue_function[kernel, kernel](
@@ -193,12 +198,12 @@ fn quantize_fp8_kernel[
     ) capturing -> SIMD[in_type, width],
     num_threads: Int,
     group_size: Int,
+    simd_width: Int,
 ](
     output: NDBuffer[mut=True, out_type, 2, MutAnyOrigin],
     scales: NDBuffer[mut=True, scales_type, 2, MutAnyOrigin],
     scale_ub: Scalar[scales_type],
 ):
-    comptime simd_width = simd_width_of[in_type]()
     comptime use_warp_tiling = group_size <= num_threads * simd_width
     comptime fp8_max = Scalar[out_type].MAX_FINITE
     comptime accum_type = get_accum_type[in_type]()
@@ -283,13 +288,16 @@ fn batched_quantize_dynamic_scaled_fp8[
     ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
 
     comptime group_size = num_cols if group_size_or_per_token == -1 else group_size_or_per_token
-    comptime n_groups = num_cols // group_size
-    comptime simd_width = simd_width_of[in_dtype, target = get_gpu_target()]()
+    comptime simd_width = 16 if group_size % 16 == 0 else 8 if group_size % 8 == 0 else 4
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime warps_per_block = min(
         ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block
     )
     comptime num_threads = warps_per_block * WARP_SIZE
+
+    __comptime_assert (
+        group_size % simd_width == 0
+    ), "group size must be multiple of simd size"
 
     if batch_size == 0 or num_rows == 0:
         return
@@ -301,13 +309,14 @@ fn batched_quantize_dynamic_scaled_fp8[
         input_fn,
         num_threads,
         group_size,
+        simd_width,
     ]
 
     ctx.enqueue_function[kernel, kernel](
         scaled_output,
         scales,
         scale_ub.cast[scales_dtype](),
-        grid_dim=(num_rows, n_groups, batch_size),
+        grid_dim=(num_rows, num_cols // group_size, batch_size),
         block_dim=num_threads,
         attributes=pdl_launch_attributes(),
     )
@@ -325,12 +334,12 @@ fn batched_quantize_fp8_kernel[
     ) capturing -> SIMD[in_type, width],
     num_threads: Int,
     group_size: Int,
+    simd_width: Int,
 ](
     output: NDBuffer[mut=True, out_type, 3, MutAnyOrigin],
     scales: NDBuffer[mut=True, scales_type, 3, MutAnyOrigin],
     scale_ub: Scalar[scales_type],
 ):
-    comptime simd_width = simd_width_of[in_type]()
     comptime use_warp_tiling = group_size <= num_threads * simd_width
     comptime fp8_max = Scalar[out_type].MAX_FINITE
     comptime accum_type = get_accum_type[in_type]()

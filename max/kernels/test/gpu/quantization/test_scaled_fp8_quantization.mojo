@@ -412,6 +412,14 @@ def main():
             DType.float8_e4m3fn, DType.float32, 128, M=None, N = Int(576)
         ](ctx, 4, 576)
 
+        # Test different alignments of the group_size to exercise the computation of simd_width.
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn, DType.bfloat16, -1, M=None, N = Int(260)
+        ](ctx, 2, 260)
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn, DType.bfloat16, -1, M=None, N = Int(264)
+        ](ctx, 2, 264)
+
         test_batched_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
@@ -452,3 +460,21 @@ def main():
             M=None,
             K = Int(128),
         ](ctx, 128, 1024, 128)
+
+        # Test different alignments of the group_size to exercise the computation of simd_width.
+        test_batched_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            132,
+            BS=None,
+            M=None,
+            K = Int(528),
+        ](ctx, 128, 400, 528)
+        test_batched_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.float32,
+            136,
+            BS=None,
+            M=None,
+            K = Int(544),
+        ](ctx, 128, 1024, 544)
