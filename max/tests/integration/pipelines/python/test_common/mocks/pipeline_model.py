@@ -23,7 +23,11 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnHiddenStates, ReturnLogits
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    KVCacheStrategy,
+)
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,

@@ -40,7 +40,8 @@ fn plus_one(arg: PythonObject) raises -> PythonObject:
 fn parallel_wrapper(array: PythonObject) raises -> PythonObject:
     comptime do_parallelize = True
     var array_len = len(array)
-    var array_len_div = math.ceildiv(array_len, num_physical_cores())
+    var num_cores = num_physical_cores()
+    var chunk_size, remainder = divmod(array_len, num_cores)
 
     @parameter
     fn calc_max(i: Int) -> None:
@@ -49,8 +50,14 @@ fn parallel_wrapper(array: PythonObject) raises -> PythonObject:
         # It is more efficient to only use Mojo native data structures in worker threads.
         with GILAcquired(Python(cpython)):
             try:
-                var start_idx = i * array_len_div
-                var end_idx = min((i + 1) * array_len_div, array_len)
+                var start_idx = i * chunk_size
+                var is_last_thread = i == num_cores - 1
+                var work_size = (
+                    chunk_size + remainder
+                ) if is_last_thread else chunk_size
+                if work_size == 0:
+                    return
+                var end_idx = start_idx + work_size
 
                 var max_val = array[start_idx]
                 for j in range(start_idx + 1, end_idx):
@@ -67,15 +74,16 @@ fn parallel_wrapper(array: PythonObject) raises -> PythonObject:
     if do_parallelize:
         # Save the current thread state to avoid holding the GIL for the parallel loop.
         with GILReleased(Python(cpython)):
-            parallelize[calc_max](num_physical_cores())
+            parallelize[calc_max](num_cores)
     else:
-        for i in range(0, num_physical_cores()):
+        for i in range(0, num_cores):
             calc_max(i)
 
     var final_max = array[0]
-    for i in range(1, num_physical_cores()):
-        if array[i * array_len_div] > final_max:
-            final_max = array[i * array_len_div]
+    for i in range(1, num_cores):
+        var idx = i * chunk_size
+        if idx < array_len and array[idx] > final_max:
+            final_max = array[idx]
     array[0] = final_max
 
     return array
