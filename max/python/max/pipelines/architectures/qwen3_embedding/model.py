@@ -21,17 +21,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 
-import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, ops
+from max.graph import Graph, ops
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnHiddenStates, ReturnLogits
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import Module
+from max.nn.kv_cache import PagedCacheValues
 from max.pipelines.core import TextContext
-from max.pipelines.dataprocessing import collate_batch
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -39,6 +36,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     SupportedEncoding,
 )
+from max.python.max.nn.kv_cache.input_types import KVCacheInputs
 from transformers import AutoConfig
 
 from ..llama3.model import Llama3Inputs
@@ -52,7 +50,7 @@ logger = logging.getLogger("max.pipelines")
 
 class Qwen3EmbeddingPipelineModel(Qwen3Model):
     """Pipeline model for Qwen3 Embedding models.
-    
+
     This model extends Qwen3Model and overrides the graph building
     to add last token pooling for generating embeddings. This allows
     maximum code reuse from the generative Qwen3 model, including
@@ -92,13 +90,13 @@ class Qwen3EmbeddingPipelineModel(Qwen3Model):
         session: InferenceSession | None = None,
     ) -> Graph:
         """Build graph with pooling layer for embeddings.
-        
+
         Overrides parent's _build_graph to add last token pooling
         and normalization for embedding generation.
         """
         # Get state dict using parent's helper method
         state_dict = self._get_state_dict(weights, adapter)
-        
+
         # Create model config with hidden states enabled
         model_config = Qwen3Config.generate(
             pipeline_config=self.pipeline_config,
@@ -115,7 +113,7 @@ class Qwen3EmbeddingPipelineModel(Qwen3Model):
         )
 
         # Build the Qwen3 model
-        nn_model: Module = Qwen3(model_config)
+        nn_model = Qwen3(model_config)
 
         # Load weights
         nn_model.load_state_dict(
@@ -139,7 +137,7 @@ class Qwen3EmbeddingPipelineModel(Qwen3Model):
             tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
                 graph.inputs
             )
-            
+
             # Construct KV cache collection (same as parent)
             kv_collection = PagedCacheValues(
                 kv_blocks=kv_cache_inputs[0].buffer,
@@ -147,7 +145,7 @@ class Qwen3EmbeddingPipelineModel(Qwen3Model):
                 lookup_table=kv_cache_inputs[2].tensor,
                 max_lengths=kv_cache_inputs[3].tensor,
             )
-            
+
             # Call the model - returns multiple outputs depending on return_logits and return_hidden_states
             # With return_logits=ALL and return_hidden_states=ALL:
             # outputs = (next_token_logits, logits, hidden_states)
@@ -157,11 +155,11 @@ class Qwen3EmbeddingPipelineModel(Qwen3Model):
                 return_n_logits.tensor,
                 input_row_offsets.tensor,
             )
-            
+
             # Extract hidden states from output tuple - it's the last element
             # Model returns: (next_token_logits, logits, hidden_states) or (logits, hidden_states)
             hidden_states = outputs[-1]  # Hidden states are always last
-            
+
             if self.pipeline_config.pool_embeddings:
                 # Apply last token pooling to get embeddings
                 # The pooling function extracts the last token from each sequence
@@ -169,10 +167,10 @@ class Qwen3EmbeddingPipelineModel(Qwen3Model):
                 embeddings = last_token_pool(
                     hidden_states, input_row_offsets.tensor
                 )
-                
+
                 # Apply L2 normalization
                 embeddings_normalized = normalize_embeddings(embeddings)
-                
+
                 # Output the pooled and normalized embeddings [batch_size, hidden_size]
                 graph.output(embeddings_normalized)
             else:
@@ -184,16 +182,16 @@ class Qwen3EmbeddingPipelineModel(Qwen3Model):
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Execute the model and return embeddings.
-        
+
         For embedding models, we return the pooled embeddings in the logits field
         for compatibility with the pipeline interface. Unlike the generative model,
         our graph outputs a single tensor (embeddings) rather than multiple outputs.
         """
         assert isinstance(model_inputs, Llama3Inputs)
-        
+
         # Get KV cache inputs
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
-        
+
         # Execute the model - unlike parent, we don't pass through signal_buffers
         # because the Qwen3 graph doesn't include them as inputs
         model_outputs = self.model.execute(
@@ -202,7 +200,7 @@ class Qwen3EmbeddingPipelineModel(Qwen3Model):
             model_inputs.return_n_logits,
             *curr_kv_cache_inputs,
         )
-        
+
         # Our graph outputs a single tensor (embeddings)
         assert isinstance(model_outputs[0], Tensor)
         # Store embeddings in the logits field for pipeline compatibility
@@ -211,11 +209,11 @@ class Qwen3EmbeddingPipelineModel(Qwen3Model):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs=None,
+        kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> Llama3Inputs:
         """Prepare inputs for embedding generation.
-        
+
         Embeddings are computed in a single forward pass, so we don't need
         persistent KV cache. However, the graph still requires KV cache tensors
         as inputs, so we allocate temporary KV cache entries for this batch.
@@ -225,13 +223,13 @@ class Qwen3EmbeddingPipelineModel(Qwen3Model):
         inputs = super().prepare_initial_token_inputs(
             replica_batches, None, return_n_logits
         )
-        
+
         # Now populate KV cache inputs from the manager
         # For embeddings, we need to temporarily allocate KV cache entries
         if kv_cache_inputs is None:
             # Flatten batch to get all contexts
             batch = [ctx for replica in replica_batches for ctx in replica]
-            
+
             # Allocate KV cache for this batch
             # Each context needs space for its tokens
             # First claim, then alloc
@@ -239,14 +237,17 @@ class Qwen3EmbeddingPipelineModel(Qwen3Model):
                 if not self.kv_manager.contains(ctx.request_id):
                     self.kv_manager.claim(ctx.request_id, replica_idx=0)
                     self.kv_manager.alloc(
-                        ctx, num_steps=1  # Only need 1 step for embedding generation
+                        ctx,
+                        num_steps=1,  # Only need 1 step for embedding generation
                     )
-            
+
             # Get the runtime inputs after allocation
             kv_cache_inputs_list = self.kv_manager.get_runtime_inputs(batch)
             if kv_cache_inputs_list:
-                kv_cache_inputs = kv_cache_inputs_list[0]  # Get first device's KV inputs
-        
+                kv_cache_inputs = kv_cache_inputs_list[
+                    0
+                ]  # Get first device's KV inputs
+
         # Update the inputs with KV cache data
         inputs.kv_cache_inputs = kv_cache_inputs
         return inputs

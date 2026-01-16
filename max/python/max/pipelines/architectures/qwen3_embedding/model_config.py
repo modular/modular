@@ -17,14 +17,14 @@ from __future__ import annotations
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
+from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
 from transformers import AutoConfig
-from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 
 
 class Qwen3EmbeddingConfig(MAXModelConfigBase):
     """Configuration for Qwen3 Embedding models.
-    
+
     Reuses Qwen3Config for most parameters but adapts KV cache
     configuration for embedding task.
     """
@@ -42,7 +42,7 @@ class Qwen3EmbeddingConfig(MAXModelConfigBase):
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Get KV cache parameters for Qwen3 Embedding.
-        
+
         Delegates to Qwen3Config since the embedding model uses the same
         architecture.
         """

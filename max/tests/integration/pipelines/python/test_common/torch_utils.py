@@ -165,18 +165,18 @@ def run_embeddings_generation(  # noqa: ANN201
     pool_embeddings: bool = False,
 ):
     """Generates embeddings for the input prompts.
-    
+
     Args:
         pool_embeddings: If True, applies last token pooling and L2 normalization
                         as per Qwen3-Embedding. If False, returns raw hidden states.
     """
-    
+
     def last_token_pool(
         last_hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
     ) -> torch.Tensor:
         """Extract the hidden state of the last non-padding token."""
-        left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
+        left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
         if left_padding:
             return last_hidden_states[:, -1]
         else:
@@ -186,14 +186,14 @@ def run_embeddings_generation(  # noqa: ANN201
                 torch.arange(batch_size, device=last_hidden_states.device),
                 sequence_lengths,
             ]
-    
+
     results = []
     for prompt in prompts:
         encoded_input = data_processor(
             [prompt], padding=True, truncation=True, return_tensors="pt"
         ).to(device)
         output = model(**encoded_input)
-        
+
         if pool_embeddings:
             # Apply last token pooling to get single embedding per sequence
             embeddings = last_token_pool(
@@ -206,7 +206,12 @@ def run_embeddings_generation(  # noqa: ANN201
             embeddings = embeddings.squeeze(0)
         else:
             # Return raw hidden states without pooling [batch_size, seq_len, hidden_dim]
-            embeddings = output.last_hidden_state.cpu().detach().to(torch.float32).numpy()
-        
+            embeddings = (
+                output.last_hidden_state.cpu()
+                .detach()
+                .to(torch.float32)
+                .numpy()
+            )
+
         results.append({"prompt": prompt, "embeddings": embeddings})
     return results

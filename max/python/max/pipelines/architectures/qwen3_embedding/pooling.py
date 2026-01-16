@@ -21,14 +21,14 @@ def last_token_pool(
     input_row_offsets: TensorValue,
 ) -> TensorValue:
     """Apply last token pooling to extract embeddings.
-    
+
     This function extracts the hidden state of the last token
     for each sequence in the batch, as used by Qwen3-Embedding models.
-    
+
     Args:
         hidden_states: Output from the transformer model in ragged format [total_seq_len, hidden_size]
         input_row_offsets: Row offsets defining sequence boundaries in flattened format [batch_size + 1]
-    
+
     Returns:
         Pooled embeddings [batch_size, hidden_size]
     """
@@ -36,36 +36,36 @@ def last_token_pool(
     # For each sequence i: length = row_offsets[i+1] - row_offsets[i]
     # Get ending offsets for each sequence
     end_offsets = input_row_offsets[1:]  # Remove first element
-    # Get starting offsets for each sequence  
+    # Get starting offsets for each sequence
     start_offsets = input_row_offsets[:-1]  # Remove last element
-    
+
     # Compute last token index for each sequence (end_offset - 1)
     # Since end_offset is exclusive, the last token is at end_offset - 1
     one = ops.constant(1, DType.uint32, device=hidden_states.device)
     last_token_indices = ops.sub(end_offsets, one)
-    
+
     # Cast to int32 for gather operation
     last_token_indices_i32 = ops.cast(last_token_indices, DType.int32)
-    
+
     # Gather the hidden states at the last token positions
     # This extracts embeddings for each sequence [batch_size, hidden_size]
     pooled = ops.gather(hidden_states, last_token_indices_i32, axis=0)
-    
+
     return pooled
 
 
 def normalize_embeddings(embeddings: TensorValue) -> TensorValue:
     """Apply L2 normalization to embeddings.
-    
+
     Args:
         embeddings: Embeddings to normalize [batch_size, hidden_size]
-    
+
     Returns:
         Normalized embeddings [batch_size, hidden_size]
     """
     # Cast to float32 BEFORE normalization for better numerical precision
     embeddings_f32 = ops.cast(embeddings, DType.float32)
-    
+
     # Apply L2 normalization: embeddings / ||embeddings||_2
     # This matches the upstream Qwen3-Embedding implementation which uses F.normalize(embeddings, p=2, dim=1)
     # Compute squared values
@@ -79,5 +79,5 @@ def normalize_embeddings(embeddings: TensorValue) -> TensorValue:
     # Normalize: embeddings / norm
     # Broadcasting: [batch_size, hidden_size] / [batch_size, 1] -> [batch_size, hidden_size]
     embeddings_normalized = ops.div(embeddings_f32, norm)
-    
+
     return embeddings_normalized

@@ -14,13 +14,13 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.architectures.llama3 import weight_adapters
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
 )
-from max.pipelines.architectures.llama3 import weight_adapters
 
 from .model import Qwen3EmbeddingPipelineModel
 

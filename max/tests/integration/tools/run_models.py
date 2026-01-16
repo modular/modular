@@ -270,7 +270,9 @@ def run_torch_model(
         )
     elif pipeline_oracle.task == PipelineTask.EMBEDDINGS_GENERATION:
         # Get pool_embeddings from oracle config if it has config_params (GenericOracle)
-        pool_embeddings = getattr(pipeline_oracle, "config_params", {}).get("pool_embeddings", False)
+        pool_embeddings = getattr(pipeline_oracle, "config_params", {}).get(
+            "pool_embeddings", False
+        )
         results = torch_utils.run_embeddings_generation(
             model=torch_pipeline_and_tokenizer.model,
             data_processor=torch_pipeline_and_tokenizer.data_processor,
