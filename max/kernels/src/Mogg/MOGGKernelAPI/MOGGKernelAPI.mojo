@@ -3360,7 +3360,7 @@ struct RMSNormFusedResidualAdd:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width](
+            return input._lambda_load[width=width, element_alignment=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -3454,7 +3454,7 @@ struct RMSNorm:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width](
+            return input._lambda_load[width=width, element_alignment=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
