@@ -1596,6 +1596,37 @@ ParseResult KGEN::parseIsMemoryOnly(AsmParser &p, bool &isMemoryOnly) {
   return success();
 }
 
+void KGEN::printMinAlignment(AsmPrinter &p, TypedAttr minAlignment) {
+  // Skip printing if minAlignment is the default (1) to keep IR clean.
+  if (auto intAttr = dyn_cast<IntegerAttr>(minAlignment)) {
+    if (intAttr.getInt() == 1)
+      return;
+    p << " align(" << intAttr.getInt() << ")";
+  } else {
+    // Future parametric support may produce other TypedAttr types.
+    p << " align(" << minAlignment << ")";
+  }
+}
+
+ParseResult KGEN::parseMinAlignment(AsmParser &p, TypedAttr &minAlignment) {
+  if (succeeded(p.parseOptionalKeyword("align"))) {
+    if (p.parseLParen())
+      return failure();
+    uint64_t value;
+    if (p.parseInteger(value))
+      return failure();
+    if (p.parseRParen())
+      return failure();
+    // Create an IntegerAttr, which is a TypedAttr.
+    minAlignment =
+        IntegerAttr::get(IntegerType::get(p.getContext(), 64), value);
+  } else {
+    // Default alignment is 1 (no explicit alignment).
+    minAlignment = IntegerAttr::get(IntegerType::get(p.getContext(), 64), 1);
+  }
+  return success();
+}
+
 ParseResult
 KGEN::parseStructDefFields(AsmParser &p,
                            SmallVector<StructDefFieldAttr> &fields) {

@@ -433,9 +433,10 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
         }
         if (decl.isSingleElement())
           return replacer.replace(fieldTypes.front(), TypeDomain::AsType);
-        return replacer.replace(
-            KGEN::StructType::get(ctx, fieldTypes, !decl.isRegisterPassable),
-            TypeDomain::AsType);
+        return replacer.replace(KGEN::StructType::get(ctx, fieldTypes,
+                                                      !decl.isRegisterPassable,
+                                                      decl.minAlignment),
+                                TypeDomain::AsType);
       },
       TypeDomain::AsType);
 

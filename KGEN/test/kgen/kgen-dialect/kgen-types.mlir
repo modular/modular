@@ -39,6 +39,16 @@ kgen.func @memory_only_struct(
   kgen.return
 }
 
+// CHECK-LABEL: @aligned_struct
+// CHECK-SAME: %arg0: !kgen.struct<(index) align(64)>,
+// CHECK-SAME: %arg1: !kgen.struct<(index) memoryOnly align(128)>
+kgen.func @aligned_struct(
+  %arg0: !kgen.struct<(index) align(64)>,
+  %arg1: !kgen.struct<(index) memoryOnly align(128)>
+) {
+  kgen.return
+}
+
 // CHECK-LABEL: @type_printing
 kgen.generator @type_printing() {
   // CHECK: type = <struct<()>>

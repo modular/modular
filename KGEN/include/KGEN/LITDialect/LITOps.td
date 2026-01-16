@@ -403,6 +403,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
     OptionalAttr<SourceNameAttr>:$sourceName,
+    // Explicit minimum alignment specified via @align(N) decorator.
+    OptionalAttr<I64Attr>:$minAlignment,
     EnumProp<LIT_TypeConvention>:$convention
   );
   let regions = (region SizedRegion<1>:$fields);
@@ -427,6 +429,13 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     }
     bool isRegisterPassableTrivial() {
       return getConvention() == TypeConvention::RegisterPassableTrivial;
+    }
+
+    /// Get explicit minimum alignment if specified via @align(N).
+    std::optional<size_t> getExplicitAlignment() {
+      if (auto attr = getMinAlignmentAttr())
+        return static_cast<size_t>(attr.getInt());
+      return std::nullopt;
     }
 
     /// Return the decl name of the struct.

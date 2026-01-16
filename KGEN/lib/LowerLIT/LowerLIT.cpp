@@ -317,6 +317,13 @@ struct LITLowerer {
     return symbolTables.getSymbolTables();
   }
 
+  /// Returns the explicit minimum alignment for a LIT struct type, if specified
+  /// via @align(N). Checks both already-lowered structs (in structDecls) and
+  /// not-yet-lowered structs (via symbol table lookup).
+  /// Returns null TypedAttr if the type is not a struct or alignment is 1
+  /// (default).
+  TypedAttr getStructMinAlignment(Type elementType);
+
   mlir::SymbolTableAnalysis &symbolTables;
   DenseMap<StringAttr, StringAttr> &renamedSymbols;
   SingletonTypeHelper &singletonTypeHelper;
@@ -327,6 +334,47 @@ struct LITLowerer {
   bool foundAnyPatterns = false;
 };
 } // namespace
+
+TypedAttr LITLowerer::getStructMinAlignment(Type elementType) {
+  auto structType = dyn_cast<LIT::StructType>(elementType);
+  if (!structType)
+    return TypedAttr();
+
+  // Flatten the symbol reference to get the struct name for lookup in the
+  // structDecls map (which uses flattened names as keys).
+  StringAttr structName =
+      flattenSymbolRefAttr(structType.getSymbol()).getAttr();
+
+  // Helper to check if alignment is non-default (i.e., not 1).
+  auto isNonDefaultAlignment = [](TypedAttr attr) {
+    if (auto intAttr = dyn_cast<IntegerAttr>(attr))
+      return intAttr.getInt() != 1;
+    // Parametric alignment is always considered non-default.
+    return true;
+  };
+
+  // First check if this struct was already processed (stored in structDecls).
+  if (auto it = structDecls.structDecls.find(structName);
+      it != structDecls.structDecls.end()) {
+    TypedAttr minAlign = it->second.minAlignment;
+    if (minAlign && isNonDefaultAlignment(minAlign))
+      return minAlign;
+    return TypedAttr();
+  }
+
+  // Struct not yet lowered - look it up in the symbol table using the full
+  // symbol reference. This handles nested symbols (e.g., @module::@struct)
+  // correctly.
+  Operation *topLevelOp = getTopLevelSymbolTable().getOp();
+  if (auto structDecl = getSymbolTableCollection().lookupSymbolIn<StructDeclOp>(
+          topLevelOp, structType.getSymbol())) {
+    if (auto minAlign = structDecl.getMinAlignmentAttr())
+      if (isNonDefaultAlignment(minAlign))
+        return minAlign;
+  }
+
+  return TypedAttr();
+}
 
 void LITLowerer::lowerLITOps(FnOp func) {
   func.getBodyRegion().walk([&](Operation *op) {
@@ -371,9 +419,18 @@ void LITLowerer::lowerLITOps(FnOp func) {
                                          call.getOperands());
     } else if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
       // Lower a lit.varlet.decl to pop.stack_allocation.
+      // Check if the element type is a struct with explicit alignment.
+      TypedAttr alignment;
+      if (TypedAttr minAlign =
+              getStructMinAlignment(varDecl.getType().getElementType())) {
+        // Convert from i64 IntegerAttr to IndexAttr for StackAllocationOp.
+        auto intAttr = cast<IntegerAttr>(minAlign);
+        alignment = b.getIndexAttr(intAttr.getInt());
+      }
+
       auto allocOp = POP::StackAllocationOp::create(
-          b, varDecl.getLoc(), /*markedLifetimes=*/true,
-          varDecl.getType().getAsPointerType());
+          b, varDecl.getLoc(), varDecl.getType().getAsPointerType(),
+          /*count=*/1, alignment, /*markedLifetimes=*/true);
 
       // Replace !lit.ref result type with a cast from the pointer.  This will
       // get squashed by LowerLITTypes.
@@ -555,6 +612,12 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
   info.sourceName = structDecl.getSourceNameAttr();
   info.decls = structDecl.getParamsAttr();
   info.isRegisterPassable = structDecl.isRegisterPassable();
+  // Provide default alignment of 1 if not explicitly specified.
+  if (auto minAlign = structDecl.getMinAlignmentAttr())
+    info.minAlignment = minAlign;
+  else
+    info.minAlignment =
+        IntegerAttr::get(IntegerType::get(structDecl.getContext(), 64), 1);
   info.loc = structDecl.getLoc();
 
   // Collect the struct fields.

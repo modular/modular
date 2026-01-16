@@ -1084,7 +1084,17 @@ static std::optional<int64_t> getMaxAlignmentAmongTypes(ArrayRef<Type> types,
 }
 
 std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
-  return getMaxAlignmentAmongTypes(getElementTypes(), target);
+  auto naturalAlign = getMaxAlignmentAmongTypes(getElementTypes(), target);
+  if (!naturalAlign)
+    return std::nullopt;
+
+  // Respect explicit minimum alignment from @align(N) decorator.
+  // minAlignment is a TypedAttr to support future parametric alignment.
+  // For now, it should always be a concrete IntegerAttr with default value 1.
+  auto intAttr = dyn_cast<IntegerAttr>(getMinAlignment());
+  assert(intAttr && "minAlignment should be IntegerAttr until parametric "
+                    "alignment is implemented");
+  return std::max(*naturalAlign, intAttr.getInt());
 }
 
 ErrorOrSuccess StructType::writeTo(TypedAttr value, int64_t addr,

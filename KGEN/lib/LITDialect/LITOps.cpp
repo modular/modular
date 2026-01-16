@@ -1112,7 +1112,7 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         /*nonmaterializableTarget=*/{}, /*destructor=*/{}, /*moveInit=*/{},
         /*copyInit=*/{}, /*linearTypeErrorMsg*/ {}, /*closureSignature=*/{},
         /*docString=*/{}, /*deprecationWarning=*/{}, /*sourceName=*/{},
-        /*convention=*/{});
+        /*minAlignment=*/{}, /*convention=*/{});
   result.regions[0]->push_back(new Block());
 }
 

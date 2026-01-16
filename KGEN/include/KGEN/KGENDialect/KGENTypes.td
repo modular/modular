@@ -532,17 +532,31 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
 
   let parameters = (ins
     OptionalArrayRefParameter<"Type">:$elementTypes,
-    "bool":$isMemoryOnly
+    "bool":$isMemoryOnly,
+    // Explicit minimum alignment specified via @align(N). A value of 1 means
+    // no explicit alignment (the default). Uses TypedAttr to support future
+    // parametric alignment (e.g., @align(n) where n is a struct parameter).
+    // For now, this will always be an IntegerAttr.
+    DefaultValuedParameter<"TypedAttr",
+                           "$_builder.getIntegerAttr($_builder.getIntegerType(64), 1)">:$minAlignment
   );
   let assemblyFormat = [{
     `<` `(` (`)`) : (custom<ParamTypes>($elementTypes)^ `)`)?
-    `` custom<IsMemoryOnly>($isMemoryOnly) `>`
+    `` custom<IsMemoryOnly>($isMemoryOnly)
+    `` custom<MinAlignment>($minAlignment) `>`
   }];
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$types)>,
     TypeBuilder<(ins "ArrayRef<Type>":$types), [{
-      return $_get($_ctxt, types, /*isMemoryOnly=*/false);
+      mlir::Builder b($_ctxt);
+      return $_get($_ctxt, types, /*isMemoryOnly=*/false,
+                   /*minAlignment=*/b.getIntegerAttr(b.getIntegerType(64), 1));
+    }]>,
+    TypeBuilder<(ins "ArrayRef<Type>":$types, "bool":$isMemoryOnly), [{
+      mlir::Builder b($_ctxt);
+      return $_get($_ctxt, types, isMemoryOnly,
+                   /*minAlignment=*/b.getIntegerAttr(b.getIntegerType(64), 1));
     }]>
   ];
 

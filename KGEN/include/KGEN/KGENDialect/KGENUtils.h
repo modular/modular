@@ -109,6 +109,11 @@ EnvAttr getModuleEnvAttr(ModuleOp moduleOp);
 void printIsMemoryOnly(AsmPrinter &p, bool isMemoryOnly);
 ParseResult parseIsMemoryOnly(AsmParser &p, bool &isMemoryOnly);
 
+/// Parser & printer for explicit minimum alignment (e.g., "align(64)").
+/// Uses TypedAttr to support future parametric alignment.
+void printMinAlignment(AsmPrinter &p, TypedAttr minAlignment);
+ParseResult parseMinAlignment(AsmParser &p, TypedAttr &minAlignment);
+
 /// Parser & printer for array of simplified StructDefFieldAttrs.
 ParseResult parseStructDefFields(AsmParser &p,
                                  SmallVector<StructDefFieldAttr> &fields);
