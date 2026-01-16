@@ -882,7 +882,7 @@ ErrorOrSuccess KGENCompiler::runElaborationPipeline(
 }
 
 static ErrorOrSuccess
-setEmissionOptions(llvm::StringMap<llvm::cl::Option *> &options,
+setEmissionOptions(llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &options,
                    StringRef emissionOpt, bool reset) {
   if (!emissionOpt.contains("=")) {
     return Error("emission option must be of the form `option=value`");
@@ -921,7 +921,7 @@ setEmissionOptions(llvm::StringMap<llvm::cl::Option *> &options,
 ErrorOrSuccess KGEN::parseEmissionOptions(EmissionOptions emissionOptions) {
   // Handle the emission options.
   // Parse the emission options from a comma separated list of values.
-  llvm::StringMap<llvm::cl::Option *> &options =
+  llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &options =
       llvm::cl::getRegisteredOptions();
 
   for (StringRef elem : emissionOptions) {
@@ -935,7 +935,7 @@ ErrorOrSuccess KGEN::parseEmissionOptions(EmissionOptions emissionOptions) {
 ErrorOrSuccess KGEN::resetEmissionOptions(EmissionOptions emissionOptions) {
   // Handle the emission options.
   // Parse the emission options from a comma separated list of values.
-  llvm::StringMap<llvm::cl::Option *> &options =
+  llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &options =
       llvm::cl::getRegisteredOptions();
 
   for (StringRef elem : emissionOptions) {

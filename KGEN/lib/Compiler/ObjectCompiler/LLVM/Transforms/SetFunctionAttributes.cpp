@@ -24,15 +24,15 @@ using namespace M::KGEN;
 PreservedAnalyses SetFunctionAttributes::run(Module &module,
                                              ModuleAnalysisManager &MAM) {
 
-  llvm::StringMap<llvm::cl::Option *> &options =
+  llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &options =
       llvm::cl::getRegisteredOptions();
 
   runImpl(module, options);
   return PreservedAnalyses::none();
 }
 
-static std::optional<DenormalMode::DenormalModeKind>
-getDenormalKind(const llvm::StringMap<llvm::cl::Option *> &options) {
+static std::optional<DenormalMode::DenormalModeKind> getDenormalKind(
+    const llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &options) {
 
   auto denormIter = options.find("denormal-fp-math-f32");
   if (denormIter == options.end())
@@ -46,7 +46,8 @@ getDenormalKind(const llvm::StringMap<llvm::cl::Option *> &options) {
 }
 
 void SetFunctionAttributes::runImpl(
-    llvm::Module &module, const llvm::StringMap<llvm::cl::Option *> &options) {
+    llvm::Module &module,
+    const llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &options) {
   // Set function denormal-fp-math-f32 attributes based on cl option value.
   // Clang does similar thing for `-fdenormal-fp-math-f32`
   // https://github.com/llvm/llvm-project/blob/cc271437553452ede002d871d32abc02084341a8/clang/lib/CodeGen/CGCall.cpp#L1940-L1948

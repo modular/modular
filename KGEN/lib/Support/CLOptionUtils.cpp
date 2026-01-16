@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Support/CLOptionUtils.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -21,7 +22,7 @@ void M::registerCommandFlags() {
 
   // Remove duplicated flags that are conflicting with other mojo and kgen
   // options.
-  llvm::StringMap<llvm::cl::Option *> &options =
+  llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &options =
       llvm::cl::getRegisteredOptions();
   options["march"]->removeArgument();
   options["mcpu"]->removeArgument();

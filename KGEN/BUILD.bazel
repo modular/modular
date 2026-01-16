@@ -1301,7 +1301,7 @@ modular_shared_library(
         "//Support:CrashReporting",
         "//Support:Globals",
         "@llvm-project//lldb:liblldb.wrapper",
-        "@llvm-project//lldb:lldb22.0.0git",
+        "@llvm-project//lldb:lldb23.0.0git",
         "@llvm-project//llvm:ExecutionEngine",
         "@llvm-project//llvm:MCJIT",
     ],
@@ -1356,6 +1356,6 @@ modular_shared_library(
         ":MojoTooling",
         "//Support:Context",
         "@llvm-project//lldb:liblldb.wrapper",
-        "@llvm-project//lldb:lldb22.0.0git",
+        "@llvm-project//lldb:lldb23.0.0git",
     ],
 )
