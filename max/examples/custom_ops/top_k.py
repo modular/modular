@@ -15,7 +15,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -159,17 +159,17 @@ def main() -> None:
     model = session.load(graph)
 
     # Create a driver tensor from the next word probabilities
-    input_tensor = Tensor.from_numpy(probabilities).to(device)
+    input_tensor = Buffer.from_numpy(probabilities).to(device)
     print(f"Sampling top k: {K} for batch size: {batch_size}")
 
     values, indices = model.execute(input_tensor)
 
     # Copy values and indices back to the CPU to be read.
-    assert isinstance(values, Tensor)
+    assert isinstance(values, Buffer)
     values = values.to(CPU())
     np_values = values.to_numpy()
 
-    assert isinstance(indices, Tensor)
+    assert isinstance(indices, Buffer)
     indices = indices.to(CPU())
     np_indices = indices.to_numpy()
 

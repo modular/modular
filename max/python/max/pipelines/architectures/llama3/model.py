@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from typing import Any, Literal
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Value
@@ -61,37 +61,37 @@ class Llama3Inputs(ModelInputs):
     execution.
     """
 
-    tokens: Tensor
+    tokens: Buffer
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: Tensor
+    input_row_offsets: Buffer
     """Tensor containing the offsets for each row in the ragged input
     sequence."""
 
-    signal_buffers: list[Tensor]
+    signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
-    return_n_logits: Tensor
+    return_n_logits: Buffer
 
-    data_parallel_splits: Tensor | Sequence[Sequence[int]] | None = None
+    data_parallel_splits: Buffer | Sequence[Sequence[int]] | None = None
     """Tensor containing the data parallel splits."""
 
     def __init__(
         self,
-        tokens: Tensor,
-        input_row_offsets: Tensor,
-        signal_buffers: list[Tensor],
-        return_n_logits: Tensor,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        signal_buffers: list[Buffer],
+        return_n_logits: Buffer,
         kv_cache_inputs: KVCacheInputs | None = None,
-        lora_ids: Tensor | None = None,
-        lora_ranks: Tensor | None = None,
-        lora_grouped_offsets: Tensor | None = None,
-        num_active_loras: Tensor | None = None,
-        lora_end_idx: Tensor | None = None,
-        batch_seq_len: Tensor | None = None,
-        lora_ids_kv: Tensor | None = None,
-        lora_grouped_offsets_kv: Tensor | None = None,
-        data_parallel_splits: Tensor | Sequence[Sequence[int]] | None = None,
+        lora_ids: Buffer | None = None,
+        lora_ranks: Buffer | None = None,
+        lora_grouped_offsets: Buffer | None = None,
+        num_active_loras: Buffer | None = None,
+        lora_end_idx: Buffer | None = None,
+        batch_seq_len: Buffer | None = None,
+        lora_ids_kv: Buffer | None = None,
+        lora_grouped_offsets_kv: Buffer | None = None,
+        data_parallel_splits: Buffer | Sequence[Sequence[int]] | None = None,
     ) -> None:
         """
         Args:
@@ -195,7 +195,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         if self.pipeline_config.model.data_parallel_degree > 1:
             assert model_inputs.data_parallel_splits is not None
             # Convert data_parallel_splits to Tensor if needed
-            if isinstance(model_inputs.data_parallel_splits, Tensor):
+            if isinstance(model_inputs.data_parallel_splits, Buffer):
                 splits_tensor = model_inputs.data_parallel_splits
             else:
                 # Convert Sequence[Sequence[int]] to flat array
@@ -205,7 +205,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
                         for s in model_inputs.data_parallel_splits
                     ]
                 )
-                splits_tensor = Tensor.from_numpy(splits_array).to(
+                splits_tensor = Buffer.from_numpy(splits_array).to(
                     self.devices[0]
                 )
             model_outputs = self.model.execute(
@@ -246,12 +246,12 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         )
         has_hidden_states = self.return_hidden_states != ReturnHiddenStates.NONE
 
-        assert isinstance(model_outputs[0], Tensor)
+        assert isinstance(model_outputs[0], Buffer)
         if has_offsets and has_hidden_states:
             assert len(model_outputs) == 4
-            assert isinstance(model_outputs[1], Tensor)
-            assert isinstance(model_outputs[2], Tensor)
-            assert isinstance(model_outputs[3], Tensor)
+            assert isinstance(model_outputs[1], Buffer)
+            assert isinstance(model_outputs[2], Buffer)
+            assert isinstance(model_outputs[3], Buffer)
             return ModelOutputs(
                 logits=model_outputs[1],
                 next_token_logits=model_outputs[0],
@@ -260,8 +260,8 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             )
         elif has_offsets:
             assert len(model_outputs) == 3
-            assert isinstance(model_outputs[1], Tensor)
-            assert isinstance(model_outputs[2], Tensor)
+            assert isinstance(model_outputs[1], Buffer)
+            assert isinstance(model_outputs[2], Buffer)
             return ModelOutputs(
                 logits=model_outputs[1],
                 next_token_logits=model_outputs[0],
@@ -269,7 +269,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             )
         elif has_hidden_states:
             assert len(model_outputs) == 2
-            assert isinstance(model_outputs[1], Tensor)
+            assert isinstance(model_outputs[1], Buffer)
             return ModelOutputs(
                 logits=model_outputs[0],
                 next_token_logits=model_outputs[0],
@@ -306,7 +306,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
-        input_row_offsets = Tensor(
+        input_row_offsets = Buffer(
             shape=(len(context_batch) + 1,),
             dtype=DType.uint32,
             device=device0,
@@ -321,13 +321,13 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
         # return_n_logits_tensor does not need to be pinned since it is not
         # copied to the device.
-        return_n_logits_tensor = Tensor.from_numpy(
+        return_n_logits_tensor = Buffer.from_numpy(
             np.array([return_n_logits], dtype=np.int64)
         )
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         num_tokens = sum(ctx.tokens.active_length for ctx in context_batch)
-        tokens = Tensor(
+        tokens = Buffer(
             shape=(num_tokens,),
             dtype=DType.int64,
             device=device0,
@@ -339,7 +339,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
         # Constructs splits for the data parallel execution.
         if dp > 1:
-            data_parallel_splits = Tensor.from_numpy(
+            data_parallel_splits = Buffer.from_numpy(
                 compute_data_parallel_splits(replica_batches)
             )
         else:
@@ -383,7 +383,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
     def prepare_next_token_inputs(
         self,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> Llama3Inputs:
         """Prepare the inputs for the next token in multistep execution.
@@ -425,7 +425,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = Tensor.from_numpy(
+        self._input_row_offsets_prealloc = Buffer.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
@@ -634,7 +634,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         session: InferenceSession,
         model_inputs: ModelInputs,
         model_outputs: ModelOutputs,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None]:

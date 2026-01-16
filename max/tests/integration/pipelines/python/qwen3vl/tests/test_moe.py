@@ -15,7 +15,7 @@
 
 import pytest
 import torch
-from max.driver import Accelerator, Device, Tensor
+from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -125,7 +125,7 @@ def generate_max_moe_outputs(
     compiled = session.load(graph, weights_registry=moe.state_dict())
 
     result = compiled.execute(
-        Tensor.from_dlpack(hidden_states.to(torch_device)).to(device)
+        Buffer.from_dlpack(hidden_states.to(torch_device)).to(device)
     )
     max_tensor = result[0]
     return from_dlpack(max_tensor)

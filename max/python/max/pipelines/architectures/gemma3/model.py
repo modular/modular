@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
@@ -63,22 +63,22 @@ class Gemma3Inputs(ModelInputs):
     execution.
     """
 
-    tokens: Tensor
+    tokens: Buffer
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: list[Tensor]
+    input_row_offsets: list[Buffer]
     """List of tensors containing the offsets for each row in the ragged input
     sequence, one per device."""
 
-    signal_buffers: list[Tensor]
+    signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
     def __init__(
         self,
-        tokens: Tensor,
-        input_row_offsets: list[Tensor],
-        return_n_logits: Tensor,
-        signal_buffers: list[Tensor],
+        tokens: Buffer,
+        input_row_offsets: list[Buffer],
+        return_n_logits: Buffer,
+        signal_buffers: list[Buffer],
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         """
@@ -245,7 +245,7 @@ class Gemma3Model(
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = Tensor.from_numpy(
+        self._input_row_offsets_prealloc = Buffer.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
@@ -404,7 +404,7 @@ class Gemma3Model(
         session: InferenceSession,
         model_inputs: ModelInputs,
         model_outputs: ModelOutputs,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None]:
@@ -453,16 +453,16 @@ class Gemma3Model(
             *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
-            assert isinstance(model_outputs[0], Tensor)
-            assert isinstance(model_outputs[1], Tensor)
-            assert isinstance(model_outputs[2], Tensor)
+            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(model_outputs[1], Buffer)
+            assert isinstance(model_outputs[2], Buffer)
             return ModelOutputs(
                 logits=model_outputs[1],
                 next_token_logits=model_outputs[0],
                 logit_offsets=model_outputs[2],
             )
         else:
-            assert isinstance(model_outputs[0], Tensor)
+            assert isinstance(model_outputs[0], Buffer)
             return ModelOutputs(
                 logits=model_outputs[0],
                 next_token_logits=model_outputs[0],
@@ -503,14 +503,14 @@ class Gemma3Model(
 
         # Create input_row_offsets for each device
         input_row_offsets_tensors = [
-            Tensor.from_numpy(input_row_offsets).to(device)
+            Buffer.from_numpy(input_row_offsets).to(device)
             for device in self.devices
         ]
 
         return Gemma3Inputs(
-            tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
+            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
             input_row_offsets=input_row_offsets_tensors,
-            return_n_logits=Tensor.from_numpy(
+            return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             signal_buffers=self.signal_buffers,
@@ -518,7 +518,7 @@ class Gemma3Model(
         )
 
     def prepare_next_token_inputs(
-        self, next_tokens: Tensor, prev_model_inputs: ModelInputs
+        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
     ) -> ModelInputs:
         """Prepares the inputs for subsequent execution steps in a multi-step generation.
 

@@ -18,7 +18,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import Model
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -82,8 +82,8 @@ def compute_log_probabilities_ragged(
     model: Model,
     *,
     input_row_offsets: npt.NDArray[np.integer[Any]],
-    logits: Tensor | None,
-    next_token_logits: Tensor,
+    logits: Buffer | None,
+    next_token_logits: Buffer,
     tokens: npt.NDArray[np.integer[Any]],
     sampled_tokens: npt.NDArray[np.integer[Any]],
     batch_top_n: Sequence[int],
@@ -160,15 +160,15 @@ def compute_log_probabilities_ragged(
     assert kernel_logits.dtype == DType.float32
     model_outputs = model.execute(
         kernel_logits,
-        Tensor.from_numpy(tokens.astype(np.uint32)).to(device),
-        Tensor.from_numpy(sampled_tokens.astype(np.uint32)).to(device),
-        Tensor.from_numpy(logit_row_offsets.astype(np.uint32)).to(device),
-        Tensor.from_numpy(token_row_offsets.astype(np.uint32)).to(device),
-        Tensor.from_numpy(output_row_offsets.astype(np.uint32)).to(device),
-        Tensor.from_numpy(output_row_offsets.astype(np.uint32)),  # for host
+        Buffer.from_numpy(tokens.astype(np.uint32)).to(device),
+        Buffer.from_numpy(sampled_tokens.astype(np.uint32)).to(device),
+        Buffer.from_numpy(logit_row_offsets.astype(np.uint32)).to(device),
+        Buffer.from_numpy(token_row_offsets.astype(np.uint32)).to(device),
+        Buffer.from_numpy(output_row_offsets.astype(np.uint32)).to(device),
+        Buffer.from_numpy(output_row_offsets.astype(np.uint32)),  # for host
     )
-    assert isinstance(model_outputs[0], Tensor)
-    assert isinstance(model_outputs[1], Tensor)
+    assert isinstance(model_outputs[0], Buffer)
+    assert isinstance(model_outputs[1], Buffer)
     lp_logits = model_outputs[0].to_numpy()
     lp_tokens = model_outputs[1].to_numpy()
 

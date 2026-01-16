@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import torch
-from max.driver import CPU, Accelerator, Device, Tensor
+from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -132,10 +132,10 @@ def merge_ragged_tensors_1d(device: Device, device_ref: DeviceRef) -> None:
     compiled = session.load(graph)
 
     results = compiled.execute(
-        Tensor.from_dlpack(a_input).to(device),
-        Tensor.from_dlpack(a_offsets).to(device),
-        Tensor.from_dlpack(b_input).to(device),
-        Tensor.from_dlpack(b_offsets).to(device),
+        Buffer.from_dlpack(a_input).to(device),
+        Buffer.from_dlpack(a_offsets).to(device),
+        Buffer.from_dlpack(b_input).to(device),
+        Buffer.from_dlpack(b_offsets).to(device),
     )
 
     max_merged_tensor = torch.from_dlpack(results[0]).to("cpu")
@@ -218,10 +218,10 @@ def merge_ragged_tensors_2d(device: Device, device_ref: DeviceRef) -> None:
     compiled = session.load(graph)
 
     results = compiled.execute(
-        Tensor.from_dlpack(a_input).to(device),
-        Tensor.from_dlpack(a_offsets).to(device),
-        Tensor.from_dlpack(b_input).to(device),
-        Tensor.from_dlpack(b_offsets).to(device),
+        Buffer.from_dlpack(a_input).to(device),
+        Buffer.from_dlpack(a_offsets).to(device),
+        Buffer.from_dlpack(b_input).to(device),
+        Buffer.from_dlpack(b_offsets).to(device),
     )
 
     max_merged_tensor = torch.from_dlpack(results[0]).to("cpu")

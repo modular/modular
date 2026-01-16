@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 import numpy as np
-from max.driver import Device, DeviceSpec, Tensor
+from max.driver import Buffer, Device, DeviceSpec
 from max.dtype import DType
 from max.engine.api import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
@@ -62,19 +62,19 @@ class DeepseekV2Inputs(ModelInputs):
     - return_n_logits: A tensor containing the number of logits to return
     """
 
-    tokens: Tensor
-    input_row_offsets: Tensor
-    signal_buffers: list[Tensor]
+    tokens: Buffer
+    input_row_offsets: Buffer
+    signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
-    return_n_logits: Tensor
+    return_n_logits: Buffer
 
     def __init__(
         self,
-        tokens: Tensor,
-        input_row_offsets: Tensor,
-        signal_buffers: list[Tensor],
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        signal_buffers: list[Buffer],
         kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: Tensor | None = None,
+        return_n_logits: Buffer | None = None,
     ) -> None:
         self.tokens = tokens
         self.input_row_offsets = input_row_offsets
@@ -82,7 +82,7 @@ class DeepseekV2Inputs(ModelInputs):
         self.kv_cache_inputs = kv_cache_inputs
         if return_n_logits is None:
             # Provide a default value if none is provided
-            self.return_n_logits = Tensor.from_numpy(
+            self.return_n_logits = Buffer.from_numpy(
                 np.array([1], dtype=np.int64)
             ).to(tokens.device)
         else:
@@ -136,16 +136,16 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
             *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
-            assert isinstance(model_outputs[0], Tensor)
-            assert isinstance(model_outputs[1], Tensor)
-            assert isinstance(model_outputs[2], Tensor)
+            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(model_outputs[1], Buffer)
+            assert isinstance(model_outputs[2], Buffer)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
             )
         else:
-            assert isinstance(model_outputs[0], Tensor)
+            assert isinstance(model_outputs[0], Buffer)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[0],
@@ -172,20 +172,20 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
 
         return DeepseekV2Inputs(
-            tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=Tensor.from_numpy(input_row_offsets).to(
+            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
+            input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
                 self.devices[0]
             ),
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Tensor.from_numpy(
+            return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ).to(self.devices[0]),
         )
 
     def prepare_next_token_inputs(
         self,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> DeepseekV2Inputs:
         assert isinstance(prev_model_inputs, DeepseekV2Inputs)
@@ -310,7 +310,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         max_batch_size = self.pipeline_config.max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
 
-        self._input_row_offsets_prealloc = Tensor.from_numpy(
+        self._input_row_offsets_prealloc = Buffer.from_numpy(
             np.arange(max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
@@ -478,7 +478,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         session: InferenceSession,
         model_inputs: ModelInputs,
         model_outputs: ModelOutputs,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None]:

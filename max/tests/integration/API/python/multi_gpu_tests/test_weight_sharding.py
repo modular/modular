@@ -13,7 +13,7 @@
 """Tests weight sharding API."""
 
 import numpy as np
-from max.driver import CPU, Accelerator, Tensor
+from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, ShardingStrategy, Weight
@@ -86,6 +86,6 @@ def test_weight_sharding() -> None:
     assert str(device1) == str(compiled.devices[2])
 
     output = compiled.execute()
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
     # Check Executed Graph
     assert np.allclose([21, 25, 29, 33, 37], output[0].to_numpy())

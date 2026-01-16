@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from max.driver import CPU, Device, Tensor
+from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.interfaces import (
@@ -168,8 +168,8 @@ class MockPipelineModel(PipelineModel[ContextT]):
             np.float32
         )
         return ModelOutputs(
-            logits=Tensor.from_numpy(rand_values),
-            next_token_logits=Tensor.from_numpy(rand_values),
+            logits=Buffer.from_numpy(rand_values),
+            next_token_logits=Buffer.from_numpy(rand_values),
         )
 
     def prepare_initial_token_inputs(
@@ -193,7 +193,7 @@ class MockPipelineModel(PipelineModel[ContextT]):
 
     def prepare_next_token_inputs(
         self,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> ModelInputs:
         del next_tokens
@@ -221,16 +221,16 @@ class MockSamplingProcessor:
         self._step = 0
 
     @property
-    def generated_tokens(self) -> Tensor:
-        return Tensor.from_numpy(self._generated_tokens)
+    def generated_tokens(self) -> Buffer:
+        return Buffer.from_numpy(self._generated_tokens)
 
     @property
-    def new_tokens(self) -> Tensor:
+    def new_tokens(self) -> Buffer:
         if self._step < self._num_steps:
             tokens = self._generated_tokens[:, self._step]
             self._step += 1
-            return Tensor.from_numpy(tokens.astype(np.int64))
-        return Tensor.from_numpy(np.zeros(self._batch_size, dtype=np.int64))
+            return Buffer.from_numpy(tokens.astype(np.int64))
+        return Buffer.from_numpy(np.zeros(self._batch_size, dtype=np.int64))
 
 
 def create_context(

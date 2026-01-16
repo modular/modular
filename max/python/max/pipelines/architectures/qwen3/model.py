@@ -17,7 +17,7 @@ import logging
 from typing import Any, Literal
 
 from max._core.engine import Model
-from max.driver import Tensor
+from max.driver import Buffer
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
@@ -37,7 +37,7 @@ class Qwen3Model(LlamaModelBase):
     model: Model
     """Compiled and initialized model ready for inference."""
 
-    signal_buffers: list[Tensor]
+    signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"

@@ -13,7 +13,7 @@
 
 
 import numpy as np
-from max.driver import Accelerator, Device, Tensor
+from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, SymbolicDim, TensorType, ops
@@ -21,8 +21,8 @@ from max.graph import DeviceRef, Graph, SymbolicDim, TensorType, ops
 
 def alloc_pinned(
     device: Device, size: int, init_value: int | None = None
-) -> Tensor:
-    t = Tensor(dtype=DType.int8, shape=[size], device=device, pinned=True)
+) -> Buffer:
+    t = Buffer(dtype=DType.int8, shape=[size], device=device, pinned=True)
     if init_value is not None:
         t.to_numpy().fill(init_value)
     return t

@@ -18,7 +18,7 @@ from functools import partial
 
 import pytest
 import torch
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -72,7 +72,7 @@ def null_mask_max_flash_attn(
 
     # Execute.
     output = model.execute(q.detach(), k.detach(), v.detach())[0]
-    assert isinstance(output, Tensor)
+    assert isinstance(output, Buffer)
     return torch.from_dlpack(output)
 
 
@@ -118,7 +118,7 @@ def causal_max_flash_attn(
 
     # Execute.
     output = model.execute(q.detach(), k.detach(), v.detach())[0]
-    assert isinstance(output, Tensor)
+    assert isinstance(output, Buffer)
     return torch.from_dlpack(output)
 
 

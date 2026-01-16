@@ -36,7 +36,7 @@ from bench import bench_kineto, setup_ninja_path
 from bencher_utils import Bench, ThroughputMeasure
 
 # MAX imports
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
@@ -284,14 +284,14 @@ def bench_max(
     )
 
     # Convert torch tensors to MAX types (these will be the actual runtime inputs)
-    paged_blocks_max = Tensor.from_dlpack(
+    paged_blocks_max = Buffer.from_dlpack(
         paged_blocks_torch
     )  # Buffer for kv_blocks
-    lut_max = Tensor.from_dlpack(lut_torch)  # Tensor for lookup_table
-    cache_lengths_max = Tensor.from_dlpack(
+    lut_max = Buffer.from_dlpack(lut_torch)  # Tensor for lookup_table
+    cache_lengths_max = Buffer.from_dlpack(
         cache_lengths_torch
     )  # Tensor for cache_lengths
-    max_lengths_max = Tensor.from_dlpack(
+    max_lengths_max = Buffer.from_dlpack(
         max_lengths_torch
     )  # Tensor for max_lengths
 

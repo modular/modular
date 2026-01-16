@@ -17,7 +17,7 @@ import platform
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -47,8 +47,8 @@ def test_acos(session: InferenceSession, dtype: DType) -> None:
     # Generate random values in the valid domain [-1, 1]
     input_data = torch.rand(1024, dtype=torch_dtype) * 2.0 - 1.0
 
-    output = model(Tensor.from_dlpack(input_data).to(model.input_devices[0]))[0]
-    assert isinstance(output, Tensor)
+    output = model(Buffer.from_dlpack(input_data).to(model.input_devices[0]))[0]
+    assert isinstance(output, Buffer)
     max_result = output.to_numpy()
 
     torch_result = torch.acos(input_data).to(dtype=torch.float32).cpu().numpy()
@@ -82,8 +82,8 @@ def test_acos_special_values(session: InferenceSession) -> None:
     # acos(-1.0) = π ≈ 3.1416
     input_data = torch.tensor([1.0, 0.5, 0.0, -0.5, -1.0], dtype=torch.float32)
 
-    output = model(Tensor.from_dlpack(input_data).to(model.input_devices[0]))[0]
-    assert isinstance(output, Tensor)
+    output = model(Buffer.from_dlpack(input_data).to(model.input_devices[0]))[0]
+    assert isinstance(output, Buffer)
     max_result = output.to_numpy()
 
     torch_result = torch.acos(input_data).cpu().numpy()
@@ -114,8 +114,8 @@ def test_acos_2d_tensor(session: InferenceSession) -> None:
     torch.manual_seed(123)
     input_data = torch.rand(10, 10, dtype=torch.float32) * 2.0 - 1.0
 
-    output = model(Tensor.from_dlpack(input_data).to(model.input_devices[0]))[0]
-    assert isinstance(output, Tensor)
+    output = model(Buffer.from_dlpack(input_data).to(model.input_devices[0]))[0]
+    assert isinstance(output, Buffer)
     max_result = output.to_numpy()
 
     torch_result = torch.acos(input_data).cpu().numpy()
@@ -146,8 +146,8 @@ def test_acos_edge_domain_values(session: InferenceSession) -> None:
         [-1.0, -0.999, -0.99, 0.99, 0.999, 1.0], dtype=torch.float32
     )
 
-    output = model(Tensor.from_dlpack(input_data).to(model.input_devices[0]))[0]
-    assert isinstance(output, Tensor)
+    output = model(Buffer.from_dlpack(input_data).to(model.input_devices[0]))[0]
+    assert isinstance(output, Buffer)
     max_result = output.to_numpy()
 
     torch_result = torch.acos(input_data).cpu().numpy()
@@ -177,8 +177,8 @@ def test_acos_clamping(session: InferenceSession) -> None:
     # acos implementation clamps to [-1, 1] internally
     input_data = torch.tensor([-1.5, -1.0, 1.0, 1.5], dtype=torch.float32)
 
-    output = model(Tensor.from_dlpack(input_data).to(model.input_devices[0]))[0]
-    assert isinstance(output, Tensor)
+    output = model(Buffer.from_dlpack(input_data).to(model.input_devices[0]))[0]
+    assert isinstance(output, Buffer)
     max_result = output.to_numpy()
 
     # Expected: clamped values should give acos(-1) or acos(1)

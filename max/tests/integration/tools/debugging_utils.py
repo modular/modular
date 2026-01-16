@@ -23,7 +23,7 @@ from typing import Any, cast
 import torch
 from create_pipelines import PIPELINE_ORACLES, GenericOracle
 from max import driver
-from max.driver.tensor import load_max_tensor
+from max.driver.buffer import load_max_buffer
 from max.engine import InferenceSession
 from max.engine.api import PrintStyle
 from max.entrypoints.cli import DevicesOptionType
@@ -318,7 +318,7 @@ def load_intermediate_tensors(
             output_dir.rglob("*.max"), key=lambda p: p.stat().st_mtime
         )
         for file in files:
-            tensor = load_max_tensor(file)
+            tensor = load_max_buffer(file)
             torch_tensor = torch.from_dlpack(tensor).cpu()
             tensors_map[file.name] = torch_tensor
     else:

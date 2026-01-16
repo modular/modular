@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from max._core.engine import Model
-from max.driver import Device, DLPackArray, Tensor
+from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession  # type: ignore
 from max.graph import DeviceRef, Graph, TensorType
@@ -73,10 +73,10 @@ def _get_or_create_cast_model(
 
 
 def cast_tensor_to(
-    tensor: Tensor,
+    tensor: Buffer,
     new_dtype: DType,
     session: InferenceSession | None = None,
-) -> Tensor:
+) -> Buffer:
     """Cast a tensor to a new dtype on-device (no host round-trips).
 
     If a session is provided, reuse it (recommended inside pipelines).
@@ -92,7 +92,7 @@ def cast_tensor_to(
 
     flat = tensor.view(tensor.dtype, [tensor.num_elements]).to(tensor.device)
     out = model(flat)[0]
-    assert isinstance(out, Tensor)
+    assert isinstance(out, Buffer)
     return out.view(new_dtype, tensor.shape)
 
 
@@ -102,9 +102,9 @@ def cast_dlpack_to(
     new_dtype: DType,
     device: Device,
     session: InferenceSession | None = None,
-) -> Tensor:
+) -> Buffer:
     """Wrap a DLPack array then cast it to the requested dtype on the given device."""
-    t = Tensor.from_dlpack(raw_tensor)
+    t = Buffer.from_dlpack(raw_tensor)
     if t.dtype != old_dtype:
         t = t.view(old_dtype, t.shape)
     t = t.to(device)
@@ -112,10 +112,10 @@ def cast_dlpack_to(
 
 
 def cast_tensors_to(
-    tensors: Sequence[Tensor] | None,
+    tensors: Sequence[Buffer] | None,
     new_dtype: DType,
     session: InferenceSession | None = None,
-) -> list[Tensor]:
+) -> list[Buffer]:
     """Cast a sequence of tensors to the requested dtype on their current devices."""
     if not tensors:
         return []

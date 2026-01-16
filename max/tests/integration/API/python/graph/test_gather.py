@@ -14,7 +14,7 @@
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor, accelerator_count
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -44,10 +44,10 @@ def test_gather_valid_indices(session: InferenceSession) -> None:
     index = torch.Tensor([[0], [1], [2], [1], [1]]).to(torch.int64)
 
     actual_tensor = model(
-        Tensor.from_dlpack(inputs).to(model.input_devices[0]),
-        Tensor.from_dlpack(index).to(model.input_devices[1]),
+        Buffer.from_dlpack(inputs).to(model.input_devices[0]),
+        Buffer.from_dlpack(index).to(model.input_devices[1]),
     )[0]
-    assert isinstance(actual_tensor, Tensor)
+    assert isinstance(actual_tensor, Buffer)
     actual = actual_tensor.to_numpy()
     expected = torch.take_along_dim(inputs, index, dim=0).numpy()
     np.testing.assert_equal(actual.reshape(5, 2), expected)
@@ -81,6 +81,6 @@ def test_gather_invalid_indices(session: InferenceSession) -> None:
 
     with pytest.raises(ValueError):
         model(
-            Tensor.from_dlpack(inputs).to(model.input_devices[0]),
-            Tensor.from_dlpack(index).to(model.input_devices[1]),
+            Buffer.from_dlpack(inputs).to(model.input_devices[0]),
+            Buffer.from_dlpack(index).to(model.input_devices[1]),
         )

@@ -14,7 +14,7 @@
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -72,9 +72,9 @@ def test_max_pool(
         graph.output(output)
 
     model = session.load(graph)
-    max_input = Tensor.from_numpy(input_tensor.numpy()).to(session.devices[0])
+    max_input = Buffer.from_numpy(input_tensor.numpy()).to(session.devices[0])
     model_output = model(max_input)[0]
-    assert isinstance(model_output, Tensor)
+    assert isinstance(model_output, Buffer)
     actual = model_output.to_numpy()
     np.testing.assert_equal(actual, expected.numpy(force=True))
 
@@ -132,8 +132,8 @@ def test_avg_pool(
         graph.output(output)
 
     model = session.load(graph)
-    avg_input = Tensor.from_numpy(input_tensor.numpy()).to(session.devices[0])
+    avg_input = Buffer.from_numpy(input_tensor.numpy()).to(session.devices[0])
     model_output = model(avg_input)[0]
-    assert isinstance(model_output, Tensor)
+    assert isinstance(model_output, Buffer)
     actual = model_output.to_numpy()
     np.testing.assert_almost_equal(actual, expected.numpy(force=True))

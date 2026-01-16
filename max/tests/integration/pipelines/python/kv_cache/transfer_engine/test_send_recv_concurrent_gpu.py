@@ -17,7 +17,7 @@ import time
 
 import numpy as np
 from max.driver import Accelerator
-from max.driver.tensor import Tensor
+from max.driver.buffer import Buffer
 from max.kv_cache import KVTransferEngine, TransferReqData
 
 """
@@ -41,7 +41,7 @@ def transfer_routine_sender(
     device = Accelerator(0)
 
     blocks_np = np.full(total_bytes, 42, dtype=np.int8)
-    blocks = Tensor.from_numpy(blocks_np).to(device)
+    blocks = Buffer.from_numpy(blocks_np).to(device)
 
     # Create engine (DP=1, TP=1)
     engine = KVTransferEngine(
@@ -95,7 +95,7 @@ def transfer_routine_receiver(
     device = Accelerator(1)
 
     blocks_np = np.full(total_bytes, 99, dtype=np.int8)
-    blocks = Tensor.from_numpy(blocks_np).to(device)
+    blocks = Buffer.from_numpy(blocks_np).to(device)
 
     # Create engine (DP=1, TP=1)
     engine = KVTransferEngine(

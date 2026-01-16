@@ -28,7 +28,7 @@ from max._core.nixl import (
     TransferDescriptorList,
     TransferOpType,
 )
-from max.driver import CPU, Accelerator, Device, Tensor
+from max.driver import CPU, Accelerator, Buffer, Device
 from numpy.typing import NDArray
 
 
@@ -85,7 +85,7 @@ def test_memory_registration(device: Device) -> None:
         gpu_device_id=0 if not device.is_host else None
     )
 
-    buffer = Tensor.from_numpy(np.ones((100, 100))).to(device)
+    buffer = Buffer.from_numpy(np.ones((100, 100))).to(device)
 
     # if the descriptors are sorted for descs and device ID.
     # sort criteria has the comparison order of dev_id, then addr, then len.
@@ -99,7 +99,7 @@ def test_memory_registration(device: Device) -> None:
     )
 
     # Test append()
-    buffer2 = Tensor.from_numpy(np.ones((50, 50))).to(device)
+    buffer2 = Buffer.from_numpy(np.ones((50, 50))).to(device)
     registration_descriptor.append(cast(NDArray[Any], buffer2))
 
     # Register Memory
@@ -119,10 +119,10 @@ def test_memory_transfer(device: Device) -> None:
     agent_1_name = "agent_1"
     agent_2_name = "agent_2"
 
-    buffer_1 = Tensor.from_numpy(
+    buffer_1 = Buffer.from_numpy(
         np.full((buffer_size_1,), buffer_magic_val_1, dtype=np.int8)
     ).to(device)
-    buffer_2 = Tensor.from_numpy(
+    buffer_2 = Buffer.from_numpy(
         np.full((buffer_size_2,), buffer_magic_val_2, dtype=np.int8)
     ).to(device)
 

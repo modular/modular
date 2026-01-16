@@ -16,7 +16,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.pipelines.lib.speculative_decoding import (
@@ -60,10 +60,10 @@ def test_accepted_hidden_states_extractor_multiple_batches(
     output_offsets = torch.from_numpy(output_offsets_np).cuda()
 
     (result,) = model(
-        Tensor.from_dlpack(hidden_states),
-        Tensor.from_dlpack(logit_offsets),
-        Tensor.from_dlpack(total_range),
-        Tensor.from_dlpack(output_offsets),
+        Buffer.from_dlpack(hidden_states),
+        Buffer.from_dlpack(logit_offsets),
+        Buffer.from_dlpack(total_range),
+        Buffer.from_dlpack(output_offsets),
     )
 
     result_max = torch.from_dlpack(result)
@@ -93,8 +93,8 @@ def test_filter_hidden_states_keep_all(
     gather_indices = torch.tensor([0, 1, 2], dtype=torch.int64).cuda()
 
     (result,) = model(
-        Tensor.from_dlpack(hidden_states),
-        Tensor.from_dlpack(gather_indices),
+        Buffer.from_dlpack(hidden_states),
+        Buffer.from_dlpack(gather_indices),
     )
 
     result_max = torch.from_dlpack(result)
@@ -115,8 +115,8 @@ def test_filter_hidden_states_remove_middle_sequence(
     gather_indices = torch.tensor([0, 1, 4, 5], dtype=torch.int64).cuda()
 
     (result,) = model(
-        Tensor.from_dlpack(hidden_states),
-        Tensor.from_dlpack(gather_indices),
+        Buffer.from_dlpack(hidden_states),
+        Buffer.from_dlpack(gather_indices),
     )
 
     result_max = torch.from_dlpack(result)
@@ -155,8 +155,8 @@ def test_filter_hidden_states_with_active_contexts(
     gather_indices = torch.from_numpy(keep_indices_np).cuda()
 
     (result,) = model(
-        Tensor.from_dlpack(hidden_states),
-        Tensor.from_dlpack(gather_indices),
+        Buffer.from_dlpack(hidden_states),
+        Buffer.from_dlpack(gather_indices),
     )
 
     result_max = torch.from_dlpack(result)
@@ -195,8 +195,8 @@ def test_filter_hidden_states_all_active(
     gather_indices = torch.from_numpy(keep_indices_np).cuda()
 
     (result,) = model(
-        Tensor.from_dlpack(hidden_states),
-        Tensor.from_dlpack(gather_indices),
+        Buffer.from_dlpack(hidden_states),
+        Buffer.from_dlpack(gather_indices),
     )
 
     result_max = torch.from_dlpack(result)

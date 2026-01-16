@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, final
 
 import numpy as np
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.interfaces import RequestID, TextGenerationInputs, TextGenerationOutput
 from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
@@ -53,8 +53,8 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         return_n_logits: int,
         is_draft: bool = False,
         draft_inputs: ModelInputs | None = None,
-        merged_draft_tokens: Tensor | None = None,
-        merged_draft_offsets: Tensor | None = None,
+        merged_draft_tokens: Buffer | None = None,
+        merged_draft_offsets: Buffer | None = None,
     ) -> tuple[ModelInputs, int]:
         # Claim cache rows
         for i, context in enumerate(batch):  # noqa: B007
@@ -97,7 +97,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                     self._target_model, "signal_buffers", []
                 ),
                 kv_cache_inputs=kv_cache_updated_inputs,
-                return_n_logits=Tensor.from_numpy(
+                return_n_logits=Buffer.from_numpy(
                     np.array([return_n_logits], dtype=np.int64)
                 ),
             )
@@ -109,18 +109,18 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         batch: list[TextContext],
         num_steps: int,
         model_inputs: ModelInputs,
-    ) -> tuple[int, Tensor, Tensor, ModelInputs, Tensor]:
+    ) -> tuple[int, Buffer, Buffer, ModelInputs, Buffer]:
         # Create sampling parameters once for the entire batch
         top_k, max_k, temperature, top_p, min_top_p, seed = (
             self._create_sampling_parameters(batch, self.draft_devices[0])
         )
 
         # Generate tensor for generated tokens.
-        generated_tokens = Tensor.zeros(
+        generated_tokens = Buffer.zeros(
             (len(batch), 0), dtype=DType.int64, device=self.draft_devices[0]
         )
 
-        generated_logits = Tensor.zeros(
+        generated_logits = Buffer.zeros(
             (len(batch), 0), dtype=DType.float32, device=self.draft_devices[0]
         )
 
@@ -128,7 +128,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         curr_step_inputs = model_inputs
 
         # num_steps first so that slice indexing is contiguous
-        all_draft_logits = Tensor.zeros(
+        all_draft_logits = Buffer.zeros(
             (num_steps, len(batch), self.vocab_size),
             dtype=DType.float32,
             device=self.draft_devices[0],
@@ -194,12 +194,12 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         draft_inputs: ModelInputs,
         context_batch: list[TextContext],
         num_draft_tokens_generated: int,
-        draft_tokens: Tensor,
-        draft_logits: Tensor,
-        merged_draft_tokens: Tensor,
-        merged_draft_offsets: Tensor,
-        all_draft_logits: Tensor,
-    ) -> tuple[Tensor, Tensor, Tensor]:
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        merged_draft_tokens: Buffer,
+        merged_draft_offsets: Buffer,
+        all_draft_logits: Buffer,
+    ) -> tuple[Buffer, Buffer, Buffer]:
         # # The kv cache manager for the target model uses these indices to set the lengths of the cache. We bump them manually here even though the tokens array has not been filled. They are reset when doing the final update of the contexts after both draft and target models have run.
         with reserve_token_space_for_batch(
             context_batch, num_draft_tokens_generated
@@ -237,9 +237,9 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 all_draft_logits,
             )
         )
-        assert isinstance(first_rejected_tokens, Tensor)
-        assert isinstance(recovered_tokens, Tensor)
-        assert isinstance(bonus_tokens, Tensor)
+        assert isinstance(first_rejected_tokens, Buffer)
+        assert isinstance(recovered_tokens, Buffer)
+        assert isinstance(bonus_tokens, Buffer)
 
         return first_rejected_tokens, recovered_tokens, bonus_tokens
 
@@ -286,8 +286,8 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             draft_tokens,
         )
 
-        assert isinstance(merged_tokens, Tensor)
-        assert isinstance(merged_offsets, Tensor)
+        assert isinstance(merged_tokens, Buffer)
+        assert isinstance(merged_offsets, Buffer)
         # Verify draft tokens with target model
         first_rejected_tokens, recovered_tokens, bonus_tokens = (
             self.verify_draft_tokens_with_target_model(

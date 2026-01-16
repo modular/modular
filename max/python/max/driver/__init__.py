@@ -23,6 +23,7 @@ from max._core.driver import (
 )
 from max._core_types.driver import DLPackArray
 
+from .buffer import Buffer, load_max_buffer
 from .driver import (
     CPU,
     Accelerator,
@@ -38,19 +39,18 @@ from .driver import (
     load_devices,
     scan_available_devices,
 )
-from .tensor import Tensor
 
 del driver  # type: ignore
-del tensor  # type: ignore
+del buffer  # type: ignore
 
 __all__ = [
     "CPU",
     "Accelerator",
+    "Buffer",
     "DLPackArray",
     "Device",
     "DeviceSpec",
     "DeviceStream",
-    "Tensor",
     "accelerator_api",
     "accelerator_architecture_name",
     "accelerator_count",
@@ -62,6 +62,7 @@ __all__ = [
     "get_virtual_device_target_arch",
     "is_virtual_device_mode",
     "load_devices",
+    "load_max_buffer",
     "scan_available_devices",
     "set_virtual_device_api",
     "set_virtual_device_count",

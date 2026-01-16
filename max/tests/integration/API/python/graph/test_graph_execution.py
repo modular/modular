@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from max.driver import CPU, Tensor
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -38,10 +38,10 @@ def test_max_graph(session: InferenceSession) -> None:
     compiled = session.load(graph)
     a_np = np.ones((1, 1)).astype(np.float32)
     b_np = np.ones((1, 1)).astype(np.float32)
-    a = Tensor.from_numpy(a_np).to(compiled.input_devices[0])
-    b = Tensor.from_numpy(b_np).to(compiled.input_devices[1])
+    a = Buffer.from_numpy(a_np).to(compiled.input_devices[0])
+    b = Buffer.from_numpy(b_np).to(compiled.input_devices[1])
     output = compiled.execute(a, b)
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
     assert np.allclose((a_np + b_np), output[0].to_numpy())
 
 
@@ -67,16 +67,16 @@ def test_max_graph_export_import_mef(session: InferenceSession) -> None:
         compiled._export_mef(mef_file.name)
         a_np = np.ones((1, 1)).astype(np.float32)
         b_np = np.ones((1, 1)).astype(np.float32)
-        a = Tensor.from_numpy(a_np).to(compiled.input_devices[0])
-        b = Tensor.from_numpy(b_np).to(compiled.input_devices[1])
+        a = Buffer.from_numpy(a_np).to(compiled.input_devices[0])
+        b = Buffer.from_numpy(b_np).to(compiled.input_devices[1])
         output = compiled.execute(a, b)[0]
-        assert isinstance(output, Tensor)
+        assert isinstance(output, Buffer)
         output_numpy = output.to_numpy()
         assert np.allclose((a_np + b_np), output_numpy)
         compiled2 = session.load(mef_file.name)
         # Executing a mef-loaded model with a device tensor seems to not work.
         output2 = compiled2.execute(a, b)[0]
-        assert isinstance(output2, Tensor)
+        assert isinstance(output2, Buffer)
         output2_numpy = output2.to_numpy()
         assert np.allclose((a_np + b_np), output2_numpy)
         assert np.allclose(output_numpy, output2_numpy)
@@ -100,11 +100,11 @@ def test_identity(session: InferenceSession) -> None:
 
     # Compile and execute identity.
     model = session.load(graph)
-    input = Tensor(shape=(1,), dtype=DType.int32)
+    input = Buffer(shape=(1,), dtype=DType.int32)
     output = model.execute(input.to(model.input_devices[0]))
     # Test that using output's storage is still valid after destroying input.
     del input
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
     _ = output[0].to(CPU())[0]
 
 
@@ -119,10 +119,10 @@ def test_max_graph_export_import_mlir(session: InferenceSession) -> None:
         mlir_file.write(str(graph._module))
         a_np = np.ones((1, 1)).astype(np.float32)
         b_np = np.ones((1, 1)).astype(np.float32)
-        a = Tensor.from_numpy(a_np).to(compiled.input_devices[0])
-        b = Tensor.from_numpy(b_np).to(compiled.input_devices[1])
+        a = Buffer.from_numpy(a_np).to(compiled.input_devices[0])
+        b = Buffer.from_numpy(b_np).to(compiled.input_devices[1])
         output = compiled.execute(a, b)[0]
-        assert isinstance(output, Tensor)
+        assert isinstance(output, Buffer)
         output_np = output.to_numpy()
         assert output_np == a_np + b_np
 
@@ -132,7 +132,7 @@ def test_max_graph_export_import_mlir(session: InferenceSession) -> None:
         graph2 = Graph(name="add", path=Path(mlir_file.name))
         compiled2 = session.load(graph2)
         output2 = compiled2.execute(a, b)[0]
-        assert isinstance(output2, Tensor)
+        assert isinstance(output2, Buffer)
         output2_np = output2.to_numpy()
         assert output2_np == a_np + b_np
         assert output_np == output2_np

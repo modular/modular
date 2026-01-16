@@ -22,11 +22,11 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from max._core.engine import Model
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Value
-from max.graph.tensor_utils import cast_tensors_to
+from max.graph.buffer_utils import cast_tensors_to
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -68,58 +68,58 @@ class Qwen2_5VLInputs(ModelInputs):
     including both text and vision inputs. Vision inputs are optional and can be None
     for text-only processing."""
 
-    input_ids: Tensor
+    input_ids: Buffer
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: list[Tensor]
+    input_row_offsets: list[Buffer]
     """Per-device tensors containing the offsets for each row in the ragged input sequence."""
 
-    signal_buffers: list[Tensor]
+    signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
-    position_ids: Tensor
+    position_ids: Buffer
     """3D RoPE position IDs for the decoder."""
 
-    return_n_logits: Tensor
+    return_n_logits: Buffer
     """Number of logits to return, used by speculative decoding for example."""
 
     kv_cache_inputs: KVCacheInputs
     """KV cache inputs for the model."""
 
-    scatter_indices: list[Tensor] | None = None
+    scatter_indices: list[Buffer] | None = None
     """Per-device pre-computed scatter indices for the image embeddings.
 
     These are the locations of the image_token_id in the inputs fed to the model."""
 
-    gather_indices: list[Tensor] | None = None
+    gather_indices: list[Buffer] | None = None
     """Per-device pre-computed gather indices for the image embeddings.
 
     These are the indices within the image embeddings that will participate in
     the subsequent scatter operation."""
 
     # Vision inputs.
-    pixel_values: list[Tensor] | None = None
+    pixel_values: list[Buffer] | None = None
     """Pixel values for vision inputs."""
 
-    window_index: list[Tensor] | None = None
+    window_index: list[Buffer] | None = None
     """Window indices for vision attention mechanism."""
 
-    vision_position_ids: list[Tensor] | None = None
+    vision_position_ids: list[Buffer] | None = None
     """1D RoPE position IDs for the visual inputs."""
 
-    max_grid_size: list[Tensor] | None = None
+    max_grid_size: list[Buffer] | None = None
     """Maximum grid size for vision inputs."""
 
-    cu_seqlens: list[Tensor] | None = None
+    cu_seqlens: list[Buffer] | None = None
     """Cumulative sequence lengths for full attention."""
 
-    cu_window_seqlens: list[Tensor] | None = None
+    cu_window_seqlens: list[Buffer] | None = None
     """Cumulative window sequence lengths for window attention."""
 
-    max_seqlen: list[Tensor] | None = None
+    max_seqlen: list[Buffer] | None = None
     """Maximum sequence length for full attention for vision inputs."""
 
-    max_window_seqlen: list[Tensor] | None = None
+    max_window_seqlen: list[Buffer] | None = None
     """Maximum sequence length for window attention for vision inputs."""
 
     @property
@@ -142,7 +142,7 @@ class Qwen2_5VLModel(
     model_config: Qwen2_5VLConfig | None
     """The Qwen2.5VL model configuration."""
 
-    _input_row_offsets_prealloc: list[Tensor]
+    _input_row_offsets_prealloc: list[Buffer]
     """Pre-allocated per-device tensors for input row offsets in multi-step execution."""
 
     def __init__(
@@ -242,7 +242,7 @@ class Qwen2_5VLModel(
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = Tensor.from_numpy(
+        self._input_row_offsets_prealloc = Buffer.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices)
 
@@ -617,32 +617,32 @@ class Qwen2_5VLModel(
         return graph
 
     @cached_property
-    def _empty_image_embeddings(self) -> list[Tensor]:
+    def _empty_image_embeddings(self) -> list[Buffer]:
         """Create empty image embeddings for text-only inputs on multi-device."""
-        return Tensor.zeros(
+        return Buffer.zeros(
             shape=[0, self.huggingface_config.text_config.hidden_size],
             dtype=self.dtype,
         ).to(self.devices)
 
     @cached_property
-    def _empty_image_scatter_indices(self) -> list[Tensor]:
+    def _empty_image_scatter_indices(self) -> list[Buffer]:
         """Create empty image scatter indices for text-only inputs on multi-device."""
-        return Tensor.zeros(
+        return Buffer.zeros(
             shape=[0],
             dtype=DType.int32,
         ).to(self.devices)
 
     @cached_property
-    def _empty_image_gather_indices(self) -> list[Tensor]:
+    def _empty_image_gather_indices(self) -> list[Buffer]:
         """Create empty image gather indices for text-only inputs on multi-device."""
-        return Tensor.zeros(
+        return Buffer.zeros(
             shape=[0],
             dtype=DType.int64,
         ).to(self.devices)
 
     def _batch_image_token_indices(
         self, context_batch: Sequence[Qwen2_5VLTextAndVisionContext]
-    ) -> tuple[list[Tensor], list[Tensor]]:
+    ) -> tuple[list[Buffer], list[Buffer]]:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
 
@@ -665,8 +665,8 @@ class Qwen2_5VLModel(
 
         # Create tensor and distribute to devices
         return (
-            Tensor.from_numpy(np_scatter_indices).to(self.devices),
-            Tensor.from_numpy(np_gather_indices).to(self.devices),
+            Buffer.from_numpy(np_scatter_indices).to(self.devices),
+            Buffer.from_numpy(np_gather_indices).to(self.devices),
         )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
@@ -677,7 +677,7 @@ class Qwen2_5VLModel(
         )
 
         # Process vision inputs if present
-        image_embeddings: list[Tensor]
+        image_embeddings: list[Buffer]
 
         if model_inputs.has_vision_inputs:
             assert model_inputs.scatter_indices is not None
@@ -710,7 +710,7 @@ class Qwen2_5VLModel(
             image_embeddings = [
                 output
                 for output in vision_outputs
-                if isinstance(output, Tensor)
+                if isinstance(output, Buffer)
             ]
             image_embeddings = cast_tensors_to(
                 image_embeddings, self.dtype, self._session
@@ -763,16 +763,16 @@ class Qwen2_5VLModel(
 
         # Return model outputs based on what the language model returns
         if len(language_outputs) == 3:
-            assert isinstance(language_outputs[0], Tensor)
-            assert isinstance(language_outputs[1], Tensor)
-            assert isinstance(language_outputs[2], Tensor)
+            assert isinstance(language_outputs[0], Buffer)
+            assert isinstance(language_outputs[1], Buffer)
+            assert isinstance(language_outputs[2], Buffer)
             return ModelOutputs(
                 next_token_logits=language_outputs[0],
                 logits=language_outputs[1],
                 logit_offsets=language_outputs[2],
             )
         else:
-            assert isinstance(language_outputs[0], Tensor)
+            assert isinstance(language_outputs[0], Buffer)
             return ModelOutputs(
                 next_token_logits=language_outputs[0],
                 logits=language_outputs[0],
@@ -782,7 +782,7 @@ class Qwen2_5VLModel(
     def prepare_decoder_position_ids(
         context_batch: Sequence[Qwen2_5VLTextAndVisionContext],
         devices: list[Device],
-    ) -> Tensor:
+    ) -> Buffer:
         """Prepare decoder position IDs for a batch of contexts.
 
         This function computes position IDs for decoder tokens, handling three cases:
@@ -798,7 +798,7 @@ class Qwen2_5VLModel(
             devices: List of devices to place the output tensor on
 
         Returns:
-            Tensor containing decoder position IDs with shape [n_rope_sections, total_seq_len]
+            Buffer containing decoder position IDs with shape [n_rope_sections, total_seq_len]
         """
         # Optimize concatenation: pre-allocate output array and write directly
         # Calculate total output size first
@@ -886,7 +886,7 @@ class Qwen2_5VLModel(
                     np.uint32, copy=False
                 )
 
-            decoder_position_ids = Tensor.from_numpy(result_array).to(
+            decoder_position_ids = Buffer.from_numpy(result_array).to(
                 devices[0]
             )
             return decoder_position_ids
@@ -990,7 +990,7 @@ class Qwen2_5VLModel(
 
             write_offset += active_len
 
-        decoder_position_ids = Tensor.from_numpy(out_array).to(devices[0])
+        decoder_position_ids = Buffer.from_numpy(out_array).to(devices[0])
 
         return decoder_position_ids
 
@@ -1027,7 +1027,7 @@ class Qwen2_5VLModel(
 
         # Prepare Inputs Needed Regardless of Images
         with Tracer("prepare_input_ids"):
-            input_ids = Tensor.from_numpy(
+            input_ids = Buffer.from_numpy(
                 np.concatenate([ctx.tokens.active for ctx in context_batch])
             ).to(self.devices[0])
 
@@ -1036,7 +1036,7 @@ class Qwen2_5VLModel(
                 [0] + [ctx.tokens.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
-            input_row_offsets_tensors = Tensor.from_numpy(input_row_offsets).to(
+            input_row_offsets_tensors = Buffer.from_numpy(input_row_offsets).to(
                 self.devices
             )
 
@@ -1056,7 +1056,7 @@ class Qwen2_5VLModel(
                 input_row_offsets=input_row_offsets_tensors,
                 position_ids=decoder_position_ids,
                 signal_buffers=self.signal_buffers,
-                return_n_logits=Tensor.from_numpy(
+                return_n_logits=Buffer.from_numpy(
                     np.array([return_n_logits], dtype=np.int64)
                 ),
                 kv_cache_inputs=kv_cache_inputs,
@@ -1107,7 +1107,7 @@ class Qwen2_5VLModel(
                     window_index_parts.append(per_ctx_index + index_offset)
                     index_offset += int(per_ctx_index.shape[0])
             window_index_np = np.concatenate(window_index_parts, axis=0)
-            window_index_tensor = Tensor.from_numpy(window_index_np)
+            window_index_tensor = Buffer.from_numpy(window_index_np)
             window_index = window_index_tensor.to(self.devices)
 
         with Tracer("preparing_vision_position_ids"):
@@ -1125,7 +1125,7 @@ class Qwen2_5VLModel(
             max_grid_size_value = max(
                 vision_data.max_grid_size.item() for vision_data in vision_datas
             )
-            max_grid_size_tensor = Tensor.from_numpy(
+            max_grid_size_tensor = Buffer.from_numpy(
                 np.array(max_grid_size_value, dtype=np.int32)
             )
             max_grid_size = [max_grid_size_tensor for _ in self.devices]
@@ -1141,7 +1141,7 @@ class Qwen2_5VLModel(
                 cu_seqlens_list.append(adjusted[1:])
                 offset = adjusted[-1]
 
-            cu_seqlens_tensor = Tensor.from_numpy(
+            cu_seqlens_tensor = Buffer.from_numpy(
                 np.concatenate(
                     [np.array([0], dtype=np.uint32), *cu_seqlens_list]
                 ).astype(np.uint32)
@@ -1165,7 +1165,7 @@ class Qwen2_5VLModel(
             cu_window_seqlens_np = np.concatenate(
                 [np.array([0], dtype=np.uint32), *cu_window_seqlens_parts]
             ).astype(np.uint32)
-            cu_window_seqlens_unique_tensor = Tensor.from_numpy(
+            cu_window_seqlens_unique_tensor = Buffer.from_numpy(
                 cu_window_seqlens_np
             )
             cu_window_seqlens = cu_window_seqlens_unique_tensor.to(self.devices)
@@ -1174,7 +1174,7 @@ class Qwen2_5VLModel(
             max_seqlen_value = max(
                 vision_data.max_seqlen.item() for vision_data in vision_datas
             )
-            max_seqlen_tensor = Tensor.from_numpy(
+            max_seqlen_tensor = Buffer.from_numpy(
                 np.array([max_seqlen_value], dtype=np.uint32)
             )
             max_seqlen = [max_seqlen_tensor for _ in self.devices]
@@ -1184,7 +1184,7 @@ class Qwen2_5VLModel(
                 vision_data.window_max_seqlen.item()
                 for vision_data in vision_datas
             )
-            window_max_seqlen_tensor = Tensor.from_numpy(
+            window_max_seqlen_tensor = Buffer.from_numpy(
                 np.array([window_max_seqlen_value], dtype=np.uint32)
             )
             max_window_seqlen = [window_max_seqlen_tensor for _ in self.devices]
@@ -1194,7 +1194,7 @@ class Qwen2_5VLModel(
             input_row_offsets=input_row_offsets_tensors,
             signal_buffers=self.signal_buffers,
             position_ids=decoder_position_ids,
-            return_n_logits=Tensor.from_numpy(
+            return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
@@ -1212,7 +1212,7 @@ class Qwen2_5VLModel(
 
     def prepare_next_token_inputs(
         self,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> Qwen2_5VLInputs:
         """Prepares the inputs for subsequent execution steps in a multi-step generation."""
@@ -1237,7 +1237,7 @@ class Qwen2_5VLModel(
         position_ids_np = (
             old_position_ids_np[..., old_row_offsets_np[1:] - 1] + 1
         )
-        position_ids = Tensor.from_numpy(position_ids_np).to(self.devices[0])
+        position_ids = Buffer.from_numpy(position_ids_np).to(self.devices[0])
 
         return Qwen2_5VLInputs(
             signal_buffers=self.signal_buffers,

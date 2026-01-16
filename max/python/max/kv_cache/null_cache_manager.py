@@ -24,7 +24,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
-from max.driver import Tensor
+from max.driver import Buffer
 from max.interfaces import RequestID, TextGenerationContext
 from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
 from max.nn.kv_cache.metrics import KVCacheMetrics
@@ -131,14 +131,14 @@ class NullKVCacheManager:
             with virtual devices that don't support device operations.
         """
         # Create dummy tensors for compilation (kept on host for virtual devices)
-        dummy_blocks = Tensor.from_numpy(np.zeros((1,), dtype=np.int32))
-        dummy_cache_lengths = Tensor.from_numpy(
+        dummy_blocks = Buffer.from_numpy(np.zeros((1,), dtype=np.int32))
+        dummy_cache_lengths = Buffer.from_numpy(
             np.zeros((len(batch),), dtype=np.int32)
         )
-        dummy_lookup_table = Tensor.from_numpy(
+        dummy_lookup_table = Buffer.from_numpy(
             np.zeros((len(batch), 1), dtype=np.int32)
         )
-        dummy_max_lengths = Tensor.from_numpy(
+        dummy_max_lengths = Buffer.from_numpy(
             np.zeros((len(batch),), dtype=np.int32)
         )
 

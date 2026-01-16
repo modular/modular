@@ -13,14 +13,14 @@
 
 from pathlib import Path
 
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def draw_mandelbrot(
-    tensor: Tensor, width: int, height: int, iterations: int
+    tensor: Buffer, width: int, height: int, iterations: int
 ) -> None:
     """A helper function to visualize the Mandelbrot set in ASCII art."""
     sr = "....,c8M@jawrpogOQEPGJ"
@@ -126,7 +126,7 @@ if __name__ == "__main__":
     result = model.execute()[0]
 
     # Copy values back to the CPU to be read.
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     result = result.to(CPU())
 
     draw_mandelbrot(result, WIDTH, HEIGHT, MAX_ITERATIONS)

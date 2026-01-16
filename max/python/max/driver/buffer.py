@@ -20,7 +20,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max._core.driver import Tensor as Tensor
+from max._core.driver import Buffer as Buffer
 from max.dtype import DType
 
 from .driver import CPU
@@ -30,24 +30,24 @@ IndexType = Sequence[_IdxElType] | _IdxElType
 ShapeType = Sequence[int]
 
 
-def _iterate_indices(self: Tensor) -> Generator[ShapeType]:
+def _iterate_indices(self: Buffer) -> Generator[ShapeType]:
     yield from product(*map(range, self.shape))
 
 
-def _contiguous(self: Tensor) -> Tensor:
-    """Creates a contiguous copy of the parent tensor."""
-    tensor_copy = Tensor(self.dtype, self.shape)
+def _contiguous(self: Buffer) -> Buffer:
+    """Creates a contiguous copy of the parent buffer."""
+    buffer_copy = Buffer(self.dtype, self.shape)
     for idx in self._iterate_indices():
-        tensor_copy[idx] = self[idx].item()
-    return tensor_copy
+        buffer_copy[idx] = self[idx].item()
+    return buffer_copy
 
 
-def _repr(self: Tensor) -> str:
-    return f"max.driver.Tensor({self.dtype}, {self.shape}, {self.stream})"
+def _repr(self: Buffer) -> str:
+    return f"max.driver.Buffer({self.dtype}, {self.shape}, {self.stream})"
 
 
-def _view(self: Tensor, dtype: DType, shape: ShapeType | None = None) -> Tensor:
-    """Return a new tensor with the given type and shape that shares the underlying memory.
+def _view(self: Buffer, dtype: DType, shape: ShapeType | None = None) -> Buffer:
+    """Return a new buffer with the given type and shape that shares the underlying memory.
 
     If the shape is not given, it will be deduced if possible, or a
     ValueError is raised.
@@ -65,44 +65,44 @@ def _view(self: Tensor, dtype: DType, shape: ShapeType | None = None) -> Tensor:
     return self._view(dtype, shape)
 
 
-def inplace_copy_from(self: Tensor, src: Tensor) -> None:
-    """Copy the contents of another tensor into this one.
+def inplace_copy_from(self: Buffer, src: Buffer) -> None:
+    """Copy the contents of another buffer into this one.
 
-    These tensors may be on different devices.
-    Requires that both tensors are contiguous and have same size.
+    These buffers may be on different devices.
+    Requires that both buffers are contiguous and have same size.
     """
-    # check that both tensors are contiguous
+    # check that both buffers are contiguous
     if not self.is_contiguous:
-        raise ValueError("Cannot copy from non-contiguous tensor")
+        raise ValueError("Cannot copy from non-contiguous buffer")
     if not src.is_contiguous:
-        raise ValueError("Cannot copy to non-contiguous tensor")
+        raise ValueError("Cannot copy to non-contiguous buffer")
 
-    # check that both tensors have same size
+    # check that both buffers have same size
     if self.num_elements != src.num_elements:
-        raise ValueError("Cannot copy tensors of different sizes")
+        raise ValueError("Cannot copy buffers of different sizes")
 
-    # check that both tensors have the same dtype
+    # check that both buffers have the same dtype
     if self.dtype != src.dtype:
-        raise ValueError("Cannot copy tensors of different dtypes")
+        raise ValueError("Cannot copy buffers of different dtypes")
 
     self._inplace_copy_from(src)
 
 
-def _from_numpy(arr: npt.NDArray[Any]) -> Tensor:
-    """Creates a tensor from a provided numpy array on the host device.
+def _from_numpy(arr: npt.NDArray[Any]) -> Buffer:
+    """Creates a buffer from a provided numpy array on the host device.
 
     The underlying data is not copied unless the array is noncontiguous. If
     it is, a contiguous copy will be returned.
     """
     # NOTE: np.ascontiguousarray only copies if needed.
     # Skip np.contiguousarray for scalars since it converts them to rank-1.
-    return Tensor.from_dlpack(np.ascontiguousarray(arr) if arr.shape else arr)
+    return Buffer.from_dlpack(np.ascontiguousarray(arr) if arr.shape else arr)
 
 
-def _to_numpy(self: Tensor) -> npt.NDArray[Any]:
-    """Converts the tensor to a numpy array.
+def _to_numpy(self: Buffer) -> npt.NDArray[Any]:
+    """Converts the buffer to a numpy array.
 
-    If the tensor is not on the host, a copy will be issued.
+    If the buffer is not on the host, a copy will be issued.
     """
     if self.pinned or self.device.is_host:
         cpu_buf = self
@@ -114,14 +114,14 @@ def _to_numpy(self: Tensor) -> npt.NDArray[Any]:
     except RuntimeError as e:
         if str(e).startswith("Unsupported device in DLTensor"):
             raise RuntimeError(
-                f"Cannot convert tensor on {self.device} to numpy; move to"
-                " the host using `Tensor.to`"
+                f"Cannot convert buffer on {self.device} to numpy; move to"
+                " the host using `Buffer.to`"
             ) from e
         raise
 
 
-def _from_dlpack(array: Any, *, copy: bool | None = None) -> Tensor:
-    """Create a tensor from an object implementing the dlpack protocol.
+def _from_dlpack(array: Any, *, copy: bool | None = None) -> Buffer:
+    """Create a buffer from an object implementing the dlpack protocol.
 
     This usually does not result in a copy, and the producer of the object
     retains ownership of the underlying memory.
@@ -129,7 +129,7 @@ def _from_dlpack(array: Any, *, copy: bool | None = None) -> Tensor:
     if isinstance(array, np.ndarray):
         if not array.flags.c_contiguous:
             raise ValueError(
-                "driver tensor's from_dlpack only accepts contiguous arrays. "
+                "driver buffer's from_dlpack only accepts contiguous arrays. "
                 "First call np.ascontiguousarray(array)"
             )
 
@@ -147,20 +147,20 @@ def _from_dlpack(array: Any, *, copy: bool | None = None) -> Tensor:
             array = array.view(np.uint8)
 
         try:
-            tensor = Tensor._from_dlpack(array)
+            buffer = Buffer._from_dlpack(array)
         except BufferError as e:
             msg = str(e)
             if msg.startswith("Cannot export readonly array"):
                 raise type(e)(  # noqa: B904
                     msg
-                    + " Consider passing `copy = True` to `Tensor.from_dlpack`."
+                    + " Consider passing `copy = True` to `Buffer.from_dlpack`."
                 )
             raise e
 
-        return tensor.view(DType.bool) if is_bool else tensor
+        return buffer.view(DType.bool) if is_bool else buffer
 
     # Short circuit if it's our type.
-    if isinstance(array, Tensor):
+    if isinstance(array, Buffer):
         return array.copy() if copy else array
 
     # Check for torch tensors by looking for the is_contiguous method rather
@@ -170,28 +170,28 @@ def _from_dlpack(array: Any, *, copy: bool | None = None) -> Tensor:
     ):
         if not array.is_contiguous():
             raise ValueError(
-                "driver tensor's from_dlpack only accepts contiguous tensors. "
+                "driver buffer's from_dlpack only accepts contiguous tensors. "
                 "First call .contiguous() on the tensor"
             )
 
     if copy is not None:
         raise ValueError(
-            "`Tensor.from_dlpack` supports the `copy` flag only for numpy"
-            " array and `Tensor` inputs"
+            "`Buffer.from_dlpack` supports the `copy` flag only for numpy"
+            " array and `Buffer` inputs"
         )
 
-    return Tensor._from_dlpack(array)
+    return Buffer._from_dlpack(array)
 
 
 # TODO(MAXPLAT-206): re-enable @wraps
-# @wraps(Tensor.mmap)
+# @wraps(Buffer.mmap)
 def _mmap(
     filename: PathLike[str] | str,
     dtype: DType,
     shape: ShapeType | int,
     mode: np._MemMapModeKind = "copyonwrite",
     offset: int = 0,
-) -> Tensor:
+) -> Buffer:
     arr: np.memmap[Any, Any] = np.memmap(
         filename,
         dtype.to_numpy(),
@@ -202,31 +202,31 @@ def _mmap(
         order="C",
     )
     assert arr.flags["C_CONTIGUOUS"]
-    return Tensor.from_dlpack(arr)
+    return Buffer.from_dlpack(arr)
 
 
-Tensor._iterate_indices = _iterate_indices  # type: ignore[method-assign]
-Tensor.contiguous = _contiguous  # type: ignore[method-assign]
-Tensor.__repr__ = _repr  # type: ignore[method-assign, assignment]
-Tensor.view = _view  # type: ignore[method-assign]
-Tensor.inplace_copy_from = inplace_copy_from  # type: ignore[method-assign]
-Tensor.from_numpy = _from_numpy  # type: ignore[method-assign]
-Tensor.to_numpy = _to_numpy  # type: ignore[method-assign]
-Tensor.from_dlpack = _from_dlpack  # type: ignore[method-assign]
-Tensor.mmap = _mmap  # type: ignore[method-assign]
+Buffer._iterate_indices = _iterate_indices  # type: ignore[method-assign]
+Buffer.contiguous = _contiguous  # type: ignore[method-assign]
+Buffer.__repr__ = _repr  # type: ignore[method-assign, assignment]
+Buffer.view = _view  # type: ignore[method-assign]
+Buffer.inplace_copy_from = inplace_copy_from  # type: ignore[method-assign]
+Buffer.from_numpy = _from_numpy  # type: ignore[method-assign]
+Buffer.to_numpy = _to_numpy  # type: ignore[method-assign]
+Buffer.from_dlpack = _from_dlpack  # type: ignore[method-assign]
+Buffer.mmap = _mmap  # type: ignore[method-assign]
 
 
-def load_max_tensor(path: PathLike[str]) -> Tensor:
-    """Experimental method for loading serialized MAX tensors.
+def load_max_buffer(path: PathLike[str]) -> Buffer:
+    """Experimental method for loading serialized MAX buffers.
 
-    Max tensors can be exported by creating a graph and calling `Value.print()`
+    Max buffers can be exported by creating a graph and calling `Value.print()`
     with the `BINARY_MAX_CHECKPOINT` option.
 
     Args:
-        path: Path to tensor (should end with .max)
+        path: Path to buffer (should end with .max)
 
     Returns:
-        A `Tensor` created from the path. The shape and dtype are read
+        A `Buffer` created from the path. The shape and dtype are read
         from the file.
 
     Raises:
@@ -238,7 +238,7 @@ def load_max_tensor(path: PathLike[str]) -> Tensor:
             raise ValueError(
                 f"{path} is not a max checkpoint. If this file was saved "
                 'from the "BINARY" debug print option (and not '
-                '"BINARY_MAX_CHECKPOINT"), please initialize `Tensor.mmap` '
+                '"BINARY_MAX_CHECKPOINT"), please initialize `Buffer.mmap` '
                 "directly."
             )
 
@@ -272,7 +272,7 @@ def load_max_tensor(path: PathLike[str]) -> Tensor:
         bytes_read = 4 + key_size + 2 + 4 * rank + 8
         if bytes_read != metadata_size:
             raise ValueError(
-                "Multiple tensors found in .max file. This is currently not supported."
+                "Multiple buffers found in .max file. This is currently not supported."
             )
 
         if dtype == DType.bfloat16:
@@ -285,9 +285,9 @@ def load_max_tensor(path: PathLike[str]) -> Tensor:
                 # Expand last dimension for uint8 bytes.
                 new_shape[-1] *= 2
 
-            tensor = Tensor.mmap(
+            buffer = Buffer.mmap(
                 path, DType.uint8, new_shape, mode="r", offset=offset
             )
-            return tensor.view(DType.bfloat16)
+            return buffer.view(DType.bfloat16)
         else:
-            return Tensor.mmap(path, dtype, shape, mode="r", offset=offset)
+            return Buffer.mmap(path, dtype, shape, mode="r", offset=offset)

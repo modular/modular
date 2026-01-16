@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Test max.driver Tensors."""
+"""Test max.driver Buffers."""
 
 import math
 import sys
@@ -24,13 +24,13 @@ import pytest
 import torch
 from hypothesis import given
 from hypothesis import strategies as st
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 
 
 def test_tensor() -> None:
     # Validate that metadata shows up correctly
-    tensor = Tensor(DType.float32, (3, 4, 5))
+    tensor = Buffer(DType.float32, (3, 4, 5))
     assert DType.float32 == tensor.dtype
     assert "DType.float32" == str(tensor.dtype)
     assert (3, 4, 5) == tensor.shape
@@ -38,13 +38,13 @@ def test_tensor() -> None:
 
     # Validate that shape can be specified as a list and we copy the dims.
     shape = [2, 3]
-    tensor2 = Tensor(DType.float32, shape)
+    tensor2 = Buffer(DType.float32, shape)
     shape[0] = 1
     assert (2, 3) == tensor2.shape
 
 
 def test_get_and_set() -> None:
-    tensor = Tensor(DType.int32, (3, 4, 5))
+    tensor = Buffer(DType.int32, (3, 4, 5))
     tensor[0, 1, 3] = 68
     # Get should return zero-d tensor
     elt = tensor[0, 1, 3]
@@ -85,7 +85,7 @@ def test_get_and_set() -> None:
 def test_slice() -> None:
     # Tensor slices should have the desired shape and should preserve
     # reference semantics.
-    tensor = Tensor(DType.int32, (3, 3, 3))
+    tensor = Buffer(DType.int32, (3, 3, 3))
     subtensor = tensor[:2, :2, :2]
     assert subtensor.shape == (2, 2, 2)
     subtensor[0, 0, 0] = 25
@@ -112,7 +112,7 @@ def test_slice() -> None:
 
 
 def test_drop_dimensions() -> None:
-    tensor = Tensor(DType.int32, (5, 5, 5))
+    tensor = Buffer(DType.int32, (5, 5, 5))
     # When indexing into a tensor with a mixture of slices and integral
     # indices, the slice should drop any dimensions that correspond to
     # integral indices.
@@ -128,7 +128,7 @@ def test_drop_dimensions() -> None:
 
 
 def test_negative_step() -> None:
-    tensor = Tensor(DType.int32, (3, 3))
+    tensor = Buffer(DType.int32, (3, 3))
     tensor[0, 0] = 1
     tensor[0, 1] = 2
     tensor[0, 2] = 3
@@ -152,7 +152,7 @@ def test_negative_step() -> None:
 
 
 def test_out_of_bounds_slices() -> None:
-    tensor = Tensor(DType.int32, (3, 3, 3))
+    tensor = Buffer(DType.int32, (3, 3, 3))
 
     # Out of bounds indexes are allowed in slices.
     assert tensor[4:, :2, 8:10:-1].shape == (0, 2, 0)
@@ -163,7 +163,7 @@ def test_out_of_bounds_slices() -> None:
 
 
 def test_one_dimensional_tensor() -> None:
-    tensor = Tensor(DType.int32, (10,))
+    tensor = Buffer(DType.int32, (10,))
     for i in range(10):
         tensor[i] = i
 
@@ -173,7 +173,7 @@ def test_one_dimensional_tensor() -> None:
 
 def test_contiguous_tensor() -> None:
     # Initialized tensors should be contiguous, and tensor slices should not be.
-    tensor = Tensor(DType.int32, (3, 3))
+    tensor = Buffer(DType.int32, (3, 3))
     assert tensor.is_contiguous
     val = 1
     for x, y in product(range(3), range(3)):
@@ -201,7 +201,7 @@ def test_contiguous_tensor() -> None:
 def test_modify_contiguous_tensor() -> None:
     # Modifications made to the original tensor should not be reflected
     # on the contiguous copy, and vice-versa.
-    tensor = Tensor(DType.int32, (3, 3))
+    tensor = Buffer(DType.int32, (3, 3))
     for x, y in product(range(3), range(3)):
         tensor[x, y] = 1
 
@@ -217,7 +217,7 @@ def test_modify_contiguous_tensor() -> None:
 def test_contiguous_slice() -> None:
     # A contiguous slice of a tensor should be considered contiguous. An
     # example of this is taking a single row from a 2-d array.
-    singlerow = Tensor.from_numpy(
+    singlerow = Buffer.from_numpy(
         np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
     )[0, :]
     assert singlerow.shape == (3,)
@@ -225,13 +225,13 @@ def test_contiguous_slice() -> None:
 
     # This should also work in cases where we take a couple of adjacent rows
     # from a multi-dimensional array.
-    multirow = Tensor.from_numpy(np.ones((5, 5), dtype=np.int32))[2:4, :]
+    multirow = Buffer.from_numpy(np.ones((5, 5), dtype=np.int32))[2:4, :]
     assert multirow.shape == (2, 5)
     assert multirow.is_contiguous
 
     # We also need this work in cases where we're just taking subarrays of 1-d
     # arrays.
-    subarray = Tensor.from_numpy(np.ones((10,), dtype=np.int32))[2:5]
+    subarray = Buffer.from_numpy(np.ones((10,), dtype=np.int32))[2:5]
     assert subarray.shape == (3,)
     assert subarray.is_contiguous
 
@@ -239,7 +239,7 @@ def test_contiguous_slice() -> None:
 def test_from_numpy() -> None:
     # A user should be able to create a tensor from a numpy array.
     arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
-    tensor = Tensor.from_numpy(arr)
+    tensor = Buffer.from_numpy(arr)
     assert tensor.shape == (2, 3)
     assert tensor.dtype == DType.int32
     assert tensor[0, 0].item() == 1
@@ -253,7 +253,7 @@ def test_from_numpy() -> None:
 def test_from_numpy_scalar() -> None:
     # Also test that scalar numpy arrays remain scalar.
     arr = np.array(1.0, dtype=np.float32)
-    tensor = Tensor.from_numpy(arr)
+    tensor = Buffer.from_numpy(arr)
 
     assert tensor.dtype == DType.float32
     assert tensor.shape == arr.shape
@@ -261,12 +261,12 @@ def test_from_numpy_scalar() -> None:
 
 def test_is_host() -> None:
     # CPU tensors should be marked as being on-host.
-    assert Tensor(DType.int32, (1, 1), device=CPU()).is_host
+    assert Buffer(DType.int32, (1, 1), device=CPU()).is_host
 
 
 def test_host_to_self() -> None:
     cpu = CPU()
-    t = Tensor(DType.int32, (1, 1), device=cpu)
+    t = Buffer(DType.int32, (1, 1), device=cpu)
     t2 = t.to(cpu)
     assert t2 is t
     t3s = t.to([cpu])
@@ -276,7 +276,7 @@ def test_host_to_self() -> None:
 
 def test_host_host_copy() -> None:
     # We should be able to freely copy tensors between host and host.
-    host_tensor = Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32))
+    host_tensor = Buffer.from_numpy(np.array([1, 2, 3], dtype=np.int32))
     tensor = host_tensor.copy(CPU())
 
     assert tensor.shape == host_tensor.shape
@@ -295,11 +295,11 @@ def test_host_host_copy() -> None:
 def test_pinning() -> None:
     # We're not actually testing the behavior of pinning here,
     # just the construction and accessor.
-    assert not Tensor(DType.int32, (1, 1), device=CPU()).pinned
-    assert Tensor(DType.int32, (1, 1), device=CPU(), pinned=True).pinned
+    assert not Buffer(DType.int32, (1, 1), device=CPU()).pinned
+    assert Buffer(DType.int32, (1, 1), device=CPU(), pinned=True).pinned
 
     if accelerator_count():
-        tensor = Tensor(DType.int32, (1, 1), device=CPU())
+        tensor = Buffer(DType.int32, (1, 1), device=CPU())
         gpu_tensor = tensor.to(Accelerator())
         assert not gpu_tensor.pinned
         # I don't actually know what the behavior _should_ be here, but
@@ -328,7 +328,7 @@ def test_from_dlpack() -> None:
     for dtype in DLPACK_DTYPES:
         np_dtype = dtype.to_numpy()
         array = np.array([0, 1, 2, 3], np_dtype)
-        tensor = Tensor.from_dlpack(array)
+        tensor = Buffer.from_dlpack(array)
         assert tensor.dtype == dtype
         assert tensor.shape == array.shape
 
@@ -342,30 +342,30 @@ def test_from_dlpack() -> None:
 
 
 def test_from_dlpack_short_circuit() -> None:
-    tensor = Tensor(DType.int8, (4,))
+    tensor = Buffer(DType.int8, (4,))
     for i in range(4):
         tensor[i] = i
 
     # Test short circuiting.
-    same_tensor = Tensor.from_dlpack(tensor)
+    same_tensor = Buffer.from_dlpack(tensor)
     assert tensor is same_tensor
-    copy_tensor = Tensor.from_dlpack(tensor, copy=True)
+    copy_tensor = Buffer.from_dlpack(tensor, copy=True)
     assert tensor is not copy_tensor
     assert tensor.dtype == copy_tensor.dtype
     assert tensor.shape == copy_tensor.shape
 
 
 def test_from_dlpack_double_transfer() -> None:
-    tensor1 = Tensor(DType.int8, (4,))
+    tensor1 = Buffer(DType.int8, (4,))
     for i in range(4):
         tensor1[i] = i
 
     arr = np.from_dlpack(tensor1)  # Transfer ownership
-    tensor2 = Tensor.from_dlpack(arr)  # Transfer ownership back
+    tensor2 = Buffer.from_dlpack(arr)  # Transfer ownership back
     tensor2[0] = np.int8(7)
     assert arr[0] == np.int8(7)
 
-    tensor3 = Tensor.from_dlpack(arr)  # No transfer, but still able to view
+    tensor3 = Buffer.from_dlpack(arr)  # No transfer, but still able to view
     # TODO: Why does this not work if we omit .item() ?
     assert tensor3[0].item() == np.int8(7)
 
@@ -374,13 +374,13 @@ def test_to_numpy_writable() -> None:
     # Ensure that to_numpy returns a writable array.
     # This is similar to test_from_dlpack_double_transfer above
     # but explicitly tests that the numpy array is writable.
-    tensor = Tensor(shape=(20, 10), dtype=DType.int32)
+    tensor = Buffer(shape=(20, 10), dtype=DType.int32)
     np_array = tensor.to_numpy()
     np_array[0, 0] = 100
 
 
 def test_dlpack_device() -> None:
-    tensor = Tensor(DType.int32, (3, 3))
+    tensor = Buffer(DType.int32, (3, 3))
     device_tuple = tensor.__dlpack_device__()
     assert len(device_tuple) == 2
     assert isinstance(device_tuple[0], int)
@@ -397,7 +397,7 @@ def test_dlpack() -> None:
         if dtype is dtype.bool:
             continue
 
-        tensor = Tensor(dtype, (1, 4))
+        tensor = Buffer(dtype, (1, 4))
         for j in range(4):
             tensor[0, j] = j
 
@@ -414,7 +414,7 @@ def test_dlpack() -> None:
 def test_torch_tensor_conversion() -> None:
     # Our tensors should be convertible to and from Torch tensors.
     torch_tensor = torch.reshape(torch.arange(1, 11, dtype=torch.int32), (2, 5))
-    driver_tensor = Tensor.from_dlpack(torch_tensor)
+    driver_tensor = Buffer.from_dlpack(torch_tensor)
     assert driver_tensor.shape == (2, 5)
     assert driver_tensor.dtype == DType.int32
     for x, y in product(range(2), range(5)):
@@ -425,7 +425,7 @@ def test_torch_tensor_conversion() -> None:
 
     # We should also be able to get this running for boolean tensors.
     bool_tensor = torch.tensor([False, True, False, True])
-    converted_bool = Tensor.from_dlpack(bool_tensor)
+    converted_bool = Buffer.from_dlpack(bool_tensor)
     assert converted_bool.shape == (4,)
     assert converted_bool.dtype == DType.bool
     for x in range(4):
@@ -437,7 +437,7 @@ def test_torch_tensor_conversion() -> None:
 
 @given(st.floats())
 def test_setitem_bfloat16(value: float) -> None:
-    tensor = Tensor(DType.bfloat16, (1,))
+    tensor = Buffer(DType.bfloat16, (1,))
     tensor[0] = value
     expected = torch.tensor([value]).type(torch.bfloat16)
     # Torch rounds values up, whereas we currently truncate.
@@ -457,7 +457,7 @@ def test_setitem_bfloat16(value: float) -> None:
 @given(st.floats())
 def test_getitem_bfloat16(value: float) -> None:
     torch_value = torch.tensor([value]).type(torch.bfloat16)
-    tensor = Tensor.from_dlpack(torch_value)
+    tensor = Buffer.from_dlpack(torch_value)
     assert tensor.dtype == DType.bfloat16
     result = tensor[0].item()
     torch.testing.assert_close(torch_value.item(), result, equal_nan=True)
@@ -466,27 +466,27 @@ def test_getitem_bfloat16(value: float) -> None:
 def test_device() -> None:
     # We should be able to set and query the device that a tensor is resident on.
     cpu = CPU()
-    tensor = Tensor(dtype=DType.int32, shape=(3, 3), device=cpu)
+    tensor = Buffer(dtype=DType.int32, shape=(3, 3), device=cpu)
     assert cpu == tensor.device
 
 
 def test_to_numpy() -> None:
     # We should be able to convert a tensor to a numpy array.
     base_arr = np.arange(1, 6, dtype=np.int32)
-    tensor = Tensor.from_numpy(base_arr)
+    tensor = Buffer.from_numpy(base_arr)
     new_arr = tensor.to_numpy()
     assert np.array_equal(base_arr, new_arr)
 
 
 def test_zeros() -> None:
     # We should be able to initialize an all-zero tensor.
-    tensor = Tensor.zeros((3, 3), DType.int32)
+    tensor = Buffer.zeros((3, 3), DType.int32)
     assert np.array_equal(tensor.to_numpy(), np.zeros((3, 3), dtype=np.int32))
 
 
 def test_scalar() -> None:
     # We should be able to create scalar values.
-    scalar = Tensor.scalar(5, DType.int32)
+    scalar = Buffer.scalar(5, DType.int32)
     assert scalar.item() == 5
 
     # We allow some ability to mutate scalars.
@@ -506,14 +506,14 @@ def memmap_example_file() -> Generator[Path, None, None]:
 
 @pytest.mark.xfail(sys.platform == "darwin", reason="GEX-2968")
 def test_memmap(memmap_example_file: Path) -> None:
-    tensor = Tensor.mmap(memmap_example_file, dtype=DType.int8, shape=(2, 4))
+    tensor = Buffer.mmap(memmap_example_file, dtype=DType.int8, shape=(2, 4))
     assert tensor.shape == (2, 4)
     assert tensor.dtype == DType.int8
     for i, j in product(range(2), range(4)):
         assert tensor[i, j].item() == i * 4 + j
 
     # Test that offsets work.
-    offset_tensor = Tensor.mmap(
+    offset_tensor = Buffer.mmap(
         memmap_example_file, dtype=DType.int8, shape=(2, 3), offset=2, mode="r"
     )
     assert offset_tensor.shape == (2, 3)
@@ -527,7 +527,7 @@ def test_memmap(memmap_example_file: Path) -> None:
     assert tensor[0, 1].item() == 1
 
     # Test that a different type works and we can modify the array.
-    tensor_16 = Tensor.mmap(
+    tensor_16 = Buffer.mmap(
         memmap_example_file, dtype=DType.int16, shape=(2,), offset=2, mode="r+"
     )
     tensor_16[0] = 0  # Intentional to avoid endianness issues.
@@ -543,7 +543,7 @@ def test_memmap(memmap_example_file: Path) -> None:
 
 
 def test_dlpack_memmap(memmap_example_file: Path) -> None:
-    tensor = Tensor.mmap(memmap_example_file, dtype=DType.int8, shape=(2, 4))
+    tensor = Buffer.mmap(memmap_example_file, dtype=DType.int8, shape=(2, 4))
     array = np.from_dlpack(tensor)
     assert array.dtype == np.int8
     assert tensor.shape == array.shape
@@ -554,9 +554,9 @@ def test_dlpack_memmap(memmap_example_file: Path) -> None:
 
 
 def test_dlpack_memmap_view(memmap_example_file: Path) -> None:
-    tensor = Tensor.mmap(memmap_example_file, dtype=DType.int8, shape=(2, 4))
+    tensor = Buffer.mmap(memmap_example_file, dtype=DType.int8, shape=(2, 4))
     tensor_view = tensor.view(DType.uint8)
-    assert isinstance(tensor_view, Tensor)
+    assert isinstance(tensor_view, Buffer)
 
     array = np.from_dlpack(tensor_view)
     assert array.dtype == np.uint8
@@ -573,8 +573,8 @@ def test_from_dlpack_memmap(memmap_example_file: Path) -> None:
     array = np.memmap(memmap_example_file, dtype=np.int8, mode="r")
     assert not array.flags.writeable
 
-    tensor = Tensor.from_dlpack(array)
-    assert isinstance(tensor, Tensor)
+    tensor = Buffer.from_dlpack(array)
+    assert isinstance(tensor, Buffer)
     assert array.dtype == np.int8
     assert tensor.shape == array.shape
 
@@ -584,27 +584,27 @@ def test_from_dlpack_memmap(memmap_example_file: Path) -> None:
 
 
 def test_num_elements() -> None:
-    tensor1 = Tensor(DType.int8, (2, 4, 3))
+    tensor1 = Buffer(DType.int8, (2, 4, 3))
     assert tensor1.num_elements == 24
 
-    tensor2 = Tensor(DType.int8, (1, 4))
+    tensor2 = Buffer(DType.int8, (1, 4))
     assert tensor2.num_elements == 4
 
-    tensor3 = Tensor(DType.int8, ())
+    tensor3 = Buffer(DType.int8, ())
     assert tensor3.num_elements == 1
 
-    tensor4 = Tensor(DType.int8, (1, 1, 1, 1, 1))
+    tensor4 = Buffer(DType.int8, (1, 1, 1, 1, 1))
     assert tensor4.num_elements == 1
 
 
 def test_element_size() -> None:
     for dtype in DLPACK_DTYPES:
-        tensor = Tensor(dtype, ())
+        tensor = Buffer(dtype, ())
         assert tensor.element_size == np.dtype(dtype.to_numpy()).itemsize
 
 
 def test_view() -> None:
-    tensor = Tensor(DType.int8, (2, 6))
+    tensor = Buffer(DType.int8, (2, 6))
     for i in range(tensor.shape[0]):
         for j in range(tensor.shape[1]):
             tensor[i, j] = i * 10 + j
@@ -619,7 +619,7 @@ def test_view() -> None:
     assert tensor_view[3, 1].item() == 11
     assert tensor_view[5, 1].item() == 15
 
-    tensor8 = Tensor(DType.int8, (2, 4))
+    tensor8 = Buffer(DType.int8, (2, 4))
     for i, j in product(range(2), range(4)):
         tensor8[i, j] = 1
 
@@ -654,11 +654,11 @@ def test_from_dlpack_noncontiguous() -> None:
         ValueError,
         match=r"from_dlpack only accepts contiguous arrays. First call np.ascontiguousarray",
     ):
-        tensor = Tensor.from_dlpack(array)
+        tensor = Buffer.from_dlpack(array)
 
 
 def test_from_dlpack_torch_noncontiguous() -> None:
-    """Test that Tensor.from_dlpack correctly handles non-contiguous torch tensors."""
+    """Test that Buffer.from_dlpack correctly handles non-contiguous torch tensors."""
     # Create a non-contiguous torch tensor via transpose.
     torch_tensor = torch.arange(12, dtype=torch.float32).reshape(3, 4).T
     assert not torch_tensor.is_contiguous()
@@ -666,25 +666,25 @@ def test_from_dlpack_torch_noncontiguous() -> None:
     with pytest.raises(
         ValueError, match="from_dlpack only accepts contiguous tensors"
     ):
-        max_tensor = Tensor.from_dlpack(torch_tensor)
+        max_tensor = Buffer.from_dlpack(torch_tensor)
 
 
 def test_item_success() -> None:
     """Test successful item() calls for valid single-element tensors."""
     # Zero-rank case
-    scalar = Tensor.scalar(8, DType.int32)
+    scalar = Buffer.scalar(8, DType.int32)
     assert scalar.item() == 8
 
     # Single-element tensors of various ranks
     for shape in [(), (1,), (1, 1), (1, 1, 1)]:
-        tensor = Tensor(DType.float32, shape)
+        tensor = Buffer(DType.float32, shape)
         tensor[tuple(0 for _ in shape)] = 3.14
         assert math.isclose(tensor.item(), 3.14, rel_tol=1e-6)
 
 
 def test_item_multiple_elements() -> None:
     """Test item() fails when tensor contains multiple elements"""
-    tensor = Tensor(DType.int32, (2,))
+    tensor = Buffer(DType.int32, (2,))
     with pytest.raises(
         ValueError,
         match="calling `item` on a tensor with 2 items but expected only 1",
@@ -693,7 +693,7 @@ def test_item_multiple_elements() -> None:
 
 
 def test_aligned() -> None:
-    tensor = Tensor(DType.int32, (5,))
+    tensor = Buffer(DType.int32, (5,))
     assert tensor._aligned()
     assert tensor._aligned(DType.int32.align)
 
@@ -713,7 +713,7 @@ def test_unaligned_tensor_copy() -> None:
         [15] + expected.view(np.uint8).tolist(),
         np.uint8,
     )
-    tensor8 = Tensor.from_numpy(unaligned_array)
+    tensor8 = Buffer.from_numpy(unaligned_array)
 
     # Copy operation now works correctly (fixed by GEX-2576).
     tensor8_copy = tensor8[1:].copy()
@@ -735,9 +735,9 @@ def test_unaligned_tensor_copy() -> None:
 
 
 def test_inplace_copy_from_raises() -> None:
-    tensor_3_3 = Tensor(DType.int32, (3, 3))
+    tensor_3_3 = Buffer(DType.int32, (3, 3))
 
-    tensor_3_10_3 = Tensor(DType.int32, (3, 10, 3))
+    tensor_3_10_3 = Buffer(DType.int32, (3, 10, 3))
     tensor_3_3_noncontig = tensor_3_10_3[:, 0, :]
     assert tensor_3_3_noncontig.shape == (3, 3)
     assert not tensor_3_3_noncontig.is_contiguous
@@ -749,13 +749,13 @@ def test_inplace_copy_from_raises() -> None:
         tensor_3_3.inplace_copy_from(tensor_3_3_noncontig)
         assert "Cannot copy from non-contiguous tensor" in str(e.value)
 
-    tensor_3_2 = Tensor(DType.int32, (3, 2))
+    tensor_3_2 = Buffer(DType.int32, (3, 2))
     with pytest.raises(ValueError) as e:
         tensor_3_3.inplace_copy_from(tensor_3_2)
         assert "Cannot copy tensors of different sizes" in str(e.value)
 
-    tensor_i32 = Tensor(DType.int32, (2, 3))
-    tensor_i16 = Tensor(DType.int16, (2, 3))
+    tensor_i32 = Buffer(DType.int32, (2, 3))
+    tensor_i16 = Buffer(DType.int16, (2, 3))
     with pytest.raises(ValueError) as e:
         tensor_i32.inplace_copy_from(tensor_i16)
         assert "Cannot copy tensors of different dtypes" in str(e.value)
@@ -768,8 +768,8 @@ def test_inplace_copy_from_tensor_view() -> None:
 
     all_nines = np.full((5, 2, 3), 999, dtype=np.int32)
 
-    src = Tensor.from_numpy(enumerated)
-    dst = Tensor.from_numpy(all_nines)
+    src = Buffer.from_numpy(enumerated)
+    dst = Buffer.from_numpy(all_nines)
 
     # Copy 3rd row of dst tensor into 1st row of src tensor.
     dst[1, :, :].inplace_copy_from(src[3, :, :])
@@ -787,7 +787,7 @@ def test_inplace_copy_from_tensor_view() -> None:
 
 
 def test_GEX_2088() -> None:
-    t = Tensor.zeros([2], DType.uint32)
+    t = Buffer.zeros([2], DType.uint32)
     assert t[1].to_numpy().item() == 0
 
 
@@ -806,7 +806,7 @@ def test_GEX_2088() -> None:
 def test_tensor_slicing_to_numpy_basic(device_factory: type) -> None:
     """Test basic tensor slicing with .to_numpy() on CPU and GPU - reproduces GEX-2576."""
     # Create original test case from reproduction
-    tensor = Tensor.from_numpy(np.arange(10).reshape(2, 5)).to(device_factory())
+    tensor = Buffer.from_numpy(np.arange(10).reshape(2, 5)).to(device_factory())
     original_data = tensor.to_numpy()
 
     # Expected: [[0 1 2 3 4], [5 6 7 8 9]]
@@ -853,7 +853,7 @@ def test_tensor_slicing_to_numpy_comprehensive(device_factory: type) -> None:
     """Comprehensive tensor slicing tests for various slice patterns on CPU and GPU."""
     # Create a 3x4 tensor for more comprehensive testing
     data = np.arange(12).reshape(3, 4).astype(np.int32)
-    tensor = Tensor.from_numpy(data).to(device_factory())
+    tensor = Buffer.from_numpy(data).to(device_factory())
 
     # Test various single row slices
     for i in range(3):
@@ -896,7 +896,7 @@ def test_tensor_slicing_to_numpy_comprehensive(device_factory: type) -> None:
 def test_tensor_slicing_to_numpy_edge_cases(device_factory: type) -> None:
     """Test edge cases for tensor slicing on CPU and GPU."""
     data = np.arange(20).reshape(4, 5).astype(np.int32)
-    tensor = Tensor.from_numpy(data).to(device_factory())
+    tensor = Buffer.from_numpy(data).to(device_factory())
 
     # Test single element slices
     for i in range(4):
@@ -954,7 +954,7 @@ def test_tensor_slicing_to_numpy_different_dtypes(device_factory: type) -> None:
     for shape, dtype in shapes_and_dtypes:
         np_dtype = dtype.to_numpy()
         data = np.arange(shape[0] * shape[1]).reshape(shape).astype(np_dtype)
-        tensor = Tensor.from_numpy(data).to(device_factory())
+        tensor = Buffer.from_numpy(data).to(device_factory())
 
         # Test middle row slice
         mid_row = shape[0] // 2
@@ -983,7 +983,7 @@ def test_tensor_slicing_to_numpy_different_dtypes(device_factory: type) -> None:
 def test_tensor_slicing_to_numpy_3d(device_factory: type) -> None:
     """Test tensor slicing with 3D tensors on CPU and GPU."""
     data = np.arange(24).reshape(2, 3, 4).astype(np.int32)
-    tensor = Tensor.from_numpy(data).to(device_factory())
+    tensor = Buffer.from_numpy(data).to(device_factory())
 
     # Test slicing along first dimension
     first_3d_slice = tensor[0:1, :, :]

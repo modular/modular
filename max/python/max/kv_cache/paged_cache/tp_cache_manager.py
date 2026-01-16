@@ -19,7 +19,7 @@ import logging
 from collections.abc import Sequence
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import RequestID, TextGenerationContext
@@ -58,10 +58,10 @@ class _TPPagedKVCacheManager:
     form one complete page of `page_size` tokens).
     """
 
-    device_tensors: list[Tensor]
+    device_tensors: list[Buffer]
     """List of tensors holding the KV cache blocks, one per device."""
 
-    host_tensors: list[Tensor] | None
+    host_tensors: list[Buffer] | None
     """Tensor holding the KV cache blocks on the host for swapping (if enabled)."""
 
     total_num_host_pages: int
@@ -138,7 +138,7 @@ class _TPPagedKVCacheManager:
             # Zero-initializing GPU device tensors does not introduce significant latency.
             # Memory is initialized because OOB TMA reads of uninitialized memory on GPU can result in NaNs in downstream kernels.
             self.device_tensors.append(
-                Tensor.zeros(
+                Buffer.zeros(
                     shape=[total_num_pages, *params.shape_per_block],
                     dtype=self.params.dtype,
                     device=device,
@@ -156,7 +156,7 @@ class _TPPagedKVCacheManager:
                     )
                 # Initializing the CPU host tensors introduces significant latency, and it's not expected that this memory will be accessed via TMA operations.
                 self.host_tensors.append(
-                    Tensor(
+                    Buffer(
                         shape=[total_num_host_pages, *params.shape_per_block],
                         dtype=self.params.dtype,
                         device=dev,
@@ -278,7 +278,7 @@ class _TPPagedKVCacheManager:
         # Allocate the lookup table buffer.
         # [0, total_num_pages) are the valid block ids and total_num_pages
         # denotes an unassigned block.
-        lut_table = Tensor(
+        lut_table = Buffer(
             shape=(batch_size, max_total_num_pages),
             dtype=DType.uint32,
             device=device0,
@@ -288,7 +288,7 @@ class _TPPagedKVCacheManager:
         lut_table_np.fill(self.total_num_pages)
 
         # Allocate cache length buffer. It is zero-initialized.
-        cache_lengths = Tensor(
+        cache_lengths = Buffer(
             shape=(batch_size,),
             dtype=DType.uint32,
             device=device0,

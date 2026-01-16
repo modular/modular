@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Device, Tensor, load_devices, scan_available_devices
+from max.driver import Buffer, Device, load_devices, scan_available_devices
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import (
@@ -463,7 +463,7 @@ class SpeculativeDecodingPipelineBase(
         self,
         batch: list[TextContext],
         device: Device,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[Buffer, Buffer, Buffer, Buffer, Buffer, Buffer]:
         """Create sampling parameter tensors from context batch.
 
         Args:
@@ -476,26 +476,26 @@ class SpeculativeDecodingPipelineBase(
         top_k_np = np.array(
             [context.sampling_params.top_k for context in batch], dtype=np.int64
         )
-        top_k = Tensor.from_numpy(top_k_np).to(device)
+        top_k = Buffer.from_numpy(top_k_np).to(device)
         max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
-        max_k = Tensor.from_numpy(max_k_np)
+        max_k = Buffer.from_numpy(max_k_np)
         temperature_np = np.array(
             [context.sampling_params.temperature for context in batch],
             dtype=np.float32,
         )
-        temperature = Tensor.from_numpy(temperature_np).to(device)
+        temperature = Buffer.from_numpy(temperature_np).to(device)
         top_p_np = np.array(
             [context.sampling_params.top_p for context in batch],
             dtype=np.float32,
         )
-        top_p = Tensor.from_numpy(top_p_np).to(device)
+        top_p = Buffer.from_numpy(top_p_np).to(device)
         # min_top_p must be provided as a scalar CPU tensor
         min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
-        min_top_p = Tensor.from_numpy(min_top_p_np)
+        min_top_p = Buffer.from_numpy(min_top_p_np)
         seed_np = np.array(
             [context.sampling_params.seed for context in batch], dtype=np.uint64
         )
-        seed = Tensor.from_numpy(seed_np).to(device)
+        seed = Buffer.from_numpy(seed_np).to(device)
 
         return (top_k, max_k, temperature, top_p, min_top_p, seed)
 
@@ -503,15 +503,15 @@ class SpeculativeDecodingPipelineBase(
     def sample_draft_logits(
         self,
         model_outputs: ModelOutputs,
-        prev_tokens: Tensor,
-        prev_logits: Tensor,
-        top_k: Tensor,
-        max_k: Tensor,
-        temperature: Tensor,
-        top_p: Tensor,
-        min_top_p: Tensor,
-        seed: Tensor,
-    ) -> tuple[Tensor, Tensor, Tensor]:
+        prev_tokens: Buffer,
+        prev_logits: Buffer,
+        top_k: Buffer,
+        max_k: Buffer,
+        temperature: Buffer,
+        top_p: Buffer,
+        min_top_p: Buffer,
+        seed: Buffer,
+    ) -> tuple[Buffer, Buffer, Buffer]:
         graph_inputs = [
             model_outputs.logits,
             prev_tokens,
@@ -524,9 +524,9 @@ class SpeculativeDecodingPipelineBase(
             prev_logits,
         ]
         a, b, c = self._draft_sampler(*graph_inputs)[:3]
-        assert isinstance(a, Tensor)
-        assert isinstance(b, Tensor)
-        assert isinstance(c, Tensor)
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        assert isinstance(c, Buffer)
         return (a, b, c)
 
     @property

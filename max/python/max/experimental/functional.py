@@ -86,7 +86,7 @@ def _run(coro: Coroutine[Any, Any, Result]) -> Result:
 
 
 _ConvertableToTensor: TypeAlias = (
-    driver.Tensor | tensor.Tensor | TensorValue | BufferValue
+    driver.Buffer | tensor.Tensor | TensorValue | BufferValue
 )
 
 
@@ -94,14 +94,14 @@ def _to_tensor(value: _ConvertableToTensor) -> tensor.Tensor:
     """Converts a tensor-like value to a Tensor.
 
     Args:
-        value: A driver.Tensor, Tensor, TensorValue, or BufferValue.
+        value: A driver.Buffer, Tensor, TensorValue, or BufferValue.
 
     Returns:
         tensor.Tensor: The converted Tensor object.
     """
     if isinstance(value, tensor.Tensor):
         return value
-    elif isinstance(value, driver.Tensor):
+    elif isinstance(value, driver.Buffer):
         return tensor.Tensor(storage=value)
     return tensor.Tensor.from_graph_value(value)
 

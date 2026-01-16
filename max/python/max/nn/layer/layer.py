@@ -24,7 +24,7 @@ from itertools import islice
 from typing import Any, Protocol
 
 import numpy as np
-from max.driver import DLPackArray, Tensor
+from max.driver import Buffer, DLPackArray
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
@@ -140,7 +140,7 @@ class Module(Layer, ABC):
                 return self.down(ops.silu(self.gate(x)) + self.up(x))
 
         model = MLP()
-        print(model.state_dict())  # {"up.weight": Tensor([5, 10]), ...}
+        print(model.state_dict())  # {"up.weight": Buffer([5, 10]), ...}
 
     Constructing a graph without :obj:`Module` can result in name collisions
     with the weights (in this example, there would be three weights with the
@@ -288,7 +288,7 @@ class Module(Layer, ABC):
 
         Args:
             state_dict: A map from weight name to a numpy array or
-                :obj:`max.driver.Tensor`.
+                :obj:`max.driver.Buffer`.
             override_quantization_encoding: Whether to override the weight
                 quantization based on the loaded value.
             weight_alignment: If specified, overrides the alignment for each
@@ -389,7 +389,7 @@ class Module(Layer, ABC):
 
         Returns:
             Map from weight name to the weight value (can be numpy array or
-            :obj:`max.driver.Tensor`).
+            :obj:`max.driver.Buffer`).
         """
 
         state_dict = {}
@@ -400,7 +400,7 @@ class Module(Layer, ABC):
                         f"Weight '{full_weight_name}' was not initialized."
                     )
                 # Contents of weights should be filled with zeros.
-                data = self._weight_values[full_weight_name] = Tensor.zeros(
+                data = self._weight_values[full_weight_name] = Buffer.zeros(
                     shape=weight.shape.static_dims, dtype=weight.dtype
                 )
             state_dict[full_weight_name] = data
@@ -456,7 +456,7 @@ def _array_from_weight_loader(
         # Store the original shape and dtype of the weight (used in layers like
         # GPTLinear).
         weight.original_dtype_and_shape = (data.dtype, data.shape)
-        data.data = new_data = Tensor.from_dlpack(data.data).view(DType.uint8)
+        data.data = new_data = Buffer.from_dlpack(data.data).view(DType.uint8)
         data.dtype = DType.uint8
         data.shape = Shape(new_data.shape)
         weight._shape = Shape(new_data.shape)
@@ -499,7 +499,7 @@ def _array_from_weight_loader(
 
 
 def _get_value_shape_dtype(value: DLPackArray) -> tuple[ShapeLike, DType]:
-    if isinstance(value, Tensor):
+    if isinstance(value, Buffer):
         shape = value.shape
         dtype = value.dtype
     elif isinstance(value, np.ndarray):
@@ -507,16 +507,16 @@ def _get_value_shape_dtype(value: DLPackArray) -> tuple[ShapeLike, DType]:
         dtype = DType.from_numpy(value.dtype)
     else:
         # `from_dlpack` does not copy the data.
-        value_tensor = Tensor.from_dlpack(value)
-        shape = value_tensor.shape
-        dtype = value_tensor.dtype
+        value_buffer = Buffer.from_dlpack(value)
+        shape = value_buffer.shape
+        dtype = value_buffer.dtype
 
     return shape, dtype
 
 
 def _check_alignment(value: DLPackArray, align: int, name: str) -> None:
     # Fast path for ndarray.
-    # The use of Tensor.from_dlpack always copies if the numpy array is not
+    # The use of Buffer.from_dlpack always copies if the numpy array is not
     # writeable, which is very common for weight values.
     #
     # This logic special cases the two code paths that potentially could copy
@@ -525,12 +525,12 @@ def _check_alignment(value: DLPackArray, align: int, name: str) -> None:
         data = value.ctypes.data
         if data % align == 0:
             return
-    elif isinstance(value, Tensor):
+    elif isinstance(value, Buffer):
         if value._aligned(align):
             return
     else:
-        tensor = Tensor.from_dlpack(value)
-        if tensor._aligned(align):
+        buffer = Buffer.from_dlpack(value)
+        if buffer._aligned(align):
             return
 
     raise ValueError(
@@ -547,7 +547,7 @@ def _validate_weight_value(
     if not isinstance(value, DLPackArray):
         raise ValueError(
             f"The class type of '{name}' value ({type(value)}) is not an array "
-            "type that we understand. Please use a numpy array or max.driver.Tensor."
+            "type that we understand. Please use a numpy array or max.driver.Buffer."
         )
 
     shape, dtype = _get_value_shape_dtype(value)

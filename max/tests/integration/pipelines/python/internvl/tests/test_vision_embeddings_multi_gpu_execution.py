@@ -18,7 +18,7 @@ import os
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -154,21 +154,21 @@ def test_vision_embeddings_multi_gpu_execution(
 
     # Execute on GPU 0
     patches_gpu0 = patches_tensor.to("cuda:0")
-    input_tensor0 = Tensor.from_dlpack(patches_gpu0.contiguous()).to(
+    input_tensor0 = Buffer.from_dlpack(patches_gpu0.contiguous()).to(
         Accelerator(0)
     )
     result0 = compiled0.execute(input_tensor0)[0]
-    assert isinstance(result0, Tensor)
+    assert isinstance(result0, Buffer)
     result0 = result0.to(CPU())
 
     # Copy input to GPU 1 and execute
     patches_gpu1 = patches_tensor.to("cuda:1")
     with torch.cuda.device(1):
-        input_tensor1 = Tensor.from_dlpack(patches_gpu1.contiguous()).to(
+        input_tensor1 = Buffer.from_dlpack(patches_gpu1.contiguous()).to(
             Accelerator(1)
         )
     result1 = compiled1.execute(input_tensor1)[0]
-    assert isinstance(result1, Tensor)
+    assert isinstance(result1, Buffer)
     result1 = result1.to(CPU())
 
     output0 = from_dlpack(result0)

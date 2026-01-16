@@ -366,7 +366,7 @@ def get_seqlens_torch(
 ) -> tuple[torch.Tensor, int]:
     """Torch implementation of get_seqlens for testing purposes.
     Args:
-        grid_thw: Tensor of shape [n_images, 3] with (t, h, w) for each image/video
+        grid_thw: Buffer of shape [n_images, 3] with (t, h, w) for each image/video
 
     Returns:
         Tuple of (cu_seqlens, max_seqlen)

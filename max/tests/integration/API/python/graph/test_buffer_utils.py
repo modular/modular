@@ -10,16 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.graph.tensor_utils casting functions."""
+"""Tests for max.graph.buffer_utils casting functions."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.driver import CPU, Tensor
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph.tensor_utils import (
+from max.graph.buffer_utils import (
     cast_dlpack_to,
     cast_tensor_to,
     cast_tensors_to,
@@ -42,7 +42,7 @@ def test_cast_tensor_to(
     """Test that cast_tensor_to correctly converts between dtypes."""
     device = CPU()
     np_array = np.array([1.0, 2.0, 3.0], dtype=old_dtype.to_numpy())
-    tensor = Tensor.from_numpy(np_array).to(device)
+    tensor = Buffer.from_numpy(np_array).to(device)
 
     result = cast_tensor_to(tensor, new_dtype, session=session)
 
@@ -59,7 +59,7 @@ def test_cast_tensor_to(
 def test_cast_tensor_to_same_dtype(session: InferenceSession) -> None:
     """Test that cast_tensor_to returns the same tensor when dtype matches."""
     device = CPU()
-    tensor = Tensor.from_numpy(np.array([1.0, 2.0], dtype=np.float32)).to(
+    tensor = Buffer.from_numpy(np.array([1.0, 2.0], dtype=np.float32)).to(
         device
     )
     result = cast_tensor_to(tensor, DType.float32, session=session)
@@ -85,8 +85,8 @@ def test_cast_tensors_to(session: InferenceSession) -> None:
     """Test that cast_tensors_to correctly casts a sequence of tensors."""
     device = CPU()
     tensors = [
-        Tensor.from_numpy(np.array([1.0], dtype=np.float32)).to(device),
-        Tensor.from_numpy(np.array([2.0], dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.array([1.0], dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.array([2.0], dtype=np.float32)).to(device),
     ]
 
     results = cast_tensors_to(tensors, DType.int32, session=session)

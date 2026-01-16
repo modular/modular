@@ -19,7 +19,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from max.driver import CPU, Tensor, accelerator_count
+from max.driver import CPU, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Weight
@@ -48,8 +48,8 @@ def test_weight(session: InferenceSession) -> None:
         output = compiled.execute()
         output0 = output[0]
         output1 = output[1]
-        assert isinstance(output0, Tensor)
-        assert isinstance(output1, Tensor)
+        assert isinstance(output0, Buffer)
+        assert isinstance(output1, Buffer)
         np.testing.assert_array_equal(weight, output0.to_numpy())
         np.testing.assert_array_equal(weight * 2, output1.to_numpy())
 
@@ -74,7 +74,7 @@ def test_weight_offset(session: InferenceSession) -> None:
         )
         output = compiled.execute()
         output0 = output[0]
-        assert isinstance(output0, Tensor)
+        assert isinstance(output0, Buffer)
         np.testing.assert_array_equal(weight, output0.to_numpy())
 
 
@@ -133,7 +133,7 @@ def test_load_gguf(session: InferenceSession, graph_testdata: Path) -> None:
         for n, (expected_tensor, actual_tensor) in enumerate(
             zip(expected, output, strict=True)
         ):
-            assert isinstance(actual_tensor, Tensor)
+            assert isinstance(actual_tensor, Buffer)
             if flat_keys[n] == "bf16":
                 assert torch.equal(
                     expected_tensor, torch.from_dlpack(actual_tensor.to(CPU()))
@@ -179,7 +179,7 @@ def test_load_safetensors(
         compiled = session.load(
             graph,
             weights_registry={
-                k: Tensor.from_dlpack(v)
+                k: Buffer.from_dlpack(v)
                 for k, v in weights.allocated_weights.items()
             },
         )
@@ -189,7 +189,7 @@ def test_load_safetensors(
         for n, (expected_tensor, actual_tensor) in enumerate(
             zip(expected, output, strict=True)
         ):
-            assert isinstance(actual_tensor, Tensor)
+            assert isinstance(actual_tensor, Buffer)
             if flat_keys[n].endswith("bf16"):
                 assert torch.equal(
                     expected_tensor, torch.from_dlpack(actual_tensor.to(CPU()))

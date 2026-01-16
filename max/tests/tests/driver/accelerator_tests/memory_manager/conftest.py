@@ -15,7 +15,7 @@
 from enum import Enum
 
 import pytest
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.support import to_human_readable_bytes
 
@@ -71,11 +71,11 @@ class MemType(str, Enum):
     PINNED = "pinned"
     DEVICE = "device"
 
-    def alloc(self, size: int) -> Tensor:
+    def alloc(self, size: int) -> Buffer:
         print(
             f"Allocating {self.value} buffer of size {to_human_readable_bytes(size)}"
         )
-        return Tensor(
+        return Buffer(
             shape=(size,),
             dtype=DType.int8,
             device=Accelerator(),

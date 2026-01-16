@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 import torch
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -185,7 +185,7 @@ def generate_max_outputs(
     graph = build_connector_model()
     model = session.load(graph, weights_registry=connector.state_dict())
 
-    x_tensor = Tensor.from_dlpack(input_tensor).to(cuda)
+    x_tensor = Buffer.from_dlpack(input_tensor).to(cuda)
     max_output = model.execute(x_tensor)[0]
 
     return max_output

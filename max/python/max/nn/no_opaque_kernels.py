@@ -168,7 +168,7 @@ def _store_cache_common(
 
     Args:
         kv_collection: The KV cache collection containing cache tensors
-        x_cache: Tensor to store (key or value)
+        x_cache: Buffer to store (key or value)
         input_row_offsets: Ragged tensor offsets
         layer_idx: Layer index for the cache
         key_or_value: 0 for key cache, 1 for value cache

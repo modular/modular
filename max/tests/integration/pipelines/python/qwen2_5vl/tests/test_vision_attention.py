@@ -16,7 +16,7 @@
 import pytest
 import torch
 import torch.nn.functional as F
-from max.driver import Accelerator, Device, Tensor
+from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -222,11 +222,11 @@ def generate_max_outputs(
 
     # Execute the model and get the first result
     result = compiled.execute(
-        Tensor.from_dlpack(input_tensor).to(device),
-        Tensor.from_dlpack(position_embeddings[0]).to(device),
-        Tensor.from_dlpack(position_embeddings[1]).to(device),
-        Tensor.from_dlpack(cu_seqlens_tensor.to(torch.uint32)).to(device),
-        Tensor.from_dlpack(
+        Buffer.from_dlpack(input_tensor).to(device),
+        Buffer.from_dlpack(position_embeddings[0]).to(device),
+        Buffer.from_dlpack(position_embeddings[1]).to(device),
+        Buffer.from_dlpack(cu_seqlens_tensor.to(torch.uint32)).to(device),
+        Buffer.from_dlpack(
             max_seqlen_tensor.to(dtype=torch.uint32, device="cpu")
         ),
     )

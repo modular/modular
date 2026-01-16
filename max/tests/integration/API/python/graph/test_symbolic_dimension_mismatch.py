@@ -14,7 +14,7 @@
 
 import numpy as np
 import pytest
-from max.driver import CPU, Tensor
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -23,7 +23,7 @@ from max.graph import DeviceRef, Graph, TensorType
 def test_symbolic_dimension_mismatch() -> None:
     device = CPU()
 
-    data = Tensor.from_numpy(np.zeros((3, 4), dtype=np.float32))
+    data = Buffer.from_numpy(np.zeros((3, 4), dtype=np.float32))
 
     with Graph(
         "symbolic_dimension_mismatch",

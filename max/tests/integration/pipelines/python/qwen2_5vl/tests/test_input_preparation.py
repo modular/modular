@@ -104,9 +104,9 @@ def create_mock_qwen_model(mocker: MockerFixture) -> Qwen2_5VLModel:
         return mock_tensor
 
     mocker.patch(
-        "max.driver.Tensor.from_numpy", side_effect=mock_tensor_from_numpy
+        "max.driver.Buffer.from_numpy", side_effect=mock_tensor_from_numpy
     )
-    mocker.patch("max.driver.Tensor.zeros", return_value=Mock())
+    mocker.patch("max.driver.Buffer.zeros", return_value=Mock())
 
     # Import after patching
 

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine.api import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, _OpaqueType, ops
@@ -151,7 +151,7 @@ def test_opaque_type_parameterization(
     result = model.execute()[0]
 
     # Verify the result
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     assert result.shape == (12,)
     assert result.dtype == DType.int32
 

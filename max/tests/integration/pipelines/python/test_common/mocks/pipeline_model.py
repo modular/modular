@@ -17,7 +17,7 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import numpy as np
-from max.driver import CPU, Device, Tensor
+from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
@@ -173,8 +173,8 @@ class MockPipelineModel(PipelineModel):
                 rand_values[i, self.eos_token] += 0.9
 
         return ModelOutputs(
-            logits=Tensor.from_numpy(rand_values),
-            next_token_logits=Tensor.from_numpy(rand_values),
+            logits=Buffer.from_numpy(rand_values),
+            next_token_logits=Buffer.from_numpy(rand_values),
         )
 
     def prepare_initial_token_inputs(
@@ -193,7 +193,7 @@ class MockPipelineModel(PipelineModel):
 
     def prepare_next_token_inputs(
         self,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> ModelInputs:
         prev_model_inputs = cast(MockModelInputs, prev_model_inputs)

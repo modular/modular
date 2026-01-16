@@ -18,7 +18,7 @@ from collections.abc import Mapping, Sequence, Set
 from os import PathLike
 
 from max._core.safetensors import SafeTensor, safe_open
-from max.driver import DLPackArray, Tensor
+from max.driver import Buffer, DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef
 
@@ -64,7 +64,7 @@ class SafetensorWeights(Weights):
     _tensors: Set[str]
     _tensors_to_file_idx: Mapping[str, int]
     _allocated: dict[str, DLPackArray]
-    _st_weight_map: dict[str, Tensor]
+    _st_weight_map: dict[str, Buffer]
     # This is a mapping of filepaths to SafeTensor handles. This is used to
     # avoid opening and mapping the same file to virtual memory multiple times,
     # which can use up all virtual memory.
@@ -78,7 +78,7 @@ class SafetensorWeights(Weights):
         tensors_to_file_idx: Mapping[str, int] | None = None,
         prefix: str = "",
         allocated: dict[str, DLPackArray] | None = None,
-        _st_weight_map: dict[str, Tensor] | None = None,
+        _st_weight_map: dict[str, Buffer] | None = None,
         _st_file_handles: dict[PathLike[str], SafeTensor] | None = None,
     ) -> None:
         self._filepaths = filepaths
@@ -144,7 +144,7 @@ class SafetensorWeights(Weights):
     def __getitem__(self, idx: int | str) -> SafetensorWeights:
         return self.__getattr__(str(idx))
 
-    def _load_tensor(self, dtype: DType | None = None) -> Tensor:
+    def _load_tensor(self, dtype: DType | None = None) -> Buffer:
         if self._prefix in self._st_weight_map:
             return self._st_weight_map[self._prefix]
 
@@ -162,7 +162,7 @@ class SafetensorWeights(Weights):
             )
 
         filepath = self._filepaths[self._tensors_to_file_idx[self.name]]
-        tensor = self._st_file_handles[filepath].get_tensor(self.name)
+        tensor = self._st_file_handles[filepath].get_buffer(self.name)
 
         self._st_weight_map[self._prefix] = tensor
         return tensor

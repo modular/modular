@@ -21,7 +21,7 @@ from threading import Thread
 import numpy as np
 import pytest
 from max.driver import CPU, Device
-from max.driver.tensor import Tensor
+from max.driver.buffer import Buffer
 from max.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -56,10 +56,10 @@ def test_send_recv_basic(device: Device) -> None:
     elts_per_page = 3
     num_elts = total_num_pages * elts_per_page
 
-    blocks_1 = Tensor.from_numpy(np.arange(num_elts, dtype=np.int16) + 10).to(
+    blocks_1 = Buffer.from_numpy(np.arange(num_elts, dtype=np.int16) + 10).to(
         device
     )
-    blocks_2 = Tensor.from_numpy(np.arange(num_elts, dtype=np.int16) + 80).to(
+    blocks_2 = Buffer.from_numpy(np.arange(num_elts, dtype=np.int16) + 80).to(
         device
     )
 

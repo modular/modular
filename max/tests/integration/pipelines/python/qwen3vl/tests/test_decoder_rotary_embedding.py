@@ -16,7 +16,7 @@
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Tensor
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -111,7 +111,7 @@ def generate_max_outputs(
 
     # Execute the model
     result = compiled.execute(
-        Tensor.from_dlpack(position_ids),
+        Buffer.from_dlpack(position_ids),
     )
     freqs_cis_torch = from_dlpack(result[0])
 

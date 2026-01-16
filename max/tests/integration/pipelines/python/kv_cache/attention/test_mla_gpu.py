@@ -15,7 +15,7 @@
 import numpy as np
 import pytest
 import torch
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -96,7 +96,7 @@ def test_mla_prefill_plan() -> None:
         batch.append(context)
 
     # Compute input row offsets for ragged tensors.
-    input_row_offsets = Tensor(DType.uint32, [batch_size + 1])
+    input_row_offsets = Buffer(DType.uint32, [batch_size + 1])
     running_sum = 0
     for i in range(batch_size):
         input_row_offsets[i] = running_sum
@@ -229,7 +229,7 @@ def test_mla_decompress_k_cache() -> None:
         batch.append(context)
 
     # Compute input row offsets for ragged tensors.
-    input_row_offsets = Tensor(DType.uint32, [batch_size + 1])
+    input_row_offsets = Buffer(DType.uint32, [batch_size + 1])
     running_sum = 0
     for i in range(batch_size):
         input_row_offsets[i] = running_sum
@@ -249,8 +249,8 @@ def test_mla_decompress_k_cache() -> None:
 
     results = model.execute(
         input_row_offsets.to(device0),
-        Tensor.from_numpy(weight.numpy()).to(device0),
-        Tensor.from_numpy(new_blocks.numpy()).to(device0),
+        Buffer.from_numpy(weight.numpy()).to(device0),
+        Buffer.from_numpy(new_blocks.numpy()).to(device0),
         cache_lengths,
         lookup_table_tensor,
         is_cache_empty_buf,

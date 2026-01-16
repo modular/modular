@@ -19,7 +19,7 @@ from statistics import mean
 from typing import Any
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
@@ -372,7 +372,7 @@ class PagedKVCacheManager:
             data_parallel_splits = prev_model_inputs.data_parallel_splits
         else:
             batch_size = cache_lengths[0].shape[0]
-            data_parallel_splits = Tensor.from_numpy(
+            data_parallel_splits = Buffer.from_numpy(
                 np.array([0, batch_size], dtype=np.int64)
             )
 
@@ -402,7 +402,7 @@ class PagedKVCacheManager:
             assert isinstance(kv_cache_inputs, list)
             for i in range(len(devices)):
                 updated_cache_length = updated_cache_lengths[start_idx + i]
-                assert isinstance(updated_cache_length, Tensor)
+                assert isinstance(updated_cache_length, Buffer)
                 kv_cache_inputs[start_idx + i] = RaggedKVCacheInputs(
                     blocks=blocks[start_idx + i],
                     cache_lengths=updated_cache_length,
@@ -464,5 +464,5 @@ class PagedKVCacheManager:
         )
 
     @property
-    def device_tensors(self) -> list[list[Tensor]]:
+    def device_tensors(self) -> list[list[Buffer]]:
         return [manager.device_tensors for manager in self._replica_managers]

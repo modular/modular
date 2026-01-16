@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -38,7 +38,7 @@ def test_custom_op_with_int_parameter(
     unimportant_for_test_tensor_type = TensorType(
         DType.int32, [1], device=DeviceRef.CPU()
     )
-    unimportant_for_test_tensor = Tensor.from_numpy(np.full([1], 1, np.int32))
+    unimportant_for_test_tensor = Buffer.from_numpy(np.full([1], 1, np.int32))
     graph = Graph(
         "test_op_with_int_parameter",
         input_types=[unimportant_for_test_tensor_type],
@@ -74,7 +74,7 @@ def test_custom_op_with_dtype_parameter(
     unimportant_for_test_tensor_type = TensorType(
         DType.int32, [1], device=DeviceRef.CPU()
     )
-    unimportant_for_test_tensor = Tensor.from_numpy(np.full([1], 1, np.int32))
+    unimportant_for_test_tensor = Buffer.from_numpy(np.full([1], 1, np.int32))
     graph = Graph(
         "test_op_with_dtype_parameter",
         input_types=[unimportant_for_test_tensor_type],
@@ -109,7 +109,7 @@ def test_custom_op_with_static_string_parameter(
     unimportant_for_test_tensor_type = TensorType(
         DType.int32, [1], device=DeviceRef.CPU()
     )
-    unimportant_for_test_tensor = Tensor.from_numpy(np.full([1], 1, np.int32))
+    unimportant_for_test_tensor = Buffer.from_numpy(np.full([1], 1, np.int32))
     graph = Graph(
         "test_op_with_static_string_parameter",
         input_types=[unimportant_for_test_tensor_type],

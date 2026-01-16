@@ -16,7 +16,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor, accelerator_count
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, StaticDim, ops
@@ -50,7 +50,7 @@ def test_repeat_interleave(
 
     model = session.load(graph)
     result = model.execute()[0]
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
 
     np.testing.assert_equal(result.to_numpy(), expected)
 
@@ -101,6 +101,6 @@ def test_repeat_interleave_vector(
 
     model = session.load(graph)
     result = model.execute()[0]
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
 
     np.testing.assert_equal(result.to_numpy(), expected)

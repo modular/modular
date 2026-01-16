@@ -15,7 +15,7 @@ import pytest
 import torch
 import triton
 import triton.language as tl
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -289,7 +289,7 @@ def create_max_fp8_result(
     # we need to view the torch fp8 tensor as uint8, as torch.Tensor doesn't support
     # to_dlpack() for fp8 dtype.
     _weight_tensor = weight_tensor.view(torch.uint8)
-    _max_weight_tensor = Tensor.from_dlpack(_weight_tensor).view(
+    _max_weight_tensor = Buffer.from_dlpack(_weight_tensor).view(
         DType.float8_e4m3fn, weight_tensor.shape
     )
 

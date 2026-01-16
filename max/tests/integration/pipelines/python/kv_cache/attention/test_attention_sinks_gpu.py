@@ -18,7 +18,7 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Accelerator, Device, Tensor
+from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -162,11 +162,11 @@ def max_flash_attention_with_sinks(
     model = session.load(graph)
 
     # Convert inputs to MAX tensors
-    q_tensor = Tensor.from_dlpack(query).to(device)
-    offsets_tensor = Tensor.from_numpy(input_row_offsets.astype(np.uint32)).to(
+    q_tensor = Buffer.from_dlpack(query).to(device)
+    offsets_tensor = Buffer.from_numpy(input_row_offsets.astype(np.uint32)).to(
         device
     )
-    sinks_tensor = Tensor.from_dlpack(sinks).to(device)
+    sinks_tensor = Buffer.from_dlpack(sinks).to(device)
 
     # Execute
     result = model.execute(
@@ -176,7 +176,7 @@ def max_flash_attention_with_sinks(
         *kv_cache_inputs,
     )[0]
 
-    return cast(Tensor, result).to(CPU()).to_numpy()
+    return cast(Buffer, result).to(CPU()).to_numpy()
 
 
 @pytest.mark.parametrize(

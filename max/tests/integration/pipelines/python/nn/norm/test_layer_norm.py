@@ -60,7 +60,7 @@ def _test_layer_norm(
 
     # Phase 3: execution.
     predicted = model(inputs)[0]
-    assert isinstance(predicted, md.Tensor)
+    assert isinstance(predicted, md.Buffer)
 
     expected = (
         torch_layer_norm(

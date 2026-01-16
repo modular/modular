@@ -256,7 +256,7 @@ def get_rope_index(
         video_token_id: Token ID indicating a video token.
         vision_start_token_id: Token ID marking the start of a vision sequence.
         tokens_per_second: Defines temporal granularity of video embeddings.
-        input_ids: Tensor of token indices for the input sequence.
+        input_ids: Buffer of token indices for the input sequence.
         image_grid_thw: Shape (num_images, 3), specifying (temporal, height, width) grid for each image.
         video_grid_thw: Shape (num_videos, 3), specifying (temporal, height, width) grid for each video.
         second_per_grid_ts: Time interval (in seconds) for each video grid along the temporal axis.

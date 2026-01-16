@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # MAX imports
 from bench import bench_kineto_with_cupti_warmup, setup_ninja_path
 from bencher_utils import Bench, ThroughputMeasure
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
@@ -368,10 +368,10 @@ def bench_max(
     )
 
     # Convert torch tensors to MAX types
-    paged_blocks_max = Tensor.from_dlpack(paged_blocks_torch)
-    lut_max = Tensor.from_dlpack(lut_torch)
-    cache_lengths_max = Tensor.from_dlpack(cache_lengths_torch)
-    max_lengths_max = Tensor.from_dlpack(max_lengths_torch)
+    paged_blocks_max = Buffer.from_dlpack(paged_blocks_torch)
+    lut_max = Buffer.from_dlpack(lut_torch)
+    cache_lengths_max = Buffer.from_dlpack(cache_lengths_torch)
+    max_lengths_max = Buffer.from_dlpack(max_lengths_torch)
 
     # Define input types
     # Query for MLA decode: [total_tokens, num_q_heads, qk_head_dim]

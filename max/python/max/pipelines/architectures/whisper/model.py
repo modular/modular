@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
@@ -51,8 +51,8 @@ class WhisperInputs(ModelInputs):
         Shape = (batch_size, target_sequence_length)
     """
 
-    input_features: Tensor
-    decoder_input_ids: Tensor
+    input_features: Buffer
+    decoder_input_ids: Buffer
 
 
 # TODO: Need specific Context type, not just this base type.

@@ -14,7 +14,7 @@
 from pathlib import Path
 
 import numpy as np
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
@@ -82,10 +82,10 @@ def main() -> None:
     session = InferenceSession(devices=[device])
     model = session.load(graph)
 
-    img_dev = Tensor.from_numpy(img).to(device)
+    img_dev = Buffer.from_numpy(img).to(device)
 
     result = model.execute(img_dev)[0]
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     result = result.to(CPU())
 
     Image.fromarray(result.to_numpy()).save("dogs_out.jpg")

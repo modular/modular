@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from max.driver import CPU, Tensor
+from max.driver import CPU, Buffer
 from max.interfaces import TextGenerationContextType
 from max.interfaces.logit_processors_type import (
     BatchLogitsProcessor,
@@ -24,8 +24,8 @@ from max.interfaces.logit_processors_type import (
 
 def apply_logits_processors(
     context_batch: list[TextGenerationContextType],
-    batch_logits: Tensor,
-    batch_logit_offsets: Tensor | None,
+    batch_logits: Buffer,
+    batch_logit_offsets: Buffer | None,
     batch_processors: list[BatchLogitsProcessor] | None = None,
 ) -> None:
     """Applies logits processors to a batch of logits.
@@ -43,7 +43,7 @@ def apply_logits_processors(
             These are applied in order after the individual context-level
             processors.
     """
-    batch_logit_offsets_cpu: Tensor | None = None
+    batch_logit_offsets_cpu: Buffer | None = None
     for i, context in enumerate(context_batch):
         processors = context.sampling_params.logits_processors
         if processors is None:
@@ -58,7 +58,7 @@ def apply_logits_processors(
             start_idx = i
             end_idx = i + 1
         logits = batch_logits[start_idx:end_idx, :]
-        assert isinstance(logits, Tensor)
+        assert isinstance(logits, Buffer)
         for processor in processors:
             processor(ProcessorInputs(logits=logits, context=context))
 

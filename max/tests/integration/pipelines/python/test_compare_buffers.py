@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for compare_tensors CLI tool."""
+"""Tests for compare_buffers CLI tool."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import compare_tensors
+import compare_buffers
 import pytest
 import torch
 from click.testing import CliRunner
-from max.driver import CPU, Tensor
+from max.driver import CPU, Buffer
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.type import DType
@@ -63,7 +63,7 @@ def save_max_tensor(
         x.print(tensor_name)
         return x
 
-    max_tensor = Tensor.from_dlpack(tensor)
+    max_tensor = Buffer.from_dlpack(tensor)
 
     graph = Graph(
         f"save_{tensor_name}",
@@ -94,7 +94,7 @@ def test_cli_specific_tensors(
 
     runner = CliRunner()
     result = runner.invoke(
-        compare_tensors.main,
+        compare_buffers.main,
         [
             "--torch-tensor",
             str(torch_file),
@@ -126,7 +126,7 @@ def test_cli_auto_match(
 
     runner = CliRunner()
     result = runner.invoke(
-        compare_tensors.main,
+        compare_buffers.main,
         [
             "--torch-tensor",
             str(torch_dir),
@@ -158,7 +158,7 @@ def test_cli_custom_tolerances(
 
     runner = CliRunner()
     result = runner.invoke(
-        compare_tensors.main,
+        compare_buffers.main,
         [
             "--torch-tensor",
             str(torch_file),

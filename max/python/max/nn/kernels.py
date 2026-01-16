@@ -105,7 +105,7 @@ def fused_qkv_padded_matmul(
         wqkv: Weight tensor for Q, K, V projections.
         kv_collection: Paged KV cache collection.
         layer_idx: Layer index for cache lookup (must be uint32).
-        valid_lengths: Tensor of shape [batch] containing the valid length for each
+        valid_lengths: Buffer of shape [batch] containing the valid length for each
             sequence (must be uint32). K and V are only written to cache for
             positions within these lengths.
         n_heads: Number of attention heads.
@@ -941,7 +941,7 @@ def fused_qk_padded_rope(
         kv_collection: Paged KV cache collection.
         freqs_cis: Frequency tensor of shape (max_seq_len * 2, head_dim).
         layer_idx: Layer index for KV cache (must be uint32 on CPU).
-        valid_lengths: Tensor of shape [batch] containing the valid length for each
+        valid_lengths: Buffer of shape [batch] containing the valid length for each
             sequence (must be uint32). RoPE is only applied to positions within
             these lengths.
         interleaved: Whether to use interleaved RoPE pattern.
@@ -1022,7 +1022,7 @@ def flash_attention_padded_kv_cache(
         q: Query tensor of shape [batch, seq_len, num_heads, head_dim]
         kv_collection: Paged KV cache collection
         layer_idx: Layer index for cache lookup
-        valid_lengths: Tensor of shape [batch] with dtype uint32 indicating
+        valid_lengths: Buffer of shape [batch] with dtype uint32 indicating
             actual (non-padded) sequence lengths for each batch element
         mask_variant: The mask variant to use for attention
         scale: Scaling factor for attention scores
@@ -1301,7 +1301,7 @@ def flash_attention_ragged_gpu(
         q: Query tensor of shape [total_seq_len, num_heads, head_dim] (ragged)
         k: Key tensor of shape [total_seq_len, num_heads, head_dim] (ragged)
         v: Value tensor of shape [total_seq_len, num_heads, head_dim] (ragged)
-        input_row_offsets: Tensor of shape [batch_size + 1] with dtype uint32.
+        input_row_offsets: Buffer of shape [batch_size + 1] with dtype uint32.
             Indicates where each sequence starts and ends in the ragged tensors.
             The values should be a prefix sum (cumulative sum) of sequence lengths.
         mask_variant: The mask variant to use for attention
@@ -3150,7 +3150,7 @@ def dynamic_block_scaled_matmul_fp4(
         b: The second tensor to multiply, must be transposed.
         a_scales: The scaling factors for the first tensor.
         b_scales: The scaling factors for the second tensor.
-        tensor_sf: Tensor-wise scaling factor equal to weight_scale_2 * input_scale (non-inverted).
+        tensor_sf: Buffer-wise scaling factor equal to weight_scale_2 * input_scale (non-inverted).
 
     Returns:
         The result of the matmul operation.

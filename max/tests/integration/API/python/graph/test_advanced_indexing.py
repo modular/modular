@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor, accelerator_count
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -182,7 +182,7 @@ def test_advanced_indexing_get_item(
 
     graph_inputs = [input_tensor] + index_tensors
     actual = model(*graph_inputs)[0]
-    assert isinstance(actual, Tensor)
+    assert isinstance(actual, Buffer)
     np.testing.assert_equal(actual.to_numpy(), expected)
 
 
@@ -247,7 +247,7 @@ def test_advanced_indexing_set_item(
 
     graph_inputs = [input_tensor, update_tensor] + index_tensors
     actual = model(*graph_inputs)[0]
-    assert isinstance(actual, Tensor)
+    assert isinstance(actual, Buffer)
     np.testing.assert_equal(actual.to_numpy(), expected)
 
 

@@ -14,11 +14,11 @@
 from dataclasses import dataclass
 
 import numpy as np
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.graph.tensor_utils import cast_tensor_to
+from max.graph.buffer_utils import cast_tensor_to
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import kv_cache_ragged_radd
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
@@ -137,8 +137,8 @@ def test_kv_cache_radd_basic() -> None:
         (a_length, kv_params.n_kv_heads * kv_params.head_dim * 2),
         dtype=np.float32,
     )
-    a_data = cast_tensor_to(Tensor.from_numpy(a_np), dtype).to(device)
-    input_row_offsets_data = Tensor.from_numpy(input_row_offsets_np).to(device)
+    a_data = cast_tensor_to(Buffer.from_numpy(a_np), dtype).to(device)
+    input_row_offsets_data = Buffer.from_numpy(input_row_offsets_np).to(device)
 
     output = model(a_data, input_row_offsets_data, batch_offset, *kv_inputs)
 

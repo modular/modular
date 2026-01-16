@@ -458,14 +458,14 @@ class Tensor(DLPackArray, HasTensorValue):
     #: Underlying memory for a realized tensor.
     #: If the tensor is used in any mutating operations that have
     #: not been realized, this holds the state before any updates.
-    storage: driver.Tensor | None
+    storage: driver.Buffer | None
     #: State for realizing an unrealized tensor.
     state: RealizationState | None
 
     def __init__(
         self,
         *,
-        storage: driver.Tensor | None = None,
+        storage: driver.Buffer | None = None,
         state: RealizationState | None = None,
     ):
         if (storage is None) == (state is None):
@@ -522,7 +522,7 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         if isinstance(array, Tensor):
             return array
-        return Tensor(storage=driver.Tensor.from_dlpack(array))
+        return Tensor(storage=driver.Buffer.from_dlpack(array))
 
     @classmethod
     def constant(
@@ -919,7 +919,7 @@ class Tensor(DLPackArray, HasTensorValue):
         return self.state is None
 
     @property
-    def _backing_value(self) -> driver.Tensor | GraphValue:
+    def _backing_value(self) -> driver.Buffer | GraphValue:
         return self.driver_tensor if self.real else self._graph_value
 
     @property
@@ -930,7 +930,7 @@ class Tensor(DLPackArray, HasTensorValue):
         return self.state.value
 
     @property
-    def driver_tensor(self) -> driver.Tensor:
+    def driver_tensor(self) -> driver.Buffer:
         """A pointer to the underlying memory.
 
         Raises if the tensor is unrealized.

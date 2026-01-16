@@ -16,7 +16,7 @@ import numpy as np
 import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -51,9 +51,9 @@ def test_reduce_add(session: InferenceSession) -> None:
         )
 
         # Run through MAX
-        max_input = Tensor.from_dlpack(input_data).to(model.input_devices[0])
+        max_input = Buffer.from_dlpack(input_data).to(model.input_devices[0])
         max_result = model(max_input)[0]
-        assert isinstance(max_result, Tensor)
+        assert isinstance(max_result, Buffer)
         max_result_np = max_result.to_numpy()
 
         # Compute expected result with torch

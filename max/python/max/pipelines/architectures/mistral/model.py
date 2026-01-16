@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
@@ -62,18 +62,18 @@ class MistralInputs(ModelInputs):
     - return_n_logits: A tensor containing the number of expected token logits.
     """
 
-    input_tokens: Tensor
-    input_row_offsets: Tensor
-    signal_buffers: list[Tensor]
+    input_tokens: Buffer
+    input_row_offsets: Buffer
+    signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
-    return_n_logits: Tensor
+    return_n_logits: Buffer
 
     def __init__(
         self,
-        input_tokens: Tensor,
-        input_row_offsets: Tensor,
-        signal_buffers: list[Tensor],
-        return_n_logits: Tensor,
+        input_tokens: Buffer,
+        input_row_offsets: Buffer,
+        signal_buffers: list[Buffer],
+        return_n_logits: Buffer,
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         self.input_tokens = input_tokens
@@ -87,7 +87,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
     model: Model
     """Compiled and initialized model ready for inference."""
 
-    signal_buffers: list[Tensor]
+    signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
     def __init__(
@@ -134,16 +134,16 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
             *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
-            assert isinstance(model_outputs[0], Tensor)
-            assert isinstance(model_outputs[1], Tensor)
-            assert isinstance(model_outputs[2], Tensor)
+            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(model_outputs[1], Buffer)
+            assert isinstance(model_outputs[2], Buffer)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
             )
         else:
-            assert isinstance(model_outputs[0], Tensor)
+            assert isinstance(model_outputs[0], Buffer)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[0],
@@ -166,7 +166,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
 
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
-        input_row_offsets = Tensor.from_numpy(
+        input_row_offsets = Buffer.from_numpy(
             np.cumsum(
                 [0] + [ctx.tokens.active_length for ctx in context_batch],
                 dtype=np.uint32,
@@ -174,7 +174,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         ).to(self.devices[0])
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        next_tokens_batch = Tensor.from_numpy(
+        next_tokens_batch = Buffer.from_numpy(
             np.concatenate([ctx.tokens.active for ctx in context_batch])
         ).to(self.devices[0])
 
@@ -182,7 +182,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
             input_tokens=next_tokens_batch,
             input_row_offsets=input_row_offsets,
             signal_buffers=self.signal_buffers,
-            return_n_logits=Tensor.from_numpy(
+            return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
@@ -190,7 +190,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
 
     def prepare_next_token_inputs(
         self,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> MistralInputs:
         assert isinstance(prev_model_inputs, MistralInputs)
@@ -435,7 +435,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = Tensor.from_numpy(
+        self._input_row_offsets_prealloc = Buffer.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 

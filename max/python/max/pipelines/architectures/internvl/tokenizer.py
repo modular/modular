@@ -304,7 +304,7 @@ def preprocess_image_to_tensor(
     InternVisionEmbeddings.__call__ to move them to preprocessing for memory efficiency.
 
     Returns:
-        Tensor of shape (batch_size, height_patches, width_patches, C, patch_size, patch_size)
+        Buffer of shape (batch_size, height_patches, width_patches, C, patch_size, patch_size)
         where each image's patches preserve spatial dimensions.
     """
     images = crop_into_patches(

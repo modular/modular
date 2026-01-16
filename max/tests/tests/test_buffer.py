@@ -10,14 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests `max.Tensor` basic behaviors."""
+"""Tests `max.driver.Buffer` basic behaviors."""
 
 import asyncio
 
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, accelerator_count
-from max.driver import Tensor as DriverTensor
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random
@@ -39,7 +38,7 @@ def test_tensor_basic() -> None:
     expected_type = TensorType(
         DType.float32, [5, 5], DeviceRef.from_device(DEVICE)
     )
-    a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
+    a_data = Buffer.zeros([5, 5], DType.float32, DEVICE)
     a = Tensor(storage=a_data)
     assert a.type == expected_type
     assert a.driver_tensor.to(CPU())[0, 0].item() == 0.0
@@ -54,7 +53,7 @@ def test_tensor_basic_lazy() -> None:
     expected_type = TensorType(
         DType.float32, [5, 5], DeviceRef.from_device(DEVICE)
     )
-    a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
+    a_data = Buffer.zeros([5, 5], DType.float32, DEVICE)
     a = Tensor(storage=a_data)
     assert a.type == expected_type
     assert a.driver_tensor.to(CPU())[0, 0].item() == 0.0
@@ -74,7 +73,7 @@ def test_tensor_with_intermediate() -> None:
     expected_type = TensorType(
         DType.float32, [5, 5], DeviceRef.from_device(DEVICE)
     )
-    a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
+    a_data = Buffer.zeros([5, 5], DType.float32, DEVICE)
     a = Tensor(storage=a_data)
     assert a.type == expected_type
     assert a.driver_tensor.to(CPU())[0, 0].item() == 0.0
@@ -89,7 +88,7 @@ def test_tensor_with_intermediate_lazy() -> None:
     expected_type = TensorType(
         DType.float32, [5, 5], DeviceRef.from_device(DEVICE)
     )
-    a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
+    a_data = Buffer.zeros([5, 5], DType.float32, DEVICE)
     a = Tensor(storage=a_data)
     assert a.type == expected_type
     assert a.driver_tensor.to(CPU())[0, 0].item() == 0.0
@@ -105,8 +104,8 @@ def test_tensor_with_intermediate_lazy() -> None:
 
 
 def test_compilation_failure() -> None:
-    a_data = DriverTensor.zeros([5, 5], DType.float8_e4m3fn, CPU())
-    b_data = DriverTensor.zeros([5, 5], DType.float32, CPU())
+    a_data = Buffer.zeros([5, 5], DType.float8_e4m3fn, CPU())
+    b_data = Buffer.zeros([5, 5], DType.float32, CPU())
     a = Tensor(storage=a_data)
 
     with F.lazy():
@@ -123,7 +122,7 @@ def test_compilation_failure() -> None:
 
 
 def test_tensor_dlpack() -> None:
-    data = DriverTensor.zeros([5, 5], DType.float32, CPU())
+    data = Buffer.zeros([5, 5], DType.float32, CPU())
     t = Tensor(storage=data)
     assert t.type == driver_tensor_type(data)
     assert t.real
@@ -195,7 +194,7 @@ def test_constant_default_device_context() -> None:
 
 def test_realized_tensor_as_buffer() -> None:
     DEVICE = Accelerator() if accelerator_count() else CPU()
-    a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
+    a_data = Buffer.zeros([5, 5], DType.float32, DEVICE)
     a = Tensor(storage=a_data)
     b = Tensor.ones_like(a.type)
     F.buffer_store(a, b)
@@ -204,7 +203,7 @@ def test_realized_tensor_as_buffer() -> None:
 
 def test_realized_tensor_as_buffer_lazy() -> None:
     DEVICE = Accelerator() if accelerator_count() else CPU()
-    a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
+    a_data = Buffer.zeros([5, 5], DType.float32, DEVICE)
     a = Tensor(storage=a_data)
     assert a.real
     with F.lazy():
@@ -229,7 +228,7 @@ def test_unrealized_value_as_buffer() -> None:
 
 def test_buffervalue_on_realized_tensor() -> None:
     DEVICE = Accelerator() if accelerator_count() else CPU()
-    a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
+    a_data = Buffer.zeros([5, 5], DType.float32, DEVICE)
     a = Tensor(storage=a_data)
     assert a.real
     with F.lazy():

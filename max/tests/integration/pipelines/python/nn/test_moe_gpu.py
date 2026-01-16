@@ -17,7 +17,7 @@ from collections.abc import Sequence
 
 import numpy as np
 import torch
-from max.driver import CPU, Accelerator, Tensor
+from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -69,12 +69,12 @@ def test_moe_create_indices() -> None:
     model = session.load(graph)
 
     def validate_moe_indices(
-        results: Sequence[Tensor],
+        results: Sequence[Buffer],
         topk_ids: np.ndarray,
         NUM_TOKENS: int,
     ) -> None:
         # check output 0
-        assert isinstance(results[0], Tensor)
+        assert isinstance(results[0], Buffer)
         token_expert_order = from_dlpack(results[0]).cpu().numpy()
 
         experts_for_tokens = topk_ids[token_expert_order]
@@ -105,7 +105,7 @@ def test_moe_create_indices() -> None:
                 current_count += 1
 
         # check output 2
-        assert isinstance(results[2], Tensor)
+        assert isinstance(results[2], Buffer)
         restore_token_order = from_dlpack(results[2]).cpu().numpy()
         # check that unperm_ids is the inverse of sorted_ids
         assert np.all(
@@ -115,7 +115,7 @@ def test_moe_create_indices() -> None:
         bin_counts = np.bincount(topk_ids, minlength=NUM_EXPERTS)
 
         # check output 4
-        assert isinstance(results[4], Tensor)
+        assert isinstance(results[4], Buffer)
         expert_usage_stats = from_dlpack(results[4]).cpu().numpy()
         max_M_among_experts = expert_usage_stats[0]
         num_experts_used = expert_usage_stats[1]
@@ -139,17 +139,17 @@ def test_moe_create_indices() -> None:
     topk_ids_0 = torch.randint(
         0, NUM_EXPERTS, size=(2500,), dtype=torch.int32
     ).numpy()
-    results_0 = model.execute(Tensor.from_numpy(topk_ids_0).to(device0))
+    results_0 = model.execute(Buffer.from_numpy(topk_ids_0).to(device0))
     validate_moe_indices(results_0, topk_ids_0, 2500)
 
     topk_ids_1 = torch.randint(
         0, NUM_EXPERTS, size=(11,), dtype=torch.int32
     ).numpy()
-    results_1 = model.execute(Tensor.from_numpy(topk_ids_1).to(device0))
+    results_1 = model.execute(Buffer.from_numpy(topk_ids_1).to(device0))
     validate_moe_indices(results_1, topk_ids_1, 11)
 
     topk_ids_2 = torch.randint(
         0, NUM_EXPERTS, size=(1,), dtype=torch.int32
     ).numpy()
-    results_2 = model.execute(Tensor.from_numpy(topk_ids_2).to(device0))
+    results_2 = model.execute(Buffer.from_numpy(topk_ids_2).to(device0))
     validate_moe_indices(results_2, topk_ids_2, 1)

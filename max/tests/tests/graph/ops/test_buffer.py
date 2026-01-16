@@ -22,7 +22,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
 from max._core.dialects import mo
-from max.driver import CPU, Tensor
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -384,11 +384,11 @@ def test_buffer_ops_sequence_after_inplace_custom() -> None:
     session = InferenceSession(devices=[CPU()])
     model = session.load(graph)
 
-    input_buffer = Tensor.from_numpy(np.zeros((4,), dtype=np.float32)).to(
+    input_buffer = Buffer.from_numpy(np.zeros((4,), dtype=np.float32)).to(
         model.input_devices[0]
     )
     (result,) = model.execute(input_buffer)
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     np.testing.assert_allclose(
         result.to_numpy(),
         np.array([1, 0, 0, 0], dtype=np.float32),

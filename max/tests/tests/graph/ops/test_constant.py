@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 from conftest import constant_float_dtypes, integral_dtypes
 from hypothesis import given
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 
@@ -55,7 +55,7 @@ def test_constant_1_1_0d() -> None:
 def test_constant_from_driver_tensor() -> None:
     with Graph("constants", input_types=()):
         const = np.array([0, 1, 2, 3, 4, 5]).astype(np.int64).reshape((2, 3))
-        result = ops.constant(Tensor.from_dlpack(const))
+        result = ops.constant(Buffer.from_dlpack(const))
 
         assert result.type == TensorType(DType.int64, [2, 3], DeviceRef.CPU())
 

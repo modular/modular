@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from max.driver import DeviceStream, Tensor
+from max.driver import Buffer, DeviceStream
 
 
 class BlockCopyEngine:
@@ -23,9 +23,9 @@ class BlockCopyEngine:
         self,
         block_size: int,
         num_device_blocks: int,
-        device_tensors: list[Tensor],
+        device_tensors: list[Buffer],
         num_host_blocks: int,
-        host_tensors: list[Tensor] | None,
+        host_tensors: list[Buffer] | None,
     ) -> None:
         if num_host_blocks > 0 and host_tensors is None:
             raise ValueError(

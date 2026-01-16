@@ -22,7 +22,7 @@ import time
 from collections.abc import Sequence
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
@@ -48,13 +48,13 @@ logger = logging.getLogger("max.pipelines")
 
 
 class BertInputs(ModelInputs):
-    next_tokens_batch: Tensor
-    attention_mask: Tensor
+    next_tokens_batch: Buffer
+    attention_mask: Buffer
 
     def __init__(
         self,
-        next_tokens_batch: Tensor,
-        attention_mask: Tensor,
+        next_tokens_batch: Buffer,
+        attention_mask: Buffer,
     ) -> None:
         self.next_tokens_batch = next_tokens_batch
         self.attention_mask = attention_mask
@@ -113,7 +113,7 @@ class BertPipelineModel(PipelineModel[TextContext]):
         model_outputs = self.model.execute(
             model_inputs.next_tokens_batch, model_inputs.attention_mask
         )
-        assert isinstance(model_outputs[0], Tensor)
+        assert isinstance(model_outputs[0], Buffer)
 
         return ModelOutputs(logits=model_outputs[0])
 
@@ -140,16 +140,16 @@ class BertPipelineModel(PipelineModel[TextContext]):
         attention_mask = (next_tokens_batch != pad_value).astype(np.float32)
 
         return BertInputs(
-            next_tokens_batch=Tensor.from_numpy(next_tokens_batch).to(
+            next_tokens_batch=Buffer.from_numpy(next_tokens_batch).to(
                 self.devices[0]
             ),
-            attention_mask=Tensor.from_numpy(attention_mask).to(
+            attention_mask=Buffer.from_numpy(attention_mask).to(
                 self.devices[0]
             ),
         )
 
     def prepare_next_token_inputs(
-        self, next_tokens: Tensor, prev_model_inputs: ModelInputs
+        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
     ) -> BertInputs:
         raise NotImplementedError(
             "Bert does not support preparing next tokens inputs."

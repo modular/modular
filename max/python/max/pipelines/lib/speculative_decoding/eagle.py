@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, final
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightsAdapter, WeightsFormat
@@ -123,7 +123,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         self,
         target_outputs: ModelOutputs,
         context_batch: list[TextContext],
-    ) -> Tensor:
+    ) -> Buffer:
         """Sample token from target model's logits.
 
         Args:
@@ -131,7 +131,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             context_batch: List of context objects to update
 
         Returns:
-            Tensor of sampled tokens with shape [batch_size, 1]
+            Buffer of sampled tokens with shape [batch_size, 1]
         """
         top_k, max_k, temperature, top_p, min_top_p, seed = (
             self._create_sampling_parameters(
@@ -139,12 +139,12 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             )
         )
 
-        prev_tokens = Tensor.zeros(
+        prev_tokens = Buffer.zeros(
             (len(context_batch), 0),
             dtype=DType.int64,
             device=self.target_devices[0],
         )
-        prev_logits = Tensor.zeros(
+        prev_logits = Buffer.zeros(
             (len(context_batch), 0),
             dtype=DType.float32,
             device=self.target_devices[0],
@@ -162,7 +162,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             prev_logits,
         ]
         sampled_tokens, _, _ = self._target_sampler(*graph_inputs)[:3]
-        assert isinstance(sampled_tokens, Tensor)
+        assert isinstance(sampled_tokens, Buffer)
 
         return sampled_tokens
 
@@ -199,7 +199,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         batch: list[TextContext],
         num_steps: int,
         return_n_logits: int,
-        hidden_states: Tensor,
+        hidden_states: Buffer,
         needs_ce: bool,
     ) -> tuple[ModelInputs, int]:
         """Prepare batch for draft model execution.
@@ -317,8 +317,8 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         num_steps: int,
         return_n_logits: int,
         draft_inputs: ModelInputs,
-        merged_tokens: Tensor | None,
-        merged_offsets: Tensor | None,
+        merged_tokens: Buffer | None,
+        merged_offsets: Buffer | None,
     ) -> tuple[ModelInputs, int]:
         """Prepare batch for target model verification of draft tokens.
 
@@ -354,7 +354,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             input_row_offsets=merged_offsets,
             signal_buffers=getattr(self._target_model, "signal_buffers", []),
             kv_cache_inputs=kv_cache_updated_inputs,
-            return_n_logits=Tensor.from_numpy(
+            return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
         )
@@ -369,10 +369,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         return_n_logits: int,
         is_draft: bool = False,
         draft_inputs: ModelInputs | None = None,
-        draft_tokens: Tensor | None = None,
-        merged_tokens: Tensor | None = None,
-        merged_offsets: Tensor | None = None,
-        hidden_states: Tensor | None = None,
+        draft_tokens: Buffer | None = None,
+        merged_tokens: Buffer | None = None,
+        merged_offsets: Buffer | None = None,
+        hidden_states: Buffer | None = None,
         needs_ce: bool = False,
     ) -> tuple[ModelInputs, int]:
         """Prepare batch for model execution.
@@ -417,18 +417,18 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         batch: list[TextContext],
         num_steps: int,
         model_inputs: ModelInputs,
-    ) -> tuple[int, Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[int, Buffer, Buffer, Buffer, Buffer]:
         # Create sampling parameters once for the entire batch
         top_k, max_k, temperature, top_p, min_top_p, seed = (
             self._create_sampling_parameters(batch, self.draft_devices[0])
         )
 
         # Generate tensor for generated tokens.
-        generated_tokens = Tensor.zeros(
+        generated_tokens = Buffer.zeros(
             (len(batch), 0), dtype=DType.int64, device=self.draft_devices[0]
         )
 
-        generated_logits = Tensor.zeros(
+        generated_logits = Buffer.zeros(
             (len(batch), 0), dtype=DType.float32, device=self.draft_devices[0]
         )
 
@@ -436,7 +436,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         curr_step_inputs = model_inputs
 
         # num_steps first so that slice indexing is contiguous
-        all_draft_logits = Tensor.zeros(
+        all_draft_logits = Buffer.zeros(
             (num_steps, len(batch), self.vocab_size),
             dtype=DType.float32,
             device=self.draft_devices[0],
@@ -504,11 +504,11 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         draft_inputs: ModelInputs,
         context_batch: list[TextContext],
         num_draft_tokens_generated: int,
-        draft_tokens: Tensor,
-        draft_logits: Tensor,
-        all_draft_logits: Tensor,
-        merged_tokens: Tensor | None = None,
-        merged_offsets: Tensor | None = None,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        all_draft_logits: Buffer,
+        merged_tokens: Buffer | None = None,
+        merged_offsets: Buffer | None = None,
     ) -> tuple[
         npt.NDArray[np.integer[Any]],
         npt.NDArray[np.integer[Any]],
@@ -543,9 +543,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 all_draft_logits,
             )
         )
-        assert isinstance(first_rejected_tokens, Tensor)
-        assert isinstance(recovered_tokens, Tensor)
-        assert isinstance(bonus_tokens, Tensor)
+        assert isinstance(first_rejected_tokens, Buffer)
+        assert isinstance(recovered_tokens, Buffer)
+        assert isinstance(bonus_tokens, Buffer)
 
         first_rejected_tokens_np, recovered_tokens_np, bonus_tokens_np = (
             first_rejected_tokens.to_numpy(),
@@ -563,10 +563,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         )
 
         # Convert to GPU tensors
-        total_range_tensor = Tensor.from_numpy(total_range_np).to(
+        total_range_tensor = Buffer.from_numpy(total_range_np).to(
             self.target_devices[0]
         )
-        output_offsets_tensor = Tensor.from_numpy(output_offsets_np).to(
+        output_offsets_tensor = Buffer.from_numpy(output_offsets_np).to(
             self.target_devices[0]
         )
 
@@ -577,7 +577,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             total_range_tensor,
             output_offsets_tensor,
         )
-        assert isinstance(accepted_hidden_states, Tensor)
+        assert isinstance(accepted_hidden_states, Buffer)
         self._draft_input_hidden_states = accepted_hidden_states
 
         return first_rejected_tokens_np, recovered_tokens_np, bonus_tokens_np
@@ -644,18 +644,18 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         # Only filter if some sequences terminated
         if len(keep_indices_np) < int(offsets[-1]):
-            keep_tensor = Tensor.from_numpy(keep_indices_np).to(
+            keep_tensor = Buffer.from_numpy(keep_indices_np).to(
                 self.target_devices[0]
             )
             (filtered_hidden_states,) = self._hidden_states_filter(
                 self._draft_input_hidden_states, keep_tensor
             )
-            assert isinstance(filtered_hidden_states, Tensor)
+            assert isinstance(filtered_hidden_states, Buffer)
             self._draft_input_hidden_states = filtered_hidden_states
 
     def _target_extend(
         self, inputs: TextGenerationInputs[TextContext]
-    ) -> tuple[ModelOutputs, Tensor]:
+    ) -> tuple[ModelOutputs, Buffer]:
         context_batch = list(inputs.batch.values())
         target_inputs, _ = self.prepare_batch(
             self._target_model,
@@ -745,7 +745,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 ],
                 dtype=np.int64,
             )
-            draft_input_tokens = Tensor.from_numpy(last_tokens).to(
+            draft_input_tokens = Buffer.from_numpy(last_tokens).to(
                 self.target_devices[0]
             )
 
@@ -753,7 +753,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             [0] + [1 for _ in context_batch],
             dtype=np.uint32,
         )
-        draft_input_offsets = Tensor.from_numpy(draft_input_offsets_np).to(
+        draft_input_offsets = Buffer.from_numpy(draft_input_offsets_np).to(
             self.target_devices[0]
         )
         merged_tokens, merged_offsets = self._ragged_token_merger(
@@ -761,8 +761,8 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             draft_input_offsets,
             draft_tokens,
         )
-        assert isinstance(merged_tokens, Tensor)
-        assert isinstance(merged_offsets, Tensor)
+        assert isinstance(merged_tokens, Buffer)
+        assert isinstance(merged_offsets, Buffer)
 
         first_rejected_tokens, recovered_tokens, bonus_tokens = (
             self.verify_draft_tokens_with_target_model(

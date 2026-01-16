@@ -25,12 +25,12 @@ import time
 
 import numpy as np
 from max.driver import Accelerator
-from max.driver.tensor import Tensor
+from max.driver.buffer import Buffer
 from max.kv_cache import KVTransferEngine
 
 
-def full(total_bytes: int, value: int, accelerator_idx: int) -> Tensor:
-    return Tensor.from_numpy(np.full(total_bytes, value, dtype=np.int8)).to(
+def full(total_bytes: int, value: int, accelerator_idx: int) -> Buffer:
+    return Buffer.from_numpy(np.full(total_bytes, value, dtype=np.int8)).to(
         Accelerator(accelerator_idx)
     )
 

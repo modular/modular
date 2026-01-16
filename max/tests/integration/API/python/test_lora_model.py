@@ -21,7 +21,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.pipelines.lib.lora import LoRAModel
 from safetensors.numpy import save_file
@@ -256,7 +256,7 @@ def test_combined_lora_a_shape(
     )
 
     combined_a = model.lora_A["layers.0.self_attn.qkv_lora.lora_A.weight"]
-    weight = Tensor.from_dlpack(combined_a.data)
+    weight = Buffer.from_dlpack(combined_a.data)
 
     expected_shape = (3 * TEST_MAX_RANK, TEST_IN_FEATURES)
     assert tuple(weight.shape) == expected_shape
@@ -279,7 +279,7 @@ def test_combined_lora_b_q_shape(
     )
 
     combined_b_q = model.lora_B["layers.0.self_attn.qkv_lora.lora_B_q.weight"]
-    weight = Tensor.from_dlpack(combined_b_q.data)
+    weight = Buffer.from_dlpack(combined_b_q.data)
 
     expected_shape = (TEST_Q_OUT_FEATURES, TEST_MAX_RANK)
     assert tuple(weight.shape) == expected_shape
@@ -302,7 +302,7 @@ def test_combined_lora_b_kv_shape(
     )
 
     combined_b_kv = model.lora_B["layers.0.self_attn.qkv_lora.lora_B_kv.weight"]
-    weight = Tensor.from_dlpack(combined_b_kv.data)
+    weight = Buffer.from_dlpack(combined_b_kv.data)
 
     expected_shape = (2, TEST_KV_OUT_FEATURES, TEST_MAX_RANK)
     assert tuple(weight.shape) == expected_shape
@@ -335,7 +335,7 @@ def test_missing_k_projection(
     assert "layers.0.self_attn.qkv_lora.lora_B_kv.weight" in model.lora_B
 
     combined_a = model.lora_A["layers.0.self_attn.qkv_lora.lora_A.weight"]
-    weight_a = Tensor.from_dlpack(combined_a.data).to_numpy()
+    weight_a = Buffer.from_dlpack(combined_a.data).to_numpy()
 
     k_portion = weight_a[TEST_MAX_RANK : 2 * TEST_MAX_RANK, :]
     assert np.allclose(k_portion, 0.0)
@@ -365,13 +365,13 @@ def test_missing_v_projection(
     )
 
     combined_a = model.lora_A["layers.0.self_attn.qkv_lora.lora_A.weight"]
-    weight_a = Tensor.from_dlpack(combined_a.data).to_numpy()
+    weight_a = Buffer.from_dlpack(combined_a.data).to_numpy()
 
     v_portion = weight_a[2 * TEST_MAX_RANK :, :]
     assert np.allclose(v_portion, 0.0)
 
     combined_b_kv = model.lora_B["layers.0.self_attn.qkv_lora.lora_B_kv.weight"]
-    weight_b_kv = Tensor.from_dlpack(combined_b_kv.data).to_numpy()
+    weight_b_kv = Buffer.from_dlpack(combined_b_kv.data).to_numpy()
 
     v_portion_b = weight_b_kv[1, :, :]
     assert np.allclose(v_portion_b, 0.0)
@@ -397,7 +397,7 @@ def test_only_q_projection(temp_lora_adapter: Callable[..., str]) -> None:
     )
 
     combined_a = model.lora_A["layers.0.self_attn.qkv_lora.lora_A.weight"]
-    weight_a = Tensor.from_dlpack(combined_a.data).to_numpy()
+    weight_a = Buffer.from_dlpack(combined_a.data).to_numpy()
 
     q_portion = weight_a[:TEST_MAX_RANK, :]
     k_portion = weight_a[TEST_MAX_RANK : 2 * TEST_MAX_RANK, :]
@@ -433,7 +433,7 @@ def test_padding_when_rank_less_than_max(
     )
 
     combined_a = model.lora_A["layers.0.self_attn.qkv_lora.lora_A.weight"]
-    weight_a = Tensor.from_dlpack(combined_a.data).to_numpy()
+    weight_a = Buffer.from_dlpack(combined_a.data).to_numpy()
 
     assert weight_a.shape == (3 * TEST_MAX_RANK, TEST_IN_FEATURES)
 
@@ -466,7 +466,7 @@ def test_no_padding_when_rank_equals_max(
     )
 
     combined_a = model.lora_A["layers.0.self_attn.qkv_lora.lora_A.weight"]
-    weight_a = Tensor.from_dlpack(combined_a.data).to_numpy()
+    weight_a = Buffer.from_dlpack(combined_a.data).to_numpy()
 
     assert weight_a.shape == (3 * TEST_MAX_RANK, TEST_IN_FEATURES)
 
@@ -521,7 +521,7 @@ def test_lora_b_is_scaled(temp_lora_adapter: Callable[..., str]) -> None:
     )
 
     combined_b_q = model.lora_B["layers.0.self_attn.qkv_lora.lora_B_q.weight"]
-    actual_b = Tensor.from_dlpack(combined_b_q.data).to_numpy()
+    actual_b = Buffer.from_dlpack(combined_b_q.data).to_numpy()
 
     expected_scaled = original_b_weight * scale
     actual_non_padded = actual_b[:, :rank]
@@ -552,7 +552,7 @@ def test_weights_cast_to_base_dtype(
     )
 
     combined_a = model.lora_A["layers.0.self_attn.qkv_lora.lora_A.weight"]
-    weight = Tensor.from_dlpack(combined_a.data)
+    weight = Buffer.from_dlpack(combined_a.data)
     assert weight.dtype == DType.bfloat16
 
 

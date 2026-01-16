@@ -23,8 +23,8 @@ class SafeTensor:
     def keys(self) -> list[str]:
         """Returns the list of tensor keys present."""
 
-    def get_tensor(self, name: str) -> max._core.driver.Tensor:
-        """Returns a tensor with a given key"""
+    def get_buffer(self, name: str) -> max._core.driver.Buffer:
+        """Returns a buffer with a given key"""
 
     def __enter__(self) -> SafeTensor: ...
     def __exit__(

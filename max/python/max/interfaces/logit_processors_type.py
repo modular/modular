@@ -59,7 +59,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class ProcessorInputs:
-    logits: md.Tensor
+    logits: md.Buffer
     context: TextGenerationContext
 
 
@@ -78,8 +78,8 @@ class BatchProcessorInputs:
     - context_batch: The batch of contexts containing the inputs to the model.
     """
 
-    logits: md.Tensor
-    logit_offsets: md.Tensor | None
+    logits: md.Buffer
+    logit_offsets: md.Buffer | None
     context_batch: Sequence[TextGenerationContext]
 
 

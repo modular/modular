@@ -14,7 +14,7 @@
 
 import numpy as np
 import pytest
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -113,23 +113,23 @@ def test_gumbel_sampling(
     graph = create_sampling_graph()
     sampler = session.load(graph)
 
-    logits_tensor = Tensor.from_dlpack(logits_np).to(device)
+    logits_tensor = Buffer.from_dlpack(logits_np).to(device)
     sampled_tokens = []
 
-    temperature = Tensor.from_numpy(
+    temperature = Buffer.from_numpy(
         np.array([temp] * batch_size, dtype=np.float32)
     ).to(device)
-    top_k_tensor = Tensor.from_numpy(
+    top_k_tensor = Buffer.from_numpy(
         np.array([top_k] * batch_size, dtype=np.int64)
     ).to(device)
-    max_k = Tensor.from_numpy(np.array(top_k, dtype=np.int64))
-    top_p_tensor = Tensor.from_numpy(
+    max_k = Buffer.from_numpy(np.array(top_k, dtype=np.int64))
+    top_p_tensor = Buffer.from_numpy(
         np.array([1.0] * batch_size, dtype=np.float32)
     ).to(device)
     for seed in range(num_trials):
         seed_start = seed * batch_size
         seed_end = seed_start + batch_size
-        seed_tensor = Tensor.from_dlpack(
+        seed_tensor = Buffer.from_dlpack(
             np.arange(seed_start, seed_end, dtype=np.uint64)
         ).to(device)
         tokens = sampler(
@@ -140,7 +140,7 @@ def test_gumbel_sampling(
             max_k,
             temperature,
         )[0]
-        assert isinstance(tokens, Tensor)
+        assert isinstance(tokens, Buffer)
         token_idxs = tokens.to_numpy()
         sampled_tokens.append(token_idxs)
 

@@ -21,7 +21,7 @@ from internvl_impl.configuration_intern_vit import (
 from internvl_impl.modeling_intern_vit import (
     InternVisionEmbeddings as HFInternVisionEmbeddings,
 )
-from max.driver import Accelerator, Device, Tensor
+from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -125,6 +125,6 @@ def generate_max_outputs(
     compiled = session.load(graph, weights_registry=embeddings.state_dict())
 
     # Execute the model and get the first result
-    result = compiled.execute(Tensor.from_dlpack(pixel_values).to(device))
+    result = compiled.execute(Buffer.from_dlpack(pixel_values).to(device))
     max_tensor = result[0]
     return from_dlpack(max_tensor)

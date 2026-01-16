@@ -14,7 +14,7 @@
 
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, Device, Tensor
+from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType
@@ -24,8 +24,8 @@ from max.nn.kernels import scatter_set_constant
 @pytest.mark.parametrize("device", [CPU(), Accelerator()])
 def test_scatter_set_constant_2d(device: Device) -> None:
     vocab_size = 3
-    data = Tensor.from_numpy(np.zeros((3, 3), dtype=np.float32)).to(device)
-    indices = Tensor.from_numpy(
+    data = Buffer.from_numpy(np.zeros((3, 3), dtype=np.float32)).to(device)
+    indices = Buffer.from_numpy(
         np.array([[0, 1], [1, 1], [1, 2], [2, 0], [2, 2]], dtype=np.int32)
     ).to(device)
     fill_val = 5.0

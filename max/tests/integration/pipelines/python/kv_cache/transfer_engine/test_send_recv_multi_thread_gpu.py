@@ -18,7 +18,7 @@ from threading import Thread
 
 import numpy as np
 from max.driver import Accelerator
-from max.driver.tensor import Tensor
+from max.driver.buffer import Buffer
 from max.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -47,7 +47,7 @@ def test_send_recv_basic() -> None:
         blocks_np = np.array(
             [10, 11, 12, 13, 14, 15, 16, 17, 18],
         )
-        blocks = Tensor.from_numpy(blocks_np).to(device)
+        blocks = Buffer.from_numpy(blocks_np).to(device)
 
         # Create engine (DP=1, TP=1)
         engine = KVTransferEngine(
@@ -98,7 +98,7 @@ def test_send_recv_basic() -> None:
         blocks_np = np.array(
             [80, 81, 82, 83, 84, 85, 86, 87, 88],
         )
-        blocks = Tensor.from_numpy(blocks_np).to(device)
+        blocks = Buffer.from_numpy(blocks_np).to(device)
 
         # Create engine (DP=1, TP=1)
         engine = KVTransferEngine(

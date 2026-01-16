@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from typing import TypeGuard
 
-from max.driver import Tensor
+from max.driver import Buffer
 from max.graph import BufferValue, TensorValue, Value
 from nvitop import Device as NVITOPDevice
 
@@ -44,15 +44,15 @@ def is_a10() -> bool:
 
 
 def are_all_tensors_iterable(
-    it: Iterable[Tensor],
-) -> TypeGuard[Iterable[Tensor]]:
-    return all(isinstance(value, Tensor) for value in it)
+    it: Iterable[Buffer],
+) -> TypeGuard[Iterable[Buffer]]:
+    return all(isinstance(value, Buffer) for value in it)
 
 
 def are_all_tensors_sequence(
-    it: Sequence[Tensor],
-) -> TypeGuard[Sequence[Tensor]]:
-    return all(isinstance(value, Tensor) for value in it)
+    it: Sequence[Buffer],
+) -> TypeGuard[Sequence[Buffer]]:
+    return all(isinstance(value, Buffer) for value in it)
 
 
 def are_all_buffer_values_sequence(

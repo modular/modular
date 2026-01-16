@@ -21,8 +21,8 @@ import numpy.typing as npt
 from max.driver import CPU, DLPackArray
 from max.dtype import DType
 
+from ..buffer_utils import cast_dlpack_to
 from ..quantization import QuantizationEncoding
-from ..tensor_utils import cast_dlpack_to
 from ..type import DeviceRef, Shape, ShapeLike
 from ..weight import Weight
 

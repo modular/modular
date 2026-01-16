@@ -15,7 +15,7 @@ from collections.abc import Sequence
 
 import numpy as np
 import pytest
-from max.driver import Tensor, accelerator_count
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, StaticDim, TensorType, TensorValue
@@ -111,7 +111,7 @@ def input_arrays() -> list[np.ndarray]:
 @pytest.fixture(scope="module")
 def graph_outputs(
     session: InferenceSession, input_arrays: list[np.ndarray]
-) -> Sequence[Tensor]:
+) -> Sequence[Buffer]:
     with Graph(
         "slice",
         input_types=[t[0] for t in PARAMS],
@@ -126,7 +126,7 @@ def graph_outputs(
     # Execute the graph.
     model = session.load(graph)
     results = model.execute(
-        *[Tensor.from_numpy(a).to(model.input_devices[0]) for a in input_arrays]
+        *[Buffer.from_numpy(a).to(model.input_devices[0]) for a in input_arrays]
     )
     assert are_all_tensors_sequence(results)
     return results
@@ -134,7 +134,7 @@ def graph_outputs(
 
 @pytest.mark.parametrize(("tensor_type", "indices"), PARAMS)
 def test_slice_numpy(
-    graph_outputs: list[Tensor],
+    graph_outputs: list[Buffer],
     input_arrays: list[np.ndarray],
     tensor_type: TensorType,
     indices: tuple[slice],

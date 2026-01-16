@@ -188,11 +188,11 @@ modular_py_binary(
 )
 
 modular_py_binary(
-    name = "compare_tensors",
+    name = "compare_buffers",
     testonly = True,
-    srcs = ["compare_tensors.py"],
+    srcs = ["compare_buffers.py"],
     imports = ["."],
-    main = "compare_tensors.py",
+    main = "compare_buffers.py",
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/driver",

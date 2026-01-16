@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import torch
-from max.driver import CPU, Tensor
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -134,12 +134,12 @@ def test_embeddings_merge_with_gather() -> None:
     compiled = session.load(graph)
 
     # Convert inputs to MAX tensors
-    text_embeds_tensor = Tensor.from_numpy(text_embeds.numpy()).to(device)
-    vision_embeds_tensor = Tensor.from_numpy(vision_embeds.numpy()).to(device)
-    scatter_indices_tensor = Tensor.from_numpy(scatter_indices.numpy()).to(
+    text_embeds_tensor = Buffer.from_numpy(text_embeds.numpy()).to(device)
+    vision_embeds_tensor = Buffer.from_numpy(vision_embeds.numpy()).to(device)
+    scatter_indices_tensor = Buffer.from_numpy(scatter_indices.numpy()).to(
         device
     )
-    gather_indices_tensor = Tensor.from_numpy(gather_indices.numpy()).to(device)
+    gather_indices_tensor = Buffer.from_numpy(gather_indices.numpy()).to(device)
 
     # Execute
     results = compiled.execute(
@@ -151,7 +151,7 @@ def test_embeddings_merge_with_gather() -> None:
 
     # Convert result back to torch
     result_tensor = results[0]
-    assert isinstance(result_tensor, Tensor)
+    assert isinstance(result_tensor, Buffer)
     actual_output = torch.from_numpy(result_tensor.to_numpy())
 
     # Verify the output matches the reference implementation
@@ -169,9 +169,9 @@ def test_embeddings_merge_with_gather() -> None:
 
     # Smoke test empty batch
     empty_results = compiled.execute(
-        Tensor.zeros(shape=(0, 0), dtype=DType.float32),
-        Tensor.zeros(shape=(0, 0), dtype=DType.float32),
-        Tensor.zeros(shape=(0,), dtype=DType.int32),
-        Tensor.zeros(shape=(0,), dtype=DType.int64),
+        Buffer.zeros(shape=(0, 0), dtype=DType.float32),
+        Buffer.zeros(shape=(0, 0), dtype=DType.float32),
+        Buffer.zeros(shape=(0,), dtype=DType.int32),
+        Buffer.zeros(shape=(0,), dtype=DType.int64),
     )
     assert empty_results[0].shape == (0, 0)

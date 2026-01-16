@@ -15,7 +15,7 @@
 
 import pytest
 import torch
-from max.driver import Accelerator, Device, Tensor
+from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -148,8 +148,8 @@ def generate_max_outputs(
 
     # Execute the model
     result = compiled.execute(
-        Tensor.from_dlpack(pixel_values).to(device),
-        Tensor.from_dlpack(window_index).to(device),
+        Buffer.from_dlpack(pixel_values).to(device),
+        Buffer.from_dlpack(window_index).to(device),
     )
     max_tensor = result[0]
     return from_dlpack(max_tensor)

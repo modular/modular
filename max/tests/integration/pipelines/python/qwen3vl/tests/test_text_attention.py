@@ -16,7 +16,7 @@
 import numpy as np
 import pytest
 import torch
-from max.driver import Accelerator, Device, Tensor
+from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -339,8 +339,8 @@ def generate_qwen3_max_outputs(
     max_lengths_tensor = kv_cache_runtime[3]
 
     result = compiled.execute(
-        Tensor.from_dlpack(flat_input.to(torch_device)).to(device),
-        Tensor.from_dlpack(input_row_offsets.to(torch_device)).to(device),
+        Buffer.from_dlpack(flat_input.to(torch_device)).to(device),
+        Buffer.from_dlpack(input_row_offsets.to(torch_device)).to(device),
         blocks_tensor,
         cache_lengths_tensor,
         lookup_table_tensor,

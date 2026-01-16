@@ -189,7 +189,7 @@ class WhisperEncoder(Module):
     def __call__(self, input_features: TensorValue) -> tuple[TensorValue, ...]:
         """
         Args:
-            input_features: Tensor of shape (batch_size, feature_size, sequence_length)
+            input_features: Buffer of shape (batch_size, feature_size, sequence_length)
         """
         # Encoder stem: two convolution layers and the GELU activation function.
         inputs_embeds = ops.gelu(self.conv1(input_features))

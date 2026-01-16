@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 import torch
 from datasets import load_dataset
-from max.driver import CPU, Tensor
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -127,7 +127,7 @@ def test_whisper_encoder(
     compiled = session.load(graph, weights_registry=state_dict)
 
     graph_api_output = compiled.execute(graph_api_inputs)[0]
-    assert isinstance(graph_api_output, Tensor)
+    assert isinstance(graph_api_output, Buffer)
 
     np.testing.assert_allclose(
         graph_api_output.to_numpy(),

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
@@ -30,7 +30,7 @@ def verify_ep_dispatch_results(
     results: list,
     per_device_inputs_torch: list[torch.Tensor],
     all_topk_ids_torch: list[torch.Tensor],
-    atomic_counters: list[Tensor],
+    atomic_counters: list[Buffer],
     config: EPConfig,
     n_devices: int,
 ) -> None:
@@ -164,7 +164,7 @@ def test_ep_dispatch(n_devices: int) -> None:
     ]
 
     per_device_inputs = [
-        Tensor.from_dlpack(input).to(devices[i])
+        Buffer.from_dlpack(input).to(devices[i])
         for i, input in enumerate(per_device_inputs_torch)
     ]
 
@@ -179,7 +179,7 @@ def test_ep_dispatch(n_devices: int) -> None:
             torch.int32
         )
         all_topk_ids_torch.append(topk_ids)
-        all_topk_ids.append(Tensor.from_dlpack(topk_ids).to(devices[i]))
+        all_topk_ids.append(Buffer.from_dlpack(topk_ids).to(devices[i]))
 
     ep_manager = EPBatchManager(config)
 

@@ -14,26 +14,26 @@
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Accelerator, DeviceStream, Tensor, accelerator_api
+from max.driver import CPU, Accelerator, Buffer, DeviceStream, accelerator_api
 from max.dtype import DType
 
 
 def test_from_numpy_accelerator() -> None:
     # A user should be able to create an accelerator tensor from a numpy array.
     arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
-    tensor = Tensor.from_numpy(arr).to(Accelerator())
+    tensor = Buffer.from_numpy(arr).to(Accelerator())
     assert tensor.shape == (2, 3)
     assert tensor.dtype == DType.int32
 
 
 def test_is_host_accelerator() -> None:
     # Accelerator tensors should be marked as not being on-host.
-    assert not Tensor(DType.int32, (1, 1), device=Accelerator()).is_host
+    assert not Buffer(DType.int32, (1, 1), device=Accelerator()).is_host
 
 
 def test_host_device_copy() -> None:
     # We should be able to freely copy tensors between host and device.
-    host_tensor = Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32))
+    host_tensor = Buffer.from_numpy(np.array([1, 2, 3], dtype=np.int32))
     device_tensor = host_tensor.copy(Accelerator())
     tensor = device_tensor.copy(CPU())
 
@@ -48,7 +48,7 @@ def test_device_device_copy() -> None:
     # We should be able to freely copy tensors between device and device.
     acc = Accelerator()
 
-    device_tensor1 = Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32)).to(
+    device_tensor1 = Buffer.from_numpy(np.array([1, 2, 3], dtype=np.int32)).to(
         acc
     )
     device_tensor2 = device_tensor1.copy(acc)
@@ -66,7 +66,7 @@ def test_torch_tensor_conversion() -> None:
     # bunch of juggling between host and device because we don't have a
     # Accelerator-compatible version of torch available yet.
     torch_tensor = torch.reshape(torch.arange(1, 11, dtype=torch.int32), (2, 5))
-    host_tensor = Tensor.from_dlpack(torch_tensor)
+    host_tensor = Buffer.from_dlpack(torch_tensor)
     acc_tensor = host_tensor.to(Accelerator())
     assert acc_tensor.shape == (2, 5)
     assert acc_tensor.dtype == DType.int32
@@ -79,7 +79,7 @@ def test_to_device() -> None:
     cpu = CPU()
     acc = Accelerator()
 
-    host_tensor = Tensor(dtype=DType.int32, shape=(3, 3), device=cpu)
+    host_tensor = Buffer(dtype=DType.int32, shape=(3, 3), device=cpu)
     acc_tensor = host_tensor.to(acc)
 
     assert cpu == host_tensor.device
@@ -91,7 +91,7 @@ def test_to_device() -> None:
 
 def test_zeros() -> None:
     # We should be able to initialize an all-zero tensor.
-    tensor = Tensor.zeros((3, 3), DType.int32, device=Accelerator())
+    tensor = Buffer.zeros((3, 3), DType.int32, device=Accelerator())
     host_tensor = tensor.to(CPU())
     assert np.array_equal(
         host_tensor.to_numpy(), np.zeros((3, 3), dtype=np.int32)
@@ -116,7 +116,7 @@ DLPACK_DTYPES = {
 def test_dlpack_accelerator() -> None:
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype, torch_dtype in DLPACK_DTYPES.items():
-        tensor = Tensor(dtype, (1, 4))
+        tensor = Buffer(dtype, (1, 4))
         for j in range(4):
             tensor[0, j] = j
         acc_tensor = tensor.to(Accelerator())
@@ -133,7 +133,7 @@ def test_from_dlpack() -> None:
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype, torch_dtype in DLPACK_DTYPES.items():
         torch_tensor = torch.tensor([0, 1, 2, 3], dtype=torch_dtype).cuda()
-        acc_tensor = Tensor.from_dlpack(torch_tensor)
+        acc_tensor = Buffer.from_dlpack(torch_tensor)
         assert acc_tensor.dtype == dtype
         assert acc_tensor.shape == torch_tensor.shape
 
@@ -142,7 +142,7 @@ def test_from_dlpack() -> None:
 
 
 def test_dlpack_device() -> None:
-    tensor = Tensor(DType.int32, (3, 3), device=Accelerator())
+    tensor = Buffer(DType.int32, (3, 3), device=Accelerator())
     device_tuple = tensor.__dlpack_device__()
     assert len(device_tuple) == 2
     assert isinstance(device_tuple[0], int)
@@ -159,7 +159,7 @@ def test_dlpack_device() -> None:
 def test_dlpack_device_pinned() -> None:
     gpu_device = Accelerator()
 
-    pinned_tensor = Tensor(DType.int32, (3, 3), device=gpu_device, pinned=True)
+    pinned_tensor = Buffer(DType.int32, (3, 3), device=gpu_device, pinned=True)
     device_tuple = pinned_tensor.__dlpack_device__()
     assert len(device_tuple) == 2
     assert isinstance(device_tuple[0], int)
@@ -175,7 +175,7 @@ def test_dlpack_device_pinned() -> None:
 def test_scalar() -> None:
     # We should be able to create scalar values on accelerators.
     acc = Accelerator()
-    scalar = Tensor.scalar(5, DType.int32, device=acc)
+    scalar = Buffer.scalar(5, DType.int32, device=acc)
     assert scalar.device == acc
 
     host_scalar = scalar.to(CPU())
@@ -184,7 +184,7 @@ def test_scalar() -> None:
 
 def test_accelerator_to_numpy() -> None:
     acc = Accelerator()
-    tensor = Tensor.zeros((3, 3), DType.int32, device=acc)
+    tensor = Buffer.zeros((3, 3), DType.int32, device=acc)
 
     assert np.array_equal(tensor.to_numpy(), np.zeros((3, 3), dtype=np.int32))
 
@@ -196,8 +196,8 @@ def test_d2h_inplace_copy_from_tensor_view() -> None:
 
     all_nines = np.full((5, 2, 3), 999, dtype=np.int32)
 
-    gpu_tensor = Tensor.from_numpy(enumerated).to(Accelerator())
-    host_tensor = Tensor.from_numpy(all_nines)
+    gpu_tensor = Buffer.from_numpy(enumerated).to(Accelerator())
+    host_tensor = Buffer.from_numpy(all_nines)
 
     # Copy 3rd row of gpu_tensor into 1st row of host_tensor.
     host_tensor[1, :, :].inplace_copy_from(gpu_tensor[3, :, :])
@@ -217,11 +217,11 @@ def test_d2h_inplace_copy_from_tensor_view() -> None:
 @pytest.mark.parametrize("is_pinned", [True, False])
 def test_to_numpy_inplace(is_pinned: bool) -> None:
     if is_pinned:
-        tensor = Tensor(
+        tensor = Buffer(
             shape=(4,), dtype=DType.int32, device=Accelerator(), pinned=True
         )
     else:
-        tensor = Tensor(shape=(4,), dtype=DType.int32, device=CPU())
+        tensor = Buffer(shape=(4,), dtype=DType.int32, device=CPU())
 
     # This should alias the existing memory.
     # It must NOT copy the memory to another buffer.
@@ -248,7 +248,7 @@ def test_pinned_concatenate() -> None:
         np.full((5,), 33, dtype=np.int32),
     ]
 
-    pinned = Tensor(
+    pinned = Buffer(
         shape=(15,), dtype=DType.int32, device=Accelerator(), pinned=True
     )
 
@@ -266,10 +266,10 @@ def test_pinned_concatenate() -> None:
 def test_zero_copy_on_to_stream_on_same_device(is_pinned: bool) -> None:
     gpu = Accelerator()
     data = np.arange(24).reshape(2, 3, 4).astype(np.int32)
-    tensor = Tensor(
+    tensor = Buffer(
         shape=data.shape, dtype=DType.int32, device=gpu, pinned=is_pinned
     )
-    tensor.inplace_copy_from(Tensor.from_numpy(data))
+    tensor.inplace_copy_from(Buffer.from_numpy(data))
     stream1 = tensor.stream
     tensor1 = tensor.to(stream1)
     assert tensor1 is tensor

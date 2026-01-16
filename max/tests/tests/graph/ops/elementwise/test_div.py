@@ -18,7 +18,7 @@ import pytest
 import torch.utils.dlpack
 from conftest import broadcast_shapes, broadcastable_tensor_types
 from hypothesis import assume, event, given
-from max.driver import CPU, Device, Tensor
+from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType
@@ -128,16 +128,16 @@ def run_models(
     rhs_dtype: DType,
     cpu: Device,
 ) -> tuple[float, float]:
-    lhs = Tensor.from_numpy(np.array(lhs_val, dtype=lhs_dtype.to_numpy())).to(
+    lhs = Buffer.from_numpy(np.array(lhs_val, dtype=lhs_dtype.to_numpy())).to(
         cpu
     )
-    rhs = Tensor.from_numpy(np.array(rhs_val, dtype=rhs_dtype.to_numpy())).to(
+    rhs = Buffer.from_numpy(np.array(rhs_val, dtype=rhs_dtype.to_numpy())).to(
         cpu
     )
     out_div, out_floor = model(lhs, rhs)
 
     def to_scalar(x: Any) -> float:
-        if isinstance(x, Tensor):
+        if isinstance(x, Buffer):
             return x.to_numpy().item()
         return torch.utils.dlpack.from_dlpack(x).numpy().item()
 

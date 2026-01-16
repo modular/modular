@@ -160,7 +160,7 @@ class DistributedVisionWindowAttention(Module, Shardable):
         Args:
             x: Input tensor of shape (seq_len, hidden_size)
             position_embeddings: Tuple of (cos, sin) tensors for rotary embeddings
-            input_row_offsets: Tensor of shape [window_size + 1] with dtype uint32.
+            input_row_offsets: Buffer of shape [window_size + 1] with dtype uint32.
                 Indicates where each window starts and ends in the ragged tensors.
                 The values should be a prefix sum (cumulative sum) of window lengths.
             max_seqlen: Maximum window length for flash attention.

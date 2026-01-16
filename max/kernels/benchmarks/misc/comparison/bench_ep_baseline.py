@@ -28,7 +28,7 @@ import torch
 from bench import bench_kineto_with_cupti_warmup
 
 # MAX imports
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
@@ -183,7 +183,7 @@ def make_inputs_for_execute(
     config: EPConfig,
     initializer: EPCommInitializer,
     dispatch_torch_dtype: torch.dtype,
-) -> list[Tensor]:
+) -> list[Buffer]:
     """
     Prepare input tensors for model.execute():
       - EP static tensors (atomic counters, send/recv pointers) from initializer
@@ -194,7 +194,7 @@ def make_inputs_for_execute(
     Note: We convert torch tensors to MAX Tensors with the correct CUDA device
     context active to avoid DLPack export issues.
     """
-    inputs: list[Tensor] = []
+    inputs: list[Buffer] = []
     # Static EP inputs
     inputs.extend(initializer.model_inputs())
 
@@ -206,7 +206,7 @@ def make_inputs_for_execute(
                 dtype=dispatch_torch_dtype,
                 device=f"cuda:{dev_id}",
             )
-            inputs.append(Tensor.from_dlpack(x))
+            inputs.append(Buffer.from_dlpack(x))
 
     # Then append all topk tensors
     for dev_id in range(config.n_gpus_per_node):
@@ -218,7 +218,7 @@ def make_inputs_for_execute(
                 dtype=torch.int32,
                 device=f"cuda:{dev_id}",
             )
-            inputs.append(Tensor.from_dlpack(topk))
+            inputs.append(Buffer.from_dlpack(topk))
 
     # Finally append router weights (uniform weights for benchmark)
     for dev_id in range(config.n_gpus_per_node):
@@ -231,7 +231,7 @@ def make_inputs_for_execute(
                 )
                 / config.top_k
             )
-            inputs.append(Tensor.from_dlpack(router_weights))
+            inputs.append(Buffer.from_dlpack(router_weights))
 
     return inputs
 
@@ -300,7 +300,7 @@ def run_bench_max_ep(args: EPBenchmarkArgs) -> None:
     )
 
     # Run with Kineto timing for EP kernel names
-    def run_once() -> list[Tensor]:
+    def run_once() -> list[Buffer]:
         return model.execute(*execute_inputs)
 
     # Measure individual phases (average per call, seconds)

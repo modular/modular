@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 import torch
 import torchvision.transforms as T
-from max.driver import Tensor, accelerator_count
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -117,9 +117,9 @@ def test_resize_bicubic_execution(
 
     # Execute MAX graph
     result = model.execute(
-        Tensor.from_numpy(input_data).to(model.input_devices[0])
+        Buffer.from_numpy(input_data).to(model.input_devices[0])
     )[0]
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     result_np = result.to_numpy()
 
     # Verify shape and values
@@ -156,11 +156,11 @@ def test_resize_bicubic_identity(
 
     input_data = np.random.rand(*shape).astype(np.float32)
     result = model.execute(
-        Tensor.from_numpy(input_data).to(model.input_devices[0])
+        Buffer.from_numpy(input_data).to(model.input_devices[0])
     )[0]
 
     # For identity transformation, output should match input closely
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     np.testing.assert_allclose(
         result.to_numpy(), input_data, rtol=1e-5, atol=1e-6
     )

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Generic
 
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
@@ -57,7 +57,7 @@ class AlwaysSignalBuffersMixin:
     """Device list that must be provided by the model class."""
 
     @cached_property
-    def signal_buffers(self) -> list[Tensor]:
+    def signal_buffers(self) -> list[Buffer]:
         """Override to always create signal buffers.
 
         Models using this mixin have distributed components that always
@@ -70,7 +70,7 @@ class AlwaysSignalBuffersMixin:
         from max.nn import Signals
 
         return [
-            Tensor.zeros(
+            Buffer.zeros(
                 shape=(Signals.NUM_BYTES,),
                 dtype=DType.uint8,
                 device=dev,
@@ -81,16 +81,16 @@ class AlwaysSignalBuffersMixin:
 
 @dataclass(frozen=True)
 class ModelOutputs:
-    logits: Tensor
+    logits: Buffer
     """Logits for a variable number of tokens per sequence."""
 
-    next_token_logits: Tensor | None = None
+    next_token_logits: Buffer | None = None
     """Logits for just the next token."""
 
-    logit_offsets: Tensor | None = None
+    logit_offsets: Buffer | None = None
     """Offsets to access variable length logits for each sequence."""
 
-    hidden_states: Tensor | None = None
+    hidden_states: Buffer | None = None
     """Hidden states for a variable number of tokens per sequence."""
 
 
@@ -105,16 +105,16 @@ class ModelInputs:
     .. code-block:: python
 
         class ReplitInputs(ModelInputs):
-            tokens: Tensor
-            input_row_offsets: Tensor
+            tokens: Buffer
+            input_row_offsets: Buffer
 
-            def __init__(self, tokens: Tensor, input_row_offsets: Tensor):
+            def __init__(self, tokens: Buffer, input_row_offsets: Buffer):
                 self.tokens = tokens
                 self.input_row_offsets = input_row_offsets
 
         # Create tensors
-        tokens = Tensor.zeros((1, 2, 3), DType.int64)
-        input_row_offsets = Tensor.zeros((1, 1, 1), DType.int64)
+        tokens = Buffer.zeros((1, 2, 3), DType.int64)
+        input_row_offsets = Buffer.zeros((1, 1, 1), DType.int64)
 
         # Initialize inputs
         inputs = ReplitInputs(tokens=tokens, input_row_offsets=input_row_offsets)
@@ -125,13 +125,13 @@ class ModelInputs:
 
     kv_cache_inputs: KVCacheInputs | None = None
 
-    lora_ids: Tensor | None = None
+    lora_ids: Buffer | None = None
     """Tensor containing the LoRA ids."""
 
-    lora_ranks: Tensor | None = None
+    lora_ranks: Buffer | None = None
     """Tensor containing the LoRA ranks"""
 
-    hidden_states: Tensor | None = None
+    hidden_states: Buffer | None = None
     """Hidden states for a variable number of tokens per sequence."""
 
     def update(self, **kwargs) -> None:
@@ -221,7 +221,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         return self._lora_manager
 
     @cached_property
-    def signal_buffers(self) -> list[Tensor]:
+    def signal_buffers(self) -> list[Buffer]:
         """Lazily initialize signal buffers for multi-GPU communication collectives.
 
         Signal buffers are only needed during model execution, not during compilation.
@@ -238,7 +238,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         # Contents of signal buffer should be filled with zeros.
         return (
             [
-                Tensor.zeros(
+                Buffer.zeros(
                     shape=(Signals.NUM_BYTES,),
                     dtype=DType.uint8,
                     device=dev,
@@ -428,7 +428,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     @abstractmethod
     def prepare_next_token_inputs(
         self,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> ModelInputs:
         """Prepares the secondary inputs to be passed to `.execute()`.
@@ -443,7 +443,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         session: InferenceSession,
         model_inputs: ModelInputs,
         model_outputs: ModelOutputs,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None]:

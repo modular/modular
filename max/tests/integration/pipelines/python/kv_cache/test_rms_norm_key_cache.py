@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pytest
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
@@ -141,7 +141,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = RaggedKVCacheInputs(
-        Tensor.from_numpy(all_ones.copy()), *graph_inputs[1:]
+        Buffer.from_numpy(all_ones.copy()), *graph_inputs[1:]
     )
 
     gamma = np.random.randn(kv_params.head_dim).astype(dtype.to_numpy())
@@ -218,7 +218,7 @@ def test_partial_rms_norm_key_cache(
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = RaggedKVCacheInputs(
-        Tensor.from_numpy(all_ones.copy()), *graph_inputs[1:]
+        Buffer.from_numpy(all_ones.copy()), *graph_inputs[1:]
     )
 
     gamma = np.random.randn(gamma_size).astype(dtype.to_numpy())
@@ -315,7 +315,7 @@ def test_rms_norm_new_key_cache(
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = RaggedKVCacheInputs(
-        Tensor.from_numpy(all_ones.copy()), *graph_inputs[1:]
+        Buffer.from_numpy(all_ones.copy()), *graph_inputs[1:]
     )
 
     gamma = np.random.randn(gamma_size).astype(dtype.to_numpy())
@@ -457,7 +457,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = RaggedKVCacheInputs(
-        Tensor.from_numpy(all_ones.copy()), *graph_inputs[1:]
+        Buffer.from_numpy(all_ones.copy()), *graph_inputs[1:]
     )
 
     # Create gamma weights for per token normalization

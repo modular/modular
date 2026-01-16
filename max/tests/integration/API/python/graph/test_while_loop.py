@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from max.driver import Tensor, accelerator_count
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -51,7 +51,7 @@ def test_while_loop(session: InferenceSession) -> None:
 
     compiled = session.load(graph)
     result = compiled.execute(0)
-    assert isinstance(result[0], Tensor)
+    assert isinstance(result[0], Buffer)
     assert result[0].to_numpy() == 10
 
 
@@ -66,7 +66,7 @@ def test_while_loop_lambda(session: InferenceSession) -> None:
 
     compiled = session.load(graph)
     result = compiled.execute(0)
-    assert isinstance(result[0], Tensor)
+    assert isinstance(result[0], Buffer)
     assert result[0].to_numpy() == 10
 
 
@@ -88,9 +88,9 @@ def test_while_loop_body_with_multiple_args(session: InferenceSession) -> None:
 
     compiled = session.load(graph)
     result = compiled.execute(0, 0)
-    assert isinstance(result[0], Tensor)
+    assert isinstance(result[0], Buffer)
     assert result[0].to_numpy() == 10
-    assert isinstance(result[1], Tensor)
+    assert isinstance(result[1], Buffer)
     assert result[1].to_numpy() == 10
 
 
@@ -124,6 +124,6 @@ def test_while_loop_inplace_user_supplied(
 
     compiled = session.load(graph, custom_extensions=[custom_ops_path])
     rawbuffer = np.ones((2, 2), dtype=np.float32)
-    compiled.execute(Tensor.from_dlpack(rawbuffer))
+    compiled.execute(Buffer.from_dlpack(rawbuffer))
     actual = np.array([[10, 1], [1, 1]], dtype=np.float32)
     np.testing.assert_equal(rawbuffer, actual)

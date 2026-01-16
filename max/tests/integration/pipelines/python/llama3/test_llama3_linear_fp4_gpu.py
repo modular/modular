@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 import torch
-from max.driver import Accelerator, Tensor, accelerator_api
+from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType
@@ -135,7 +135,7 @@ def get_state_dict(
             weight, f"{layer_name}.weight", DType.uint8, Shape(weight.shape)
         ),
         f"{layer_name}.weight_scale": WeightData(
-            Tensor.from_dlpack(weight_scale.view(torch.uint8)).view(
+            Buffer.from_dlpack(weight_scale.view(torch.uint8)).view(
                 DType.float8_e4m3fn
             ),  # avoids BufferError: float8 types are not supported by dlpack, when loading state_dict
             f"{layer_name}.weight_scale",
@@ -229,7 +229,7 @@ def generate_max_linear_output(
     input_flat = input_tensor.reshape(-1, hidden_size)
 
     out = compiled.execute(
-        Tensor.from_dlpack(input_flat).to(device),
+        Buffer.from_dlpack(input_flat).to(device),
     )[0]
 
     output_tensor = from_dlpack(out).to(torch.bfloat16)

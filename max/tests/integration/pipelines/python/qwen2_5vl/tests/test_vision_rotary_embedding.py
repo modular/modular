@@ -15,7 +15,7 @@
 
 import pytest
 import torch
-from max.driver import Accelerator, Device, Tensor
+from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -45,7 +45,7 @@ def max_rot_pos_emb(
     """Generate position IDs for MAX VisionRotaryEmbedding.
 
     Args:
-        grid_thw: Tensor of shape (num_grids, 3) containing (temporal, height, width) dimensions
+        grid_thw: Buffer of shape (num_grids, 3) containing (temporal, height, width) dimensions
         spatial_merge_size: Size of spatial merging (e.g., 2 means 2x2 patches are merged)
 
     Returns:
@@ -193,8 +193,8 @@ def generate_max_outputs(
     # Compile and run
     compiled = session.load(graph, weights_registry={})
     results = compiled.execute(
-        Tensor.from_dlpack(rot_pos_ids).to(device),
-        Tensor.from_dlpack(window_index).to(device),
+        Buffer.from_dlpack(rot_pos_ids).to(device),
+        Buffer.from_dlpack(window_index).to(device),
     )
 
     # Convert back to torch

@@ -17,13 +17,13 @@ import os
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator
-from max.driver.tensor import Tensor
+from max.driver.buffer import Buffer
 from max.dtype import DType
 from max.kv_cache import KVTransferEngine
 
 
 def test_constructor() -> None:
-    tensor = Tensor(DType.int8, (10, 10), device=CPU())
+    tensor = Buffer(DType.int8, (10, 10), device=CPU())
 
     # ok - DP=1, TP=1
     _ = KVTransferEngine(
@@ -60,10 +60,10 @@ def test_initiate_send_transfer() -> None:
     elts_per_page = 3
     num_elts = total_num_pages * elts_per_page
 
-    blocks_1 = Tensor.from_numpy(np.arange(num_elts, dtype=np.int16) + 10).to(
+    blocks_1 = Buffer.from_numpy(np.arange(num_elts, dtype=np.int16) + 10).to(
         device
     )
-    blocks_2 = Tensor.from_numpy(np.arange(num_elts, dtype=np.int16) + 80).to(
+    blocks_2 = Buffer.from_numpy(np.arange(num_elts, dtype=np.int16) + 80).to(
         device
     )
 
@@ -147,7 +147,7 @@ def test_initiate_send_transfer() -> None:
 
 def test_ensure_we_use_memory_manager() -> None:
     cpu_device = CPU()
-    cpu_tensor = Tensor.from_numpy(np.arange(10, dtype=np.int16)).to(cpu_device)
+    cpu_tensor = Buffer.from_numpy(np.arange(10, dtype=np.int16)).to(cpu_device)
 
     acc_device = Accelerator()
     acc_tensor = cpu_tensor.to(acc_device)
@@ -174,7 +174,7 @@ def test_ensure_we_use_memory_manager() -> None:
 
 def test_dp_structure_validation() -> None:
     """Test that DP structure (2D list) is properly validated."""
-    tensor = Tensor(DType.int8, (10, 10), device=CPU())
+    tensor = Buffer(DType.int8, (10, 10), device=CPU())
 
     # Empty outer list should fail
     with pytest.raises(ValueError, match="must contain at least one replica"):
@@ -191,8 +191,8 @@ def test_dp_structure_validation() -> None:
 
 def test_multi_replica_construction() -> None:
     """Test constructing engine with multiple DP replicas."""
-    tensor1 = Tensor(DType.int8, (10, 10), device=CPU())
-    tensor2 = Tensor(DType.int8, (10, 10), device=CPU())
+    tensor1 = Buffer(DType.int8, (10, 10), device=CPU())
+    tensor2 = Buffer(DType.int8, (10, 10), device=CPU())
 
     # DP=2, TP=1
     engine = KVTransferEngine(
@@ -210,9 +210,9 @@ def test_replicas_must_have_same_tp_degree() -> None:
     Note: This test validates the error message but uses TP=1 for both replicas
     since CPU only supports TP=1. The validation would work the same for GPU.
     """
-    t1 = Tensor(DType.int8, (10, 10), device=CPU())
+    t1 = Buffer(DType.int8, (10, 10), device=CPU())
     # Different size to test validation
-    t2 = Tensor(DType.int8, (20, 20), device=CPU())
+    t2 = Buffer(DType.int8, (20, 20), device=CPU())
 
     # Note: We can't actually test TP>1 mismatch with CPU since CPU requires TP=1.
     # Instead, test that different tensor shapes are caught by the bytes_per_page validation.
@@ -231,8 +231,8 @@ def test_replicas_must_have_same_tp_degree() -> None:
 def test_replicas_must_have_same_total_num_pages() -> None:
     """Test that all replicas must have the same total_num_pages."""
     # Create tensors with different sizes
-    t1 = Tensor(DType.int8, (20,), device=CPU())  # 20 elements
-    t2 = Tensor(DType.int8, (30,), device=CPU())  # 30 elements
+    t1 = Buffer(DType.int8, (20,), device=CPU())  # 20 elements
+    t2 = Buffer(DType.int8, (30,), device=CPU())  # 30 elements
 
     # Both replicas should validate against the same total_num_pages
     # This should fail because t2 has 30 elements but total_num_pages=2
@@ -251,8 +251,8 @@ def test_replicas_must_have_same_total_num_pages() -> None:
 def test_replica_idx_validation() -> None:
     """Test that replica_idx is validated in transfer methods."""
     device = CPU()
-    tensor1 = Tensor.from_numpy(np.arange(9, dtype=np.int16)).to(device)
-    tensor2 = Tensor.from_numpy(np.arange(9, dtype=np.int16) + 10).to(device)
+    tensor1 = Buffer.from_numpy(np.arange(9, dtype=np.int16)).to(device)
+    tensor2 = Buffer.from_numpy(np.arange(9, dtype=np.int16) + 10).to(device)
 
     # DP=2, TP=1
     engine_1 = KVTransferEngine(

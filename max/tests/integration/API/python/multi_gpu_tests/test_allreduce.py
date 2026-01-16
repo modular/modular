@@ -22,8 +22,8 @@ import pytest
 from max.driver import (
     CPU,
     Accelerator,
+    Buffer,
     Device,
-    Tensor,
     accelerator_count,
 )
 from max.dtype import DType
@@ -104,13 +104,13 @@ def test_allreduce_execution() -> None:
     out_np = a_np * expected_sum
 
     # Create tensors on each device
-    input_tensors = [Tensor.from_numpy(a_np).to(device) for device in devices]
+    input_tensors = [Buffer.from_numpy(a_np).to(device) for device in devices]
 
     output = compiled.execute(*input_tensors, *signals.buffers())
 
     # Check Executed Graph
     for out_tensor, device in zip(output, devices, strict=True):
-        assert isinstance(out_tensor, Tensor)
+        assert isinstance(out_tensor, Buffer)
         assert out_tensor.device == device
         assert np.allclose(out_np, out_tensor.to(host).to_numpy())
 
@@ -186,7 +186,7 @@ def test_allreduce_epilogue_fusion(num_gpus: int) -> None:
     inputs = []
     a_np = np.ones((M, N), np.float32)
     for i in range(num_gpus):
-        inputs.append(Tensor.from_numpy(a_np).to(devices[i]))
+        inputs.append(Buffer.from_numpy(a_np).to(devices[i]))
 
     for dev in devices:
         dev.synchronize()
@@ -196,7 +196,7 @@ def test_allreduce_epilogue_fusion(num_gpus: int) -> None:
     expected = np.full((M, N), num_gpus + 42.0, dtype=np.float32)
 
     for tensor in outputs:
-        assert isinstance(tensor, Tensor)
+        assert isinstance(tensor, Buffer)
         assert np.allclose(expected, tensor.to(host).to_numpy(), atol=1e-6)
 
 
@@ -248,7 +248,7 @@ def test_allreduce_signal_buffer_too_small_error_message(
 
     # Create input tensors on each device.
     input_tensors = [
-        Tensor.zeros((64, 64), dtype=DType.float32).to(devices[i])
+        Buffer.zeros((64, 64), dtype=DType.float32).to(devices[i])
         for i in range(num_gpus)
     ]
 

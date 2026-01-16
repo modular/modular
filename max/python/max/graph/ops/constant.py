@@ -23,7 +23,7 @@ from max.mlir.dialects import mo
 
 from ..._core import graph as _graph
 from ..._core.dialects import mo as _mo
-from ...driver import CPU, Device, DLPackArray, Tensor
+from ...driver import CPU, Buffer, Device, DLPackArray
 from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue
@@ -88,7 +88,7 @@ def constant(
             )
 
         min, max = _DTYPE_MIN_AND_MAX[dtype]
-        tensor = Tensor(dtype, shape(value), device=CPU())
+        tensor = Buffer(dtype, shape(value), device=CPU())
         for idx in tensor._iterate_indices():
             v = index(value, idx)
 
@@ -104,7 +104,7 @@ def constant(
     elif isinstance(value, np.ndarray):
         value = np.ascontiguousarray(value)
 
-    value = Tensor.from_dlpack(value)
+    value = Buffer.from_dlpack(value)
     device = DeviceRef.from_device(device or value.device)
     dtype = dtype or value.dtype
     if dtype != value.dtype:

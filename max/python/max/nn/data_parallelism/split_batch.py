@@ -45,7 +45,7 @@ def split_batch(
     Args:
         input: Input tensor of shape [total_seq_len, ...].
         input_row_offsets: Row offsets tensor indicating batch boundaries.
-        data_parallel_splits: Tensor containing batch splits for each device.
+        data_parallel_splits: Buffer containing batch splits for each device.
             Must be located on CPU.
 
     Returns:
@@ -139,7 +139,7 @@ def split_batch_replicated(
             The list must be the same length as the number of devices.
         input_row_offsets_int64: Row offsets tensor indicating batch boundaries.
             Must be located on CPU.
-        data_parallel_splits: Tensor containing batch splits for each device.
+        data_parallel_splits: Buffer containing batch splits for each device.
             Must be located on CPU.
 
     Returns:

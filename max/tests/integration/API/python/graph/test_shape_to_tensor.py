@@ -13,7 +13,7 @@
 
 
 import numpy as np
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
@@ -31,9 +31,9 @@ def test_shape_to_tensor_static(session: InferenceSession) -> None:
 
     x = np.ones((2, 4)).astype(np.float32)
     output = compiled.execute(
-        Tensor.from_numpy(x).to(compiled.input_devices[0])
+        Buffer.from_numpy(x).to(compiled.input_devices[0])
     )
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
 
     np.testing.assert_equal(output[0].to_numpy(), np.array([2, 4]))
 
@@ -50,9 +50,9 @@ def test_shape_to_tensor_dynamic(session: InferenceSession) -> None:
 
     x = np.ones((7, 3)).astype(np.float32)
     output = compiled.execute(
-        Tensor.from_numpy(x).to(compiled.input_devices[0])
+        Buffer.from_numpy(x).to(compiled.input_devices[0])
     )
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
 
     np.testing.assert_equal(output[0].to_numpy(), np.array([7, 3]))
 
@@ -69,9 +69,9 @@ def test_shape_to_tensor_solo_dim(session: InferenceSession) -> None:
 
     x = np.ones((7, 3)).astype(np.float32)
     output = compiled.execute(
-        Tensor.from_numpy(x).to(compiled.input_devices[0])
+        Buffer.from_numpy(x).to(compiled.input_devices[0])
     )
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
 
     # Output is only a scalar
     assert output[0].shape == ()

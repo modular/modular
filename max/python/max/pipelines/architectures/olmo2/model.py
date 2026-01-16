@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from max.driver import Tensor
+from max.driver import Buffer
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter
@@ -32,7 +32,7 @@ class Olmo2Model(LlamaModelBase):
     model: Model
     """Compiled and initialized model ready for inference."""
 
-    signal_buffers: list[Tensor]
+    signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"

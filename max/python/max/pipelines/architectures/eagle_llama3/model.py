@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
@@ -86,8 +86,8 @@ class EagleLlama3Model(LlamaModelBase):
         )
 
         assert len(model_outputs) == 2
-        assert isinstance(model_outputs[0], Tensor)
-        assert isinstance(model_outputs[1], Tensor)
+        assert isinstance(model_outputs[0], Buffer)
+        assert isinstance(model_outputs[1], Buffer)
 
         return ModelOutputs(
             logits=model_outputs[0],

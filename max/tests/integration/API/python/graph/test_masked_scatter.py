@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.driver import Tensor, accelerator_count
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, ops
@@ -75,5 +75,5 @@ def test_masked_scatter(
 
     model = session.load(graph)
     result = model.execute()[0]
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     np.testing.assert_equal(result.to_numpy(), expected)

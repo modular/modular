@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, Device, Tensor
+from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, Type, ops
@@ -62,7 +62,7 @@ def compute_pattern_value(page_id: int, layer_id: int, kv_idx: int) -> int:
 
 def create_patterned_kv_cache(
     config: KVCacheConfig, device: Device
-) -> tuple[Tensor, np.ndarray]:
+) -> tuple[Buffer, np.ndarray]:
     """Create a KV cache tensor filled with verifiable patterns."""
     data = np.zeros(config.shape, dtype=np.float16)
     for page_id in range(config.total_num_pages):
@@ -70,13 +70,13 @@ def create_patterned_kv_cache(
             for kv_idx in range(config.kv_dim):
                 val = compute_pattern_value(page_id, layer_id, kv_idx)
                 data[page_id, kv_idx, layer_id, :, :, :] = val
-    return Tensor.from_numpy(data).to(device), data
+    return Buffer.from_numpy(data).to(device), data
 
 
-def create_empty_kv_cache(config: KVCacheConfig, device: Device) -> Tensor:
+def create_empty_kv_cache(config: KVCacheConfig, device: Device) -> Buffer:
     """Create an empty (zeros) KV cache tensor."""
     data = np.zeros(config.shape, dtype=np.float16)
-    return Tensor.from_numpy(data).to(device)
+    return Buffer.from_numpy(data).to(device)
 
 
 def build_copy_graph(
@@ -151,20 +151,20 @@ def execute_copy(
     graph: Graph,
     gpu_device: Device,
     cpu_device: Device,
-    gpu_kv_blocks: Tensor,
-    host_kv_blocks: Tensor,
+    gpu_kv_blocks: Buffer,
+    host_kv_blocks: Buffer,
     src_pages: list[int],
     dst_pages: list[int],
     target_layer: int,
-) -> Tensor:
+) -> Buffer:
     """Execute the copy graph and return the result."""
-    src_page_ids = Tensor.from_numpy(np.array(src_pages, dtype=np.int64)).to(
+    src_page_ids = Buffer.from_numpy(np.array(src_pages, dtype=np.int64)).to(
         cpu_device
     )
-    dst_page_ids = Tensor.from_numpy(np.array(dst_pages, dtype=np.int64)).to(
+    dst_page_ids = Buffer.from_numpy(np.array(dst_pages, dtype=np.int64)).to(
         cpu_device
     )
-    layer_idx = Tensor.from_numpy(np.array(target_layer, dtype=np.uint32)).to(
+    layer_idx = Buffer.from_numpy(np.array(target_layer, dtype=np.uint32)).to(
         cpu_device
     )
 
@@ -178,7 +178,7 @@ def execute_copy(
         dst_page_ids,
         layer_idx,
     )[0]
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     return result
 
 
