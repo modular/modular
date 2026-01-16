@@ -205,10 +205,29 @@ ParameterEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
 FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldTypes(
     StructFieldTypesAttr attr) {
   FailureOr<ResolvedStructHandle> resolvedOr =
-      resolveStructOp(attr.getTypeValue(), /*acceptAsync=*/false);
-  if (failed(resolvedOr))
+      resolveStructOp(attr.getTypeValue(), /*acceptAsync=*/true);
+  if (failed(resolvedOr)) {
+    emitEvaluationError("struct_field_types requires a struct type");
     return failure();
+  }
   ResolvedStructHandle resolved = *resolvedOr;
+
+  // If concrete instance is available, use its already-substituted field types.
+  if (resolved.instance) {
+    auto structType =
+        cast<StructInstanceType>(resolved.instance.getValueDomainType());
+    SmallVector<TypedAttr> resultAttrs;
+    for (StructDefFieldAttr field : structType.getFields())
+      resultAttrs.push_back(field.getTypeValue());
+    return cast<TypedAttr>(VariadicAttr::get(resultAttrs, attr.getType()));
+  }
+
+  // If the decl is null, we are in an async context and the struct instance is
+  // not yet ready.
+  if (!resolved.decl)
+    return TypedAttr();
+
+  // Otherwise, use generator types and rebind with param values.
   SmallVector<TypedAttr> fieldTypes;
   resolved.decl.getFieldTypes(fieldTypes);
 
@@ -230,8 +249,10 @@ FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldNames(
     StructFieldNamesAttr attr) {
   FailureOr<ResolvedStructHandle> resolvedOr =
       resolveStructOp(attr.getTypeValue(), /*acceptAsync=*/false);
-  if (failed(resolvedOr))
+  if (failed(resolvedOr)) {
+    emitEvaluationError("struct_field_names requires a struct type");
     return failure();
+  }
   ResolvedStructHandle resolved = *resolvedOr;
   SmallVector<StringAttr> fieldNames;
   resolved.decl.getFieldNames(fieldNames);
@@ -253,12 +274,19 @@ FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldIndexByName(
 
   FailureOr<ResolvedStructHandle> resolvedOr =
       resolveStructOp(attr.getTypeValue(), /*acceptAsync=*/false);
-  if (failed(resolvedOr))
+  if (failed(resolvedOr)) {
+    emitEvaluationError("struct_field_index_by_name requires a struct type");
     return failure();
+  }
   ResolvedStructHandle resolved = *resolvedOr;
   auto index = resolved.decl.findFieldIndex(fieldNameAttr.getValue());
-  if (!index)
+  if (!index) {
+    emitEvaluationError(
+        "struct '" +
+        SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
+        "' has no field named '" + fieldNameAttr.getValue() + "'");
     return failure();
+  }
   return cast<TypedAttr>(
       Builder(attr.getType().getContext()).getIndexAttr(*index));
 }
@@ -270,13 +298,42 @@ FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldTypeByName(
     return failure();
 
   FailureOr<ResolvedStructHandle> resolvedOr =
-      resolveStructOp(attr.getTypeValue(), /*acceptAsync=*/false);
-  if (failed(resolvedOr))
+      resolveStructOp(attr.getTypeValue(), /*acceptAsync=*/true);
+  if (failed(resolvedOr)) {
+    emitEvaluationError("struct_field_type_by_name requires a struct type");
     return failure();
+  }
   ResolvedStructHandle resolved = *resolvedOr;
-  TypedAttr fieldType = resolved.decl.getFieldType(fieldNameAttr.getValue());
-  if (!fieldType)
+  StringRef fieldName = fieldNameAttr.getValue();
+
+  // If concrete instance is available, search its fields directly.
+  if (resolved.instance) {
+    auto structType =
+        cast<StructInstanceType>(resolved.instance.getValueDomainType());
+    for (StructDefFieldAttr field : structType.getFields())
+      if (field.getName().getValue() == fieldName)
+        return field.getTypeValue();
+    emitEvaluationError(
+        "struct '" +
+        SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
+        "' has no field named '" + fieldName + "'");
     return failure();
+  }
+
+  // If the decl is null, we are in an async context and the struct instance is
+  // not yet ready.
+  if (!resolved.decl)
+    return TypedAttr();
+
+  // Otherwise, use generator's field type and rebind.
+  TypedAttr fieldType = resolved.decl.getFieldType(fieldName);
+  if (!fieldType) {
+    emitEvaluationError(
+        "struct '" +
+        SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
+        "' has no field named '" + fieldName + "'");
+    return failure();
+  }
   FailureOr<TypedAttr> result = failure();
   withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
                 [&](ParameterEvaluator &evaluator) {

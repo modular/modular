@@ -53,7 +53,8 @@ protected:
   evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) override;
 
   /// Resolve a type value to its struct declaration.
-  /// IREvaluator expects TypeInstanceRefAttr and looks up the generator.
+  /// Returns null decl if acceptAsync is true and the instance is not yet ready
+  /// (signaling retry).
   FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
                                                   bool acceptAsync) override;
 
@@ -105,18 +106,7 @@ private:
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
                                          bool withResultSlot);
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
-  FailureOr<TypedAttr> evaluateStructFieldTypesAttr(StructFieldTypesAttr attr);
-  FailureOr<TypedAttr> evaluateStructFieldNamesAttr(StructFieldNamesAttr attr);
-  FailureOr<TypedAttr>
-  evaluateStructFieldIndexByNameAttr(StructFieldIndexByNameAttr attr);
-  FailureOr<TypedAttr>
-  evaluateStructFieldTypeByNameAttr(StructFieldTypeByNameAttr attr);
   FailureOr<TypedAttr> evaluateVariadicSizeAttr(VariadicSizeAttr attr);
-
-  /// Helper to resolve a type reference to a StructInstanceType.
-  /// Emits an error with the given function name context on failure.
-  FailureOr<StructInstanceType> resolveStructInstanceType(TypedAttr typeRef,
-                                                          StringRef funcName);
 
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);

@@ -57,16 +57,22 @@ class ParameterEvaluator;
 //===----------------------------------------------------------------------===//
 
 /// A resolved struct handle containing the generator and optionally the
-/// concrete instance. On success, `decl` always contains the parametric struct
-/// declaration operation. The `instance` field is non-null if a concrete
-/// StructInstanceOp is available.
+/// concrete instance.
+///
+/// There are three possible states on success:
+/// 1. `decl` is null: Async concretization was triggered. The caller should
+///    return null to signal retry.
+/// 2. `decl` is valid, `instance` is null: Generator is available but no
+///    concrete instance. Use generator + rebinding for evaluation.
+/// 3. `decl` is valid, `instance` is valid: Concrete instance is available.
 struct ResolvedStructHandle {
-  /// The struct declaration operation (always valid on success).
+  /// The struct declaration operation. Null if async concretization was
+  /// triggered and the caller should retry later.
   StructDeclInterface decl;
-  /// The parameter values for the struct.
+  /// The parameter values for the struct. Valid when `decl` is valid.
   ArrayRef<TypedAttr> paramValues;
   /// A context-specific opaque handle for the context to track additional
-  /// state.
+  /// state. Valid when `decl` is valid.
   void *handle = nullptr;
   /// The concrete struct instance operation, if available.
   StructInstanceOp instance = nullptr;
@@ -104,19 +110,18 @@ public:
 protected:
   /// Resolve a type value to its struct declaration interface.
   ///
-  /// On success, always returns a handle with a valid `decl` (the parametric
-  /// struct declaration op). The `instance` field is populated if a concrete
-  /// instance is available.
-  ///
   /// The `acceptAsync` argument controls behavior when a concrete instance
   /// is not yet ready:
   /// - If acceptAsync=true AND context supports async: triggers async
-  ///   elaboration so the caller can retry later.
-  /// - Otherwise: just returns the generator without an instance.
+  ///   elaboration and returns a handle with null `decl` to signal retry.
+  /// - If acceptAsync=false OR context doesn't support async: returns the
+  ///   generator (and instance is provided only if already available).
   ///
   /// Returns:
   /// - failure(): An error occurred during resolution.
-  /// - success(): Handle with valid generator. Check `instance` for concrete.
+  /// - success() with null `decl`: Async triggered, caller should retry.
+  /// - success() with valid `decl`: Generator available. Check `instance`
+  ///   to see if concrete info can be used directly.
   virtual FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
                                                           bool acceptAsync);
 
