@@ -106,7 +106,7 @@ class PDLModule:
         self, arg0: str, arg1: Callable, /
     ) -> None: ...
 
-class GreedyRewriteDriverConfig:
+class GreedyRewriteConfig:
     def __init__(self) -> None:
         """Create a greedy rewrite driver config with defaults"""
 
@@ -162,7 +162,7 @@ class FrozenRewritePatternSet:
 def apply_patterns_and_fold_greedily(
     module: max._mlir._mlir_libs._mlir.ir.Module,
     set: FrozenRewritePatternSet,
-    config: GreedyRewriteDriverConfig | None = None,
+    config: GreedyRewriteConfig | None = None,
 ) -> None:
     """
     Applys the given patterns to the given module greedily while folding results.
@@ -172,7 +172,7 @@ def apply_patterns_and_fold_greedily(
 def apply_patterns_and_fold_greedily(
     op: max._mlir._mlir_libs._mlir.ir._OperationBase,
     set: FrozenRewritePatternSet,
-    config: GreedyRewriteDriverConfig | None = None,
+    config: GreedyRewriteConfig | None = None,
 ) -> None:
     """
     Applys the given patterns to the given op greedily while folding results.
