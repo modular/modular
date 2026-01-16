@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import functools
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -38,6 +39,7 @@ from max.pipelines.core import TextAndVisionContext, TextContext
 from transformers import (
     AutoConfig,
     AutoTokenizer,
+    PretrainedConfig,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
@@ -49,8 +51,9 @@ if TYPE_CHECKING:
 from .audio_generator_pipeline import AudioGeneratorPipeline
 from .config_enums import RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
-from .hf_utils import HuggingFaceRepo
+from .hf_utils import HuggingFaceRepo, get_model_index_path_for_diffusers
 from .interfaces import PipelineModel
+from .pipeline_variants.image_generation import ImageGenerationPipeline
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import (
     EAGLESpeculativeDecodingPipeline,
@@ -74,6 +77,7 @@ def get_pipeline_for_task(
     | type[StandaloneSpeculativeDecodingPipeline]
     | type[SpeechTokenGenerationPipeline]
     | type[EAGLESpeculativeDecodingPipeline]
+    | type[ImageGenerationPipeline]
 ):
     if task == PipelineTask.TEXT_GENERATION:
         if pipeline_config._speculative is not None:
@@ -100,6 +104,8 @@ def get_pipeline_for_task(
         return AudioGeneratorPipeline
     elif task == PipelineTask.SPEECH_TOKEN_GENERATION:
         return SpeechTokenGenerationPipeline
+    elif task == PipelineTask.IMAGE_GENERATION:
+        return ImageGenerationPipeline
 
 
 @dataclass(frozen=False)
@@ -290,7 +296,7 @@ class PipelineRegistry:
 
     def get_active_huggingface_config(
         self, huggingface_repo: HuggingFaceRepo
-    ) -> AutoConfig:
+    ) -> AutoConfig | PretrainedConfig:
         """Retrieves or creates a cached HuggingFace AutoConfig for the given
         model configuration.
 
@@ -311,7 +317,22 @@ class PipelineRegistry:
         Returns:
             AutoConfig: The HuggingFace configuration object for the model.
         """
-        if huggingface_repo not in self._cached_huggingface_configs:
+        model_index_path = get_model_index_path_for_diffusers(huggingface_repo)
+
+        if model_index_path is not None:
+            with open(model_index_path, encoding="utf-8") as f:
+                model_index = json.load(f)
+
+            class_name = model_index.get("_class_name")
+            if not class_name or not isinstance(class_name, str):
+                raise ValueError(
+                    f"Diffusers-style repository '{huggingface_repo.repo_id}' is missing a valid '_class_name' in model_index.json"
+                )
+
+            self._cached_huggingface_configs[huggingface_repo] = (
+                PretrainedConfig(architectures=[class_name])
+            )
+        else:
             self._cached_huggingface_configs[huggingface_repo] = (
                 AutoConfig.from_pretrained(
                     huggingface_repo.repo_id,
@@ -444,87 +465,104 @@ class PipelineRegistry:
         assert arch is not None
         devices = load_devices(pipeline_config.model.device_specs)
 
-        max_length = arch.pipeline_model.calculate_max_seq_len(
-            pipeline_config, huggingface_config=huggingface_config
-        )
-
-        # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
-        # and suffers from the whitespace decoding bug. So, we enable the fix
-        # for only MistralModel in order to avoid any issues with performance
-        # for rest of the models. This can be applied more generically once
-        # we have more time verifying this for all the models.
-        # More information:
-        # https://linear.app/modularml/issue/AIPIPE-197/add-support-for-mistral-7b-instruct-v03
-        # TODO: remove this pipeline_model.__name__ check
-        if (
-            arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
-            and arch.tokenizer is TextTokenizer
-        ):
-            text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
-            tokenizer = text_tokenizer(
-                pipeline_config.model.model_path,
-                pipeline_config=pipeline_config,
-                revision=pipeline_config.model.huggingface_model_revision,
-                max_length=max_length,
-                trust_remote_code=pipeline_config.model.trust_remote_code,
-                enable_llama_whitespace_fix=True,
-                chat_template=pipeline_config.retrieve_chat_template(),
-                context_validators=arch.context_validators,
+        if task != PipelineTask.IMAGE_GENERATION:
+            max_length = arch.pipeline_model.calculate_max_seq_len(
+                pipeline_config, huggingface_config=huggingface_config
             )
-        else:
-            tokenizer = arch.tokenizer(
-                model_path=pipeline_config.model.model_path,
-                pipeline_config=pipeline_config,
-                revision=pipeline_config.model.huggingface_model_revision,
-                max_length=max_length,
-                trust_remote_code=pipeline_config.model.trust_remote_code,
-                chat_template=pipeline_config.retrieve_chat_template(),
-                context_validators=arch.context_validators,
-            )
-        # Cast tokenizer to the proper type for text generation pipeline compatibility
-        typed_tokenizer = cast(
-            PipelineTokenizer[
-                Any, npt.NDArray[np.integer[Any]], TextGenerationRequest
-            ],
-            tokenizer,
-        )
 
-        # For speculative decoding, retrieve draft model's architecture
-        factory_kwargs: dict[str, Any] = {
-            "pipeline_config": pipeline_config,
-            "pipeline_model": arch.pipeline_model,
-            "eos_token_id": tokenizer.eos,
-            "weight_adapters": arch.weight_adapters,
-            "tokenizer": typed_tokenizer,
-        }
-
-        # If using speculative decoding, add draft model-specific parameters
-        if pipeline_config.draft_model_config is not None:
-            draft_arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.draft_model_config.huggingface_weight_repo,
-                use_module_v3=pipeline_config.use_module_v3,
-            )
-            if draft_arch is None:
-                raise ValueError(
-                    f"MAX-Optimized architecture not found for draft model "
-                    f"'{pipeline_config.draft_model_config.model_path}'"
+            # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
+            # and suffers from the whitespace decoding bug. So, we enable the fix
+            # for only MistralModel in order to avoid any issues with performance
+            # for rest of the models. This can be applied more generically once
+            # we have more time verifying this for all the models.
+            # More information:
+            # https://linear.app/modularml/issue/AIPIPE-197/add-support-for-mistral-7b-instruct-v03
+            # TODO: remove this pipeline_model.__name__ check
+            if (
+                arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
+                and arch.tokenizer is TextTokenizer
+            ):
+                text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
+                tokenizer = text_tokenizer(
+                    pipeline_config.model.model_path,
+                    pipeline_config=pipeline_config,
+                    revision=pipeline_config.model.huggingface_model_revision,
+                    max_length=max_length,
+                    trust_remote_code=pipeline_config.model.trust_remote_code,
+                    enable_llama_whitespace_fix=True,
+                    chat_template=pipeline_config.retrieve_chat_template(),
+                    context_validators=arch.context_validators,
                 )
-            factory_kwargs["draft_pipeline_model"] = draft_arch.pipeline_model
-            factory_kwargs["draft_weight_adapters"] = draft_arch.weight_adapters
-
-        pipeline_factory = cast(
-            Callable[[], PipelineTypes],
-            functools.partial(  # type: ignore
-                pipeline_class, **factory_kwargs
-            ),
-        )
-
-        if tokenizer.eos is None:
-            raise ValueError(
-                "tokenizer.eos value is None, tokenizer configuration is incomplete."
+            else:
+                tokenizer = arch.tokenizer(
+                    model_path=pipeline_config.model.model_path,
+                    pipeline_config=pipeline_config,
+                    revision=pipeline_config.model.huggingface_model_revision,
+                    max_length=max_length,
+                    trust_remote_code=pipeline_config.model.trust_remote_code,
+                    chat_template=pipeline_config.retrieve_chat_template(),
+                    context_validators=arch.context_validators,
+                )
+            # Cast tokenizer to the proper type for text generation pipeline compatibility
+            typed_tokenizer = cast(
+                PipelineTokenizer[
+                    Any, npt.NDArray[np.integer[Any]], TextGenerationRequest
+                ],
+                tokenizer,
             )
 
-        return tokenizer, pipeline_factory
+            # For speculative decoding, retrieve draft model's architecture
+            factory_kwargs: dict[str, Any] = {
+                "pipeline_config": pipeline_config,
+                "pipeline_model": arch.pipeline_model,
+                "eos_token_id": tokenizer.eos,
+                "weight_adapters": arch.weight_adapters,
+                "tokenizer": typed_tokenizer,
+            }
+
+            # If using speculative decoding, add draft model-specific parameters
+            if pipeline_config.draft_model_config is not None:
+                draft_arch = self.retrieve_architecture(
+                    huggingface_repo=pipeline_config.draft_model_config.huggingface_weight_repo,
+                    use_module_v3=pipeline_config.use_module_v3,
+                )
+                if draft_arch is None:
+                    raise ValueError(
+                        f"MAX-Optimized architecture not found for draft model "
+                        f"'{pipeline_config.draft_model_config.model_path}'"
+                    )
+                factory_kwargs["draft_pipeline_model"] = (
+                    draft_arch.pipeline_model
+                )
+                factory_kwargs["draft_weight_adapters"] = (
+                    draft_arch.weight_adapters
+                )
+
+            pipeline_factory = cast(
+                Callable[[], PipelineTypes],
+                functools.partial(  # type: ignore
+                    pipeline_class, **factory_kwargs
+                ),
+            )
+
+            if tokenizer.eos is None:
+                raise ValueError(
+                    "tokenizer.eos value is None, tokenizer configuration is incomplete."
+                )
+
+            return tokenizer, pipeline_factory
+        else:
+            factory_kwargs = {
+                "pipeline_config": pipeline_config,
+                "diffusion_pipeline": arch.pipeline_model,
+            }
+            pipeline_factory = cast(
+                Callable[[], PipelineTypes],
+                functools.partial(  # type: ignore
+                    pipeline_class, **factory_kwargs
+                ),
+            )
+            return None, pipeline_factory
 
     def retrieve_context_type(
         self, pipeline_config: PipelineConfig

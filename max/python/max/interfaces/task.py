@@ -58,6 +58,8 @@ class PipelineTask(str, Enum):
     """Task for generating audio."""
     SPEECH_TOKEN_GENERATION = "speech_token_generation"
     """Task for generating speech tokens."""
+    IMAGE_GENERATION = "image_generation"
+    """Task for generating images."""
 
     @property
     def output_type(
