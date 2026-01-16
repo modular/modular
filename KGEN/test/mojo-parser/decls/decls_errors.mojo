@@ -274,17 +274,13 @@ fn first_and_rest[T: __TypeOfAllTypes, *Ts: AnyType](*values: *Ts):
 
 
 fn unresolvedPackCall[*t : AnyType](var *args: *t):
-  # FIXME: need a better error message :)
-  # expected-error @below {{invalid call to 'examplePack': failed to infer parameter 'Ts'}}
+  # expected-error @below {{assigning 0 operands to an unresolvable variadic pack argument}}
   var _ = examplePack[*t]()
 
 fn badPackCalls(value: Int):
-  # FIXME: fix error message regression, we need to move variadic pack diagnose into ParamInf.
-  # e_xpected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 1 positional operand, but 2 were specified}}
-
-  # expected-error @+1 {{invalid call to 'examplePack': failed to infer parameter 'Ts'}}
+  # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 1 positional operand, but 2 were specified}}
   examplePack[Int](1, 2)
-  # expected-error @+1 {{invalid call to 'examplePack': failed to infer parameter 'Ts'}}
+  # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 2 positional operands, but 1 was specified}}
   examplePack[Int, FloatDyn](1)
   # expected-error-re @below {{invalid call to 'examplePack': value passed to 'args' cannot be converted from '__mlir_type.index' to 'FloatDyn'}}
   examplePack[Int, FloatDyn](1, Int(2)._mlir_value)

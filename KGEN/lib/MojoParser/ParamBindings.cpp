@@ -231,13 +231,6 @@ ParamBindings::verifyBindingsImpl(const CallOperands &origOperands,
           {}};
 }
 
-std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
-ParamBindings::verifyBindings(LITGeneratorType sig, ParamInf &inference) const {
-  return verifyBindingsImpl(parameters, sig.getInputParamTypes(),
-                            sig.getMetadata(), inference,
-                            /*partial=*/false);
-}
-
 ParameterExprArrayAttr
 ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
                                  PogListAttr paramList, bool partial) const {

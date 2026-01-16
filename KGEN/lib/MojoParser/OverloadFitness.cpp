@@ -316,52 +316,6 @@ MojoInflightDiag DiagEmitter::badImplicitConversion(ASTType fromType,
 // OverloadFitness
 //===----------------------------------------------------------------------===//
 
-/// Calculate the minimum required and maximum allowed number of positional
-/// operands for a signature, assuming that the signature has a variadic pack;
-static std::optional<std::pair<size_t, size_t>>
-calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature) {
-  // This function heavily assumes that a signature has at most
-  // one pack variadic argument and that variadics are always the last
-  // positional args.
-  size_t numPosArgs = countNumPositional(signature.getArgListAttrs());
-
-  // We don't require any positional operands (because this function does not
-  // check for passing kinds).
-  if (!numPosArgs)
-    return std::make_pair(0, numPosArgs);
-
-  // If we have a variadic argument, it will consume all positional operands,
-  // but it does not require any.
-  size_t lastPosIdx = numPosArgs - 1;
-  if (signature.isPosVarArg(lastPosIdx))
-    return std::make_pair(0, std::numeric_limits<size_t>::max());
-
-  // If we have a non-empty variadic pack argument, we do require a certain
-  // number of positional operands (since the value of positional packs cannot
-  // be provided by keyword operands).
-  // NOTE: in this case, it doesn't matter if there are preceding positional
-  // arguments with default values: the pack cannot have a default value and
-  // _must_ be provided positional operands explicitly, and therefore the
-  // preceding defaults won't be used anyway.
-  if (ASTType variadicPackType = signature.getIfVariadicPack(lastPosIdx)) {
-    VariadicAttr packed = // See if resolved.
-        sugarDynCast<VariadicAttr>(variadicPackType.getVariadicPackTypeList());
-
-    // The caller should know the concrete type list unless we binded the pack
-    // directly as a parameter.  This is an unpack like situation.
-    // TODO: This happens in error cases and needs to be re-evaluated.
-    if (!packed)
-      return std::nullopt;
-
-    // NOTE: we adjust the number of user declared pos args since that
-    // includes the pack itself (hence the "-1").
-    size_t packSize = packed.getValues().size();
-    return std::make_pair(numPosArgs - 1 + packSize, numPosArgs - 1 + packSize);
-  }
-
-  return std::make_pair(0, numPosArgs);
-}
-
 /// Check the expected type against the provided operand. This identifies any
 /// problems with the operand type.
 std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
@@ -772,30 +726,17 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   //  }
   if (failed(inference.inferForCall(signature, operands, variadicKwOperands,
                                     returnsSelf, hasCTADParams))) {
-    // FIXME: Unfortunately, `inferFailed` does not imply that there is an
-    // failure reported in the `inferenceDiags` (understand why!). Besides, we
-    // still have to call `verifyBindings` because mojo diagnostic will be
-    // filled in `ParamBinding`. This is WRONG and need to be fixed after fully
-    // migration. For now, simply erase every inferred value if inference failed
-    // to make it behave the same as before (we probably need to move error
-    // diagnose into ParamInfState or as a separate util?).
     if (diag)
       return std::move(*diag);
-    if (!inference.unprovableConstraints.empty())
-      return std::move(inference.unprovableConstraints);
-
-    for (size_t i = 0, e = signature.getInputParamTypes().size(); i < e; i++)
-      inference.evaluator.overwriteIndexBinding(i, nullptr);
+    // Then there must be unprovable constraints.
+    assert(!inference.unprovableConstraints.empty());
+    return std::move(inference.unprovableConstraints);
   }
 
-  auto [newBindings, bindingFitness] =
-      callable.paramBindings.verifyBindings(signature, inference);
-
-  // If there is an error, we just forward the diagnostics.
-  if (diag)
-    return std::move(*diag);
-  if (!bindingFitness.unprovableConstraints.empty())
-    return std::move(bindingFitness.unprovableConstraints);
+  auto newBindings = ParameterExprArrayAttr::get(
+      signature.getContext(), inference.evaluator.getIndexBindings());
+  assert(inference.unprovableConstraints.empty() &&
+         "expect no unprovable constraints on a successful inference.");
   assert(newBindings && "expected new bindings when no diagnostic was emitted");
 
   // If anything was bound, apply it to the signature so the expected argument
@@ -812,22 +753,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   for (Type outputType : signature.getResults())
     if (!ASTType(outputType).isRegisterPassable(callLoc, shared))
       return emitDiagFor.resultGenericMemType(outputType);
-
-  // Binding the parameters would determine the type of pack varargs. Given
-  // this, we need to check again if we have missing or too many arguments.
-
-  std::optional<std::pair<size_t, size_t>> posNumBoundOr =
-      calculateRequiredPosOperandsForPacks(signature);
-  // This means that we can not determine a concrete number of packed
-  // arguments, this is always an error.
-  if (!posNumBoundOr)
-    return emitDiagFor.unresolvedPackCount(numPosOperands);
-
-  auto [minPosOperands, maxPosOperands] = *posNumBoundOr;
-  if (numPosOperands < minPosOperands || maxPosOperands < numPosOperands) {
-    return emitDiagFor.wrongArgCountWithPack(minPosOperands, maxPosOperands,
-                                             numPosOperands);
-  }
 
   // As we walk through the values provided as part of the argument list, we
   // match them up against arguments expected by the signature of the callee,
