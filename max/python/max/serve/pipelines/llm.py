@@ -58,8 +58,18 @@ OutputType = TypeVar("OutputType", bound=PipelineOutput)
 
 @dataclass(frozen=True)
 class TokenGeneratorOutput:
+    """Output from token generation - can contain batched tokens.
+
+    When yielded from next_token_batch(), contains combined decoded text from
+    all tokens in a single scheduler response. The batch size equals
+    len(response.tokens) from the model worker.
+    """
+
     status: GenerationStatus
-    decoded_token: str | None = None
+    # Combined decoded text from all tokens in this batch
+    decoded_tokens: str | None = None
+    # Number of tokens in this batch (1 for single token, N for batch)
+    token_count: int = 1
     token_log_probabilities: list[float] | None = None
     top_log_probabilities: list[dict[str, float]] | None = None
     prompt_token_count: int | None = None
@@ -161,10 +171,17 @@ class TokenGeneratorPipeline(
 
         return (token_log_probabilities, top_log_probabilities)
 
-    async def next_token(
+    async def next_token_batch(
         self, request: TextGenerationRequest
     ) -> AsyncGenerator[TokenGeneratorOutput, None]:
-        """Generates and streams tokens for the provided request."""
+        """Generates and streams token batches for the provided request.
+
+        Yields batches of tokens aligned with scheduler responses. Each batch
+        contains all tokens from a single model worker response (size depends
+        on max_num_steps config). Benefits:
+        - Single tokenizer.decode() call per batch instead of per token
+        - Callers can amortize Pydantic/SSE overhead across the batch
+        """
         itl = StopWatch()
         total_sw = StopWatch()
         self.logger.debug(
@@ -175,11 +192,10 @@ class TokenGeneratorPipeline(
 
         # Always skip special tokens in decoded output
         # (EOS tokens like <|im_end|> should not appear in the text response)
-        # This applies to both regular generation and tool use
         skip_special_tokens = True
 
-        # Track whether we've yielded the first token (for TTFT metric)
-        first_token_yielded = False
+        # Track whether we've yielded the first batch (for TTFT metric)
+        first_batch_yielded = False
 
         try:
             with record_ms(METRICS.input_time):
@@ -191,6 +207,7 @@ class TokenGeneratorPipeline(
                 # stop detector is stateful, so new it up here for
                 # use in the response stream
                 stop_detector = StopDetector(stop=request.sampling_params.stop)
+                has_stop_sequences = len(stop_detector.stop) > 0
 
                 async for response in self.engine_queue.stream(
                     context.request_id, context
@@ -198,73 +215,68 @@ class TokenGeneratorPipeline(
                     assert isinstance(response, TextGenerationOutput)
 
                     if len(response.tokens) == 0:
-                        output = TokenGeneratorOutput(
-                            status=response.final_status
+                        yield TokenGeneratorOutput(
+                            status=response.final_status,
+                            token_count=0,
                         )
-                        yield output
+                        continue
 
-                    for i, token in enumerate(response.tokens):
-                        # We intentionally do not use `with Trace(...)` to minimize
-                        # nesting in code.
-                        # Additionally, using a parent span and pushing/popping causes
-                        # the nsys trace to be overly noisy since this is an async loop.
-                        with Tracer("tokenizer.decode") as tracer:
-                            decoded_token = await self.tokenizer.decode(
-                                token, skip_special_tokens=skip_special_tokens
-                            )
+                    # Batch decode all tokens at once - single decode call
+                    with Tracer("tokenizer.decode_batch"):
+                        decoded_tokens = await self.tokenizer.decode(
+                            np.array(response.tokens),
+                            skip_special_tokens=skip_special_tokens,
+                        )
 
-                        # Detect custom stop phrases
-                        stop_sequence_match = None
-                        if len(stop_detector.stop) > 0:
-                            with Tracer("stop_detector.step") as tracer:
-                                if stop_sequence_match := stop_detector.step(
-                                    decoded_token
-                                ):
-                                    # Tell the scheduler to stop generating this request
-                                    self.engine_queue.cancel_queue.put_nowait(
-                                        [request.request_id]
-                                    )
+                    # Check for stop sequences if configured
+                    stop_sequence_match = None
+                    if has_stop_sequences:
+                        with Tracer("stop_detector.step"):
+                            if stop_sequence_match := stop_detector.step(
+                                decoded_tokens
+                            ):
+                                self.engine_queue.cancel_queue.put_nowait(
+                                    [request.request_id]
+                                )
+                                logger.debug(
+                                    f"Cancelling {request.request_id} because stop "
+                                    f"sequence ({stop_sequence_match}) detected"
+                                )
 
-                                    logger.debug(
-                                        f"Cancelling {request.request_id} because stop sequence ({stop_sequence_match}) detected in {stop_detector.continuation_tail}"
-                                    )
-
-                        token_log_probabilities = None
-                        top_log_probabilities = None
-                        if response.log_probabilities:
-                            log_prob = response.log_probabilities[i]
-                            with Tracer("collect_log_probs") as tracer:
+                    # Collect log probabilities if present (still per-token)
+                    all_token_log_probs = None
+                    all_top_log_probs = None
+                    if response.log_probabilities:
+                        all_token_log_probs = []
+                        all_top_log_probs = []
+                        for log_prob in response.log_probabilities:
+                            with Tracer("collect_log_probs"):
                                 (
-                                    token_log_probabilities,
-                                    top_log_probabilities,
+                                    token_probs,
+                                    top_probs,
                                 ) = await self._collect_log_probs(
                                     log_prob, skip_special_tokens
                                 )
+                                all_token_log_probs.extend(token_probs)
+                                all_top_log_probs.extend(top_probs)
 
-                        # Take the final status if last token.
-                        # For all intermediate tokens assume Active.
-                        if i == len(response.tokens) - 1:
-                            status = response.final_status
-                        else:
-                            status = GenerationStatus.ACTIVE
+                    # Record metrics - one TTFT/ITL per batch
+                    if not first_batch_yielded:
+                        METRICS.ttft(itl.elapsed_ms)
+                        first_batch_yielded = True
+                    else:
+                        METRICS.itl(itl.elapsed_ms)
+                    itl.reset()
 
-                        output = TokenGeneratorOutput(
-                            decoded_token=decoded_token,
-                            token_log_probabilities=token_log_probabilities,
-                            top_log_probabilities=top_log_probabilities,
-                            prompt_token_count=len(context.tokens),
-                            stop_sequence=stop_sequence_match,
-                            status=status,
-                        )
-
-                        if not first_token_yielded:
-                            METRICS.ttft(itl.elapsed_ms)
-                            first_token_yielded = True
-                        else:
-                            METRICS.itl(itl.elapsed_ms)
-                        itl.reset()
-
-                        yield output
+                    yield TokenGeneratorOutput(
+                        status=response.final_status,
+                        decoded_tokens=decoded_tokens,
+                        token_count=len(response.tokens),
+                        token_log_probabilities=all_token_log_probs,
+                        top_log_probabilities=all_top_log_probs,
+                        prompt_token_count=len(context.tokens),
+                        stop_sequence=stop_sequence_match,
+                    )
         finally:
             if self.debug_logging:
                 self.logger.debug(
@@ -276,8 +288,8 @@ class TokenGeneratorPipeline(
     async def all_tokens(
         self, request: TextGenerationRequest
     ) -> list[TokenGeneratorOutput]:
-        """Generates all tokens for the provided request."""
-        return [token async for token in self.next_token(request)]
+        """Generates all token batches for the provided request."""
+        return [batch async for batch in self.next_token_batch(request)]
 
     async def encode(
         self, request: TextGenerationRequest

@@ -249,10 +249,12 @@ async def _async_worker(
                 )
 
                 # Generate this request until complete
-                tokens = await pipeline.all_tokens(gen_request)
+                batches = await pipeline.all_tokens(gen_request)
                 return "".join(
-                    t.decoded_token if t.decoded_token is not None else ""
-                    for t in tokens
+                    batch.decoded_tokens
+                    if batch.decoded_tokens is not None
+                    else ""
+                    for batch in batches
                 )
 
             responses = await _async_map(

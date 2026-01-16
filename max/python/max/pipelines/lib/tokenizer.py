@@ -389,10 +389,15 @@ class TextTokenizer(
         # https://github.com/huggingface/transformers/issues/31643
         # https://github.com/Lightning-AI/litgpt/pull/1559
         if self._enable_llama_whitespace_fix and encoded.size == 1:
-            return self._decode_with_llama_whitespace_fix(encoded, **kwargs)
+            return await self._decode_with_llama_whitespace_fix(
+                encoded, **kwargs
+            )
+
+        def _decode_fn() -> str:
+            return self.delegate.decode(encoded, **kwargs)
 
         try:
-            return self.delegate.decode(encoded, **kwargs)
+            return await run_with_default_executor(_decode_fn)
         except OverflowError as e:
             error_msg = _handle_decode_overflow(encoded, len(self.delegate))
             raise OverflowError(error_msg) from e
@@ -508,7 +513,7 @@ class TextTokenizer(
         dummy_token_decoded = self.delegate.decode([dummy_token_id])
         return dummy_token_id, len(dummy_token_decoded)
 
-    def _decode_with_llama_whitespace_fix(
+    async def _decode_with_llama_whitespace_fix(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
         if encoded.shape == ():
@@ -516,10 +521,16 @@ class TextTokenizer(
             # if the array is actually a scalar.  Reshape to a 1-length rank-1
             # array in this case.  See MODELS-467 for symptom.
             encoded = encoded.reshape((1,))
-        decoded = self.delegate.decode(
-            np.insert(encoded, 0, self._llama_whitespace_fix_dummy_token_id),
-            **kwargs,
-        )
+
+        def _decode_fn() -> str:
+            return self.delegate.decode(
+                np.insert(
+                    encoded, 0, self._llama_whitespace_fix_dummy_token_id
+                ),
+                **kwargs,
+            )
+
+        decoded = await run_with_default_executor(_decode_fn)
         return decoded[self._llama_whitespace_fix_dummy_token_len :]
 
     async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
@@ -667,8 +678,12 @@ class TextAndVisionTokenizer(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
         """Transformer a provided encoded token array, back into readable text."""
-        try:
+
+        def _decode_fn() -> str:
             return self.delegate.decode(encoded, **kwargs)
+
+        try:
+            return await run_with_default_executor(_decode_fn)
         except OverflowError as e:
             error_msg = _handle_decode_overflow(encoded, len(self.delegate))
             raise OverflowError(error_msg) from e

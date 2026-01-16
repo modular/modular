@@ -219,15 +219,15 @@ async def test_llm_new_context_value_error_stream(
 
 
 @pytest.mark.asyncio
-async def test_ttft_recorded_once_per_request() -> None:
-    """Test that TTFT is recorded exactly once per request, not per chunk."""
+async def test_ttft_recorded_once_per_batch() -> None:
+    """Test that TTFT is recorded exactly once per request, with ITL per batch."""
     from max.serve.pipelines.llm import TokenGeneratorPipeline
 
     # Mock METRICS - use MagicMock for context managers (input_time, output_time)
     mock_metrics = MagicMock()
 
     # Create 3 chunks with 2, 3, 2 tokens = 7 total
-    # Expect: 1 TTFT (first token), 6 ITLs (rest)
+    # Expect: 1 TTFT (first batch), 2 ITLs (remaining 2 batches)
     test_request_id = RequestID(value="test-request")
     chunks = [
         TextGenerationOutput(
@@ -268,19 +268,33 @@ async def test_ttft_recorded_once_per_request() -> None:
     # Create pipeline mock - Mock() auto-generates nested attributes
     pipeline = Mock()
     pipeline.tokenizer.new_context = AsyncMock(return_value=mock_context)
-    pipeline.tokenizer.decode = AsyncMock(return_value="token")
+    # Mock decode to return combined tokens text
+    pipeline.tokenizer.decode = AsyncMock(return_value="batch_text")
     pipeline.engine_queue.stream = mock_stream
     pipeline.debug_logging = False
 
-    # Patch METRICS and call the real next_token method.
+    # Patch METRICS and call the real next_token_batch method.
     # Binding lets us test real method logic with our mock pipeline.
     with patch("max.serve.pipelines.llm.METRICS", mock_metrics):
-        bound_method = TokenGeneratorPipeline.next_token.__get__(
+        bound_method = TokenGeneratorPipeline.next_token_batch.__get__(
             pipeline, type(pipeline)
         )
-        tokens_yielded = sum([1 async for _ in bound_method(mock_request)])
+        batches = [batch async for batch in bound_method(mock_request)]
 
-    # Verify TTFT called exactly once, ITL called for remaining 6 tokens
+    # Verify TTFT called exactly once, ITL called for remaining 2 batches
     assert mock_metrics.ttft.call_count == 1
-    assert mock_metrics.itl.call_count == 6
-    assert tokens_yielded == 7
+    assert mock_metrics.itl.call_count == 2
+    assert len(batches) == 3
+
+    # Verify token counts are preserved
+    total_tokens = sum(batch.token_count for batch in batches)
+    assert total_tokens == 7
+
+    # Verify each batch has the expected token count
+    assert batches[0].token_count == 2
+    assert batches[1].token_count == 3
+    assert batches[2].token_count == 2
+
+    # Verify decoded_tokens is set for each batch
+    for batch in batches:
+        assert batch.decoded_tokens == "batch_text"

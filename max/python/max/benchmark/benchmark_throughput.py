@@ -319,11 +319,10 @@ def print_results(
         if isinstance(outputs, EmbeddingsGenerationOutput):
             output_text = str(outputs.embeddings)
         else:
-            output_tokens = [
-                generated_token.decoded_token for generated_token in outputs
-            ]
             output_text = "".join(
-                token for token in output_tokens if token is not None
+                batch.decoded_tokens
+                for batch in outputs
+                if batch.decoded_tokens is not None
             )
         print(f'task#{i}: {{"{requests[int(i)].prompt}", "{output_text}"}}')
 
