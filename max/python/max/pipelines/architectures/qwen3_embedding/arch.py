@@ -36,9 +36,6 @@ qwen3_embedding_arch = SupportedArchitecture(
     supported_encodings={
         SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q4_0: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q6_k: [KVCacheStrategy.PAGED],
     },
     pipeline_model=Qwen3EmbeddingPipelineModel,
     tokenizer=TextTokenizer,
