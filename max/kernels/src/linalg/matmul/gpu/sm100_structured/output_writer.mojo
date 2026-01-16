@@ -256,8 +256,8 @@ struct TileWriter[
         var epilogue_applier = EpilogueApplierType(
             UInt32(warp_id), UInt32(lane)
         )
-        var c_row = UInt32(c_coord[0] * UInt(Self.BM))
-        var c_col = UInt32(c_coord[1] * UInt(Self.MMA_N))
+        var c_row = UInt32(c_coord[0] * UInt32(Self.BM))
+        var c_col = UInt32(c_coord[1] * UInt32(Self.MMA_N))
 
         var upper_frag_casted: SIMD[Self.epilogue_dtype, Self.rep_frag_size]
         var lower_frag_casted: SIMD[Self.epilogue_dtype, Self.rep_frag_size]

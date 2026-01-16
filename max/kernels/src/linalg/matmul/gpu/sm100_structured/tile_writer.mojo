@@ -278,8 +278,10 @@ struct TMAStoreCoords[
         self.elect_one_warp = cg2_elect if Self.cta_group == 2 else cg1_elect
 
         # N coordinate
-        var n_base = c_coord[1] * UInt(Self.MMA_N) + UInt(Self.stage_n_offset)
-        var n_mma128 = n_base + UInt(Self.BN * Int(warp_id // 2))
+        var n_base = c_coord[1] * UInt32(Self.MMA_N) + UInt32(
+            Self.stage_n_offset
+        )
+        var n_mma128 = n_base + UInt32(Self.BN * Int(warp_id // 2))
         var cg2_n = n_base if Self.MMA_M == 256 else n_mma128
         self.coord_n = UInt(cg2_n if Self.cta_group == 2 else n_base)
 
@@ -1285,8 +1287,8 @@ fn shared_memory_epilogue_transpose[
                     + swizzle(cj * swizzle_dim + ck)
                     + ci * swizzle_dim * Int(stageN)
                 )
-                var row = local_i + gmem_col
-                var col = local_j + gmem_row
+                var row = local_i + UInt32(gmem_col)
+                var col = local_j + UInt32(gmem_row)
                 if row < Int(M) and col < Int(N):
                     var val = ptr.load[width=simd_size, alignment=alignment]()
                     ptr.store[width=simd_size, alignment=alignment](
@@ -1350,8 +1352,8 @@ fn shared_memory_epilogue_transpose[
 
                     # Undo swizzle to get logical value
                     var ptr = c_smem.ptr + swizzle(offset)
-                    var row = local_i + gmem_col
-                    var col = local_j + gmem_row
+                    var row = local_i + UInt32(gmem_col)
+                    var col = local_j + UInt32(gmem_row)
                     if row < Int(M) and col < Int(N):
                         var val = ptr.load[
                             width=simd_size, alignment=alignment
@@ -1482,10 +1484,12 @@ fn shared_memory_epilogue[
             var col_offset_lower = lower_coord[1][0].get_int()
 
             local_upper_col = (
-                section_offset_upper * (num_stages * stageN) + col_offset_upper
+                section_offset_upper * Int64(num_stages * stageN)
+                + col_offset_upper
             )
             local_lower_col = (
-                section_offset_lower * (num_stages * stageN) + col_offset_lower
+                section_offset_lower * Int64(num_stages * stageN)
+                + col_offset_lower
             )
 
         else:
@@ -1505,10 +1509,10 @@ fn shared_memory_epilogue[
             local_lower_col = offset_lower % Int(shared_n)
 
         # Convert local SMEM coords to global memory coords
-        var gmem_upper_row = local_upper_row + c_row
-        var gmem_upper_col = local_upper_col + gmem_col
-        var gmem_lower_row = local_lower_row + c_row
-        var gmem_lower_col = local_lower_col + gmem_col
+        var gmem_upper_row = local_upper_row + Int64(c_row)
+        var gmem_upper_col = local_upper_col + Int64(gmem_col)
+        var gmem_lower_row = local_lower_row + Int64(c_row)
+        var gmem_lower_col = local_lower_col + Int64(gmem_col)
 
         # Apply epilogue if within bounds
         if gmem_upper_row < Int(M) and gmem_upper_col < Int(N):

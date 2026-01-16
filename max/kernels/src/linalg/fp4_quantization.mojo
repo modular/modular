@@ -942,16 +942,16 @@ fn quantize_dynamic_scaled_async_kernel[
                 StaticTuple[UInt32, 4](
                     0,
                     0,
-                    UInt(block_idx.y),
-                    UInt(block_idx.x),
+                    UInt32(block_idx.y),
+                    UInt32(block_idx.x),
                 ),
             )
 
             output_tma_op.async_store(
                 output_smem,
                 StaticTuple[UInt32, 2](
-                    UInt(block_idx.y * (SF_K_GROUP_SIZE) // 2),
-                    UInt(block_idx.x * UInt(SF_MN_GROUP_SIZE)),
+                    UInt32(block_idx.y * (SF_K_GROUP_SIZE) // 2),
+                    UInt32(block_idx.x) * UInt32(SF_MN_GROUP_SIZE),
                 ),
             )
             output_tma_op.commit_group()
