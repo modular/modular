@@ -284,7 +284,7 @@ fn consumer_main_loop[
     mma_shape: IndexList[3],
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](
     tmem_addr: Int,
     a_smem_iter: SMemTileIter[a_type, a_smem_layout],

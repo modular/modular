@@ -386,17 +386,17 @@ fn multi_stage_store_C[
     c_layout: Layout,
     c_tensor_layout: Layout,
     c_desc_layout: Layout,
-    num_accum_pipeline_stages: UInt,
+    num_accum_pipeline_stages: Int,
     /,
     *,
     accum_type: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
-    stage_stride_cols: UInt,
+    stage_stride_cols: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
-    num_output_warps: UInt = 4,
-    max_tmem_cols: UInt = 512,
+    num_output_warps: Int = 4,
+    max_tmem_cols: Int = 512,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     transpose_c: Bool = False,
 ](
@@ -409,9 +409,7 @@ fn multi_stage_store_C[
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
-    accum_pipeline_consumer_state: PipelineState[
-        Int(num_accum_pipeline_stages)
-    ],
+    accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
@@ -534,7 +532,7 @@ fn multi_stage_store_C[
             )
 
             # Guard the write to shared memory is done.
-            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
         else:
             var c_smem_warp_tile = c_smem_tile.tile[32, stageN](Int(warp_id), 0)
@@ -553,7 +551,7 @@ fn multi_stage_store_C[
             )
 
             # Guard the write to shared memory is done.
-            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
         var lane = lane_id()
 
@@ -646,18 +644,18 @@ fn multi_stage_store_C[
             comptime logical_c_layout = Layout.row_major(
                 chunk_num, stageN, vec_chunkM
             )
-            comptime thread_num = num_output_warps * UInt(WARP_SIZE)
-            __comptime_assert logical_c_layout.size() % Int(thread_num) == 0, (
+            comptime thread_num = num_output_warps * WARP_SIZE
+            __comptime_assert logical_c_layout.size() % thread_num == 0, (
                 "logical_c_layout.size() must be a multiple of thread_num. Got "
                 + String(logical_c_layout.size())
                 + "."
             )
-            comptime value_shape = logical_c_layout.size() // Int(thread_num)
+            comptime value_shape = logical_c_layout.size() // thread_num
             comptime cM = c.shape[1]()
 
             @parameter
             for v in range(value_shape):
-                comptime thread_offset = v * Int(thread_num)
+                comptime thread_offset = v * thread_num
                 var thread_index = UInt32(thread_idx.x) + UInt32(thread_offset)
                 # idx2crd but RuntimeTuple.idx2crd is too hard to use
                 var vec_chunkM_idx = thread_index % vec_chunkM
@@ -691,7 +689,7 @@ fn multi_stage_store_C[
         @parameter
         if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
-            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
 fn zero_output[
@@ -1143,7 +1141,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 accum_type=accum_type,
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,
-                stage_stride_cols = UInt(stage_stride_cols),
+                stage_stride_cols = Int(stage_stride_cols),
                 c_swizzle=c_swizzle,
                 cta_group=cta_group,
                 num_output_warps=num_output_warps,

@@ -113,21 +113,17 @@ from linalg.fp4_utils import (
 from linalg.matmul.gpu.sm100.matmul import (
     WarpRole,
     RLayout32Bits,
-    f32_frag_to_smem,
     stsm_helper,
     shared_memory_epilogue_transpose,
     shared_memory_epilogue,
-    _compute_register_lambda_fn,
     register_epilogue,
-    copy_accum_to_gmem,
-    multi_stage_store_C,
     accum_arrive,
 )
 from gpu.mma_sm100 import UMMAKind
 
 
 @always_inline
-fn _copy_accum_to_gmem[
+fn copy_accum_to_gmem[
     c_type: DType,
     c_layout: Layout,
     c_smem_layout: Layout,
@@ -142,7 +138,7 @@ fn _copy_accum_to_gmem[
     epilogue_dtype: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
-    num_output_warps: UInt,
+    num_output_warps: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
@@ -247,17 +243,17 @@ fn _copy_accum_to_gmem[
             @parameter
             if register_based_epilogue:
                 register_epilogue[
-                    UInt(MMA_M),
+                    MMA_M,
                     data_paths,
-                    UInt(num_stages),
+                    num_stages,
                     bits,
-                    UInt(stage),
-                    UInt(stageN),
+                    stage,
+                    stageN,
                     elementwise_compute_lambda_fn.value(),
-                    UInt(num_output_warps),
+                    num_output_warps,
                     epilogue_dtype,
-                    UInt(upper_frag_casted.size),
-                    UInt(repeat),
+                    upper_frag_casted.size,
+                    repeat,
                     transpose_c,
                     cta_group=cta_group,
                     is_lower_frag_required=is_lower_frag_required,
@@ -320,7 +316,7 @@ fn _copy_accum_to_gmem[
                 )
 
                 # Guard the write to shared memory is done.
-                named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+                named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
                 @parameter
                 if elementwise_compute_lambda_fn:
@@ -376,7 +372,7 @@ fn _copy_accum_to_gmem[
                 )
 
                 # Guard the write to shared memory is done.
-                named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+                named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
                 @parameter
                 if elementwise_compute_lambda_fn:
@@ -430,7 +426,7 @@ fn _copy_accum_to_gmem[
                 )
 
             # Guard the write to shared memory is done.
-            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
             @parameter
             if elementwise_compute_lambda_fn:
@@ -637,16 +633,16 @@ fn _copy_accum_to_gmem[
         @parameter
         if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
-            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
 @always_inline
-fn _multi_stage_store_C[
+fn multi_stage_store_C[
     c_type: DType,
     c_smem_layout: Layout,
     c_layout: Layout,
     c_desc_layout: Layout,
-    num_accum_pipeline_stages: UInt,
+    num_accum_pipeline_stages: Int,
     c_tensor_layout: Layout,
     /,
     *,
@@ -654,11 +650,11 @@ fn _multi_stage_store_C[
     accum_type: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
-    stage_stride_cols: UInt,
+    stage_stride_cols: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
-    num_output_warps: UInt = 4,
-    max_tmem_cols: UInt = 512,
+    num_output_warps: Int = 4,
+    max_tmem_cols: Int = 512,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
@@ -675,9 +671,7 @@ fn _multi_stage_store_C[
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
-    mma_output_pipeline: ProducerConsumerPipeline[
-        Int(num_accum_pipeline_stages)
-    ],
+    mma_output_pipeline: ProducerConsumerPipeline[num_accum_pipeline_stages],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt32, UInt32],
     elect_one_warp: Bool,
@@ -745,7 +739,7 @@ fn _multi_stage_store_C[
 
     comptime is_lower_frag_required = not (cta_group == 1 and BM == 64)
 
-    _copy_accum_to_gmem[
+    copy_accum_to_gmem[
         repeat=rep,
         accum_type=accum_type,
         cta_group=cta_group,
@@ -1057,7 +1051,7 @@ fn consumer_main_loop[
     SFB_NUM_COLS: Int,
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](
     tmem_addr: UInt32,
     sfa_tmem: UInt32,
@@ -1120,7 +1114,7 @@ fn consumer_main_loop[
 
     # Compose TMEM address: accum stage encoded in column field with stride in columns.
     if elect_one_sync():
-        for j in range(k_group_size):
+        for j in range(UInt32(k_group_size)):
             var a_smem_tile = a_smem_iter.next(stage * k_group_size + j)[]
             var b_smem_tile = b_smem_iter.next(stage * k_group_size + j)[]
             var sfa_smem_tile = sfa_smem_iter.next(stage * k_group_size + j)[]
@@ -2001,7 +1995,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                             SFB_NUM_COLS=SFB_NUM_COLS,
                             cta_group = config.cta_group,
                             cluster_shape = config.cluster_shape,
-                            k_group_size = config.k_group_size,
+                            k_group_size = Int(config.k_group_size),
                         ](
                             tmem_offset,
                             sfa_tmem,
@@ -2062,12 +2056,12 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             with MatmulProfilerType[3](workspace, tile_idx):
                 # WAIT FOR MMA TO FINISH AND STORE RESULT
                 # scheduler fetch next work
-                _multi_stage_store_C[
+                multi_stage_store_C[
                     input_type=a_type,
                     accum_type=accum_type,
                     block_tile_shape = config.block_tile_shape,
                     mma_shape = config.mma_shape,
-                    stage_stride_cols = UInt(stage_stride_cols),
+                    stage_stride_cols=stage_stride_cols,
                     c_swizzle = config.c_swizzle,
                     cta_group = config.cta_group,
                     num_output_warps=num_output_warps,

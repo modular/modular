@@ -353,8 +353,8 @@ fn multi_stage_store_C[
     mma_shape: IndexList[3],
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
-    num_output_warps: UInt = 4,
-    max_tmem_cols: UInt = 512,
+    num_output_warps: Int = 4,
+    max_tmem_cols: Int = 512,
 ](
     c_iter: LayoutTensorIter[
         c_type,
@@ -440,7 +440,7 @@ fn multi_stage_store_C[
         )
 
         # Guard the write to shared memory is done.
-        named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+        named_barrier[num_output_warps * WARP_SIZE]()
 
         var lane = lane_id()
 
@@ -467,7 +467,7 @@ fn multi_stage_store_C[
         if stage > 0 and stage < num_stages - 1:
             # Guard the tma read from shared memory is done.
             # E.g. stage = 1, this guards the TMA store using buffer 0 is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+            named_barrier[num_output_warps * WARP_SIZE]()
 
     if elect_one_warp:
         tcgen05_release_allocation_lock[cta_group]()

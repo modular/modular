@@ -342,7 +342,7 @@ fn consumer_main_loop[
     mma_shape: IndexList[3],
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](
     tmem_addr: UInt32,
     a_smem_iter: LayoutTensorIter[
@@ -383,8 +383,7 @@ fn consumer_main_loop[
 
     # Compose TMEM address: accum stage encoded in column field with stride in columns.
     if elect_one_sync():
-        for jj in range(k_group_size):
-            var j = UInt32(jj)
+        for j in range(UInt32(k_group_size)):
             var offset = stage * UInt32(k_group_size) + j
             var a_smem_tile = a_smem_iter.next(offset)[]
             var b_smem_tile = b_smem_iter.next(offset)[]
@@ -1093,15 +1092,15 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
 @always_inline
 fn _compute_register_lambda_fn[
     epilogue_dtype: DType,
-    frag_size: UInt,
-    inc: UInt,
-    offset: UInt,
+    frag_size: Int,
+    inc: Int,
+    offset: Int,
     compute_lambda_fn: elementwise_compute_lambda_type,
     transpose_c: Bool,
 ](
     top_coord: StaticTuple[UInt32, 2],
     bottom_coord: StaticTuple[UInt32, 2],
-    mut frag: SIMD[epilogue_dtype, Int(frag_size)],
+    mut frag: SIMD[epilogue_dtype, frag_size],
     staged_c_row: UInt32,
     staged_c_col: UInt32,
 ):
@@ -1116,8 +1115,8 @@ fn _compute_register_lambda_fn[
     )
 
     # slice the fragment to get the current repeat top and bottom fragments
-    var simd_top = frag.slice[2, offset = Int(offset)]()
-    var simd_bottom = frag.slice[2, offset = Int(offset + 2)]()
+    var simd_top = frag.slice[2, offset=offset]()
+    var simd_bottom = frag.slice[2, offset = offset + 2]()
 
     # In normal case, simd_top and simd_bottom are elements on the M dimension
     # when transpose_c is true, they are on the N dimension. We change the index order
@@ -1160,31 +1159,31 @@ fn _compute_register_lambda_fn[
             )
 
     # store the results back into the fragment
-    frag[Int(offset)] = simd_top[0]
-    frag[Int(offset + 1)] = simd_top[1]
-    frag[Int(offset + 2)] = simd_bottom[0]
-    frag[Int(offset + 3)] = simd_bottom[1]
+    frag[offset] = simd_top[0]
+    frag[offset + 1] = simd_top[1]
+    frag[offset + 2] = simd_bottom[0]
+    frag[offset + 3] = simd_bottom[1]
 
 
 @always_inline
 fn register_epilogue[
-    MMA_M: UInt,
-    data_paths: UInt,
-    num_stages: UInt,
-    bits: UInt,
-    stage: UInt,
-    stageN: UInt,
+    MMA_M: Int,
+    data_paths: Int,
+    num_stages: Int,
+    bits: Int,
+    stage: Int,
+    stageN: Int,
     compute_lambda_fn: elementwise_compute_lambda_type,
-    num_output_warps: UInt,
+    num_output_warps: Int,
     epilogue_dtype: DType,
-    frag_size: UInt,
-    repeats: UInt,
+    frag_size: Int,
+    repeats: Int,
     transpose_c: Bool,
     cta_group: Int,
     is_lower_frag_required: Bool,
 ](
-    mut upper_frag_casted: SIMD[epilogue_dtype, Int(frag_size)],
-    mut lower_frag_casted: SIMD[epilogue_dtype, Int(frag_size)],
+    mut upper_frag_casted: SIMD[epilogue_dtype, frag_size],
+    mut lower_frag_casted: SIMD[epilogue_dtype, frag_size],
     c_row: UInt32,
     c_col: UInt32,
     N: UInt32,
@@ -1193,7 +1192,7 @@ fn register_epilogue[
         bits == 256 and data_paths == 16
     ), "Only 16x256b tensor memory load is supported"
 
-    comptime load_width = 2
+    comptime load_width = UInt(2)
 
     var warp_id = get_warp_id()
 
@@ -1213,12 +1212,12 @@ fn register_epilogue[
     else:
         # based on layout B (https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-b)
         staged_c_row += UInt32((warp_id % 2) * 32)
-        staged_c_col += UInt32((warp_id // 2) * num_stages * stageN)
+        staged_c_col += UInt32((warp_id // 2) * UInt(num_stages * stageN))
 
     # this is the tensor memory layout
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-matrix-fragments-shape-16256b
     # we use it to figure out the starting coordinate
-    comptime threads_per_row = stageN // repeats // load_width
+    comptime threads_per_row = UInt(stageN) // UInt(repeats) // load_width
     var top_frag_upper_coord_left = StaticTuple[UInt32, 2](
         UInt32(lane_id() // threads_per_row),
         UInt32(lane_id() % threads_per_row * load_width),
@@ -1305,7 +1304,7 @@ fn copy_accum_to_gmem[
     epilogue_dtype: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
-    num_output_warps: UInt,
+    num_output_warps: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
@@ -1408,17 +1407,17 @@ fn copy_accum_to_gmem[
             @parameter
             if register_based_epilogue:
                 register_epilogue[
-                    UInt(MMA_M),
+                    MMA_M,
                     data_paths,
-                    UInt(num_stages),
+                    num_stages,
                     bits,
-                    UInt(stage),
-                    UInt(stageN),
+                    stage,
+                    stageN,
                     elementwise_compute_lambda_fn.value(),
-                    UInt(num_output_warps),
+                    num_output_warps,
                     epilogue_dtype,
-                    UInt(upper_frag_casted.size),
-                    UInt(repeat),
+                    upper_frag_casted.size,
+                    repeat,
                     transpose_c,
                     cta_group=cta_group,
                     is_lower_frag_required=is_lower_frag_required,
@@ -1481,7 +1480,7 @@ fn copy_accum_to_gmem[
                 )
 
                 # Guard the write to shared memory is done.
-                named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+                named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
                 @parameter
                 if elementwise_compute_lambda_fn:
@@ -1537,7 +1536,7 @@ fn copy_accum_to_gmem[
                 )
 
                 # Guard the write to shared memory is done.
-                named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+                named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
                 @parameter
                 if elementwise_compute_lambda_fn:
@@ -1591,7 +1590,7 @@ fn copy_accum_to_gmem[
                 )
 
             # Guard the write to shared memory is done.
-            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
             @parameter
             if elementwise_compute_lambda_fn:
@@ -1723,7 +1722,7 @@ fn copy_accum_to_gmem[
         @parameter
         if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
-            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
 @always_inline
@@ -1733,18 +1732,18 @@ fn multi_stage_store_C_split_k[
     c_layout: Layout,
     c_desc_layout: Layout,
     reduction_layout: Layout,
-    num_accum_pipeline_stages: UInt,
+    num_accum_pipeline_stages: Int,
     /,
     *,
     input_type: DType,
     accum_type: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
-    stage_stride_cols: UInt,
+    stage_stride_cols: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
-    num_output_warps: UInt = 4,
-    max_tmem_cols: UInt = 512,
+    num_output_warps: Int = 4,
+    max_tmem_cols: Int = 512,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
@@ -1761,9 +1760,7 @@ fn multi_stage_store_C_split_k[
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    mma_output_pipeline: ProducerConsumerPipeline[
-        Int(num_accum_pipeline_stages)
-    ],
+    mma_output_pipeline: ProducerConsumerPipeline[num_accum_pipeline_stages],
     tmem_addr: UInt32,
     work_info: WorkInfoSplitK,
     elect_one_warp: Bool,
@@ -1862,18 +1859,18 @@ fn multi_stage_store_C[
     c_smem_layout: Layout,
     c_layout: Layout,
     c_desc_layout: Layout,
-    num_accum_pipeline_stages: UInt,
+    num_accum_pipeline_stages: Int,
     /,
     *,
     input_type: DType,
     accum_type: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
-    stage_stride_cols: UInt,
+    stage_stride_cols: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
-    num_output_warps: UInt = 4,
-    max_tmem_cols: UInt = 512,
+    num_output_warps: Int = 4,
+    max_tmem_cols: Int = 512,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
@@ -1888,9 +1885,7 @@ fn multi_stage_store_C[
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    mma_output_pipeline: ProducerConsumerPipeline[
-        Int(num_accum_pipeline_stages)
-    ],
+    mma_output_pipeline: ProducerConsumerPipeline[num_accum_pipeline_stages],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt32, UInt32],
     elect_one_warp: Bool,
@@ -2410,7 +2405,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                             mma_shape = config.mma_shape,
                             cta_group = config.cta_group,
                             cluster_shape = config.cluster_shape,
-                            k_group_size = config.k_group_size,
+                            k_group_size = Int(config.k_group_size),
                         ](
                             tmem_offset,
                             a_smem,
@@ -2469,7 +2464,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                     accum_type=accum_type,
                     block_tile_shape = config.block_tile_shape,
                     mma_shape = config.mma_shape,
-                    stage_stride_cols = UInt(stage_stride_cols),
+                    stage_stride_cols=stage_stride_cols,
                     c_swizzle = config.c_swizzle,
                     cta_group = config.cta_group,
                     num_output_warps=num_output_warps,
@@ -2925,7 +2920,7 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
                             mma_shape = config.mma_shape,
                             cta_group = config.cta_group,
                             cluster_shape = config.cluster_shape,
-                            k_group_size = config.k_group_size,
+                            k_group_size = Int(config.k_group_size),
                         ](
                             tmem_offset,
                             a_smem,
@@ -2981,7 +2976,7 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
                     accum_type = config.accum_type,
                     block_tile_shape = config.block_tile_shape,
                     mma_shape = config.mma_shape,
-                    stage_stride_cols = UInt(stage_stride_cols),
+                    stage_stride_cols=stage_stride_cols,
                     c_swizzle = config.c_swizzle,
                     cta_group = config.cta_group,
                     num_output_warps=num_output_warps,

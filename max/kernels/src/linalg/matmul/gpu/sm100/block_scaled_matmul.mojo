@@ -117,12 +117,9 @@ from linalg.fp4_utils import (
 )
 from .matmul import (
     WarpRole,
-    RLayout32Bits,
-    f32_frag_to_smem,
     stsm_helper,
     shared_memory_epilogue_transpose,
     shared_memory_epilogue,
-    _compute_register_lambda_fn,
     register_epilogue,
     accum_arrive,
 )
@@ -419,7 +416,7 @@ fn consumer_main_loop[
     SFB_NUM_COLS: Int,
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](
     tmem_addr: UInt32,
     sfa_tmem: UInt32,
@@ -482,8 +479,7 @@ fn consumer_main_loop[
 
     # Compose TMEM address: accum stage encoded in column field with stride in columns.
     if elect_one_sync():
-        for jj in range(k_group_size):
-            var j = UInt32(jj)
+        for j in range(UInt32(k_group_size)):
             var offset = stage * UInt32(k_group_size) + j
             var a_smem_tile = a_smem_iter.next(offset)[]
             var b_smem_tile = b_smem_iter.next(offset)[]
@@ -514,18 +510,18 @@ fn multi_stage_store_C[
     c_smem_layout: Layout,
     c_layout: Layout,
     c_desc_layout: Layout,
-    num_accum_pipeline_stages: UInt,
+    num_accum_pipeline_stages: Int,
     /,
     *,
     input_type: DType,
     accum_type: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
-    stage_stride_cols: UInt,
+    stage_stride_cols: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
-    num_output_warps: UInt = 4,
-    max_tmem_cols: UInt = 512,
+    num_output_warps: Int = 4,
+    max_tmem_cols: Int = 512,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
@@ -540,9 +536,7 @@ fn multi_stage_store_C[
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    mma_output_pipeline: ProducerConsumerPipeline[
-        Int(num_accum_pipeline_stages)
-    ],
+    mma_output_pipeline: ProducerConsumerPipeline[num_accum_pipeline_stages],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt32, UInt32, UInt32],
     elect_one_warp: Bool,
@@ -615,7 +609,7 @@ fn copy_accum_to_gmem[
     epilogue_dtype: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
-    num_output_warps: UInt,
+    num_output_warps: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
@@ -720,17 +714,17 @@ fn copy_accum_to_gmem[
             @parameter
             if register_based_epilogue:
                 register_epilogue[
-                    UInt(MMA_M),
+                    MMA_M,
                     data_paths,
-                    UInt(num_stages),
+                    num_stages,
                     bits,
-                    UInt(stage),
-                    UInt(stageN),
+                    stage,
+                    stageN,
                     elementwise_compute_lambda_fn.value(),
-                    UInt(num_output_warps),
+                    num_output_warps,
                     epilogue_dtype,
-                    UInt(upper_frag_casted.size),
-                    UInt(repeat),
+                    upper_frag_casted.size,
+                    repeat,
                     transpose_c,
                     cta_group=cta_group,
                     is_lower_frag_required=is_lower_frag_required,
@@ -793,7 +787,7 @@ fn copy_accum_to_gmem[
                 )
 
                 # Guard the write to shared memory is done.
-                named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+                named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
                 @parameter
                 if elementwise_compute_lambda_fn:
@@ -849,7 +843,7 @@ fn copy_accum_to_gmem[
                 )
 
                 # Guard the write to shared memory is done.
-                named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+                named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
                 @parameter
                 if elementwise_compute_lambda_fn:
@@ -903,7 +897,7 @@ fn copy_accum_to_gmem[
                 )
 
             # Guard the write to shared memory is done.
-            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
             @parameter
             if elementwise_compute_lambda_fn:
@@ -1041,7 +1035,7 @@ fn copy_accum_to_gmem[
         @parameter
         if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
-            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
 @parameter
@@ -1999,7 +1993,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                             SFB_NUM_COLS=SFB_NUM_COLS,
                             cta_group = config.cta_group,
                             cluster_shape = config.cluster_shape,
-                            k_group_size = config.k_group_size,
+                            k_group_size = Int(config.k_group_size),
                         ](
                             tmem_offset,
                             sfa_tmem,
@@ -2062,7 +2056,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     accum_type=accum_type,
                     block_tile_shape = config.block_tile_shape,
                     mma_shape = config.mma_shape,
-                    stage_stride_cols = UInt(stage_stride_cols),
+                    stage_stride_cols=stage_stride_cols,
                     c_swizzle = config.c_swizzle,
                     cta_group = config.cta_group,
                     num_output_warps=num_output_warps,

@@ -353,17 +353,17 @@ fn multi_stage_store_C[
     c_smem_layout: Layout,
     c_layout: Layout,
     c_desc_layout: Layout,
-    num_accum_pipeline_stages: UInt,
+    num_accum_pipeline_stages: Int,
     /,
     *,
     accum_type: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
-    stage_stride_cols: UInt,
+    stage_stride_cols: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
-    num_output_warps: UInt = 4,
-    max_tmem_cols: UInt = 512,
+    num_output_warps: Int = 4,
+    max_tmem_cols: Int = 512,
 ](
     c_iter: LayoutTensorIter[
         c_type,
@@ -373,9 +373,7 @@ fn multi_stage_store_C[
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    accum_pipeline_consumer_state: PipelineState[
-        Int(num_accum_pipeline_stages)
-    ],
+    accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
@@ -470,7 +468,7 @@ fn multi_stage_store_C[
         )
 
         # Guard the write to shared memory is done.
-        named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+        named_barrier[num_output_warps * WARP_SIZE]()
         var lane = lane_id()
         if elect_one_warp and lane == 0:
             fence_async_view_proxy()
@@ -496,7 +494,7 @@ fn multi_stage_store_C[
         if stage > 0 and stage < num_stages - 1:
             # Guard the tma read from shared memory is done.
             # E.g. stage = 1, this guards the TMA store using buffer 0 is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+            named_barrier[num_output_warps * WARP_SIZE]()
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -942,7 +940,7 @@ fn kernel_8[
                 accum_type=accum_type,
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,
-                stage_stride_cols = UInt(stage_stride_cols),
+                stage_stride_cols=stage_stride_cols,
                 c_swizzle=c_swizzle,
                 cta_group=cta_group,
                 num_output_warps=num_output_warps,
