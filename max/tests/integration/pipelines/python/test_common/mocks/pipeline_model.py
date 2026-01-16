@@ -93,7 +93,7 @@ class MockPipelineModel(PipelineModel):
         )
         self._lora_manager = (
             LoRAManager(
-                config=self.pipeline_config.lora_config,
+                config=self.pipeline_config.lora,
                 base_model_path=pipeline_config.model.model_path,
                 base_dtype=self.encoding.dtype,
                 n_heads=huggingface_config.num_attention_heads,
@@ -101,8 +101,8 @@ class MockPipelineModel(PipelineModel):
                 head_dim=huggingface_config.head_dim,
                 zmq_endpoint_base=self.pipeline_config.zmq_endpoint_base,
             )
-            if self.pipeline_config.lora_config
-            and self.pipeline_config.lora_config.enable_lora
+            if self.pipeline_config.lora
+            and self.pipeline_config.lora.enable_lora
             else None
         )
 

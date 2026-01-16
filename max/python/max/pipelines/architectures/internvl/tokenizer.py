@@ -564,7 +564,7 @@ class InternVLTokenizer(TextAndVisionTokenizer):
         vision_overrides = pipeline_config.model.vision_config_overrides
 
         self.enable_prefix_caching = (
-            pipeline_config.model.kv_cache_config.enable_prefix_caching
+            pipeline_config.model.kv_cache.enable_prefix_caching
         )
 
         # Create custom processor instead of AutoProcessor (which doesn't exist for InternVL)

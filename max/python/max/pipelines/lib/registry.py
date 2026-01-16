@@ -499,15 +499,15 @@ class PipelineRegistry:
         }
 
         # If using speculative decoding, add draft model-specific parameters
-        if pipeline_config.draft_model_config is not None:
+        if pipeline_config.draft_model is not None:
             draft_arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.draft_model_config.huggingface_weight_repo,
+                huggingface_repo=pipeline_config.draft_model.huggingface_weight_repo,
                 use_module_v3=pipeline_config.use_module_v3,
             )
             if draft_arch is None:
                 raise ValueError(
                     f"MAX-Optimized architecture not found for draft model "
-                    f"'{pipeline_config.draft_model_config.model_path}'"
+                    f"'{pipeline_config.draft_model.model_path}'"
                 )
             factory_kwargs["draft_pipeline_model"] = draft_arch.pipeline_model
             factory_kwargs["draft_weight_adapters"] = draft_arch.weight_adapters

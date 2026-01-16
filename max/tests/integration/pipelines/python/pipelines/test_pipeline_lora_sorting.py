@@ -307,8 +307,8 @@ def create_pipeline_with_lora(
 
     mock_config = MagicMock()
     mock_config.max_length = 512
-    mock_config.sampling_config.enable_structured_output = False
-    mock_config.sampling_config.enable_variable_logits = False
+    mock_config.sampling.enable_structured_output = False
+    mock_config.sampling.enable_variable_logits = False
 
     if pipeline_type == PipelineType.TEXT_GENERATION:
 

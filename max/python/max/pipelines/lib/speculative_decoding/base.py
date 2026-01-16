@@ -251,7 +251,7 @@ class SpeculativeDecodingPipelineBase(
             huggingface_config=target_config,
             encoding=self.pipeline_config.model.quantization_encoding,
             devices=self.target_devices,
-            kv_cache_config=self.pipeline_config.model.kv_cache_config,
+            kv_cache_config=self.pipeline_config.model.kv_cache,
             weights=target_weights,
             adapter=weight_adapters.get(_target_weights_format),
             return_logits=ReturnLogits.VARIABLE,
@@ -272,10 +272,8 @@ class SpeculativeDecodingPipelineBase(
         draft_session = InferenceSession(devices=self.draft_devices)
         self.pipeline_config.configure_session(draft_session)
 
-        assert self.pipeline_config.draft_model_config is not None
-        draft_config = (
-            self.pipeline_config.draft_model_config.huggingface_config
-        )
+        assert self.pipeline_config.draft_model is not None
+        draft_config = self.pipeline_config.draft_model.huggingface_config
 
         if hasattr(self.pipeline_config.model.huggingface_config, "vocab_size"):
             self.vocab_size = (
@@ -300,19 +298,17 @@ class SpeculativeDecodingPipelineBase(
             )
 
         # Retrieve Encoding, and Files for Draft Model
-        if self.pipeline_config.draft_model_config is None:
+        if self.pipeline_config.draft_model is None:
             raise ValueError(
                 "draft_model must be provided for speculative decoding"
             )
 
-        draft_hf_repo = (
-            self.pipeline_config.draft_model_config.huggingface_weight_repo
-        )
+        draft_hf_repo = self.pipeline_config.draft_model.huggingface_weight_repo
 
-        # Use the quantization_encoding from draft_model_config if provided
-        if self.pipeline_config.draft_model_config.quantization_encoding:
+        # Use the quantization_encoding from draft_model if provided
+        if self.pipeline_config.draft_model.quantization_encoding:
             draft_encoding = (
-                self.pipeline_config.draft_model_config.quantization_encoding
+                self.pipeline_config.draft_model.quantization_encoding
             )
         else:
             # Fall back to first supported encoding if not specified
@@ -326,27 +322,26 @@ class SpeculativeDecodingPipelineBase(
             )
             draft_encoding = encodings[0]
 
-        # Use already-resolved weight paths from draft_model_config
+        # Use already-resolved weight paths from draft_model
         draft_weight_paths: list[Path] = []
         if (
-            self.pipeline_config.draft_model_config.huggingface_weight_repo.repo_type
+            self.pipeline_config.draft_model.huggingface_weight_repo.repo_type
             == RepoType.online
         ):
             # Download weight files if not existent.
             draft_weight_paths = download_weight_files(
-                huggingface_model_id=self.pipeline_config.draft_model_config.model_path,
+                huggingface_model_id=self.pipeline_config.draft_model.model_path,
                 filenames=[
-                    str(x)
-                    for x in self.pipeline_config.draft_model_config.weight_path
+                    str(x) for x in self.pipeline_config.draft_model.weight_path
                 ],
-                revision=self.pipeline_config.draft_model_config.huggingface_weight_revision,
+                revision=self.pipeline_config.draft_model.huggingface_weight_revision,
                 max_workers=8,
             )
         else:
             # Make sure the weight paths are absolute paths
             draft_weight_paths = [
-                self.pipeline_config.draft_model_config.model_path / x
-                for x in self.pipeline_config.draft_model_config.weight_path
+                self.pipeline_config.draft_model.model_path / x
+                for x in self.pipeline_config.draft_model.weight_path
             ]
 
         draft_weights = load_weights(draft_weight_paths)
@@ -372,7 +367,7 @@ class SpeculativeDecodingPipelineBase(
             huggingface_config=draft_config,
             encoding=draft_encoding,
             devices=self.draft_devices,
-            kv_cache_config=self.pipeline_config.draft_model_config.kv_cache_config,
+            kv_cache_config=self.pipeline_config.draft_model.kv_cache,
             weights=draft_weights,
             adapter=actual_draft_weight_adapters.get(_draft_weights_format),
             return_logits=ReturnLogits.LAST_TOKEN,
@@ -382,7 +377,7 @@ class SpeculativeDecodingPipelineBase(
         )
 
         # Load draft sampler
-        draft_sampling_config = self.pipeline_config.sampling_config
+        draft_sampling_config = self.pipeline_config.sampling
         draft_sampling_config.enable_variable_logits = False
         self._draft_sampler = draft_session.load(
             token_sampler(

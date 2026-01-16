@@ -176,7 +176,7 @@ class FusedSamplingProcessor:
         self.presence_penalty: Tensor | None = None
         self.repetition_penalty: Tensor | None = None
 
-        if pipeline_config.sampling_config.enable_penalties:
+        if pipeline_config.sampling.enable_penalties:
             # TODO: migrate penalties to pinned memory
             self.frequency_data = [
                 _build_token_frequency_csr(context_batch, num_steps, device),
@@ -220,7 +220,7 @@ class FusedSamplingProcessor:
             context_batch,
             num_steps,
             device,
-            pipeline_config.sampling_config.enable_min_tokens,
+            pipeline_config.sampling.enable_min_tokens,
         )
 
         self.step_counter = 0

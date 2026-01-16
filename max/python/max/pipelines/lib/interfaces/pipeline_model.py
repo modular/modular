@@ -204,7 +204,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
         self._lora_manager: LoRAManager | None = (
             LoRAManager(
-                pipeline_config.lora_config,
+                pipeline_config.lora,
                 pipeline_config.model.model_name,
                 self.dtype,
                 huggingface_config.num_attention_heads,
@@ -212,7 +212,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 huggingface_config.head_dim,
                 pipeline_config.zmq_endpoint_base,
             )
-            if pipeline_config.lora_config
+            if pipeline_config.lora
             else None
         )
 

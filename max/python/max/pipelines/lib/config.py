@@ -237,7 +237,7 @@ class PipelineConfig(ConfigFileModel):
 
     def configure_session(self, session: InferenceSession) -> None:
         """Configure an InferenceSession with standard pipeline settings."""
-        session.gpu_profiling(self.profiling_config.gpu_profiling)
+        session.gpu_profiling(self.profiling.gpu_profiling)
         session._use_experimental_kernels(self.use_experimental_kernels)
         session._use_vendor_blas(self.use_vendor_blas)
         session._pdl_level(self.pdl_level)
@@ -692,18 +692,18 @@ class PipelineConfig(ConfigFileModel):
         self._validate_and_resolve_max_num_steps()
 
         if (
-            self.sampling_config.enable_structured_output
+            self.sampling.enable_structured_output
             and self.model.default_device_spec.device_type == "cpu"
         ):
             raise ValueError(
                 "enable_structured_output is not currently supported on CPU."
             )
 
-        if self.sampling_config.enable_penalties and self.draft_model_config:
+        if self.sampling.enable_penalties and self.draft_model:
             logger.warning(
                 "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
             )
-            self.sampling_config.enable_penalties = False
+            self.sampling.enable_penalties = False
 
         # Validate LoRA compatibility with model configuration
         if self._lora and self._lora.enable_lora:
@@ -717,9 +717,9 @@ class PipelineConfig(ConfigFileModel):
         )
 
         # Run Additional Checks for Speculative Decoding
-        if self.draft_model_config:
+        if self.draft_model:
             self._validate_and_resolve_remaining_pipeline_config(
-                model_config=self.draft_model_config
+                model_config=self.draft_model
             )
 
             self._validate_pipeline_config_for_speculative_decoding()
@@ -738,13 +738,13 @@ class PipelineConfig(ConfigFileModel):
         """
         Validate the pipeline configs when used in speculative decoding mode.
         """
-        assert self.draft_model_config is not None
+        assert self.draft_model is not None
         assert self._speculative is not None
 
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.draft_model_config.huggingface_model_repo,
+            huggingface_repo=self.draft_model.huggingface_model_repo,
             use_module_v3=self.use_module_v3,
         )
 
@@ -770,7 +770,7 @@ class PipelineConfig(ConfigFileModel):
                 )
 
             draft_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
-                huggingface_repo=self.draft_model_config.huggingface_model_repo
+                huggingface_repo=self.draft_model.huggingface_model_repo
             )
             target_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
                 huggingface_repo=self.model.huggingface_model_repo
@@ -779,7 +779,7 @@ class PipelineConfig(ConfigFileModel):
             # Compare Vocabularies
             if draft_tokenizer.get_vocab() != target_tokenizer.get_vocab():
                 raise ValueError(
-                    f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the vocabulary of the tokenizer for the target model ({self.model.model_path})"
+                    f"tokenizer for draft_model ({self.draft_model.model_path}) does not match the vocabulary of the tokenizer for the target model ({self.model.model_path})"
                 )
 
             # Compare Tokenizer Configuration
@@ -791,12 +791,12 @@ class PipelineConfig(ConfigFileModel):
                     != target_tokenizer._tokenizer.__dict__
                 ):
                     raise ValueError(
-                        f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model.model_path})"
+                        f"tokenizer for draft_model ({self.draft_model.model_path}) does not match the configuration of the tokenizer for the target model ({self.model.model_path})"
                     )
             else:
                 if draft_tokenizer.__dict__ != target_tokenizer.__dict__:
                     raise ValueError(
-                        f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model.model_path})"
+                        f"tokenizer for draft_model ({self.draft_model.model_path}) does not match the configuration of the tokenizer for the target model ({self.model.model_path})"
                     )
 
         if self.enable_echo:
@@ -804,21 +804,19 @@ class PipelineConfig(ConfigFileModel):
                 "enable_echo not currently supported with speculative decoding enabled"
             )
 
-        if self.sampling_config.enable_structured_output:
+        if self.sampling.enable_structured_output:
             raise ValueError(
                 "structured outputs not currently supported with speculative decoding enabled"
             )
 
-        if self.model.kv_cache_config.enable_prefix_caching and not self.force:
+        if self.model.kv_cache.enable_prefix_caching and not self.force:
             logging.warning(
                 "Prefix caching is not supported with speculative decoding. "
                 "Overriding user setting to False. Pass --force to bypass this "
                 "validation, though this may result in unexpected behavior or errors."
             )
-            self.model.kv_cache_config.enable_prefix_caching = False
-            self.draft_model_config.kv_cache_config.enable_prefix_caching = (
-                False
-            )
+            self.model.kv_cache.enable_prefix_caching = False
+            self.draft_model.kv_cache.enable_prefix_caching = False
 
     def _validate_and_resolve_remaining_pipeline_config(
         self, model_config: MAXModelConfig
@@ -1091,7 +1089,7 @@ class PipelineConfig(ConfigFileModel):
         _log_kvcache_details(kv_config)
 
         # Draft model kvcache config (if using speculative decoding)
-        if self.draft_model_config is not None:
+        if self.draft_model is not None:
             logger.info("")
             logger.info("Draft Model KVCache Configuration:")
             logger.info("-" * 40)
@@ -1190,24 +1188,20 @@ class PipelineConfig(ConfigFileModel):
         """Accessor for the MAXModelConfig instance."""
         return self._model
 
-    # TODO(SERVSYS-1066): This should be renamed to just draft_model.
     @property
-    def draft_model_config(self) -> MAXModelConfig | None:
+    def draft_model(self) -> MAXModelConfig | None:
         return self._draft_model
 
-    # TODO(SERVSYS-1066): This should be renamed to just sampling.
     @property
-    def sampling_config(self) -> SamplingConfig:
+    def sampling(self) -> SamplingConfig:
         return self._sampling
 
-    # TODO(SERVSYS-1066): This should be renamed to just profiling.
     @property
-    def profiling_config(self) -> ProfilingConfig:
+    def profiling(self) -> ProfilingConfig:
         return self._profiling
 
-    # TODO(SERVSYS-1066): This should be renamed to just lora.
     @property
-    def lora_config(self) -> LoRAConfig | None:
+    def lora(self) -> LoRAConfig | None:
         return self._lora
 
 

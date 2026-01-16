@@ -322,7 +322,7 @@ def mock_pipeline_config(qwen_token_ids: dict[str, int]) -> MagicMock:
     # Create mock model config
     model_config = MagicMock()
     model_config.huggingface_config = hf_config
-    model_config.kv_cache_config = kv_cache_config
+    model_config.kv_cache = kv_cache_config
 
     # Create mock pipeline config
     pipeline_config = MagicMock()

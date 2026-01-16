@@ -97,7 +97,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         # TODO: We may need to support having different sampling parameters for the draft and target model
         self._target_sampler = self._target_session.load(
             token_sampler(
-                self.pipeline_config.sampling_config,
+                self.pipeline_config.sampling,
                 return_logits=True,
                 device=DeviceRef.from_device(self.target_devices[0]),
             )

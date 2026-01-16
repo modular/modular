@@ -310,7 +310,7 @@ class MAXModelConfig(MAXModelConfigBase):
             self.model_path = self._weights_repo_id
 
     @property
-    def kv_cache_config(self) -> KVCacheConfig:
+    def kv_cache(self) -> KVCacheConfig:
         # `_kv_cache` is a PrivateAttr. Some construction paths (notably
         # unpickling) can bypass __init__, so the PrivateAttr may be absent.
         if not hasattr(self, "_kv_cache"):
@@ -843,25 +843,24 @@ class MAXModelConfig(MAXModelConfigBase):
             self.quantization_encoding, []
         )
         if (
-            self.kv_cache_config.cache_strategy == KVCacheStrategy.MODEL_DEFAULT
+            self.kv_cache.cache_strategy == KVCacheStrategy.MODEL_DEFAULT
             and supported_cache_strategies
         ):
             default_strategy = supported_cache_strategies[0]
             msg = f"default cache_strategy of '{default_strategy}' enabled"
             logger.debug(msg)
 
-            self.kv_cache_config.cache_strategy = default_strategy
+            self.kv_cache.cache_strategy = default_strategy
         elif (
             supported_cache_strategies
-            and self.kv_cache_config.cache_strategy
-            not in supported_cache_strategies
+            and self.kv_cache.cache_strategy not in supported_cache_strategies
         ):
             supported_strategy = supported_cache_strategies[0]
 
-            msg = f"cache_strategy = '{self.kv_cache_config.cache_strategy}' not supported for '{self.quantization_encoding}', using '{supported_strategy}' cache strategy."
+            msg = f"cache_strategy = '{self.kv_cache.cache_strategy}' not supported for '{self.quantization_encoding}', using '{supported_strategy}' cache strategy."
             logger.warning(msg)
 
-            self.kv_cache_config.cache_strategy = supported_strategy
+            self.kv_cache.cache_strategy = supported_strategy
 
     def _validate_final_architecture_model_path_weight_path(self) -> None:
         # Assume at this point, an architecture,

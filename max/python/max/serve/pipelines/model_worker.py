@@ -182,7 +182,7 @@ class ModelWorker:
             # Maybe retrieve LoRA manager.
             lora_manager = None
             pipeline_model = get_pipeline_model(pipeline)
-            if pipeline_config.lora_config:
+            if pipeline_config.lora:
                 assert pipeline_model is not None
                 lora_manager = pipeline_model.lora_manager
                 assert lora_manager is not None

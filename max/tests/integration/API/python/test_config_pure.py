@@ -179,12 +179,12 @@ class TestPipelineConfigUtilityMethods:
         config._create_lora_config_if_needed(kwargs)
 
         # Should create LoRA config
-        assert config.lora_config is not None
-        assert config.lora_config.lora_paths == [
+        assert config.lora is not None
+        assert config.lora.lora_paths == [
             "/path/to/lora1",
             "/path/to/lora2",
         ]
-        assert config.lora_config.max_lora_rank == 32
+        assert config.lora.max_lora_rank == 32
 
         # Should remove LoRA-related kwargs
         assert "lora_paths" not in kwargs
@@ -204,7 +204,7 @@ class TestPipelineConfigUtilityMethods:
         }
         config._create_lora_config_if_needed(kwargs)
         # LoRA config should not be created if no lora_paths are provided.
-        assert config.lora_config is None
+        assert config.lora is None
 
     @mock_pipeline_config_resolve
     def test_create_draft_model_config_if_needed_with_model_path(self) -> None:
@@ -220,9 +220,9 @@ class TestPipelineConfigUtilityMethods:
         config._create_draft_model_config_if_needed(kwargs)
 
         # Should create draft model config
-        assert config.draft_model_config is not None
-        assert config.draft_model_config.model_path == "/path/to/draft"
-        assert config.draft_model_config.quantization_encoding == "float32"
+        assert config.draft_model is not None
+        assert config.draft_model.model_path == "/path/to/draft"
+        assert config.draft_model.quantization_encoding == "float32"
 
         # Should remove draft-related kwargs
         assert "draft_model_path" not in kwargs
@@ -243,7 +243,7 @@ class TestPipelineConfigUtilityMethods:
 
         config._create_draft_model_config_if_needed(kwargs)
         # Draft model config should not be created if no model_path is provided.
-        assert config.draft_model_config is None
+        assert config.draft_model is None
 
     @mock_pipeline_config_resolve
     def test_create_and_set_config_basic(self) -> None:
@@ -261,9 +261,9 @@ class TestPipelineConfigUtilityMethods:
         )
 
         # Should create and set the config
-        assert config.sampling_config is not None
-        assert config.sampling_config.enable_structured_output is True
-        assert config.sampling_config.enable_penalties is True
+        assert config.sampling is not None
+        assert config.sampling.enable_structured_output is True
+        assert config.sampling.enable_penalties is True
 
     @mock_pipeline_config_resolve
     def test_create_and_set_config_model_config_with_kv_cache(self) -> None:
@@ -295,9 +295,9 @@ class TestPipelineConfigUtilityMethods:
         )
 
         # Should create sampling config with variable logits enabled
-        assert config.sampling_config is not None
-        assert config.sampling_config.enable_min_tokens is True
-        assert config.sampling_config.enable_variable_logits is True
+        assert config.sampling is not None
+        assert config.sampling.enable_min_tokens is True
+        assert config.sampling.enable_variable_logits is True
 
     @mock_pipeline_config_resolve
     def test_process_remaining_config_classes(self) -> None:
@@ -324,8 +324,8 @@ class TestPipelineConfigUtilityMethods:
         assert "unknown_param" in unmatched_kwargs
 
         # Should update configs
-        assert config.sampling_config.enable_structured_output is True
-        assert config.sampling_config.enable_penalties is True
+        assert config.sampling.enable_structured_output is True
+        assert config.sampling.enable_penalties is True
         assert config.model.model_path == "/override/path"
         assert config.model._kv_cache.kv_cache_page_size == 128
 
@@ -373,22 +373,22 @@ class TestPipelineConfigUtilityMethods:
         assert config.max_batch_size == 4
 
         # LoRA config
-        assert config.lora_config is not None
-        assert config.lora_config.lora_paths == ["/lora1", "/lora2"]
-        assert config.lora_config.max_lora_rank == 64
+        assert config.lora is not None
+        assert config.lora.lora_paths == ["/lora1", "/lora2"]
+        assert config.lora.max_lora_rank == 64
 
         # Draft model config
-        assert config.draft_model_config is not None
-        assert config.draft_model_config.model_path == "/draft/model"
-        assert config.draft_model_config.quantization_encoding == "float32"
+        assert config.draft_model is not None
+        assert config.draft_model.model_path == "/draft/model"
+        assert config.draft_model.quantization_encoding == "float32"
 
         # Sampling config
-        assert config.sampling_config.enable_structured_output is True
-        assert config.sampling_config.enable_penalties is False
+        assert config.sampling.enable_structured_output is True
+        assert config.sampling.enable_penalties is False
 
         # Model config with KV cache
         assert config.model.quantization_encoding == "bfloat16"
-        assert config.model.kv_cache_config.kv_cache_page_size == 512
+        assert config.model.kv_cache.kv_cache_page_size == 512
 
 
 @prepare_registry
@@ -698,10 +698,10 @@ def test_config__validates_lora_configuration(
         quantization_encoding=SupportedEncoding.bfloat16,
         enable_prefix_caching=False,  # Must be disabled for LoRA
     )
-    assert config.lora_config is not None
-    assert config.lora_config.lora_paths[0] == llama_3_1_8b_lora_local_path
-    assert config.lora_config.max_lora_rank == 16
-    assert config.lora_config.max_num_loras == 1
+    assert config.lora is not None
+    assert config.lora.lora_paths[0] == llama_3_1_8b_lora_local_path
+    assert config.lora.max_lora_rank == 16
+    assert config.lora.max_num_loras == 1
 
 
 @prepare_registry
@@ -751,9 +751,9 @@ def test_config__validates_lora_works_for_llama(
     )
 
     # Verify LoRA config was created successfully
-    assert config.lora_config is not None
-    assert config.lora_config.enable_lora is True
-    assert config.lora_config.lora_paths == ["/some/lora/path"]
+    assert config.lora is not None
+    assert config.lora.enable_lora is True
+    assert config.lora.lora_paths == ["/some/lora/path"]
 
 
 @prepare_registry
@@ -800,8 +800,8 @@ def test_config__validates_lora_single_device_only(
         quantization_encoding=SupportedEncoding.bfloat16,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
     )
-    assert config.lora_config is not None
-    assert config.lora_config.enable_lora is True
+    assert config.lora is not None
+    assert config.lora.enable_lora is True
 
 
 @prepare_registry
@@ -838,7 +838,7 @@ def test_config__validates_lora_fails_with_multiple_devices(
         quantization_encoding=SupportedEncoding.bfloat16,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
     )
-    assert config.lora_config is None
+    assert config.lora is None
 
 
 class TestSamplingConfig:

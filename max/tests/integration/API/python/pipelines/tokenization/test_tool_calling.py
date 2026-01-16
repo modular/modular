@@ -37,7 +37,7 @@ def _create_mock_pipeline_config(model_path: str) -> MagicMock:
 
     mock_model_config = MagicMock()
     mock_model_config.huggingface_config = hf_config
-    mock_model_config.kv_cache_config = mock_kv_cache_config
+    mock_model_config.kv_cache = mock_kv_cache_config
 
     pipeline_config = MagicMock()
     pipeline_config.model = mock_model_config

@@ -373,7 +373,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                 self._default_eos_token_ids.update(eos_token_id)
 
         self.enable_prefix_caching = (
-            pipeline_config.model.kv_cache_config.enable_prefix_caching
+            pipeline_config.model.kv_cache.enable_prefix_caching
         )
 
         if image_token_id := getattr(

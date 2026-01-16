@@ -76,7 +76,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         config = pipeline_config.model.huggingface_config
 
         self.enable_prefix_caching = (
-            pipeline_config.model.kv_cache_config.enable_prefix_caching
+            pipeline_config.model.kv_cache.enable_prefix_caching
         )
 
         if vision_token_id := getattr(config, "image_token_id", None):

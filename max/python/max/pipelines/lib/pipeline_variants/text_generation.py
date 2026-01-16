@@ -155,7 +155,7 @@ class TextGenerationPipeline(
         # Create a grammar compiler if constrained decoding is enabled
         self.vocab_size = None
 
-        if pipeline_config.sampling_config.enable_structured_output:
+        if pipeline_config.sampling.enable_structured_output:
             assert hasattr(self.tokenizer, "delegate")
             hf_tokenizer = self.tokenizer.delegate
             assert isinstance(hf_tokenizer, PreTrainedTokenizerFast)
@@ -211,7 +211,7 @@ class TextGenerationPipeline(
             huggingface_config=self._pipeline_config.model.huggingface_config,
             encoding=self._pipeline_config.model.quantization_encoding,
             devices=self._devices,
-            kv_cache_config=self._pipeline_config.model.kv_cache_config,
+            kv_cache_config=self._pipeline_config.model.kv_cache,
             weights=_load_weights(weight_paths),
             adapter=self._weight_adapters.get(
                 _weights_format(weight_paths), None
@@ -225,16 +225,14 @@ class TextGenerationPipeline(
         from max.graph import DeviceRef as _DeviceRef
 
         self._sampler_with_bitmask: Model | None = None
-        if self._pipeline_config.sampling_config.enable_structured_output:
+        if self._pipeline_config.sampling.enable_structured_output:
             self._sampler_with_bitmask = session.load(
                 token_sampler(
-                    self._pipeline_config.sampling_config,
+                    self._pipeline_config.sampling,
                     device=_DeviceRef.from_device(self._devices[0]),
                 )
             )
-            cfg_without_bitmask = copy.deepcopy(
-                self._pipeline_config.sampling_config
-            )
+            cfg_without_bitmask = copy.deepcopy(self._pipeline_config.sampling)
             cfg_without_bitmask.enable_structured_output = False
             self._sampler_without_bitmask = session.load(
                 token_sampler(
@@ -245,7 +243,7 @@ class TextGenerationPipeline(
         else:
             self._sampler_without_bitmask = session.load(
                 token_sampler(
-                    self._pipeline_config.sampling_config,
+                    self._pipeline_config.sampling,
                     device=_DeviceRef.from_device(self._devices[0]),
                 )
             )
@@ -327,7 +325,7 @@ class TextGenerationPipeline(
                 enabled via sampling configuration.
         """
         if context.json_schema and context.matcher is None:
-            if not self._pipeline_config.sampling_config.enable_structured_output:
+            if not self._pipeline_config.sampling.enable_structured_output:
                 raise ValueError(
                     "json_schema provided but constrained decoding is not enabled."
                 )
@@ -367,7 +365,7 @@ class TextGenerationPipeline(
             A bitmask array of shape [batch_size, vocab_size] if structured
             output is enabled; otherwise ``None``.
         """
-        if not self._pipeline_config.sampling_config.enable_structured_output:
+        if not self._pipeline_config.sampling.enable_structured_output:
             return None
 
         if self.vocab_size is None:
@@ -632,7 +630,7 @@ class TextGenerationPipeline(
             # Validate output. This is more of an internal check that the model
             # is implemented correctly.
             if (
-                self._pipeline_config.sampling_config.enable_variable_logits
+                self._pipeline_config.sampling.enable_variable_logits
                 and model_outputs.logit_offsets is None
             ):
                 raise ValueError(

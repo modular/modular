@@ -43,7 +43,7 @@ def mock_pipeline_config() -> MagicMock:
     # Create mock model config
     model_config = MagicMock()
     model_config.huggingface_config = hf_config
-    model_config.kv_cache_config = kv_cache_config
+    model_config.kv_cache = kv_cache_config
     model_config.vision_config_overrides = {}
 
     # Create mock pipeline config

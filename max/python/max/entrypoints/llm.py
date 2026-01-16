@@ -198,9 +198,9 @@ async def _async_worker(
     lora_queue: LoRAQueue | None = (
         LoRAQueue(
             pipeline_config.zmq_endpoint_base,
-            pipeline_config.lora_config.lora_paths,
+            pipeline_config.lora.lora_paths,
         )
-        if pipeline_config.lora_config
+        if pipeline_config.lora
         else None
     )
     # Create Queues
