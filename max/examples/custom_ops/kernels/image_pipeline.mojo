@@ -119,9 +119,7 @@ struct Blur:
                         pix_val_accum += Int(img_in[cur_row, cur_col])
                         pixel_count += 1
 
-            return (
-                (pix_val_accum / pixel_count).clamp(0, 255).cast[DType.uint8]()
-            )
+            return UInt8(max(min(pix_val_accum // pixel_count, 255), 0))
 
         # Apply the kernel to each pixel in the output tensor
         foreach[blur_kernel, target=target, simd_width=1](img_out, ctx)
