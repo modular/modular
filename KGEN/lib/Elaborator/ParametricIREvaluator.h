@@ -53,6 +53,8 @@ protected:
   evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) override;
 
   /// Resolve a type value to its struct declaration.
+  /// ParametricIREvaluator ignores acceptAsync and always returns the generator
+  /// (never triggers async, never returns null decl).
   FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
                                                   bool acceptAsync) override;
 
@@ -210,22 +212,6 @@ private:
                                          bool withResultSlot);
 
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
-
-  /// Helper to resolve a type reference to a StructInstanceType.
-  /// Emits an error with the given function name context on failure.
-  FailureOr<std::pair<StructInstanceType, PParamNode *>>
-  resolveStructInstanceType(TypedAttr typeRef, StringRef funcName);
-
-  /// Creates a nested evaluator with the struct's parameter bindings set up
-  /// so that getReboundType can properly substitute type parameters.
-  ParametricIREvaluator createNestedEvaluator(PParamNode *genNode);
-
-  FailureOr<TypedAttr> evaluateStructFieldTypesAttr(StructFieldTypesAttr attr);
-  FailureOr<TypedAttr> evaluateStructFieldNamesAttr(StructFieldNamesAttr attr);
-  FailureOr<TypedAttr>
-  evaluateStructFieldIndexByNameAttr(StructFieldIndexByNameAttr attr);
-  FailureOr<TypedAttr>
-  evaluateStructFieldTypeByNameAttr(StructFieldTypeByNameAttr attr);
 
   void dump() {
     for (auto pair : getCurrentParamEval().getDeclBindings()) {

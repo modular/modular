@@ -368,7 +368,7 @@ kgen.struct.generator @FieldTestStruct = struct_inst<"FieldTestStruct"(first: in
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator @test_field_not_found() {
-  // expected-note @below {{struct '!kgen.struct_inst<"FieldTestStruct"(first: index, second: i32)>' has no field named 'nonexistent'}}
+  // expected-note @below {{struct 'FieldTestStruct' has no field named 'nonexistent'}}
   kgen.param.constant: index = <#kgen.struct_field_index_by_name<#field_test_struct, "nonexistent">>
   kgen.return
 }
@@ -383,7 +383,7 @@ kgen.struct.generator @FieldTypeTestStruct = struct_inst<"FieldTypeTestStruct"(a
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator @test_field_type_not_found() {
-  // expected-note @below {{struct '!kgen.struct_inst<"FieldTypeTestStruct"(alpha: f32, beta: f64)>' has no field named 'missing'}}
+  // expected-note @below {{struct 'FieldTypeTestStruct' has no field named 'missing'}}
   kgen.param.constant: type = <#kgen.struct_field_type_by_name<#field_type_test_struct, "missing">>
   kgen.return
 }
