@@ -141,8 +141,6 @@ IREvaluator::evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) {
     return cast<TypedAttr>(symOr.takeValue());
   }
 
-  if (auto getWitnessEntry = dyn_cast<GetWitnessAttr>(attr))
-    return evaluateGetWitnessAttr(getWitnessEntry);
   if (auto getLinkageNameAttr = dyn_cast<GetLinkageNameAttr>(attr))
     return evaluateGetLinkageNameAttr(getLinkageNameAttr);
   if (auto getSourceNameAttr = dyn_cast<GetSourceNameAttr>(attr))
@@ -312,51 +310,61 @@ FailureOr<TypedAttr> IREvaluator::evaluateStringAddress(ParamOperatorAttr op) {
   return {ptr};
 }
 
-FailureOr<TypedAttr>
-IREvaluator::evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry) {
-  // Find the node for the instantiated type ref.
-  TypedAttr resolved = getWitnessEntry.getTypeRefIfResolved();
-  if (!resolved) {
-    emitError({*errorLoc, "no instantiation for trait " +
-                              getWitnessEntry.getTraitName().getValue() +
-                              ", get witness table failed"});
-    return failure();
-  }
+//===----------------------------------------------------------------------===//
+// ParameterEvaluationContext Hooks
+//===----------------------------------------------------------------------===//
 
-  SymbolRefAttr instanceRef = cast<TypeInstanceRefAttr>(resolved).getSymbol();
-  ParamNode *genNode = elaborator->lookupImplNode(instanceRef)->parent;
-  // Always look up witness tables from the StructGeneratorOp, since the
-  // StructInstanceOp is undergoing elaboration, and we should not block on
-  // the instance's completion.
+FailureOr<ResolvedStructHandle>
+IREvaluator::resolveStructOp(TypedAttr typeValue, bool acceptAsync) {
+  // IREvaluator works with already-instantiated types (TypeInstanceRefAttr).
+  // Always returns the generator; instance is populated if concretized.
+  TypedAttr typeRef = getTypeRefForTypeValueIfResolved(typeValue);
+  if (!typeRef)
+    return failure();
+
+  auto instanceRef = cast<TypeInstanceRefAttr>(typeRef);
+  ParamNode *genNode =
+      elaborator->lookupImplNode(instanceRef.getSymbol())->parent;
   StructGeneratorOp gen = cast<StructGeneratorOp>(genNode->gen);
-  SymbolTable symtab(gen);
-  ConformanceOp witnessTable =
-      symtab.lookup<ConformanceOp>(getWitnessEntry.getTraitName());
-  if (!witnessTable) {
-    emitError({*errorLoc, "instantiated struct type " +
-                              mlir::debugString(instanceRef) +
-                              " does not have witness table for trait " +
-                              getWitnessEntry.getTraitName().getValue()});
+
+  // Look up the impl node and try to get the StructInstanceOp.
+  // Add parent node as waiter if the user accepts async elaboration.
+  ErrorTreeOr<StructInstanceOp> structInstanceOr =
+      elaborator->getConcreteStructTypeInstance(parent, *errorLoc, instanceRef,
+                                                acceptAsync);
+  if (structInstanceOr.isError()) {
+    emitError(structInstanceOr.takeError());
     return failure();
   }
 
+  // If the struct instance is already done concretizing, return it. Otherwise,
+  // it would be null already.
+  return ResolvedStructHandle{gen, genNode->inputParams, genNode,
+                              structInstanceOr.takeValue()};
+}
+
+Operation *
+IREvaluator::resolveConformanceForStruct(ResolvedStructHandle resolved,
+                                         StringAttr traitName) {
+  // Always look up the conformance in the generator since we don't concretize
+  // conformance tables yet.
+  SymbolTable symtab(resolved.decl.getOperation());
+  return symtab.lookup<ConformanceOp>(traitName);
+}
+
+void IREvaluator::withEvaluator(
+    ArrayRef<ParamDeclAttr> paramDecls, ArrayRef<TypedAttr> paramValues,
+    llvm::function_ref<void(ParameterEvaluator &)> callback) {
   IREvaluator nestedEvaluator(*elaborator, parent);
   nestedEvaluator.setErrorLoc(*errorLoc);
-  // If the struct generator has input params, we need to provide an
-  // IREvaluator for concretizing the witness entries.
-  for (auto [param, value] :
-       llvm::zip(gen.getInputParams(), genNode->inputParams))
+  for (auto [param, value] : llvm::zip(paramDecls, paramValues))
     nestedEvaluator.setDeclBinding(param, value);
-  FailureOr<TypedAttr> simplified =
-      getWitnessEntry.simplify(witnessTable, &nestedEvaluator);
-  if (failed(simplified)) {
-    emitError({*errorLoc, "failed to locate witness entry for " +
-                              gen.getSymName() + ", " +
-                              getWitnessEntry.getTraitName().getValue() + ", " +
-                              getWitnessEntry.getWitnessName().getValue()});
-    return failure();
-  }
-  return simplified;
+  callback(nestedEvaluator);
+}
+
+void IREvaluator::emitEvaluationError(const Twine &message) {
+  // Use the ErrorTree-based emitError from IREvaluatorContext.
+  IREvaluatorContext::emitError({*errorLoc, message.str()});
 }
 
 //===----------------------------------------------------------------------===//

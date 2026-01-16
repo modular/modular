@@ -138,23 +138,28 @@ public:
 protected:
   /// Resolve LIT struct types to KGEN struct generators using the decls
   /// mapping.
-  ResolvedStructHandle resolveStructOp(TypedAttr typeValue) override;
+  FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
+                                                  bool acceptAsync) override;
 
 private:
   StructDecls &decls;
 };
 } // namespace
 
-ResolvedStructHandle
-LowerLITEvaluationContext::resolveStructOp(TypedAttr typeValue) {
+FailureOr<ResolvedStructHandle>
+LowerLITEvaluationContext::resolveStructOp(TypedAttr typeValue,
+                                           bool /*acceptAsync*/) {
+  // LowerLITEvaluationContext does not support async concretization, so
+  // acceptAsync is ignored - we always return the generator.
+
   // We can only resolve if the type reference is a resolved LIT struct type.
   auto typeParam = sugarDynCast<TypeParamAttr>(typeValue);
   if (!typeParam)
-    return {};
+    return failure();
 
   auto structType = sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
   if (!structType)
-    return {};
+    return failure();
 
   // Map LIT struct decl to KGEN struct generator via decls.
   SymbolRefAttr structDeclRef = structType.getSymbol();
@@ -164,10 +169,12 @@ LowerLITEvaluationContext::resolveStructOp(TypedAttr typeValue) {
   auto structDecl =
       symtab.lookupSymbolIn<StructGeneratorOp>(module, structGenRef);
   if (!structDecl)
-    return {};
+    return failure();
 
-  return {cast<StructDeclInterface>(structDecl.getOperation()),
-          structType.getParamValues(), nullptr};
+  return ResolvedStructHandle{
+      cast<StructDeclInterface>(structDecl.getOperation()),
+      structType.getParamValues(), nullptr,
+      /*instance=*/nullptr};
 }
 
 //===----------------------------------------------------------------------===//

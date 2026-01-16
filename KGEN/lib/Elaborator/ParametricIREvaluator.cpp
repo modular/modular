@@ -489,8 +489,6 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateContextSpecific(
     return cast<TypedAttr>(symOr.takeValue());
   }
 
-  if (auto getWitnessEntry = dyn_cast<GetWitnessAttr>(attr))
-    return evaluateGetWitnessAttr(getWitnessEntry);
   if (auto getLinkageNameAttr = dyn_cast<GetLinkageNameAttr>(attr))
     return evaluateGetLinkageNameAttr(getLinkageNameAttr);
   if (auto getSourceNameAttr = dyn_cast<GetSourceNameAttr>(attr))
@@ -689,48 +687,46 @@ ParametricIREvaluator::evaluateStringAddress(ParamOperatorAttr op) {
   return {ptr};
 }
 
-FailureOr<TypedAttr>
-ParametricIREvaluator::evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry) {
-  // Find the node for the instantiated type ref.
-  TypedAttr resolved = getWitnessEntry.getTypeRefIfResolved();
-  if (!resolved) {
-    emitError({*errorLoc, "no instantiation for trait " +
-                              getWitnessEntry.getTraitName().getValue() +
-                              ", get witness table failed"});
-    return failure();
-  }
+//===----------------------------------------------------------------------===//
+// ParameterEvaluationContext Hooks
+//===----------------------------------------------------------------------===//
 
-  SymbolRefAttr instanceRef = cast<TypeInstanceRefAttr>(resolved).getSymbol();
-  PParamNode *genNode = elaborator->lookupImplNode(instanceRef)->parent;
-  // Always look up witness tables from the StructGeneratorOp, since the
-  // StructInstanceOp is undergoing elaboration, and we should not block on
-  // the instance's completion.
+FailureOr<ResolvedStructHandle>
+ParametricIREvaluator::resolveStructOp(TypedAttr typeValue,
+                                       bool /*acceptAsync*/) {
+  // ParametricIREvaluator works with already-instantiated types.
+  // acceptAsync is ignored since we always look up from the generator.
+  TypedAttr typeRef = getTypeRefForTypeValueIfResolved(typeValue);
+  if (!typeRef)
+    return failure();
+
+  auto instanceRef = cast<TypeInstanceRefAttr>(typeRef);
+  PParamNode *genNode =
+      elaborator->lookupImplNode(instanceRef.getSymbol())->parent;
   StructGeneratorOp gen = cast<StructGeneratorOp>(genNode->gen);
-  SymbolTable symtab(gen);
-  ConformanceOp witnessTable =
-      symtab.lookup<ConformanceOp>(getWitnessEntry.getTraitName());
-  if (!witnessTable) {
-    emitError({*errorLoc, "instantiated struct type " +
-                              mlir::debugString(instanceRef) +
-                              " does not have witness table for trait " +
-                              getWitnessEntry.getTraitName().getValue()});
-    return failure();
-  }
+  return ResolvedStructHandle{gen, genNode->inputParams, genNode,
+                              /*instance=*/nullptr};
+}
 
-  // If the struct generator has input params, we need to provide an
-  // IREvaluator for concretizing the witness entries.
-  ParametricIREvaluator nestedEvaluator = createNestedEvaluator(genNode);
-  FailureOr<TypedAttr> simplified = getWitnessEntry.simplify(
-      witnessTable, &nestedEvaluator.getCurrentParamEval());
+Operation *ParametricIREvaluator::resolveConformanceForStruct(
+    ResolvedStructHandle resolved, StringAttr traitName) {
+  SymbolTable symtab(resolved.decl.getOperation());
+  return symtab.lookup<ConformanceOp>(traitName);
+}
 
-  if (failed(simplified)) {
-    emitError({*errorLoc, "failed to locate witness entry for " +
-                              gen.getSymName() + ", " +
-                              getWitnessEntry.getTraitName().getValue() + ", " +
-                              getWitnessEntry.getWitnessName().getValue()});
-    return failure();
-  }
-  return simplified;
+void ParametricIREvaluator::withEvaluator(
+    ArrayRef<ParamDeclAttr> paramDecls, ArrayRef<TypedAttr> paramValues,
+    llvm::function_ref<void(ParameterEvaluator &)> callback) {
+  ParametricIREvaluator nestedEvaluator(*elaborator, parent);
+  nestedEvaluator.setErrorLoc(*errorLoc);
+  nestedEvaluator.pushParamValues(paramValues, true);
+  for (auto [param, value] : llvm::zip(paramDecls, paramValues))
+    nestedEvaluator.overwriteDeclBinding(param, value);
+  callback(nestedEvaluator.getCurrentParamEval());
+}
+
+void ParametricIREvaluator::emitEvaluationError(const Twine &message) {
+  IREvaluatorContext::emitError({*errorLoc, message.str()});
 }
 
 //===----------------------------------------------------------------------===//

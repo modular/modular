@@ -28,25 +28,31 @@ static LIT::StructType getStructTypeForTypeValue(TypedAttr typeValue) {
   return sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
 }
 
-ResolvedStructHandle
-ParserEvaluationContext::resolveStructOp(TypedAttr typeValue) {
+FailureOr<ResolvedStructHandle>
+ParserEvaluationContext::resolveStructOp(TypedAttr typeValue,
+                                         bool /*acceptAsync*/) {
+  // Parser doesn't support async concretization, so acceptAsync is ignored -
+  // we always return the generator.
   auto typeParam = sugarDynCast<TypeParamAttr>(typeValue);
   if (!typeParam)
-    return {};
+    return failure();
 
   auto resolvedType = sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
   if (!resolvedType)
-    return {};
+    return failure();
 
   ASTDecl &astDecl =
       shared.declResolver->getDeclForTypeSymbol(resolvedType.getSymbol());
   auto structDeclOp = cast<StructDeclOp>(astDecl.getIfOperation());
 
   if (failed(shared.declResolver->resolveBody(astDecl, astDecl.getLoc())))
-    return {};
+    return failure();
 
-  return {cast<StructDeclInterface>(structDeclOp.getOperation()),
-          resolvedType.getParamValues(), &astDecl};
+  // Return the decl. instance is null since this is not an IREvaluator context.
+  return ResolvedStructHandle{
+      cast<StructDeclInterface>(structDeclOp.getOperation()),
+      resolvedType.getParamValues(), &astDecl,
+      /*instance=*/nullptr};
 }
 
 Operation *ParserEvaluationContext::resolveConformanceForStruct(
@@ -81,10 +87,11 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
   // Handle TypeConformsToTraitAttr.
   if (auto conformsTo =
           sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
-    if (ResolvedStructHandle resolved =
-            resolveStructOp(conformsTo.getTypeValue())) {
-      return conformsTo.simplify(SymbolTable(resolved.decl.getOperation()));
-    }
+    FailureOr<ResolvedStructHandle> resolvedOr =
+        resolveStructOp(conformsTo.getTypeValue(), /*acceptAsync=*/false);
+    if (succeeded(resolvedOr))
+      return conformsTo.simplify(SymbolTable(resolvedOr->decl.getOperation()));
+
     // Try fold tighter trait types.
     ASTType typeToCheck = conformsTo.getTypeValue();
     auto traitToCheck = dyn_cast<TraitType>(typeToCheck.getMetaType());

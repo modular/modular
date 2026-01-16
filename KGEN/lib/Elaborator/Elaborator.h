@@ -154,7 +154,8 @@ public:
   /// as a waiter on the struct instance node and return null.
   ErrorTreeOr<StructInstanceOp>
   getConcreteStructTypeInstance(ImplNode *parent, Location loc,
-                                TypeInstanceRefAttr instref);
+                                TypeInstanceRefAttr instref,
+                                bool addWaiter = true);
 
   /// Add an owned function operation that should be appended to the moydule at
   /// the end of elaboration. This is where generated functions during

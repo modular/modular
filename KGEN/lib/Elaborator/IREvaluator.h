@@ -52,6 +52,23 @@ protected:
   FailureOr<TypedAttr>
   evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) override;
 
+  /// Resolve a type value to its struct declaration.
+  /// IREvaluator expects TypeInstanceRefAttr and looks up the generator.
+  FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
+                                                  bool acceptAsync) override;
+
+  /// Look up the conformance operation for a struct and trait name.
+  Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
+                                         StringAttr traitName) override;
+
+  /// Create a nested evaluator with the provided parameter bindings.
+  void withEvaluator(
+      ArrayRef<ParamDeclAttr> paramDecls, ArrayRef<TypedAttr> paramValues,
+      llvm::function_ref<void(ParameterEvaluator &)> callback) override;
+
+  /// Emit an evaluation error using the elaborator's error infrastructure.
+  void emitEvaluationError(const Twine &message) override;
+
 public:
   /// Given a generic parameter expression, substitute known values for
   /// parameters into it and fold it down to a simple constant. This returns an
@@ -88,7 +105,6 @@ private:
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
                                          bool withResultSlot);
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
-  FailureOr<TypedAttr> evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry);
   FailureOr<TypedAttr> evaluateStructFieldTypesAttr(StructFieldTypesAttr attr);
   FailureOr<TypedAttr> evaluateStructFieldNamesAttr(StructFieldNamesAttr attr);
   FailureOr<TypedAttr>

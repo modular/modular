@@ -56,19 +56,20 @@ class ParameterEvaluator;
 // ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
 
-/// A generic handle for a resolved StructDeclInterface from a particular
-/// evaluation context.
+/// A resolved struct handle containing the generator and optionally the
+/// concrete instance. On success, `decl` always contains the parametric struct
+/// declaration operation. The `instance` field is non-null if a concrete
+/// StructInstanceOp is available.
 struct ResolvedStructHandle {
-  /// The struct declaration operation.
+  /// The struct declaration operation (always valid on success).
   StructDeclInterface decl;
-  /// The parameter values for the struct (if any).
+  /// The parameter values for the struct.
   ArrayRef<TypedAttr> paramValues;
   /// A context-specific opaque handle for the context to track additional
   /// state.
   void *handle = nullptr;
-
-  /// Convenience: treat a resolved handle as "truthy" when it has a decl.
-  explicit operator bool() const { return static_cast<bool>(decl); }
+  /// The concrete struct instance operation, if available.
+  StructInstanceOp instance = nullptr;
 };
 
 /// This class is used by ParameterEvaluator to evaluate
@@ -102,10 +103,25 @@ public:
 
 protected:
   /// Resolve a type value to its struct declaration interface.
-  /// Returns a falsy handle if resolution fails.
-  virtual ResolvedStructHandle resolveStructOp(TypedAttr typeValue);
+  ///
+  /// On success, always returns a handle with a valid `decl` (the parametric
+  /// struct declaration op). The `instance` field is populated if a concrete
+  /// instance is available.
+  ///
+  /// The `acceptAsync` argument controls behavior when a concrete instance
+  /// is not yet ready:
+  /// - If acceptAsync=true AND context supports async: triggers async
+  ///   elaboration so the caller can retry later.
+  /// - Otherwise: just returns the generator without an instance.
+  ///
+  /// Returns:
+  /// - failure(): An error occurred during resolution.
+  /// - success(): Handle with valid generator. Check `instance` for concrete.
+  virtual FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
+                                                          bool acceptAsync);
 
   /// Resolve the conformance op for a struct and trait name in this context.
+  /// For now, this conformance op is always parametric (non-concrete).
   virtual Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
                                                  StringAttr traitName);
 
@@ -121,6 +137,10 @@ protected:
   /// normal case for unsupported attributes.
   virtual FailureOr<TypedAttr>
   evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr);
+
+  /// Emit an evaluation error message. The base implementation does nothing.
+  /// Derived classes can override to emit diagnostics.
+  virtual void emitEvaluationError(const Twine &message);
 
 private:
   // Common evaluation methods that use the virtual hooks.
@@ -145,7 +165,8 @@ public:
 
 protected:
   /// Resolve struct info for KGEN dialect structs.
-  ResolvedStructHandle resolveStructOp(TypedAttr typeValue) override;
+  FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
+                                                  bool acceptAsync) override;
 
   /// Resolve conformance using the struct's symbol table.
   Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
