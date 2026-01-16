@@ -223,7 +223,6 @@ async def test_ttft_recorded_once_per_batch() -> None:
     """Test that TTFT is recorded exactly once per request, with ITL per batch."""
     from max.serve.pipelines.llm import TokenGeneratorPipeline
 
-    # Mock METRICS - use MagicMock for context managers (input_time, output_time)
     mock_metrics = MagicMock()
 
     # Create 3 chunks with 2, 3, 2 tokens = 7 total

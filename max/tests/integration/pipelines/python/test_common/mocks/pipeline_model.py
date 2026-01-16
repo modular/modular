@@ -22,6 +22,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
+from max.kv_cache import PagedKVCacheManager
 from max.nn import ReturnHiddenStates, ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -87,7 +88,7 @@ class MockPipelineModel(PipelineModel):
 
         # This is required to smuggle these parameters in.
         self.max_length = pipeline_config.max_length
-        self.kv_manager = MagicMock()
+        self.kv_manager = MagicMock(spec=PagedKVCacheManager)
 
         # These mypy ignores, are needed to smuggle in these settings without
         # reworking these globally.

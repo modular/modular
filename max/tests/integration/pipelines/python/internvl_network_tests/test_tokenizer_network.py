@@ -104,7 +104,7 @@ async def test_internvl_tokenizer_apply_chat_template(
     mock_tokenizer = mocker.MagicMock()
     mock_tokenizer.apply_chat_template.return_value = "User: What is this?"
 
-    # Create a mock config.
+    # Create a mock config with nested vision_config.
     mock_config = mocker.MagicMock()
     mock_config.vision_config.image_size = 448
     mock_config.vision_config.patch_size = 14

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections.abc import Generator, Iterator
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, NonCallableMock, patch
 
 import numpy as np
 import pytest
@@ -19,6 +19,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph.weights import WeightData
 from max.interfaces import LoRAOperation, LoRARequest, LoRAResponse, LoRAStatus
+from max.pipelines.core import TextContext
 from max.pipelines.lib.lora import LoRAManager
 from max.pipelines.lib.lora_config import LoRAConfig
 
@@ -224,16 +225,16 @@ def test_model_name_base_model_mapping(
     device = CPU()
     input_row_offsets = np.array([0, 8, 16, 24, 32])
 
-    context_empty = MagicMock()
+    context_empty = NonCallableMock(spec=TextContext)
     context_empty.model_name = ""
 
-    context_none = MagicMock()
+    context_none = NonCallableMock(spec=TextContext)
     del context_none.model_name
 
-    context_base = MagicMock()
+    context_base = NonCallableMock(spec=TextContext)
     context_base.model_name = lora_manager.base_model_path
 
-    context_lora = MagicMock()
+    context_lora = NonCallableMock(spec=TextContext)
     context_lora.model_name = "test_lora"
 
     contexts = [
@@ -283,10 +284,10 @@ def test_served_model_name_base_model_mapping(
     device = CPU()
     input_row_offsets = np.array([0, 8, 16, 24])
 
-    context_served = MagicMock()
+    context_served = NonCallableMock(spec=TextContext)
     context_served.model_name = served_name
 
-    context_lora = MagicMock()
+    context_lora = NonCallableMock(spec=TextContext)
     context_lora.model_name = "test_lora"
 
     contexts = [context_lora, context_served]
@@ -332,7 +333,7 @@ def test_update_alias_buffers_copies_lora_a_weight(
     weight_data = np.random.randn(3 * max_rank, in_features).astype(np.float32)
     weight_tensor = Buffer.from_numpy(weight_data)
 
-    mock_weight = MagicMock(spec=WeightData)
+    mock_weight = NonCallableMock(spec=WeightData)
     mock_weight.data = weight_tensor
     mock_lora.get.side_effect = lambda key: (
         mock_weight if key == buffer_key else None
@@ -369,7 +370,7 @@ def test_update_alias_buffers_copies_lora_b_kv_weight(
     weight_data = np.stack([k_weight, v_weight])
     weight_tensor = Buffer.from_numpy(weight_data)
 
-    mock_weight = MagicMock(spec=WeightData)
+    mock_weight = NonCallableMock(spec=WeightData)
     mock_weight.data = weight_tensor
     mock_lora.get.side_effect = lambda key: (
         mock_weight if key == buffer_key else None
@@ -481,17 +482,17 @@ def test_update_alias_buffers_full_qkv_combination(
 
     mock_lora = MagicMock()
 
-    def get_weight(key: str) -> MagicMock | None:
+    def get_weight(key: str) -> NonCallableMock | None:
         if key == lora_a_key:
-            mock_weight = MagicMock(spec=WeightData)
+            mock_weight = NonCallableMock(spec=WeightData)
             mock_weight.data = Buffer.from_numpy(lora_a_data)
             return mock_weight
         elif key == lora_b_q_key:
-            mock_weight = MagicMock(spec=WeightData)
+            mock_weight = NonCallableMock(spec=WeightData)
             mock_weight.data = Buffer.from_numpy(lora_b_q_data)
             return mock_weight
         elif key == lora_b_kv_key:
-            mock_weight = MagicMock(spec=WeightData)
+            mock_weight = NonCallableMock(spec=WeightData)
             mock_weight.data = Buffer.from_numpy(lora_b_kv_data)
             return mock_weight
         return None
@@ -521,17 +522,17 @@ def test_update_alias_buffers_full_qkv_combination(
     v_data_2 = np.random.randn(kv_features, max_rank).astype(np.float32)
     lora_b_kv_data_2 = np.stack([k_data_2, v_data_2])
 
-    def get_weight_2(key: str) -> MagicMock | None:
+    def get_weight_2(key: str) -> NonCallableMock | None:
         if key == lora_a_key:
-            mock_weight = MagicMock(spec=WeightData)
+            mock_weight = NonCallableMock(spec=WeightData)
             mock_weight.data = Buffer.from_numpy(lora_a_data_2)
             return mock_weight
         elif key == lora_b_q_key:
-            mock_weight = MagicMock(spec=WeightData)
+            mock_weight = NonCallableMock(spec=WeightData)
             mock_weight.data = Buffer.from_numpy(lora_b_q_data_2)
             return mock_weight
         elif key == lora_b_kv_key:
-            mock_weight = MagicMock(spec=WeightData)
+            mock_weight = NonCallableMock(spec=WeightData)
             mock_weight.data = Buffer.from_numpy(lora_b_kv_data_2)
             return mock_weight
         return None

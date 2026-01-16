@@ -179,6 +179,7 @@ modular_py_test(
     deps = [
         "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
         requirement("numpy"),
         requirement("transformers"),
     ],

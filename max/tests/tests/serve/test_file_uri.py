@@ -14,9 +14,10 @@
 """Test file URI support in MAX serve."""
 
 from io import BytesIO
-from unittest.mock import MagicMock
+from unittest.mock import NonCallableMock
 
 import pytest
+from max.serve.config import Settings
 from max.serve.router.openai_routes import resolve_image_from_url
 from PIL import Image
 from pydantic import AnyUrl
@@ -37,7 +38,7 @@ async def test_file_uri_absolute_path(tmp_path) -> None:  # noqa: ANN001
     test_data = create_test_image_bytes()
     test_image.write_bytes(test_data)
 
-    settings = MagicMock()
+    settings = NonCallableMock(spec=Settings)
     settings.allowed_image_roots = [str(tmp_path)]
     settings.max_local_image_bytes = 20_000_000
 
@@ -50,7 +51,7 @@ async def test_file_uri_absolute_path(tmp_path) -> None:  # noqa: ANN001
 @pytest.mark.asyncio
 async def test_file_uri_not_found(tmp_path) -> None:  # noqa: ANN001
     """Test error for missing files."""
-    settings = MagicMock()
+    settings = NonCallableMock(spec=Settings)
     settings.allowed_image_roots = [str(tmp_path)]
     settings.max_local_image_bytes = 20_000_000
 
@@ -70,7 +71,7 @@ async def test_file_uri_path_traversal_blocked(tmp_path) -> None:  # noqa: ANN00
     secret_file = tmp_path / "secret.jpg"
     secret_file.write_bytes(create_test_image_bytes())
 
-    settings = MagicMock()
+    settings = NonCallableMock(spec=Settings)
     settings.allowed_image_roots = [str(allowed)]
     settings.max_local_image_bytes = 20_000_000
 
@@ -83,7 +84,7 @@ async def test_file_uri_path_traversal_blocked(tmp_path) -> None:  # noqa: ANN00
 @pytest.mark.asyncio
 async def test_file_uri_directory_blocked(tmp_path) -> None:  # noqa: ANN001
     """Test directories cannot be accessed."""
-    settings = MagicMock()
+    settings = NonCallableMock(spec=Settings)
     settings.allowed_image_roots = [str(tmp_path)]
     settings.max_local_image_bytes = 20_000_000
 
@@ -97,7 +98,7 @@ async def test_file_uri_size_limit(tmp_path) -> None:  # noqa: ANN001
     large_file = tmp_path / "large.jpg"
     large_file.write_bytes(b"x" * (21 * 1024 * 1024))  # 21MB
 
-    settings = MagicMock()
+    settings = NonCallableMock(spec=Settings)
     settings.allowed_image_roots = [str(tmp_path)]
     settings.max_local_image_bytes = 20 * 1024 * 1024  # 20MB
 
@@ -112,7 +113,7 @@ async def test_file_uri_url_encoded_path(tmp_path) -> None:  # noqa: ANN001
     test_data = create_test_image_bytes()
     test_image.write_bytes(test_data)
 
-    settings = MagicMock()
+    settings = NonCallableMock(spec=Settings)
     settings.allowed_image_roots = [str(tmp_path)]
     settings.max_local_image_bytes = 20_000_000
 
@@ -130,7 +131,7 @@ async def test_file_uri_localhost_host(tmp_path) -> None:  # noqa: ANN001
     test_data = create_test_image_bytes()
     test_image.write_bytes(test_data)
 
-    settings = MagicMock()
+    settings = NonCallableMock(spec=Settings)
     settings.allowed_image_roots = [str(tmp_path)]
     settings.max_local_image_bytes = 20_000_000
 
@@ -143,7 +144,7 @@ async def test_file_uri_localhost_host(tmp_path) -> None:  # noqa: ANN001
 @pytest.mark.asyncio
 async def test_file_uri_remote_host_rejected(tmp_path) -> None:  # noqa: ANN001
     """Test remote hosts are rejected."""
-    settings = MagicMock()
+    settings = NonCallableMock(spec=Settings)
     settings.allowed_image_roots = [str(tmp_path)]
     settings.max_local_image_bytes = 20_000_000
 
@@ -159,7 +160,7 @@ async def test_file_uri_no_allowed_roots(tmp_path) -> None:  # noqa: ANN001
     test_file = tmp_path / "test.jpg"
     test_file.write_bytes(create_test_image_bytes())
 
-    settings = MagicMock()
+    settings = NonCallableMock(spec=Settings)
     settings.allowed_image_roots = []
     settings.max_local_image_bytes = 20_000_000
 
@@ -182,7 +183,7 @@ async def test_file_uri_symlink_escape(tmp_path) -> None:  # noqa: ANN001
     except OSError:
         pytest.skip("Symlinks not supported")
 
-    settings = MagicMock()
+    settings = NonCallableMock(spec=Settings)
     settings.allowed_image_roots = [str(allowed)]
     settings.max_local_image_bytes = 20_000_000
 

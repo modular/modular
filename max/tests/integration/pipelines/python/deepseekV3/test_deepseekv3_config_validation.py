@@ -14,25 +14,29 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import NonCallableMock
 
 import pytest
+from max.graph import DeviceRef
 from max.pipelines.architectures.deepseekV3.deepseekV3 import (
     DeepseekV3DecoderLayer,
 )
+from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
 
 
 def make_mock_config(
     *,
-    ep_config: MagicMock | None = None,
+    ep_config: NonCallableMock | None = None,
     data_parallel_degree: int = 1,
     num_devices: int = 8,
-) -> MagicMock:
+) -> NonCallableMock:
     """Create a mock DeepseekV3Config for testing."""
-    config = MagicMock()
+    config = NonCallableMock(spec=DeepseekV3Config)
     config.ep_config = ep_config
     config.data_parallel_degree = data_parallel_degree
-    config.devices = [MagicMock() for _ in range(num_devices)]
+    config.devices = [
+        NonCallableMock(spec=DeviceRef) for _ in range(num_devices)
+    ]
     config.n_routed_experts = 256
     config.first_k_dense_replace = 3
     config.moe_layer_freq = 1
@@ -45,10 +49,10 @@ def make_mock_config(
     config.n_group = 8
     config.topk_group = 4
     config.norm_topk_prob = True
-    config.norm_dtype = MagicMock()
-    config.correction_bias_dtype = MagicMock()
+    config.norm_dtype = NonCallableMock()
+    config.correction_bias_dtype = NonCallableMock()
     config.n_shared_experts = 1
-    config.dtype = MagicMock()
+    config.dtype = NonCallableMock()
     config.float8_config = None
     return config
 
@@ -61,7 +65,11 @@ def test_ep_config_requires_data_parallel_attention() -> None:
     layer.ep_manager = None
 
     # Config with ep_config set (expert parallelism enabled)
-    config = make_mock_config(ep_config=MagicMock())
+    # Set n_gpus_per_node and n_nodes as integers since _get_mlp multiplies them
+    ep_config = NonCallableMock()
+    ep_config.n_gpus_per_node = 1
+    ep_config.n_nodes = 1
+    config = make_mock_config(ep_config=ep_config)
 
     # layer_idx=3 is the first MoE layer (>= first_k_dense_replace=3)
     with pytest.raises(ValueError, match="Expert-parallel MoE/MLP is only"):

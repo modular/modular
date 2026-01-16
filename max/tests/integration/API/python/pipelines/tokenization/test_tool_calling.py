@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import re
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
 from max.interfaces import (
@@ -25,6 +25,7 @@ from max.interfaces import (
     TextGenerationRequestTool,
 )
 from max.pipelines import TextTokenizer
+from max.pipelines.lib import KVCacheConfig
 from transformers import AutoConfig
 
 
@@ -32,7 +33,7 @@ def _create_mock_pipeline_config(model_path: str) -> MagicMock:
     """Create a mock PipelineConfig with real HuggingFace config."""
     hf_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
 
-    mock_kv_cache_config = MagicMock()
+    mock_kv_cache_config = NonCallableMock(spec=KVCacheConfig)
     mock_kv_cache_config.enable_prefix_caching = False
 
     mock_model_config = MagicMock()

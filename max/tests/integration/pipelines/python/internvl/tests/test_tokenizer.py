@@ -69,11 +69,8 @@ def mock_pipeline_config() -> MagicMock:
 
     Includes vision_config by default since most InternVL tests involve image processing.
     """
-    # Create mock huggingface config with spec to validate interface
-    # Include vision_config for image processing tests
     hf_config = _create_mock_huggingface_config(include_vision_config=True)
 
-    # Create mock KV cache config with spec to validate interface
     kv_cache_config = NonCallableMock(spec=KVCacheConfig)
     kv_cache_config.enable_prefix_caching = False
 

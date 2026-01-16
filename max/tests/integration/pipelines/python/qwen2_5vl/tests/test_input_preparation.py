@@ -49,6 +49,7 @@ from max.pipelines.architectures.qwen2_5vl.context import (
 from max.pipelines.architectures.qwen2_5vl.model import Qwen2_5VLModel
 from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
 from max.pipelines.core import TextAndVisionContext
+from max.pipelines.lib import KVCacheConfig
 from pytest_mock import MockerFixture
 from transformers import Qwen2_5_VLConfig
 
@@ -331,11 +332,9 @@ def mock_pipeline_config(qwen_token_ids: dict[str, int]) -> MagicMock:
     Provides a mock pipeline config with HuggingFace config containing
     the required token IDs and vision config.
     """
-    # Create mock huggingface config with spec to validate interface
     hf_config = _create_mock_huggingface_config(qwen_token_ids)
 
-    # Create mock KV cache config
-    kv_cache_config = MagicMock()
+    kv_cache_config = NonCallableMock(spec=KVCacheConfig)
     kv_cache_config.enable_prefix_caching = False
 
     # Create mock model config

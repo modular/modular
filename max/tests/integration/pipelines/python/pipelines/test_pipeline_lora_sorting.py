@@ -17,7 +17,7 @@ from collections import OrderedDict
 from collections.abc import Sequence
 from enum import Enum
 from typing import Any, TypeVar, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, NonCallableMock, patch
 
 import numpy as np
 import pytest
@@ -30,6 +30,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TokenBuffer,
 )
+from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -46,7 +47,7 @@ from max.pipelines.lib import (
     PipelineModel,
     SupportedEncoding,
 )
-from max.pipelines.lib.lora import LoRAManager
+from max.pipelines.lib.lora import LoRAManager, LoRAModel
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
 )
@@ -103,7 +104,7 @@ class MockPipelineModel(PipelineModel[ContextT]):
         self.devices = [CPU()]
         self.max_seq_len = 2048
 
-        self.kv_manager = MagicMock()
+        self.kv_manager = MagicMock(spec=PagedKVCacheManager)
         self.kv_manager.contains = MagicMock(return_value=True)
         self.kv_manager.claim = MagicMock()
         self.kv_manager.alloc = MagicMock()
@@ -287,8 +288,9 @@ def create_lora_manager(
         )
 
     for name in lora_names:
-        fake_lora = MagicMock()
+        fake_lora = NonCallableMock(spec=LoRAModel)
         fake_lora.rank = 8
+        fake_lora.name = name
         manager._loras[name] = fake_lora
         manager._active_loras.put(name, fake_lora)
 
@@ -305,7 +307,7 @@ def create_pipeline_with_lora(
         lora_manager=lora_manager
     )
 
-    mock_config = MagicMock()
+    mock_config = NonCallableMock(spec=PipelineConfig)
     mock_config.max_length = 512
     mock_config.sampling.enable_structured_output = False
     mock_config.sampling.enable_variable_logits = False

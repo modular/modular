@@ -123,6 +123,12 @@ class DummyPipelineConfig(PipelineConfig):
         model_config._kv_cache = KVCacheConfig(
             cache_strategy=kv_cache_strategy,
         )
+        # NOTE: Using MagicMock without spec here because HuggingFace configs
+        # vary by model type (LlamaConfig, Qwen2Config, etc.). Tests that need
+        # strict type checking should pass a model-specific huggingface_config
+        # parameter to DummyPipelineConfig or use the real AutoConfig.
+        # TODO: Consider accepting huggingface_config as an optional parameter
+        # to allow tests to provide model-specific spec'd mocks.
         model_config._huggingface_config = MagicMock()
         # Populate the private attrs that callers expect.
         pydantic_private["_model"] = model_config
@@ -142,14 +148,20 @@ class DummyPipelineConfig(PipelineConfig):
 
 
 def mock_huggingface_config(func: Callable[_P, _R]) -> Callable[_P, _R]:
-    """Mock HuggingFace config to return correct architectures for test models."""
+    """Mock HuggingFace config to return correct architectures for test models.
+
+    NOTE: Uses MagicMock without spec because HuggingFace configs vary by model
+    type and have deeply nested structure (e.g., vision_config, llm_config).
+    Tests requiring strict type checking should use real AutoConfig.from_pretrained()
+    with appropriate network mocking or provide a specific config class as spec.
+    """
 
     @wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         def mock_from_pretrained(  # noqa: ANN202
             model_name_or_path: str | os.PathLike[str], **kwargs: Any
         ):
-            # Create a mock config with the correct architectures based on model
+            # Create a mock config with the correct architectures based on model.
             mock_config = MagicMock()
 
             # Map specific test models to their architectures

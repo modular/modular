@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import NonCallableMock
 
 from max.pipelines.architectures.deepseekV3.weight_adapters import (
     convert_safetensor_state_dict,
@@ -24,7 +24,7 @@ from transformers.models.deepseek_v3.configuration_deepseek_v3 import (
 
 
 def test_convert_safetensor_state_dict() -> None:
-    weight = MagicMock()
+    weight = NonCallableMock()
     state_dict = {
         "model.layers.29.input_layernorm.weight": weight,
         "model.layers.29.post_attention_layernorm.weight": weight,

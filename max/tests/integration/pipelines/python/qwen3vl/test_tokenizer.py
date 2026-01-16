@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
 from max.interfaces import (
@@ -26,6 +26,7 @@ from max.interfaces import (
     TextGenerationRequestMessage,
 )
 from max.pipelines.architectures.qwen3vl_moe.tokenizer import Qwen3VLTokenizer
+from max.pipelines.lib import KVCacheConfig
 from transformers import AutoConfig, AutoProcessor
 
 
@@ -34,7 +35,7 @@ def _create_mock_pipeline_config(model_path: str) -> MagicMock:
     # Load real HuggingFace config for proper vision config values
     hf_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
 
-    mock_kv_cache_config = MagicMock()
+    mock_kv_cache_config = NonCallableMock(spec=KVCacheConfig)
     mock_kv_cache_config.enable_prefix_caching = False
 
     mock_model_config = MagicMock()
