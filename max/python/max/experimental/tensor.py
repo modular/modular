@@ -22,12 +22,6 @@ eager execution of tensor operations, complementing the graph-based execution
 model provided by :obj:`~max.graph`. The tensor operations automatically compile
 and execute using the MAX runtime.
 
-:class:`~max.experimental.Tensor` is designed to be a high-performance NumPy
-replacement for programming accelerators. It implements numerics through
-high-performance Mojo kernels JIT-compiled for the hardware available, including
-state-of-the-art optimizations like automatic kernel fusion. It is intended as
-a building block for programming large, heterogeneous clusters of accelerators.
-
 **Key Features:**
 
 - **Eager semantics**: Operations give immediate results for quick iteration and feedback.
@@ -37,8 +31,14 @@ a building block for programming large, heterogeneous clusters of accelerators.
     Operations may be easily fused into larger graphs to take advantage of
     the graph compiler's automatic fusions.
 - **Lazy evaluation**: Tensors may be computed lazily until their values are needed.
-- **NumPy compatibility**: Supports common NumPy-like operations and indexing.
-- **Device management**: Supports common NumPy-like operations and indexing.
+- **Familiar API**: Supports common array operations and indexing.
+
+.. note::
+
+  Tensors use lazy evaluation and JIT compilation, which incurs compilation
+  overhead on first execution. This can result in higher latency for initial
+  operations compared to eager frameworks like NumPy or PyTorch. Subsequent
+  executions reuse compiled kernels for better performance.
 
 Create and manipulate tensors with automatic compilation and optimization:
 
@@ -411,7 +411,7 @@ class Tensor(DLPackArray, HasTensorValue):
     - **Eager execution**: Operations execute immediately with automatic compilation.
     - **Lazy evaluation**: Computation may be deferred until results are needed.
     - **High performance**: Uses the Mojo compiler and optimized kernels.
-    - **NumPy-like API**: Supports familiar array operations and indexing.
+    - **Familiar API**: Supports common array operations and indexing.
     - **Device flexibility**: Works seamlessly across CPU and accelerators.
 
     **Creating Tensors:**
@@ -447,6 +447,15 @@ class Tensor(DLPackArray, HasTensorValue):
     Operations on tensors build a computation graph behind the scenes, which is
     compiled and executed when needed. All illegal operations fail immediately
     with clear error messages, ensuring a smooth development experience.
+
+    .. note::
+
+      The lazy evaluation model and JIT compilation introduce compilation overhead
+      on first execution of operations. This results in higher latency for
+      interactive operations compared to eager frameworks like NumPy or PyTorch,
+      particularly when materializing tensor values (e.g., printing or converting
+      to other formats). Subsequent operations on similar shapes and dtypes reuse
+      compiled kernels for improved performance.
 
     **Interoperability:**
 
