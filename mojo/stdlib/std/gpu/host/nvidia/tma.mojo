@@ -29,7 +29,6 @@ from gpu.host.device_context import (
     _checked,
     _DeviceBufferPtr,
 )
-from memory import stack_allocation
 
 from utils import IndexList, StaticTuple
 from builtin.device_passable import DevicePassable
@@ -261,6 +260,7 @@ struct TensorMapFloatOOBFill:
 
 # The TMA descriptor is a 128-byte opaque object filled by the driver API.
 # It should be 64-byte aligned both on the host and the device (if passed to constant memory).
+@align(64)
 struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
     """TMA tensor map descriptor.
 
@@ -372,8 +372,8 @@ fn create_tma_descriptor[
     Raises:
         An error if the descriptor creation fails.
     """
-    # Enforces host-side alignment
-    var tma_descriptor = stack_allocation[1, TMADescriptor, alignment=64]()[0]
+    # TMADescriptor is @align(64) so stack allocation is automatically 64-byte aligned.
+    var tma_descriptor = TMADescriptor()
     var tensor_map_ptr = UnsafePointer(to=tma_descriptor).bitcast[NoneType]()
 
     # NOTE: These are initialized in the comptime loop below.

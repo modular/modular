@@ -14,7 +14,6 @@
 from sys import external_call, size_of
 from gpu.host import DeviceBuffer
 from gpu.host.device_context import _checked, _ConstCharPtr, _DeviceBufferPtr
-from memory import stack_allocation
 from utils import IndexList, StaticTuple
 
 
@@ -214,6 +213,7 @@ struct OOBFill:
 
 # The TMA descriptor is a 128-byte opaque object filled by the driver API.
 # It should be 64-byte aligned both on the host and the device (if passed to constant memory).
+@align(64)
 struct TensorMap(ImplicitlyCopyable):
     """A tensor memory access descriptor for optimized GPU tensor operations.
 
@@ -291,9 +291,9 @@ fn create_tensormap[
         Error if the tensor configuration is invalid or if the underlying
         CUDA driver call fails.
     """
-    # Tensormap must be 64 bytes aligned on host.
+    # TensorMap is @align(64) so stack allocation is automatically 64-byte aligned.
     # https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__TENSOR__MEMORY.html
-    var tensormap = stack_allocation[1, TensorMap, alignment=64]()[0]
+    var tensormap = TensorMap()
     var tensormap_ptr = UnsafePointer(to=tensormap).bitcast[NoneType]()
 
     var global_dim_arg = InlineArray[Int64, rank](uninitialized=True)
