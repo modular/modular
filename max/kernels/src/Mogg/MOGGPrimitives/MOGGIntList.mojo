@@ -14,9 +14,7 @@
 
 
 from buffer.dimlist import DimList, _make_tuple
-from memory import LegacyUnsafePointer, memset_zero
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from memory import memset_zero
 
 from utils.index import IndexList
 
@@ -34,14 +32,14 @@ struct IntList[static_values: DimList = DimList()](
         Self._safe_len
     ]()
 
-    var data: UnsafePointer[Int]
+    var data: UnsafePointer[Int, MutExternalOrigin]
     var stack_alloc_data: IndexList[Self._safe_len]
     var length: Int
 
     @always_inline
     fn __init__(out self):
         self.length = Self._length
-        self.data = UnsafePointer[Int]()
+        self.data = UnsafePointer[Int, MutExternalOrigin]()
         self.stack_alloc_data = IndexList[Self._safe_len]()
 
     # Should not be copy constructable, i.e passed by value, but can be cloned.
@@ -49,7 +47,7 @@ struct IntList[static_values: DimList = DimList()](
     fn __init__(out self, other: IntList):
         var num_elements = len(other)
         self.length = Self._length
-        self.data = UnsafePointer[Int]()
+        self.data = UnsafePointer[Int, MutExternalOrigin]()
         self.stack_alloc_data = IndexList[Self._safe_len]()
 
         @parameter
@@ -67,7 +65,7 @@ struct IntList[static_values: DimList = DimList()](
         else:
             # Worst case we allocate the memory on the heap.
             self.length = num_elements
-            self.data = UnsafePointer[Int].alloc(num_elements)
+            self.data = alloc[Int](num_elements)
             for i in range(num_elements):
                 self.data[i] = other[i]
             self.stack_alloc_data = IndexList[Self._safe_len]()
@@ -77,7 +75,7 @@ struct IntList[static_values: DimList = DimList()](
         var num_elements = len(elems)
 
         self.length = Self._length
-        self.data = UnsafePointer[Int]()
+        self.data = UnsafePointer[Int, MutExternalOrigin]()
         self.stack_alloc_data = IndexList[Self._safe_len]()
 
         @parameter
@@ -97,7 +95,7 @@ struct IntList[static_values: DimList = DimList()](
         else:
             # Worst case we allocate the memory on the heap.
             self.length = num_elements
-            self.data = UnsafePointer[Int].alloc(num_elements)
+            self.data = alloc[Int](num_elements)
             for i in range(num_elements):
                 self.data[i] = elems[i]
             self.stack_alloc_data = IndexList[Self._safe_len]()
@@ -106,18 +104,18 @@ struct IntList[static_values: DimList = DimList()](
     fn __init__[rank: Int](out self, shape: IndexList[rank]):
         __comptime_assert rank == len(Self.static_values)
         self.length = rank
-        self.data = UnsafePointer[Int]()
+        self.data = UnsafePointer[Int, MutExternalOrigin]()
         self.stack_alloc_data = rebind[IndexList[Self._safe_len]](shape)
 
     @always_inline
     fn __copyinit__(out self, existing: Self):
         self.stack_alloc_data = existing.stack_alloc_data
         self.length = existing.length
-        self.data = UnsafePointer[Int]()
+        self.data = UnsafePointer[Int, MutExternalOrigin]()
 
         @parameter
         if not Self.has_static_length():
-            self.data = UnsafePointer[Int].alloc(self.length)
+            self.data = alloc[Int](self.length)
             for i in range(self.length):
                 self.data[i] = existing[i]
 
@@ -138,7 +136,7 @@ struct IntList[static_values: DimList = DimList()](
         else:
             # Worst case we allocate the memory on the heap.
             new.length = length
-            new.data = UnsafePointer[Int].alloc(length)
+            new.data = alloc[Int](length)
             memset_zero(new.data, length)
         return new
 
@@ -234,7 +232,7 @@ struct IntList[static_values: DimList = DimList()](
 
         @parameter
         if not Self.has_static_length():
-            x.data = UnsafePointer[Int].alloc(length)
+            x.data = alloc[Int](length)
             for i in range(length):
                 x.data[i] = 0
         return x^
@@ -259,5 +257,4 @@ struct IntList[static_values: DimList = DimList()](
     fn __del__(deinit self):
         @parameter
         if not Self.has_static_length():
-            if self.data != UnsafePointer[Int]():
-                self.data.free()
+            self.data.free()
