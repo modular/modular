@@ -193,7 +193,7 @@ class Qwen3EmbeddingPipelineModel(Qwen3Model):
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
 
         # Execute the model - unlike parent, we don't pass through signal_buffers
-        # because the Qwen3 graph doesn't include them as inputs
+        # because the Qwen3 embedding graph doesn't include them as inputs
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets,

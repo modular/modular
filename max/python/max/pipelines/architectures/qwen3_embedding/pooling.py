@@ -40,10 +40,10 @@ def last_token_pool(
     # Compute last token index for each sequence (end_offset - 1)
     # Since end_offset is exclusive, the last token is at end_offset - 1
     one = ops.constant(1, DType.uint32, device=hidden_states.device)
-    last_token_indices = ops.sub(end_offsets, one)
+    last_token_indices = end_offsets - one
 
     # Cast to int32 for gather operation
-    last_token_indices_i32 = ops.cast(last_token_indices, DType.int32)
+    last_token_indices_i32 = last_token_indices.cast(DType.int32)
 
     # Gather the hidden states at the last token positions
     # This extracts embeddings for each sequence [batch_size, hidden_size]
@@ -62,20 +62,20 @@ def normalize_embeddings(embeddings: TensorValue) -> TensorValue:
         Normalized embeddings [batch_size, hidden_size]
     """
     # Cast to float32 BEFORE normalization for better numerical precision
-    embeddings_f32 = ops.cast(embeddings, DType.float32)
+    embeddings_f32 = embeddings.cast(DType.float32)
 
     # Apply L2 normalization: embeddings / ||embeddings||_2
     # This matches the upstream Qwen3-Embedding implementation which uses F.normalize(embeddings, p=2, dim=1)
     # Compute squared values
-    embeddings_squared = ops.mul(embeddings_f32, embeddings_f32)
+    embeddings_squared = embeddings_f32 * embeddings_f32
     # Sum along the last dimension (hidden_size) to get L2 norm squared for each sample
     # ops.sum keeps dimensions, so result is [batch_size, 1]
     norm_squared = ops.sum(embeddings_squared, axis=-1)
     # Compute L2 norm (sqrt of sum of squares) with epsilon for numerical stability
     epsilon = ops.constant(1e-12, DType.float32, embeddings_f32.device)
-    norm = ops.sqrt(ops.add(norm_squared, epsilon))
+    norm = ops.sqrt(norm_squared + epsilon)
     # Normalize: embeddings / norm
     # Broadcasting: [batch_size, hidden_size] / [batch_size, 1] -> [batch_size, hidden_size]
-    embeddings_normalized = ops.div(embeddings_f32, norm)
+    embeddings_normalized = embeddings_f32 / norm
 
     return embeddings_normalized
