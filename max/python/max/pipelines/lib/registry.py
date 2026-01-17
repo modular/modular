@@ -76,24 +76,21 @@ def get_pipeline_for_task(
     | type[EAGLESpeculativeDecodingPipeline]
 ):
     if task == PipelineTask.TEXT_GENERATION:
-        if pipeline_config._speculative_config is not None:
-            assert (
-                pipeline_config._speculative_config.speculative_method
-                is not None
-            )
+        if pipeline_config._speculative is not None:
+            assert pipeline_config._speculative.speculative_method is not None
             if (
-                pipeline_config._speculative_config.speculative_method
+                pipeline_config._speculative.speculative_method
                 == SpeculativeMethod.STANDALONE
             ):
                 return StandaloneSpeculativeDecodingPipeline
             elif (
-                pipeline_config._speculative_config.speculative_method
+                pipeline_config._speculative.speculative_method
                 == SpeculativeMethod.EAGLE
             ):
                 return EAGLESpeculativeDecodingPipeline
             else:
                 raise ValueError(
-                    f"Unsupported speculative method: {pipeline_config._speculative_config.speculative_method}"
+                    f"Unsupported speculative method: {pipeline_config._speculative.speculative_method}"
                 )
         else:
             return TextGenerationPipeline[TextContext]
@@ -377,17 +374,17 @@ class PipelineRegistry:
             arch = self.architectures[override_architecture]
         else:
             arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+                huggingface_repo=pipeline_config.model.huggingface_model_repo,
                 use_module_v3=pipeline_config.use_module_v3,
             )
 
         if arch is None:
             raise ValueError(
-                f"No architecture found for {pipeline_config.model_config.huggingface_model_repo.repo_id}"
+                f"No architecture found for {pipeline_config.model.huggingface_model_repo.repo_id}"
             )
 
         # Calculate Max Length
-        huggingface_config = pipeline_config.model_config.huggingface_config
+        huggingface_config = pipeline_config.model.huggingface_config
         max_length = arch.pipeline_model.calculate_max_seq_len(
             pipeline_config, huggingface_config=huggingface_config
         )
@@ -399,20 +396,21 @@ class PipelineRegistry:
         ):
             text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
             tokenizer = text_tokenizer(
-                pipeline_config.model_config.model_path,
-                revision=pipeline_config.model_config.huggingface_model_revision,
+                pipeline_config.model.model_path,
+                pipeline_config=pipeline_config,
+                revision=pipeline_config.model.huggingface_model_revision,
                 max_length=max_length,
-                trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
                 chat_template=pipeline_config.retrieve_chat_template(),
             )
         else:
             tokenizer = arch.tokenizer(
-                model_path=pipeline_config.model_config.model_path,
-                revision=pipeline_config.model_config.huggingface_model_revision,
-                max_length=max_length,
-                trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                model_path=pipeline_config.model.model_path,
                 pipeline_config=pipeline_config,
+                revision=pipeline_config.model.huggingface_model_revision,
+                max_length=max_length,
+                trust_remote_code=pipeline_config.model.trust_remote_code,
                 chat_template=pipeline_config.retrieve_chat_template(),
             )
 
@@ -435,16 +433,16 @@ class PipelineRegistry:
             arch = self.architectures[override_architecture]
         else:
             arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+                huggingface_repo=pipeline_config.model.huggingface_model_repo,
                 use_module_v3=pipeline_config.use_module_v3,
             )
 
         # Load HuggingFace Config
-        huggingface_config = pipeline_config.model_config.huggingface_config
+        huggingface_config = pipeline_config.model.huggingface_config
 
         # Architecture should not be None here, as the engine is MAX.
         assert arch is not None
-        devices = load_devices(pipeline_config.model_config.device_specs)
+        devices = load_devices(pipeline_config.model.device_specs)
 
         max_length = arch.pipeline_model.calculate_max_seq_len(
             pipeline_config, huggingface_config=huggingface_config
@@ -464,21 +462,22 @@ class PipelineRegistry:
         ):
             text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
             tokenizer = text_tokenizer(
-                pipeline_config.model_config.model_path,
-                revision=pipeline_config.model_config.huggingface_model_revision,
+                pipeline_config.model.model_path,
+                pipeline_config=pipeline_config,
+                revision=pipeline_config.model.huggingface_model_revision,
                 max_length=max_length,
-                trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
                 chat_template=pipeline_config.retrieve_chat_template(),
                 context_validators=arch.context_validators,
             )
         else:
             tokenizer = arch.tokenizer(
-                model_path=pipeline_config.model_config.model_path,
-                revision=pipeline_config.model_config.huggingface_model_revision,
-                max_length=max_length,
-                trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                model_path=pipeline_config.model.model_path,
                 pipeline_config=pipeline_config,
+                revision=pipeline_config.model.huggingface_model_revision,
+                max_length=max_length,
+                trust_remote_code=pipeline_config.model.trust_remote_code,
                 chat_template=pipeline_config.retrieve_chat_template(),
                 context_validators=arch.context_validators,
             )
@@ -500,15 +499,15 @@ class PipelineRegistry:
         }
 
         # If using speculative decoding, add draft model-specific parameters
-        if pipeline_config.draft_model_config is not None:
+        if pipeline_config.draft_model is not None:
             draft_arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.draft_model_config.huggingface_weight_repo,
+                huggingface_repo=pipeline_config.draft_model.huggingface_weight_repo,
                 use_module_v3=pipeline_config.use_module_v3,
             )
             if draft_arch is None:
                 raise ValueError(
                     f"MAX-Optimized architecture not found for draft model "
-                    f"'{pipeline_config.draft_model_config.model_path}'"
+                    f"'{pipeline_config.draft_model.model_path}'"
                 )
             factory_kwargs["draft_pipeline_model"] = draft_arch.pipeline_model
             factory_kwargs["draft_weight_adapters"] = draft_arch.weight_adapters
@@ -547,13 +546,13 @@ class PipelineRegistry:
             ValueError: If no supported architecture is found for the given model repository.
         """
         if arch := self.retrieve_architecture(
-            huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+            huggingface_repo=pipeline_config.model.huggingface_model_repo,
             use_module_v3=pipeline_config.use_module_v3,
         ):
             return arch.context_type
 
         raise ValueError(
-            f"MAX Optimized architecture not supported for {pipeline_config.model_config.huggingface_model_repo.repo_id}"
+            f"MAX Optimized architecture not supported for {pipeline_config.model.huggingface_model_repo.repo_id}"
         )
 
     def retrieve_pipeline_task(
@@ -572,13 +571,13 @@ class PipelineRegistry:
             ValueError: If no supported architecture is found for the given model repository.
         """
         if arch := self.retrieve_architecture(
-            huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+            huggingface_repo=pipeline_config.model.huggingface_model_repo,
             use_module_v3=pipeline_config.use_module_v3,
         ):
             return arch.task
 
         raise ValueError(
-            f"MAX Optimized architecture not supported for {pipeline_config.model_config.huggingface_model_repo.repo_id}"
+            f"MAX Optimized architecture not supported for {pipeline_config.model.huggingface_model_repo.repo_id}"
         )
 
     def retrieve(

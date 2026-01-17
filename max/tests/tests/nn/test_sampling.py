@@ -16,7 +16,7 @@ from typing import cast
 
 import numpy as np
 import pytest
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -61,7 +61,7 @@ def test_min_p_execution(
 
         # Execute MAX model.
         min_p_output, *_ = model.execute(np_input)
-        cast(Tensor, min_p_output).to_numpy()
+        cast(Buffer, min_p_output).to_numpy()
 
 
 def test_min_p_known_inputs_outputs(session: InferenceSession) -> None:
@@ -101,7 +101,7 @@ def test_min_p_known_inputs_outputs(session: InferenceSession) -> None:
 
         min_p_array = np.array([0.1, 0.1, 0.26, 0.1, 0.1], dtype=np.float32)
         min_p_output, *_ = model.execute(np_input, min_p_array)
-        result = cast(Tensor, min_p_output).to_numpy()
+        result = cast(Buffer, min_p_output).to_numpy()
         assert (
             result[2, 0] == 2
         )  # 1.1 is the only logit that is greater than 0.26 after softmax

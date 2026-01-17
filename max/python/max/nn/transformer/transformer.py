@@ -19,10 +19,10 @@ from typing import TypeVar
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
 
-from ..embedding import Embedding, EmbeddingV1
+from ..embedding import Embedding
 from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Layer, LayerList, Module
-from ..linear import Linear, LinearV1
+from ..linear import Linear
 from ..rotary_embedding import RotaryEmbedding
 
 
@@ -100,8 +100,8 @@ class Transformer(Module):
         n_heads: int,
         layers: list[Block],
         norm: Layer,
-        output: LinearV1 | Linear,
-        embedding: EmbeddingV1 | Embedding,
+        output: Linear,
+        embedding: Embedding,
         kv_params: KVCacheParams,
         rope: RotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,

@@ -11,7 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.cluster import block_rank_in_cluster, cluster_sync, elect_one_sync
+from gpu.primitives.cluster import (
+    block_rank_in_cluster,
+    cluster_sync,
+    elect_one_sync,
+)
 from gpu.host import DeviceContext
 from gpu import block_id_in_cluster, block_idx
 from gpu import warp_id as get_warp_id
@@ -229,7 +233,7 @@ fn test_tile_scheduler(ctx: DeviceContext) raises:
     # CHECK-DAG: work_info: (0, 13, 0, True)
     # CHECK-DAG: work_info: (0, 11, 0, True)
     # CHECK-DAG: work_info: (0, 12, 0, True)
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         cluster_dim,
         grid_dim=grid_dim,
         block_dim=(256),

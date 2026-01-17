@@ -18,13 +18,14 @@ from gpu.host import DeviceContext
 
 # from testing import assert_almost_equal
 from gpu import thread_idx
-from gpu.mma import (
+from gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from internal_utils import assert_equal, random, zero
+from internal_utils import assert_equal
+from random import rand
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tensor_core_async import (
@@ -32,7 +33,9 @@ from layout.tensor_core_async import (
     _rhs_descriptor,
     tile_layout_k_major,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils import StaticTuple
 
@@ -168,10 +171,10 @@ fn wgmma_e4m3_e4m3_f32[
     )
 
     # Initialize matmul operands
-    random(a_host)
-    random(b_host)
-    zero(c_host)
-    zero(c_host_ref)
+    rand(a_host.data, a_host.num_elements())
+    rand(b_host.data, b_host.num_elements())
+    c_host.zero()
+    c_host_ref.zero()
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -205,7 +208,7 @@ fn wgmma_e4m3_e4m3_f32[
         transpose_b=transpose_b,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         a_tensor,
         b_tensor,
         c_tensor,
@@ -262,7 +265,7 @@ fn wgmma_e4m3_e4m3_f32[
 
     ctx.synchronize()
 
-    assert_equal(c_host, c_host_ref)
+    assert_equal(c_host.data, c_host_ref.data, c_host.num_elements())
 
     # Cleanup
     a_host_ptr.free()

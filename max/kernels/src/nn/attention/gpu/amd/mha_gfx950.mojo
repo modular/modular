@@ -278,7 +278,8 @@ struct KVBuffer[
         head_idx: UInt,
         shared_ptr: UnsafePointer[
             Scalar[Self.kv_t.dtype],
-            address_space = AddressSpace.SHARED, **_,
+            address_space = AddressSpace.SHARED,
+            ...,
         ],
         end: UInt,
         warp_id: UInt32,
@@ -375,9 +376,9 @@ struct KVBuffer[
         if Self.transpose:
             comptime num_warps_n = Self.BN // Self.WN
             var warp_col = get_warp_id() % UInt(num_warps_n)
-            var smem_tile = self.smem_iter.next_unsafe(buffer)[].tile[
-                Self.BN, Self.BK
-            ](0, Int(bk_tile))
+            var smem_tile = self.smem_iter.next_unsafe(
+                self.smem_iter.layout_uint_type(buffer)
+            )[].tile[Self.BN, Self.BK](0, Int(bk_tile))
 
             var wtile_coord0 = Int(warp_col)
             var wtile_coord1 = 0
@@ -399,7 +400,9 @@ struct KVBuffer[
             @parameter
             for k in range(Self.BK // MMA_K):
                 var smem_tile = (
-                    self.smem_iter.next_unsafe(buffer)[]
+                    self.smem_iter.next_unsafe(
+                        self.smem_iter.layout_uint_type(buffer)
+                    )[]
                     .tile[Self.BK, Self.depth](Int(bk_tile), 0)
                     .tile[MMA_K, Self.depth](k, 0)
                 )
@@ -431,7 +434,7 @@ struct KVBuffer[
                         tile_layout,
                         MutAnyOrigin,
                         address_space = smem_tile.address_space,
-                    ](smem_tile.ptr.offset(offset))
+                    ](smem_tile.ptr + offset)
                     frags[i, 0] = rebind[frags.element_type](
                         load_b_tr[Self.mma_shape](tile)
                     )
@@ -442,16 +445,18 @@ struct KVBuffer[
 __extension Attention:
     @always_inline
     fn get_num_rows(self) -> UInt32:
-        end = min(self.kv_start_row + Self.BN, self.num_keys)
-        num_rows = min(end - self.kv_start_row, UInt32(Self.BN))
-        return num_rows
+        var end = min(self.kv_start_row + UInt32(Self.BN), self.num_keys)
+        var num_rows = max(
+            min(Int32(end - self.kv_start_row), Int32(UInt32(Self.BN))), 0
+        )
+        return UInt32(num_rows)
 
     @always_inline
-    fn apply_mask[stage: Int](mut self, not_last_iter: Bool = True):
+    fn apply_mask[stage: Int](mut self, not_last_iter: Bool = False):
         self.scale_p_reg[stage]()
         var num_rows = self.get_num_rows()
         self.mask_apply[stage](self.kv_start_row, num_rows, not_last_iter)
-        self.kv_start_row += self.BN
+        self.kv_start_row += UInt32(Self.BN)
 
     @always_inline
     fn online_softmax_step_0[stage: Int, mask: Bool = True](mut self):
@@ -719,7 +724,8 @@ __extension Attention:
         if is_causal_mask:
             # for causal mask we can exit early depending on the q_tile_idx
             var num_tiles_causal = ceildiv(
-                Int((self.q_tile_idx() + 1) * Self.BM), Int(Self.BN)
+                Int((self.q_tile_idx() + 1) * Self.BM) + self.start_pos,
+                Int(Self.BN),
             )
             var num_tiles = ceildiv(self.num_keys, Int(Self.BN))
             num_tiles_causal = min(Int(num_tiles_causal), Int(num_tiles))
@@ -732,7 +738,9 @@ __extension Attention:
             UInt32(iter_end),
             UInt32(Self.BN * 2),
         ):
-            var end = min(self.kv_start_row + 2 * Self.BN, self.num_keys)
+            var end = min(
+                self.kv_start_row + UInt32(2 * Self.BN), self.num_keys
+            )
             loop_over_kvcache[Int(Self.BN)](end)
 
         mma_qk[1]()

@@ -1,4 +1,6 @@
-# Mojo references, an alternate take
+# Mojo References, an Alternate Take
+
+**Status**: Implemented.
 
 Nick Smith + Chris Lattner; May 28, 2024
 

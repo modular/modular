@@ -15,7 +15,7 @@ from math import ceildiv
 from random import randn, seed
 from sys import has_nvidia_gpu_accelerator
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from buffer import NDBuffer
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
@@ -26,7 +26,9 @@ from utils import IndexList
 from utils.index import Index
 from utils.numerics import isnan
 from internal_utils import assert_almost_equal
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
@@ -66,7 +68,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
             DType.float32, DType.float32, DType.float32
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -87,7 +89,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
             tile_size = WARP_SIZE * WARPS_PER_BLOCK,
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -136,7 +138,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
             BLOCK_DIM,
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -161,7 +163,6 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
     comptime errorTolerance = 1e-2
-    var failed = False
     assert_almost_equal(
         c_host,
         c_host_naive,
@@ -242,8 +243,8 @@ fn run_matvec_with_epilogue_fn(
             DType.float32,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function_checked[kernel, kernel]()
-        ctx.enqueue_function_checked(
+        var func = ctx.compile_function_experimental[kernel]()
+        ctx.enqueue_function(
             func,
             c_device,
             a_device,
@@ -265,8 +266,8 @@ fn run_matvec_with_epilogue_fn(
             tile_size = WARP_SIZE * WARPS_PER_BLOCK,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function_checked[kernel, kernel]()
-        ctx.enqueue_function_checked(
+        var func = ctx.compile_function_experimental[kernel]()
+        ctx.enqueue_function(
             func,
             c_device,
             a_device,
@@ -320,8 +321,8 @@ fn run_matvec_with_epilogue_fn(
             BLOCK_DIM,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function_checked[kernel, kernel]()
-        ctx.enqueue_function_checked(
+        var func = ctx.compile_function_experimental[kernel]()
+        ctx.enqueue_function(
             func,
             c_device,
             a_device,
@@ -346,7 +347,6 @@ fn run_matvec_with_epilogue_fn(
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
     comptime errorTolerance = 1e-2
-    var failed = False
     assert_almost_equal(
         c_host,
         c_host_naive,

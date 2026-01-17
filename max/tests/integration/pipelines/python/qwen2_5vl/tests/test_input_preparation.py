@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, NonCallableMock
 
 import numpy as np
 import pytest
@@ -39,6 +39,7 @@ from max.interfaces import (
     SamplingParams,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TokenBuffer,
 )
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.parallel import ParallelArrayOps
@@ -48,7 +49,9 @@ from max.pipelines.architectures.qwen2_5vl.context import (
 from max.pipelines.architectures.qwen2_5vl.model import Qwen2_5VLModel
 from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
 from max.pipelines.core import TextAndVisionContext
+from max.pipelines.lib import KVCacheConfig
 from pytest_mock import MockerFixture
+from transformers import Qwen2_5_VLConfig
 
 
 def create_mock_qwen_model(mocker: MockerFixture) -> Qwen2_5VLModel:
@@ -103,9 +106,9 @@ def create_mock_qwen_model(mocker: MockerFixture) -> Qwen2_5VLModel:
         return mock_tensor
 
     mocker.patch(
-        "max.driver.Tensor.from_numpy", side_effect=mock_tensor_from_numpy
+        "max.driver.Buffer.from_numpy", side_effect=mock_tensor_from_numpy
     )
-    mocker.patch("max.driver.Tensor.zeros", return_value=Mock())
+    mocker.patch("max.driver.Buffer.zeros", return_value=Mock())
 
     # Import after patching
 
@@ -278,8 +281,8 @@ def round_trip_tokenizer_mock(
 def qwen_vision_config_mock(mocker: MockerFixture) -> MagicMock:
     """Mock Qwen2.5VL vision config with standard parameters.
 
-    Creates and patches AutoConfig.from_pretrained with a mock config
-    containing typical Qwen2.5VL vision parameters.
+    Creates a mock config containing typical Qwen2.5VL vision parameters.
+    This is used to create the mock pipeline_config fixture.
     """
     cfg = MagicMock()
     cfg.vision_config = MagicMock()
@@ -288,12 +291,61 @@ def qwen_vision_config_mock(mocker: MockerFixture) -> MagicMock:
     cfg.vision_config.spatial_merge_size = 2
     cfg.vision_config.window_size = 448
     cfg.vision_config.tokens_per_second = 2
-
-    mocker.patch(
-        "max.pipelines.architectures.qwen2_5vl.tokenizer.AutoConfig.from_pretrained",
-        return_value=cfg,
-    )
     return cfg
+
+
+def _create_mock_huggingface_config(
+    qwen_token_ids: dict[str, int],
+) -> NonCallableMock:
+    """Create a mock HuggingFace config with spec=Qwen2_5_VLConfig.
+
+    Using spec ensures that ONLY attributes present on the real Qwen2_5_VLConfig
+    are accessible. This prevents tests from passing when code incorrectly
+    accesses attributes that don't exist on the real config type.
+    """
+    mock_hf_config = NonCallableMock(spec=Qwen2_5_VLConfig)
+
+    # Set up required attributes that the tokenizer accesses from HuggingFace config
+    mock_hf_config.image_token_id = qwen_token_ids["image_token_id"]
+    mock_hf_config.video_token_id = qwen_token_ids["video_token_id"]
+    mock_hf_config.vision_start_token_id = qwen_token_ids[
+        "vision_start_token_id"
+    ]
+    mock_hf_config.eos_token_id = 2
+
+    # Create vision config
+    vision_config = NonCallableMock()
+    vision_config.patch_size = 14
+    vision_config.temporal_patch_size = 2
+    vision_config.spatial_merge_size = 2
+    vision_config.window_size = 448
+    vision_config.tokens_per_second = 2
+    mock_hf_config.vision_config = vision_config
+
+    return mock_hf_config
+
+
+@pytest.fixture
+def mock_pipeline_config(qwen_token_ids: dict[str, int]) -> MagicMock:
+    """Create a mock PipelineConfig for Qwen2.5VL tests.
+
+    Provides a mock pipeline config with HuggingFace config containing
+    the required token IDs and vision config.
+    """
+    hf_config = _create_mock_huggingface_config(qwen_token_ids)
+
+    kv_cache_config = NonCallableMock(spec=KVCacheConfig)
+    kv_cache_config.enable_prefix_caching = False
+
+    # Create mock model config
+    model_config = MagicMock()
+    model_config.huggingface_config = hf_config
+    model_config.kv_cache = kv_cache_config
+
+    # Create mock pipeline config
+    pipeline_config = MagicMock()
+    pipeline_config.model = model_config
+    return pipeline_config
 
 
 @pytest.fixture
@@ -348,7 +400,7 @@ def image_processor_mock() -> Callable[[np.ndarray, np.ndarray], MagicMock]:
 async def test_qwen_input_preparation__position_ids_after_reset(
     mocker: MockerFixture,
     round_trip_tokenizer_mock: Callable[[list[int]], MagicMock],
-    qwen_vision_config_mock: MagicMock,
+    mock_pipeline_config: MagicMock,
     qwen_token_ids: dict[str, int],
 ) -> None:
     """Test that decoder_position_ids are correctly recomputed after context reset (text-only).
@@ -391,12 +443,8 @@ async def test_qwen_input_preparation__position_ids_after_reset(
         return_value=(None, None, ""),  # No images for text-only test
     )
 
-    # Create tokenizer with token IDs from fixture
-    tokenizer = Qwen2_5VLTokenizer("test-model")
-    tokenizer.image_token_id = qwen_token_ids["image_token_id"]
-    tokenizer.video_token_id = qwen_token_ids["video_token_id"]
-    tokenizer.vision_start_token_id = qwen_token_ids["vision_start_token_id"]
-    tokenizer.tokens_per_second = 2
+    # Create tokenizer with mock pipeline config
+    tokenizer = Qwen2_5VLTokenizer("test-model", mock_pipeline_config)
 
     # ========================================================================
     # SECTION 2: Create Initial Context
@@ -417,7 +465,7 @@ async def test_qwen_input_preparation__position_ids_after_reset(
         f"Expected Qwen2_5VLTextAndVisionContext, got {type(context)}"
     )
 
-    initial_current_length = context.current_length
+    initial_current_length = len(context.tokens)
 
     # ========================================================================
     # SECTION 3: Simulate Generation + Reset (Core Test Scenario)
@@ -426,17 +474,17 @@ async def test_qwen_input_preparation__position_ids_after_reset(
     for i in range(5):
         context.update(100 + i)  # Add tokens 100, 101, 102, 103, 104
 
-    assert context.current_length == initial_current_length + 5
+    assert len(context.tokens) == initial_current_length + 5
 
     # Reset the context (simulating preemption/restart)
     context.reset()
 
     # Verify reset state: indices reset, but tokens remain
-    assert context.processed_length == 0
+    assert context.tokens.processed_length == 0
     assert (
-        context.current_position == initial_current_length + 5
+        context.tokens.current_position == initial_current_length + 5
     )  # Includes the 5 added tokens
-    assert context.current_length == initial_current_length + 5
+    assert len(context.tokens) == initial_current_length + 5
 
     # Key point: decoder_position_ids shape (initial_current_length) doesn't match
     # current_length (initial_current_length + 5) because we added tokens.
@@ -460,10 +508,10 @@ async def test_qwen_input_preparation__position_ids_after_reset(
     # ========================================================================
     # Create a fresh context with the same token sequence as if we were starting
     # from scratch with all tokens (initial + 5 generated)
-    assert len(context.all_tokens) == initial_current_length + 5
+    assert len(context.tokens.all) == initial_current_length + 5
 
     request2 = TextGenerationRequest(
-        prompt=context.all_tokens.tolist(),  # Use all tokens
+        prompt=context.tokens.all.tolist(),  # Use all tokens
         request_id=RequestID("test-id-2"),
         model_name="test-model",
     )
@@ -507,7 +555,7 @@ async def test_qwen_input_preparation__position_ids_after_reset(
 async def test_qwen_input_preparation__position_ids_after_reset_with_image(
     mocker: MockerFixture,
     round_trip_tokenizer_mock: Callable[[list[int]], MagicMock],
-    qwen_vision_config_mock: MagicMock,
+    mock_pipeline_config: MagicMock,
     qwen_token_ids: dict[str, int],
     image_processor_mock: Callable[[np.ndarray, np.ndarray], MagicMock],
 ) -> None:
@@ -577,15 +625,11 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
         ),  # (images, videos, placeholder_text)
     )
 
-    # Create tokenizer with mocked image processor
-    tokenizer = Qwen2_5VLTokenizer("test-model")
+    # Create tokenizer with mock pipeline config
+    tokenizer = Qwen2_5VLTokenizer("test-model", mock_pipeline_config)
     tokenizer.img_processor = image_processor_mock(
         mock_pixel_values, mock_image_grid_thw
     )
-    tokenizer.image_token_id = qwen_token_ids["image_token_id"]
-    tokenizer.video_token_id = qwen_token_ids["video_token_id"]
-    tokenizer.vision_start_token_id = qwen_token_ids["vision_start_token_id"]
-    tokenizer.tokens_per_second = 2
 
     # ========================================================================
     # SECTION 2: Create Initial Context with Image
@@ -613,7 +657,7 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
     )
     assert len(context.images) > 0, "Context should contain image metadata"
 
-    initial_current_length = context.current_length
+    initial_current_length = len(context.tokens)
     initial_images = context.images
 
     # ========================================================================
@@ -623,15 +667,15 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
     for i in range(3):
         context.update(200 + i)  # Add tokens 200, 201, 202
 
-    assert context.current_length == initial_current_length + 3
+    assert len(context.tokens) == initial_current_length + 3
 
     # Reset the context (simulating preemption/restart)
     context.reset()
 
     # Verify reset state: indices reset, tokens and images remain
-    assert context.processed_length == 0
-    assert context.current_position == initial_current_length + 3
-    assert context.current_length == initial_current_length + 3
+    assert context.tokens.processed_length == 0
+    assert context.tokens.current_position == initial_current_length + 3
+    assert len(context.tokens) == initial_current_length + 3
     assert len(context.images) == len(initial_images), (
         "Images should be preserved after reset"
     )
@@ -665,7 +709,7 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
                 ],
             )
         ],
-        prompt=context.all_tokens.tolist(),  # Override with full token sequence
+        prompt=context.tokens.all.tolist(),  # Override with full token sequence
         request_id=RequestID("test-id-with-image-2"),
         model_name="test-model",
     )
@@ -674,7 +718,7 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
 
     # Verify fresh context has same properties
     assert len(context2.images) == len(context.images)
-    assert context2.current_length == context.current_length
+    assert len(context2.tokens) == len(context.tokens)
 
     # Get position IDs from fresh context
     fresh_qwen_inputs = model.prepare_initial_token_inputs(
@@ -764,7 +808,7 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
     image_token_id = 151652
     ctx = Qwen2_5VLTextAndVisionContext(
         request_id=RequestID("test-posid-increment"),
-        tokens=tokens,
+        tokens=TokenBuffer(tokens),
         max_length=L + 8,
         eos_token_ids=set([2]),
         sampling_params=SamplingParams(max_new_tokens=2),
@@ -783,9 +827,9 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
     )
 
     # Verify initial state: prefill phase (start_idx=0, active range covers all tokens).
-    assert ctx.processed_length == 0
-    assert ctx.current_position == L
-    assert ctx.current_length == L
+    assert ctx.tokens.processed_length == 0
+    assert ctx.tokens.current_position == L
+    assert len(ctx.tokens) == L
 
     # Build inputs for prefill phase.
     dummy_kv_inputs = Mock(spec=KVCacheInputs)
@@ -807,9 +851,7 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
 
     # Simulate first decode step (single-token generation).
     # Mimic the pipeline's next iteration: move to decode phase with single active token.
-    ctx.rewind_processing(ctx.processed_length - L)
-    ctx.current_position = L + 1  # type: ignore
-    ctx._end_idx = L + 1
+    ctx.tokens.advance_with_token(0)
 
     step1_inputs = model.prepare_initial_token_inputs(
         replica_batches=[[ctx]],

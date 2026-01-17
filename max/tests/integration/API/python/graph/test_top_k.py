@@ -16,7 +16,7 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor, accelerator_count
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -59,7 +59,7 @@ def test_top_k_execution(
 
     # Execute MAX model.
     max_values, max_indices = model.execute(
-        Tensor.from_numpy(np_input).to(model.input_devices[0])
+        Buffer.from_numpy(np_input).to(model.input_devices[0])
     )
 
     # Get torch reference results.
@@ -73,7 +73,7 @@ def test_top_k_execution(
 
     # Verify values match.
     np.testing.assert_allclose(
-        cast(Tensor, max_values).to_numpy(), torch_values.numpy(), rtol=1e-5
+        cast(Buffer, max_values).to_numpy(), torch_values.numpy(), rtol=1e-5
     )
 
     # For indices verification, check that gathered values match.
@@ -81,7 +81,7 @@ def test_top_k_execution(
     # (once this test supports that).
     np.testing.assert_array_equal(
         np.take_along_axis(
-            np_input, cast(Tensor, max_indices).to_numpy(), axis=axis
+            np_input, cast(Buffer, max_indices).to_numpy(), axis=axis
         ),
         np.take_along_axis(np_input, torch_indices.numpy(), axis=axis),
     )
@@ -112,7 +112,7 @@ def test_top_k_invalid_k(session: InferenceSession) -> None:
         match=r"k value exceeds dimension size along specified axis",
     ):
         model.execute(
-            Tensor.from_numpy(np.ones(input_shape, dtype=np.float32)).to(
+            Buffer.from_numpy(np.ones(input_shape, dtype=np.float32)).to(
                 model.input_devices[0]
             )
         )

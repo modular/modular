@@ -21,7 +21,12 @@ from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tensor_tile,
+    create_tma_tile,
+)
 from memory import stack_allocation
 
 from utils.index import Index, IndexList
@@ -91,14 +96,14 @@ def test_tma_swizzle[
     var dst = ManagedLayoutTensor[dtype, layout](ctx)
 
     @parameter
-    if dtype is DType.float8_e4m3fn:
+    if dtype == DType.float8_e4m3fn:
         random(src.tensor[update=False]())
         random(dst.tensor[update=False]())
     else:
         arange(src.tensor[update=False](), 0)
         arange(dst.tensor[update=False](), 0)
 
-    var tma_tensor = create_tma_tile[
+    var tma_tensor = create_tensor_tile[
         tile_shape,
         swizzle_mode=swizzle_mode,
     ](ctx, src.device_tensor())
@@ -126,7 +131,7 @@ def test_tma_swizzle[
         type_of(tma_tensor).layout,
         type_of(tma_tensor).desc_layout,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(shape[1] // tile_shape[1], shape[0] // tile_shape[0]),

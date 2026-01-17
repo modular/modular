@@ -20,8 +20,11 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from memory import LegacyUnsafePointer as UnsafePointer
-from internal_utils import assert_almost_equal, random, zero
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from internal_utils import assert_almost_equal
+from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu.sm100.matmul import (
@@ -63,7 +66,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     block_swizzle_size: Int = 0,
     benchmark: Bool = False,
     swapAB: Bool = False,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value
@@ -163,8 +166,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             for k_idx in range(K):
                 b_host[n_idx, k_idx] = Float32(n_idx + k_idx).cast[b_type]()
     else:
-        random(a_host)
-        random(b_host)
+        rand(a_host.data, a_host.num_elements())
+        rand(b_host.data, b_host.num_elements())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -213,8 +216,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
     )

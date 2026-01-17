@@ -189,7 +189,7 @@ async def _async_worker(
     tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config
     )
-    model_name = pipeline_config.model_config.model_path
+    model_name = pipeline_config.model.model_path
 
     # Start the model worker process.
     # Create dynamic and continuous batching workers and associated queues
@@ -198,9 +198,9 @@ async def _async_worker(
     lora_queue: LoRAQueue | None = (
         LoRAQueue(
             pipeline_config.zmq_endpoint_base,
-            pipeline_config.lora_config.lora_paths,
+            pipeline_config.lora.lora_paths,
         )
-        if pipeline_config.lora_config
+        if pipeline_config.lora
         else None
     )
     # Create Queues
@@ -239,7 +239,7 @@ async def _async_worker(
                     SamplingParamsInput(
                         max_new_tokens=request.max_new_tokens  # noqa: B023
                     ),
-                    sampling_params_defaults=pipeline_config.model_config.sampling_params_defaults,
+                    sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
                 )
                 gen_request = TextGenerationRequest(
                     request_id=RequestID(),
@@ -249,10 +249,12 @@ async def _async_worker(
                 )
 
                 # Generate this request until complete
-                tokens = await pipeline.all_tokens(gen_request)
+                chunks = await pipeline.all_tokens(gen_request)
                 return "".join(
-                    t.decoded_token if t.decoded_token is not None else ""
-                    for t in tokens
+                    chunk.decoded_tokens
+                    if chunk.decoded_tokens is not None
+                    else ""
+                    for chunk in chunks
                 )
 
             responses = await _async_map(

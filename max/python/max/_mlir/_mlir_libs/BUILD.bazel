@@ -11,16 +11,13 @@ copy_files(
 modular_nanobind_extension(
     name = "_mlir.bindings",
     srcs = [
-        "@llvm-raw//:mlir/lib/Bindings/Python/Globals.h",
+        "@llvm-raw//:mlir/lib/Bindings/Python/Globals.cpp",
         "@llvm-raw//:mlir/lib/Bindings/Python/IRAffine.cpp",
         "@llvm-raw//:mlir/lib/Bindings/Python/IRAttributes.cpp",
         "@llvm-raw//:mlir/lib/Bindings/Python/IRCore.cpp",
         "@llvm-raw//:mlir/lib/Bindings/Python/IRInterfaces.cpp",
-        "@llvm-raw//:mlir/lib/Bindings/Python/IRModule.cpp",
-        "@llvm-raw//:mlir/lib/Bindings/Python/IRModule.h",
         "@llvm-raw//:mlir/lib/Bindings/Python/IRTypes.cpp",
         "@llvm-raw//:mlir/lib/Bindings/Python/MainModule.cpp",
-        "@llvm-raw//:mlir/lib/Bindings/Python/NanobindUtils.h",
         "@llvm-raw//:mlir/lib/Bindings/Python/Pass.cpp",
         "@llvm-raw//:mlir/lib/Bindings/Python/Pass.h",
         "@llvm-raw//:mlir/lib/Bindings/Python/Rewrite.cpp",
@@ -56,5 +53,8 @@ This is likely to occur when bumping LLVM, you can run
 # ===----------------------------------------------------------------------=== #
 """,
     pyi_srcs = glob(["**/*.pyi"]),
-    tags = ["no-mypy"],
+    tags = [
+        "no-mypy",
+        "no-pydeps",  # Needs _mlir (invalid relative import) and max._mlir.ir (which would cause a circular dependency)
+    ],
 )

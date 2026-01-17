@@ -13,10 +13,12 @@
 
 from collections import OptionalReg
 from math import align_down, ceildiv, exp, exp2, log
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from algorithm import sync_parallelize, vectorize
 from algorithm._gpu.reduction import block_reduce, row_reduce
 from algorithm.reduction import (
@@ -116,7 +118,7 @@ fn _exp2_concrete(x: SIMD) -> type_of(x):
 fn _softmax_2_pass_step1[
     simd_width: Int,
     dtype: DType,
-](input: LayoutTensor[dtype, **_]) -> StaticTuple[Scalar[dtype], 2]:
+](input: LayoutTensor[dtype, ...]) -> StaticTuple[Scalar[dtype], 2]:
     __comptime_assert input.rank == 1
     # STEP 1: find the runningMax and runningSum in each batch.
     #   runningMax = -∞
@@ -168,8 +170,8 @@ fn _softmax_2_pass_step2[
     unroll_factor: Int,
     dtype: DType,
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
-    input: LayoutTensor[dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
+    input: LayoutTensor[dtype, ...],
     running_max: Scalar[dtype],
     running_sum: Scalar[dtype],
 ):
@@ -198,7 +200,7 @@ fn _softmax_2_pass_step2[
 fn softmax_2_pass[
     simd_width: Int,
     dtype: DType,
-](output: LayoutTensor[mut=True, dtype, **_], input: LayoutTensor[dtype, **_],):
+](output: LayoutTensor[mut=True, dtype, ...], input: LayoutTensor[dtype, ...],):
     """Performs an unbatched softmax on an input tensor using the two-pass
     online algorithm.
 
@@ -262,7 +264,7 @@ fn _softmax_3_pass_step_2[
         dtype, width
     ],
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     max_val: Scalar[dtype],
 ) -> Scalar[dtype]:
     __comptime_assert output.rank == 1
@@ -303,7 +305,7 @@ fn _softmax_3_pass_step_3[
     accum_apply_func: fn[dtype: DType, width: Int] (
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> SIMD[dtype, width],
-](output: LayoutTensor[mut=True, dtype, **_], accum: Scalar[dtype],):
+](output: LayoutTensor[mut=True, dtype, ...], accum: Scalar[dtype],):
     __comptime_assert output.rank == 1
     # STEP 3: normalize each batch
     # accum = accum_proc_func(accum)
@@ -340,7 +342,7 @@ fn _softmax_3_pass_base[
     step3_accum_apply_func: fn[dtype: DType, width: Int] (
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> SIMD[dtype, width],
-](output: LayoutTensor[mut=True, dtype, **_]) raises:
+](output: LayoutTensor[mut=True, dtype, ...]) raises:
     """Performs an unbatched three-pass softmax. The actual behavior of each
     step can be different between the (regular) softmax and logsoftmax.
 
@@ -435,7 +437,7 @@ fn softmax_3_pass[
         dtype, _simd_width
     ],
     logsoftmax: Bool = False,
-](output: LayoutTensor[mut=True, dtype, **_]) raises:
+](output: LayoutTensor[mut=True, dtype, ...]) raises:
     """Performs an unbatched softmax on an input tensor using the three-pass
     algorithm.
 
@@ -508,7 +510,7 @@ fn logsoftmax[
     target: StaticString = "cpu",
 ](
     shape: IndexList[rank],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     axis: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -523,8 +525,8 @@ fn logsoftmax[
     rank: Int,
     target: StaticString = "cpu",
 ](
-    input: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    input: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
     axis: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -561,7 +563,7 @@ fn _softmax_cpu[
     logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     axis: Int,
 ) raises:
     # TODO: Add rowwise generator to de-duplicate partitioning logic between
@@ -590,7 +592,7 @@ fn _softmax_cpu[
                 Layout.row_major(UNKNOWN_VALUE),
                 address_space = output.address_space,
             ](
-                output.ptr.offset(buffer_offset),
+                output.ptr + buffer_offset,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     IndexList[1](inner_dim)
                 ),
@@ -609,7 +611,7 @@ fn _softmax_cpu[
             softmax_3_pass[
                 simd_width,
                 dtype,
-                origin_of(),
+                origin_of()._mlir_origin,
                 input_fn_1d,
                 logsoftmax=logsoftmax,
             ](output_buffer_view)
@@ -624,8 +626,8 @@ fn softmax[
     simd_width: Int,
     rank: Int,
 ](
-    input: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    input: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
     axis: Int,
 ) raises:
     @parameter
@@ -773,6 +775,9 @@ fn softmax_kernel[
 
         @parameter
         if logsoftmax:
+            __comptime_assert (
+                dtype.is_floating_point()
+            ), "dtype must be floating point"
             output.store(row_coords, log(output.load[width=1](row_coords)))
 
 
@@ -789,7 +794,7 @@ fn _softmax_gpu[
     logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     axis: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
@@ -821,7 +826,7 @@ fn _softmax_gpu[
         sink=sink,
         logsoftmax=logsoftmax,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         shape,
         output,
         sink_weights.value(),
@@ -841,7 +846,7 @@ fn softmax[
     logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     axis: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -860,7 +865,7 @@ fn softmax[
                 dtype,
                 simd_width,
                 rank,
-                origin_of(),
+                origin_of()._mlir_origin,
                 input_fn,
                 logsoftmax=logsoftmax,
             ](shape, output, axis)
@@ -1111,11 +1116,11 @@ fn _online_softmax_iter_for_mma_output[
         1, 2
     ) if is_nvidia_gpu() else Layout.row_major(4, 1),
 ](
-    output_reg_tile: LayoutTensor[mut=True, dtype, *_, **_],
-    score_reg_tile: LayoutTensor[mut=True, dtype, *_, **_],
-    warp_scratch: LayoutTensor[mut=True, dtype, *_, **_],
-    rowmax: UnsafePointer[Scalar[dtype], mut=True, **_],
-    rowsum: UnsafePointer[Scalar[dtype], mut=True, **_],
+    output_reg_tile: LayoutTensor[mut=True, dtype, ...],
+    score_reg_tile: LayoutTensor[mut=True, dtype, ...],
+    warp_scratch: LayoutTensor[mut=True, dtype, ...],
+    rowmax: UnsafePointer[Scalar[dtype], ...],
+    rowsum: UnsafePointer[Scalar[dtype], ...],
 ):
     comptime num_colwise_warps = block_layout_by_warp.shape[0].value()
     comptime num_rowwise_warps = block_layout_by_warp.shape[1].value()
@@ -1521,17 +1526,17 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         mut=True,
         dtype,
         output_layout,
-        *_,
-        address_space = AddressSpace.LOCAL, **_,
+        address_space = AddressSpace.LOCAL,
+        ...,
     ],
     warp_scratch: LayoutTensor[
-        mut=True, dtype, *_, address_space = AddressSpace.SHARED, **_
+        mut=True, dtype, address_space = AddressSpace.SHARED, ...
     ],
     o_smem_ptr_base: UnsafePointer[
-        Scalar[dtype], mut=True, address_space = AddressSpace.SHARED, **_
+        Scalar[dtype], address_space = AddressSpace.SHARED, ...
     ],
-    rowmax: UnsafePointer[Scalar[dtype], mut=True, **_],
-    rowsum: UnsafePointer[Scalar[dtype], mut=True, **_],
+    rowmax: UnsafePointer[Scalar[dtype], ...],
+    rowsum: UnsafePointer[Scalar[dtype], ...],
 ):
     # Here, we use naming conventions aligning with MHA's
     comptime num_m_mmas = score_layout_by_mma_unit.shape[0].value()
@@ -1558,7 +1563,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     #
 
     var tid = thread_idx.x
-    var lane = lane_id()
+    var lane = UInt32(lane_id())
     var warp_y, warp_x = divmod(tid // UInt(WARP_SIZE), UInt(num_warps_n))
 
     comptime fragment_layout = Layout.row_major(
@@ -1823,7 +1828,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                     address_space = AddressSpace.SHARED,
                 ](o_smem_ptr_write)
                 .vectorize[1, frag_size]()
-                .distribute[Layout.row_major(WARP_SIZE, 1)](lane)
+                .distribute[Layout.row_major(WARP_SIZE, 1)](UInt(lane))
             )
             # after distribute and vectorize, the shape should be
             # WM * WN // (2*frag_size * WARP_SIZE), 1
@@ -1855,7 +1860,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                 address_space = AddressSpace.SHARED,
             ](o_smem_ptr_reduce)
             .vectorize[1, frag_size]()
-            .distribute[Layout.row_major(WARP_SIZE, 1)](lane)
+            .distribute[Layout.row_major(WARP_SIZE, 1)](UInt(lane))
         )
 
         @parameter
@@ -1916,10 +1921,6 @@ fn _rowmax_online_softmax[
     comptime num_colwise_tiles = reg_tile_layout[0].size()
     comptime num_rowwise_tiles = reg_tile_layout[1].size()
     # The online softmax attributes for each thread's elements (fragments).
-    __comptime_assert rowmax_tensor.element_layout.size() == frag_num_rows, (
-        "`rowmax_tensor` and `rowsum_tensor` should be vectorized for AMD,"
-        " where `frag_num_rows > 1`. This simplifies the implementation."
-    )
     score_frag_rowmax = type_of(rowmax_tensor).stack_allocation()
 
     comptime num_rowwise_lanes = UInt32(warp_layout.shape[1].value())

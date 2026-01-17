@@ -26,10 +26,10 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Device, DLPackArray, Tensor
+from max.driver import CPU, Buffer, Device, DLPackArray
 from max.dtype import DType
+from max.graph.buffer_utils import cast_dlpack_to, cast_tensor_to
 from max.graph.quantization import QuantizationEncoding
-from max.graph.tensor_utils import cast_dlpack_to, cast_tensor_to
 from max.graph.type import DeviceRef, Shape, TensorType
 from max.graph.value import TensorValue
 from max.graph.weights import WeightData, WeightsFormat, load_weights
@@ -413,12 +413,12 @@ class LoRAModel:
         """
         for data in self._lora_A.values():
             if isinstance(data.data, np.ndarray):
-                weight_tensor = Tensor.from_numpy(data.data)
+                weight_tensor = Buffer.from_numpy(data.data)
                 data.data = cast_tensor_to(weight_tensor, base_dtype)
 
         for data in self._lora_B.values():
             if isinstance(data.data, np.ndarray):
-                weight_tensor = Tensor.from_numpy(data.data)
+                weight_tensor = Buffer.from_numpy(data.data)
                 data.data = cast_tensor_to(weight_tensor, base_dtype)
 
     def _combine_qkv_weights(self) -> None:
@@ -458,7 +458,7 @@ class LoRAModel:
         """Convert WeightData to numpy array (data may already be numpy or dlpack)."""
         if isinstance(weight_data.data, np.ndarray):
             return weight_data.data
-        return Tensor.from_dlpack(weight_data.data).to_numpy()
+        return Buffer.from_dlpack(weight_data.data).to_numpy()
 
     def _create_weight_data(
         self,
@@ -674,7 +674,7 @@ class LoRAModel:
             data = weight.data()
 
             if LoRAType.A.value in key:
-                weight_np = Tensor.from_dlpack(data.data).to_numpy()
+                weight_np = Buffer.from_dlpack(data.data).to_numpy()
                 data.data = self._pad_lora_a_weight(weight_np, rank)
                 self._lora_A[key] = data
 
@@ -682,7 +682,7 @@ class LoRAModel:
                 # Pre-multiply scale to avoid doing it in the kernel every forward.
                 # The loaded safetensors weights are read-only, so we must copy.
                 weight_np = (
-                    Tensor.from_dlpack(data.data).copy().to_numpy() * scale
+                    Buffer.from_dlpack(data.data).copy().to_numpy() * scale
                 )
                 data.data = self._pad_lora_b_weight(weight_np, rank)
                 self._lora_B[key] = data
@@ -791,7 +791,7 @@ class LoRAManager:
         context_batch: Sequence[TextGenerationContextType],
         input_row_offsets: npt.NDArray[np.integer[Any]],
         device: Device,
-    ) -> tuple[Tensor, ...]:
+    ) -> tuple[Buffer, ...]:
         """
         Gets the LoRA graph inputs
 
@@ -863,14 +863,14 @@ class LoRAManager:
         for id_ in grouped_ids:
             grouped_ids_kv.append(id_ + self.max_num_loras)
 
-        lora_ids = Tensor.from_numpy(np.array(grouped_ids, dtype=np.int32)).to(
+        lora_ids = Buffer.from_numpy(np.array(grouped_ids, dtype=np.int32)).to(
             device
         )
-        lora_ranks = Tensor.from_numpy(np.array(grouped_ranks, dtype=np.uint32))
-        lora_grouped_offsets = Tensor.from_numpy(
+        lora_ranks = Buffer.from_numpy(np.array(grouped_ranks, dtype=np.uint32))
+        lora_grouped_offsets = Buffer.from_numpy(
             np.array(grouped_offsets, dtype=np.uint32)
         ).to(device)
-        num_active_loras = Tensor.from_numpy(
+        num_active_loras = Buffer.from_numpy(
             np.array([last_lora_idx], dtype=np.int64)
         )
         # TODO: This is a hacky workaround for creating a dynamic shaped output
@@ -884,15 +884,15 @@ class LoRAManager:
         lora_end_zeros = np.zeros([lora_end_idx], dtype=np.int64)
         if lora_end_idx != 0:
             lora_end_zeros[0] = lora_end_idx
-        lora_end = Tensor.from_numpy(lora_end_zeros)
-        batch_seq_len = Tensor.from_numpy(
+        lora_end = Buffer.from_numpy(lora_end_zeros)
+        batch_seq_len = Buffer.from_numpy(
             np.array([input_row_offsets[-1]], dtype=np.int64)
         )
 
-        lora_ids_kv = Tensor.from_numpy(
+        lora_ids_kv = Buffer.from_numpy(
             np.array(grouped_ids_kv, dtype=np.int32)
         ).to(device)
-        lora_grouped_offsets_kv = Tensor.from_numpy(
+        lora_grouped_offsets_kv = Buffer.from_numpy(
             np.array(grouped_offsets_kv, dtype=np.uint32)
         ).to(device)
 
@@ -1093,14 +1093,14 @@ class LoRAManager:
             slot: The slot index where the LoRA weights should be placed.
         """
         for state_key in self._alias_buffers:
-            buffer = Tensor.from_dlpack(self._alias_buffers[state_key])
+            buffer = Buffer.from_dlpack(self._alias_buffers[state_key])
 
             lora_weight = lora.get(state_key)
-            weight: Tensor
+            weight: Buffer
             if lora_weight:
-                weight = Tensor.from_dlpack(lora_weight.data)
+                weight = Buffer.from_dlpack(lora_weight.data)
             else:
-                weight = Tensor.zeros(
+                weight = Buffer.zeros(
                     buffer.shape[1:],
                     dtype=buffer.dtype,
                     device=buffer.device,
@@ -1179,7 +1179,7 @@ class LoRAManager:
                     continue
 
                 state_key = f"{key}.{weight_key}"
-                weight = Tensor.zeros(
+                weight = Buffer.zeros(
                     base_weight.shape.static_dims, base_weight.dtype
                 ).copy(base_weight.device.to_device())
                 state_dict[state_key] = WeightData(

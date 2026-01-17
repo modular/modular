@@ -16,16 +16,15 @@ from collections import OptionalReg
 from gpu import (
     WARP_SIZE,
     barrier,
-    block,
     block_dim,
     block_idx,
     grid_dim,
     lane_id,
     thread_idx,
     warp_id,
-    warp,
 )
-from gpu.grid_controls import PDL, pdl_launch_attributes
+from gpu.primitives import block, warp
+from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.host.dim import Dim
 from gpu.memory import AddressSpace, external_memory
@@ -37,7 +36,9 @@ from layout import (
 )
 from math import ceildiv, gcd, exp
 from memory import stack_allocation
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import Atomic
 from random import Random
 from sys import align_of, bit_width_of, simd_width_of, size_of
@@ -258,8 +259,8 @@ fn topk_mask_logits[
     dtype: DType, out_idx_type: DType, block_size: Int = 1024
 ](
     ctx: DeviceContext,
-    logits: LayoutTensor[dtype, **_],
-    masked_logits: LayoutTensor[mut=True, dtype, **_],
+    logits: LayoutTensor[dtype, ...],
+    masked_logits: LayoutTensor[mut=True, dtype, ...],
     top_k_val: Int,
     top_k_arr: OptionalReg[
         LayoutTensor[
@@ -294,7 +295,7 @@ fn topk_mask_logits[
             logits.layout,
             masked_logits.layout,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             logits,
             masked_logits,
             top_k_arr.value().to_device_buffer(ctx),
@@ -760,8 +761,8 @@ fn topk_sampling_from_prob[
     dtype: DType, out_idx_type: DType, block_size: Int = 1024
 ](
     ctx: DeviceContext,
-    probs: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, out_idx_type, **_],
+    probs: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, out_idx_type, ...],
     top_k_val: Int,
     deterministic: Bool = False,
     rng_seed: UInt64 = 0,
@@ -824,7 +825,7 @@ fn topk_sampling_from_prob[
             output.layout,
             deterministic,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             probs,
             output,
             indices.value().to_device_buffer(ctx),
@@ -1056,8 +1057,8 @@ fn topk_softmax_sample[
     dtype: DType, out_idx_type: DType, block_size: Int = 1024
 ](
     ctx: DeviceContext,
-    logits: LayoutTensor[dtype, **_],
-    sampled_indices: LayoutTensor[mut=True, out_idx_type, **_],
+    logits: LayoutTensor[dtype, ...],
+    sampled_indices: LayoutTensor[mut=True, out_idx_type, ...],
     top_k_val: Int,
     temperature_val: Float32 = 1.0,
     seed_val: UInt64 = 0,
@@ -1142,7 +1143,7 @@ fn topk_softmax_sample[
             logits.layout,
             sampled_indices.layout,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             logits,
             sampled_indices,
             top_k_arr.value().to_device_buffer(ctx),

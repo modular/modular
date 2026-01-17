@@ -18,14 +18,15 @@ directly without mpirun.
 See `test_shmem_gpu_per_process.mojo` for how you can launch one GPU per process
 using mpirun.
 """
-
+# REQUIRES: NVIDIA-GPU
 # RUN: %mojo-build %s -o %t
-# RUN: %t
+# RUN: %mpirun-gpu-per-thread %t
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer, alloc
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 from shmem import *
-from shmem._nvshmem import *
 from pathlib import cwd, Path
 from os.path import dirname
 from pathlib import Path, cwd
@@ -51,9 +52,9 @@ fn simple_shift_kernel(destination: UnsafePointer[Int32]):
 def simple_shift(ctx: SHMEMContext):
     # Set up buffers to test devices are communicating with the correct IDs
     var target_device = ctx.enqueue_create_buffer[DType.int32](1)
-    var target_host = ctx.enqueue_create_host_buffer[DType.int32](1)
+    var target_host = alloc[Int32](1)
 
-    ctx.enqueue_function_checked[simple_shift_kernel, simple_shift_kernel](
+    ctx.enqueue_function[simple_shift_kernel](
         target_device, grid_dim=1, block_dim=1
     )
     ctx.barrier_all()

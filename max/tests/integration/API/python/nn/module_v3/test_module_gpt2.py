@@ -21,12 +21,7 @@ import pytest
 from max.driver import CPU, Accelerator, Device, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.tensor import (
-    Tensor,
-    TensorType,
-    default_device,
-    default_dtype,
-)
+from max.experimental.tensor import Tensor, TensorType
 from max.graph import DeviceRef, Dim, DimLike
 from max.nn.module_v3 import (
     Embedding,
@@ -54,7 +49,7 @@ def causal_mask(  # noqa: ANN201
     return F.band_part(mask, num_lower=None, num_upper=0, exclude=True)
 
 
-class MultiHeadAttention(Module):
+class MultiHeadAttention(Module[[Tensor], Tensor]):
     def __init__(
         self,
         in_dim: DimLike,
@@ -83,7 +78,7 @@ class MultiHeadAttention(Module):
     def out_dim(self):  # noqa: ANN201
         return self.query.out_dim
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         b, num_tokens, _in_dim = x.shape
 
         keys = self.key(x)  # Shape: (b, num_tokens, out_dim)
@@ -124,27 +119,27 @@ class MultiHeadAttention(Module):
         return context_vec
 
 
-class LayerNorm(Module):
+class LayerNorm(Module[[Tensor], Tensor]):
     def __init__(self, dim: DimLike, *, eps: float = 1e-5):
         self.eps = eps
         self.scale = Tensor.ones([dim])
         self.shift = Tensor.zeros([dim])
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         return F.layer_norm(
             x, gamma=self.scale, beta=self.shift, epsilon=self.eps
         )
 
 
 @module_dataclass
-class GeLU(Module):
+class GeLU(Module[[Tensor], Tensor]):
     approximate: str = "tanh"
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         return F.gelu(x, approximate=self.approximate)
 
 
-class FeedForward(Module):
+class FeedForward(Module[[Tensor], Tensor]):
     def __init__(self, dim: int):
         self.layers = Sequential(
             Linear(dim, 4 * dim),
@@ -152,23 +147,23 @@ class FeedForward(Module):
             Linear(4 * dim, dim),
         )
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         return self.layers(x)
 
 
-M = TypeVar("M", bound=Module)
+M = TypeVar("M", bound=Module[[Tensor], Tensor])
 
 
 @module_dataclass
-class Highway(Module, Generic[M]):
+class Highway(Module[[Tensor], Tensor], Generic[M]):
     norm: LayerNorm
     layer: M
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         return x + self.layer(self.norm(x))
 
 
-class TransformerBlock(Module):
+class TransformerBlock(Module[[Tensor], Tensor]):
     attention: Highway[MultiHeadAttention]
     feed_forward: Highway[FeedForward]
 
@@ -185,14 +180,14 @@ class TransformerBlock(Module):
         )
         self.feed_forward = Highway(LayerNorm(dim), FeedForward(dim))
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         return Sequential(
             self.attention,
             self.feed_forward,
         )(x)
 
 
-class GPTModel(Module):
+class GPTModel(Module[[Tensor], Tensor]):
     def __init__(
         self,
         vocab_size: DimLike,
@@ -228,7 +223,7 @@ class GPTModel(Module):
     def dim(self) -> Dim:
         return self.token_embedding.dim
 
-    def __call__(self, in_idx: Tensor) -> Tensor:
+    def forward(self, in_idx: Tensor) -> Tensor:
         tok_embeds = self.token_embedding(in_idx)
         pos_embeds = self.positional_embedding(Tensor.range_like(in_idx.type))
         x = tok_embeds + pos_embeds  # Shape [batch_size, num_tokens, emb_size]
@@ -246,16 +241,17 @@ def device():  # noqa: ANN201
 
 @pytest.fixture
 def gpt_model(device: Device):  # noqa: ANN201
-    model = GPTModel(
-        dim=64,
-        num_layers=2,
-        num_heads=2,
-        vocab_size=50257,
-        context_length=1024,
-        qkv_bias=True,
-    )
+    with F.lazy():
+        model = GPTModel(
+            dim=64,
+            num_layers=2,
+            num_heads=2,
+            vocab_size=50257,
+            context_length=1024,
+            qkv_bias=True,
+        ).to(device=device)
 
-    yield model.to(device=device)
+    yield model
 
 
 def test_gpt2_repr(gpt_model: GPTModel) -> None:
@@ -291,13 +287,4 @@ def test_gpt2_compiled(gpt_model: GPTModel, device: Device) -> None:
     results = compiled(input)
     assert isinstance(results, Tensor)
     assert results.real
-    assert results.shape == [1, 1, gpt_model.token_embedding.vocab_size]
-
-
-def test_default_dtype_device(gpt_model: GPTModel, device: Device) -> None:
-    with default_dtype(DType.float64), default_device(CPU()):
-        input = Tensor.zeros([1, 1], dtype=DType.int64)
-        results = gpt_model(input)
-
-    assert isinstance(results, Tensor)
     assert results.shape == [1, 1, gpt_model.token_embedding.vocab_size]

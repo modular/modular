@@ -34,7 +34,6 @@ from math import (
     sqrt,
     tanh,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
 from random import randn, seed
 from sys import align_of, external_call, llvm_intrinsic
 from sys.info import simd_width_of, size_of, _current_target
@@ -57,7 +56,7 @@ from comm.allgather import allgather
 from comm.allreduce import allreduce
 from comm import MAX_GPUS, Signal
 from compiler_internal import StaticTensorSpec
-from gpu.host import DeviceContext, get_gpu_target
+from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -127,6 +126,7 @@ from nn.flash_attention import flash_attention_split_kv
 from nn.fold import fold, fold_shape
 from nn.gather_scatter import (
     Axis,
+    ScatterNegativeIndexStrategy,
     _unsafe_normalize_neg_index,
     gather,
     gather_nd,
@@ -149,6 +149,7 @@ from nn.index_tensor import (
 )
 from nn.irfft import irfft
 from nn.kv_cache import (
+    copy_kv_pages_d2h,
     generic_flash_attention_kv_cache_padded,
     generic_flash_attention_kv_cache_padded_materialized_mask,
     generic_fused_qk_rope_bshd_continuous_batch,
@@ -363,7 +364,7 @@ fn _unsafe_str_to_int_tuple[str_slice: StaticString]() -> IntTuple:
 
         @parameter
         for pos in range(str_len):
-            result = result * 10 + (ord(sub_string[pos]) - ord("0"))
+            result = result * 10 + (ord(sub_string[byte=pos]) - ord("0"))
         int_tuple.append(result)
 
     return int_tuple^
@@ -817,6 +818,9 @@ struct Log(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
         return log(x)
 
 
@@ -1052,12 +1056,17 @@ struct ScatterND:
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
-        updates: InputTensor[dtype = output.dtype, *_],
+        updates: InputTensor[dtype = output.dtype, ...],
         indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
-        scatter_nd[output.dtype, indices.dtype, False, target,](
+        scatter_nd[
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            target=target,
+        ](
             input.to_layout_tensor(),
             indices.to_layout_tensor(),
             updates.to_layout_tensor(),
@@ -1068,7 +1077,7 @@ struct ScatterND:
     @staticmethod
     fn shape[](
         input: InputTensor,
-        updates: InputTensor[dtype = input.dtype, *_],
+        updates: InputTensor[dtype = input.dtype, ...],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -1080,6 +1089,43 @@ struct ScatterND:
         )
 
 
+@compiler.register("mo.scatter_nd.skip_neg_indices")
+struct ScatterNDSkipNegIndices:
+    @staticmethod
+    fn execute[
+        target: StaticString,
+    ](
+        output: OutputTensor,
+        input: InputTensor[dtype = output.dtype, rank = output.rank],
+        updates: InputTensor[dtype = output.dtype, ...],
+        indices: InputTensor,
+        ctx: DeviceContextPtr,
+    ) raises:
+        # This is identical to mo.scatter_nd except in how we handle negative indices.
+        # In mo.scatter_nd, it is well defined to pass indices between [-dim_size, dim_size).
+        # Negative indices will be normalized by incrementing them by dim_size.
+        # This allows the kernel to support negative relative indexing.
+        # eg: x[-1] == x[dim_size - 1]
+        #
+        # In mo.scatter_nd.skip_neg_indices, we handle negative indices by skipping
+        # the update for that index instead.
+        scatter_nd_generator[
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            negative_index_strategy = ScatterNegativeIndexStrategy.SKIP,
+            target=target,
+            reduce_fn=None,
+            _trace_description="scatter_nd.skip_neg_indices",
+        ](
+            input.to_layout_tensor(),
+            indices.to_layout_tensor(),
+            updates.to_layout_tensor(),
+            output.to_layout_tensor(),
+            context=ctx,
+        )
+
+
 @compiler.register("mo.scatter_nd.add")
 struct ScatterNDAdd:
     @staticmethod
@@ -1088,7 +1134,7 @@ struct ScatterNDAdd:
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
-        updates: InputTensor[dtype = output.dtype, *_],
+        updates: InputTensor[dtype = output.dtype, ...],
         indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
@@ -1102,10 +1148,10 @@ struct ScatterNDAdd:
             return lhs + rhs
 
         scatter_nd_generator[
-            output.dtype,
-            indices.dtype,
-            False,
-            target,
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.add",
         ](
@@ -1119,7 +1165,7 @@ struct ScatterNDAdd:
     @staticmethod
     fn shape[](
         input: InputTensor,
-        updates: InputTensor[dtype = input.dtype, *_],
+        updates: InputTensor[dtype = input.dtype, ...],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -1139,7 +1185,7 @@ struct ScatterNDMul:
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
-        updates: InputTensor[dtype = output.dtype, *_],
+        updates: InputTensor[dtype = output.dtype, ...],
         indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
@@ -1153,10 +1199,10 @@ struct ScatterNDMul:
             return lhs * rhs
 
         scatter_nd_generator[
-            output.dtype,
-            indices.dtype,
-            False,
-            target,
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.mul",
         ](
@@ -1170,7 +1216,7 @@ struct ScatterNDMul:
     @staticmethod
     fn shape[](
         input: InputTensor,
-        updates: InputTensor[dtype = input.dtype, *_],
+        updates: InputTensor[dtype = input.dtype, ...],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -1190,7 +1236,7 @@ struct ScatterNDMin:
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
-        updates: InputTensor[dtype = output.dtype, *_],
+        updates: InputTensor[dtype = output.dtype, ...],
         indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
@@ -1204,10 +1250,10 @@ struct ScatterNDMin:
             return min(lhs, rhs)
 
         scatter_nd_generator[
-            output.dtype,
-            indices.dtype,
-            False,
-            target,
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.min",
         ](
@@ -1221,7 +1267,7 @@ struct ScatterNDMin:
     @staticmethod
     fn shape[](
         input: InputTensor,
-        updates: InputTensor[dtype = input.dtype, *_],
+        updates: InputTensor[dtype = input.dtype, ...],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -1241,7 +1287,7 @@ struct ScatterNDMax:
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
-        updates: InputTensor[dtype = output.dtype, *_],
+        updates: InputTensor[dtype = output.dtype, ...],
         indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
@@ -1255,10 +1301,11 @@ struct ScatterNDMax:
             return max(lhs, rhs)
 
         scatter_nd_generator[
-            output.dtype,
-            indices.dtype,
-            False,
-            target,
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            negative_index_strategy = ScatterNegativeIndexStrategy.NORMALIZE,
+            target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.max",
         ](
@@ -1272,7 +1319,7 @@ struct ScatterNDMax:
     @staticmethod
     fn shape[](
         input: InputTensor,
-        updates: InputTensor[dtype = input.dtype, *_],
+        updates: InputTensor[dtype = input.dtype, ...],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -3121,7 +3168,7 @@ struct GatherND:
         _trace_name: StaticString,
     ](
         output: OutputTensor,
-        data: InputTensor[dtype = output.dtype, *_],
+        data: InputTensor[dtype = output.dtype, ...],
         indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3162,7 +3209,7 @@ struct Gather:
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor,
-        input: FusedInputTensor[dtype = output.dtype, *_],
+        input: FusedInputTensor[dtype = output.dtype, ...],
         indices: FusedInputTensor,
         axis: Scalar,
         ctx: DeviceContextPtr,
@@ -3237,8 +3284,8 @@ struct GatherSum:
     @staticmethod
     fn execute(
         output: OutputTensor,
-        input: InputTensor[dtype = output.dtype, *_],
-        indices: InputTensor[dtype = DType.int32, *_],
+        input: InputTensor[dtype = output.dtype, ...],
+        indices: InputTensor[dtype = DType.int32, ...],
     ) raises:
         fn add[
             dtype: DType, simd_width: Int
@@ -3357,7 +3404,7 @@ struct RMSNormFusedResidualAdd:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width](
+            return input._lambda_load[width=width, element_alignment=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -3451,7 +3498,7 @@ struct RMSNorm:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width](
+            return input._lambda_load[width=width, element_alignment=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -4371,7 +4418,7 @@ struct Concat:
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank],
         axis: Scalar,
-        inputs: FusedInputVariadicTensors[dtype, rank, *_],
+        inputs: FusedInputVariadicTensors[dtype, rank, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
@@ -4423,7 +4470,7 @@ struct Concat:
         dtype: DType,
         rank: Int,
     ](
-        axis: Scalar, inputs: InputVariadicTensors[dtype, rank, *_]
+        axis: Scalar, inputs: InputVariadicTensors[dtype, rank, ...]
     ) raises -> IndexList[rank]:
         return concat_shape_impl(Int(axis), inputs)
 
@@ -4544,7 +4591,7 @@ struct Split:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputVariadicTensors[dtype, rank, *_],
+        output: OutputVariadicTensors[dtype, rank, ...],
         input: InputTensor[dtype=dtype, rank=rank],
         split_sizes: InputTensor[rank=1],
         axis: Scalar,
@@ -4901,9 +4948,6 @@ struct ConvTranspose:
         @parameter
         if is_cpu[target]():
             conv_transposed_cpu[
-                _,
-                _,
-                _,
                 input.dtype,
                 filter.dtype,  # Filter dtype.
                 output.dtype,  # Output dtype.
@@ -4940,9 +4984,6 @@ struct ConvTranspose:
                 pad_tuple[1] = pad_w[0]
 
             conv_transposed_gpu[
-                _,
-                _,
-                _,
                 input.dtype,
                 filter.dtype,
                 output.dtype,
@@ -6043,10 +6084,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     hidden_state: ManagedTensorSlice[dtype=dtype, rank=2],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     weight: ManagedTensorSlice[dtype=weight_type, rank=2],
-    kv_collection: PagedKVCacheCollection[
-        dtype,
-        *_,
-    ],
+    kv_collection: PagedKVCacheCollection[dtype, ...],
     layer_idx: UInt32,
     output: ManagedTensorSlice[dtype=dtype, rank=2],
     ctx: DeviceContextPtr,
@@ -6077,10 +6115,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     hidden_state: ManagedTensorSlice[dtype=dtype, rank=2],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     weight: ManagedTensorSlice[dtype=weight_type, rank=2],
-    kv_collection: PagedKVCacheCollection[
-        dtype,
-        *_,
-    ],
+    kv_collection: PagedKVCacheCollection[dtype, ...],
     layer_idx: UInt32,
     output: ManagedTensorSlice[dtype=dtype, rank=2],
     bias: ManagedTensorSlice[dtype=dtype, rank=1],
@@ -6109,10 +6144,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_paged_kernel_api[
 ](
     hidden_state: ManagedTensorSlice[dtype=dtype, rank=3],
     weight: ManagedTensorSlice[dtype=dtype, rank=2],
-    kv_collection: PagedKVCacheCollection[
-        dtype,
-        *_,
-    ],
+    kv_collection: PagedKVCacheCollection[dtype, ...],
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
@@ -6497,10 +6529,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
 ](
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
-    kv_collection: PagedKVCacheCollection[
-        dtype,
-        *_,
-    ],
+    kv_collection: PagedKVCacheCollection[dtype, ...],
     freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2],
     position_ids: ManagedTensorSlice[dtype = DType.uint32, rank=2],
     layer_idx: UInt32,
@@ -6595,7 +6624,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     ) raises:
         # Dummy position_ids - won't be used since has_position_ids=False
         var dummy_position_ids = DynamicTensor[dtype = DType.uint32, rank=2](
-            UnsafePointer[UInt32](), IndexList[2](0)
+            {}, IndexList[2](0)
         )
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
@@ -6961,76 +6990,18 @@ struct Struct_mla_decode_ragged_paged:
         )
 
 
-@compiler.register("mo.mla.prefill.init.ragged.paged")
-struct Struct_mla_prefill_init_ragged_paged:
-    @always_inline
-    @staticmethod
-    fn execute[
-        dtype: DType,
-        softmax_type: DType,
-        //,
-        mask_str: StaticString,
-        score_mod_str: StaticString,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=dtype, rank=3],
-        softmax_info: OutputTensor[dtype=softmax_type, rank=3],
-        q: InputTensor[dtype=dtype, rank=3],
-        k: InputTensor[dtype=dtype, rank=3],
-        v: InputTensor[dtype=dtype, rank=3],
-        buffer_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        cache_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
-        layer_idx: UInt32,
-        scale: Float32,
-        context: DeviceContextPtr,
-    ) raises:
-        var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            cache_lengths,
-            kv_lookup_table,
-            max_lengths,
-        )
-        generic_flare_mla_prefill_kv_cache_ragged[
-            write_softmax_info=True,
-            use_cascade_attention=False,
-            target=target,
-            mask_str=mask_str,
-            score_mod_str=score_mod_str,
-        ](
-            q.to_layout_tensor(),
-            k.to_layout_tensor(),
-            v.to_layout_tensor(),
-            buffer_row_offsets.to_layout_tensor(),
-            cache_offsets.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            kv_collection,
-            layer_idx,
-            scale,
-            output.to_layout_tensor(),
-            softmax_info.to_layout_tensor(),
-            context,
-        )
-
-
 @compiler.register("mo.mla.prefill.ragged.paged")
 struct Struct_mla_prefill_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
         dtype: DType,
-        softmax_type: DType,
         //,
         target: StaticString,
         mask_str: StaticString,
         score_mod_str: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
-        softmax_info: OutputTensor[dtype=softmax_type, rank=3],
         q: InputTensor[dtype=dtype, rank=3],
         k: InputTensor[dtype=dtype, rank=3],
         v: InputTensor[dtype=dtype, rank=3],
@@ -7043,12 +7014,8 @@ struct Struct_mla_prefill_ragged_paged:
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
-        prev_output: InputTensor[dtype=dtype, rank=3],
-        prev_softmax_info: InputTensor[dtype=softmax_type, rank=3],
         context: DeviceContextPtr,
     ) raises:
-        var prev_output_nd = prev_output.to_layout_tensor()
-        var prev_softmax_info_nd = prev_softmax_info.to_layout_tensor()
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             cache_lengths,
@@ -7056,8 +7023,6 @@ struct Struct_mla_prefill_ragged_paged:
             max_lengths,
         )
         generic_flare_mla_prefill_kv_cache_ragged[
-            write_softmax_info=True,
-            use_cascade_attention=True,
             target=target,
             mask_str=mask_str,
             score_mod_str=score_mod_str,
@@ -7072,26 +7037,7 @@ struct Struct_mla_prefill_ragged_paged:
             layer_idx,
             scale,
             output.to_layout_tensor(),
-            softmax_info.to_layout_tensor(),
             context,
-            LayoutTensor[
-                prev_output_nd.dtype, Layout.row_major[3](), MutAnyOrigin
-            ](
-                prev_output_nd.ptr,
-                RuntimeLayout[Layout.row_major[3]()].row_major(
-                    prev_output_nd.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            LayoutTensor[
-                prev_softmax_info_nd.dtype,
-                Layout.row_major[3](),
-                MutAnyOrigin,
-            ](
-                prev_softmax_info_nd.ptr,
-                RuntimeLayout[Layout.row_major[3]()].row_major(
-                    prev_softmax_info_nd.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
         )
 
 
@@ -7519,6 +7465,7 @@ struct Struct_moe_create_indices:
 struct Struct_moe_router_group_limited:
     @always_inline
     @staticmethod
+    @parameter
     fn execute[
         scores_type: DType,
         bias_type: DType,
@@ -7532,11 +7479,18 @@ struct Struct_moe_router_group_limited:
     ](
         expert_indices: OutputTensor[dtype = DType.int32, rank=2],
         expert_weights: OutputTensor[dtype=scores_type, rank=2],
-        expert_scores: InputTensor[dtype=scores_type, rank=2],
+        expert_scores: FusedInputTensor[dtype=scores_type, rank=2],
         expert_bias: InputTensor[dtype=bias_type, rank=1],
         routed_scaling_factor: Float32,
         context: DeviceContextPtr,
     ) raises:
+        @parameter
+        @always_inline
+        fn scores_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[scores_type, width]:
+            return expert_scores._lambda_load[width=width](coords)
+
         router_group_limited[
             n_routed_experts,
             n_experts_per_tok,
@@ -7544,6 +7498,11 @@ struct Struct_moe_router_group_limited:
             topk_group,
             norm_weights,
             target=target,
+            scores_input_fn = OptionalReg[
+                fn[
+                    width: Int
+                ] (IndexList[2]) capturing -> SIMD[scores_type, width]
+            ](scores_input_fn),
         ](
             expert_indices.to_layout_tensor(),
             expert_weights.to_layout_tensor(),
@@ -7832,8 +7791,8 @@ struct Struct_kv_cache_store_paged:
             kv_lookup_table,
             max_lengths,
         )
-
-        var cache: paged_kv_collection.CacheType
+        comptime KVCacheT = paged_kv_collection.CacheType
+        var cache: KVCacheT
 
         @parameter
         if key_or_value == 0:
@@ -7857,7 +7816,9 @@ struct Struct_kv_cache_store_paged:
                 idx,
             )
 
-        kv_cache_store_ragged[input_fn=input_fn, target=target](
+        kv_cache_store_ragged[
+            cache_t=KVCacheT, input_fn=input_fn, target=target
+        ](
             cache,
             inputs.shape(),
             input_row_offsets.to_layout_tensor(),
@@ -8739,9 +8700,9 @@ struct DistributedAllReduceSum:
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank],
-        inputs: InputVariadicTensors[dtype, rank, *_],
+        inputs: InputVariadicTensors[dtype, rank, ...],
         signal_buffers: MutableInputVariadicTensors[
-            dtype = DType.uint8, rank=1, *_
+            dtype = DType.uint8, rank=1, ...
         ],
         device_ctx: DeviceContextPtr,
     ) capturing raises:
@@ -8789,7 +8750,9 @@ struct DistributedAllReduceSum:
         var out_buf = managed_tensor_slice_to_ndbuffer(output)
 
         # Marshal signal buffers.
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -8824,10 +8787,10 @@ struct DistributedAllGather:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        outputs: OutputVariadicTensors[dtype, rank, *_],
-        inputs: InputVariadicTensors[dtype, rank, *_],
+        outputs: OutputVariadicTensors[dtype, rank, ...],
+        inputs: InputVariadicTensors[dtype, rank, ...],
         signal_buffers: MutableInputVariadicTensors[
-            dtype = DType.uint8, rank=1, *_
+            dtype = DType.uint8, rank=1, ...
         ],
         dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
@@ -8873,7 +8836,9 @@ struct DistributedAllGather:
         for i in range(num_devices * num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -8893,11 +8858,11 @@ struct DistributedMatmulAllReduce:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        outputs: FusedOutputVariadicTensors[c_type, 2, *_],
-        inputs: InputVariadicTensors[a_type, 2, *_],
-        weights: InputVariadicTensors[b_type, 2, *_],
+        outputs: FusedOutputVariadicTensors[c_type, 2, ...],
+        inputs: InputVariadicTensors[a_type, 2, ...],
+        weights: InputVariadicTensors[b_type, 2, ...],
         signal_buffers: MutableInputVariadicTensors[
-            dtype = DType.uint8, rank=1, *_
+            dtype = DType.uint8, rank=1, ...
         ],
         dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
@@ -8974,7 +8939,9 @@ struct DistributedMatmulAllReduce:
                 NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape]
             ](managed_tensor_slice_to_ndbuffer(outputs[i]))
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -9057,6 +9024,7 @@ struct AdvancedIndexingGetItem:
     fn execute[
         input_rank: Int,
         index_rank: Int,
+        output_rank: Int,
         input_type: DType,
         index_type: DType,
         num_index_tensors: Int,
@@ -9065,15 +9033,18 @@ struct AdvancedIndexingGetItem:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_tensor: OutputTensor[
-            dtype=input_type, rank = input_rank + index_rank - num_index_tensors
-        ],
+        out_tensor: OutputTensor[dtype=input_type, rank=output_rank],
         input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank],
         indices: FusedInputVariadicTensors[
             index_type, index_rank, size=num_index_tensors
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:
+        # TODO: Uses `where` clause when emit mojo is turned on by default.
+        __comptime_assert (
+            output_rank == input_rank + index_rank - num_index_tensors
+        )
+
         @parameter
         @always_inline
         fn input_tensor_fn[
@@ -9331,11 +9302,11 @@ struct QuantizeDynamicScaledFloat8:
         @parameter
         @always_inline
         fn input_fn[
-            width: Int
+            width: Int, alignment: Int
         ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
-            return input._lambda_load[width=width](IndexList[2](row, col))
-
-        comptime hidden_dim = input.static_spec.shape.get[1]()
+            return input._lambda_load[width=width, element_alignment=alignment](
+                Index(row, col)
+            )
 
         quantize_dynamic_scaled_fp8[
             out_dtype=output_type,
@@ -9343,13 +9314,13 @@ struct QuantizeDynamicScaledFloat8:
             scales_dtype=scales_type,
             input_fn,
             group_size_or_per_token,
-            hidden_dim,
+            num_cols = input.static_spec.shape.get[1](),
         ](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(scales),
             scale_ub,
             ctx.get_device_context(),
-            input.dim_size(0),
+            num_rows=input.dim_size(0),
         )
 
 
@@ -9373,31 +9344,26 @@ struct BatchedQuantizeDynamicScaledFloat8:
     ) raises:
         __comptime_assert is_gpu[target](), "only valid on GPUs"
 
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var batch_size = input.dim_size(0)
-        var num_rows = input.dim_size(1)
-
         @parameter
-        @__copy_capture(input_ndbuffer)
         @always_inline
         fn input_fn[
-            width: Int
+            width: Int, alignment: Int
         ](batch: Int, row: Int, col: Int) capturing -> SIMD[input_type, width]:
-            return input_ndbuffer.load[width=width](
-                IndexList[3](batch, row, col)
+            return input._lambda_load[width=width, element_alignment=alignment](
+                Index(batch, row, col)
             )
 
         batched_quantize_dynamic_scaled_fp8[
             input_fn=input_fn,
             group_size_or_per_token=group_size_or_per_token,
-            num_cols = input_ndbuffer.shape.get[2](),
+            num_cols = input.static_spec.shape.get[2](),
         ](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(scales),
             scale_ub,
             ctx.get_device_context(),
-            num_rows=num_rows,
-            batch_size=batch_size,
+            num_rows=input.dim_size(1),
+            batch_size=input.dim_size(0),
         )
 
 
@@ -9487,7 +9453,7 @@ struct MatmulStaticScaledFloat8:
         var output_dummy = NDBuffer[
             DType.float32, 2, MutAnyOrigin, DimList(Dim(), N)
         ](
-            UnsafePointer[Scalar[DType.float32]](),
+            {},
             IndexList[2](M, N),
         )
 
@@ -9794,3 +9760,55 @@ struct Struct_sliced_add_ragged:
                     lora_end_idx.to_layout_tensor(),
                     None,
                 )
+
+
+# ===-----------------------------------------------------------------------===#
+# KV Cache GPU→CPU Copy Operations
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.kv_cache.copy_pages_d2h")
+struct KVCacheCopyPagesD2H:
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        device_kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        host_kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        src_page_ids: InputTensor[dtype = DType.int64, rank=1],
+        dst_page_ids: InputTensor[dtype = DType.int64, rank=1],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var gpu_ctx = ctx.get_device_context()
+
+        copy_kv_pages_d2h(
+            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+                device_kv_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    device_kv_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+                host_kv_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    host_kv_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.int64, Layout.row_major[1](), MutAnyOrigin](
+                src_page_ids.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    src_page_ids.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.int64, Layout.row_major[1](), MutAnyOrigin](
+                dst_page_ids.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    dst_page_ids.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            Int(layer_idx),
+            gpu_ctx,
+        )

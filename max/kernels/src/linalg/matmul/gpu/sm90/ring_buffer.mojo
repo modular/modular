@@ -56,7 +56,7 @@ from ....structuring import NVIDIASharedMemoryManager
 
 @register_passable("trivial")
 struct ProducerTiles[
-    origin: Origin[True],
+    origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
 ]:
     """Context manager for producer access to ring buffer tiles.
@@ -93,7 +93,7 @@ struct ProducerTiles[
 
 @register_passable("trivial")
 struct ConsumerTiles[
-    origin: Origin[True],
+    origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
 ]:
     """Context manager for consumer access to ring buffer tiles.
@@ -130,7 +130,7 @@ struct ConsumerTiles[
 
 @register_passable("trivial")
 struct RingBufferConsumer[
-    origin: Origin[True],
+    origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
 ]:
     """Consumer view of the ring buffer.
@@ -164,7 +164,7 @@ struct RingBufferConsumer[
 
 @register_passable("trivial")
 struct RingBufferProducer[
-    origin: Origin[True],
+    origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
 ]:
     """Producer view of the ring buffer.
@@ -433,7 +433,7 @@ struct RingBuffer[
             # In multi-cluster mode, one thread per block arrives
             if self.warp_group_thread_idx < UInt(Self.cluster_size):
                 _ = self.empty_mbar[Int(read_idx)][].arrive_cluster(
-                    self.warp_group_thread_idx
+                    UInt32(self.warp_group_thread_idx)
                 )
         else:
             # In single-block mode, only thread 0 arrives
@@ -471,7 +471,7 @@ struct RingBuffer[
             if Self.cluster_size > 1:
                 if self.warp_group_thread_idx < UInt(Self.cluster_size):
                     _ = self.empty_mbar[i][].arrive_cluster(
-                        self.warp_group_thread_idx
+                        UInt32(self.warp_group_thread_idx)
                     )
             else:
                 if self.warp_group_thread_idx == 0:

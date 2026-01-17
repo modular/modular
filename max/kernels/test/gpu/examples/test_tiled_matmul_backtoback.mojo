@@ -136,7 +136,9 @@ struct BackToBackMatmulConfig[
 # We parallelize blocks across rows of A/D and columns of C/D
 # One invocation evaluates `(A[block_x, :] * B) * C[:, block_y]`
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(config.num_threads())
+    )
 )
 fn b2b_gemm[
     d_type: DType,
@@ -507,8 +509,12 @@ fn b2b_gemm[
                 else:
                     dst_idx = Int(d_gmem_frag.runtime_layout(i))
 
-                var m = Int((thread_offset + dst_idx) // N)
-                var n = Int((thread_offset + dst_idx) % N)
+                var m = Int(
+                    (thread_offset + dst_idx) // type_of(thread_offset)(N)
+                )
+                var n = Int(
+                    (thread_offset + dst_idx) % type_of(thread_offset)(N)
+                )
                 if m < Int(M) and n < Int(N):
                     epilogue(
                         (m, n),
@@ -550,10 +556,14 @@ fn b2b_gemm[
                 else:
                     dst_idx = Int(d_gmem_frag.runtime_layout(i))
 
-                var m = Int((thread_offset + dst_idx) // N)
-                var n = Int((thread_offset + dst_idx) % N)
+                var m = Int(
+                    (thread_offset + dst_idx) // type_of(thread_offset)(N)
+                )
+                var n = Int(
+                    (thread_offset + dst_idx) % type_of(thread_offset)(N)
+                )
                 if m < Int(M) and n < Int(N):
-                    var vec = d_reg_frag.ptr.offset(src_idx).load[
+                    var vec = (d_reg_frag.ptr + src_idx).load[
                         width=2, alignment = align_of[SIMD[d_type, 2]]()
                     ]()
                     epilogue((m, n), vec)
@@ -603,7 +613,7 @@ fn multistage_b2b_gemm[
             size(Layout(A.layout.shape[1]))
         )
         print("smem_use =", smem_use)
-        ctx.enqueue_function_checked[b2b_fn, b2b_fn](
+        ctx.enqueue_function[b2b_fn, b2b_fn](
             D,
             A,
             B,
@@ -620,7 +630,7 @@ fn multistage_b2b_gemm[
 
 
 fn matmul_naive(
-    C: LayoutTensor[mut=True, **_],
+    C: LayoutTensor[mut=True, ...],
     A: LayoutTensor,
     B: LayoutTensor,
 ):

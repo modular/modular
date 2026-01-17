@@ -5,25 +5,36 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "lib",
     srcs = glob(["**/*.py"]),
+    ignore_extra_deps = [
+        # Used for speeding up HF downloads, not used directly
+        requirement("hf-transfer"),
+        # Optional dep of max.graph, used for loading gguf files
+        # TODO: Possible this dep should be pushed elsewhere
+        requirement("gguf"),
+    ],
     deps = [
         "//max/python/max/config",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/kv_cache",
         "//max/python/max/nn",
         "//max/python/max/pipelines/core",
-        "//max/python/max/pipelines/dataprocessing",
         "//max/python/max/profiler",
+        "//max/python/max/serve/queue",
         "//max/python/max/serve/telemetry",
         "//max/python/max/support",
-        requirement("gguf"),
         requirement("hf-transfer"),
         requirement("huggingface-hub"),
         requirement("llguidance"),
         requirement("numpy"),
         requirement("pillow"),
+        requirement("pydantic"),
+        requirement("requests"),
+        requirement("tqdm"),
         requirement("transformers"),
+        requirement("typing-extensions"),
     ],
 )

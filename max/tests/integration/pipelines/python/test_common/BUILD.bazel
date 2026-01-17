@@ -8,8 +8,9 @@ load(
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_library(
@@ -17,11 +18,7 @@ modular_py_library(
     testonly = True,
     srcs = ["__init__.py"],
     imports = [".."],
-    visibility = [
-        "//SDK:__subpackages__",
-        "//max/tests:__subpackages__",
-        "//open-source/max/max/tests:__subpackages__",
-    ],
+    tags = ["no-pydeps"],  # This is a meta-target, which sort of goes against the point of the pydeps test
     deps = [
         requirement("pytest"),
         requirement("numpy"),
@@ -45,7 +42,10 @@ modular_py_library(
         ":torch_hooks",
         ":torch_utils",
         ":verify_utils",
-    ],
+    ] + select({
+        "//:nvidia_gpu": [":vllm_utils"],
+        "//conditions:default": [],
+    }),
 )
 
 modular_py_library(
@@ -75,8 +75,8 @@ modular_py_library(
     srcs = ["test_data.py"],
     imports = [".."],
     deps = [
-        ":storage",
         "//max/python/max/interfaces",
+        "//max/python/max/support",
     ],
 )
 
@@ -100,9 +100,12 @@ modular_py_library(
         ":test_data",
         requirement("numpy"),
         requirement("transformers"),
+        requirement("typing-extensions"),
         "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/interfaces",
-        "//max/python/max/nn",
         "//max/python/max/pipelines",
     ],
 )
@@ -113,7 +116,7 @@ modular_py_library(
     srcs = ["evaluate_embeddings.py"],
     imports = [".."],
     deps = [
-        "//max/python/max/driver",
+        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
     ],
 )
@@ -132,7 +135,6 @@ modular_py_library(
     imports = [".."],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("nvitop"),
     ],
@@ -145,6 +147,7 @@ modular_py_library(
     imports = [".."],
     deps = [
         requirement("numpy"),
+        "//max/python/max/interfaces",
         "//max/python/max/pipelines/core",
     ],
 )
@@ -156,9 +159,9 @@ modular_py_library(
     imports = [".."],
     deps = [
         requirement("pytest"),
+        requirement("typing-extensions"),
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/architectures",
-        "@rules_python//python/runfiles",
+        "//max/python/max/pipelines/lib",
     ],
 )
 
@@ -178,7 +181,14 @@ modular_py_library(
     srcs = ["pipeline_model_dummy.py"],
     imports = [".."],
     deps = [
-        "//max/python/max",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
         requirement("transformers"),
     ],
 )
@@ -187,15 +197,34 @@ modular_py_library(
     name = "torch_utils",
     testonly = True,
     srcs = ["torch_utils.py"],
+    ignore_extra_deps = [
+        requirement("accelerate"),  # Required to run torch models on GPU.
+    ],
     imports = [".."],
     deps = [
-        ":evaluate",
         ":test_data",
         requirement("accelerate"),  # Required to run torch models on GPU.
         requirement("pillow"),
+        requirement("requests"),
         requirement("torch"),
         requirement("transformers"),
     ],
+)
+
+modular_py_library(
+    name = "vllm_utils",
+    testonly = True,
+    srcs = ["vllm_utils.py"],
+    imports = [".."],
+    deps = [
+        ":test_data",
+        requirement("numpy"),
+    ] + select({
+        "//:nvidia_gpu": [
+            requirement("vllm"),
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 modular_py_library(
@@ -205,6 +234,7 @@ modular_py_library(
     imports = [".."],
     deps = [
         requirement("torch"),
+        requirement("typing-extensions"),
     ],
 )
 
@@ -220,10 +250,19 @@ modular_py_library(
     ],
     imports = [".."],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
+        requirement("numpy"),
+        requirement("typing-extensions"),
         requirement("transformers"),
-        requirement("setuptools"),
     ],
 )
 
@@ -246,6 +285,7 @@ modular_py_library(
     ],
     imports = [".."],
     deps = [
+        requirement("numpy"),
         requirement("rich"),
         requirement("scipy"),
     ],
@@ -260,6 +300,7 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/nn",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
         requirement("safetensors"),
         requirement("torch"),
@@ -282,6 +323,7 @@ modular_py_library(
     name = "storage",
     testonly = True,
     srcs = ["storage.py"],
+    ignore_unresolved_imports = ["botocore"],
     imports = [".."],
     deps = [
         requirement("boto3"),

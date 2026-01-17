@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable
-from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import (
@@ -29,38 +28,7 @@ from max.graph import (
 from max.graph.quantization import QuantizationEncoding
 from max.nn.comm.allreduce import Allreduce
 
-from .layer import Layer, Module
-
-
-@dataclass
-class EmbeddingV1(Layer):
-    """A lookup table for embedding integer indices into dense vectors.
-
-    Deprecated: Use `Embedding` instead.
-    """
-
-    weights: TensorValueLike
-    device: DeviceRef
-
-    def __call__(self, indices: TensorValueLike) -> TensorValue:
-        """Embeds the input indices by looking up corresponding vectors.
-
-        Args:
-            indices: A tensor of integer indices to look up.
-
-        Returns:
-            A tensor containing the embeddings corresponding to the input indices.
-        """
-        self.weights = TensorValue(self.weights).to(self.device)
-        indices = TensorValue(indices).to(self.device)
-
-        result = ops.gather(self.weights, indices, axis=0)
-        if (
-            isinstance(self.weights, Weight)
-            and self.weights.quantization_encoding is not None
-        ):
-            result = ops.dequantize(self.weights.quantization_encoding, result)
-        return result
+from .layer import Module
 
 
 class Embedding(Module):

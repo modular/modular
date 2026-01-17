@@ -11,11 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import asyncio
+import contextlib
 import queue
 import sys
 import time
+from collections.abc import Generator
 from dataclasses import fields, is_dataclass
 from typing import Any
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -23,7 +27,10 @@ import zmq
 from max.interfaces import (
     ImageMetadata,
     RequestID,
+    SchedulerError,
+    SchedulerResult,
     SharedMemoryArray,
+    TokenBuffer,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -34,6 +41,7 @@ from max.serve.queue.zmq_queue import (
     ZmqPushSocket,
     generate_zmq_ipc_path,
 )
+from max.serve.scheduler.queues import EngineQueue
 
 
 def dataclass_equal(left: Any, right: Any) -> bool:
@@ -98,7 +106,7 @@ def test_serialization_and_deserialization_through_queue_with_msgpack() -> None:
         TextContext(
             request_id=RequestID(),
             max_length=15,
-            tokens=np.ones(5, dtype=np.int32),
+            tokens=TokenBuffer(np.ones(5, dtype=np.int64)),
         ),
     )
 
@@ -124,7 +132,7 @@ def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
     context = TextAndVisionContext(
         request_id=RequestID("test-request"),
         max_length=50,
-        tokens=np.array([0, 1, 22, 22, 4]),
+        tokens=TokenBuffer(np.array([0, 1, 22, 22, 4], dtype=np.int64)),
         images=[ImageMetadata(start_idx=2, end_idx=4, pixel_values=img)],
         vision_token_ids=[22],
     )
@@ -167,7 +175,7 @@ def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
     context2 = TextAndVisionContext(
         request_id=RequestID("test-request-2"),
         max_length=50,
-        tokens=np.array([0, 1, 22, 22, 4]),
+        tokens=TokenBuffer(np.array([0, 1, 22, 22, 4], dtype=np.int64)),
         images=[ImageMetadata(start_idx=2, end_idx=4, pixel_values=img)],
         vision_token_ids=[22],
     )
@@ -199,7 +207,9 @@ def test_zmq_push_pull_queue_with_complex_data() -> None:
     """Test queue with complex data structures using pickle serialization."""
 
     context = TextContext(
-        request_id=RequestID(), max_length=15, tokens=np.array([1, 1, 1, 1, 1])
+        request_id=RequestID(),
+        max_length=15,
+        tokens=TokenBuffer(np.array([1, 1, 1, 1, 1], dtype=np.int64)),
     )
     test_data = ("test_id", context)
 
@@ -218,7 +228,9 @@ def test_zmq_push_pull_queue_with_complex_data() -> None:
 def test_zmq_push_pull_queue_with_custom_serialization() -> None:
     """Test queue with custom msgpack serialization."""
     context = TextContext(
-        request_id=RequestID(), max_length=10, tokens=np.array([1, 2, 3, 4, 5])
+        request_id=RequestID(),
+        max_length=10,
+        tokens=TokenBuffer(np.array([1, 2, 3, 4, 5], dtype=np.int64)),
     )
     test_data = (context.request_id, context)
 
@@ -320,7 +332,7 @@ def test_zmq_push_pull_queue_with_vision_context() -> None:
     context = TextAndVisionContext(
         request_id=RequestID("test-vision-request"),
         max_length=50,
-        tokens=np.array([0, 1, 22, 22, 4]),
+        tokens=TokenBuffer(np.array([0, 1, 22, 22, 4], dtype=np.int64)),
         images=[ImageMetadata(start_idx=2, end_idx=4, pixel_values=img)],
         vision_token_ids=[22],
     )
@@ -337,7 +349,7 @@ def test_zmq_push_pull_queue_with_vision_context() -> None:
 
     assert result[0] == test_data[0]
     assert result[1].request_id == test_data[1].request_id
-    assert np.array_equal(result[1].tokens, test_data[1].tokens)
+    assert np.array_equal(result[1].tokens.array, test_data[1].tokens.array)
     assert np.allclose(
         result[1].images[0].pixel_values, test_data[1].images[0].pixel_values
     )
@@ -363,7 +375,7 @@ def test_shared_memory_default_threshold_usage() -> None:
     context = TextAndVisionContext(
         request_id=RequestID("array-test"),
         max_length=50,
-        tokens=np.array([0, 1, 22, 22, 4]),
+        tokens=TokenBuffer(np.array([0, 1, 22, 22, 4], dtype=np.int64)),
         images=[ImageMetadata(start_idx=2, end_idx=4, pixel_values=img)],
         vision_token_ids=[22],
     )
@@ -381,7 +393,7 @@ def test_shared_memory_default_threshold_usage() -> None:
     # Verify both arrays are correctly transmitted
     assert result[0] == test_data[0]
     assert result[1].request_id == test_data[1].request_id
-    assert np.array_equal(result[1].tokens, test_data[1].tokens)
+    assert np.array_equal(result[1].tokens.array, test_data[1].tokens.array)
     assert np.allclose(
         result[1].images[0].pixel_values, test_data[1].images[0].pixel_values
     )
@@ -392,3 +404,62 @@ def test_shared_memory_default_threshold_usage() -> None:
 
     # Large array should use shared memory (contain __shm__ marker)
     assert b"__shm__" in encoded
+
+
+@pytest.mark.asyncio
+async def test_engine_queue_stream_propagates_scheduler_error() -> None:
+    """Test that stream() raises with error details including remote traceback."""
+    fake_traceback = (
+        "Traceback (most recent call last):\n"
+        '  File "pipeline.py", line 42, in execute\n'
+        "    result = model.forward(inputs)\n"
+        "RuntimeError: CUDA out of memory\n"
+    )
+    error_result: SchedulerResult[Any] = SchedulerResult(
+        is_done=True,
+        result=None,
+        error=SchedulerError(
+            error_type="RuntimeError",
+            error_message="CUDA out of memory",
+            traceback_str=fake_traceback,
+        ),
+    )
+
+    req_id = RequestID("test-error-request")
+    context = TextContext(
+        request_id=req_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([1, 2, 3], dtype=np.int64)),
+    )
+
+    mock_out_queue: asyncio.Queue[SchedulerResult[Any]] = asyncio.Queue()
+    await mock_out_queue.put(error_result)
+
+    with patch.object(EngineQueue, "__init__", lambda self, *args: None):
+        engine_queue: EngineQueue[TextContext, Any] = EngineQueue.__new__(
+            EngineQueue
+        )
+        engine_queue.pending_out_queues = {}
+        engine_queue.request_queue = Mock()
+
+    @contextlib.contextmanager
+    def mock_open_channel(
+        rid: RequestID, data: TextContext
+    ) -> Generator[asyncio.Queue[SchedulerResult[Any]], None, None]:
+        engine_queue.pending_out_queues[rid] = mock_out_queue
+        try:
+            yield mock_out_queue
+        finally:
+            del engine_queue.pending_out_queues[rid]
+
+    with patch.object(engine_queue, "open_channel", mock_open_channel):
+        with pytest.raises(RuntimeError) as exc_info:
+            async for _ in engine_queue.stream(req_id, context):
+                pass
+
+        # Verify error message includes type, message, and remote traceback
+        error_msg = str(exc_info.value)
+        assert "RuntimeError" in error_msg
+        assert "CUDA out of memory" in error_msg
+        assert "Remote traceback:" in error_msg
+        assert "pipeline.py" in error_msg

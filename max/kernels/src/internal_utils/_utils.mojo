@@ -13,13 +13,7 @@
 
 import time
 from collections import OptionalReg
-from io.io import _snprintf
-from math import ceildiv
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
-from random import rand, random_float64
+from math import ceildiv, floor
 from sys import argv, env_get_string
 from builtin.device_passable import DevicePassable
 
@@ -31,7 +25,7 @@ from benchmark import (
     clobber_memory,
     keep,
 )
-from buffer import Dim, DimList, NDBuffer
+from buffer import Dim, DimList
 from buffer.dimlist import _make_tuple
 from compile import compile_info
 from gpu import *
@@ -39,10 +33,7 @@ from gpu.host import DeviceBuffer, DeviceContext
 from random import Random
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from tensor import DynamicTensor
-from testing import assert_equal, assert_true
-
 from utils import IndexList
-from utils.index import product
 
 
 struct ValOrDim[dim: Dim = Dim()](Defaultable):
@@ -108,45 +99,9 @@ struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
             raise Error("Invalid initialization type")
 
 
-fn initialize(
-    buffer: NDBuffer[mut=True, **_], init_type: InitializationType
-) raises:
-    if init_type == InitializationType.zero:
-        buffer.zero()
-    elif init_type == InitializationType.one:
-        buffer.fill(1)
-    elif init_type == InitializationType.uniform_distribution:
-        random(buffer)
-    elif init_type == InitializationType.arange:
-        arange(buffer)
-    else:
-        raise Error("Invalid initialization type")
-
-
-@parameter
-@always_inline
-fn arange(buffer: NDBuffer[mut=True, *_]):
-    @parameter
-    if buffer.rank == 2:
-        for i in range(buffer.dim[0]()):
-            for j in range(buffer.dim[1]()):
-                buffer[IndexList[buffer.rank](i, j)] = i * buffer.dim[1]() + j
-    else:
-        for i in range(len(buffer)):
-            buffer.data[i] = i
-
-
-fn zero(buffer: NDBuffer[mut=True, *_, **_]):
-    buffer.zero()
-
-
-fn fill(buffer: NDBuffer[mut=True, *_], val: Scalar):
-    buffer.fill(val.cast[buffer.type]())
-
-
 # TODO: refactor the following to run exactly once.
 fn bench_compile_time[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     func: func_type,
     emission_kind: StaticString = "asm",
@@ -262,7 +217,7 @@ fn static[d: Int]() -> ValOrDim[d]:
     return ValOrDim[d]()
 
 
-fn dynamic(d: Int) -> ValOrDim:
+fn dynamic(d: Int) -> ValOrDim[]:
     return ValOrDim(d)
 
 
@@ -308,118 +263,6 @@ fn arg_parse(handle: String, default: Float64) raises -> Float64:
     return default
 
 
-@always_inline
-fn _str_fmt_width[str_max: Int = 256](s: String, str_width: Int) -> String:
-    """Return `s` padded on the left with spaces so that the total length is
-    exactly `str_width`.  If `s` is already longer than `str_width` it is
-    returned unchanged. This re-implementation avoids the previous reliance on `_snprintf`
-    """
-    debug_assert(str_width > 0, "str_width must be positive")
-    var current_len = len(s)
-    if current_len >= str_width:
-        return s
-
-    # pads to the right to match numpy
-    var out = s
-    var pad_len = str_width - current_len
-    out += " " * pad_len
-    return out
-
-
-@always_inline
-fn _compute_max_scalar_str_len[rank: Int](x: NDBuffer[_, rank]) -> Int:
-    """Return the maximum string length of all scalar elements in `x`."""
-    var max_len: Int = 0
-    for i in range(x.num_elements()):
-        max_len = max(max_len, len(String(x.data[i])))
-    return max_len
-
-
-@always_inline
-fn ndbuffer_to_str[
-    rank: Int,
-    axis: Int = 0,
-](
-    x: NDBuffer[_, rank],
-    prev: IndexList[rank] = IndexList[rank](),
-    width: Int = 8,
-    indent: String = "",
-) -> String:
-    """Pretty-print an NDBuffer similar to NumPy's ndarray formatting.
-    The tensor is rendered as nested bracketed lists, one row (or sub-tensor)
-    per line, without the index headers previously produced.
-    """
-    var cur = prev
-
-    var effective_width = width
-    if axis == 0 and indent == "":
-        # ensure we have enough space to print the longest scalar plus one
-        # leading space for separation.
-        var computed = _compute_max_scalar_str_len[rank](x) + 1
-        effective_width = max(effective_width, computed)
-
-    # maximum desired terminal width before wrapping.
-    var max_line_width = 120
-
-    var out_str = String()
-
-    @parameter
-    if axis == rank - 1:
-        # base case – print a 1-d slice
-        var num_elems = x.dynamic_shape[axis]
-        out_str += "["
-        var line_len: Int = 0
-        for i in range(num_elems):
-            cur[axis] = i
-            var formatted = _str_fmt_width(String(x[cur]), effective_width)
-
-            # decide if we need to wrap before appending this element.
-            if i > 0:
-                if line_len + 1 + effective_width > max_line_width:
-                    out_str += (
-                        "\n" + indent + " "
-                    )  # align under opening bracket
-                    line_len = 0
-                else:
-                    # use single separator since previous value already padded right
-                    out_str += " "
-                    line_len += 1
-
-            if i == num_elems - 1:
-                out_str += String(x[cur])
-            else:
-                out_str += formatted
-            line_len += effective_width
-        out_str += "]"
-    else:
-        # Recursive case – print higher-rank slices, line by line.
-        out_str += "["
-        var next_indent = indent + " "
-        for i in range(x.dynamic_shape[axis]):
-            cur[axis] = i
-            if i > 0:
-                out_str += "\n" + next_indent
-            out_str += ndbuffer_to_str[rank, axis + 1](
-                x, cur, effective_width, next_indent
-            )
-        out_str += "]"
-    return out_str
-
-
-fn array_equal[
-    dtype: DType,
-    rank: Int,
-](x_array: NDBuffer[dtype, rank], y_array: NDBuffer[dtype, rank],) raises:
-    """Assert two ndbuffers have identical type, rank, length, and values."""
-
-    assert_true(
-        x_array.dynamic_shape.flattened_length()
-        == y_array.dynamic_shape.flattened_length()
-    )
-    for i in range(x_array.dynamic_shape.flattened_length()):
-        assert_equal(x_array.data[i], y_array.data[i])
-
-
 @fieldwise_init
 @register_passable("trivial")
 struct Mode(ImplicitlyCopyable, Stringable):
@@ -463,19 +306,6 @@ struct Mode(ImplicitlyCopyable, Stringable):
         return True if self._value & mode._value else False
 
 
-fn random[
-    dtype: DType
-](buffer: NDBuffer[mut=True, dtype, **_], min: Float64 = 0, max: Float64 = 1):
-    @parameter
-    if dtype.is_float8():
-        var size = buffer.num_elements()
-        for i in range(size):
-            var rnd = (random_float64(min, max) - 0.5) * 2.0
-            buffer.data[i] = rnd.cast[dtype]()
-    else:
-        rand(buffer.data, buffer.num_elements(), min=min, max=max)
-
-
 fn update_bench_config_args(mut b: Bench) raises:
     # TODO: refactor and move to bencher.mojo when internal_utils is available in oss.
 
@@ -510,12 +340,12 @@ struct Timer:
     var report: List[String]
 
     fn __init__(out self):
-        self.start = time.perf_counter_ns()
+        self.start = Float64(time.perf_counter_ns())
         self.current = self.start
         self.report = List[String]()
 
     fn measure(mut self, msg: String):
-        var current = time.perf_counter_ns()
+        var current = Float64(time.perf_counter_ns())
         var elapsed = current - self.current
         self.current = current
         self.report.append("[" + msg + "] " + String(elapsed / 1e6) + " (ms)")
@@ -537,7 +367,7 @@ struct Timer:
 fn init_vector_gpu[
     dtype: DType
 ](
-    x: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     len: Int,
     mode: InitializationType,
     value: Scalar[dtype],
@@ -565,7 +395,7 @@ fn init_vector_gpu[
     elif mode == InitializationType.fill:
         values = SIMD[dtype, 4](value)
     elif mode == InitializationType.uniform_distribution:
-        var rng = Random(offset=tid)
+        var rng = Random(offset=UInt64(tid))
         values = SIMD[dtype, 4](rng.step_uniform())
     elif mode == InitializationType.arange:
         values = SIMD[dtype, 4](
@@ -590,7 +420,7 @@ fn init_vector_launch[
     # using num-threads = 1/4th of length to initialize the array
 
     comptime kernel = init_vector_gpu[dtype]
-    context.enqueue_function_checked[kernel, kernel](
+    context.enqueue_function_experimental[kernel](
         out_device,
         length,
         init_type,
@@ -598,3 +428,37 @@ fn init_vector_launch[
         grid_dim=(num_blocks),
         block_dim=(block_dim),
     )
+
+
+fn _pretty_print_float(val: Float64) -> String:
+    """Converts float to string, omitting fractional part if not needed.
+
+    Examples:
+        _pretty_print_float(2.0) returns "2"
+        _pretty_print_float(2.5) returns "2.5"
+    """
+    if Float64(floor(val)) == val:
+        return String(Int(val))
+    return String(val)
+
+
+fn human_readable_size(size: Int) -> String:
+    """Formats a byte size into human-readable form (KB, MB, GB).
+
+    Args:
+        size: Size in bytes.
+
+    Returns:
+        Human-readable string (e.g., "4KB", "256MB", "2GB").
+    """
+    comptime KB = 1024
+    comptime MB = KB * KB
+    comptime GB = MB * KB
+
+    if size >= GB:
+        return _pretty_print_float(Float64(size) / GB) + "GB"
+    if size >= MB:
+        return _pretty_print_float(Float64(size) / MB) + "MB"
+    if size >= KB:
+        return _pretty_print_float(Float64(size) / KB) + "KB"
+    return String(size) + "B"

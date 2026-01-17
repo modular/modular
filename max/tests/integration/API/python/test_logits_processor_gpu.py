@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -28,7 +28,12 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.interfaces import BatchProcessorInputs, ProcessorInputs, SamplingParams
+from max.interfaces import (
+    BatchProcessorInputs,
+    ProcessorInputs,
+    SamplingParams,
+    TokenBuffer,
+)
 from max.pipelines import TextContext
 from max.pipelines.lib.sampling.logits_processor import apply_logits_processors
 
@@ -67,33 +72,33 @@ class TestApplyLogitsProcessorsGPU:
             print("before", inputs.logits.to_numpy())
             update_gpu_logits(
                 inputs.logits,
-                Tensor.from_numpy(np.array([1], dtype=np.float32)),
+                Buffer.from_numpy(np.array([1], dtype=np.float32)),
             )
             print("after", inputs.logits.to_numpy())
 
         def add_two(inputs: ProcessorInputs) -> None:
             update_gpu_logits(
                 inputs.logits,
-                Tensor.from_numpy(np.array([2], dtype=np.float32)),
+                Buffer.from_numpy(np.array([2], dtype=np.float32)),
             )
 
         def sub_one(inputs: ProcessorInputs) -> None:
             update_gpu_logits(
                 inputs.logits,
-                Tensor.from_numpy(np.array([-1], dtype=np.float32)),
+                Buffer.from_numpy(np.array([-1], dtype=np.float32)),
             )
 
         context_batch = [
             TextContext(
                 max_length=100,
-                tokens=np.empty(1, dtype=np.int32),
+                tokens=TokenBuffer(np.array([42], dtype=np.int64)),
                 sampling_params=SamplingParams(
                     logits_processors=[add_one, add_two]
                 ),
             ),
             TextContext(
                 max_length=100,
-                tokens=np.empty(1, dtype=np.int32),
+                tokens=TokenBuffer(np.array([42], dtype=np.int64)),
                 sampling_params=SamplingParams(logits_processors=[sub_one]),
             ),
         ]
@@ -105,7 +110,7 @@ class TestApplyLogitsProcessorsGPU:
         """Test apply_logits_processors with no offsets."""
 
         device = Accelerator()
-        logits = Tensor.from_numpy(
+        logits = Buffer.from_numpy(
             np.arange(10).reshape(2, 5).astype(np.float32)
         ).to(device)
 
@@ -127,10 +132,10 @@ class TestApplyLogitsProcessorsGPU:
         # Assume these 3 logits are returned for the first context
         # and 2 logits are returned for the second context.
         device = Accelerator()
-        logits = Tensor.from_numpy(
+        logits = Buffer.from_numpy(
             np.arange(30).reshape(5, 6).astype(np.float32)
         ).to(device)
-        logit_offsets = Tensor.from_numpy(
+        logit_offsets = Buffer.from_numpy(
             np.array([0, 3, 5]).astype(np.uint32)
         ).to(device)
 
@@ -149,15 +154,21 @@ class TestApplyLogitsProcessorsGPU:
         """Test apply_logits_processors with batch processors."""
 
         device = Accelerator()
-        logits = Tensor.from_numpy(
+        logits = Buffer.from_numpy(
             np.arange(10).reshape(2, 5).astype(np.float32),
         ).to(device)
-        logit_offsets = Tensor.from_numpy(
+        logit_offsets = Buffer.from_numpy(
             np.array([0, 3, 5]).astype(np.uint32)
         ).to(device)
         context_batch = [
-            TextContext(max_length=100, tokens=np.empty(1, dtype=np.int32)),
-            TextContext(max_length=100, tokens=np.empty(1, dtype=np.int32)),
+            TextContext(
+                max_length=100,
+                tokens=TokenBuffer(np.array([42], dtype=np.int64)),
+            ),
+            TextContext(
+                max_length=100,
+                tokens=TokenBuffer(np.array([42], dtype=np.int64)),
+            ),
         ]
 
         def add_one(inputs: BatchProcessorInputs) -> None:
@@ -166,7 +177,7 @@ class TestApplyLogitsProcessorsGPU:
             assert inputs.context_batch is context_batch
             update_gpu_logits(
                 inputs.logits,
-                Tensor.from_numpy(np.array([1], dtype=np.float32)),
+                Buffer.from_numpy(np.array([1], dtype=np.float32)),
             )
 
         apply_logits_processors(context_batch, logits, logit_offsets, [add_one])

@@ -15,7 +15,7 @@ from math import ceildiv
 
 from gpu import MAX_THREADS_PER_BLOCK_METADATA
 from gpu.globals import WARPGROUP_SIZE
-from gpu.id import thread_idx
+from gpu import thread_idx
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from layout import Layout, LayoutTensor
 from layout.tma_async import TMATensorTile
@@ -112,7 +112,7 @@ __extension HopperMatmulSM90Kernel:
             )
 
             @parameter
-            if a_type is DType.float8_e4m3fn:
+            if a_type == DType.float8_e4m3fn:
                 _ = final_c_reg_tile.fill(0.0)
             else:
                 _ = c_reg_tile.fill(0.0)
@@ -132,7 +132,7 @@ __extension HopperMatmulSM90Kernel:
                     var block_x = UInt(ceildiv(work_info.n, Self.BN))
                     var output_reg_tile = (
                         final_c_reg_tile if a_type
-                        is DType.float8_e4m3fn else c_reg_tile
+                        == DType.float8_e4m3fn else c_reg_tile
                     )
 
                     Self.consumer_output(
@@ -234,7 +234,7 @@ __extension HopperMatmulSM90Kernel:
 
             var output_reg_tile = (
                 final_c_reg_tile if a_type
-                is DType.float8_e4m3fn else c_reg_tile
+                == DType.float8_e4m3fn else c_reg_tile
             )
 
             Self.consumer_output(

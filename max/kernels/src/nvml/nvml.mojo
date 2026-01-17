@@ -18,11 +18,12 @@ from pathlib import Path
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
 
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-    stack_allocation,
-)
+from memory import stack_allocation, LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 
 # ===-----------------------------------------------------------------------===#
 # Constants
@@ -68,7 +69,7 @@ fn _init_dylib() -> OwnedDLHandle:
 
 @always_inline
 fn _get_dylib_function[
-    func_name: StaticString, result_type: AnyTrivialRegType
+    func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         CUDA_NVML_LIBRARY(),
@@ -82,7 +83,7 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-struct DriverVersion(ImplicitlyCopyable, StringableRaising):
+struct DriverVersion(ImplicitlyCopyable, Stringable):
     var _value: List[String]
 
     fn __init__(out self, var value: List[String]):
@@ -100,8 +101,9 @@ struct DriverVersion(ImplicitlyCopyable, StringableRaising):
     fn patch(self) raises -> Int:
         return Int(self._value[2]) if len(self._value) > 2 else 0
 
-    fn __str__(self) raises -> String:
-        return String(self.major(), ".", self.minor(), ".", self.patch())
+    fn __str__(self) -> String:
+        var patch = self._value[2] if len(self._value) > 2 else ""
+        return String(self._value[0], ".", self._value[1], ".", patch)
 
 
 # ===-----------------------------------------------------------------------===#

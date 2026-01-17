@@ -15,7 +15,9 @@ from gpu.host import DeviceContext
 from gpu import block_idx, thread_idx
 from layout import *
 from layout.layout_tensor import LayoutTensor
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn gpu_kernel(
@@ -52,7 +54,7 @@ def main():
         ctx.enqueue_copy(vec_b_dev, vec_b_ptr)
         ctx.enqueue_copy(vec_c_dev, vec_c_ptr)
 
-        ctx.enqueue_function_checked[gpu_kernel, gpu_kernel](
+        ctx.enqueue_function_experimental[gpu_kernel](
             vec_c_dev,
             vec_a_dev,
             vec_b_dev,

@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from max.driver import Tensor, accelerator_count
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -95,11 +95,11 @@ def test_conditional_execution_with_results(session: InferenceSession) -> None:
 
     compiled = session.load(graph)
     output = compiled.execute(True)
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
     assert output[0].to_numpy() == 1
 
     output = compiled.execute(False)
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
     assert output[0].to_numpy() == 0
 
 
@@ -128,23 +128,23 @@ def test_conditional_shape_to_tensor_solo_dim(
 
     compiled = session.load(graph)
 
-    x = Tensor.from_numpy(np.ones((7, 3)).astype(np.float32)).to(
+    x = Buffer.from_numpy(np.ones((7, 3)).astype(np.float32)).to(
         compiled.input_devices[0]
     )
     output = compiled.execute(x)
 
     # Output is only a scalar
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
     assert output[0].shape == ()
     np.testing.assert_equal(output[0].to_numpy(), np.array([1]))
 
-    x = Tensor.from_numpy(np.ones((7, 4)).astype(np.float32)).to(
+    x = Buffer.from_numpy(np.ones((7, 4)).astype(np.float32)).to(
         compiled.input_devices[0]
     )
     output = compiled.execute(x)
 
     # Output is only a scalar
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
     assert output[0].shape == ()
     np.testing.assert_equal(output[0].to_numpy(), np.array([0]))
 
@@ -197,14 +197,14 @@ def test_conditional_inplace_user_supplied(
     rawbuffer = torch.ones((2, 2), dtype=torch.float32)
     if accelerator_count() > 0:
         rawbuffer = rawbuffer.cuda()
-    model.execute(Tensor.from_dlpack(rawbuffer), True)
+    model.execute(Buffer.from_dlpack(rawbuffer), True)
     actual = np.array([[3, 1], [1, 1]], dtype=np.float32) * -1
     np.testing.assert_equal(rawbuffer.cpu().numpy(), actual)
 
     rawbuffer = torch.ones((2, 2), dtype=torch.float32)
     if accelerator_count() > 0:
         rawbuffer = rawbuffer.cuda()
-    model.execute(Tensor.from_dlpack(rawbuffer), False)
+    model.execute(Buffer.from_dlpack(rawbuffer), False)
     actual = np.array([[4, 1], [1, 1]], dtype=np.float32)
     np.testing.assert_equal(rawbuffer.cpu().numpy(), actual)
 
@@ -324,11 +324,11 @@ def test_conditional_with_same_name_weight(session: InferenceSession) -> None:
             graph, weights_registry={"random_weight": weight}
         )
         output = compiled.execute(True)
-        assert isinstance(output[0], Tensor)
+        assert isinstance(output[0], Buffer)
         np.testing.assert_array_equal(weight * 2, output[0].to_numpy())
 
         output = compiled.execute(False)
-        assert isinstance(output[0], Tensor)
+        assert isinstance(output[0], Buffer)
         np.testing.assert_array_equal(weight * 3, output[0].to_numpy())
 
 
@@ -378,11 +378,11 @@ def test_conditional_with_diff_names_weights(session: InferenceSession) -> None:
             },
         )
         output = compiled.execute(True)
-        assert isinstance(output[0], Tensor)
+        assert isinstance(output[0], Buffer)
         np.testing.assert_array_equal(true_weight * 2, output[0].to_numpy())
 
         output = compiled.execute(False)
-        assert isinstance(output[0], Tensor)
+        assert isinstance(output[0], Buffer)
         np.testing.assert_array_equal(false_weight * 3, output[0].to_numpy())
 
 
@@ -413,11 +413,11 @@ def test_conditional_with_returned_weights(session: InferenceSession) -> None:
             graph, weights_registry={"random_weight": weight}
         )
         output = compiled.execute(True)
-        assert isinstance(output[0], Tensor)
+        assert isinstance(output[0], Buffer)
         np.testing.assert_array_equal(weight, output[0].to_numpy())
 
         output = compiled.execute(False)
-        assert isinstance(output[0], Tensor)
+        assert isinstance(output[0], Buffer)
         np.testing.assert_array_equal(weight, output[0].to_numpy())
 
 
@@ -466,9 +466,9 @@ def test_cond_returned_diff_weights(session: InferenceSession) -> None:
             },
         )
         output = compiled.execute(True)
-        assert isinstance(output[0], Tensor)
+        assert isinstance(output[0], Buffer)
         np.testing.assert_array_equal(true_weight * 2, output[0].to_numpy())
 
         output = compiled.execute(False)
-        assert isinstance(output[0], Tensor)
+        assert isinstance(output[0], Buffer)
         np.testing.assert_array_equal(false_weight * 2, output[0].to_numpy())

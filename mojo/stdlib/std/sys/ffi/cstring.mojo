@@ -195,7 +195,8 @@ struct CStringSlice[origin: ImmutOrigin](
         Args:
             writer: The `Writer` to write the `CStringSlice` to.
         """
-        writer.write_bytes(self.as_bytes())
+        # TODO: This should error if the bytes are not valid UTF-8.
+        writer.write_string(StringSlice(unsafe_from_utf8=self.as_bytes()))
 
     @always_inline
     fn unsafe_ptr(self) -> UnsafePointer[Int8, Self.origin]:

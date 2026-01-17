@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides the `Stringable` and `StringableRaising` traits.
+"""Provides the `Stringable` trait.
 
 These are Mojo built-ins, so you don't need to import them.
 """
@@ -23,17 +23,18 @@ These are Mojo built-ins, so you don't need to import them.
 trait Stringable:
     """
     The `Stringable` trait describes a type that can be converted to a
-    [`String`](/mojo/std/collections/string/String).
+    [`String`](/mojo/std/collections/string/string/String).
 
-    Any type that conforms to `Stringable` or
-    [`StringableRaising`](/mojo/std/builtin/str/StringableRaising) works
-    with the built-in [`print()`](/mojo/std/builtin/io/print) and
-    [`String()`](/mojo/std/builtin/str/str) functions.
+    Any type that conforms to `Stringable` works
+    with the built-in [`print()`](/mojo/std/io/io/print) function and
+    implicitly converts to a
+    [`String`](/mojo/std/collections/string/string/String).
 
     The `Stringable` trait requires the type to define the `__str__()` method.
     For example:
 
     ```mojo
+    @fieldwise_init
     struct Foo(Stringable):
         var s: String
 
@@ -53,15 +54,11 @@ trait Stringable:
     True
     ```
 
-    **Note:** If the `__str__()` method might raise an error, use the
-    [`StringableRaising`](/mojo/std/builtin/str/StringableRaising)
-    trait, instead.
-
     About the difference between `__repr__()` and `__str__()`:
     The method `__repr__` computes the "official" string representation of an object
-    while `__str__` computes the "informal" or nicely printable string representation of an object.
+    while `__str__()` computes the "informal" or nicely printable string representation of an object.
 
-    This method differs from `__repr__()` in that there is no expectation that `__str__()`
+    `__str__()` differs from `__repr__()` in that there is no expectation that `__str__()`
     return a valid Mojo expression: a more convenient or concise representation can be used.
     """
 
@@ -74,6 +71,7 @@ trait Stringable:
         ...
 
 
+@deprecated("StringableRaising is deprecated, use Writable instead")
 trait StringableRaising:
     """The StringableRaising trait describes a type that can be converted to a
     [`String`](/mojo/std/collections/string/String).

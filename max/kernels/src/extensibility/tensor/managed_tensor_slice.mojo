@@ -29,10 +29,9 @@ from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from layout._coord import Coord, _DimsToCoordLike
+from layout._tile_tensor import TileTensor
+
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import trace_arg
@@ -97,7 +96,7 @@ fn simd_store_into_managed_tensor_slice[
     @always_inline
     fn store_stride1():
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             var v = value.cast[DType.uint8]()
             tensor._ptr.bitcast[UInt8]().store(flat_index, v)
         else:
@@ -108,15 +107,15 @@ fn simd_store_into_managed_tensor_slice[
     @always_inline
     fn store_strided(stride: Int):
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             var v = value.cast[DType.uint8]()
             strided_store(
                 v,
-                tensor._ptr.bitcast[UInt8]().offset(flat_index),
+                tensor._ptr.bitcast[UInt8]() + flat_index,
                 stride,
             )
         else:
-            return strided_store(value, tensor._ptr.offset(flat_index), stride)
+            return strided_store(value, tensor._ptr + flat_index, stride)
 
     @parameter
     if static_stride.is_dynamic():
@@ -149,7 +148,7 @@ fn simd_store_into_tensor_pointer[
     simd_width: Int,
     element_alignment: Int = 1,
 ](
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     shape: IndexList[rank],
     strides: IndexList[rank],
     indices: IndexList[rank],
@@ -197,7 +196,7 @@ fn simd_load_from_tensor_pointer[
     simd_width: Int,
     element_alignment: Int = 1,
 ](
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     shape: IndexList[rank],
     strides: IndexList[rank],
     indices: IndexList[rank],
@@ -260,7 +259,7 @@ fn simd_load_from_managed_tensor_slice[
     @always_inline
     fn load_stride1() -> SIMD[dtype, simd_width]:
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             var v = tensor._ptr.bitcast[UInt8]().load[
                 width=simd_width,
                 invariant=invariant,
@@ -276,15 +275,15 @@ fn simd_load_from_managed_tensor_slice[
     @always_inline
     fn load_strided(stride: Int) -> SIMD[dtype, simd_width]:
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             var v = strided_load[simd_width, invariant=invariant](
-                tensor._ptr.bitcast[UInt8]().offset(flat_index),
+                tensor._ptr.bitcast[UInt8]() + flat_index,
                 stride,
             )
             return v.cast[dtype]()
         else:
             return strided_load[simd_width, invariant=invariant](
-                tensor._ptr.offset(flat_index), stride
+                tensor._ptr + flat_index, stride
             )
 
     @parameter
@@ -325,7 +324,7 @@ fn _extract_tensor_spec[
 
 @no_inline
 fn rebuild_static_tensor_specs_with_input_lambda[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     dtype: DType,
     rank: Int,
@@ -347,7 +346,7 @@ fn rebuild_static_tensor_specs_with_input_lambda[
 
 @no_inline
 fn rebuild_static_tensor_specs_with_output_lambda[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     dtype: DType,
     rank: Int,
@@ -369,7 +368,7 @@ fn rebuild_static_tensor_specs_with_output_lambda[
 
 @no_inline
 fn rebuild_static_tensor_specs_with_compute_output_lambda[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     dtype: DType,
     rank: Int,
@@ -565,7 +564,7 @@ fn _mixed_precision_compute_output_fusion_hook_impl[
 )
 @no_inline
 fn rebuild_mix_precision_static_tensor_specs_with_input_lambda[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     src_dtype: DType,
     dst_dtype: DType,
@@ -715,13 +714,13 @@ struct ManagedTensorSlice[
     comptime _in_lambda = Self.static_spec.in_lambda
     comptime _out_lambda = Self.static_spec.out_lambda
 
-    var _ptr: UnsafePointer[Scalar[Self.dtype]]
+    var _ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     var _spec: RuntimeTensorSpec[Self.dtype, Self.rank]
     var _runtime_strides: IndexList[Self.rank]
 
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.dtype]],
+        ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
         slices: InlineArray[Slice, Self.rank],
         slicer_spec: RuntimeTensorSpec[Self.dtype, Self.rank],
     ):
@@ -766,11 +765,11 @@ struct ManagedTensorSlice[
         for i in range(Self.rank):
             strides[i] = step[i] * slicer_strides[i]
 
-        self = Self(ptr.offset(start_offset), slice_spec, strides)
+        self = Self(ptr + start_offset, slice_spec, strides)
 
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.dtype]],
+        ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
         shape: IndexList[Self.rank],
     ):
         """Initializes a ManagedTensorSlice from a pointer and shape.
@@ -785,7 +784,7 @@ struct ManagedTensorSlice[
 
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.dtype]],
+        ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
         shape: IndexList[Self.rank],
         strides: IndexList[Self.rank],
     ):
@@ -982,7 +981,7 @@ struct ManagedTensorSlice[
     @always_inline
     fn unsafe_ptr[
         _dtype: DType = Self.dtype
-    ](self) -> UnsafePointer[Scalar[_dtype]]:
+    ](self) -> UnsafePointer[Scalar[_dtype], MutAnyOrigin]:
         """Get the pointer stored in this tensor slice.
 
         Since this method obtains the pointer stored in this tensor slice, it
@@ -995,7 +994,7 @@ struct ManagedTensorSlice[
         Returns:
             The `UnsafePointer` which contains the data for this tensor slice.
         """
-        return rebind[UnsafePointer[Scalar[_dtype]]](self._ptr)
+        return self._ptr.bitcast[Scalar[_dtype]]()
 
     @always_inline
     fn load[
@@ -1227,7 +1226,9 @@ struct ManagedTensorSlice[
         self,
         new_runtime_shape: IndexList[new_rank],
         new_runtime_strides: IndexList[new_rank],
-        offset_ptr: OptionalReg[UnsafePointer[Scalar[Self.dtype]]] = None,
+        offset_ptr: OptionalReg[
+            UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+        ] = None,
         out result: ManagedTensorSlice[
             rank=new_rank,
             io_spec = Self.io_spec,
@@ -1268,6 +1269,49 @@ struct ManagedTensorSlice[
                 self.strides().cast[result.linear_idx_type](),
             ),
         )
+
+    @always_inline
+    fn to_tile_tensor[
+        coord_dtype: DType
+    ](
+        self,
+        out result: TileTensor[
+            shape_types = _DimsToCoordLike[coord_dtype, Self.static_spec.shape],
+            stride_types = _DimsToCoordLike[
+                coord_dtype, Self.static_spec.strides
+            ],
+            dtype = Self.dtype,
+            origin=MutExternalOrigin,
+        ],
+    ):
+        var shape_tuple = Coord[
+            *_DimsToCoordLike[coord_dtype, Self.static_spec.shape]
+        ]()
+        var stride_tuple = Coord[
+            *_DimsToCoordLike[coord_dtype, Self.static_spec.strides]
+        ]()
+        var shape = self.shape()
+        var stride = self.strides()
+
+        @parameter
+        for i in range(Self.rank):
+
+            @parameter
+            if not shape_tuple.element_types[i].IS_STATIC_VALUE:
+                shape_tuple[i] = rebind[shape_tuple.element_types[i]](
+                    Scalar[coord_dtype](shape[i])
+                )
+
+            @parameter
+            if not stride_tuple.element_types[i].IS_STATIC_VALUE:
+                stride_tuple[i] = rebind[stride_tuple.element_types[i]](
+                    Scalar[coord_dtype](stride[i])
+                )
+
+        return {
+            self.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
+            layout._layout.Layout(shape_tuple^, stride_tuple^),
+        }
 
     fn write_to(self, mut writer: Some[Writer]):
         """
@@ -1337,7 +1381,7 @@ fn _is_consistent[static_info: DimList](runtime_info: IndexList) -> Bool:
     return True
 
 
-# TODO: Move to open-source/max/mojo/stdlib/stdlib/runtime/tracing.mojo and
+# TODO: Move to oss/modular/mojo/stdlib/stdlib/runtime/tracing.mojo and
 # rename to trace_arg
 @always_inline
 fn trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:

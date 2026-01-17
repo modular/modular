@@ -14,14 +14,16 @@
 
 This module contains the CPU-side code for SM100 matrix multiplication:
 - TMA descriptor creation
-- Kernel instantiation and launch via ctx.enqueue_function_checked
+- Kernel instantiation and launch via ctx.enqueue_function
 
 All GPU code (kernel structs, runtime functions) is in matmul_kernels.mojo.
 """
 
 from collections import OptionalReg
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import size_of
 
 from gpu.host import DeviceContext, FuncAttribute
@@ -29,29 +31,27 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from layout.tma_async import create_tma_tile
+from layout.tma_async import create_tensor_tile
 
 from utils.index import Index
 from utils.static_tuple import StaticTuple
 
-from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
-from ..sm100.config import MatmulConfig
+from linalg.utils import (
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+)
+from linalg.matmul.gpu.sm100.config import MatmulConfig
 from .tile_scheduler_splitk import (
     get_required_locks_buffer_size_bytes,
     get_num_tiles,
 )
-from ..profiler import MatmulWarpSpecializationWorkSpaceManager
+from linalg.matmul.gpu.profiler import MatmulWarpSpecializationWorkSpaceManager
 
 # Import kernel structs and GPU functions from matmul_kernels
 from .matmul_kernels import (
     B200MatmulSmem,
     BlackwellMatmulSM100Kernel,
     BlackwellMatmulSM100FallbackKernel,
-    # Re-export for backward compatibility (used by warp_specialized_blockwise_fp8)
-    WarpRole,
-    accum_arrive,
-    consumer_main_loop,
-    stsm_helper,
 )
 
 
@@ -72,9 +72,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
-    c_device: LayoutTensor[c_type, c_layout, *_, **_],
-    a_device: LayoutTensor[a_type, a_layout, *_, **_],
-    b_device: LayoutTensor[b_type, b_layout, *_, **_],
+    c_device: LayoutTensor[c_type, c_layout, ...],
+    a_device: LayoutTensor[a_type, a_layout, ...],
+    b_device: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
     __comptime_assert transpose_b, "Only support transposed B"
@@ -130,12 +130,12 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         ceildiv(K, BK) % Int(config.k_group_size) == 0
     ), "K iterations must be a multiple of k_group_size"
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode = config.a_swizzle
     ](ctx, a_device)
 
     # fmt: off
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
@@ -155,7 +155,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
 
     __comptime_assert (not config.AB_swapped) or config.c_swizzle.bytes() == 128, "Only support 128B swizzle mode when AB_swapped is True"
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
-    var c_tma_op = create_tma_tile[
+    var c_tma_op = create_tensor_tile[
         c_tma_tile_shape if not config.AB_swapped else Index(
             c_tma_tile_shape[0], c_tma_tile_shape_1
         ),
@@ -233,7 +233,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
             ptr=UnsafePointer[UInt64, origin=MutAnyOrigin](), length=0
         )
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -275,9 +275,9 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
-    c_device: LayoutTensor[c_type, c_layout, *_, **_],
-    a_device: LayoutTensor[a_type, a_layout, *_, **_],
-    b_device: LayoutTensor[b_type, b_layout, *_, **_],
+    c_device: LayoutTensor[c_type, c_layout, ...],
+    a_device: LayoutTensor[a_type, a_layout, ...],
+    b_device: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
     @parameter
@@ -373,9 +373,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     register_based_epilogue: Bool = True,
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
-    c_device: LayoutTensor[c_type, c_layout, *_, **_],
-    a_device: LayoutTensor[a_type, a_layout, *_, **_],
-    b_device: LayoutTensor[b_type, b_layout, *_, **_],
+    c_device: LayoutTensor[c_type, c_layout, ...],
+    a_device: LayoutTensor[a_type, a_layout, ...],
+    b_device: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
     __comptime_assert transpose_b, "Only support transposed B"
@@ -431,11 +431,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         config.num_pipeline_stages % config.k_group_size == 0
     ), "num_pipeline_stages must be a multiple of k_group_size"
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode = config.a_swizzle
     ](ctx, a_device)
 
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
@@ -457,7 +457,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     # the tile shape with 128B swizzle mode, there should always be 64 elements
     # on the contiguous dim.
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
-    var c_tma_op = create_tma_tile[
+    var c_tma_op = create_tensor_tile[
         c_tma_tile_shape if not config.AB_swapped else Index(
             c_tma_tile_shape[0], c_tma_tile_shape_1
         ),
@@ -561,7 +561,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     else:
         workspace = Span[UInt64, MutAnyOrigin]()
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -605,9 +605,9 @@ fn matmul_sm100_fallback[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, *_, **_],
-    a: LayoutTensor[a_type, a_layout, *_, **_],
-    b: LayoutTensor[b_type, b_layout, *_, **_],
+    c: LayoutTensor[c_type, c_layout, ...],
+    a: LayoutTensor[a_type, a_layout, ...],
+    b: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
     __comptime_assert transpose_b, "Only support transposed B"
@@ -622,8 +622,8 @@ fn matmul_sm100_fallback[
     comptime BK = block_tile_shape[2]
 
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
-    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
-    b_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
+    b_tma_op = create_tensor_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b)
@@ -658,7 +658,7 @@ fn matmul_sm100_fallback[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c,

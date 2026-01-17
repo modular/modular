@@ -366,12 +366,16 @@ def calculate_metrics(
             itls += outputs[i].itl
             ttfts.append(outputs[i].ttft)
             # Input throughput is fully calculated once we reach the first output token.
-            input_throughputs.append(outputs[i].prompt_len / outputs[i].ttft)
+            if outputs[i].ttft > 0:
+                input_throughputs.append(
+                    outputs[i].prompt_len / outputs[i].ttft
+                )
             # output throughput ignores the first token.
             # It is just timing for the chain of output tokens.
-            output_throughputs.append(
-                (output_len - 1) / (outputs[i].latency - outputs[i].ttft)
-            )
+            if (outputs[i].latency - outputs[i].ttft) > 0:
+                output_throughputs.append(
+                    (output_len - 1) / (outputs[i].latency - outputs[i].ttft)
+                )
             latencies.append(outputs[i].latency)
         else:
             actual_output_lens.append(0)
@@ -1566,6 +1570,7 @@ def main(args: argparse.Namespace) -> None:
             max_output_len=args.max_output_len,
         )
     elif isinstance(benchmark_dataset, RandomBenchmarkDataset):
+        random_state = np.random.default_rng(args.seed)
         if args.num_chat_sessions:
             chat_sessions = benchmark_dataset.gen_multiturn_random_requests(
                 input_len=args.random_input_len,
@@ -1578,6 +1583,8 @@ def main(args: argparse.Namespace) -> None:
                 max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
                 distribution_type=args.random_distribution_type,
                 first_turn_ratio=args.random_first_turn_ratio,
+                random_state=random_state,
+                use_synthetic_tokens=(args.dataset_name == "synthetic"),
             )
         else:
             input_requests = benchmark_dataset.sample_requests(
@@ -1591,6 +1598,8 @@ def main(args: argparse.Namespace) -> None:
                 distribution_type=args.random_distribution_type,
                 image_size=args.random_image_size,
                 image_count=args.random_image_count,
+                random_state=random_state,
+                use_synthetic_tokens=(args.dataset_name == "synthetic"),
             )
     elif isinstance(benchmark_dataset, AxolotlBenchmarkDataset):
         input_requests = benchmark_dataset.sample_requests(

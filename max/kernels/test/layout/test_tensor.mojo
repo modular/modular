@@ -1437,7 +1437,7 @@ fn test_slice_with_offsets():
     print("slice-of[0:3,:2,0]")
     print(
         tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices= (0, 1)](
-            offsets=(0)
+            IndexList[1](0)
         )
     )
 
@@ -1448,7 +1448,7 @@ fn test_slice_with_offsets():
     print("slice-of-[0:3,:2,1]")
     print(
         tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices= (0, 1)](
-            offsets=(1)
+            IndexList[1](1)
         )
     )
 
@@ -1458,7 +1458,9 @@ fn test_slice_with_offsets():
     # CHECK: 16.0 17.0
     print("slice-of-[2,:,:]")
     print(
-        tensor_4x3x2_row_major.slice[:, :, slice_indices= (1, 2)](offsets=(2))
+        tensor_4x3x2_row_major.slice[:, :, slice_indices= (1, 2)](
+            IndexList[1](2)
+        )
     )
 
     print("slice-of-[:,1,:]")
@@ -1468,7 +1470,9 @@ fn test_slice_with_offsets():
     # CHECK: 14.0 15.0
     # CHECK: 20.0 21.0
     print(
-        tensor_4x3x2_row_major.slice[:, :, slice_indices= (0, 2)](offsets=(1))
+        tensor_4x3x2_row_major.slice[:, :, slice_indices= (0, 2)](
+            IndexList[1](1)
+        )
     )
 
     # CHECK: slice-of-[:,0,0]
@@ -1478,7 +1482,9 @@ fn test_slice_with_offsets():
     # CHECK: 18.0
     print("slice-of-[:,0,0]")
     print(
-        tensor_4x3x2_row_major.slice_1d[:, slice_indices= (0)](offsets=(0, 0))
+        tensor_4x3x2_row_major.slice_1d[:, slice_indices = IndexList[1](0)](
+            IndexList[2](0, 0)
+        )
     )
 
     # CHECK: slice-of-[2,:,1]
@@ -1487,7 +1493,9 @@ fn test_slice_with_offsets():
     # CHECK: 17.0
     print("slice-of-[2,:,1]")
     print(
-        tensor_4x3x2_row_major.slice_1d[:, slice_indices= (1)](offsets=(2, 1))
+        tensor_4x3x2_row_major.slice_1d[:, slice_indices = IndexList[1](1)](
+            IndexList[2](2, 1)
+        )
     )
 
 

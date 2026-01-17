@@ -15,7 +15,6 @@ from collections import Optional
 from sys import size_of
 from sys.intrinsics import readfirstlane
 
-from buffer import NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from gpu.intrinsics import AMDBufferResource
 from gpu.compute.mma import mma
@@ -68,7 +67,7 @@ struct ManagedLayoutTensor[
 
     @always_inline
     fn __init__(
-        out self, runtime_layout: RuntimeLayout[Self.layout, **_]
+        out self, runtime_layout: RuntimeLayout[Self.layout, ...]
     ) raises:
         self.ctx = DeviceContext(api="cpu")
 
@@ -104,7 +103,7 @@ struct ManagedLayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        runtime_layout: RuntimeLayout[Self.layout, **_],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
         ctx: DeviceContext,
     ) raises:
         __comptime_assert (
@@ -161,23 +160,6 @@ struct ManagedLayoutTensor[
                 self.runtime_layout,
             )
 
-    fn device_buffer[
-        update: Bool = True
-    ](self) raises -> NDBuffer[Self.dtype, Self.layout.rank(), MutAnyOrigin]:
-        @parameter
-        if update:
-            self._update_device()
-
-        var shape = IndexList[Self.layout.rank()]()
-
-        @parameter
-        for r in range(Self.layout.rank()):
-            shape[r] = self.runtime_layout.dim(r)
-
-        return NDBuffer[Self.dtype, Self.layout.rank()](
-            self.device_data.value().unsafe_ptr(), shape
-        )
-
     fn tensor[update: Bool = True](self) raises -> Self.layout_tensor_type:
         @parameter
         if update:
@@ -193,23 +175,6 @@ struct ManagedLayoutTensor[
                 self.host_data.unsafe_ptr(),
                 self.runtime_layout,
             )
-
-    fn buffer[
-        update: Bool = True
-    ](self) raises -> NDBuffer[Self.dtype, Self.layout.rank(), MutAnyOrigin]:
-        @parameter
-        if update:
-            self._update_host()
-
-        var shape = IndexList[Self.layout.rank()]()
-
-        @parameter
-        for r in range(Self.layout.rank()):
-            shape[r] = self.runtime_layout.dim(r)
-
-        return NDBuffer[Self.dtype, Self.layout.rank()](
-            self.host_data.unsafe_ptr(), shape
-        )
 
     fn _update_device(self) raises:
         if self.ctx.api() != "cpu":

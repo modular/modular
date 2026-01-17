@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections.string.string_slice import get_static_string
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of
@@ -70,7 +69,7 @@ fn _init_nvshmem_dylib() -> OwnedDLHandle:
 
 @always_inline
 fn _get_nvshmem_function[
-    func_name: StaticString, result_type: AnyTrivialRegType
+    func_name: StaticString, result_type: __TypeOfAllTypes
 ]() -> result_type:
     try:
         return _get_dylib_function[
@@ -156,10 +155,10 @@ comptime NVSHMEM_TEAM_INDEX_MAX: nvshmem_team_id_t = nvshmem_team_id_t.MAX
 # Structs
 struct NVSHMEMXInitAttr:
     var version: c_int
-    var mpi_comm: UnsafePointer[MPIComm]
+    var mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]
     var args: NVSHMEMXInitArgs
 
-    fn __init__(out self, mpi_comm: UnsafePointer[MPIComm]):
+    fn __init__(out self, mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]):
         __comptime_assert (
             size_of[Self]() == 144
         ), "NVSHMEMXInitAttr must be 144 bytes"
@@ -184,7 +183,7 @@ struct NVSHMEMXInitArgs:
 
 struct NVSHMEMXUniqueIDArgs:
     var version: c_int
-    var id: UnsafePointer[NVSHMEMXUniqueID]
+    var id: UnsafePointer[NVSHMEMXUniqueID, MutAnyOrigin]
     var myrank: c_int
     var nranks: c_int
 
@@ -193,7 +192,7 @@ struct NVSHMEMXUniqueIDArgs:
             size_of[Self]() == 24
         ), "NVSHMEMXUniqueIDArgs must be 24 bytes"
         self.version = (1 << 16) + size_of[NVSHMEMXUniqueIDArgs]()
-        self.id = UnsafePointer[NVSHMEMXUniqueID]()
+        self.id = UnsafePointer[NVSHMEMXUniqueID, MutAnyOrigin]()
         self.myrank = 0
         self.nranks = 0
 
@@ -263,31 +262,31 @@ fn _dtype_to_nvshmem_type[
     """
 
     @parameter
-    if dtype is DType.float16:
+    if dtype == DType.float16:
         return get_static_string[prefix, "half", suffix, scope]()
-    elif dtype is DType.bfloat16:
+    elif dtype == DType.bfloat16:
         return get_static_string[prefix, "bfloat16", suffix, scope]()
-    elif dtype is DType.float32:
+    elif dtype == DType.float32:
         return get_static_string[prefix, "float", suffix, scope]()
-    elif dtype is DType.float64:
+    elif dtype == DType.float64:
         return get_static_string[prefix, "double", suffix, scope]()
-    elif dtype is DType.int8:
+    elif dtype == DType.int8:
         return get_static_string[prefix, "int8", suffix, scope]()
-    elif dtype is DType.uint8:
+    elif dtype == DType.uint8:
         return get_static_string[prefix, "uint8", suffix, scope]()
-    elif dtype is DType.int16:
+    elif dtype == DType.int16:
         return get_static_string[prefix, "int16", suffix, scope]()
-    elif dtype is DType.uint16:
+    elif dtype == DType.uint16:
         return get_static_string[prefix, "uint16", suffix, scope]()
-    elif dtype is DType.int32:
+    elif dtype == DType.int32:
         return get_static_string[prefix, "int32", suffix, scope]()
-    elif dtype is DType.uint32:
+    elif dtype == DType.uint32:
         return get_static_string[prefix, "uint32", suffix, scope]()
-    elif dtype is DType.int64:
+    elif dtype == DType.int64:
         return get_static_string[prefix, "int64", suffix, scope]()
-    elif dtype is DType.uint64:
+    elif dtype == DType.uint64:
         return get_static_string[prefix, "uint64", suffix, scope]()
-    elif dtype is DType.int:
+    elif dtype == DType.int:
         return get_static_string[prefix, "size", suffix, scope]()
     else:
         return CompilationTarget.unsupported_target_error[
@@ -362,11 +361,11 @@ fn nvshmemx_init_thread(
 
 fn nvshmemx_hostlib_init_attr(
     flags: UInt32,
-    attr: UnsafePointer[NVSHMEMXInitAttr],
+    attr: UnsafePointer[NVSHMEMXInitAttr, MutAnyOrigin],
 ) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_hostlib_init_attr",
-        fn (UInt32, UnsafePointer[NVSHMEMXInitAttr]) -> c_int,
+        fn (UInt32, UnsafePointer[NVSHMEMXInitAttr, MutAnyOrigin]) -> c_int,
     ]()(flags, attr)
 
 
@@ -426,26 +425,34 @@ fn nvshmem_n_pes() -> c_int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn nvshmem_malloc[dtype: DType](size: c_size_t) -> UnsafePointer[Scalar[dtype]]:
+fn nvshmem_malloc[
+    dtype: DType
+](size: c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     return _get_nvshmem_function[
         "nvshmem_malloc",
-        fn (c_size_t) -> UnsafePointer[Scalar[dtype]],
+        fn (c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(size)
 
 
 fn nvshmem_calloc[
     dtype: DType
-](count: c_size_t, size: c_size_t) -> UnsafePointer[Scalar[dtype]]:
+](count: c_size_t, size: c_size_t) -> UnsafePointer[
+    Scalar[dtype], MutExternalOrigin
+]:
     return _get_nvshmem_function[
         "nvshmem_calloc",
-        fn (c_size_t, c_size_t) -> UnsafePointer[Scalar[dtype]],
+        fn (
+            c_size_t, c_size_t
+        ) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(count, size)
 
 
-fn nvshmem_free[dtype: DType](ptr: UnsafePointer[Scalar[dtype]]):
+fn nvshmem_free[
+    dtype: DType, //
+](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
     _get_nvshmem_function[
         "nvshmem_free",
-        fn (UnsafePointer[Scalar[dtype]]) -> NoneType,
+        fn (type_of(ptr)) -> NoneType,
     ]()(ptr)
 
 
@@ -509,7 +516,7 @@ fn nvshmem_put_nbi[
 
 fn nvshmem_p[
     dtype: DType
-](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int):
+](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int,):
     comptime symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_p"]()
     external_call[symbol, NoneType](dest, value, pe)
 
@@ -561,7 +568,10 @@ fn nvshmem_g[
 
 @extern("nvshmemx_signal_op")
 fn nvshmemx_signal_op(
-    sig_addr: UnsafePointer[UInt64], signal: UInt64, sig_op: c_int, pe: c_int
+    sig_addr: UnsafePointer[UInt64, MutAnyOrigin],
+    signal: UInt64,
+    sig_op: c_int,
+    pe: c_int,
 ):
     ...
 
@@ -624,7 +634,7 @@ fn nvshmemx_barrier_all_on_stream(stream: CUstream):
 
 @extern("nvshmem_signal_wait_until")
 fn nvshmem_signal_wait_until(
-    sig_addr: UnsafePointer[UInt64], cmp: c_int, cmp_value: UInt64
+    sig_addr: UnsafePointer[UInt64, MutAnyOrigin], cmp: c_int, cmp_value: UInt64
 ):
     ...
 

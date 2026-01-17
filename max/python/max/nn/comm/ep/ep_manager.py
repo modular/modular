@@ -27,7 +27,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -47,6 +47,7 @@ from .ep_config import NUM_GROUPS, EPConfig
 from .ep_kernels import (
     call_ep_combine,
     call_ep_combine_cb,
+    call_ep_combine_fused_shared_expert,
     call_ep_dispatch,
     call_ep_dispatch_cb,
     call_ep_dispatch_cb_fp8,
@@ -54,6 +55,31 @@ from .ep_kernels import (
 )
 
 logger = logging.getLogger("max.pipelines")
+
+
+def get_ep_local_sync_counters_size(n_experts: int) -> int:
+    """Returns the total size in Int32 elements needed for EP sync counters.
+
+    This must match the EPLocalSyncCounters.total_size() in ep_comm.mojo.
+
+    Memory Layout (all sizes in Int32 elements):
+    - dispatch: 2 * n_experts + MAX_GPUS_PER_NODE
+    - dispatch_cb/combine: 2 * n_experts + MAX_GPUS_PER_NODE
+    - combine_cb: 2 * n_experts
+
+    Args:
+        n_experts: Number of experts in the model.
+
+    Returns:
+        Total size in Int32 elements needed for all EP sync counters.
+    """
+
+    MAX_GPUS_PER_NODE = 8
+
+    dispatch_size = 2 * n_experts + MAX_GPUS_PER_NODE
+    dispatch_cb_size = 2 * n_experts + MAX_GPUS_PER_NODE
+    combine_cb_size = 2 * n_experts
+    return dispatch_size + dispatch_cb_size + combine_cb_size
 
 
 class EPBatchManager:
@@ -94,6 +120,17 @@ class EPBatchManager:
     """Dictionary of device ID to dimension for the dispatch input tensor.
     Used to determine the shape of the combined output tensor.
     """
+
+    _input_x: dict[int, TensorValue | None] = {}
+    """Input tokens for the current device. If shared experts fusion is
+    enabled, this will be used to temporarily store the inputs of the MoE
+    module, and passed to the ep_dispatch_cb kernel.
+    """
+
+    _shared_expert_outputs: dict[int, TensorValue | None] = {}
+    """Shared expert outputs for the current device. If shared experts fusion is
+    enabled, this will be used to store the outputs of the shared experts from
+    the ep_combine kernel."""
 
     def __init__(self, config: EPConfig):
         """Initialize the EP batch manager.
@@ -144,7 +181,7 @@ class EPBatchManager:
         return [
             BufferType(
                 DType.int32,
-                [2 * self.config.n_experts],
+                [get_ep_local_sync_counters_size(self.config.n_experts)],
                 device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
             )
             for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
@@ -248,6 +285,11 @@ class EPBatchManager:
             self.config,
         )
 
+        if self.config.fused_shared_expert:
+            self._input_x[device_id] = input_tokens
+        else:
+            self._input_x[device_id] = None
+
     def ep_dispatch_cb(self, device_id: int) -> tuple[TensorValue, ...]:
         """Complete Expert Parallelism token dispatch phase.
 
@@ -280,6 +322,7 @@ class EPBatchManager:
                 self.recv_buf_ptrs[DISPATCH_GROUP],
                 self.recv_count_ptrs[DISPATCH_GROUP],
                 self.config,
+                self._input_x[device_id],
             )
 
             # The first five elements are the input for the grouped matmul
@@ -296,6 +339,7 @@ class EPBatchManager:
                 self.recv_buf_ptrs[DISPATCH_GROUP],
                 self.recv_count_ptrs[DISPATCH_GROUP],
                 self.config,
+                self._input_x[device_id],
             )
 
             # The first four elements are the input for the grouped matmul
@@ -326,20 +370,40 @@ class EPBatchManager:
             "Source info is not set, you should call ep_dispatch_cb() first."
         )
 
-        call_ep_combine(
-            input_tokens,
-            src_info,
-            self.atomic_counters[0][device_id],
-            self.send_buf_ptrs[COMBINE_GROUP],
-            self.recv_buf_ptrs[COMBINE_GROUP],
-            self.recv_count_ptrs[COMBINE_GROUP],
-            self.config,
-        )
+        if self.config.fused_shared_expert:
+            dispatch_dim = self._dispatch_dim[device_id]
+            assert dispatch_dim is not None, (
+                "Dispatch dimension is not set, you should call ep_dispatch() first."
+            )
+            self._shared_expert_outputs[device_id] = (
+                call_ep_combine_fused_shared_expert(
+                    input_tokens,
+                    src_info,
+                    self.atomic_counters[0][device_id],
+                    self.send_buf_ptrs[COMBINE_GROUP],
+                    self.recv_buf_ptrs[COMBINE_GROUP],
+                    self.recv_count_ptrs[COMBINE_GROUP],
+                    self.config,
+                    dispatch_dim,
+                )
+            )
+        else:
+            call_ep_combine(
+                input_tokens,
+                src_info,
+                self.atomic_counters[0][device_id],
+                self.send_buf_ptrs[COMBINE_GROUP],
+                self.recv_buf_ptrs[COMBINE_GROUP],
+                self.recv_count_ptrs[COMBINE_GROUP],
+                self.config,
+            )
 
         # reset src_info to None to avoid reusing it for the next batch
         self._src_info[device_id] = None
 
-    def ep_combine_cb(self, device_id: int) -> TensorValue:
+    def ep_combine_cb(
+        self, router_weight: TensorValue, device_id: int
+    ) -> TensorValue:
         """Complete Expert Parallelism combine phase.
 
         This method waits for all expert output transfers to complete, then
@@ -347,10 +411,12 @@ class EPBatchManager:
         positions for the current device.
 
         Args:
+            expert_weights: Router weights for the current device.
+                A TensorValue with shape (num_local_tokens, top_k).
             device_id: Device ID for the current device.
 
         Returns:
-            Final output tensor with shape (num_local_tokens, top_k, hidden_size).
+            Final output tensor with shape (num_local_tokens, hidden_size).
         """
         COMBINE_GROUP = 1
 
@@ -367,7 +433,13 @@ class EPBatchManager:
             self.recv_count_ptrs[COMBINE_GROUP],
             self.config,
             dispatch_dim,
+            router_weight,
         )
+
+        if self.config.fused_shared_expert:
+            shared_expert_outputs = self._shared_expert_outputs[device_id]
+            assert shared_expert_outputs is not None
+            results += shared_expert_outputs
 
         return results
 
@@ -388,16 +460,16 @@ class EPCommInitializer:
     """Compiled model that sets up the SHMEM library context for local GPUs and
     allocates the SHMEM memory for the send, receive, and receive count buffers."""
 
-    send_buf_ptrs: list[Tensor]
+    send_buf_ptrs: list[Buffer]
     """List of device pointers for the send buffer."""
 
-    recv_buf_ptrs: list[Tensor]
+    recv_buf_ptrs: list[Buffer]
     """List of device pointers for the receive buffer."""
 
-    recv_count_ptrs: list[Tensor]
+    recv_count_ptrs: list[Buffer]
     """List of device pointers for the receive count buffer."""
 
-    atomic_counters: list[Tensor]
+    atomic_counters: list[Buffer]
     """List of atomic counters used for synchronization."""
 
     def _estimate_ep_memory_usage(self) -> int:
@@ -425,12 +497,14 @@ class EPCommInitializer:
             config: EP configuration.
         """
         self.config = config
-        # Each expert needs 2 atomic counters
-        self.atomic_counter_size = 2 * self.config.n_experts
+        # Allocated based on the EPLocalSyncCounters struct in ep_comm.mojo
+        self.atomic_counter_size = get_ep_local_sync_counters_size(
+            self.config.n_experts
+        )
 
         # Create atomic counters for each GPU in each buffer group
         self.atomic_counters = [
-            Tensor(
+            Buffer(
                 DType.int32,
                 [self.atomic_counter_size],
                 device=Accelerator(i % self.config.n_gpus_per_node),
@@ -448,12 +522,14 @@ class EPCommInitializer:
         Returns:
             Graph: Computation graph for EP initialization.
         """
+
+        atomic_counter_shape = self.atomic_counters[0].shape
         with Graph(
             "ep_init",
             input_types=[
                 BufferType(
                     DType.int32,
-                    [2 * self.config.n_experts],
+                    atomic_counter_shape,
                     device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
                 )
                 for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
@@ -517,7 +593,7 @@ class EPCommInitializer:
         all_outputs = self.init_model.execute(*self.atomic_counters)
         all_outputs_np: list[npt.NDArray[Any]] = []
         for dev_ptr in all_outputs:
-            assert isinstance(dev_ptr, Tensor)
+            assert isinstance(dev_ptr, Buffer)
             all_outputs_np.append(dev_ptr.to_numpy())
 
         # Process the output device pointers:
@@ -544,13 +620,13 @@ class EPCommInitializer:
             recv_count_ptrs_np.append(curr_group_ptrs[:, 2])
 
         self.send_buf_ptrs = [
-            Tensor.from_numpy(dev_ptr) for dev_ptr in send_buf_ptrs_np
+            Buffer.from_numpy(dev_ptr) for dev_ptr in send_buf_ptrs_np
         ]
         self.recv_buf_ptrs = [
-            Tensor.from_numpy(dev_ptr) for dev_ptr in recv_buf_ptrs_np
+            Buffer.from_numpy(dev_ptr) for dev_ptr in recv_buf_ptrs_np
         ]
         self.recv_count_ptrs = [
-            Tensor.from_numpy(dev_ptr) for dev_ptr in recv_count_ptrs_np
+            Buffer.from_numpy(dev_ptr) for dev_ptr in recv_count_ptrs_np
         ]
 
         # The last element is the my_ranks tensor
@@ -566,11 +642,11 @@ class EPCommInitializer:
 
         logger.info(f"Initialized EP for node {self.config.node_id}")
 
-    def model_inputs(self) -> list[Tensor]:
+    def model_inputs(self) -> list[Buffer]:
         """Get the model inputs for the MoE model.
 
         Returns:
-            list[Tensor]: List of all tensors needed as model inputs.
+            list[Buffer]: List of all tensors needed as model inputs.
         """
         return (
             self.atomic_counters

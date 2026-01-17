@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 import torch
 from max._core.engine import PrintStyle
-from max.driver import Accelerator, Tensor, accelerator_api
+from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -161,7 +161,7 @@ def generate_max_outputs(
         kv_manager.claim(context.request_id)
         batch.append(context)
 
-    input_row_offsets = Tensor(DType.uint32, [batch_size + 1])
+    input_row_offsets = Buffer(DType.uint32, [batch_size + 1])
     running_sum = 0
     for i in range(batch_size):
         input_row_offsets[i] = running_sum
@@ -175,7 +175,7 @@ def generate_max_outputs(
                 kv_manager.alloc(ctx, 1)
             kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
             input_tensor_device = (
-                Tensor.from_numpy(
+                Buffer.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
                 )
                 .view(DType.bfloat16)
@@ -197,7 +197,7 @@ def generate_max_outputs(
         kv_manager.alloc(ctx)
     kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
     input_tensor_device = (
-        Tensor.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
+        Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)
         .to(device0)
     )
@@ -324,7 +324,7 @@ def generate_max_outputs_dp(
         kv_manager.claim(context.request_id)
         batch.append(context)
 
-    input_row_offsets = Tensor(DType.uint32, [batch_size + 1])
+    input_row_offsets = Buffer(DType.uint32, [batch_size + 1])
     running_sum = 0
     for i in range(batch_size):
         input_row_offsets[i] = running_sum
@@ -338,7 +338,7 @@ def generate_max_outputs_dp(
                 kv_manager.alloc(ctx)
             kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
             input_tensor_device = (
-                Tensor.from_numpy(
+                Buffer.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
                 )
                 .view(DType.bfloat16)
@@ -360,7 +360,7 @@ def generate_max_outputs_dp(
         kv_manager.alloc(ctx)
     kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
     input_tensor_device = (
-        Tensor.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
+        Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)
         .to(device0)
     )
@@ -410,30 +410,6 @@ def test_latent_attention_decode(
 @pytest.mark.skipif(
     accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
 )
-def test_latent_attention_cascade_prefill(
-    config: DeepseekV2Config, attention_weights: dict[str, torch.Tensor]
-) -> None:
-    long_input_tensor = torch.randn(
-        1, 300, config.hidden_size, dtype=torch.bfloat16
-    )
-    max_output = generate_max_outputs(
-        config, long_input_tensor, attention_weights, use_prefill=True
-    )
-    max_output_cascade_prefill = generate_max_outputs(
-        config,
-        long_input_tensor,
-        attention_weights,
-        use_prefill=True,
-        prefill_buffer_size=128,
-    )
-    torch.testing.assert_close(
-        max_output, max_output_cascade_prefill, rtol=1e-4, atol=1e-4
-    )
-
-
-@pytest.mark.skipif(
-    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
-)
 def test_data_parallel_latent_attention_prefill_matches_single(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
@@ -465,25 +441,3 @@ def test_data_parallel_latent_attention_decode_matches_single(
         config, input_tensor, attention_weights, use_prefill=False
     )
     torch.testing.assert_close(single, dp, rtol=5e-4, atol=5e-4)
-
-
-@pytest.mark.skipif(
-    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
-)
-def test_data_parallel_latent_attention_cascade_prefill_matches_single(
-    config: DeepseekV2Config, attention_weights: dict[str, torch.Tensor]
-) -> None:
-    long_input_tensor = torch.randn(
-        1, 300, config.hidden_size, dtype=torch.bfloat16
-    )
-    single = generate_max_outputs(
-        config, long_input_tensor, attention_weights, use_prefill=True
-    )
-    dp_cascade = generate_max_outputs_dp(
-        config,
-        long_input_tensor,
-        attention_weights,
-        use_prefill=True,
-        prefill_buffer_size=128,
-    )
-    torch.testing.assert_close(single, dp_cascade, rtol=1e-4, atol=1e-4)

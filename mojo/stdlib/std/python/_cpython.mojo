@@ -254,8 +254,8 @@ struct PythonVersion(ImplicitlyCopyable):
         var next_idx = 0
         var i = 0
         while next_idx < len(version) and i < 3:
-            if version[next_idx] == "." or (
-                version[next_idx] == " " and i == 2
+            if version[byte=next_idx] == "." or (
+                version[byte=next_idx] == " " and i == 2
             ):
                 var c = version[start:next_idx]
                 try:
@@ -368,7 +368,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
         )
 
 
-fn _null_fn_ptr[T: AnyTrivialRegType]() -> T:
+fn _null_fn_ptr[T: __TypeOfAllTypes]() -> T:
     return __mlir_op.`pop.pointer.bitcast`[_type=T](
         __mlir_attr.`#interp.pointer<0> : !kgen.pointer<none>`
     )
@@ -753,7 +753,7 @@ struct PyModuleDef(Movable, Representable, Stringable, Writable):
 
 struct ExternalFunction[
     name: StaticString,
-    type: AnyTrivialRegType,
+    type: __TypeOfAllTypes,
 ]:
     @staticmethod
     @always_inline
@@ -1702,7 +1702,7 @@ struct CPython(Defaultable, Movable):
 
         var error: String
         try:
-            error = String(PythonObject(from_owned=err_ptr))
+            error = String(py=PythonObject(from_owned=err_ptr))
         except e:
             abort(
                 "internal error: Python exception occurred but cannot be"

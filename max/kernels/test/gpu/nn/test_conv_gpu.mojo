@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import ceildiv
 from random import rand
 
@@ -124,7 +126,7 @@ fn test_conv3d_gpu[
     ]
 
     # run gpu implementation
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         input_buf,
         filter_buf,
         output_buf,

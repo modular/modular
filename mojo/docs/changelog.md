@@ -21,6 +21,27 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now supports the `@align(N)` decorator to specify minimum alignment for
+  structs, similar to C++'s `alignas` and Rust's `#[repr(align(N))]`. The value
+  `N` must be a positive power of 2 and specifies the minimum alignment in
+  bytes. The actual alignment will be `max(N, natural_alignment)` - you cannot
+  use `@align` to reduce alignment below the struct's natural alignment. For
+  example, `@align(1)` on a struct containing an `Int` (8-byte aligned) will
+  emit a warning and the struct will remain 8-byte aligned.
+
+  ```mojo
+  from sys import align_of
+
+  @align(64)
+  struct CacheAligned:
+      var data: Int
+
+  fn main():
+      print(align_of[CacheAligned]())  # Prints 64
+  ```
+
+  Both stack and heap allocations respect `@align`.
+
 - Mojo now supports raising "typed errors", where a function can specify a
   what type it raises instead of defaulting to the `Error` type. This is done by
   specifying it after the `raises` keyword, e.g.
@@ -142,16 +163,6 @@ what we publish.
   generic functions instantiated with `Never` as their error type) compile into
   the same ABI as functions that don't `raise`.
 
-- The `deinit` argument convention can now be applied to any argument of a
-  struct method, but the argument type still must be of the enclosing struct
-  type.
-
-- Context managers (used in `with` statements) can now define consuming exit
-  methods, i.e. `fn __exit__(var self)` which can be useful for linear context
-  managers. This also works with `deinit`.
-
-### Language changes
-
 - Mojo now allows the use of a `comptime(x)` expression to force a subexpression
   to be evaluated at compile time.  This can help make working with certain
   types more elegant when you can't (or don't want to) materialize them into a
@@ -169,6 +180,46 @@ what we publish.
     print(comptime(a.size()))
   ```
 
+- The `deinit` argument convention can now be applied to any argument of a
+  struct method, but the argument type still must be of the enclosing struct
+  type.
+
+- Context managers (used in `with` statements) can now define consuming exit
+  methods, i.e. `fn __exit__(var self)` which can be useful for linear context
+  managers. This also works with `deinit`.
+
+- Mojo now allows functions that return references to convert to functions that
+  return values if the type is implicitly copyable or implicitly convertible to
+  the destination type:
+
+  ```mojo
+  fn fn_returns_ref(x: SomeType) -> ref [x.field] Int: ...
+  fn examples():
+      # OK, Int result from fn_returns_ref can be implicitly copied.
+      var f1 : fn (x: SomeType) -> Int = fn_returns_ref
+      # OK, Int result from fn_returns_ref implicitly converts to Float64.
+      var f2 : fn (x: SomeType) -> Float64 = fn_returns_ref
+  ```
+
+- Mojo now supports the `...` expression.  It is a logically empty value of
+  `EllipsisType`.  It can be used in overloaded functions (e.g. getitem calls),
+  e.g.:
+
+  ```mojo
+  struct YourType:
+    fn __getitem__(self, idx: Int) -> Int:
+      # ... behavior when passed x[i]
+    fn __getitem__(self, idx: EllipsisType) -> Int:
+      # ... behavior when passed x[...]
+  ```
+
+### Language changes
+
+- The `*_` and `**_` syntax for explicitly unpacked parameters has been replaced
+  with a simplified `...` syntax.  Instead of `T[4, 5, *_, **_]` you can now use
+  `T[4, 5, ...]`.  The `...` delays binding of both keyword and non-keyword
+  parameters.
+
 - The compiler will now warn on unqualified access to struct parameters, e.g.
 
   ```mojo
@@ -185,10 +236,11 @@ what we publish.
 - The Mojo language basic trait hierarchy has changed to expand first-class
   support for linear types (aka. non-implicitly-destructible types).
 
-  The `AnyType` and `Movable` traits no longer requires that a type provide a
-  `__del__()` method that may be called by the compiler implicitly whenever an
-  owned value is unused. Instead, the `ImplicitlyDestructible` trait should be
-  used in generic code to require that a type is implicitly destructible.
+  The `AnyType`, `Movable`, and `Copyable` traits no longer require that a type
+  provide a `__del__()` method that may be called by the compiler implicitly
+  whenever an owned value is unused. Instead, the `ImplicitlyDestructible` trait
+  should be used in generic code to require that a type is implicitly
+  destructible.
 
   Linear types enable Mojo programs to encode powerful invariants in the type
   system, by modeling a type in such a way that a user is required to take an
@@ -201,9 +253,280 @@ what we publish.
   Relatedly, the `UnknownDestructibility` trait is now no longer required, as it
   is equivalent to the new `AnyType` behavior.
 
+- The `__next_ref__` method in for-each loops has been removed.  Now you can
+  implement the `__next__` method of your iterator to return either a value or a
+  reference.  When directly using the collection, Mojo will use the
+  ref-returning variant, but will allow it to conform to `Iterator` for use with
+  generic algorithms (which use a copied value).
+
+- The `origin_of(x)` operator now returns a value of type `Origin` instead of an
+  internal MLIR type, and aliases like `ImmutOrigin` are now `Origin` type as
+  well.
+
+- The `Origin.cast_from[x]` syntax has been replaced with a safe implicit
+  conversion from any origin to an immutable origin (`ImmutOrigin(x)`) and an
+  explicit unsafe conversion (`unsafe_origin_mutcast[origin, mut=m]`).
+
+- Mojo no longer supports overloading functions on parameters alone: it will not
+  try to disambiguate between `fn foo[a: Int8]():` and `fn foo[a: Int32]():` for
+  example.  Mojo never fully implemented the previous support in a reliable way,
+  and removing this simplifies the language.  It still supports overloading on
+  function arguments of course.
+
+- The Mojo compiler generates more clear error messages when diagnosing invalid
+  calls: it mentions the argument name, instead of "argument #4".
+
 ### Library changes
 
+- [Issue #5734](https://github.com/modular/modular/issues/5734): Added
+  `is_struct_type[T]()` function to the `reflection` module. This function
+  returns `True` if `T` is a Mojo struct type, `False` otherwise. It is useful
+  for guarding reflection code that uses struct-specific APIs like
+  `struct_field_count` or `struct_field_names` to avoid compiler errors on
+  non-struct types (such as MLIR primitive types). Use `@parameter if` with this
+  function since the guarded reflection APIs are evaluated at compile time.
+
+- The `reflection` module has been reorganized into `type_info` and
+  `struct_fields` submodules. The public API via `from reflection import ...`
+  remains unchanged. Users who were importing internal symbols directly from
+  `reflection.reflection` should update their imports to use
+  `reflection.type_info` or `reflection.struct_fields` as appropriate.
+
+- The `Hashable` trait now has a default implementation of
+  `__hash__[H: Hasher](self, mut hasher: H)` that uses
+  reflection to automatically hash all struct fields.
+  This means simple structs can conform to `Hashable` without
+  implementing any methods:
+
+  ```mojo
+  @fieldwise_init
+  struct Point(Hashable):
+      var x: Float64
+      var y: Float64
+
+  var p = Point(1.5, 2.7)
+  hash(p)
+  ```
+
+  All fields must conform to `Hashable`. Override `__hash__` for custom hashing.
+
+- The `Writable` trait now has a default implementation of `write_to()` that uses
+  reflection to automatically format all struct fields. This means simple structs
+  can conform to `Writable` without implementing any methods:
+
+  ```mojo
+  @fieldwise_init
+  struct Point(Writable):
+      var x: Float64
+      var y: Float64
+
+  var p = Point(1.5, 2.7)
+  print(p)  # Point(x=1.5, y=2.7)
+  ```
+
+  All fields must conform to `Writable`. Override `write_to()` for custom
+  formatting.
+
+- `InlineArray` no longer conforms to `ImplicitlyCopyable`.
+  Users must explicitly copy arrays or take references.
+
+- The `Equatable` trait now has a default implementation of `__eq__()` that uses
+  reflection to compare all fields. This means simple structs can conform to
+  `Equatable` without implementing any methods:
+
+  ```mojo
+  @fieldwise_init
+  struct Point(Equatable):
+      var x: Int
+      var y: Int
+
+  var p1 = Point(1, 2)
+  var p2 = Point(1, 2)
+  print(p1 == p2)  # True
+  ```
+
+  All fields must conform to `Equatable`. If a field doesn't implement
+  `Equatable`, a clear compile-time error is produced. Override `__eq__()` for
+  custom equality semantics. Note: The default performs memberwise equality,
+  which may not be appropriate for types with floating-point fields (due to NaN
+  semantics).
+
+- `PythonObject` now supports implicit conversion from `None`, allowing more
+  natural Python-like code:
+
+  ```mojo
+  var obj: PythonObject = None  # Now works without explicit PythonObject(None)
+
+  fn returns_none() -> PythonObject:
+      return None  # Implicit conversion
+  ```
+
+- `IndexList` is no longer implicitly constructible from `Int`. Previously, the
+  fill constructor (which broadcasts a single `Int` to all elements) was marked
+  `@implicit`, allowing code like `var x: IndexList[3] = 5` which would create
+  `(5, 5, 5)`. This implicit conversion has been removed to improve type safety.
+  Use explicit construction instead: `IndexList[3](5)`.
+
+- The `ConvertibleFromPython` trait and associated initializers now have a
+  required keyword argument. Before: `Int(pyObj)`. After: `Int(py=pyObj)`. This
+  avoids ambiguities in cases where either multiple overloads could apply, or
+  where implicit conversions to `PythonObject` could mask that a Python
+  operation was happening.
+
+- The `inlined_assembly` function is now publicly exported from the `sys` module,
+  allowing users to embed raw assembly instructions directly into Mojo code.
+  This provides fine-grained control over hardware operations using LLVM-style
+  inline assembly syntax. Example:
+
+  ```mojo
+  from sys import inlined_assembly
+
+  # Convert bfloat16 to float32 on NVIDIA GPU using PTX assembly.
+  var result = inlined_assembly[
+      "cvt.f32.bf16 $0, $1;",
+      Float32,
+      constraints="=f,h",
+      has_side_effect=False,
+  ](my_bf16_as_int16)
+  ```
+
+- We have removed `Identifiable` from enum-like types
+  (such as `DType` and `AddressSpace`). This change is
+  related to the idea that `Identifiable` is for comparing memory addresses.
+
+- The `Iterator` trait and and for-each loop have removed the `__has_next__`
+  method and now using a `__next__` method that `raises StopIteration`. This
+  follows Python precedent better, is more convenient to implement, and can be a
+  minor performance win in some cases.
+
 - `Variadic` now has `zip_types`, `zip_values`, and `slice_types`.
+
+- The `reflection` module has been moved from `compile.reflection` to a top-level
+  `reflection` module. Update imports from `from compile.reflection import ...`
+  to `from reflection import ...`.
+
+- The `reflection` module now supports compile-time struct field introspection:
+
+  - `struct_field_count[T]()` returns the number of fields
+  - `struct_field_names[T]()` returns an `InlineArray[StaticString, N]` of
+    all field names
+  - `struct_field_types[T]()` returns a variadic of all field types
+  - `struct_field_index_by_name[T, name]()` returns the index of a field by name
+  - `struct_field_type_by_name[T, name]()` returns the type of a field,
+    wrapped in a `ReflectedType` struct
+
+  These APIs work with both concrete types and generic type parameters,
+  enabling generic serialization, comparison, and other reflection-based
+  utilities.
+
+  Example iterating over fields (works with generics):
+
+  ```mojo
+  fn print_fields[T: AnyType]():
+      comptime names = struct_field_names[T]()
+      comptime types = struct_field_types[T]()
+      @parameter
+      for i in range(struct_field_count[T]()):
+          print(names[i], get_type_name[types[i]]())
+
+  fn main():
+      print_fields[Point]()  # Works with any struct!
+  ```
+
+  Example looking up a field by name:
+
+  ```mojo
+  comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
+  comptime field_type = struct_field_type_by_name[Point, "y"]()
+  var value: field_type.T = 3.14  # field_type.T is Float64
+  ```
+
+- Two new magic functions have been added for index-based struct field access:
+
+  - `__struct_field_type_at_index(T, idx)` returns the type of the field at the
+    given index.
+  - `__struct_field_ref(idx, ref s)` returns a reference to the field at the
+    given index.
+
+  Unlike `kgen.struct.extract` which copies the field value, `__struct_field_ref`
+  returns a reference, enabling reflection-based utilities to work with
+  non-copyable types:
+
+  ```mojo
+  struct Container:
+      var id: Int
+      var resource: NonCopyableResource  # Cannot be copied!
+
+  fn inspect(ref c: Container):
+      # Get references to fields without copying
+      ref id_ref = __struct_field_ref(0, c)
+      ref resource_ref = __struct_field_ref(1, c)
+
+      print("id:", id_ref)
+      print("resource:", resource_ref.data)
+
+      # Mutation through reference also works
+      __struct_field_ref(0, c) = 42
+  ```
+
+  The index can be either a literal integer or a parametric index (such as a
+  loop variable in a `@parameter for` loop), enabling generic field iteration:
+
+  ```mojo
+  fn print_all_fields[T: AnyType](ref s: T):
+      comptime names = struct_field_names[T]()
+      @parameter
+      for i in range(struct_field_count[T]()):
+          print(names[i], "=", __struct_field_ref(i, s))
+
+  fn main():
+      var c = Container(42, NonCopyableResource(100))
+      print_all_fields(c)  # Works with any struct!
+  ```
+
+  This enables implementing generic Debug traits and serialization utilities
+  that work with any struct, regardless of whether its fields are copyable.
+
+- The `conforms_to` builtin now accepts types from the reflection APIs like
+  `struct_field_types[T]()`. This enables checking trait conformance on
+  dynamically obtained field types:
+
+  ```mojo
+  @parameter
+  for i in range(struct_field_count[MyStruct]()):
+      comptime field_type = struct_field_types[MyStruct]()[i]
+      @parameter
+      if conforms_to(field_type, Copyable):
+          print("Field", i, "is Copyable")
+  ```
+
+- The `reflection` module now provides source location introspection APIs:
+
+  - `SourceLocation` - A struct holding file name, line, and column information
+  - `source_location()` - Returns the location where it's called
+  - `call_location()` - Returns the location where the caller was invoked
+    (requires the caller to be `@always_inline`)
+
+  These were previously internal APIs (`_SourceLocation`, `__source_location`,
+  `__call_location`) in `builtin._location`. The old module has been removed.
+
+  Example:
+
+  ```mojo
+  from reflection import source_location, call_location, SourceLocation
+
+  fn main():
+      var loc = source_location()
+      print(loc)  # main.mojo:5:15
+
+  @always_inline
+  fn log_here():
+      var caller_loc = call_location()
+      print("Called from:", caller_loc)
+  ```
+
+  Note: These APIs do not work correctly in parameter expressions (comptime
+  contexts return placeholder values).
 
 - The `Copyable` trait now refines the `Movable` trait.  This means that structs
   and generic algorithms that already require `Copyable` don't need to also
@@ -225,8 +548,7 @@ what we publish.
   no longer allocates memory.
 
 - `Dict` now raises a custom `DictKeyError` type on failure, making lookup
-  failures more efficient to handle. The error message now includes the missing
-  key when the key type implements `Writable`:
+  failures more efficient to handle.
 
   ```mojo
   var d = Dict[String, Int]()
@@ -234,7 +556,7 @@ what we publish.
   try:
       _ = d[key]
   except e:
-      print(e)  # Prints: DictKeyError(key=missing_key)
+      print(e)  # Prints: DictKeyError
   ```
 
 - Remove `List` variadic initializer.
@@ -328,14 +650,18 @@ what we publish.
   generic code that supports object instances that cannot be implicitly
   destroyed.
 
-  - `UnsafePointer`, `Pointer`, and `OwnedPointer` can point to linear types
+  - `Span`, `UnsafePointer`, `Pointer`, and `OwnedPointer` can point to linear
+    types.
     - Added `UnsafePointer.destroy_pointee_with()`, for destroying linear types
       in-place using a destructor function pointer.
-  - `Variant` and `VariadicPack` can now contain linear types
+  - `List`, `InlineArray`, `Optional`, `Variant`, `VariadicListMem`, and
+    `VariadicPack` can now contain linear types.
     - `Variant.take` now takes `deinit self` instead of `mut self`.
     - Added `Variant.destroy_with` for destroying a linear type in-place with an
       explicit destructor function.
-  - `UnsafeMaybeUninitialized` can now contain linear types
+    - The `*args` language syntax for arguments now supports linear types.
+  - `Iterator.Element` no longer requires `ImplicitlyDestructible`.
+  - `UnsafeMaybeUninitialized` can now contain linear types.
 
 - Using a new 'unconditional conformances' technique leveraging `conforms_to()`
   and `trait_downcast()` to perform "late" element type conformance checking,
@@ -345,7 +671,14 @@ what we publish.
   - `List` now conforms to `Equatable`, `Writable`, `Stringable`,
     and `Representable`.
   - `Dict` now conforms to `Writable`, `Stringable`, and `Representable`.
+  - `Set` now conforms to `Writable`, `Stringable`, and `Representable`.
+  - `Deque` now conforms to `Writable`, `Stringable`, and `Representable`.
+  - `InlineArray` now conforms to `Writable`, `Stringable`, and `Representable`.
+  - `LinkedList` now conforms to `Writable`, `Stringable`, and `Representable`.
   - `Iterator` no longer requires its type to be `Copyable`.
+  - `Pointer` now conforms to `Writable`.
+  - `ArcPointer` now conforms to `Writable`.
+  - `OwnedPointer` now conforms to `Writable`.
 
   - The following types no longer require their elements to be `Copyable`.
     - `Iterator`
@@ -366,7 +699,7 @@ what we publish.
 - Remove the `Int.__init__(self, value: StringSlice, base: UInt)` constructor.
   Users should call `atol` directly.
 
-- `DeviceContext.enqueue_function_checked()` and
+- `DeviceContext.enqueue_function()` and
   `DeviceContext.enqueue_function_experimental()` now automatically infer
   `func_attribute` to `FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(shared_mem_bytes)`
   when `shared_mem_bytes` is specified but `func_attribute` is not, for NVIDIA GPUs
@@ -388,8 +721,87 @@ what we publish.
 - The `iter.peekable` function has been added. This allows users to peek at
   the next element of an iterator without advancing it.
 
+- The "LegacyUnsafePointer" type has been changed to take its mutability as a
+  first inferred parameter without a default, rather than a later explicit
+  parameter with a default value of true. We recommend moving off of this type
+  as soon as possible, but to roughly emulate the prior behavior, try out:
+
+  ```mojo
+  from memory import LegacyUnsafePointer
+  comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+  ```
+
+- the `os.process` submodule has been added with utilities to spawn and
+  wait on processes. These use `posix_spawn` and do not go through the
+  system shell.
+
+- The `Error` type no longer conforms to `Boolable` or `Defaultable`. Errors
+  must now be constructed with meaningful context, and optionality should be
+  expressed through `Optional[Error]` rather than treating errors as boolean
+  values.
+
+- `Writer` and `Writable` have been moved into a new `format` module and out of
+  `io`. These traits are not directly related to binary i/o, but are rather
+  closely tied to type/value string formatting.
+
+- The `Writable` trait now supports debug formatting through an optional
+  `write_repr_to()` method, called by `repr()` and the `{!r}` format specifier.
+  Additionally, `repr()` and string formatting methods (`.format()` on `String`,
+  `StringSlice`, and `StringLiteral`) now accept `Writable` types, enabling
+  efficient formatting without intermediate string allocations. To preserve
+  existing behavior, types implementing both `Stringable & Representable` and
+  `Writable` will continue using `Stringable & Representable` methods; only
+  types implementing `Writable` alone will use the new code paths.
+
+- `Writer` has been reworked to only support UTF-8 data instead of arbitrary
+  `Byte` sequences. The `write_bytes` method has been replaced with
+  `write_string`.
+
+  - In line with these changes, `String`'s `write_bytes` method has also been
+    deprecated, and its initializer `__init__(out self, *, bytes: Span[Byte])`
+    has had its keyword argument renamed to `unsafe_from_utf8`. This bring it
+    more in line with the existing `StringSlice` constructors and explicitly
+    states that construction from arbitrary bytes is inherently unsafe.
+
+- `String` has had its UTF-8 guarantees strengthened.
+  - It now has three separate constructors when converting raw bytes
+  (`Span[Byte]`) to a `String`
+    - `String(from_utf8=...)`: Raises an error if the bytes are invalid UTF-8
+    - `String(from_utf8_lossy=...)`: Converts invalid UTF-8 byte sequences
+      into the `(U+FFFD, �)` replacement character and does not raise an error.
+    - `String(unsafe_from_utf8=...)`: Unsafely assumes the input bytes are valid
+      UTF-8 without any checks.
+  - `append_byte` has been deprecated and has been replaced with
+    `append(Codepoint)`.
+
+- `DeviceContext.enqueue_function_checked()` and
+  `DeviceStream.enqueue_function_checked()` have been renamed to
+  `enqueue_function()`. Similarly, `DeviceContext.compile_function_checked()`
+  has been renamed to `compile_function()`.
+
+- External origins are now expressed using type level
+  `{Mut,Immut,}ExternalOrigin` aliases instead of being spelled like
+  `Origin[True].external`, improving consistency with other origin types.
+
+- `StringableRaising` has been deprecated and its usages in the stdlib have
+  been removed.
+
+- `StringSlice.char_length()` has been renamed `count_codepoints()`. The same
+  function was added to `String` and `StringLiteral`.
+
 ### Tooling changes
 
+- The Mojo compiler now supports the `-Werror` flag, which treats all warnings
+  as compilation errors. This is useful for enforcing stricter code quality
+  standards, particularly in CI/CD pipelines. The flag works with the Mojo
+  compiler tools (`mojo run`, `mojo build`, `mojo package`, `mojo doc`).
+  When used with `--disable-warnings`, warnings are promoted to errors first,
+  so the errors are not suppressed.
+  - The counterpart `-Wno-error` flag disables treating warnings as errors.
+    When both flags are specified, the last one wins.
+- The `--validate-doc-strings` flag has been deprecated for `mojo doc` and
+  removed from other tools (`mojo build`, `mojo run`, `mojo package`). Use
+  `-Werror` instead to treat warnings as errors.
 - The Mojo compiler now "diffs" very long types in error messages to explain
   what is going on in a more easy to understand way.
 - Specifying CUDA architectures with `--target-accelerator` now expects a sm
@@ -416,14 +828,36 @@ what we publish.
 - The Mojo Debugger `mojo break-on-raise` feature now works correctly with
   multiple targets in a debugger instance. The setting is per-target.
 - Docstring validation now includes `comptime` aliases. The
-  `--validate-doc-strings` and `--diagnose-missing-doc-strings` flags now check
-  that public aliases have properly formatted docstrings (summary ends with
-  period, starts with capital letter). Parametric aliases are also checked for
-  proper `Parameters:` sections.
+  `--diagnose-missing-doc-strings` flag now checks that public aliases have
+  properly formatted docstrings (summary ends with period, starts with capital
+  letter). Parametric aliases are also checked for proper `Parameters:` sections.
+- Docstring validation with `--validate-doc-strings` now emits an
+  error when an `fn` function is declared to raise an error (`raises`) but it's
+  missing a [`Raises`
+  docstring](https://github.com/modular/modular/blob/main/mojo/stdlib/docs/docstring-style-guide.md#errors)
+  (previously it emitted only a warning). Because Mojo automatically
+  treats all `def` functions as [raising
+  functions](/mojo/manual/functions#raising-and-non-raising-functions), we don't
+  enforce `Raises` docs for `def` functions (to avoid noisy false positives).
 - The Mojo LSP server now debounces document updates to reduce CPU usage during
   rapid typing. Previously, every keystroke triggered a full document parse;
   now updates are coalesced with a 150ms delay, reducing parse frequency by
   10-50x during active editing.
+- The Mojo compiler now supports the `--experimental-export-fixit` flag for
+  `mojo build`, `mojo run`, and `mojo package`. This flag exports fix-its to a
+  YAML file compatible with `clang-apply-replacements`, instead of applying them
+  directly. This is useful for integrating Mojo's fix-it suggestions into
+  external tooling workflows. The flag is mutually exclusive with
+  `--experimental-fixit` (which applies fix-its directly).
+- The Mojo compiler now supports the `-Xlinker` flag to pass options on
+  directly to the linker, e.g.,
+
+  ```console
+  mojo build -Xlinker -lfoo main.mojo
+  ```
+
+  Note: this option only has an effect with `mojo build`. With `mojo run`, the
+  arguments are ignored and a warning is issued.
 
 ### Experimental changes
 
@@ -446,7 +880,7 @@ or removed in future releases.
 - Added support for `DType` expressions in `where` clauses:
 
   ```mojo
-  fn foo[dt: DType]() -> Int where dt is DType.int32:
+  fn foo[dt: DType]() -> Int where dt == DType.int32:
       return 42
   ```
 
@@ -470,16 +904,53 @@ or removed in future releases.
 
 ### ❌ Removed
 
-- The DeviceContext `enqueue_function` and `compile_function` have been removed.
-  Please migrate the code to use `enqueue_function_checked` and
-  `compile_function_checked`.
+- The DeviceContext `enqueue_function_unchecked` and `compile_function_unchecked`
+  have been removed. Please migrate the code to use `enqueue_function` and
+  `compile_function`.
+
+- The `UnsafePointer.offset()` method is now deprecated. Use pointer arithmetic
+  instead:
+
+  ```mojo
+  # Before
+  new_ptr = ptr.offset(n)
+
+  # After
+  new_ptr = ptr + n
+  ```
+
+- The following deprecated GPU compatibility modules have been removed:
+  - `gpu.id` - Use `from gpu import block_idx, thread_idx, ...` instead
+  - `gpu.block` - Use `from gpu.primitives.block import ...` instead
+  - `gpu.warp` - Use `from gpu.primitives.warp import ...` instead
+  - `gpu.cluster` - Use `from gpu.primitives.cluster import ...` instead
+  - `gpu.grid_controls` - Use `from gpu.primitives.grid_controls import ...` instead
+  - `gpu.mma` - Use `from gpu.compute.mma import ...` instead
+  - `gpu.mma_operand_descriptor` - Use
+    `from gpu.compute.mma_operand_descriptor import ...` instead
+  - `gpu.mma_util` - Use `from gpu.compute.mma_util import ...` instead
+  - `gpu.mma_sm100` - Use `from gpu.compute.arch.mma_nvidia_sm100 import ...` instead
+  - `gpu.semaphore` - Use `from gpu.sync.semaphore import ...` instead
+  - `gpu.tcgen05` - Use `from gpu.compute.arch.tcgen05 import ...` instead
 
 ### 🛠️ Fixed
 
+- Mojo no longer complains about "cannot infer parameter X" when unrelated type
+  checking errors happen in complex parametric code.  It now gives much more
+  useful and actionable error messages in these cases.
+- `Codepoint.unsafe_decode_utf8_codepoint()` no longer returns `Codepoint(0)`
+  (NUL) when passed an empty span. Instead, a `debug_assert` now enforces the
+  requirement that the input span be non-empty, consistent with the function's
+  existing safety contract.
+- [Issue #5732](https://github.com/modular/modular/issues/5732): Compiler
+  crash when using `get_type_name` with types containing constructor calls in
+  their parameters (like `A[B(True)]`) when extracted via `struct_field_types`.
 - [Issue #1850](https://github.com/modular/modular/issues/1850): Mojo assumes
   string literal at start of a function is a doc comment
 - [Issue #4501](https://github.com/modular/modular/issues/4501): Incorrect
   parsing of incomplete assignment
+- [Issue #4765](https://github.com/modular/modular/issues/4765): Parser
+  accepts pointless var ref a = n binding form
 - [Issue #5578](https://github.com/modular/modular/issues/5578): ownership
   overloading not working when used with `ref`.
 - [Issue #5137](https://github.com/modular/modular/issues/5137): Tail call
@@ -490,3 +961,13 @@ or removed in future releases.
   crashes on alias of parametrized function with origin.
 - [Issue #5618](https://github.com/modular/modular/issues/5618): Compiler crash
   when should be implicit conversion error.
+- [Issue #5635](https://github.com/modular/modular/issues/5635): `Deque` shrink
+  reallocation incorrectly handled empty deque with `capacity > min_capacity`.
+- [Issue #5723](https://github.com/modular/modular/issues/5723): Compiler crash
+  when using `get_type_name` with nested parametric types from `struct_field_types`.
+- [Issue #5731](https://github.com/modular/modular/issues/5731): Compiler crash
+  when using reflection functions on builtin types like `Int`, `NoneType`, or
+  `Origin`.
+- [Issue #5754](https://github.com/modular/modular/issues/5754):
+  `struct_field_type_by_name` now works correctly when using `ReflectedType.T`
+  as a type annotation.

@@ -39,7 +39,7 @@ fn _lowercase_mapping_index(rune: Codepoint) -> Int:
 
 
 @always_inline
-fn _to_index[lookup: List[UInt32, **_]](rune: Codepoint) -> Int:
+fn _to_index[lookup: List[UInt32, ...]](rune: Codepoint) -> Int:
     """Find index of rune in lookup with binary search.
     Returns -1 if not found."""
 
@@ -68,14 +68,14 @@ fn _get_uppercase_mapping(
     if index1 != -1:
         var rune = materialize[uppercase_mapping]()[index1]
         array[0] = Codepoint(unsafe_unchecked_codepoint=rune)
-        return Tuple(UInt(1), array)
+        return Tuple(UInt(1), array^)
 
     var index2 = _uppercase_mapping2_index(char)
     if index2 != -1:
         var runes = materialize[uppercase_mapping2]()[index2]
         array[0] = Codepoint(unsafe_unchecked_codepoint=runes[0])
         array[1] = Codepoint(unsafe_unchecked_codepoint=runes[1])
-        return Tuple(UInt(2), array)
+        return Tuple(UInt(2), array^)
 
     var index3 = _uppercase_mapping3_index(char)
     if index3 != -1:
@@ -83,7 +83,7 @@ fn _get_uppercase_mapping(
         array[0] = Codepoint(unsafe_unchecked_codepoint=runes[0])
         array[1] = Codepoint(unsafe_unchecked_codepoint=runes[1])
         array[2] = Codepoint(unsafe_unchecked_codepoint=runes[2])
-        return Tuple(UInt(3), array)
+        return Tuple(UInt(3), array^)
 
     return None
 
@@ -174,17 +174,16 @@ fn to_lowercase(s: StringSlice[mut=False]) -> String:
     Returns:
         A new string where cased letters have been converted to lowercase.
     """
-    var data = s.as_bytes()
-    var result = String(capacity=_estimate_needed_size(len(data)))
+    var result = String(capacity=_estimate_needed_size(s.byte_length()))
     var input_offset = 0
-    while input_offset < len(data):
+    while input_offset < s.byte_length():
         var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            data[input_offset:]
+            s.as_bytes()[input_offset:]
         )
         var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
         if lowercase_char_opt is None:
-            result.write_bytes(
-                data[input_offset : input_offset + rune_and_size[1]]
+            result.write_string(
+                s[input_offset : input_offset + rune_and_size[1]]
             )
         else:
             result += String(lowercase_char_opt.unsafe_value())
@@ -203,12 +202,11 @@ fn to_uppercase(s: StringSlice[mut=False]) -> String:
     Returns:
         A new string where cased letters have been converted to uppercase.
     """
-    var data = s.as_bytes()
-    var result = String(capacity=_estimate_needed_size(len(data)))
+    var result = String(capacity=_estimate_needed_size(s.byte_length()))
     var input_offset = 0
-    while input_offset < len(data):
+    while input_offset < s.byte_length():
         var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            data[input_offset:]
+            s.as_bytes()[input_offset:]
         )
         var uppercase_replacement_opt = _get_uppercase_mapping(rune_and_size[0])
 
@@ -217,14 +215,14 @@ fn to_uppercase(s: StringSlice[mut=False]) -> String:
             # up to 3 characters in length. A fixed size `Codepoint` array is
             # returned, along with a `count` (1, 2, or 3) of how many
             # replacement characters are in the uppercase replacement sequence.
-            count, uppercase_replacement_chars = (
+            count, ref uppercase_replacement_chars = (
                 uppercase_replacement_opt.unsafe_value()
             )
             for char_idx in range(count):
                 result += String(uppercase_replacement_chars[char_idx])
         else:
-            result.write_bytes(
-                data[input_offset : input_offset + rune_and_size[1]]
+            result.write_string(
+                s[input_offset : input_offset + rune_and_size[1]]
             )
 
         input_offset += rune_and_size[1]

@@ -15,8 +15,10 @@ from random import rand
 
 from gpu import block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext
-from gpu.semaphore import Semaphore
-from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
+from gpu.sync.semaphore import Semaphore
+from memory import LegacyUnsafePointer, memset_zero
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 
@@ -31,7 +33,7 @@ fn semaphore_vector_reduce[
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
-    var sema = Semaphore(locks.offset(0), Int(tid))
+    var sema = Semaphore(locks, Int(tid))
 
     sema.fetch()
     # for each block the partition id is the same as block_idx
@@ -77,7 +79,7 @@ fn run_vector_reduction[
     ctx.enqueue_copy(c_device, c_host)
 
     comptime kernel = semaphore_vector_reduce[dtype, N, num_parts]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         c_device,
         a_device,
         lock_dev,
@@ -113,7 +115,7 @@ fn semaphore_matrix_reduce[
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
-    var sema = Semaphore(locks.offset(0), Int(tid))
+    var sema = Semaphore(locks, Int(tid))
 
     sema.fetch()
 
@@ -167,7 +169,7 @@ fn run_matrix_reduction[
     var block_size = 1024
 
     comptime kernel = semaphore_matrix_reduce[dtype, M, N, num_parts]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         c_device,
         a_device,
         lock_dev,

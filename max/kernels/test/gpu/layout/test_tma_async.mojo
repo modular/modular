@@ -24,6 +24,7 @@ from layout._fillers import arange, random
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
 from layout.tma_async import (
+    create_tensor_tile,
     SharedMemBarrier,
     TMATensorTile,
     create_tma_tile,
@@ -276,7 +277,7 @@ def test_tma_ragged_store[
         using_max_descriptor_size,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         ragged_tensor_map,
         sequence_lengths,
         grid_dim=(rank),
@@ -327,7 +328,7 @@ def test_tma_load_row_major[
     ](ctx)
 
     @parameter
-    if dtype is DType.float8_e4m3fn:
+    if dtype == DType.float8_e4m3fn:
         random(src.tensor())
     else:
         arange(src.tensor(), 0)
@@ -343,7 +344,7 @@ def test_tma_load_row_major[
             type_of(tma_tensor).layout,  # smem layout
             type_of(tma_tensor).layout,  # thread layout
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             dst.device_tensor(),
             tma_tensor,
             grid_dim=(1, M_roundup // tileM),
@@ -356,7 +357,7 @@ def test_tma_load_row_major[
             type_of(tma_tensor).layout,  # smem layout
             type_of(tma_tensor).layout,  # thread layout
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             dst.device_tensor(),
             tma_tensor,
             grid_dim=(N_roundup // tileN, M_roundup // tileM),
@@ -483,7 +484,7 @@ def test_tma_async_store[
             type_of(tma_tensor).layout,
             src_layout,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(1, src_M // tileM),
@@ -497,7 +498,7 @@ def test_tma_async_store[
             type_of(tma_tensor).layout,
             src_layout,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(src_N // tileN, src_M // tileM),
@@ -618,7 +619,7 @@ def test_tma_async_reduce[
             type_of(tma_tensor).layout,
             src_layout,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(1, src_M // tileM),
@@ -631,7 +632,7 @@ def test_tma_async_reduce[
             type_of(tma_tensor).layout,
             src_layout,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(src_N // tileN, src_M // tileM),
@@ -769,7 +770,7 @@ def test_tma_load_two_buffers_row_major[
         type_of(a_tma_tensor).layout,  # thread layout
         type_of(b_tma_tensor).layout,  # thread layout
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_dst.device_tensor(),
         b_dst.device_tensor(),
         a_tma_tensor,
@@ -930,16 +931,16 @@ def test_tma_load_and_store_two_buffers_row_major[
 
     arange(a_src.tensor(), 1)
     arange(b_src.tensor(), 1)
-    var a_tma_src_tensor = create_tma_tile[Index(tileM, tileN)](
+    var a_tma_src_tensor = create_tensor_tile[Index(tileM, tileN)](
         ctx, a_src.device_tensor()
     )
-    var b_tma_src_tensor = create_tma_tile[Index(tileM, tileN)](
+    var b_tma_src_tensor = create_tensor_tile[Index(tileM, tileN)](
         ctx, b_src.device_tensor()
     )
-    var a_tma_dst_tensor = create_tma_tile[Index(tileM, tileN)](
+    var a_tma_dst_tensor = create_tensor_tile[Index(tileM, tileN)](
         ctx, a_dst.device_tensor()
     )
-    var b_tma_dst_tensor = create_tma_tile[Index(tileM, tileN)](
+    var b_tma_dst_tensor = create_tensor_tile[Index(tileM, tileN)](
         ctx, b_dst.device_tensor()
     )
     ctx.synchronize()
@@ -953,7 +954,7 @@ def test_tma_load_and_store_two_buffers_row_major[
         a_layout=dst_layout,  # dst layout
         b_layout=dst_layout,  # dst layout
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_dst_tensor,
         b_tma_dst_tensor,
         a_tma_src_tensor,

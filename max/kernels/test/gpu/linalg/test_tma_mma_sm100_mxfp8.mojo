@@ -13,13 +13,19 @@
 
 from sys import size_of, argv
 from utils.numerics import min_finite, max_finite
-from gpu import WARP_SIZE, barrier, warp_id as get_warp_id
+from gpu import (
+    WARP_SIZE,
+    barrier,
+    warp_id as get_warp_id,
+    block_idx,
+    lane_id,
+    thread_idx,
+)
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx
 from gpu.memory import AddressSpace, external_memory
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
+from gpu.compute.arch.mma_nvidia_sm100 import *
+from gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import IntTuple
@@ -31,8 +37,13 @@ from layout.tensor_core_async import (
 )
 from layout.layout import tile_to_shape
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE, RuntimeLayout
-from gpu.cluster import block_rank_in_cluster
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from gpu.primitives.cluster import block_rank_in_cluster
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tensor_tile,
+    create_tma_tile,
+)
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
@@ -40,8 +51,11 @@ from math import ceildiv
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
 from internal_utils._utils import ValOrDim, dynamic, static
-from memory import LegacyUnsafePointer as UnsafePointer
-from internal_utils import assert_almost_equal, random, fill, zero
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from internal_utils import assert_almost_equal
+from random import rand
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
 from collections import OptionalReg
@@ -107,7 +121,7 @@ fn block_scaled_mxfp8_kernel[
 ):
     __comptime_assert num_threads == 256
     __comptime_assert (
-        a_type == b_type and a_type is DType.float8_e4m3fn
+        a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     comptime BM = block_tile_shape[0]
@@ -510,7 +524,7 @@ fn sm100_block_scaled_mxfp8[
     __comptime_assert transpose_b, "Only support transposed B"
 
     __comptime_assert (
-        a_type == b_type and a_type is DType.float8_e4m3fn
+        a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     var M = c.dim(0)
@@ -526,8 +540,8 @@ fn sm100_block_scaled_mxfp8[
         256,
     ), "Only support 128x128x128 or 128x256x128 block size"
 
-    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
-    b_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
+    b_tma_op = create_tensor_tile[
         Index(BN, BK),
         swizzle_mode=b_swizzle,
     ](ctx, b)
@@ -590,7 +604,7 @@ fn sm100_block_scaled_mxfp8[
         ),
     )
 
-    var a_scales_tma_op = create_tma_tile[
+    var a_scales_tma_op = create_tensor_tile[
         Index(
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
@@ -600,7 +614,7 @@ fn sm100_block_scaled_mxfp8[
         ),
     ](ctx, a_scales_4d)
 
-    var b_scales_tma_op = create_tma_tile[
+    var b_scales_tma_op = create_tensor_tile[
         Index(
             BN // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
@@ -640,7 +654,7 @@ fn sm100_block_scaled_mxfp8[
         b_swizzle=b_swizzle,
         num_threads=block_dim,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         a_scales_tma_op,
@@ -730,8 +744,8 @@ def test_block_scaled_mxfp8[
         ref_scales_type, 2, _, static_ref_b_scales_shape
     ](b_scales_device_ref.unsafe_ptr(), dynamic_ref_b_scales_shape)
 
-    fill(a_scales_host_ref, Scalar[ref_scales_type](1.0))
-    fill(b_scales_host_ref, Scalar[ref_scales_type](1.0))
+    a_scales_host_ref.fill(Scalar[ref_scales_type](1.0))
+    b_scales_host_ref.fill(Scalar[ref_scales_type](1.0))
 
     for i in range(a_scales_host_ref.dim(0)):
         for j in range(a_scales_host_ref.dim(1) // 32):
@@ -885,10 +899,10 @@ def test_block_scaled_mxfp8[
         m,
         n,
         k,
-        a_scales_host_ref,
-        b_scales_host_ref,
-        a_scales_host,
-        b_scales_host,
+        from_ndbuffer_row_major(a_scales_host_ref),
+        from_ndbuffer_row_major(b_scales_host_ref),
+        from_ndbuffer_row_major(a_scales_host),
+        from_ndbuffer_row_major(b_scales_host),
     )
     # Initialize matmul operands
     if simple_init():
@@ -899,8 +913,8 @@ def test_block_scaled_mxfp8[
             for k in range(K):
                 b_host[n, k] = Float32(1 if n == k else 0).cast[b_type]()
     else:
-        random(a_host)
-        random(b_host)
+        rand(a_host.data, a_host.num_elements())
+        rand(b_host.data, b_host.num_elements())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -940,8 +954,9 @@ def test_block_scaled_mxfp8[
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
     )

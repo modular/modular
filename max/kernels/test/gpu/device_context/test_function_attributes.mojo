@@ -14,7 +14,9 @@
 from gpu import thread_idx
 from gpu.host import DeviceContext
 from gpu.host.func_attribute import Attribute
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 
@@ -23,7 +25,7 @@ def test_function_attributes():
         x[0] = Int(thread_idx.x)
 
     with DeviceContext() as ctx:
-        var func = ctx.compile_function_checked[kernel, kernel]()
+        var func = ctx.compile_function_experimental[kernel]()
         assert_equal(func.get_attribute(Attribute.LOCAL_SIZE_BYTES), 0)
 
 

@@ -18,12 +18,12 @@ This package provides GPU tensor core and matrix multiplication operations:
 - **mma_util**: Utility functions for loading/storing MMA operands
 - **mma_operand_descriptor**: Operand descriptor types for MMA
 - **tensor_ops**: Tensor core-based reductions and operations
-- **tcgen05**: 5th generation tensor core operations (Blackwell)
 - **arch/**: Architecture-specific MMA implementations (internal)
   - `mma_nvidia`: NVIDIA tensor cores (SM70-SM90)
   - `mma_nvidia_sm100`: NVIDIA Blackwell (SM100)
   - `mma_amd`: AMD Matrix Cores (CDNA2/3/4)
   - `mma_amd_rdna`: AMD WMMA (RDNA3/4)
+  - `tcgen05`: 5th generation tensor core operations (Blackwell)
 
 ## Usage
 

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import base64
 import copy
-import functools
 import io
 import json
 import logging
@@ -30,6 +29,7 @@ from max.interfaces import (
     ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TokenBuffer,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     mrope_pos_ids_3d,
@@ -44,7 +44,7 @@ from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoTokenizer
 
 from .context import Qwen3VLTextAndVisionContext, VisionEncodingData
 
@@ -314,12 +314,12 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
     def __init__(
         self,
         model_path: str,
+        pipeline_config: PipelineConfig,
         *,
         revision: str | None = None,
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
-        pipeline_config: PipelineConfig | None = None,
         **unused_kwargs,
     ):
         """Initialize the tokenizer with custom image processor instead of AutoProcessor."""
@@ -334,20 +334,8 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         )
         self.max_length = max_length or self.delegate.model_max_length
 
-        # Create encoding functions. Used by encode method in parent class.
-        self._encode_with_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=True
-        )
-        self._encode_without_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=False
-        )
-
-        # Load config to get image processing parameters
-        config = AutoConfig.from_pretrained(
-            model_path,
-            revision=revision,
-            trust_remote_code=trust_remote_code,
-        )
+        # Use the pre-loaded HuggingFace config from pipeline_config
+        config = pipeline_config.model.huggingface_config
 
         # Extract vision config parameters
         vision_config = config.vision_config
@@ -377,88 +365,74 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         # Initialize EOS token IDs
         self._default_eos_token_ids = set([self.eos])
 
-        if pipeline_config:
-            huggingface_config = pipeline_config.model_config.huggingface_config
-            if eos_token_id := getattr(
-                huggingface_config, "eos_token_id", None
-            ):
-                if isinstance(eos_token_id, int):
-                    self._default_eos_token_ids.add(eos_token_id)
-                elif isinstance(eos_token_id, list):
-                    self._default_eos_token_ids.update(eos_token_id)
+        huggingface_config = pipeline_config.model.huggingface_config
+        if eos_token_id := getattr(huggingface_config, "eos_token_id", None):
+            if isinstance(eos_token_id, int):
+                self._default_eos_token_ids.add(eos_token_id)
+            elif isinstance(eos_token_id, list):
+                self._default_eos_token_ids.update(eos_token_id)
 
-            self.enable_prefix_caching = (
-                pipeline_config.model_config.kv_cache_config.enable_prefix_caching
-                if pipeline_config
-                else False
+        self.enable_prefix_caching = (
+            pipeline_config.model.kv_cache.enable_prefix_caching
+        )
+
+        if image_token_id := getattr(
+            huggingface_config, "image_token_id", None
+        ):
+            self.image_token_id = image_token_id
+        else:
+            raise ValueError("image_token_id not found in model_config config")
+
+        if video_token_id := getattr(
+            huggingface_config, "video_token_id", None
+        ):
+            self.video_token_id = video_token_id
+
+        # Qwen3VL specific: vision_start_token and vision_end_token
+        if vision_start_token_id := getattr(
+            huggingface_config, "vision_start_token_id", None
+        ):
+            self.vision_start_token_id = vision_start_token_id
+        else:
+            raise ValueError(
+                "vision_start_token_id not found in model_config config"
             )
 
-            if image_token_id := getattr(
-                pipeline_config.model_config.huggingface_config,
-                "image_token_id",
-                None,
-            ):
-                self.image_token_id = image_token_id
-            else:
-                raise ValueError(
-                    "image_token_id not found in model_config config"
-                )
+        if vision_end_token_id := getattr(
+            huggingface_config, "vision_end_token_id", None
+        ):
+            self.vision_end_token_id = vision_end_token_id
+        else:
+            raise ValueError(
+                "vision_end_token_id not found in model_config config"
+            )
 
-            if video_token_id := getattr(
-                pipeline_config.model_config.huggingface_config,
-                "video_token_id",
-                None,
-            ):
-                self.video_token_id = video_token_id
-
-            # Qwen3VL specific: vision_start_token and vision_end_token
-            if vision_start_token_id := getattr(
-                pipeline_config.model_config.huggingface_config,
-                "vision_start_token_id",
-                None,
-            ):
-                self.vision_start_token_id = vision_start_token_id
-            else:
-                raise ValueError(
-                    "vision_start_token_id not found in model_config config"
-                )
-
-            if vision_end_token_id := getattr(
-                pipeline_config.model_config.huggingface_config,
-                "vision_end_token_id",
-                None,
-            ):
-                self.vision_end_token_id = vision_end_token_id
-            else:
-                raise ValueError(
-                    "vision_end_token_id not found in model_config config"
-                )
-
-            if vision_config := getattr(
-                huggingface_config, "vision_config", None
-            ):
-                # If num_position_embeddings wasn't found in AutoConfig, try from pipeline_config
-                if self.num_position_embeddings is None:
-                    self.num_position_embeddings = getattr(
-                        vision_config, "num_position_embeddings", None
-                    )
-            else:
-                raise ValueError(
-                    "vision_config must be provided in HuggingFace Config"
-                )
-
+        vision_cfg = getattr(huggingface_config, "vision_config", None)
+        if vision_cfg is not None:
+            # If num_position_embeddings wasn't found in config, try from huggingface_config
             if self.num_position_embeddings is None:
-                raise ValueError(
-                    "num_position_embeddings not found in vision_config. "
-                    "This is required for bilinear interpolation position embeddings."
+                self.num_position_embeddings = getattr(
+                    vision_cfg, "num_position_embeddings", None
                 )
+        else:
+            raise ValueError(
+                "vision_config must be provided in HuggingFace Config"
+            )
+
+        if self.num_position_embeddings is None:
+            raise ValueError(
+                "num_position_embeddings not found in vision_config. "
+                "This is required for bilinear interpolation position embeddings."
+            )
 
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]
     ) -> str:
         """Apply chat template using tokenizer directly (not processor)."""
         templated_message = self.delegate.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
+            [msg.model_dump() for msg in messages],
+            tokenize=False,
+            add_generation_prompt=True,
         )
         assert isinstance(templated_message, str)
         return templated_message
@@ -505,9 +479,9 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                     model_name=request.model_name,
                     messages=messages,
                 )
-                assert new_request.messages is not None
+                assert new_request.messages
                 prompt = self.apply_chat_template(new_request.messages)
-        elif request.messages is not None:
+        elif request.messages:
             prompt = self.apply_chat_template(request.messages)
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
@@ -757,7 +731,9 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         context = Qwen3VLTextAndVisionContext(
             request_id=request.request_id,
             eos_token_ids=eos_token_ids,
-            tokens=encoded_prompt,
+            tokens=TokenBuffer(
+                array=encoded_prompt.astype(np.int64, copy=False),
+            ),
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,

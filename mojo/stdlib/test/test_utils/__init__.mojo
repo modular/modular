@@ -14,7 +14,7 @@
 from .compare_helpers import compare
 from .hash import assert_dif_hashes, assert_fill_factor, dif_bits
 from .math_helpers import ulp_distance
-from .test_utils import libm_call
+from .test_utils import libm_call, check_write_to
 from .types import (
     AbortOnCopy,
     AbortOnDel,
@@ -24,9 +24,11 @@ from .types import (
     DelRecorder,
     ExplicitCopyOnly,
     ImplicitCopyOnly,
+    ConfigureTrivial,
     MoveCopyCounter,
     MoveCounter,
     MoveOnly,
+    NonMovable,
     Observable,
     ObservableDel,
     ObservableMoveOnly,

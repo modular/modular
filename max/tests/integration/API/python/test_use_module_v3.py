@@ -47,7 +47,7 @@ def test_registry__retrieve_architecture_without_module_v3() -> None:
     )
 
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        huggingface_repo=config.model_config.huggingface_model_repo,
+        huggingface_repo=config.model.huggingface_model_repo,
         use_module_v3=False,
     )
 
@@ -70,7 +70,7 @@ def test_registry__retrieve_architecture_with_module_v3_not_registered() -> (
     )
 
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        huggingface_repo=config.model_config.huggingface_model_repo,
+        huggingface_repo=config.model.huggingface_model_repo,
         use_module_v3=True,
     )
 
@@ -105,12 +105,12 @@ def test_registry__retrieve_architecture_with_module_v3() -> None:
     )
 
     arch_v3 = PIPELINE_REGISTRY.retrieve_architecture(
-        huggingface_repo=config.model_config.huggingface_model_repo,
+        huggingface_repo=config.model.huggingface_model_repo,
         use_module_v3=True,
     )
 
     arch_base = PIPELINE_REGISTRY.retrieve_architecture(
-        huggingface_repo=config.model_config.huggingface_model_repo,
+        huggingface_repo=config.model.huggingface_model_repo,
         use_module_v3=False,
     )
 
@@ -222,7 +222,7 @@ def test_config__use_module_v3_with_draft_model() -> None:
     assert config.use_module_v3 is True
 
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        huggingface_repo=config.model_config.huggingface_model_repo,
+        huggingface_repo=config.model.huggingface_model_repo,
         use_module_v3=config.use_module_v3,
     )
 

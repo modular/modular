@@ -34,16 +34,16 @@ fn random_numbers[
 
         @parameter
         if (
-            dtype is DType.int8
-            or dtype is DType.int16
-            or dtype is DType.int32
-            or dtype is DType.int64
+            dtype == DType.int8
+            or dtype == DType.int16
+            or dtype == DType.int32
+            or dtype == DType.int64
         ):
             result.append(random_si64(0, max).cast[dtype]())
         elif (
-            dtype is DType.float16
-            or dtype is DType.float32
-            or dtype is DType.float64
+            dtype == DType.float16
+            or dtype == DType.float32
+            or dtype == DType.float64
         ):
             result.append(random_float64(0, max).cast[dtype]())
         else:
@@ -535,6 +535,8 @@ def test_sort_strings():
 
 @fieldwise_init
 struct Person(Comparable, ImplicitlyCopyable):
+    """Test struct using default reflection-based __eq__."""
+
     var name: String
     var age: Int
 
@@ -545,8 +547,7 @@ struct Person(Comparable, ImplicitlyCopyable):
             return self.name < other.name
         return False
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self.age == other.age and self.name == other.name
+    # Uses default reflection-based __eq__ from Equatable trait
 
 
 def test_sort_comparamble_elements_list():

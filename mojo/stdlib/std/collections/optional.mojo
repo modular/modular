@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -47,12 +47,38 @@ struct _NoneType(ImplicitlyCopyable):
     pass
 
 
+@register_passable
+@fieldwise_init
+struct EmptyOptionalError[T: AnyType](ImplicitlyCopyable, Writable):
+    """An error type for when an empty `Optional` is accessed.
+
+    Parameters:
+        T: The type of the value that was accessed in the `Optional`.
+    """
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write the error to a `Writer`.
+
+        Args:
+            writer: The `Writer` to write to.
+
+
+        Examples:
+
+        ```mojo
+        instance = Optional[String]()
+        print(instance) # Output: None
+        ```
+        """
+        writer.write("EmptyOptionalError[", get_type_name[Self.T](), "]")
+
+
 # ===-----------------------------------------------------------------------===#
 # Optional
 # ===-----------------------------------------------------------------------===#
 
 
-struct Optional[T: Movable & ImplicitlyDestructible](
+struct Optional[T: Movable](
     Boolable,
     Defaultable,
     ImplicitlyCopyable,
@@ -92,7 +118,7 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
     # Iterator aliases
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     """The iterator type for this optional.
 
@@ -115,7 +141,15 @@ struct Optional[T: Movable & ImplicitlyDestructible](
     # ===-------------------------------------------------------------------===#
 
     fn __init__(out self):
-        """Construct an empty `Optional`."""
+        """Construct an empty `Optional`.
+
+        Examples:
+
+        ```mojo
+        instance = Optional[String]()
+        print(instance) # Output: None
+        ```
+        """
         self._value = Self._type(_NoneType())
 
     @implicit
@@ -124,6 +158,13 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
         Args:
             value: The value to store in the `Optional`.
+
+        Examples:
+
+        ```mojo
+        instance = Optional[String]("Hello")
+        print(instance) # Output: 'Hello'
+        ```
         """
         self._value = Self._type(value^)
 
@@ -137,6 +178,13 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
         Args:
             value: Must be exactly `None`.
+
+        Examples:
+
+        ```mojo
+        instance = Optional[String](None)
+        print(instance) # Output: None
+        ```
         """
         self = Self(value=NoneType(value))
 
@@ -146,6 +194,13 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
         Args:
             value: Must be exactly `None`.
+
+        Examples:
+
+        ```mojo
+        instance = Optional[String](None)
+        print(instance) # Output: None
+        ```
         """
         self = Self()
 
@@ -258,25 +313,32 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
         Returns:
             An iterator over the Optional's value (if present).
+
+        Examples:
+
+        ```mojo
+        instance = Optional("Hello")
+        for value in instance:
+            print(value) # Output: Hello
+        instance = None
+        for value in instance:
+            print(value) # Does not reach line
+        ```
         """
         return self.copy()
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        """Return true if the Optional has a value.
-
-        Returns:
-            True if the Optional contains a value, False otherwise.
-        """
-        return self.__bool__()
-
-    @always_inline
-    fn __next__(mut self) -> Self.Element:
+    fn __next__(mut self) raises StopIteration -> Self.Element:
         """Return the contained value of the Optional.
 
         Returns:
             The value contained in the Optional.
+
+        Raises:
+            `StopIteration` if the iterator has been exhausted.
         """
+        if not self.__bool__():
+            raise StopIteration()
         return self.take()
 
     @always_inline
@@ -285,10 +347,26 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
         Returns:
             A tuple containing the length (0 or 1) and an `Optional` containing the length.
+
+        Examples:
+
+        ```mojo
+        fn bounds():
+            empty_instance = Optional[Int]()
+            populated_instance = Optional[Int](50)
+
+            # Bounds returns a tuple: (`bounds`, `Optional` version of `bounds`)
+            # with the length of the `Optional`.
+            print(empty_instance.bounds()[0])     # 0
+            print(populated_instance.bounds()[0]) # 1
+            print(empty_instance.bounds()[1])     # 0
+            print(populated_instance.bounds()[1]) # 1
+        ```
         """
         var len = 1 if self else 0
         return (len, {len})
 
+    @always_inline
     fn __bool__(self) -> Bool:
         """Return true if the Optional has a value.
 
@@ -297,6 +375,7 @@ struct Optional[T: Movable & ImplicitlyDestructible](
         """
         return not self._value.isa[_NoneType]()
 
+    @always_inline
     fn __invert__(self) -> Bool:
         """Return False if the `Optional` has a value.
 
@@ -306,7 +385,9 @@ struct Optional[T: Movable & ImplicitlyDestructible](
         return not self
 
     @always_inline
-    fn __getitem__(ref self) raises -> ref [self._value] Self.T:
+    fn __getitem__(
+        ref self,
+    ) raises EmptyOptionalError[Self.T] -> ref [self._value] Self.T:
         """Retrieve a reference to the value inside the `Optional`.
 
         Returns:
@@ -316,7 +397,7 @@ struct Optional[T: Movable & ImplicitlyDestructible](
             On empty `Optional`.
         """
         if not self:
-            raise Error(".value() on empty Optional")
+            raise EmptyOptionalError[Self.T]()
         return self.unsafe_value()
 
     fn __str__(self: Self) -> String:
@@ -399,6 +480,16 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
         Notes:
             This will abort on empty `Optional`.
+
+        Examples:
+
+        ```mojo
+        instance = Optional("Hello")
+        x = instance.value()
+        print(x) # Hello
+        # instance = Optional[String]() # Uncomment both lines to crash
+        # print(instance.value())       # Attempts to take value from `None`
+        ```
         """
         if not self.__bool__():
             abort(
@@ -419,6 +510,24 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
         Notes:
             This will **not** abort on empty `Optional`.
+
+        Examples:
+
+        ```mojo
+        instance = Optional("Hello")
+        x = instance.unsafe_value()
+        print(x) # Hello
+        instance = Optional[String](None)
+
+        # Best practice:
+        if instance:
+            y = instance.unsafe_value() # Will not reach this line
+            print(y)
+
+        # In debug builds, this will deterministically abort:
+        y = instance.unsafe_value()
+        print(y)
+        ```
         """
         debug_assert(self.__bool__(), "`.value()` on empty `Optional`")
         return self._value.unsafe_get[Self.T]()
@@ -431,6 +540,28 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
         Notes:
             This will abort on empty `Optional`.
+
+        Examples:
+
+        ```mojo
+        instance = Optional("Hello")
+        print(instance.bounds()[0])  # Output: 1
+        x = instance.take() # Moves value from `instance` to `x`
+        print(x)  # Output: Hello
+
+        # `instance` is now `Optional(None)`
+        print(instance.bounds()[0])  # Output: 0
+        print(instance)  # Output: None
+
+        # Best practice
+        if instance:
+            y = instance.take()  # Won't reach this line
+            print(y)
+
+        # Used directly
+        # y = instance.take()         # ABORT: `Optional.take()` called on empty `Optional` (via runtime `abort`)
+        # print(y)                    # Does not reach this line
+        ```
         """
         if not self.__bool__():
             abort(
@@ -449,19 +580,58 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
         Notes:
             This will **not** abort on empty `Optional`.
+
+        Examples:
+
+        ```mojo
+        instance = Optional("Hello")
+        print(instance.bounds()[0]) # Output: 1
+        x = instance.unsafe_take()  # Moves value from `instance` to `x`
+        print(x)                    # Output: Hello
+
+        # `instance` is now `Optional(None)`
+        print(instance.bounds()[0]) # Output: 0
+        print(instance)             # Output: None
+
+        # Best practice:
+        if instance:
+            y = instance.unsafe_take() # Won't reach this line
+            print(y)
+
+        # In debug builds, this will deterministically abort:
+        y = instance.unsafe_take()  # ABORT: `Optional.take()` called on empty `Optional` (via `debug_assert`)
+        print(y)                    # Does not reach this line
+        ```
         """
         debug_assert(self.__bool__(), "`.unsafe_take()` on empty `Optional`")
         return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
 
-    fn or_else(deinit self, var default: Self.T) -> Self.T:
+    fn or_else[
+        _T: Movable & ImplicitlyDestructible, //
+    ](deinit self: Optional[_T], var default: _T) -> _T:
         """Return the underlying value contained in the `Optional` or a default
         value if the `Optional`'s underlying value is not present.
+
+        Parameters:
+            _T: Type of the optional element, which must conform to
+                `ImplicitlyDestructible`.
 
         Args:
             default: The new value to use if no value was present.
 
         Returns:
             The underlying value contained in the `Optional` or a default value.
+
+        Examples:
+
+        ```mojo
+        instance = Optional("Hello")
+        print(instance)                  # Output: 'Hello'
+        print(instance.or_else("Bye"))   # Output: Hello
+        instance = None
+        print(instance)                  # Output: None
+        print(instance.or_else("Bye"))   # Output: Bye
+        ```
         """
         if self:
             return self.unsafe_take()
@@ -469,7 +639,7 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
     fn copied[
         mut: Bool,
-        origin: Origin[mut],
+        origin: Origin[mut=mut],
         //,
         _T: Copyable,
     ](self: Optional[Pointer[_T, origin]]) -> Optional[_T]:
@@ -512,7 +682,7 @@ struct Optional[T: Movable & ImplicitlyDestructible](
 
 
 @register_passable("trivial")
-struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
+struct OptionalReg[T: __TypeOfAllTypes](Boolable, Defaultable, DevicePassable):
     """A register-passable optional type.
 
     This struct optionally contains a value. It only works with trivial register

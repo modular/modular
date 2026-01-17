@@ -20,37 +20,50 @@ import weakref
 import pytest
 from max import driver
 from max.driver import CPU, Accelerator, accelerator_count
+from max.experimental import functional as F
 from max.experimental import random
 from max.experimental.tensor import Tensor, TensorType, defaults
 from max.nn.module_v3.module import Module, module_dataclass
 
 
 @module_dataclass
-class SubModule(Module):
+class SubModule(Module[[Tensor], Tensor]):
     b: Tensor
     eps: float = 1e-5
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         return x + self.b
 
 
 @module_dataclass
-class TestModule(Module):
+class TestModule(Module[[Tensor], Tensor]):
     a: Tensor
     sub: SubModule
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         return self.sub(x) + self.a
 
 
 @module_dataclass
-class SuperModule(Module):
+class SuperModule(Module[[Tensor], Tensor]):
     mod: TestModule
 
 
 @pytest.fixture
 def test_module():  # noqa: ANN201
-    return TestModule(a=Tensor.constant(1), sub=SubModule(b=Tensor.constant(2)))
+    return TestModule(
+        a=Tensor.constant(1),
+        sub=SubModule(b=Tensor.constant(2)),
+    )
+
+
+@pytest.fixture
+def lazy_test_module():  # noqa: ANN201
+    with F.lazy():
+        return TestModule(
+            a=Tensor.constant(1),
+            sub=SubModule(b=Tensor.constant(2)),
+        )
 
 
 @pytest.fixture
@@ -60,7 +73,7 @@ def super_module(test_module: TestModule):  # noqa: ANN201
 
 def test_module_dataclass() -> None:
     @module_dataclass
-    class Test(Module):
+    class Test(Module[..., None]):
         a: int
         b: int = 0
 
@@ -84,7 +97,7 @@ def test_module_repr(test_module: TestModule) -> None:
 
 
 def test_module_custom_repr() -> None:
-    class Linear(Module):
+    class Linear(Module[..., None]):
         weight: Tensor
         bias: Tensor | int
 
@@ -116,6 +129,12 @@ def test_module_decomposition_call(test_module: TestModule) -> None:
     x = Tensor.constant(1)
     assert test_module.sub.b.item() == 2
     assert test_module.sub(x).item() == 3
+
+
+def test_module_forward(test_module: TestModule) -> None:
+    x = Tensor.constant(1)
+    # __call__ invokes forward, so both should produce the same result
+    assert test_module.forward(x).item() == test_module(x).item()
 
 
 def test_module_local_parameters(test_module: TestModule) -> None:
@@ -282,14 +301,15 @@ def test_compile(test_module: TestModule) -> None:
     assert all((result_eager == result_compiled)._values())
 
 
-def test_compile_with_weights(test_module: TestModule) -> None:
+def test_compile_with_weights(lazy_test_module: TestModule) -> None:
+    test_module = lazy_test_module
     dtype, device = defaults()
     type = TensorType(dtype, ["batch", "n"], device=device)
 
     parameters = weakref.WeakValueDictionary(test_module.parameters)
 
     weights = {
-        name: driver.Tensor.zeros(
+        name: driver.Buffer.zeros(
             [int(d) for d in param.shape], param.dtype, param.device
         )
         for name, param in test_module.parameters
@@ -303,15 +323,17 @@ def test_compile_with_weights(test_module: TestModule) -> None:
     assert not any(param.real for param in parameters.values())
     assert not any(param.real for _, param in test_module.parameters)
 
-    input = driver.Tensor.zeros([3, 3], dtype, device)
+    input = driver.Buffer.zeros([3, 3], dtype, device)
     _ = compiled(input)
 
     assert not any(param.real for param in parameters.values())
     assert not any(param.real for _, param in test_module.parameters)
 
 
-@pytest.mark.skip("TODO(XFN-32): never realize module weights if not needed")
-def test_compile_with_weights_never_realized(test_module: TestModule) -> None:
+def test_compile_with_weights_never_realized(
+    lazy_test_module: TestModule,
+) -> None:
+    test_module = lazy_test_module
     dtype, device = defaults()
     type = TensorType(dtype, ["batch", "n"], device=device)
 

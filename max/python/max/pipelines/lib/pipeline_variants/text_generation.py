@@ -27,7 +27,7 @@ import llguidance.numpy
 import numpy as np
 import numpy.typing as npt
 from llguidance import LLMatcher
-from max.driver import load_devices
+from max.driver import Buffer, load_devices
 from max.engine import Model
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
@@ -115,11 +115,11 @@ class TextGenerationPipeline(
 
         Raises:
             ValueError: If ``quantization_encoding`` is not configured in
-                ``pipeline_config.model_config`` or if structured output is
+                ``pipeline_config.model`` or if structured output is
                 requested without a valid tokenizer delegate.
         """
         self._pipeline_config = pipeline_config
-        self._devices = load_devices(pipeline_config.model_config.device_specs)
+        self._devices = load_devices(pipeline_config.model.device_specs)
         self._weight_adapters = weight_adapters
         self._tokenizer = tokenizer
 
@@ -129,11 +129,10 @@ class TextGenerationPipeline(
         self.batch_infos: list[BatchInfo] = []
 
         # Expand eos tokens if more are provided in pipeline_config
-        if (
-            "eos_token_id"
-            in self._pipeline_config.model_config.huggingface_config
-        ):
-            eos_tokens = self._pipeline_config.model_config.huggingface_config.eos_token_id
+        if "eos_token_id" in self._pipeline_config.model.huggingface_config:
+            eos_tokens = (
+                self._pipeline_config.model.huggingface_config.eos_token_id
+            )
             if isinstance(eos_tokens, int):
                 if eos_tokens != eos_token_id:
                     msg = f"eos_token_id provided in huggingface config ({eos_tokens}), does not match provided eos_token_id ({eos_token_id}), using provided eos_token_id"
@@ -156,7 +155,7 @@ class TextGenerationPipeline(
         # Create a grammar compiler if constrained decoding is enabled
         self.vocab_size = None
 
-        if pipeline_config.sampling_config.enable_structured_output:
+        if pipeline_config.sampling.enable_structured_output:
             assert hasattr(self.tokenizer, "delegate")
             hf_tokenizer = self.tokenizer.delegate
             assert isinstance(hf_tokenizer, PreTrainedTokenizerFast)
@@ -175,39 +174,31 @@ class TextGenerationPipeline(
         self._pipeline_config.configure_session(session)
 
         # Load model.
-        if not self._pipeline_config.model_config.quantization_encoding:
+        if not self._pipeline_config.model.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
 
-        # Retrieve the weight id, if different than the model_path
-
-        # TODO: These should ideally not call _weights_repo_id directly. I believe
-        # huggingface_weight_repo_id property can be used here?
-        weight_model_id = (
-            self._pipeline_config.model_config._weights_repo_id
-            if self._pipeline_config.model_config._weights_repo_id
-            else self._pipeline_config.model_config.model_path
-        )
+        # Retrieve the weights repo id (falls back to model_path when unset).
+        weight_model_id = self._pipeline_config.model.huggingface_weight_repo_id
 
         weight_paths: list[Path] = []
         if (
-            self._pipeline_config.model_config.huggingface_weight_repo.repo_type
+            self._pipeline_config.model.huggingface_weight_repo.repo_type
             == RepoType.online
         ):
             # Download weight files if not existent.
             weight_paths = download_weight_files(
                 huggingface_model_id=weight_model_id,
                 filenames=[
-                    str(x)
-                    for x in self._pipeline_config.model_config.weight_path
+                    str(x) for x in self._pipeline_config.model.weight_path
                 ],
-                revision=self._pipeline_config.model_config.huggingface_weight_revision,
-                force_download=self._pipeline_config.model_config.force_download,
+                revision=self._pipeline_config.model.huggingface_weight_revision,
+                force_download=self._pipeline_config.model.force_download,
             )
         else:
             # Make sure the weight paths are absolute paths
             weight_paths = [
-                self._pipeline_config.model_config.model_path / x
-                for x in self._pipeline_config.model_config.weight_path
+                self._pipeline_config.model.model_path / x
+                for x in self._pipeline_config.model.weight_path
             ]
 
         # late imports to minimize header deps
@@ -217,10 +208,10 @@ class TextGenerationPipeline(
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=self._pipeline_config.model_config.huggingface_config,
-            encoding=self._pipeline_config.model_config.quantization_encoding,
+            huggingface_config=self._pipeline_config.model.huggingface_config,
+            encoding=self._pipeline_config.model.quantization_encoding,
             devices=self._devices,
-            kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
+            kv_cache_config=self._pipeline_config.model.kv_cache,
             weights=_load_weights(weight_paths),
             adapter=self._weight_adapters.get(
                 _weights_format(weight_paths), None
@@ -234,16 +225,14 @@ class TextGenerationPipeline(
         from max.graph import DeviceRef as _DeviceRef
 
         self._sampler_with_bitmask: Model | None = None
-        if self._pipeline_config.sampling_config.enable_structured_output:
+        if self._pipeline_config.sampling.enable_structured_output:
             self._sampler_with_bitmask = session.load(
                 token_sampler(
-                    self._pipeline_config.sampling_config,
+                    self._pipeline_config.sampling,
                     device=_DeviceRef.from_device(self._devices[0]),
                 )
             )
-            cfg_without_bitmask = copy.deepcopy(
-                self._pipeline_config.sampling_config
-            )
+            cfg_without_bitmask = copy.deepcopy(self._pipeline_config.sampling)
             cfg_without_bitmask.enable_structured_output = False
             self._sampler_without_bitmask = session.load(
                 token_sampler(
@@ -254,7 +243,7 @@ class TextGenerationPipeline(
         else:
             self._sampler_without_bitmask = session.load(
                 token_sampler(
-                    self._pipeline_config.sampling_config,
+                    self._pipeline_config.sampling,
                     device=_DeviceRef.from_device(self._devices[0]),
                 )
             )
@@ -308,7 +297,7 @@ class TextGenerationPipeline(
 
         if num_available_steps <= 0:
             raise ValueError(
-                f"Request {context.request_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
+                f"Request {context.request_id} length ({len(context.tokens)}) is larger than or equal to the configured max_length ({max_seq_len})"
             )
 
         return min(num_available_steps, num_steps)
@@ -336,7 +325,7 @@ class TextGenerationPipeline(
                 enabled via sampling configuration.
         """
         if context.json_schema and context.matcher is None:
-            if not self._pipeline_config.sampling_config.enable_structured_output:
+            if not self._pipeline_config.sampling.enable_structured_output:
                 raise ValueError(
                     "json_schema provided but constrained decoding is not enabled."
                 )
@@ -376,7 +365,7 @@ class TextGenerationPipeline(
             A bitmask array of shape [batch_size, vocab_size] if structured
             output is enabled; otherwise ``None``.
         """
-        if not self._pipeline_config.sampling_config.enable_structured_output:
+        if not self._pipeline_config.sampling.enable_structured_output:
             return None
 
         if self.vocab_size is None:
@@ -504,8 +493,8 @@ class TextGenerationPipeline(
         """
         self.batch_infos.append(
             BatchInfo(
-                past_seq_lens=[x.processed_length for x in contexts],
-                seq_lens=[x.active_length for x in contexts],
+                past_seq_lens=[x.tokens.processed_length for x in contexts],
+                seq_lens=[x.tokens.active_length for x in contexts],
                 num_steps=num_steps,
             )
         )
@@ -583,6 +572,8 @@ class TextGenerationPipeline(
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
+        device0 = self._devices[0]
+        pinned = not device0.is_host
         # Prepare the batch.
         model_inputs, num_steps, bitmask, flat_batch = self.prepare_batch(
             inputs.batches, inputs.num_steps
@@ -600,15 +591,16 @@ class TextGenerationPipeline(
             else:
                 sampler = self._sampler_without_bitmask
 
-            sampling_processor = FusedSamplingProcessor(
-                sampler=sampler,
-                pipeline_config=self._pipeline_config,
-                context_batch=flat_batch,
-                num_steps=num_steps,
-                device=self._devices[0],
-                bitmask=bitmask,
-                vocab_size=self.vocab_size,
-            )
+            with Tracer("FusedSamplingProcessor"):
+                sampling_processor = FusedSamplingProcessor(
+                    sampler=sampler,
+                    pipeline_config=self._pipeline_config,
+                    context_batch=flat_batch,
+                    num_steps=num_steps,
+                    device=device0,
+                    bitmask=bitmask,
+                    vocab_size=self.vocab_size,
+                )
 
             batch_processors.append(sampling_processor)
 
@@ -624,9 +616,11 @@ class TextGenerationPipeline(
                 except Exception:
                     batch_size = len(flat_batch)
                     cache_tokens = sum(
-                        ctx.processed_length for ctx in flat_batch
+                        ctx.tokens.processed_length for ctx in flat_batch
                     )
-                    input_tokens = sum(ctx.active_length for ctx in flat_batch)
+                    input_tokens = sum(
+                        ctx.tokens.active_length for ctx in flat_batch
+                    )
                     logger.error(
                         "Encountered an exception while executing batch: "
                         f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}, {num_steps=:}"
@@ -636,7 +630,7 @@ class TextGenerationPipeline(
             # Validate output. This is more of an internal check that the model
             # is implemented correctly.
             if (
-                self._pipeline_config.sampling_config.enable_variable_logits
+                self._pipeline_config.sampling.enable_variable_logits
                 and model_outputs.logit_offsets is None
             ):
                 raise ValueError(
@@ -674,7 +668,7 @@ class TextGenerationPipeline(
                     except NotImplementedError:
                         logger.warning(
                             "Unable to compute log probabilities for"
-                            f" {self._pipeline_config.model_config.model_path}"
+                            f" {self._pipeline_config.model.model_path}"
                         )
                         batch_log_probabilities.append(
                             [None for _ in flat_batch]
@@ -710,14 +704,27 @@ class TextGenerationPipeline(
             return {}
 
         # Do the copy to host for each token generated.
-        with Tracer("generated_tokens.to(CPU())") as tracer:
-            generated_tokens_host = (
-                sampling_processor.generated_tokens.to_numpy()
+        with Tracer("D2H generated_tokens") as tracer:
+            generated_tokens_device = sampling_processor.generated_tokens
+            # Allocate a pinned tensor on the host for faster async d2h transfer
+            # speeds. If the model is on host, then fall back to normal pageable
+            # memory.
+            generated_tokens_host = Buffer(
+                shape=generated_tokens_device.shape,
+                dtype=generated_tokens_device.dtype,
+                device=device0,
+                pinned=not device0.is_host,
             )
+            generated_tokens_host.inplace_copy_from(generated_tokens_device)
+            # We assume that the call to `.to_numpy()` will insert a device
+            # synchronize to guarantee that the async d2h transfer is done.
+            # However, if this API changes we will have to add an explicit
+            # device0.synchronize() here.
+            generated_tokens_np = generated_tokens_host.to_numpy()
 
         # Update the context object.
         res = self.update_context_and_prepare_responses(
-            generated_tokens_host,
+            generated_tokens_np,
             batch_log_probabilities,
             flat_batch,
             num_steps,

@@ -19,7 +19,9 @@ from gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from memory import LegacyUnsafePointer as UnsafePointer, memcpy
+from memory import LegacyUnsafePointer, memcpy
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import freqs_cis_table_input
 from testing import assert_almost_equal
@@ -252,7 +254,6 @@ def execute_fused_qk_rope_ragged(
                 mixed_ce_q_ragged_host, mixed_ce_q_ragged_runtime_layout
             )
             for bs_idx in range(batch_size):
-                true_ce_prompt_len = true_ce_prompt_lens[bs_idx]
                 mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
                 true_ce_row_offset = Int(true_ce_row_offsets_host_ptr[bs_idx])
                 mixed_ce_row_offset = Int(mixed_ce_row_offsets_host_ptr[bs_idx])

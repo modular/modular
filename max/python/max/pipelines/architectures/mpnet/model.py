@@ -18,11 +18,10 @@ Implementation is based on MPNetModel from the transformers library.
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Sequence
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
@@ -32,6 +31,7 @@ from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.dataprocessing import collate_batch
 from max.pipelines.lib import (
+    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -58,13 +58,13 @@ class MPNetInputs(ModelInputs):
     - attention_mask: A tensor containing the extended attention mask
     """
 
-    next_tokens_batch: Tensor
-    attention_mask: Tensor
+    next_tokens_batch: Buffer
+    attention_mask: Buffer
 
     def __init__(
         self,
-        next_tokens_batch: Tensor,
-        attention_mask: Tensor,
+        next_tokens_batch: Buffer,
+        attention_mask: Buffer,
     ) -> None:
         self.next_tokens_batch = next_tokens_batch
         self.attention_mask = attention_mask
@@ -141,7 +141,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         model_outputs = self.model.execute(
             model_inputs.next_tokens_batch, model_inputs.attention_mask
         )
-        assert isinstance(model_outputs[0], Tensor)
+        assert isinstance(model_outputs[0], Buffer)
 
         return ModelOutputs(logits=model_outputs[0])
 
@@ -157,7 +157,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         context_batch = replica_batches[0]
 
         # Get tokens and seq_ids.
-        tokens = [ctx.next_tokens for ctx in context_batch]
+        tokens = [ctx.tokens.active for ctx in context_batch]
 
         # Pad tokens for the batch.
         pad_value = getattr(self.huggingface_config, "pad_token_id", 1)
@@ -171,24 +171,23 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         attention_mask = (next_tokens_batch != pad_value).astype(np.float32)
 
         return MPNetInputs(
-            next_tokens_batch=Tensor.from_numpy(next_tokens_batch).to(
+            next_tokens_batch=Buffer.from_numpy(next_tokens_batch).to(
                 self.devices[0]
             ),
-            attention_mask=Tensor.from_numpy(attention_mask).to(
+            attention_mask=Buffer.from_numpy(attention_mask).to(
                 self.devices[0]
             ),
         )
 
     def prepare_next_token_inputs(
-        self, next_tokens: Tensor, prev_model_inputs: ModelInputs
+        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
     ) -> MPNetInputs:
         raise NotImplementedError(
             "MPNet does not support preparing next tokens inputs."
         )
 
     def load_model(self, session: InferenceSession) -> Model:
-        logger.info("Building and compiling model...")
-        before = time.perf_counter()
+        timer = CompilationTimer("model")
         if self.adapter:
             state_dict = self.adapter(dict(self.weights.items()))
         else:
@@ -202,19 +201,8 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             self.dtype,
             DeviceRef.from_device(self.devices[0]),
         )
-        after_build = time.perf_counter()
-
-        logger.info(f"Building graph took {after_build - before:.6f} seconds")
-
-        before_compile = time.perf_counter()
+        timer.mark_build_complete()
         model = session.load(graph, weights_registry=state_dict)
-        after = time.perf_counter()
+        timer.done()
 
-        logger.info(
-            f"Compiling model took {after - before_compile:.6f} seconds"
-        )
-
-        logger.info(
-            f"Building and compiling model took {after - before:.6f} seconds"
-        )
         return model

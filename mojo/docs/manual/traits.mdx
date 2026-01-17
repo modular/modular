@@ -106,12 +106,12 @@ trait Quackable:
 ```
 
 A trait looks a lot like a struct, except it's introduced by the `trait`
-keyword. Note that the `quack()` method signature is followed three dots
+keyword. Note that the `quack()` method signature is followed by three dots
 (`...`). This indicates it isn't implemented within the trait. In this
 example, `quack` is a *required method* and must be implemented by
 any conforming struct.
 
-A trait can supply a default implementation so conforming structs
+A trait can supply a default implementation, so conforming structs
 don’t need to implement the method themselves. You can provide a full
 implementation or use the `pass` keyword. Using `pass` creates a
 no-op method that does nothing. In your conforming struct, you
@@ -133,7 +133,7 @@ traits that describe generic types. For more information, see
 
 ### Adding traits to structs
 
-Next we need some structs that conform to the `Quackable` trait. Since the
+Next, we need some structs that conform to the `Quackable` trait. Since the
 `Duck` and `StealthCow` structs above already implement the `quack()` method,
 all we need to do is add the `Quackable` trait to the traits it conforms to
 (in parenthesis, after the struct name).
@@ -155,7 +155,7 @@ struct StealthCow(Copyable, Quackable):
 
 The struct needs to implement any methods that are declared in the trait. The
 compiler enforces conformance: if a struct says it conforms to a trait, it must
-implement everything required by the trait or the code won't compile.
+implement everything required by the trait, or the code won't compile.
 
 ### Using a trait as a type bound
 
@@ -468,10 +468,9 @@ own types. These standard library traits include:
 * [`Representable`](/mojo/std/builtin/repr/Representable)
 * [`Sized`](/mojo/std/builtin/len/Sized)
 * [`Stringable`](/mojo/std/builtin/str/Stringable)
-* [`StringableRaising`](/mojo/std/builtin/str/StringableRaising)
 * [`Roundable`](/mojo/std/builtin/math/Roundable)
-* [`Writable`](/mojo/std/io/write/Writable)
-* [`Writer`](/mojo/std/io/write/Writer)
+* [`Writable`](/mojo/std/format/Writable)
+* [`Writer`](/mojo/std/format/Writer)
 
 The API reference docs linked above include usage examples for each trait. The
 following sections discuss a few of these traits.
@@ -534,10 +533,8 @@ True
 
 The [`Stringable`](/mojo/std/builtin/str/Stringable) trait identifies a type
 that can be explicitly converted to
-[`String`](/mojo/std/collections/string/string/String). The
-[`StringableRaising`](/mojo/std/builtin/str/StringableRaising) trait
-describes a type that can be converted to a `String`, but the conversion might
-raise an error. These traits also mean that the type can support both the `{!s}`
+[`String`](/mojo/std/collections/string/string/String).
+This traits also mean that the type can support both the `{!s}`
 and `{}` format specifiers of the `String` and `StringSlice` class's
 [`format()`](/mojo/std/collections/string/string/String#format) method. These
 traits require the type to define the
@@ -552,21 +549,29 @@ method, which should compute the "official" string representation of a type. If
 at all possible, this should look like a valid Mojo expression that could be
 used to recreate a struct instance with the same value.
 
-The [`Writable`](/mojo/std/io/write/Writable) trait describes a
-type that can be converted to a stream of UTF-8 encoded data by writing to a
-`Writer` object. The [`print()`](/mojo/std/builtin/io/print) function
-requires that its arguments conform to the `Writable` trait. This enables
-efficient stream-based writing by default, avoiding unnecessary intermediate
-String heap allocations.
+The [`Writable`](/mojo/std/format/Writable) trait describes a
+type that can produce a human-readable text representation by writing to a
+[`Writer`](/mojo/std/format/Writer) object. The [`print()`](/mojo/std/builtin/io/print)
+function requires that its arguments conform to the `Writable` trait. This
+enables efficient stream-based writing by default, avoiding unnecessary
+intermediate String heap allocations.
 
 The `Writable` trait requires a type to implement a
-[`write_to()`](/mojo/std/io/write/Writable#write_to) method, which
+[`write_to()`](/mojo/std/format/Writable#write_to) method, which
 is provided with an object that conforms to the
-[`Writer`](/mojo/std/io/write/Writer) as an argument. You then
+[`Writer`](/mojo/std/format/Writer) trait as an argument. You then
 invoke the `Writer` instance's
-[`write()`](/mojo/std/io/write/Writer#write) method to write a
+[`write()`](/mojo/std/format/Writer#write) method to write a
 sequence of `Writable` arguments constituting the `String` representation of
 your type.
+
+An important feature of the `Writer` trait is that it **only accepts valid UTF-8
+text**. This means that when you write data to a `Writer`, you can only use
+`StringSlice` values (via the
+[`write_string()`](/mojo/std/format/Writer#write_string) method) or other
+`Writable` types; you cannot write arbitrary bytes. This guarantee ensures that
+types like `String` can safely implement the `Writer` trait without risking
+corruption of their internal UTF-8 data.
 
 While this might sound complex at first, in practice you can minimize
 boilerplate and duplicated code by using the
@@ -610,43 +615,26 @@ String: Dog(Rex, 5)
 Representation: Dog(name='Rex', age=5)
 ```
 
-### The `ImplicitlyDestructible` trait
+### Lifetime management traits
 
-When building a generic container type, one challenge is knowing how to dispose
-of the contained items when the container is destroyed. Any type that
-dynamically allocates memory needs to supply a
-[destructor](/mojo/manual/lifecycle/death#destructor) (`__del__()` method)
-that must be called to free the allocated memory. But not all types have a
-destructor.
+Mojo provides two core traits for managing value lifetimes:
 
-The [`ImplicitlyDestructible`](/mojo/std/builtin/anytype/ImplicitlyDestructible)
-trait represents a type with a destructor. Almost all traits inherit from
-`ImplicitlyDestructible`, and all structs conform to `ImplicitlyDestructible` by
-default. For any type that conforms to `ImplicitlyDestructible` and doesn't
-define a destructor, Mojo generates a no-op destructor. This means you can call
-the destructor on any type that inherits from `ImplicitlyDestructible`.
+- [`AnyType`](/mojo/std/builtin/anytype/AnyType): The base trait that all types
+extend. Types conforming only to `AnyType` may require explicit destruction.
 
-:::note TODO
+- [`ImplicitlyDestructible`](/mojo/std/builtin/anytype/ImplicitlyDestructible):
+Types that can be automatically destroyed by calling `__del__()` when their lifetime ends.
 
-In the Mojo standard library docs you will also see a trait called
-[`AnyType`](/mojo/std/builtin/anytype/AnyType),
-which represents a type that may or may not have a destructor. All structs
-implicitly conform to this trait.
-
-This trait exists to support a feature called *linear* or *explicitly-destroyed*
-types. A linear type may not be destroyed by the compiler implicitly, and
-instead may only be destroyed when the programmer explicitly calls a named
-destructor method. The compiler will issue an error if a linear type becomes
-unused without being explicitly destroyed.
-
-:::
+For detailed information about value destruction, explicit destruction with the
+`@explicit_destroy` decorator, and when to use each approach, see [Death of a
+value](/mojo/manual/lifecycle/death).
 
 ## Generic structs with traits
 
 You can also use traits when defining a generic container. A generic container
 is a container (for example, an array or hashmap) that can hold different data
-types. In a dynamic language like Python it's easy to add  different types of
-items to a container. But in a statically-typed environment the compiler needs
+types. In a dynamic language like Python it's easy to add different types of
+items to a container. But in a statically-typed environment, the compiler needs
 to be able to identify the types at compile time. For example, if the container
 needs to copy a value, the compiler needs to verify that the type can be copied.
 
@@ -674,7 +662,7 @@ for i in range(len(list)):
 You can use traits to define requirements for elements that are stored in a
 container. For example, `List` requires elements that can be moved and
 copied. To store a struct in a `List`, the struct needs to conform to
-the `Copyable` trait, which require a
+the `Copyable` trait, which requires a
 [copy constructor](/mojo/manual/lifecycle/life#copy-constructor) and a
 [move constructor](/mojo/manual/lifecycle/life#move-constructor).
 
@@ -739,7 +727,7 @@ The following struct implements the `Stacklike` trait using a `List` as the
 underlying storage:
 
 ```mojo
-struct MyStack[type: Copyable](Stacklike):
+struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
     """A simple Stack built using a List."""
     comptime EltType = Self.type
     comptime list_type = List[Self.EltType]
@@ -769,7 +757,7 @@ Because a struct that conforms to `Copyable` is not necessarily
 printable, `MyStack` uses
 [conditional conformance](/mojo/manual/parameters/#conditional-conformance) to
 define a `dump()` method that works as long as the element type is
-[writable](/mojo/std/io/write/Writable/).
+[writable](/mojo/std/format/Writable/).
 
 The following code exercises this new trait by defining a generic method,
 `add_to_stack()` that adds an item to any `Stacklike` type.

@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import MagicMock, NonCallableMock
 
 import hf_repo_lock
 import numpy as np
@@ -27,6 +28,7 @@ from max.interfaces import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
+    TokenBuffer,
 )
 from max.pipelines import (
     PIPELINE_REGISTRY,
@@ -36,7 +38,26 @@ from max.pipelines import (
     TextTokenizer,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.lib import KVCacheConfig
 from test_common.mocks import mock_estimate_memory_footprint
+from transformers import AutoConfig
+
+
+def _create_mock_pipeline_config(model_path: str) -> MagicMock:
+    """Create a mock PipelineConfig with real HuggingFace config."""
+    hf_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+
+    mock_kv_cache_config = NonCallableMock(spec=KVCacheConfig)
+    mock_kv_cache_config.enable_prefix_caching = False
+
+    mock_model_config = MagicMock()
+    mock_model_config.huggingface_config = hf_config
+    mock_model_config.kv_cache = mock_kv_cache_config
+
+    pipeline_config = MagicMock()
+    pipeline_config.model = mock_model_config
+    return pipeline_config
+
 
 LLAMA_3_1_HF_REPO_ID = "meta-llama/Llama-3.1-8B-Instruct"
 LLAMA_3_1_HF_REVISION = hf_repo_lock.revision_for_hf_repo(LLAMA_3_1_HF_REPO_ID)
@@ -63,14 +84,16 @@ def test_text_and_vision_tokenizer() -> None:
     VALID_REPOS = {
         # This is not currently working for pixtral.
         "mistral-community/pixtral-12b": "[IMG]",
-        "meta-llama/Llama-3.2-11B-Vision-Instruct": "<|image|>",
     }
     img_url = "https://picsum.photos/id/237/200/300"
     img = convert_image_url_to_base64(img_url)
     imgs = [[], [img], [img, img]]
     for repo_id in VALID_REPOS:
         model_path = repo_id
-        tokenizer = TextAndVisionTokenizer(model_path, trust_remote_code=True)
+        pipeline_config = _create_mock_pipeline_config(model_path)
+        tokenizer = TextAndVisionTokenizer(
+            model_path, pipeline_config=pipeline_config, trust_remote_code=True
+        )
         for imgs_list in imgs:
             content = [
                 {"type": "text", "text": "What is in this image?"},
@@ -108,7 +131,8 @@ def test_text_tokenizer_with_tool_use(
     """
 
     model_path = llama_3_1_8b_instruct_local_path
-    tokenizer = TextTokenizer(model_path)
+    pipeline_config = _create_mock_pipeline_config(model_path)
+    tokenizer = TextTokenizer(model_path, pipeline_config=pipeline_config)
 
     request = TextGenerationRequest(
         request_id=RequestID("request_with_tools"),
@@ -151,8 +175,12 @@ def test_tokenizer__truncates_to_max_length(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
     max_length = 12
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
     tokenizer = TextTokenizer(
         llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
         max_length=max_length,
     )
 
@@ -162,7 +190,7 @@ def test_tokenizer__truncates_to_max_length(
         prompt="Short message",
     )
     context: TextContext = asyncio.run(tokenizer.new_context(short_request))
-    assert context.current_length < 12
+    assert len(context.tokens) < 12
 
     long_request = TextGenerationRequest(
         request_id=RequestID("request_with_short_message"),
@@ -176,14 +204,19 @@ def test_tokenizer__truncates_to_max_length(
 def test_tokenizer__with_prompt_as_list_of_int(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
-    tokenizer = TextTokenizer(llama_3_1_8b_instruct_local_path)
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        llama_3_1_8b_instruct_local_path, pipeline_config=pipeline_config
+    )
     request = TextGenerationRequest(
         request_id=RequestID(),
         model_name=llama_3_1_8b_instruct_local_path,
         prompt=[0, 1, 2, 3, 4, 5],
     )
     context = asyncio.run(tokenizer.new_context(request))
-    assert np.array_equal(context.tokens, np.array([0, 1, 2, 3, 4, 5]))
+    assert np.array_equal(context.tokens.all, np.array([0, 1, 2, 3, 4, 5]))
 
 
 def test_tokenizer__with_context_validation(
@@ -192,8 +225,12 @@ def test_tokenizer__with_context_validation(
     def raise_fn(context: TextContext | TextAndVisionContext) -> None:
         raise ValueError("test")
 
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
     tokenizer = TextTokenizer(
         llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
         trust_remote_code=True,
         context_validators=[raise_fn],
     )
@@ -212,20 +249,23 @@ def test_tokenizer_regression_MODELS_467() -> None:
     """Regression test for
     https://linear.app/modularml/issue/MODELS-467/[bug]-no-text-response-mistralaimistral-7b-instruct-v03
     """
+    model_path = "mistralai/Mistral-7B-Instruct-v0.3"
+    pipeline_config = _create_mock_pipeline_config(model_path)
     tokenizer = TextTokenizer(
-        "mistralai/Mistral-7B-Instruct-v0.3",
+        model_path,
+        pipeline_config=pipeline_config,
         revision="e0bc86c23ce5aae1db576c8cca6f06f1f73af2db",
         enable_llama_whitespace_fix=True,
         trust_remote_code=True,
     )
 
-    def rank1(items: list[int]) -> np.ndarray:  # type: ignore
+    def rank1(items: list[int]) -> np.ndarray:
         return np.array(items, dtype=np.uint32)
 
-    def rank0(item: int) -> np.ndarray:  # type: ignore
+    def rank0(item: int) -> np.ndarray:
         return rank1([item])[0]
 
-    def decode(tokens: np.ndarray) -> str:  # type: ignore
+    def decode(tokens: np.ndarray) -> str:
         return asyncio.run(tokenizer.decode(tokens))
 
     # Single token here needs preceding space, including rank-0.
@@ -241,15 +281,21 @@ def test_tokenizer_regression_MODELS_467() -> None:
 async def test_tokenizer__encode_and_decode(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
-    tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        model_path=llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
+    )
 
     test_string = "hi my name is"
     encoded = await tokenizer.encode(test_string, add_special_tokens=False)
     context = TextContext(
         max_length=10,
-        tokens=np.array(encoded),
+        tokens=TokenBuffer(np.array(encoded, dtype=np.int64)),
     )
-    assert context.current_length == len(encoded)
+    assert len(context.tokens) == len(encoded)
     decoded = await tokenizer.decode(encoded)
     assert test_string == decoded
 
@@ -271,7 +317,9 @@ def test_text_tokenizer_with_constrained_decoding(
         enable_structured_output=True,
     )
 
-    tokenizer = TextTokenizer(pipeline_config.model_config.model_path)
+    tokenizer = TextTokenizer(
+        pipeline_config.model.model_path, pipeline_config=pipeline_config
+    )
 
     prompt = """
     Please provide a json response, with the person's name and age extracted from the excerpt.
@@ -284,7 +332,7 @@ def test_text_tokenizer_with_constrained_decoding(
 
     request = TextGenerationRequest(
         request_id=RequestID("request_with_tools"),
-        model_name=pipeline_config.model_config.model_path,
+        model_name=pipeline_config.model.model_path,
         messages=[
             TextGenerationRequestMessage(
                 role="user",
@@ -317,7 +365,13 @@ def test_text_tokenizer_with_constrained_decoding(
 def test_tokenizer_encode_stop_criteria(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
-    tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        model_path=llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
+    )
 
     prompt = "hi my name is"
 
@@ -396,7 +450,7 @@ def test_tokenizer_stores_eos_token_ids(
     )
 
     # Test single eos token id
-    pipeline_config.model_config.huggingface_config.eos_token_id = 123456
+    pipeline_config.model.huggingface_config.eos_token_id = 123456
     tokenizer = TextTokenizer(
         model_path=modular_ai_llama_3_1_local_path,
         pipeline_config=pipeline_config,
@@ -404,7 +458,7 @@ def test_tokenizer_stores_eos_token_ids(
     assert tokenizer._default_eos_token_ids == {tokenizer.eos, 123456}
 
     # Test list of eos token ids
-    pipeline_config.model_config.huggingface_config.eos_token_id = [123, 456]
+    pipeline_config.model.huggingface_config.eos_token_id = [123, 456]
     tokenizer = TextTokenizer(
         model_path=modular_ai_llama_3_1_local_path,
         pipeline_config=pipeline_config,
@@ -439,7 +493,13 @@ def test_text_and_vision_tokenizer_stores_eos_token_ids(
 async def test_tokenizer__apply_chat_template_dict_list_vs_str_content(
     llama_3_1_8b_instruct_local_path,  # noqa: ANN001
 ) -> None:
-    tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        model_path=llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
+    )
 
     messages = [
         TextGenerationRequestMessage(
@@ -471,13 +531,19 @@ async def test_tokenizer__generate_prompt_and_token_ids(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
     """Test the _generate_prompt_and_token_ids method of TextTokenizer."""
-    tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        model_path=llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
+    )
 
     # Test with string prompt
     prompt = "Hello, how are you?"
     prompt_text, token_ids = await tokenizer._generate_prompt_and_token_ids(
         prompt=prompt,
-        messages=None,
+        messages=[],
     )
     assert isinstance(prompt_text, str)
     assert prompt_text == prompt
@@ -509,25 +575,6 @@ async def test_tokenizer__generate_prompt_and_token_ids(
     assert "Hello, how are you?" in prompt_text
     assert "I'm doing well, thank you!" in prompt_text
 
-    # Test with both prompt and messages (should raise ValueError)
-    with pytest.raises(
-        ValueError, match="both prompt and messages cannot be provided"
-    ):
-        await tokenizer._generate_prompt_and_token_ids(
-            prompt="test",
-            messages=messages,
-        )
-
-    # Test with neither prompt nor messages (should raise ValueError)
-    with pytest.raises(
-        ValueError,
-        match="either prompt must be provided as a list\\[int\\] or str, or messages must be provided as a list\\[TextGenerationRequestMessage\\]",
-    ):
-        await tokenizer._generate_prompt_and_token_ids(
-            prompt=None,
-            messages=None,
-        )
-
 
 @pytest.mark.asyncio
 async def test_custom_prompt_template() -> None:
@@ -546,8 +593,10 @@ ASSISTANT: {{ message['content'] }}
 ASSISTANT: {% endif %}"""
 
     # Create tokenizer with custom template
+    pipeline_config = _create_mock_pipeline_config(model_name)
     tokenizer = TextTokenizer(
         model_path=model_name,
+        pipeline_config=pipeline_config,
         trust_remote_code=True,
         chat_template=custom_template,
     )
@@ -578,6 +627,7 @@ ASSISTANT: {% endif %}"""
     # Compare with default template to ensure it's different
     default_tokenizer = TextTokenizer(
         model_path=model_name,
+        pipeline_config=pipeline_config,
         trust_remote_code=True,
     )
 
@@ -618,8 +668,10 @@ TOOLS AVAILABLE:
 ASSISTANT: {% endif %}"""
 
     # Create tokenizer with custom template
+    pipeline_config = _create_mock_pipeline_config(model_name)
     tokenizer = TextTokenizer(
         model_path=model_name,
+        pipeline_config=pipeline_config,
         trust_remote_code=True,
         chat_template=custom_template,
     )
@@ -686,8 +738,10 @@ ASSISTANT: {{ message['content'] }}
 {% endfor %}"""  # Note: missing closing }} for first message['content']
 
     # Create tokenizer with broken template
+    pipeline_config = _create_mock_pipeline_config(model_name)
     tokenizer = TextTokenizer(
         model_path=model_name,
+        pipeline_config=pipeline_config,
         trust_remote_code=True,
         chat_template=broken_template,
     )
@@ -722,8 +776,10 @@ async def test_default_template_error_passthrough() -> None:
     model_name = "HuggingFaceTB/SmolLM2-135M-Instruct"
 
     # Create tokenizer without custom template
+    pipeline_config = _create_mock_pipeline_config(model_name)
     tokenizer = TextTokenizer(
         model_path=model_name,
+        pipeline_config=pipeline_config,
         trust_remote_code=True,
     )
 
@@ -759,8 +815,10 @@ async def test_custom_template_new_context_integration() -> None:
 ASSISTANT: """
 
     # Create tokenizer with custom template
+    pipeline_config = _create_mock_pipeline_config(model_name)
     tokenizer = TextTokenizer(
         model_path=model_name,
+        pipeline_config=pipeline_config,
         trust_remote_code=True,
         chat_template=custom_template,
     )
@@ -789,7 +847,7 @@ ASSISTANT: """
     assert len(context.tokens) > 0
 
     # Decode the prompt tokens to verify our custom template was used
-    prompt_tokens = context.prompt_tokens
+    prompt_tokens = context.tokens.prompt
     decoded_prompt = await tokenizer.decode(prompt_tokens)
 
     # Should contain our custom format
@@ -803,7 +861,13 @@ async def test_tokenizer_decode_overflow_error_with_invalid_token_ids(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
     """Test that decode raises a helpful OverflowError when token IDs exceed vocab size."""
-    tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        model_path=llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
+    )
 
     vocab_size = len(tokenizer.delegate.vocab)
 
@@ -832,7 +896,13 @@ async def test_tokenizer_decode_overflow_error_with_negative_token_ids(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
     """Test that decode raises a helpful OverflowError when negative token IDs are present."""
-    tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        model_path=llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
+    )
 
     # Create a token array with negative values
     negative_tokens = np.array([1, -5, 3, -100, 5], dtype=np.int64)

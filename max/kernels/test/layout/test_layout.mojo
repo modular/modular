@@ -39,7 +39,7 @@ from layout.layout import (
     zipped_divide,
 )
 from math import ceildiv
-from testing import assert_equal
+from testing import assert_equal, assert_raises
 
 from utils import IndexList
 
@@ -704,7 +704,7 @@ def test_expand_modes_alike():
     comptime layout_1 = Layout(
         IntTuple(30, IntTuple(2, 2)), IntTuple(2, IntTuple(60, 1))
     )
-    comptime ema0 = expand_modes_alike(layout_0, layout_1)
+    var ema0 = materialize[expand_modes_alike(layout_0, layout_1)]()
     # CHECK: (((3, (5, 2)), (2, 2)):((1, (24, 12)), (3, 6)))
     print(ema0[0])
     # CHECK: (((3, (5, 2)), (2, 2)):((2, (6, 30)), (60, 1)))
@@ -717,23 +717,23 @@ def test_expand_modes_alike():
         ),
     )
     comptime layout_3 = Layout(IntTuple(2310, IntTuple(2, 2)))
-    comptime ema1 = expand_modes_alike(layout_2, layout_3)
+    var ema1 = materialize[expand_modes_alike(layout_2, layout_3)]()
     # CHECK: (((3, (((7, 11), 5), 2)), (2, 2)):((1, (((120, 840), 24), 12)), (3, 6)))
     print(ema1[0])
     # CHECK: (((3, (((7, 11), 5), 2)), (2, 2)):((1, (((3, 21), 231), 1155)), (2310, 4620)))
     print(ema1[1])
 
-    comptime ema2 = expand_modes_alike(
-        Layout(IntTuple(2, 2), IntTuple(2, 1)), Layout(4)
-    )
+    var ema2 = materialize[
+        expand_modes_alike(Layout(IntTuple(2, 2), IntTuple(2, 1)), Layout(4))
+    ]()
     # CHECK: ((2, 2):(2, 1))
     print(ema2[0])
     # CHECK: ((2, 2):(1, 2))
     print(ema2[1])
 
-    comptime ema3 = expand_modes_alike(
-        Layout(IntTuple(3, 4), IntTuple(2, 6)), Layout(12)
-    )
+    var ema3 = materialize[
+        expand_modes_alike(Layout(IntTuple(3, 4), IntTuple(2, 6)), Layout(12))
+    ]()
     # CHECK: ((3, 4):(2, 6))
     print(ema3[0])
     # CHECK: ((3, 4):(1, 3))
@@ -885,9 +885,12 @@ def test_iter():
     assert_equal(next(it), Layout(2, 12))
     assert_equal(next(it), Layout(3, 4))
     assert_equal(next(it), Layout(4, 1))
-    assert_equal(it.__has_next__(), False)
+    with assert_raises():
+        _ = next(it)  # raises StopIteration
     var layout2 = Layout()
-    assert_equal(iter(layout2).__has_next__(), False)
+    with assert_raises():
+        var it = iter(layout2)
+        _ = it.__next__()  # raises StopIteration
 
 
 def test_arange_nested_layout():

@@ -20,12 +20,10 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
 
-import numpy as np
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
-    ShapeLike,
     ShardingStrategy,
     TensorValue,
     TensorValueLike,
@@ -33,25 +31,15 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.graph.weights import Weights
 from max.nn.float8_config import (
     Float8Config,
     Float8ScaleGranularity,
 )
-from max.nn.kernels import (
-    convert_weights_to_fp8_fnuz_if_needed,
-)
+from max.nn.float8_ops import matmul_float4, matmul_float8
 from max.support.math import ceildiv
 
 from .clamp import clamp
-from .kernels import (
-    dynamic_scaled_matmul,
-    matmul_static_scaled_float8,
-    quantize_dynamic_scaled_float8,
-    quantize_static_scaled_float8,
-    swish_glu,
-)
-from .layer import Layer, Module, Shardable
+from .layer import Module, Shardable
 
 
 class Linear(Module, Shardable):
@@ -139,7 +127,14 @@ class Linear(Module, Shardable):
             self.weight = Weight(
                 name=f"{name}.weight" if name else "weight",
                 dtype=dtype,
-                shape=(out_dim, in_dim),
+                shape=(
+                    out_dim,
+                    in_dim // 2
+                    if float8_config
+                    and float8_config.quant_method == "modelopt"
+                    and float8_config.quant_algo == "NVFP4"
+                    else in_dim,
+                ),
                 device=device,
                 quantization_encoding=quantization_encoding,
             )
@@ -183,29 +178,8 @@ class Linear(Module, Shardable):
                     "Only TENSOR, COLWISE and BLOCK granularities are supported, currently"
                 )
 
-            weight_scale_shape: tuple[int, ...]
             weight_scale = float8_config.weight_scale
-            if weight_scale.is_rowwise:
-                weight_scale_shape = (int(self.weight.shape[0]), 1)
-            elif weight_scale.is_tensor:
-                weight_scale_shape = ()
-            elif weight_scale.is_block:
-                assert float8_config.weight_scale.block_size is not None
-                weight_scale_shape = (
-                    ceildiv(
-                        int(self.weight.shape[0]),
-                        float8_config.weight_scale.block_size[0],
-                    ),
-                    ceildiv(
-                        int(self.weight.shape[1]),
-                        float8_config.weight_scale.block_size[1],
-                    ),
-                )
-            else:
-                raise ValueError(
-                    "only row-wise and tensor scaling are "
-                    f"supported currently, but got {weight_scale.granularity}"
-                )
+            weight_scale_shape = self._infer_weight_scale_shape(float8_config)
 
             self.weight_scale = Weight(
                 name=f"{name}.weight_scale" if name else "weight_scale",
@@ -216,6 +190,46 @@ class Linear(Module, Shardable):
                 device=DeviceRef.CPU(),
                 quantization_encoding=quantization_encoding,
             )
+            if (
+                float8_config
+                and float8_config.quant_method == "modelopt"
+                and float8_config.quant_algo == "NVFP4"
+            ):
+                self.weight_scale_2 = Weight(
+                    name=f"{name}.weight_scale_2" if name else "weight_scale_2",
+                    dtype=float8_config.input_scale.dtype,
+                    shape=(),
+                    device=DeviceRef.CPU(),
+                    quantization_encoding=quantization_encoding,
+                )
+
+    def _infer_weight_scale_shape(
+        self, float8_config: Float8Config
+    ) -> tuple[int, ...]:
+        weight_scale_shape: tuple[int, ...]
+        weight_scale = float8_config.weight_scale
+        if weight_scale.is_rowwise:
+            weight_scale_shape = (int(self.weight.shape[0]), 1)
+        elif weight_scale.is_tensor:
+            weight_scale_shape = ()
+        elif weight_scale.is_block:
+            assert float8_config.weight_scale.block_size is not None
+            weight_scale_shape = (
+                ceildiv(
+                    int(self.weight.shape[0]),
+                    float8_config.weight_scale.block_size[0],
+                ),
+                ceildiv(
+                    int(self.weight.shape[1]),
+                    float8_config.weight_scale.block_size[1],
+                ),
+            )
+        else:
+            raise ValueError(
+                "only row-wise and tensor scaling are "
+                f"supported currently, but got {weight_scale.granularity}"
+            )
+        return weight_scale_shape
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -396,37 +410,24 @@ class Linear(Module, Shardable):
             assert self.weight_scale is not None
             weight_scale: TensorValue = self.weight_scale
 
-            weight, weight_scale = convert_weights_to_fp8_fnuz_if_needed(
-                weight, weight_scale
-            )
-
-            if self.input_scale is not None:
-                x = quantize_static_scaled_float8(
-                    x, self.input_scale, out_type=weight.dtype
-                )
-
-                res = matmul_static_scaled_float8(
-                    x, weight, self.input_scale, weight_scale
+            if self.float8_config.quant_method == "modelopt":
+                assert self.input_scale is not None
+                assert self.weight_scale_2 is not None
+                res = matmul_float4(
+                    x,
+                    self.weight,
+                    weight_scale,
+                    self.input_scale,
+                    self.weight_scale_2,
+                    self.float8_config,
                 )
             else:
-                x, x_scales = quantize_dynamic_scaled_float8(
+                res = matmul_float8(
                     x,
-                    self.float8_config.input_scale,
-                    self.float8_config.weight_scale,
-                    scales_type=weight_scale.dtype,
-                    out_type=weight.dtype,
-                )
-                if self.device:
-                    weight_scale = weight_scale.to(self.device)
-
-                res = dynamic_scaled_matmul(
-                    x,
-                    weight,
-                    x_scales,
+                    self.weight,
                     weight_scale,
-                    self.float8_config.input_scale,
-                    self.float8_config.weight_scale,
-                    out_type=DType.bfloat16,
+                    self.input_scale,
+                    self.float8_config,
                 )
         else:
             res = x @ weight.T
@@ -563,287 +564,6 @@ class ColumnParallelLinear(Linear):
         return ops.allgather(linear_outs, signal_buffers, axis=-1)
 
 
-def _allocate_if_needed(
-    value: Weights | Weight, dtype: DType, shape: ShapeLike
-) -> Weight:
-    if isinstance(value, Weight):
-        return value
-    else:
-        return value.weight.allocate(dtype, shape)
-
-
-@dataclass
-class LinearV1(Layer):
-    """A unified linear layer that delegates to either regular or quantized implementation.
-
-    .. deprecated:: 25.5
-        Use :obj:`Linear` instead.
-    """
-
-    weight: TensorValueLike
-    """The weight tensor for the linear transformation."""
-
-    bias: TensorValueLike | None = None
-    """Optional bias tensor for the linear transformation."""
-
-    def __call__(self, x: TensorValue) -> TensorValue:
-        """Applies the linear transformation to the input.
-
-        Args:
-            x: Input tensor to transform.
-
-        Returns:
-            The transformed tensor after applying the linear layer.
-        """
-        weight = TensorValue(self.weight)
-        if weight.type.device != x.type.device:
-            weight = weight.to(x.type.device)
-        res = x @ weight.T
-        if self.bias is not None:
-            bias = TensorValue(self.bias)
-            if bias.type.device != x.type.device:
-                bias = bias.to(x.type.device)
-            res += bias
-        return res
-
-    @classmethod
-    def create(
-        cls,
-        dtype: DType,
-        quantization_encoding: QuantizationEncoding | None,
-        in_features: int,
-        out_features: int,
-        weights: Weights | Weight,
-        bias: Weights | Weight | None = None,
-        quantization_config: QuantizationConfig | None = None,
-    ) -> LinearV1:
-        """Factory method to create a :obj:`LinearV1` layer with appropriate implementation.
-
-        Args:
-            dtype: The :obj:`DType` for the layer.
-            quantization_encoding: The :obj:`QuantizationEncoding` for the weights.
-            in_features: The input feature dimension.
-            out_features: The output feature dimension.
-            weights: The :obj:`Weights` or :obj:`Weight` object for the layer.
-            bias: Optional :obj:`Weights` or :obj:`Weight` object for bias.
-            quantization_config: Optional :obj:`QuantizationConfig` for quantization.
-
-        Returns:
-            A :obj:`LinearV1` instance.
-        """
-        if not quantization_encoding:
-            weight = _allocate_if_needed(
-                weights, dtype, [in_features, out_features]
-            )
-            bias_weight = (
-                _allocate_if_needed(bias, dtype, [out_features])
-                if bias
-                else None
-            )
-            return LinearV1(weight=weight, bias=bias_weight)
-        else:
-            return QLinearV1._create(
-                dtype,
-                quantization_encoding,
-                in_features,
-                out_features,
-                weights,
-                bias,
-                quantization_config,
-            )
-
-
-@dataclass
-class QLinearV1(LinearV1):
-    """A quantized fully connected layer.
-
-    .. deprecated:: 25.5
-        Use :obj:`Linear` instead.
-    """
-
-    quantization_encoding: QuantizationEncoding | None = None
-    """The :obj:`QuantizationEncoding` for the quantized weights."""
-
-    @classmethod
-    def _create(
-        cls,
-        dtype: DType,
-        quantization_encoding: QuantizationEncoding,
-        in_features: int,
-        out_features: int,
-        weights: Weights | Weight,
-        bias: Weights | Weight | None,
-        quantization_config: QuantizationConfig | None,
-    ) -> LinearV1:
-        if quantization_encoding != QuantizationEncoding.GPTQ:
-            weight = _allocate_if_needed(
-                weights, dtype, [in_features, out_features]
-            )
-            bias_weight = (
-                _allocate_if_needed(bias, dtype, [out_features])
-                if bias
-                else None
-            )
-            return QLinearV1(
-                weight=weight,
-                bias=bias_weight,
-                # GGUF weights can have different quantization per weight
-                quantization_encoding=weight.quantization_encoding,
-            )
-        else:
-            return GPTQLinearV1._create(
-                dtype,
-                quantization_encoding,
-                in_features,
-                out_features,
-                weights,
-                bias,
-                quantization_config,
-            )
-
-    def __call__(self, x: TensorValue) -> TensorValue:
-        """Applies the quantized linear transformation to the input.
-
-        Args:
-            x: Input tensor to transform.
-
-        Returns:
-            The transformed tensor after applying the quantized linear layer.
-        """
-        assert self.quantization_encoding is not None
-        weight = TensorValue(self.weight)
-        weight = weight.to(x.type.device)
-        res = ops.qmatmul(self.quantization_encoding, None, x, weight)
-        if self.bias is not None:
-            bias = TensorValue(self.bias).to(x.type.device or DeviceRef.CPU())
-            res += bias
-        return res
-
-
-@dataclass
-class GPTQLinearV1(QLinearV1):
-    """A :obj:`Linear` layer for GPTQ encoding.
-
-    .. deprecated:: 25.5
-        Use :obj:`GPTQLinear` instead.
-    """
-
-    quantization_config: QuantizationConfig | None = None
-    """The :obj:`QuantizationConfig` for GPTQ quantization."""
-
-    perm_idx: TensorValueLike | None = None
-    """Optional permutation indices for GPTQ quantization."""
-
-    @classmethod
-    def _create(
-        cls,
-        dtype: DType,
-        quantization_encoding: QuantizationEncoding,
-        in_features: int,
-        out_features: int,
-        weights: Weights | Weight,
-        bias: Weights | Weight | None,
-        quantization_config: QuantizationConfig | None,
-    ) -> LinearV1:
-        """Internal method to create a :obj:`LinearV1` layer from GPTQ weights.
-
-        Args:
-            dtype: The :obj:`DType` for the layer.
-            quantization_encoding: The :obj:`QuantizationEncoding` for GPTQ.
-            in_features: The input feature dimension.
-            out_features: The output feature dimension.
-            weights: The :obj:`Weights` or :obj:`Weight` object for the layer.
-            bias: Optional :obj:`Weights` or :obj:`Weight` object for bias.
-            quantization_config: The :obj:`QuantizationConfig` for GPTQ.
-
-        Returns:
-            A :obj:`LinearV1` instance.
-        """
-        assert quantization_config, (
-            "QuantizationConfig must be provided for GPTQLinear"
-        )
-
-        assert quantization_config.sym, "GPTQ with sym=False is not supported."
-
-        desc_act = quantization_config.desc_act
-
-        perm_idx = None
-
-        if isinstance(weights, Weights) and weights.qweight.exists():
-            orig_quantized_weights = [weights.qweight, weights.scales]
-            quantized_weights = []
-            for idx, qw in enumerate(orig_quantized_weights):  # noqa: B007
-                orig = qw.allocate()
-                # TODO(AITLIB-135): allocate_as_bytes is only available for
-                # safetensors. This isn't a problem right now because gptq is
-                # only present for safetensors
-                weight_bytes = qw.allocate_as_bytes()  # type: ignore
-                assert len(orig.shape) == 2
-                reshaped = ops.reshape(
-                    weight_bytes,
-                    (orig.shape[0] * orig.dtype.size_in_bytes, orig.shape[1]),
-                ).transpose(0, 1)
-                quantized_weights.append(reshaped)
-
-            weight = ops.concat(
-                (quantized_weights[0], quantized_weights[1]), axis=1
-            ).transpose(0, 1)
-
-            if desc_act:
-                perm_idx = weights.g_idx.allocate(DType.int32, [out_features])
-                # hack: argsort the perm_idx array
-                weights._allocated[perm_idx.name] = np.argsort(  # type: ignore
-                    weights._allocated[perm_idx.name]  # type: ignore
-                ).astype(np.int32)
-
-            return GPTQLinearV1(
-                weight=weight,
-                bias=None,
-                quantization_encoding=quantization_encoding,
-                quantization_config=quantization_config,
-                perm_idx=perm_idx,
-            )
-
-        else:
-            weight = _allocate_if_needed(
-                weights, DType.bfloat16, [in_features, out_features]
-            )
-            bias_weight = (
-                _allocate_if_needed(bias, dtype, [out_features])
-                if bias
-                else None
-            )
-            return LinearV1(weight, bias_weight)
-
-    def __call__(self, x: TensorValue) -> TensorValue:
-        """Applies the GPTQ quantized linear transformation to the input.
-
-        Args:
-            x: Input tensor to transform.
-
-        Returns:
-            The transformed tensor after applying the GPTQ quantized linear layer.
-        """
-        assert self.quantization_encoding is not None
-        weight = TensorValue(self.weight)
-        if self.perm_idx is not None:
-            perm_idx = TensorValue(self.perm_idx)
-            res = ops.qmatmul(
-                self.quantization_encoding,
-                self.quantization_config,
-                ops.gather(x, perm_idx, axis=(x.rank - 1)),
-                weight,
-                perm_idx,
-            )
-        else:
-            res = ops.qmatmul(
-                self.quantization_encoding, self.quantization_config, x, weight
-            )
-        if self.bias is not None:
-            res += TensorValue(self.bias)
-        return res
-
-
 @dataclass
 class GPTQLinear(Linear):
     """A :obj:`Linear` layer for GPTQ encoding."""
@@ -958,48 +678,6 @@ class GPTQLinear(Linear):
         if self.bias is not None:
             res += TensorValue(self.bias)
         return res
-
-
-@dataclass
-class MLPV1(Layer):
-    """Simple multi-layer perceptron composed of three :obj:`LinearV1` layers.
-
-    Uses SiLU activation function.
-
-    .. deprecated:: 25.5
-        Use :obj:`MLP` instead.
-    """
-
-    gate_proj: LinearV1
-    """The gate projection :obj:`LinearV1` layer."""
-
-    down_proj: LinearV1
-    """The down projection :obj:`LinearV1` layer."""
-
-    up_proj: LinearV1
-    """The up projection :obj:`LinearV1` layer."""
-
-    def __call__(self, x: TensorValueLike) -> TensorValue:
-        """Applies the MLP transformation to the input.
-
-        Args:
-            x: Input tensor to transform.
-
-        Returns:
-            The transformed tensor after applying the MLP layers.
-        """
-        if (
-            self.gate_proj.bias is None
-            and self.up_proj.bias is None
-            and TensorValue(x).rank == 2
-            and TensorValue(x).device != DeviceRef.CPU()
-            and False  # GEX-1476: This causes elaboration errors - disable swish_glu pathway.
-        ):
-            return self.down_proj(
-                swish_glu(x, self.gate_proj.weight, self.up_proj.weight)
-            )
-
-        return self.down_proj(ops.silu(self.gate_proj(x)) * self.up_proj(x))  # type: ignore
 
 
 _ACTIVATION_FUNCTIONS = {

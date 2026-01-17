@@ -16,7 +16,7 @@
 
 fn test_cannot_cast_immutable_to_mutable[
     T: AnyType
-](p: UnsafePointer[mut=True, T, **_]):
+](p: UnsafePointer[mut=True, T, ...]):
     pass
 
 
@@ -24,5 +24,8 @@ def main():
     var x = 42
 
     var p = UnsafePointer(to=x).as_immutable()
-    # CHECK: constraint failed: Invalid UnsafePointer conversion from immutable to mutable
+    # FIXME: this probably should be a parameter inference error, not the type
+    # conversion error.
+
+    # CHECK: invalid call to 'test_cannot_cast_immutable_to_mutable': value passed to 'p' cannot be converted from 'UnsafePointer[Int, {{.*}}]' to 'UnsafePointer[T, {{.*}}]'
     test_cannot_cast_immutable_to_mutable(p)

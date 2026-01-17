@@ -21,7 +21,8 @@ from gpu.host import DeviceContext
 from gpu.host.compile import _compile_code, get_gpu_target
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from internal_utils import assert_almost_equal, random, zero
+from internal_utils import assert_almost_equal
+from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul.gpu.sm100.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
@@ -128,6 +129,11 @@ fn test_ptx[
     comptime M = c_layout.shape[0].value()
     comptime N = c_layout.shape[1].value()
     comptime K = a_layout.shape[1].value()
+
+    # This can be used to get an actual PTX file to compare against.
+    # with open("/tmp/actual_ptx.txt", "w") as f:
+    #    f.write_all(ptx.as_bytes())
+
     var expected_ptx = reference_ptx[M, N, K]()
     assert_equal(ptx, expected_ptx)
 

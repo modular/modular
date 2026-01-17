@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from builtin.constrained import _constrained_field_conforms_to
+from reflection import struct_field_names, struct_field_types
+
 
 @deprecated(use=Equatable)
 comptime EqualityComparable = Equatable
@@ -19,10 +22,35 @@ comptime EqualityComparable = Equatable
 
 trait Equatable:
     """A type which can be compared for equality with other instances of itself.
+
+    The `Equatable` trait has a default implementation of `__eq__()` that uses
+    reflection to compare all fields. This means simple structs can conform to
+    `Equatable` without implementing any methods:
+
+    ```mojo
+    @fieldwise_init
+    struct Point(Equatable):
+        var x: Int
+        var y: Int
+
+    var p1 = Point(1, 2)
+    var p2 = Point(1, 2)
+    print(p1 == p2)  # True
+    ```
+
+    All fields must conform to `Equatable`. Override `__eq__()` for custom
+    equality semantics.
+
+    Note: The default implementation performs memberwise equality comparison.
+    This may not be appropriate for types containing floating-point fields
+    (due to NaN semantics) or types requiring custom equality logic.
     """
 
     fn __eq__(self, other: Self) -> Bool:
         """Define whether two instances of the object are equal to each other.
+
+        The default implementation uses reflection to compare all fields for
+        equality. All fields must conform to `Equatable`.
 
         Args:
             other: Another instance of the same type.
@@ -31,7 +59,25 @@ trait Equatable:
             True if the instances are equal according to the type's definition
             of equality, False otherwise.
         """
-        ...
+
+        # Default implementation using reflection: compare all fields
+        comptime names = struct_field_names[Self]()
+        comptime types = struct_field_types[Self]()
+
+        @parameter
+        for i in range(names.size):
+            comptime T = types[i]
+            _constrained_field_conforms_to[
+                conforms_to(T, Equatable),
+                Parent=Self,
+                FieldIndex=i,
+                ParentConformsTo="Equatable",
+            ]()
+            if trait_downcast[Equatable](
+                __struct_field_ref(i, self)
+            ) != trait_downcast[Equatable](__struct_field_ref(i, other)):
+                return False
+        return True
 
     @always_inline
     fn __ne__(self, other: Self) -> Bool:

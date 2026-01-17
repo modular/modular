@@ -28,7 +28,7 @@ from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import barrier, block_dim, global_idx, thread_idx
-from gpu.grid_controls import PDLLevel
+from gpu.primitives.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import A100, B200, H100, MI355X, GPUInfo
 from layout import LayoutTensor, RuntimeLayout
@@ -36,11 +36,9 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
 from logger import Logger
-from memory import (
-    LegacyUnsafePointer as UnsafePointer,
-    bitcast,
-    stack_allocation,
-)
+from memory import LegacyUnsafePointer, bitcast, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils import Index, IndexList
 from utils.numerics import get_accum_type
@@ -413,13 +411,13 @@ fn _matmul_gpu[
     comptime amd_float8_dtypes = (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
-    ) if ctx.default_device_info is MI355X else (
+    ) if ctx.default_device_info == MI355X else (
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
     )
 
     comptime matmul_supported_format_amd = (
-        (a_type is DType.bfloat16 or a_type in amd_float8_dtypes)
+        (a_type == DType.bfloat16 or a_type in amd_float8_dtypes)
         and b_type == a_type
         and c_type in (DType.float32, DType.bfloat16)
     )
@@ -455,9 +453,9 @@ fn _matmul_gpu[
     # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
     # TODO: Need to find a better dispatch strategy.
     var h100_matmul_cond = (
-        materialize[ctx.default_device_info is H100]()
+        materialize[ctx.default_device_info == H100]()
         and n % 8 == 0
-        and a_type is DType.bfloat16
+        and a_type == DType.bfloat16
     )
     var amdgpu_matmul_cond = has_amd_gpu_accelerator() and n % 4 == 0
     var multi_gemm_cond = (
@@ -512,7 +510,7 @@ fn _matmul_gpu[
         ](c, a, b, ctx)
 
     @parameter
-    if ctx.default_device_info is H100:
+    if ctx.default_device_info == H100:
         var status = matmul_dispatch_sm90[
             c_type,
             a_type,
@@ -674,7 +672,7 @@ fn _matmul_gpu[
                 if (
                     a_type == b_type
                     and a_type.is_half_float()
-                    and ctx.default_device_info is A100
+                    and ctx.default_device_info == A100
                     and transpose_b
                 ):
                     comptime Ms: List[Int32] = [
@@ -779,7 +777,7 @@ fn _matmul_gpu[
         elementwise_lambda_fn=elementwise_lambda_wrapper,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c_layout_tensor,
         a_layout_tensor,
         b_layout_tensor,
@@ -886,7 +884,7 @@ fn multistage_gemm[
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
 
-        ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
+        ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
             tensor_c,
             tensor_a,
             tensor_b,
@@ -913,7 +911,7 @@ fn multistage_gemm[
             config,
             elementwise_lambda_fn,
         ]
-        ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
+        ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
             tensor_c,
             tensor_a,
             tensor_b,
@@ -994,7 +992,7 @@ fn multistage_gemm[
 
         @parameter
         if has_amd_gpu_accelerator():
-            ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
+            ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
                 tensor_c,
                 tensor_a,
                 tensor_b,
@@ -1004,7 +1002,7 @@ fn multistage_gemm[
                 block_dim=runtime_config.block_dim(),
             )
         else:
-            ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
+            ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
                 tensor_c,
                 tensor_a,
                 tensor_b,
@@ -1046,7 +1044,7 @@ fn multistage_gemm[
             config=config,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
-        ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
+        ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
             tensor_c,
             tensor_a,
             tensor_b,
@@ -1074,7 +1072,7 @@ fn multistage_gemm[
             elementwise_lambda_fn,
         ]
 
-        ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
+        ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
             tensor_c,
             tensor_a,
             tensor_b,

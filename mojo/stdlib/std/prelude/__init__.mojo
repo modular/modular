@@ -10,7 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Standard library prelude: fundamental types, traits, and operations auto-imported."""
+"""Standard library prelude: fundamental types, traits, and operations auto-imported.
+
+This package's contents form the basic vocabulary of Mojo programming that every
+developer uses. It is implicitly imported to every Mojo program.
+
+The `prelude` package contains the core types, traits, and functions that are
+automatically imported into every Mojo program. It provides the foundational
+building blocks of the language including basic types (Int, String, Bool),
+essential traits (Copyable, Movable, Equatable), memory primitives (Pointer,
+Span), and common operations (print, len, range). This package defines the
+default namespace that makes Mojo code immediately usable without explicit
+imports.
+"""
 
 from collections import Dict, InlineArray, KeyElement, List, Optional
 from collections.string import (
@@ -24,8 +36,8 @@ from collections.string import (
     chr,
     ord,
 )
+from format import Writable, Writer
 from hashlib.hash import Hashable, hash
-from io import Writable, Writer
 from io.file import FileHandle, open
 from io.file_descriptor import FileDescriptor
 from io.io import input, print
@@ -71,7 +83,12 @@ from builtin.math import (
 )
 from builtin.none import NoneType
 from builtin.range import range
-from builtin.rebind import rebind, rebind_var, trait_downcast
+from builtin.rebind import (
+    rebind,
+    rebind_var,
+    trait_downcast,
+    trait_downcast_var,
+)
 from builtin.repr import Representable, repr
 from builtin.reversed import ReversibleRange, reversed
 from builtin.simd import (
@@ -101,12 +118,12 @@ from builtin.simd import (
     UInt256,
 )
 from builtin.sort import partition, sort
-from builtin.str import Stringable, StringableRaising
+from builtin.str import Stringable
 from builtin.string_literal import StringLiteral
 from builtin.swap import swap
 from builtin.tuple import Tuple
 from builtin.type_aliases import (
-    AnyTrivialRegType,
+    __TypeOfAllTypes,
     ImmutAnyOrigin,
     ImmutOrigin,
     MutAnyOrigin,
@@ -115,6 +132,10 @@ from builtin.type_aliases import (
     Origin,
     OriginSet,
     StaticConstantOrigin,
+    ExternalOrigin,
+    ImmutExternalOrigin,
+    MutExternalOrigin,
+    unsafe_origin_mutcast,
 )
 from builtin.uint import UInt
 from builtin.value import (
@@ -125,9 +146,23 @@ from builtin.value import (
     Movable,
     materialize,
 )
-from builtin.variadics import VariadicList, VariadicListMem, VariadicPack
+from builtin.variadics import (
+    Variadic,
+    VariadicList,
+    VariadicListMem,
+    VariadicPack,
+)
 from documentation import doc_private
-from iter import Iterable, Iterator, enumerate, iter, map, next, zip
+from iter import (
+    Iterable,
+    Iterator,
+    StopIteration,
+    enumerate,
+    iter,
+    map,
+    next,
+    zip,
+)
 from memory import (
     alloc,
     AddressSpace,

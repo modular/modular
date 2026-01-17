@@ -66,7 +66,7 @@ fn _quicksort_partition_right[
 
     var left = 1
     var right = size - 1
-    var ref pivot_value = span.unsafe_get(0)
+    ref pivot_value = span.unsafe_get(0)
 
     while True:
         # no need for left < right since quick sort pick median of 3 as pivot
@@ -95,7 +95,7 @@ fn _quicksort_partition_left[
 
     var left = 1
     var right = size - 1
-    var ref pivot_value = span.unsafe_get(0)
+    ref pivot_value = span.unsafe_get(0)
 
     while True:
         while left < right and not cmp_fn(pivot_value, span.unsafe_get(left)):
@@ -259,6 +259,9 @@ fn _quicksort[
 # ===-----------------------------------------------------------------------===#
 
 
+# This is being passed mutable origins that are taken from the same memory
+# object, so of course they alias.  The caller guarantees they don't overlap.
+@__unsafe_disable_nested_origin_exclusivity
 fn _merge[
     T: Copyable,
     span_origin: MutOrigin,
@@ -345,7 +348,7 @@ fn _stable_sort_impl[
             var span1 = span.unsafe_subspan(offset=j, length=merge_size)
             var span2 = span.unsafe_subspan(
                 offset=j + merge_size,
-                length=min(merge_size, max(0, size - (j + merge_size))),
+                length=min(merge_size, max(size - (j + merge_size), 0)),
             )
             _merge[cmp_fn](span1, span2, temp_buff)
             for i in range(merge_size + len(span2)):
@@ -496,7 +499,7 @@ fn sort[
     The function doesn't return anything, the span is updated in-place.
 
     Parameters:
-        T: Copyable type of the underlying data.
+        T: Type of the underlying data.
         origin: Origin of span.
         cmp_fn: The comparison function.
         stable: Whether the sort should be stable.

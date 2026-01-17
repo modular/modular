@@ -33,9 +33,11 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import A100, is_cpu, is_valid_target
 from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.tma_async import TMATensorTile, create_tma_tile
+from layout.tma_async import TMATensorTile, create_tensor_tile, create_tma_tile
 from logger import Logger
-from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
+from memory import LegacyUnsafePointer, memset_zero
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from gpu.host.info import B200, H100
@@ -87,7 +89,7 @@ comptime elementwise_epilogue_type = fn[
 @always_inline
 fn _get_batch_dims[
     rank: Int
-](flat_index: Int, shape: IndexList[rank, **_], out res: type_of(shape)):
+](flat_index: Int, shape: IndexList[rank, ...], out res: type_of(shape)):
     res = {}
     var curr_index = flat_index
 
@@ -102,7 +104,7 @@ fn _get_batch_dims[
 # A utility to reshape NDBuffer with rank > 3 to rank-3.
 @always_inline
 fn _reshape_nd_buffer_with_batch_to_3d(
-    buffer: NDBuffer[*_, **_],
+    buffer: NDBuffer[...],
 ) -> NDBuffer[
     buffer.type,
     3,
@@ -172,7 +174,7 @@ fn _reshape_layout_tensor_with_batch_to_3d[
     c_layout: Layout,
     reshape_layout: Layout = _reshape_to_3d[c_layout](),
 ](
-    tensor: LayoutTensor[c_type, c_layout, *_, **_],
+    tensor: LayoutTensor[c_type, c_layout, ...],
 ) -> LayoutTensor[
     tensor.dtype,
     reshape_layout,
@@ -380,9 +382,9 @@ fn batched_matmul[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank, *_],
-    a_buf: NDBuffer[a_type, rank, *_],
-    b_buf: NDBuffer[b_type, rank, *_],
+    c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
+    a_buf: NDBuffer[a_type, rank, _, _, _],
+    b_buf: NDBuffer[b_type, rank, _, _, _],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -534,11 +536,11 @@ fn _batched_matmul_cpu[
         for batch in range(batch_start, batch_start + batches_per_task):
             # Get a 2D view of the 3D Tensor.
             var c_view = NDBuffer[c_type, 2](
-                c.data.offset(batch * c_stride_between_batches),
+                c.data + batch * c_stride_between_batches,
                 IndexList[2](c.dim[1](), c.dim[2]()),
             )
             var a_view = NDBuffer[a_type, 2, MutAnyOrigin](
-                a.data.offset(batch * a_stride_between_batches),
+                a.data + batch * a_stride_between_batches,
                 IndexList[2](a.dim[1](), a.dim[2]()),
             )
 
@@ -559,7 +561,7 @@ fn _batched_matmul_cpu[
                 packA_i8mm[a_type](0, m, k, a_view.data, a_packed_ptr)
 
             var b_view = NDBuffer[b_type, 2](
-                b.data.offset(batch * b_stride_between_batches),
+                b.data + batch * b_stride_between_batches,
                 IndexList[2](b.dim[1](), b.dim[2]()),
             )
 
@@ -769,7 +771,7 @@ fn batched_matmul_kernel_gpu[
 @always_inline
 fn get_shape_index_list[
     rank: Int, dtype: DType, layout: Layout
-](tensor: LayoutTensor[dtype, layout, *_, **_]) -> IndexList[rank]:
+](tensor: LayoutTensor[dtype, layout, ...]) -> IndexList[rank]:
     var index_list = IndexList[rank](0)
 
     @parameter
@@ -789,9 +791,9 @@ fn _batched_matmul_gpu[
     transpose_b: Bool = False,
     elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank, *_, **_],
-    a_buf: NDBuffer[a_type, rank, *_, **_],
-    b_buf: NDBuffer[b_type, rank, *_, **_],
+    c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
+    a_buf: NDBuffer[a_type, rank, _, _, _],
+    b_buf: NDBuffer[b_type, rank, _, _, _],
     ctx: DeviceContext,
 ) raises:
     var c_tensor = from_ndbuffer_row_major(c_buf)
@@ -891,7 +893,7 @@ fn _batched_matmul_gpu[
 
         var grid_dim = kernels.ampere_128x128_4.grid_dim(UInt(m), UInt(n))
 
-        ctx.enqueue_function_checked[batched_matmul_type, batched_matmul_type](
+        ctx.enqueue_function[batched_matmul_type, batched_matmul_type](
             c_tensor_reshaped,
             a_tensor_reshaped,
             b_tensor_reshaped,
@@ -936,9 +938,7 @@ fn _batched_matmul_gpu[
                 elementwise_epilogue_fn,
             ]
 
-            ctx.enqueue_function_checked[
-                batched_matmul_type, batched_matmul_type
-            ](
+            ctx.enqueue_function[batched_matmul_type, batched_matmul_type](
                 c_tensor_reshaped,
                 a_tensor_reshaped,
                 b_tensor_reshaped,
@@ -984,7 +984,7 @@ fn _batched_matmul_gpu[
             b_tensor_reshaped.layout,
             elementwise_epilogue_fn,
         ]
-        ctx.enqueue_function_checked[bmm, bmm](
+        ctx.enqueue_function[bmm, bmm](
             c_tensor_reshaped,
             a_tensor_reshaped,
             b_tensor_reshaped,
@@ -1011,9 +1011,9 @@ fn batched_matmul[
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank, *_],
-    a_buf: NDBuffer[a_type, rank, *_],
-    b_buf: NDBuffer[b_type, rank, *_],
+    c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
+    a_buf: NDBuffer[a_type, rank, _, _, _],
+    b_buf: NDBuffer[b_type, rank, _, _, _],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1226,11 +1226,11 @@ fn bmm_sm100_blockwise_scaled_fp8[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, *_, **_],
-    a: LayoutTensor[a_type, a_layout, *_, **_],
-    b: LayoutTensor[b_type, b_layout, *_, **_],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, *_, **_],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, *_, **_],
+    c: LayoutTensor[c_type, c_layout, ...],
+    a: LayoutTensor[a_type, a_layout, ...],
+    b: LayoutTensor[b_type, b_layout, ...],
+    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ...],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
     ctx: DeviceContext,
 ) raises:
     __comptime_assert transpose_b, "Only support transposed B"
@@ -1314,7 +1314,7 @@ fn bmm_sm100_blockwise_scaled_fp8[
         "]",
     )
 
-    var a_tma_op = create_tma_tile[
+    var a_tma_op = create_tensor_tile[
         Index(1, BM, BK),
         swizzle_mode=a_swizzle,
         __tile_layout = Layout.row_major(1, BM, BK),
@@ -1324,13 +1324,13 @@ fn bmm_sm100_blockwise_scaled_fp8[
         1, BK, BN
     )
 
-    var b_tma_op = create_tma_tile[
+    var b_tma_op = create_tensor_tile[
         b_tile_shape,
         swizzle_mode=b_swizzle,
         __tile_layout = Layout.row_major(b_tile_shape),
     ](ctx, b)
 
-    var a_scales_tma_op = create_tma_tile[
+    var a_scales_tma_op = create_tensor_tile[
         Index(1, 1, BM),
         __tile_layout = Layout.row_major(1, 1, BM),
         __desc_layout = Layout(IntTuple(1, 1, BM), IntTuple(1, 1, 1)),
@@ -1368,7 +1368,7 @@ fn bmm_sm100_blockwise_scaled_fp8[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c,
@@ -1505,7 +1505,7 @@ fn batched_matmul_dynamic_scaled_fp8[
     ctx: DeviceContext,
 ) raises:
     __comptime_assert (
-        ctx.default_device_info is B200 or ctx.default_device_info is H100
+        ctx.default_device_info == B200 or ctx.default_device_info == H100
     ), "Only support SM100 or SM90"
     __comptime_assert (
         m_scale_granularity == 1
@@ -1525,7 +1525,7 @@ fn batched_matmul_dynamic_scaled_fp8[
     ), "Only support block-wise scale granularity"
 
     @parameter
-    if ctx.default_device_info is B200:
+    if ctx.default_device_info == B200:
         var a_tensor = from_ndbuffer_row_major(a)
         var b_tensor = from_ndbuffer_row_major(b)
         var c_tensor = from_ndbuffer_row_major(c)

@@ -18,8 +18,8 @@ modular_py_library(
     srcs = ["print_hook.py"],
     deps = [
         ":base_print_hook",
-        "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn",
     ],
 )
 

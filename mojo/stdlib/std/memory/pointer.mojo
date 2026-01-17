@@ -19,6 +19,8 @@ from memory import Pointer
 ```
 """
 
+from reflection.type_info import _unqualified_type_name
+
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
 # ===-----------------------------------------------------------------------===#
@@ -27,7 +29,6 @@ from memory import Pointer
 @register_passable("trivial")
 struct AddressSpace(
     Equatable,
-    Identifiable,
     ImplicitlyCopyable,
     Intable,
     Stringable,
@@ -90,7 +91,7 @@ struct AddressSpace(
         """
         return self._value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __eq__(self, other: Self) -> Bool:
         """Checks if the two address spaces are equal.
 
@@ -100,31 +101,7 @@ struct AddressSpace(
         Returns:
           True if the two address spaces are equal and False otherwise.
         """
-        return self is other
-
-    @always_inline("nodebug")
-    fn __is__(self, other: Self) -> Bool:
-        """Checks if the two address spaces are equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are not equal and False otherwise.
-        """
-        return self.value() == other.value()
-
-    @always_inline("nodebug")
-    fn __isnot__(self, other: Self) -> Bool:
-        """Checks if the two address spaces are not equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are not equal and False otherwise.
-        """
-        return self.value() != other.value()
+        return self._value == other._value
 
     @always_inline("nodebug")
     fn __str__(self) -> String:
@@ -142,20 +119,28 @@ struct AddressSpace(
         Args:
             writer: The object to write to.
         """
-        if self is AddressSpace.GENERIC:
+        if self == AddressSpace.GENERIC:
             writer.write("AddressSpace.GENERIC")
-        elif self is AddressSpace.GLOBAL:
+        elif self == AddressSpace.GLOBAL:
             writer.write("AddressSpace.GLOBAL")
-        elif self is AddressSpace.SHARED:
+        elif self == AddressSpace.SHARED:
             writer.write("AddressSpace.SHARED")
-        elif self is AddressSpace.CONSTANT:
+        elif self == AddressSpace.CONSTANT:
             writer.write("AddressSpace.CONSTANT")
-        elif self is AddressSpace.LOCAL:
+        elif self == AddressSpace.LOCAL:
             writer.write("AddressSpace.LOCAL")
-        elif self is AddressSpace.SHARED_CLUSTER:
+        elif self == AddressSpace.SHARED_CLUSTER:
             writer.write("AddressSpace.SHARED_CLUSTER")
         else:
             writer.write("AddressSpace(", self.value(), ")")
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the AddressSpace.
+
+        Args:
+            writer: The object to write to.
+        """
+        self.write_to(writer)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -181,9 +166,9 @@ struct Pointer[
     mut: Bool,
     //,
     type: AnyType,
-    origin: Origin[mut],
+    origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](ImplicitlyCopyable, Stringable):
+](ImplicitlyCopyable, Stringable, Writable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
@@ -208,9 +193,9 @@ struct Pointer[
     ]
     comptime _with_origin = Pointer[Self.type, _, Self.address_space]
 
-    comptime Mutable = Self._with_origin[MutOrigin.cast_from[Self.origin]]
+    comptime Mutable = Self._with_origin[unsafe_origin_mutcast[Self.origin]]
     """The mutable version of the `Pointer`."""
-    comptime Immutable = Self._with_origin[ImmutOrigin.cast_from[Self.origin]]
+    comptime Immutable = Self._with_origin[ImmutOrigin(Self.origin)]
     """The immutable version of the `Pointer`."""
     # Fields
     var _value: Self._mlir_type
@@ -224,8 +209,12 @@ struct Pointer[
     @implicit
     @always_inline("nodebug")
     fn __init__(
-        other: Self._with_origin[_],
-        out self: Self._with_origin[ImmutOrigin.cast_from[other.origin]],
+        other: Pointer,
+        out self: Pointer[
+            other.type,
+            ImmutOrigin(other.origin),
+            address_space = other.address_space,
+        ],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -321,6 +310,32 @@ struct Pointer[
             The string representation of the Pointer.
         """
         return String(UnsafePointer(to=self[]))
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Formats this pointer address to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        UnsafePointer(to=self[]).write_to(writer)
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the Pointer.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write(
+            "Pointer[mut=",
+            Self.mut,
+            ", ",
+            _unqualified_type_name[Self.type](),
+            ", address_space=",
+            Self.address_space,
+            "](",
+            self,
+            ")",
+        )
 
     @always_inline("nodebug")
     fn __merge_with__[

@@ -14,6 +14,40 @@
 from sys import external_call
 
 from builtin.simd import _simd_apply
+from testing import assert_equal, assert_true
+
+
+def check_write_to(value: Some[Writable], *, expected: String, is_repr: Bool):
+    """Check that the write_to or write_repr_to of the value is equal to the expected string.
+
+    Args:
+        value: The Writable value to check.
+        expected: The expected string.
+        is_repr: Whether to check the repr version of the value.
+    """
+
+    var string = String()
+    if is_repr:
+        value.write_repr_to(string)
+    else:
+        value.write_to(string)
+    assert_equal(string, expected)
+
+
+def check_write_to(value: Some[Writable], *, contains: String, is_repr: Bool):
+    """Check that the write_to or write_repr_to of the value contains the expected string.
+
+    Args:
+        value: The Writable value to check.
+        contains: The string to check for in the output.
+        is_repr: Whether to check the repr version of the value.
+    """
+    var string = String()
+    if is_repr:
+        value.write_repr_to(string)
+    else:
+        value.write_to(string)
+    assert_true(contains in string)
 
 
 @always_inline
@@ -59,7 +93,7 @@ fn libm_call[
     ], "input dtype must be float32 or float64"
 
     @parameter
-    if dtype is DType.float32:
+    if dtype == DType.float32:
         return _simd_apply[_float32_dispatch, result_dtype=dtype](arg)
     else:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg)

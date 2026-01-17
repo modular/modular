@@ -33,7 +33,8 @@ from max.interfaces.log_probabilities import LogProbabilities
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
-from max.interfaces.tokens import TokenSlice
+from max.interfaces.tokens import TokenBuffer
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class TextGenerationRequestFunction(TypedDict):
@@ -75,45 +76,118 @@ class TextGenerationResponseFormat(TypedDict):
     """A JSON schema dictionary that defines the structure and validation rules for the generated response."""
 
 
-class TextGenerationRequestMessage(TypedDict):
-    role: Literal["system", "user", "assistant", "tool", "function"]
-    """
-    The role of the message sender, indicating whether the message is from the system, user, or assistant.
-    """
+class ContentPart(BaseModel):
+    type: Literal["text", "image"]
 
-    content: str | list[dict[str, Any]]
-    """
-    Content can be a simple string or a list of message parts of different modalities.
 
-    For example:
+class MessageContentPart(BaseModel):
+    type: str = Field(..., description="Content type identifier")
+    model_config = ConfigDict(frozen=True)
 
-    .. code-block:: json
 
-        {
-          "role": "user",
-          "content": "What's the weather like in Boston today?"
-        }
+class TextContentPart(MessageContentPart):
+    type: Literal["text"] = Field(
+        default="text", description="Content type identifier"
+    )
+    text: str = Field(..., description="Text text content")
 
-    Or:
 
-    .. code-block:: json
+class ImageContentPart(MessageContentPart):
+    type: Literal["image"] = Field(
+        default="image", description="Content type identifier"
+    )
 
-        {
-          "role": "user",
-          "content": [
-            {
-              "type": "text",
-              "text": "What's in this image?"
-            },
-            {
-              "type": "image_url",
-              "image_url": {
-                  "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
-              }
-            }
-          ]
-        }
-    """
+
+MessageContent = TextContentPart | ImageContentPart
+
+MessageRole = Literal["system", "user", "assistant", "tool", "function"]
+
+
+class TextGenerationRequestMessage(BaseModel):
+    role: MessageRole = Field(
+        ..., description="Text role of the message sender"
+    )
+
+    content: str | list[MessageContent]
+    model_config = ConfigDict(
+        frozen=True,
+        from_attributes=True,
+    )
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def validate_content_format(cls, v: Any) -> str | list[MessageContent]:
+        if isinstance(v, str):
+            return v
+
+        if not isinstance(v, list):
+            raise ValueError(
+                f"Invalid content format: {type(v).__name__}. "
+                "Expected str or list of content parts."
+            )
+
+        normalized: list[MessageContent] = []
+        for item in v:
+            if isinstance(item, (TextContentPart, ImageContentPart)):
+                normalized.append(item)
+                continue
+
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"Invalid content part type: {type(item).__name__}. "
+                    "Expected dict or MessageContentPart instance."
+                )
+
+            if "type" not in item:
+                raise ValueError(
+                    f"Malformed message content part: missing 'type' field. Got: {item}"
+                )
+
+            content_type = item["type"]
+
+            if content_type == "text":
+                text_value = item.get("text") or item.get("content", "")
+                normalized.append(TextContentPart(text=text_value))
+            elif content_type == "image":
+                normalized.append(ImageContentPart())
+            elif content_type == "image_url":
+                raise ValueError(
+                    "image_url content type not supported in internal format. "
+                    "Images must be provided as bytes in TextGenerationRequest.images "
+                    "with image placeholders (type='image') in message content."
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported message content type: '{content_type}'"
+                )
+
+        return normalized
+
+    def flatten_content(self) -> dict[str, str]:
+        if isinstance(self.content, str):
+            return {"role": str(self.role), "content": self.content}
+
+        content_str = ""
+        for content in self.content:
+            if isinstance(content, TextContentPart):
+                if content_str != "":
+                    content_str += "\n"
+
+                content_str += content.text
+
+            else:
+                raise ValueError("only text content can be flattened.")
+
+        return {"role": str(self.role), "content": content_str}
+
+    @cached_property
+    def number_of_images(self) -> int:
+        """Returns the number of ImageContentPart instances in the message content."""
+        if isinstance(self.content, str):
+            return 0
+        return sum(
+            1 for item in self.content if isinstance(item, ImageContentPart)
+        )
 
 
 @dataclass(frozen=True)
@@ -131,13 +205,13 @@ class TextGenerationRequest(Request):
     representing token IDs. If not provided, the model may generate output
     based on the messages field.
     """
-    messages: list[TextGenerationRequestMessage] | None = None
+    messages: list[TextGenerationRequestMessage] = field(default_factory=list)
     """
     A list of messages for chat-based interactions. This is used in chat
     completion APIs, where each message represents a turn in the conversation.
     If provided, the model will generate responses based on these messages.
     """
-    images: list[bytes] | None = None
+    images: list[bytes] = field(default_factory=list)
     """
     A list of image byte arrays that can be included as part of the request.
     This field is optional and may be used for multimodal inputs where images
@@ -196,6 +270,52 @@ class TextGenerationRequest(Request):
     If not specified, the request will be routed to the default endpoint.
     """
 
+    def __post_init__(self) -> None:
+        """Validates mutual exclusivity, image-messaging constraints, and message-image consistency after object initialization."""
+        # Convert dict messages to TextGenerationRequestMessage objects
+        if self.messages is not None:
+            converted_messages: list[TextGenerationRequestMessage] = []
+            for msg in self.messages:
+                if isinstance(msg, dict):
+                    converted_messages.append(
+                        TextGenerationRequestMessage(**msg)
+                    )
+                elif isinstance(msg, TextGenerationRequestMessage):
+                    converted_messages.append(msg)
+                else:
+                    raise TypeError(f"Invalid message type: {type(msg)}")
+            # Use object.__setattr__ for frozen dataclass
+            object.__setattr__(self, "messages", converted_messages)
+
+        if self.prompt and self.messages:
+            raise ValueError(
+                "both prompt and messages cannot be provided to TextGenerationRequest"
+            )
+
+        if self.images and isinstance(self.prompt, str):
+            raise ValueError(
+                "string prompts cannot be provided, when images are provided, use messages"
+            )
+
+        if self.images and self.number_of_images != len(self.images):
+            raise ValueError(
+                f"number of images provided in TextGenerationRequest do not match messages:\n{self.messages}"
+            )
+
+    @cached_property
+    def number_of_images(self) -> int:
+        """
+        Returns the total number of image-type contents across all provided messages.
+
+        Returns:
+            int: Total count of image-type contents found in messages.
+        """
+        return (
+            sum(message.number_of_images for message in self.messages)
+            if self.messages
+            else 0
+        )
+
 
 def _check_text_generation_output_implements_pipeline_output(
     x: TextGenerationOutput,
@@ -241,27 +361,12 @@ class TextGenerationContext(BaseContext, Protocol):
     the state of tokens throughout the generation process. It handles token arrays,
     generation status, sampling parameters, and various indices that track different
     stages of token processing.
-
-    The context maintains a token array with the following layout::
-
-        .                      +---------- full prompt ----------+   CHUNK_SIZE*N v
-        . +--------------------+------------------+-----------------+----------------+
-        . |     completed      |     next_tokens  |                 |  preallocated  |
-        . +--------------------+------------------+-----------------+----------------+
-        .     processed_length ^ current_position ^         end_idx ^
-
-    Token Array Regions:
-        - completed: Tokens that have already been processed and encoded.
-        - next_tokens: Tokens that will be processed in the next iteration.
-          This may be a subset of the full prompt due to chunked prefill.
-        - preallocated: Token slots that have been preallocated. The token array
-          resizes to multiples of ``CHUNK_SIZE`` to accommodate new tokens.
-
-    Key Indices:
-        - ``processed_length``: Marks the beginning of uncompleted tokens
-        - ``current_position``: Marks the end of next_tokens within the array
-        - ``end_idx``: Marks the end of all active tokens (one past the last token)
     """
+
+    @property
+    def tokens(self) -> TokenBuffer:
+        """The token buffer for the context."""
+        ...
 
     @property
     def eos_token_ids(self) -> set[int]:
@@ -274,42 +379,6 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def current_position(self) -> int:
-        """The index marking the end of ``next_tokens`` within the token array.
-
-        This index separates completed tokens from tokens that will be processed
-        in the next iteration during chunked prefill or generation.
-
-        Returns:
-            The zero-based index where ``next_tokens`` begin in the token array.
-        """
-        ...
-
-    @property
-    def processed_length(self) -> int:
-        """The index marking the start of completed tokens in the token array.
-
-        Completed tokens are those that have already been processed and encoded
-        by the model in previous iterations.
-
-        Returns:
-            The zero-based index where completed tokens begin in the token array.
-        """
-        ...
-
-    @property
-    def current_length(self) -> int:
-        """The current total length of the sequence.
-
-        This includes both completed tokens and tokens currently being processed,
-        representing the total number of tokens in the active sequence.
-
-        Returns:
-            The total number of tokens including completed and active tokens.
-        """
-        ...
-
-    @property
     def max_length(self) -> int | None:
         """The maximum allowed length for this sequence.
 
@@ -318,43 +387,6 @@ class TextGenerationContext(BaseContext, Protocol):
 
         Returns:
             The maximum sequence length limit, or ``None`` if no limit is set.
-        """
-        ...
-
-    @property
-    def active_length(self) -> int:
-        """The number of tokens being processed in the current iteration.
-
-        During context encoding (prompt processing), this equals the prompt size
-        or chunk size for chunked prefill. During token generation, this is
-        typically 1 (one new token per iteration).
-
-        Returns:
-            The number of tokens being processed in this iteration.
-        """
-        ...
-
-    @property
-    def next_tokens(self) -> TokenSlice:
-        """The tokens to be processed in the next model iteration.
-
-        This array contains the tokens that will be fed to the model in the
-        upcoming forward pass. The length should match ``active_length``.
-
-        Returns:
-            A 1D NumPy array of int32 token IDs with length equal to ``active_length``.
-        """
-        ...
-
-    @property
-    def tokens(self) -> TokenSlice:
-        """The complete token array including preallocated slots.
-
-        This includes all tokens (completed, active, and preallocated empty slots).
-        For most use cases, prefer ``all_tokens`` to get only the active tokens.
-
-        Returns:
-            A 1D NumPy array of int32 values containing all tokens including padding.
         """
         ...
 
@@ -417,59 +449,6 @@ class TextGenerationContext(BaseContext, Protocol):
         Returns:
             ``True`` if input tokens should be included in log probability output,
             ``False`` otherwise.
-        """
-        ...
-
-    @property
-    def all_tokens(self) -> TokenSlice:
-        """All active tokens in the context (prompt and generated).
-
-        This property returns only the meaningful tokens, excluding any
-        preallocated but unused slots in the token array.
-
-        Returns:
-            A 1D NumPy array of int32 values containing all prompt and generated tokens.
-        """
-        ...
-
-    @property
-    def prompt_tokens(self) -> TokenSlice:
-        """The original prompt tokens for this context.
-
-        These are the input tokens that were provided to start the generation
-        process, before any tokens were generated by the model.
-
-        Returns:
-            A 1D NumPy array of int32 values containing the original prompt token IDs.
-        """
-        ...
-
-    @property
-    def generated_tokens(self) -> TokenSlice:
-        """All tokens generated by the model for this context.
-
-        This excludes the original prompt tokens and includes only tokens
-        that have been produced during the generation process.
-
-        Returns:
-            A 1D NumPy array of int32 values containing generated token IDs.
-        """
-        ...
-
-    def get_last_generated_token(self) -> int:
-        """The most recently generated token.
-
-        This property returns the token ID of the most recent token that was
-        generated by the model during the generation process. If no tokens
-        have been generated yet, this method will raise an error.
-
-        This is not a @property method since it can raise.
-
-        Returns:
-            The token ID of the most recently generated token.
-
-        Raises:
-            ValueError: If no tokens have been generated yet.
         """
         ...
 
@@ -565,57 +544,6 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
-    def rewind_processing(self, n: int) -> None:
-        """Rewind the processing window start by n.
-
-        Use after rejecting a draft so future steps reprocess those tokens.
-        Args:
-            n (int): The number of tokens to rewind.
-        """
-        ...
-
-    def skip_processing(self, n: int) -> None:
-        """Advance the processing window start by n.
-
-        Use after committing tokens to cache or accepting a draft so future steps no
-        longer reprocess those tokens. Validates that start <= end.
-
-        Args:
-            n (int): The number of tokens to skip.
-        """
-        ...
-
-    def chunk(self, chunk_size: int) -> None:
-        """Optionally chunk the active token window to enforce a maximum size.
-
-        This method is typically used by the scheduler when performing chunked
-        prefill. If the number of active prompt tokens exceeds the per-batch
-        target, the context may be "chunked" by advancing indices so that only
-        a bounded number of active tokens remain.
-
-        Args:
-            chunk_size (int): The desired maximum number of active tokens to keep
-                in this context.
-
-        Raises:
-            ValueError: If ``chunk_size`` is negative or larger than the current
-                number of active tokens, indicating that the context cannot be
-                chunked appropriately.
-
-        """
-        ...
-
-    @property
-    def needs_ce(self) -> bool:
-        """Returns whether this context needs context encoding (CE).
-
-        CE mode indicates that the context has additional prompt tokens to encode.
-
-        Returns:
-            bool: True if the context needs CE, False otherwise.
-        """
-        ...
-
     @property
     def sampling_params(self) -> SamplingParams:
         """The sampling parameters configured for this generation request.
@@ -705,14 +633,14 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
 
     def __post_init__(self) -> None:
         self.input_tokens = sum(
-            ctx.active_length for ctx in self.batch.values()
+            ctx.tokens.active_length for ctx in self.batch.values()
         )
         self.context_tokens = sum(
-            ctx.processed_length for ctx in self.batch.values()
+            ctx.tokens.processed_length for ctx in self.batch.values()
         )
         self.batch_type = BatchType.TG
         for req in self.batch.values():
-            if req.needs_ce:
+            if req.tokens.generated_length == 0:
                 self.batch_type = BatchType.CE
                 break
 

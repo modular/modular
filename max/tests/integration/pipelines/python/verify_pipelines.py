@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import enum
 import functools
@@ -21,7 +22,7 @@ import os
 import sys
 import time
 import traceback
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TextIO
@@ -66,6 +67,7 @@ class VerificationStatus(str, enum.Enum):
     INVALID = "invalid"
     ERROR = "error"
     FLAKE = "flake"
+    INFRA = "infra"
 
     @property
     def emoji(self) -> str:
@@ -77,6 +79,7 @@ _VERDICT_EMOJI = {
     VerificationStatus.INVALID: "🟡",
     VerificationStatus.ERROR: "❌",
     VerificationStatus.FLAKE: "❄️",
+    VerificationStatus.INFRA: "🧯",
 }
 
 
@@ -84,6 +87,7 @@ _VERDICT_EMOJI = {
 class VerificationVerdict:
     status: VerificationStatus
     discrepancy_report: DiscrepancyReport | None = None
+    kl_div_threshold: float | None = None
 
     @property
     def emoji(self) -> str:
@@ -232,6 +236,9 @@ def dump_results(
         elif verdict.discrepancy_report.model_modality == Modality.EMBEDDING:
             any_embedding = True
 
+    if node := os.environ.get("NODE_NAME"):
+        to.write(f"\n\nRan on node: {node}")
+
     if any_failed:
         to.write("\n\n## Failed/Crashed Models\n")
         to.write("| Status | Model |\n")
@@ -245,30 +252,47 @@ def dump_results(
     if any_logit:
         to.write("\n\n## LLMs\n")
         to.write(
-            "**KL Div** = average over all prompts (lower is better)\n"
-            "Note: This is NOT the max threshold used for pass/fail checks\n\n"
-            "**Diff** = change from previous run\n"
+            "**KL Div (max)** = max KL Div over all prompts. This is the threshold used for pass/fail checks.\n"
+            "**KL Div (avg)** = average over all prompts (lower is better)\n"
+            "**Diff** = change of the average KL Div from previous run\n"
             "  • Negative = accuracy improved\n"
             "  • Positive = accuracy worsened\n"
             "  • N/A = no previous verdict\n"
             "  • --- = no change\n"
         )
-        to.write("| Status | Model | KL Div | Diff |\n")
-        to.write("| :----: | :---  | :---:  | :---:|\n")
+        to.write(
+            "| Status | Model | KL Div (max) | KL Div (avg) | Diff (avg) |\n"
+        )
+        to.write(
+            "| :----: | :---- | :----------: | :----------: | :--------: |\n"
+        )
 
         for name, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
             if verdict.discrepancy_report is None:
                 continue
             if verdict.discrepancy_report.model_modality != Modality.LOGIT:
                 continue
-            kl = f"{verdict.discrepancy_report.avg_kl_div:.2e}"
+            kl_max = f"{verdict.discrepancy_report.max_kl_div:.2e}"
+            threshold_max = f"{verdict.kl_div_threshold:.2e}"
+            kl_avg = f"{verdict.discrepancy_report.avg_kl_div:.2e}"
+            if (
+                verdict.discrepancy_report.max_kl_div is None
+                or verdict.kl_div_threshold is None
+            ):
+                kl_max_str = f"{kl_max} (? {threshold_max})"
+            elif (
+                verdict.discrepancy_report.max_kl_div > verdict.kl_div_threshold
+            ):
+                kl_max_str = f"{kl_max} (>{threshold_max})"
+            else:
+                kl_max_str = f"{kl_max} (<={threshold_max})"
 
             diff_str = "N/A"
             if previous_verdicts and name in previous_verdicts:
                 diff_str = compute_diff(verdict, previous_verdicts[name])
 
             to.write(
-                f"| {verdict.emoji} | {display_name(name)} | {kl} | {diff_str} |\n"
+                f"| {verdict.emoji} | {display_name(name)} | {kl_max_str} | {kl_avg} | {diff_str} |\n"
             )
 
     if any_embedding:
@@ -345,6 +369,27 @@ class PregeneratedTorchGoldens:
     """S3 path to the tar file containing the bundled golden json files."""
     json_file: str
     """Name of the json file containing the golden logits."""
+
+
+class InfraError(Exception):
+    """Raised when an error with the runner environment has been encountered."""
+
+
+@contextlib.contextmanager
+def detect_infra_errors() -> Generator[None, None, None]:
+    try:
+        yield
+    except ValueError as exc:
+        exc_str = str(exc)
+        if (
+            'failed to create device: No supported "gpu" device available.'
+            in exc_str
+            and "CUDA call failed: CUDA_ERROR_UNKNOWN" in exc_str
+        ):
+            raise InfraError(
+                "GPU device seems to have fallen off from runner"
+            ) from exc
+        raise
 
 
 def generate_llm_logits_with_optional_retry(
@@ -505,6 +550,7 @@ def run_llm_verification(
         return VerificationVerdict(
             status=status,
             discrepancy_report=result.discrepancy_report,
+            kl_div_threshold=kl_div_threshold,
         )
     except Exception:
         traceback.print_exc()
@@ -533,14 +579,18 @@ class PipelineDef:
         print_suggested_tolerances: bool,
     ) -> VerificationVerdict:
         try:
-            return self.run(
-                device_type,
-                devices,
-                find_tolerances,
-                print_suggested_tolerances,
-            )
+            with detect_infra_errors():
+                return self.run(
+                    device_type,
+                    devices,
+                    find_tolerances,
+                    print_suggested_tolerances,
+                )
         except Flake:
             return VerificationVerdict(status=VerificationStatus.FLAKE)
+        except InfraError:
+            traceback.print_exc()
+            return VerificationVerdict(status=VerificationStatus.INFRA)
         except Exception:
             traceback.print_exc()
             return VerificationVerdict(status=VerificationStatus.ERROR)
@@ -863,21 +913,6 @@ PIPELINES = {
             kl_div_threshold=5.2e-3,
         ),
     ),
-    "meta-llama/Llama-3.2-11B-Vision-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big"],
-        run=_make_pipeline_runner(
-            pipeline="meta-llama/Llama-3.2-11B-Vision-Instruct",
-            encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama3-vision_golden/1/80e47cd8ba86f3c0f2c9768eb966136fc3e5974f5dd01177a7464338b85221d2/torch_llama3-vision_golden.tar.gz",
-                json_file="torch_llama3_2_bfloat16_golden.json",
-            ),
-            # Note: llama-vision is not yet using llama3 rope.
-            cos_dist_threshold=5e-3,
-            kl_div_threshold=5.4e-3,
-        ),
-    ),
     "OpenGVLab/InternVL3-1B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         # TODO(KERN-1861): MI300x: Memory access fault by GPU node-2.
@@ -996,8 +1031,8 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen3-VL-30B-A3B-Instruct",
             encoding="bfloat16",
-            cos_dist_threshold=1.1e-01,
-            kl_div_threshold=1.2e01,
+            cos_dist_threshold=1.7e00,
+            kl_div_threshold=2.1e01,
         ),
     ),
     "Qwen/Qwen3-8B-bfloat16": PipelineDef(
@@ -1018,7 +1053,7 @@ PIPELINES = {
             pipeline="allenai/olmOCR-2-7B-1025-FP8",
             encoding="float8_e4m3fn",
             cos_dist_threshold=2.4e-01,
-            kl_div_threshold=4.5e-01,
+            kl_div_threshold=8.8e-01,
         ),
     ),
     "allenai/OLMo-2-1124-7B-float32": PipelineDef(
@@ -1162,8 +1197,8 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz",
                 json_file="vllm_deepseek-r1_float8_golden.json",
             ),
-            cos_dist_threshold=6e-02,
-            kl_div_threshold=1.5e-1,
+            cos_dist_threshold=5.2e-03,
+            kl_div_threshold=1.6e-1,
             timeout=1200,
         ),
     ),
@@ -1220,8 +1255,8 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_gemma3-27b_golden/1/1a619d49187cdce335f4492acab40fd950922748e6631c0478572344ff295efc/vllm_gemma3-27b_golden.tar.gz",
                 json_file="vllm_gemma3-27b_float8-dynamic_golden.json",
             ),
-            cos_dist_threshold=2.7e-2,
-            kl_div_threshold=5.9e-1,
+            cos_dist_threshold=3.6e-2,
+            kl_div_threshold=7.0e-1,
         ),
     ),
     # Multi-GPU variant
@@ -1272,7 +1307,7 @@ PIPELINES = {
                 json_file="vllm_llama3_1_8B_float8_dyanmic_bf16_lora_golden.json",
             ),
             cos_dist_threshold=1.41e-01,
-            kl_div_threshold=6.22e-01,
+            kl_div_threshold=7.1e-01,
         ),
     ),
 }

@@ -28,12 +28,12 @@ from utils import IndexList
 fn tile[
     dtype: DType, type_repeats: DType
 ](
-    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     repeats: LayoutTensor[
-        type_repeats, address_space = AddressSpace.GENERIC, **_
+        type_repeats, address_space = AddressSpace.GENERIC, ...
     ],
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ) raises:
     """
@@ -150,8 +150,8 @@ fn tile[
                 var output_src_stride = num_cols_input
                 var count = output_src_stride
                 for rep in range(repeat_cols):
-                    var src_ptr = input.ptr.offset(input_src_index)
-                    var dst_ptr = output.ptr.offset(
+                    var src_ptr = input.ptr + input_src_index
+                    var dst_ptr = output.ptr + (
                         output_src_index + rep * output_src_stride
                     )
                     memcpy(dest=dst_ptr, src=src_ptr, count=count)
@@ -187,8 +187,8 @@ fn tile[
                     * repeat_cols
                 )
                 for rep in range(repeat_rows - 1):
-                    var src_ptr = output.ptr.offset(src_index)
-                    var dst_ptr = output.ptr.offset(
+                    var src_ptr = output.ptr + src_index
+                    var dst_ptr = output.ptr + (
                         src_index + (rep + 1) * src_index_stride
                     )
                     memcpy(dest=dst_ptr, src=src_ptr, count=count)
@@ -215,8 +215,8 @@ fn tile[
                 * repeat_cols
             )
             for rep in range(repeat_depth - 1):
-                var src_ptr = output.ptr.offset(src_index)
-                var dst_ptr = output.ptr.offset(
+                var src_ptr = output.ptr + src_index
+                var dst_ptr = output.ptr + (
                     src_index + (rep + 1) * src_index_stride
                 )
                 memcpy(dest=dst_ptr, src=src_ptr, count=count)
@@ -236,8 +236,8 @@ fn tile[
         var count = src_index_stride
         var src_index = 0
         for rep in range(repeat_dp - 1):
-            var src_ptr = output.ptr.offset(src_index)
-            var dst_ptr = output.ptr.offset(
+            var src_ptr = output.ptr + src_index
+            var dst_ptr = output.ptr + (
                 src_index + (rep + 1) * src_index_stride
             )
             memcpy(dest=dst_ptr, src=src_ptr, count=count)
@@ -249,8 +249,8 @@ fn tile_shape[
     repeats_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: LayoutTensor[input_type, **_],
-    repeats_buf: LayoutTensor[repeats_type, **_],
+    input_buf: LayoutTensor[input_type, ...],
+    repeats_buf: LayoutTensor[repeats_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     """
     Compute the output shape of a `tile` operation, and assert the inputs are

@@ -198,10 +198,10 @@ if ceildiv(M, BM) * ceildiv(N, BN) < 0.8 * num_SMs:
 
   # Write result of K 0:1536 to work_space [0:64, 0:N]
   # write result of K 1536:3072 to work_space [0: 64, N:2*N]
-  ctx.enqueue_function_checked(matmul(A, B, work_space, num_K_partitions))
+  ctx.enqueue_function(matmul(A, B, work_space, num_K_partitions))
 
   # Sum work_space: [0:64, 0:N] + [0: 64, N:2*N].
-  ctx.enqueue_function_checked(split_k_reduction(C, work_space, num_K_partitions))
+  ctx.enqueue_function(split_k_reduction(C, work_space, num_K_partitions))
 ```
 
 ## Flash Attention

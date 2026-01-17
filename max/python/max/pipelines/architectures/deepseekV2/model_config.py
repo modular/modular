@@ -14,24 +14,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
-from max.pipelines.lib import (
-    KVCacheConfig,
-    MAXModelConfig,
-    MAXModelConfigBase,
-    PipelineConfig,
-)
+from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
+from pydantic import model_validator
 from transformers import AutoConfig
+from typing_extensions import Self
 
 
-@dataclass
-class DeepseekV2ConfigBase(MAXModelConfigBase):
-    """Base configuration for DeepseekV2 models."""
+class DeepseekV2Config(MAXModelConfigBase):
+    """Configuration for DeepseekV2 models."""
 
     # MAX specific fields
     dtype: DType
@@ -51,7 +46,7 @@ class DeepseekV2ConfigBase(MAXModelConfigBase):
     ep_size: int = 1
     routed_scaling_factor: float = 1.0
     kv_lora_rank: int = 512
-    q_lora_rank: int = 1536
+    q_lora_rank: int | None = 1536
     qk_rope_head_dim: int = 64
     v_head_dim: int = 128
     qk_nope_head_dim: int = 128
@@ -82,7 +77,8 @@ class DeepseekV2ConfigBase(MAXModelConfigBase):
 
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
 
-    def __post_init__(self):
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
         if self.hidden_act != "silu":
             raise ValueError(
                 "'silu' is the only hidden_act currently supported"
@@ -105,13 +101,8 @@ class DeepseekV2ConfigBase(MAXModelConfigBase):
         if self.pad_token_id is not None:
             raise ValueError("Padding token is not supported yet")
 
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {}
+        return self
 
-
-@dataclass
-class DeepseekV2Config(MAXModelConfig, DeepseekV2ConfigBase):
     @staticmethod
     def help() -> dict[str, str]:
         return {}
@@ -140,7 +131,7 @@ class DeepseekV2Config(MAXModelConfig, DeepseekV2ConfigBase):
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             is_mla=True,
-            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
     @staticmethod

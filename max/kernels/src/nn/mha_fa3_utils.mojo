@@ -16,18 +16,22 @@ from math import ceildiv
 from math.constants import log2e
 from memory import (
     bitcast,
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
 )
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from sys import size_of
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from algorithm.functional import unswitch
 from gpu import block_idx, thread_idx
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.mma import st_matrix
+from gpu.compute.mma import st_matrix
 from gpu.sync import async_copy_arrive
 from layout.int_tuple import IntTuple
 from layout.layout import UNKNOWN_VALUE, Layout
@@ -41,8 +45,8 @@ from layout.tensor_core_async import st_matrix_n_layout, tile_layout_k_major
 from layout.tma_async import (
     create_split_tma,
     PipelineState,
+    RaggedTMA3DTile,
     SharedMemBarrier,
-    _should_split_last_dim,
     SplitLastDimTMATensorTile,
     _split_last_layout,
     TMATensorTile,
@@ -278,7 +282,7 @@ struct MHAPosition[
         if Self.decoding:
             return Self.group
         else:
-            return min(Self.BM, self.seq_len - self.prompt_offset)
+            return min(self.seq_len - self.prompt_offset, Self.BM)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -365,29 +369,30 @@ struct MHAPosition[
         exp_sum_offset = Self.q_num_heads * (
             self.prompt_idx + batch_size * self.prompt_offset
         )
-        exp_sum_ptr = partition.get_exp_sum_qk_max_pointer().offset(
-            exp_sum_offset
-        )
-        qk_max_ptr = exp_sum_ptr.offset(
+        exp_sum_ptr = partition.get_exp_sum_qk_max_pointer() + exp_sum_offset
+        qk_max_ptr = exp_sum_ptr + (
             Self.q_num_heads * batch_size * partition.num_partitions()
         )
         return (exp_sum_ptr, qk_max_ptr)
 
     @always_inline
     fn get_start_and_end_for_partitions[
-        partition_t: MHAPartitionScheme,
-        //,
-    ](self, partition: partition_t) -> Tuple[UInt32, UInt32]:
+        PartitionType: MHAPartitionScheme, MaskType: MHAMask, //, page_size: Int
+    ](self, partition: PartitionType, mask: MaskType) -> Tuple[UInt32, UInt32]:
+        var start_col: UInt32 = mask.start_column[Self.BM, Self.BN, page_size](
+            self.get_score_row()
+        )
+
         @parameter
-        if partition_t.do_partition:
+        if PartitionType.do_partition:
             start, end = get_start_and_end_for_partitions[Self.BN](
-                Int(self.num_keys),
+                Int(self.num_keys - start_col),
                 Int(partition.num_partitions()),
                 Int(self.prompt_offset),
             )
-            return (UInt32(start), UInt32(end))
+            return (UInt32(start) + start_col, UInt32(end) + start_col)
         else:
-            return (UInt32(0), self.num_keys)
+            return (start_col, self.num_keys)
 
     @staticmethod
     @always_inline
@@ -669,27 +674,16 @@ fn q_smem_shape[
     group: Int,
     depth: Int,
     decoding: Bool,
-](
-    out res: IndexList[
-        3 if not decoding else (
-            5 if _should_split_last_dim[dtype](depth, swizzle_mode) else 4
-        )
-    ]
-):
+](out res: IndexList[4 if decoding else 3]):
     comptime L = res.size
-    __comptime_assert L in (3, 4, 5)
+    __comptime_assert L in (3, 4)
 
     @parameter
     if L == 3:  # prefill
         return {BM, 1, depth}
     else:
         comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
-
-        @parameter
-        if L == 4:  # decoding, no split
-            return {1, 1, max(group, 8), swizzle_granularity}
-        else:  # decoding, split
-            return {1, 1, max(group, 8), 1, swizzle_granularity}
+        return {1, 1, max(group, 8), swizzle_granularity}
 
 
 fn q_gmem_shape[
@@ -700,33 +694,15 @@ fn q_gmem_shape[
     q_num_heads: Int,
     depth: Int,
     decoding: Bool,
-](
-    out res: IndexList[
-        3 if not decoding else (
-            5 if _should_split_last_dim[dtype](depth, swizzle_mode) else 4
-        )
-    ]
-):
+](out res: IndexList[4 if decoding else 3]):
     comptime L = res.size
-    __comptime_assert L in (3, 4, 5)
+    __comptime_assert L in (3, 4)
 
     @parameter
     if L == 3:  # prefill
         return {UNKNOWN_VALUE, q_num_heads, depth}
     else:
-        comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
-
-        @parameter
-        if L == 4:  # decoding, no split
-            return {UNKNOWN_VALUE, q_num_heads // group, group, depth}
-        else:  # decoding, split
-            return {
-                UNKNOWN_VALUE,
-                q_num_heads // group,
-                group,
-                depth // swizzle_granularity,
-                swizzle_granularity,
-            }
+        return {UNKNOWN_VALUE, q_num_heads // group, group, depth}
 
 
 comptime QTMATile[
@@ -750,8 +726,7 @@ comptime KVTMATile[
     swizzle_mode: TensorMapSwizzle,
     *,
     BN: Int,
-    depth: Int,
-    BK: Int = depth,
+    BK: Int,
 ] = SplitLastDimTMATensorTile[
     dtype,
     IndexList[3](BN, 1, BK),
@@ -793,7 +768,6 @@ fn q_tma[
         depth=depth,
         decoding=decoding,
     ]()
-    # print("q_tma (rows = ", rows, "):", sep="")
     return create_split_tma[smem_dim, gmem_dim, swizzle_mode](ctx, ptr, rows)
 
 
@@ -934,20 +908,6 @@ fn _apply_mask[
                     for j in range(WN // 8):
                         score_col = mask_frag_col + j * 8
                         p = p_reg_tile[i, m_mma, j, n_mma]
-                        # if thread_idx.x % 128 == 0 and block_idx.y == 2:
-                        #     print(
-                        #         "p_reg_tile[",
-                        #         i,
-                        #         ", ",
-                        #         m_mma,
-                        #         ", ",
-                        #         j,
-                        #         ", ",
-                        #         n_mma,
-                        #         "] = ",
-                        #         p,
-                        #         sep="",
-                        #     )
 
                         @parameter
                         if masked:
@@ -987,12 +947,7 @@ fn _apply_mask[
                         if decoding:
                             bound = IndexList[2, element_type = DType.uint32](
                                 Int(position.num_keys),
-                                Int(
-                                    min(
-                                        BN + kv_tile_start_row,
-                                        position.num_keys,
-                                    )
-                                ),
+                                Int(position.num_keys),
                             )
                             p = _kernel_mask(
                                 IndexList[2, element_type = DType.uint32](
@@ -1038,11 +993,7 @@ fn q_coord[
 ](
     row: UInt32,
     head_idx: UInt32,
-    out res: StaticTuple[
-        UInt32,
-        (4 if decoding else 3)
-        + Int(_should_split_last_dim(depth, swizzle_granularity)),
-    ],
+    out res: StaticTuple[UInt32, (4 if decoding else 3)],
 ):
     """
     Returns the coordinates for a tma load on the `Q` matrix.
@@ -1068,18 +1019,8 @@ fn q_coord[
 @always_inline
 fn kv_coord[
     *, depth: Int, swizzle_granularity: Int
-](
-    row: UInt32,
-    head_idx: UInt32,
-    out res: StaticTuple[
-        UInt32, 4 if _should_split_last_dim(depth, swizzle_granularity) else 3
-    ],
-):
-    @parameter
-    if res.size == 4:
-        return {0, 0, head_idx, row}
-    else:
-        return {0, head_idx, row}
+](row: UInt32, head_idx: UInt32) -> StaticTuple[UInt32, 3]:
+    return {0, head_idx, row}
 
 
 @always_inline
@@ -1089,10 +1030,6 @@ fn produce[
     BN: Int,
     q_smem_layout: Layout,
     q_desc_layout: Layout,
-    k_smem_layout: Layout,
-    k_desc_layout: Layout,
-    v_smem_layout: Layout,
-    v_desc_layout: Layout,
     depth: Int,
     padded_depth: Int,
     num_heads: Int,
@@ -1116,15 +1053,17 @@ fn produce[
         q_smem_layout,
         q_desc_layout,
     ],
-    k_tma_op: TMATensorTile[
+    k_tma_op: KVTMATile[
         qkv_type,
-        k_smem_layout,
-        k_desc_layout,
+        swizzle_mode,
+        BN=BN,
+        BK=padded_depth,
     ],
-    v_tma_op: TMATensorTile[
+    v_tma_op: KVTMATile[
         qkv_type,
-        v_smem_layout,
-        v_desc_layout,
+        swizzle_mode,
+        BN=BN,
+        BK=padded_depth,
     ],
     q_smem: UnsafePointer[
         Scalar[qkv_type], address_space = AddressSpace.SHARED
@@ -1197,11 +1136,15 @@ fn produce[
     ]:
         return {q_smem + q_size * q_idx + offset}
 
+    comptime k_smem_layout = tile_layout_k_major[
+        qkv_type, BN, padded_depth, swizzle_mode
+    ]()
+
     @parameter
     @always_inline
-    fn k_tile(
+    fn kv_tile(
         idx: UInt32,
-        out k_smem: LayoutTensor[
+        out tile: LayoutTensor[
             qkv_type,
             k_smem_layout,
             MutAnyOrigin,
@@ -1212,24 +1155,7 @@ fn produce[
         ],
     ):
         comptime sz = BN * padded_depth
-        k_smem = {kv_smem + sz * idx}
-
-    @parameter
-    @always_inline
-    fn v_tile(
-        idx: UInt32,
-        out v_smem: LayoutTensor[
-            qkv_type,
-            v_smem_layout,
-            MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
-            alignment=128,
-        ],
-    ):
-        comptime sz = BN * padded_depth
-        v_smem = {kv_smem + sz * idx}
+        tile = {kv_smem + sz * idx}
 
     @parameter
     @always_inline("nodebug")
@@ -1244,7 +1170,7 @@ fn produce[
         var write_phase: UInt32 = state.phase()
 
         ref p_mbar = produced_mbar_kv[write_idx]
-        k_sub = k_tile(write_idx)
+        k_sub = kv_tile(write_idx)
 
         @parameter
         if wait:
@@ -1266,12 +1192,14 @@ fn produce[
         mut state: PipelineState[pipeline_stages],
         row: UInt32,
         kv_head_idx: UInt32,
+        key_start: UInt32,
+        key_end: UInt32,
     ):
         var write_idx: UInt32 = state.index()
         var write_phase: UInt32 = state.phase()
 
         ref p_mbar = produced_mbar_kv[write_idx]
-        v_sub = v_tile(write_idx)
+        v_sub = kv_tile(write_idx)
         consumed_mbar_kv[write_idx].wait(write_phase)
         comptime bytes = BN * padded_depth * size_of[qkv_type]()
         p_mbar.expect_bytes(bytes)
@@ -1309,7 +1237,9 @@ fn produce[
 
     @parameter
     if PartitionType.do_partition:
-        startend = position.get_start_and_end_for_partitions(partition)
+        startend = position.get_start_and_end_for_partitions[
+            page_size = KVLUTType.page_size
+        ](partition, mask)
         start = startend[0]
         end = startend[1]
         if start >= end:
@@ -1331,32 +1261,16 @@ fn produce[
             comptime d: Int = d_idx * swizzle_granularity
             comptime smem_offset = q_smem_layout_consumer(IntTuple(0, d))
 
-            @parameter
-            if _should_split_last_dim[qkv_type](depth, swizzle_mode):
-                q_tma_op.async_copy_5d(
-                    q_producer(q_idx, smem_offset),
-                    q_mbar,
-                    (
-                        UInt(0),
-                        UInt(d_idx),
-                        UInt(0),
-                        UInt(position.head_idx),
-                        UInt(position.q_row),
-                    ),
-                )
-            else:
-                # if thread_idx.x % 32 == 0:
-                #     print("Loading q[", position.q_row, ", ", position.head_idx, ", 0, " + String(d) + "]", sep="")
-                q_tma_op.async_copy_4d(
-                    q_producer(q_idx, smem_offset),
-                    q_mbar,
-                    (
-                        UInt(d),
-                        UInt(0),
-                        UInt(position.head_idx),
-                        UInt(position.q_row),
-                    ),
-                )
+            q_tma_op.async_copy_4d(
+                q_producer(q_idx, smem_offset),
+                q_mbar,
+                (
+                    UInt(d),
+                    UInt(0),
+                    UInt(position.head_idx),
+                    UInt(position.q_row),
+                ),
+            )
     else:
         q_tma_op.async_copy(
             q_producer(q_pipeline_state.index()),
@@ -1370,7 +1284,9 @@ fn produce[
 
     @parameter
     if not PartitionType.do_partition:
-        startend = position.get_start_and_end_for_partitions(partition)
+        startend = position.get_start_and_end_for_partitions[
+            page_size = KVLUTType.page_size
+        ](partition, mask)
         start = startend[0]
         end = startend[1]
     var kv_tile_start_row: UInt32 = start
@@ -1388,6 +1304,7 @@ fn produce[
 
     var kv_row_prev: UInt32 = kv_row
     var kv_head_idx_prev: UInt32 = kv_head_idx
+    var kv_tile_start_row_prev: UInt32 = kv_tile_start_row
     # wait to flip phase, but only bother after producing
     # there isn't any memory we can throttle
     # the order of the consumer's arrivals determines the
@@ -1444,39 +1361,22 @@ fn produce[
 
                     @parameter
                     for d_idx in range(depth // 64):
-
-                        @parameter
-                        if _should_split_last_dim[qkv_type](
-                            depth, swizzle_mode
-                        ):
-                            q_tma_op.async_copy_5d(
-                                q_producer(q_idx),
-                                pq_mbar,
-                                (
-                                    UInt(0),
-                                    UInt(d_idx),
-                                    UInt(0),
-                                    UInt(position.head_idx),
-                                    UInt(position.q_row),
-                                ),
-                            )
-                        else:
-                            comptime d: UInt = UInt(d_idx * 64)
-                            q_tma_op.async_copy_4d(
-                                q_producer(q_idx),
-                                pq_mbar,
-                                (
-                                    d,
-                                    UInt(0),
-                                    UInt(position.head_idx),
-                                    UInt(position.q_row),
-                                ),
-                            )
+                        comptime d: UInt = UInt(d_idx * 64)
+                        q_tma_op.async_copy_4d(
+                            q_producer(q_idx),
+                            pq_mbar,
+                            (
+                                d,
+                                UInt(0),
+                                UInt(position.head_idx),
+                                UInt(position.q_row),
+                            ),
+                        )
 
                 kv_head_idx = position.kv_head_idx()
-                start, new_end = position.get_start_and_end_for_partitions(
-                    partition
-                )
+                start, new_end = position.get_start_and_end_for_partitions[
+                    page_size = KVLUTType.page_size
+                ](partition, mask)
                 kv_tile_start_row = start
                 end = new_end
             else:
@@ -1489,11 +1389,24 @@ fn produce[
             continue
         kv_row = kv_lut.row_idx(position.prompt_idx, kv_tile_start_row)
         produce_k[True](write_pipeline_states, kv_row, kv_head_idx)
-        produce_v(write_pipeline_states, kv_row_prev, kv_head_idx_prev)
+        produce_v(
+            write_pipeline_states,
+            kv_row_prev,
+            kv_head_idx_prev,
+            kv_tile_start_row_prev,
+            end,
+        )
         kv_row_prev = kv_row
         kv_head_idx_prev = kv_head_idx
+        kv_tile_start_row_prev = kv_tile_start_row
 
-    produce_v(write_pipeline_states, kv_row_prev, kv_head_idx_prev)
+    produce_v(
+        write_pipeline_states,
+        kv_row_prev,
+        kv_head_idx_prev,
+        kv_tile_start_row_prev,
+        end,
+    )
 
 
 @always_inline
@@ -1501,10 +1414,10 @@ fn output_reg_to_smem_st_matrix[
     output_type: DType,
     accum_type: DType,
     num_m_mmas: Int,
+    padded_depth: Int,
     o_frag_size: Int,
     //,
     BM: Int,
-    padded_depth: Int,
     swizzle: Swizzle,
     num_consumer: Int,
 ](
@@ -1523,7 +1436,7 @@ fn output_reg_to_smem_st_matrix[
         address_space = AddressSpace.SHARED,
     ],
 ):
-    var st_matrix_rt_layout = RuntimeLayout[
+    comptime st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[
             output_type, padded_depth, num_m_mmas, num_consumer
         ](),
@@ -1545,7 +1458,7 @@ fn output_reg_to_smem_st_matrix[
                 Int(local_warp_group_idx),
             )
             var accum_smem_idx = swizzle(st_matrix_rt_layout(st_matrix_args))
-            var offset = accum_smem_tile.ptr.offset(accum_smem_idx)
+            var offset = accum_smem_tile.ptr + accum_smem_idx
             var output_frag = (
                 output_reg_tile.tile[1, 8](m_mma, i)
                 .load[8](0, 0)
@@ -1591,14 +1504,14 @@ fn output_reg_to_smem[
         Layout.row_major(BM, padded_depth),
         address_space = AddressSpace.SHARED,
     ](q_smem)
-    comptime use_stmatrix = accum_type is DType.float32 and padded_depth % 16 == 0 and size_of[
+    comptime use_stmatrix = accum_type == DType.float32 and padded_depth % 16 == 0 and size_of[
         output_type
     ]() == 2 and o_frag_size % 8 == 0
 
     @parameter
     if use_stmatrix:
         var warp_group_thread_idx = tid % WARPGROUP_SIZE
-        output_reg_to_smem_st_matrix[BM, padded_depth, swizzle, num_consumer](
+        output_reg_to_smem_st_matrix[BM, swizzle, num_consumer](
             warp_group_thread_idx,
             local_warp_group_idx,
             output_reg_tile,

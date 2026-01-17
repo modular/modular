@@ -15,7 +15,6 @@ from math import ceildiv
 from sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer import NDBuffer
 from gpu import barrier, warp_id, lane_id
 from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
@@ -31,7 +30,12 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
     warpgroup_fence,
 )
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tensor_tile,
+    create_tma_tile,
+)
 from memory import stack_allocation
 from testing import assert_almost_equal
 
@@ -62,7 +66,7 @@ fn _load_a_reg_tile[
         layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
-        *_, **_,
+        ...,
     ],
 ):
     __comptime_assert ret.layout[0].shape[0].value() > 0
@@ -316,10 +320,10 @@ def test_tma_wgmma[
         Layout.row_major(M, N),
     ](ctx)
 
-    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
         ctx, a.device_tensor()
     )
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
@@ -341,7 +345,7 @@ def test_tma_wgmma[
         a_smem=a_smem,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),
@@ -352,13 +356,9 @@ def test_tma_wgmma[
 
     vendor_blas.matmul(
         ctx,
-        rebind[NDBuffer[c_type, 2, MutAnyOrigin]](c_ref.device_buffer()),
-        rebind[NDBuffer[a_type, 2, MutAnyOrigin]](
-            a.device_buffer[update=False]()
-        ),
-        rebind[NDBuffer[b_type, 2, MutAnyOrigin]](
-            b.device_buffer[update=False]()
-        ),
+        c_ref.device_tensor[update=False](),
+        a.device_tensor[update=False](),
+        b.device_tensor[update=False](),
         c_row_major=True,
         transpose_b=transpose_b,
     )

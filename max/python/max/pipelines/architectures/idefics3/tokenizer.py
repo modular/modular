@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import functools
 import io
 import json
 from collections.abc import Sequence
@@ -24,16 +23,19 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
+    ImageContentPart,
     ImageMetadata,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TokenBuffer,
 )
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import TextAndVisionTokenizer
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from PIL.Image import Image as ImageType
-from transformers import AutoConfig, AutoProcessor, AutoTokenizer
+from transformers import AutoProcessor, AutoTokenizer
 
 if TYPE_CHECKING:
     from max.pipelines.lib import PipelineConfig
@@ -49,12 +51,12 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
     def __init__(
         self,
         model_path: str,
+        pipeline_config: PipelineConfig,
         *,
         revision: str | None = None,
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
-        pipeline_config: PipelineConfig | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -70,29 +72,17 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         # Set max_length after delegate is created (like parent class)
         self.max_length = max_length or self.delegate.model_max_length
 
-        # Set up encode methods (copied from TextAndVisionTokenizer)
-        self._encode_with_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=True
-        )
-        self._encode_without_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=False
-        )
-
-        # Load config for image processing
-        config = AutoConfig.from_pretrained(
-            model_path, revision=revision, trust_remote_code=trust_remote_code
-        )
+        # Use the pre-loaded HuggingFace config from pipeline_config
+        config = pipeline_config.model.huggingface_config
 
         self.enable_prefix_caching = (
-            pipeline_config.model_config.kv_cache_config.enable_prefix_caching
-            if pipeline_config
-            else False
+            pipeline_config.model.kv_cache.enable_prefix_caching
         )
 
         if vision_token_id := getattr(config, "image_token_id", None):
             self.vision_token_ids = [vision_token_id]
         else:
-            raise ValueError("image_token_id not found in model_config config")
+            raise ValueError("image_token_id not found in model config")
 
         self.processor = AutoProcessor.from_pretrained(
             model_path, revision=revision
@@ -129,22 +119,20 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         # Convert to text-only messages first
         text_messages: list[dict[str, Any]] = []
         for message in messages:
-            text_message: dict[str, Any] = {"role": message.get("role")}
-            content = message.get("content")
+            text_message: dict[str, Any] = {"role": message.role}
+            content = message.content
 
             if isinstance(content, str):
                 text_message["content"] = content
             elif isinstance(content, list):
-                text_parts = []
+                text_parts: list[str] = []
                 for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
+                    if isinstance(item, TextContentPart):
                         # Handle both "content" and "text" keys
-                        text_content = item.get("content") or item.get(
-                            "text", ""
-                        )
+                        text_content = item.text
                         if text_content:
                             text_parts.append(text_content)
-                    elif isinstance(item, dict) and item.get("type") == "image":
+                    elif isinstance(item, ImageContentPart):
                         # Add image placeholder
                         text_parts.append("<image>")
                 text_message["content"] = " ".join(text_parts)
@@ -168,14 +156,14 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         add_special_tokens = True
         if request.prompt is not None:
             prompt = request.prompt
-        elif request.messages is not None:
+        elif request.messages:
             prompt = self.apply_chat_template(request.messages)
             add_special_tokens = False
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
 
         # Convert image bytes to PIL Image objects.
-        if request.images is not None and len(request.images) > 0:
+        if request.images:
             images = []
             for image_bytes in request.images:
                 try:
@@ -276,11 +264,16 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             raise ValueError(
                 f"Number of image token indices ({len(start_and_end_idxs)}) does not match number of pixel values ({len(pixel_values)})"
             )
+
+        token_buffer = TokenBuffer(
+            array=encoded_prompt.astype(np.int64, copy=False),
+        )
+
         context = TextAndVisionContext(
             request_id=request.request_id,
             eos_token_ids=eos_token_ids,
             extra_model_args=extra_model_args,
-            tokens=encoded_prompt,
+            tokens=token_buffer,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,

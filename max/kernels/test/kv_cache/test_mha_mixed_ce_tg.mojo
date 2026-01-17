@@ -121,7 +121,6 @@ def execute_ragged_flash_attention():
         ),
     ).fill(0)
     for bs_idx in range(batch_size):
-        true_ce_prompt_len = true_ce_prompt_lens[bs_idx]
         mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
 
         true_ce_row_offset = true_ce_row_offsets[bs_idx]

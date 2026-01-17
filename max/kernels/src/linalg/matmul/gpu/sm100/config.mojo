@@ -23,7 +23,15 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.math import align_down
 from ..tile_scheduler import RasterOrder
-from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
+from linalg.fp4_utils import (
+    SF_MN_GROUP_SIZE,
+    SF_K_GROUP_SIZE,
+    SF_ATOM_M,
+    SF_ATOM_K,
+    NVFP4_SF_VECTOR_SIZE,
+    MXFP8_SF_VECTOR_SIZE,
+)
+from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 @fieldwise_init
@@ -49,16 +57,16 @@ struct MatmulConfig[
     # Has default values or derivible from mandatory parameters
     var block_tile_shape: IndexList[3]
     var num_split_k: Int
-    var num_pipeline_stages: UInt
-    var num_clc_pipeline_stages: UInt
-    var num_accum_pipeline_stages: UInt
+    var num_pipeline_stages: Int
+    var num_clc_pipeline_stages: Int
+    var num_accum_pipeline_stages: Int
     var num_output_stages: UInt
     var output_tile_shape: IndexList[2]
     var a_swizzle: TensorMapSwizzle
     var b_swizzle: TensorMapSwizzle
     var c_swizzle: TensorMapSwizzle
 
-    var k_group_size: UInt
+    var k_group_size: Int
 
     fn __init__(
         out self,
@@ -70,10 +78,10 @@ struct MatmulConfig[
         num_split_k: Int = 1,
         block_swizzle_size: Int = 0,
         raster_order: RasterOrder = RasterOrder.AlongM,
-        k_group_size: UInt = 1,
-        num_pipeline_stages: Optional[UInt] = None,
-        num_accum_pipeline_stages: UInt = 2,
-        num_clc_pipeline_stages: UInt = 2,
+        k_group_size: Int = 1,
+        num_pipeline_stages: Optional[Int] = None,
+        num_accum_pipeline_stages: Int = 2,
+        num_clc_pipeline_stages: Int = 2,
     ):
         constrained[Self.a_type == Self.b_type]()
 
@@ -150,7 +158,7 @@ struct MatmulConfig[
         var output_smem_bytes = c_smem_bytes + 12
 
         # response 128B, clc mbar 16B, clc-load pipeline mbar 16B
-        var clc_smem_bytes = 160 * Int(self.num_clc_pipeline_stages)
+        var clc_smem_bytes = 160 * self.num_clc_pipeline_stages
 
         # Usage by mma-output-pipeline
         var mma_output_smem_bytes = self.num_accum_pipeline_stages * 16
@@ -171,15 +179,12 @@ struct MatmulConfig[
         )
 
         # Subtract 511B for mbar usage etc
-        self.num_pipeline_stages = UInt(
-            (
-                b200_smem
-                - output_smem_bytes
-                - clc_smem_bytes
-                - Int(mma_output_smem_bytes)
-            )
-            // AB_smem_per_stage
-        )
+        self.num_pipeline_stages = (
+            b200_smem
+            - output_smem_bytes
+            - clc_smem_bytes
+            - Int(mma_output_smem_bytes)
+        ) // AB_smem_per_stage
 
     fn __eq__(
         self,
@@ -427,9 +432,9 @@ fn choose_config[
         cluster_shape=Index(cta_group, 1, 1),
         AB_swapped=swapAB,
         block_swizzle_size=optimal_block_swizzle_size,
-        num_accum_pipeline_stages=UInt(min(2, min_num_waves)),
-        num_clc_pipeline_stages=UInt(num_clc_pipeline_stages),
-        k_group_size=UInt(k_group_size),
+        num_accum_pipeline_stages=min(2, min_num_waves),
+        num_clc_pipeline_stages=num_clc_pipeline_stages,
+        k_group_size=k_group_size,
     )
 
 
@@ -485,20 +490,23 @@ struct BlockScaledMatmulConfig[
     # Has default values or derivible from mandatory parameters
     var block_tile_shape: IndexList[3]
     var num_split_k: Int
-    var num_pipeline_stages: UInt
-    var num_clc_pipeline_stages: UInt
-    var num_accum_pipeline_stages: UInt
+    var num_pipeline_stages: Int
+    var num_clc_pipeline_stages: Int
+    var num_accum_pipeline_stages: Int
     var num_output_stages: UInt
     var output_tile_shape: IndexList[2]
     var a_swizzle: TensorMapSwizzle
     var b_swizzle: TensorMapSwizzle
     var c_swizzle: TensorMapSwizzle
-
-    var k_group_size: UInt
+    var k_group_size: Int
+    var scaling_kind: UMMAKind
+    var vec_sf_size: Int
+    var num_sf_k_tiles: Int
 
     fn __init__(
         out self,
         *,
+        scaling_kind: UMMAKind,
         cta_group: Int = 2,
         mma_shape: IndexList[3] = get_mma_shape[Self.a_type, Self.accum_type](),
         cluster_shape: IndexList[3] = Index(2, 1, 1),
@@ -506,10 +514,10 @@ struct BlockScaledMatmulConfig[
         num_split_k: Int = 1,
         block_swizzle_size: Int = 0,
         raster_order: RasterOrder = RasterOrder.AlongM,
-        k_group_size: UInt = 1,
-        num_pipeline_stages: Optional[UInt] = None,
-        num_accum_pipeline_stages: UInt = 2,
-        num_clc_pipeline_stages: UInt = 2,
+        k_group_size: Int = 1,
+        num_pipeline_stages: Optional[Int] = None,
+        num_accum_pipeline_stages: Int = 2,
+        num_clc_pipeline_stages: Int = 2,
     ):
         constrained[Self.a_type == Self.b_type]()
 
@@ -520,10 +528,26 @@ struct BlockScaledMatmulConfig[
         self.block_swizzle_size = block_swizzle_size
         self.raster_order = raster_order
         self.k_group_size = k_group_size
+
         self.block_tile_shape = Index(
             self.mma_shape[0] // self.cta_group,
             self.mma_shape[1] // self.cta_group,
             128 // size_of[Self.a_type](),
+        )
+
+        # Scaling factors configuration (SFA, SFB)
+        self.scaling_kind = scaling_kind
+        self.vec_sf_size = (
+            NVFP4_SF_VECTOR_SIZE if self.scaling_kind
+            == UMMAKind.KIND_MXF4NVF4 else MXFP8_SF_VECTOR_SIZE
+        )
+        var SF_K_GROUP_SIZE = self.vec_sf_size * SF_ATOM_K
+        self.num_sf_k_tiles = (
+            (2 * self.block_tile_shape[2])
+            // (SF_K_GROUP_SIZE) if (
+                self.scaling_kind == UMMAKind.KIND_MXF4NVF4
+            ) else (self.block_tile_shape[2])
+            // (SF_K_GROUP_SIZE)
         )
 
         # If MMA_M is 256, each of the pair ctas has the entire MMA_N
@@ -586,7 +610,7 @@ struct BlockScaledMatmulConfig[
         var output_smem_bytes = c_smem_bytes + 12
 
         # response 128B, clc mbar 16B, clc-load pipeline mbar 16B
-        var clc_smem_bytes = 160 * Int(self.num_clc_pipeline_stages)
+        var clc_smem_bytes = 160 * self.num_clc_pipeline_stages
 
         # Usage by mma-output-pipeline
         var mma_output_smem_bytes = self.num_accum_pipeline_stages * 16
@@ -602,12 +626,14 @@ struct BlockScaledMatmulConfig[
             * size_of[Self.b_type]()
         )
         var a_scales_smem_bytes_per_stage = (
-            (self.block_tile_shape[0] // SF_MN_GROUP_SIZE)
+            self.num_sf_k_tiles
+            * (self.block_tile_shape[0] // SF_MN_GROUP_SIZE)
             * Self.sf_block_atom_size
             * size_of[Self.sfa_dtype]()
         )
         var b_scales_smem_bytes_per_stage = (
-            (self.mma_shape[1] // SF_MN_GROUP_SIZE)
+            self.num_sf_k_tiles
+            * (self.mma_shape[1] // SF_MN_GROUP_SIZE)
             * Self.sf_block_atom_size
             * size_of[Self.sfb_dtype]()
         )
@@ -620,15 +646,12 @@ struct BlockScaledMatmulConfig[
         )
 
         # Subtract 511B for mbar usage etc
-        self.num_pipeline_stages = UInt(
-            (
-                b200_smem
-                - output_smem_bytes
-                - clc_smem_bytes
-                - Int(mma_output_smem_bytes)
-            )
-            // (AB_smem_per_stage + AB_sf_smem_per_stage)
-        )
+        self.num_pipeline_stages = (
+            b200_smem
+            - output_smem_bytes
+            - clc_smem_bytes
+            - Int(mma_output_smem_bytes)
+        ) // (AB_smem_per_stage + AB_sf_smem_per_stage)
 
     fn __eq__(
         self,
@@ -659,6 +682,9 @@ struct BlockScaledMatmulConfig[
             and self.raster_order == other.raster_order
             and self.k_group_size == other.k_group_size
             and self.num_split_k == other.num_split_k
+            and self.scaling_kind == other.scaling_kind
+            and self.vec_sf_size == other.vec_sf_size
+            and self.num_sf_k_tiles == other.num_sf_k_tiles
         )
 
     fn swap_AB_type(
@@ -690,6 +716,7 @@ struct BlockScaledMatmulConfig[
             raster_order=self.raster_order,
             k_group_size=self.k_group_size,
             num_split_k=self.num_split_k,
+            scaling_kind=self.scaling_kind,
         )
 
     fn __str__(self) -> String:
@@ -697,9 +724,12 @@ struct BlockScaledMatmulConfig[
 
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("kernel_")
+        writer.write(self.scaling_kind, "_")
         writer.write(Self.a_type, "_")
         writer.write(Self.c_type, "_")
+        writer.write("A_vec", self.vec_sf_size, "_")
         writer.write(Self.sfa_dtype, "_")
+        writer.write("B_vec", self.vec_sf_size, "_")
         writer.write(Self.sfb_dtype, "_")
         writer.write("cta", self.cta_group, "_")
         writer.write(
@@ -771,3 +801,6 @@ struct BlockScaledMatmulConfig[
         hasher.update(self.raster_order)
         hasher.update(self.k_group_size)
         hasher.update(self.num_split_k)
+        hasher.update(self.scaling_kind)
+        hasher.update(self.vec_sf_size)
+        hasher.update(self.num_sf_k_tiles)

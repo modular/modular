@@ -10,12 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides infrastructure for creating Python bindings to Mojo code.
+
+This module implements the core machinery for exposing Mojo functions and types
+to Python through CPython's C API. It includes builder types for constructing
+Python modules and type objects, wrapper functions for converting between Mojo
+and Python calling conventions, and utilities for argument validation and type
+conversion. This enables seamless bidirectional interoperability between Mojo
+and Python code.
+"""
 
 from sys.ffi import _Global, c_int
 from sys.info import size_of
 
 from builtin._startup import _ensure_current_or_global_runtime_init
-from compile.reflection import get_type_name
+from reflection import get_type_name
 from memory import OpaquePointer, stack_allocation
 from python import Python, PythonObject
 from python._cpython import (
@@ -413,7 +422,7 @@ struct PythonModuleBuilder:
         )
 
     fn def_function[
-        func_type: AnyTrivialRegType,
+        func_type: __TypeOfAllTypes,
         //,
         func: PyObjectFunction[func_type, has_kwargs=_],
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
@@ -855,7 +864,7 @@ struct PythonTypeBuilder(Copyable):
         )
 
     fn def_method[
-        method_type: AnyTrivialRegType,
+        method_type: __TypeOfAllTypes,
         //,
         method: PyObjectFunction[method_type, self_type=_, has_kwargs=_],
     ](
@@ -894,7 +903,7 @@ struct PythonTypeBuilder(Copyable):
         ](method_name, docstring)
 
     fn def_staticmethod[
-        method_type: AnyTrivialRegType,
+        method_type: __TypeOfAllTypes,
         //,
         method: PyObjectFunction[method_type, has_kwargs=_],
     ](
@@ -960,9 +969,10 @@ fn _py_new_function_wrapper[
     try:
         return _unsafe_alloc[T](subtype)
     except e:
+        var error_message = String(e)
         var error_type = cpython.get_error_global("PyExc_TypeError")
         cpython.PyErr_SetString(
-            error_type, e.data.as_c_string_slice().unsafe_ptr()
+            error_type, error_message.as_c_string_slice().unsafe_ptr()
         )
         return {}
 
@@ -989,9 +999,10 @@ fn _py_init_function_wrapper[
 
     except e:
         # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
+        var error_message = String(e)
         var error_type = cpython.get_error_global("PyExc_ValueError")
         cpython.PyErr_SetString(
-            error_type, e.data.as_c_string_slice().unsafe_ptr()
+            error_type, error_message.as_c_string_slice().unsafe_ptr()
         )
         return -1
 
@@ -1060,10 +1071,11 @@ fn _py_c_function_wrapper[
                     py_self, args, kwargs
                 ).steal_data()
         except e:
+            var error_message = String(e)
             var error_type = cpython.get_error_global("PyExc_Exception")
 
             cpython.PyErr_SetString(
-                error_type, e.data.as_c_string_slice().unsafe_ptr()
+                error_type, error_message.as_c_string_slice().unsafe_ptr()
             )
 
             # Return a NULL `PyObject*`.
@@ -1072,7 +1084,7 @@ fn _py_c_function_wrapper[
 
 @always_inline
 fn _py_function_wrapper[
-    method_type: AnyTrivialRegType,
+    method_type: __TypeOfAllTypes,
     self_type: ImplicitlyDestructible,
     //,
     func: PyObjectFunction[method_type, self_type, has_kwargs=_],
@@ -1226,7 +1238,7 @@ fn _try_convert_arg[
     func_name: StringSlice, py_args: PythonObject, argidx: Int, out result: T
 ) raises:
     try:
-        result = T(py_args[argidx])
+        result = T(py=py_args[argidx])
     except convert_err:
         raise Error(
             String.format(

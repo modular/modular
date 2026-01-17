@@ -14,7 +14,7 @@
 from sys import size_of
 
 from gpu import barrier
-from gpu.cluster import block_rank_in_cluster, cluster_sync
+from gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import cluster_dim, cluster_idx, thread_idx
@@ -23,7 +23,12 @@ from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tensor_tile,
+    create_tma_tile,
+)
 from memory import stack_allocation
 from testing import assert_equal
 
@@ -52,8 +57,8 @@ fn tma_swizzle_multicast_load_kernel[
     comptime subcluster_tileN = subcluster_tile_layout.shape[1].value()
 
     var block_rank = block_rank_in_cluster()
-    var rank_m = Int(block_rank // CLUSTER_N)
-    var rank_n = Int(block_rank % CLUSTER_N)
+    var rank_m = Int(block_rank // UInt32(CLUSTER_N))
+    var rank_n = Int(block_rank % UInt32(CLUSTER_N))
 
     comptime CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
     var tma_multicast_mask = (1 << Int(CLUSTER_SIZE)) - 1
@@ -134,14 +139,14 @@ def test_tma_multicast_swizzle[
     var dst = ManagedLayoutTensor[dtype, layout](ctx)  # FIX THIS
 
     @parameter
-    if dtype is DType.float8_e4m3fn:
+    if dtype == DType.float8_e4m3fn:
         random(src.tensor())
         random(dst.tensor())
     else:
         arange(src.tensor(), 0)
         arange(dst.tensor(), 0)
 
-    var tma_tensor = create_tma_tile[
+    var tma_tensor = create_tensor_tile[
         subcluster_tile_shape, swizzle_mode=swizzle_mode
     ](ctx, src.device_tensor())
 
@@ -163,7 +168,7 @@ def test_tma_multicast_swizzle[
         CLUSTER_M=CLUSTER_M,
         CLUSTER_N=CLUSTER_N,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(

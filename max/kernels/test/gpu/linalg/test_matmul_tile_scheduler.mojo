@@ -54,7 +54,7 @@ fn test_kernel():
 def test(ctx: DeviceContext):
     comptime kernel = test_kernel
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         grid_dim=(4),
         block_dim=(1),
     )

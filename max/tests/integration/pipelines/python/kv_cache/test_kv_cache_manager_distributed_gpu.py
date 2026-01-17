@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
@@ -75,12 +75,13 @@ def test_claim() -> None:
     max_batch_size = 10
     batch = []
     for i in range(max_batch_size * data_parallel_degree):
-        context = create_text_context(np.empty(i))
+        # TokenBuffer requires at least one token, so start from 1
+        context = create_text_context(np.empty(max(i, 1)))
         replica_idx = kv_manager.get_or_recommend_replica(context)
         kv_manager.claim(context.request_id, replica_idx=replica_idx)
         batch.append((replica_idx, context))
 
-    new_context = create_text_context(np.empty(i))
+    new_context = create_text_context(np.empty(max(i, 1)))
 
     # Release a slot.
     replica_idx, context = batch[0]
@@ -113,7 +114,7 @@ def test_step() -> None:
 
     # Assert that each cache_length is initialized appropriately as 0
     for ctx in batch:
-        assert ctx.processed_length == 0
+        assert ctx.tokens.processed_length == 0
 
     # Update these values a few times
     for j in range(3):
@@ -125,19 +126,21 @@ def test_step() -> None:
         kv_manager.step(batch)
 
         for i, ctx in enumerate(batch):
-            assert ctx.processed_length == prompt_lens[i] * (j + 1)
+            assert ctx.tokens.processed_length == prompt_lens[i] * (j + 1)
 
         for i, ctx in enumerate(batch):
-            orig_processed_length = ctx.processed_length
+            orig_processed_length = ctx.tokens.processed_length
             for _ in range(prompt_lens[i] - 1):
                 ctx.update(42)
-            ctx.rewind_processing(ctx.processed_length - orig_processed_length)
+            ctx.tokens.rewind_processing(
+                ctx.tokens.processed_length - orig_processed_length
+            )
 
 
 @dataclass
 class PrevModelInputs:
-    input_row_offsets: Tensor
-    data_parallel_splits: Tensor
+    input_row_offsets: Buffer
+    data_parallel_splits: Buffer
 
 
 def test_increment_cache_lengths() -> None:
@@ -163,20 +166,20 @@ def test_increment_cache_lengths() -> None:
 
     # For testing, assign the cache lengths to some arbitrary values.
     device_0 = kv_manager.devices[0]
-    kv_cache_inputs[0].cache_lengths = Tensor.from_numpy(
+    kv_cache_inputs[0].cache_lengths = Buffer.from_numpy(
         np.array([10, 25], dtype=np.uint32)
     ).to(device_0)
-    kv_cache_inputs[1].cache_lengths = Tensor.from_numpy(
+    kv_cache_inputs[1].cache_lengths = Buffer.from_numpy(
         np.array([32], dtype=np.uint32)
     ).to(kv_manager.devices[1])
 
     # Create correct prev_model_inputs based on the prompt lengths and assigned
     # replicas.
     prev_model_inputs = PrevModelInputs(
-        input_row_offsets=Tensor.from_numpy(
+        input_row_offsets=Buffer.from_numpy(
             np.array([0, 3, 7, 14], dtype=np.uint32)
         ).to(device_0),
-        data_parallel_splits=Tensor.from_numpy(
+        data_parallel_splits=Buffer.from_numpy(
             np.array([0, 2, 3], dtype=np.int64)
         ),
     )

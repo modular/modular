@@ -37,7 +37,7 @@ If only non-max objects attempt promotion, it will always fail.
 import numpy as np
 from max.dtype import DType
 
-from ..driver import DLPackArray, Tensor
+from ..driver import Buffer, DLPackArray
 from . import ops
 from .graph import DeviceRef
 from .value import TensorValue, TensorValueLike, _is_strong_tensor_value_like
@@ -116,7 +116,7 @@ def _promote_to_strong(
 ) -> TensorValue:
     """Promotes weak dtypes and handle device placement.
 
-    If the the input value is already strong, its dtype will not be changed.
+    If the input value is already strong, its dtype will not be changed.
     Instead, strong dtype promotion will be handled by the individual ops in RMO.
     """
     if _is_strong_tensor_value_like(value):
@@ -140,7 +140,7 @@ def _promote_to_strong(
         )
 
     elif isinstance(value, DLPackArray):
-        tensor = Tensor.from_dlpack(value)
+        tensor = Buffer.from_dlpack(value)
 
         if tensor.dtype.is_float() and strong_dtype.is_integral():
             raise ValueError(

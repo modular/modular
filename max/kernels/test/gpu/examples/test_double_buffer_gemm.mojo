@@ -360,7 +360,7 @@ fn test(ctx: DeviceContext) raises:
         @always_inline
         @parameter
         fn run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function_checked[gemm, gemm](
+            ctx.enqueue_function_experimental[gemm](
                 c_tensor,
                 a_tensor,
                 b_tensor,
@@ -377,7 +377,7 @@ fn test(ctx: DeviceContext) raises:
         var TFlop = 2.0 * M * N * K * 1e-12
         print(nrun, "runs avg(s)", sectime, "TFlops/s", TFlop / sectime)
 
-    ctx.enqueue_function_checked[gemm, gemm](
+    ctx.enqueue_function_experimental[gemm](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -400,7 +400,7 @@ fn test(ctx: DeviceContext) raises:
         b_tensor.layout,
         BLOCK_DIM,
     ]
-    ctx.enqueue_function_checked[gemm_naive, gemm_naive](
+    ctx.enqueue_function_experimental[gemm_naive](
         c_tensor_ref,
         a_tensor,
         b_tensor,

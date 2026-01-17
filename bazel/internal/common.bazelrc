@@ -78,6 +78,7 @@ common --@rules_python//python/config_settings:exec_tools_toolchain=disabled
 
 # Make flag easier to write on the command line
 build --flag_alias=mojocopt=@rules_mojo//:mojo_copt
+build --flag_alias=mojopackagecopt=@rules_mojo//:mojo_package_copt
 
 # Disable cc_library's underlying shared library because of circular dependency linking issues
 build --dynamic_mode=off
@@ -128,13 +129,18 @@ build --action_env=MODULAR_TELEMETRY_ENABLED=false --host_action_env=MODULAR_TEL
 build --test_env=MODULAR_TELEMETRY_ENABLED=false
 run --run_env=MODULAR_TELEMETRY_ENABLED=false
 
+# Emit Mojo is enabled by default for build, run, and test.
+build --//:emit_mojo=true
+test --test_env=EMIT_MOJO=1
+run --run_env=EMIT_MOJO=1
+
 # Differentiate between accidental 'bazel run' vs 'bazel test'
 test --test_env=MODULAR_RUNNING_TESTS=true
 
 # Default GPU memory restrictions to 0, all tests must override this
-build --test_env=MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_ONLY=true
-build --test_env=MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE=0
-build --test_env=MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_CHUNK_PERCENT=100
+build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY=true
+build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE=0
+build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT=100
 
 # Allow --modify_execution_info to be passed any number of times
 common --incompatible_modify_execution_info_additive
@@ -193,8 +199,10 @@ build:remote --local_test_jobs=HOST_CPUS
 build:remote --jobs=1000
 build:remote --repo_env=MODULAR_REMOTE_EXEC=1
 
-# Enable dynamic execution on Linux only
+# Enable dynamic execution
 build --internal_spawn_scheduler
+# Enable dynamic execution for exec config, helpful if remote exec is queueing
+build --experimental_dynamic_exclude_tools=false
 build:linux --spawn_strategy=dynamic,remote,worker,sandboxed,standalone
 build:macos --spawn_strategy=remote,worker,sandboxed,standalone
 build:macos --strategy=CppCompile=dynamic,remote,worker,sandboxed,standalone

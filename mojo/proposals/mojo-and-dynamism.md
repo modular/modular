@@ -1,5 +1,7 @@
 # Mojo and Dynamism
 
+**Status**: Proposed.
+
 Mojo has the lofty goal of being a simple, powerful, and easy-to-use language
 like Python but with features that allow programmers to reach the performance of
 C. One of Mojo's approaches is to start by adopting the syntax of Python and

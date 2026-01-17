@@ -822,27 +822,17 @@ Because the Mojo compiler performs static type checking, a `String` constructor
 can accept a value only if its type implements some required behavior—in this
 case, it only accepts types that can generate a `String` representation.
 
-To enforce this, the `String()` constructors require a type to conform to either
-the [`Stringable`](/mojo/std/builtin/str/Stringable) or
-[`StringableRaising`](/mojo/std/builtin/str/StringableRaising) trait. (This
-type of function is sometimes referred to as a [*generic*
-function](/mojo/manual/parameters/#parameters-and-generics).) Each trait
-requires a conforming type to implement a `__str__()` method that returns a
-`String` representation. The only difference between the two traits is that
-`Stringable` requires that the method *cannot* raise an error, whereas
-`StringableRaising` indicates that the method *might* raise an error. (To learn
-more, read [The `Stringable`, `Representable`, and `Writable`
+To enforce this, the `String()` constructors require a type to conform to the 
+[`Stringable`] trait. (This type of function is sometimes referred to as a
+[*generic* function](/mojo/manual/parameters/#parameters-and-generics).) Each
+trait requires a conforming type to implement a `__str__()` method that returns
+a `String` representation. (To learn more, read [The `Stringable`,
+`Representable`, and `Writable`
 traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
 
 Our `grid_str()` method already returns a `String` representation, so it looks
 like we just have to rename it to `__str__()`. However, we also need to indicate
-which trait `Grid` conforms to. In our case, it must be `Stringable` instead of
-`StringableRaising` because we used `fn` to define the method. If you define
-a function or method with `def`, the compiler *always* assumes the
-function *can* raise an error. In contrast, an `fn` function is a [non-raising
-function](/mojo/manual/functions#raising-and-non-raising-functions) by default
-(though you can still declare that it might raise an error using the [`raises`
-keyword](/mojo/manual/errors#declare-a-raising-function)).
+which trait `Grid` conforms to. In our case, it must be `Stringable`.
 
 In `gridv1.mojo`, we need to update the `Grid` declaration to indicate that
 the type conforms to `Stringable` and rename the `grid_str()` method to
@@ -1225,15 +1215,16 @@ interface using a Python library.
 
 Mojo lets you import Python modules, call Python functions, and interact with
 Python objects from Mojo code. To demonstrate this capability, we'll
-use a Python package called [pygame](https://www.pygame.org) to create and
-manage a graphical user interface for our Game of Life program.
+use a Python package called [pygame-ce](https://pyga.me/docs/index.html) to
+create and manage a graphical user interface for our Game of Life program.
 
 First, we need to update our `pixi.toml` file to add a dependency on
-Python and the `pygame` package. In the project directory, execute the
-following command from the terminal:
+Python and the `pygame-ce` package. In the project directory, execute the
+following commands from the terminal:
 
 ```bash
-pixi add "python>=3.11,<3.13" "pygame>=2.6.1,<3"
+pixi add "python>=3.11,<3.15" 
+pixi add --pypi "pygame-ce>=2.5.6,<3"
 ```
 
 :::note
@@ -1316,14 +1307,14 @@ def run_display(
     running = True
     while running:
         # Poll for events
-        event = pygame.event.poll()
-        if event.type == pygame.QUIT:
-            # Quit if the window is closed
-            running = False
-        elif event.type == pygame.KEYDOWN:
-            # Also quit if the user presses <Escape> or 'q'
-            if event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                # Quit if the window is closed
                 running = False
+            elif event.type == pygame.KEYDOWN:
+                # Also quit if the user presses <Escape> or 'q'
+                if event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
+                    running = False
 
         # Clear the window by painting with the background color
         window.fill(background_fill_color)

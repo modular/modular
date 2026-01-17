@@ -35,7 +35,6 @@ scatter_set_constant = F.functional(kernels.scatter_set_constant)
 def test_custom() -> None:
     indices = Tensor.ones([4], dtype=DType.int32, device=DEVICE)
     token_expert_order, *_rest = moe_create_indices(indices, 8)
-    token_expert_order._sync_realize()
     assert token_expert_order.real
 
 

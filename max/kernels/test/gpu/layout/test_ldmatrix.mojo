@@ -16,13 +16,15 @@ from random import random_si64
 
 from gpu import WARP_SIZE, barrier, lane_id, thread_idx
 from gpu.host import DeviceContext
-from gpu.mma import ld_matrix, mma
-from gpu.mma_util import store_matrix_d
+from gpu.compute.mma import ld_matrix, mma
+from gpu.compute.mma_util import store_matrix_d
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal
 
 from utils.index import IndexList
@@ -173,7 +175,7 @@ fn check_ldmatrix_transposed_bf16[
     ctx.enqueue_copy(b_device, b_host)
 
     comptime kernel_type = test_ldmatrix_transposed[input_type, output_type]
-    ctx.enqueue_function_checked[kernel_type, kernel_type](
+    ctx.enqueue_function_experimental[kernel_type](
         c_device,
         a_device,
         b_device,
@@ -200,7 +202,7 @@ fn check_ldmatrix_transposed_bf16[
         b_tensor.layout,
         BLOCK_DIM,
     ]
-    ctx.enqueue_function_checked[kernel_naive_type, kernel_naive_type](
+    ctx.enqueue_function_experimental[kernel_naive_type](
         c_tensor_ref,
         a_tensor,
         b_tensor,
@@ -267,7 +269,7 @@ fn check_ldmatrix(
     comptime MMA_K = 8
 
     comptime kernel_type = test_ldmatrix_fp32
-    ctx.enqueue_function_checked[kernel_type, kernel_type](
+    ctx.enqueue_function_experimental[kernel_type](
         c_device,
         a_device,
         b_device,
@@ -312,7 +314,7 @@ fn check_ldmatrix(
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function_checked[kernel_naive_type, kernel_naive_type](
+    ctx.enqueue_function_experimental[kernel_naive_type](
         c_tensor_ref,
         a_tensor,
         b_tensor,

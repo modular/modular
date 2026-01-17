@@ -22,7 +22,7 @@ from max.nn import Module
 
 def meshgrid(
     height: DimLike, width: DimLike, _indexing: str = "ij"
-) -> TensorValue:
+) -> tuple[TensorValue, TensorValue]:
     """Returns row indices and col indices of each point on the grid."""
     height = Dim(height)
     width = Dim(width)
@@ -51,7 +51,7 @@ def meshgrid(
     v_grid = ops.tile(
         ops.unsqueeze(col_indices, 0), [height, 1]
     )  # Shape: (height, width)
-    return h_grid, v_grid  # type: ignore
+    return h_grid, v_grid
 
 
 def patch_position_ids(
@@ -73,7 +73,7 @@ def patch_position_ids(
         # TODO(MSDK-1193): replace ? by ops.chunk() or ops.split_tensor()
         # Combine row and col indices into 1 tensor of paired coordinates. Shape = (height, width, 2)
         # Then split into 2 tensors: 1st and 2nd coordinate of points in the mesh.
-        mesh_coords = ops.stack(mesh, axis=-1).reshape((-1, 2))  # type: ignore
+        mesh_coords = ops.stack(mesh, axis=-1).reshape((-1, 2))
         h_grid, v_grid = mesh_coords[:, 0], mesh_coords[:, 1]
         # Calculates a unique ID for each coordinate pair.
         # TODO: Understand if using max_width here leads to memory inefficiency

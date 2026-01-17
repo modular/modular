@@ -236,7 +236,7 @@ def msgpack_numpy_decoder(
         copy: Copy numpy arrays if true. Defaults to True.
             Copy is set to True by default because most downstream usage of deserialized tensors are MAX driver tensors, which require owned numpy arrays.
             This is a constraint imposed by dlpack & numpy where we cannot create a buffer from read-only data.
-            While there is a performance benefit during deserialization to removing copies by default, this often just moves the work downstream to an implicit copy during `Tensor.from_numpy`.
+            While there is a performance benefit during deserialization to removing copies by default, this often just moves the work downstream to an implicit copy during `Buffer.from_numpy`.
             As a result, it is easier to make the copy explicit here and maintain the pattern that all numpy arrays used in MAX are owned by the current process.
 
     Returns:

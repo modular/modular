@@ -29,7 +29,6 @@ from max.graph import (
     Value,
     ops,
 )
-from max.graph.ops.allreduce import matmul_allreduce
 from max.nn import (
     MLP,
     ColumnParallelLinear,
@@ -42,9 +41,12 @@ from max.nn import (
 )
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
+    MLAPrefillMetadata,
+    TensorParallelLatentAttentionWithRope,
 )
 from max.nn.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
+    TensorParallelLatentAttentionWithRopeFp8,
 )
 from max.nn.comm.allreduce import Allreduce
 from max.nn.comm.ep import EPBatchManager
@@ -78,6 +80,14 @@ class DeepseekV3DecoderLayer(Module):
         self.config = config
         self.ep_manager = ep_manager
         num_devices = len(config.devices)
+        if config.data_parallel_degree not in (1, num_devices):
+            raise ValueError(
+                "data_parallel_degree must be 1 (TP attention) or match the "
+                f"number of devices ({num_devices})."
+            )
+        self.use_data_parallel_attention = (
+            num_devices > 1 and config.data_parallel_degree == num_devices
+        )
 
         # Create Multi-head Latent Attention layer.
         mla_kwargs: dict[str, Any] = dict(
@@ -98,14 +108,24 @@ class DeepseekV3DecoderLayer(Module):
 
         mla_cls: (
             type[DataParallelLatentAttentionWithRope]
+            | type[TensorParallelLatentAttentionWithRope]
             | type[DataParallelLatentAttentionWithRopeFp8]
+            | type[TensorParallelLatentAttentionWithRopeFp8]
         )
         if config.float8_config is not None:
             mla_kwargs["float8_config"] = config.float8_config
-            mla_cls = DataParallelLatentAttentionWithRopeFp8
+            mla_cls = (
+                DataParallelLatentAttentionWithRopeFp8
+                if self.use_data_parallel_attention
+                else TensorParallelLatentAttentionWithRopeFp8
+            )
         else:
             mla_kwargs["dtype"] = config.dtype
-            mla_cls = DataParallelLatentAttentionWithRope
+            mla_cls = (
+                DataParallelLatentAttentionWithRope
+                if self.use_data_parallel_attention
+                else TensorParallelLatentAttentionWithRope
+            )
 
         self.self_attn = mla_cls(**mla_kwargs)
 
@@ -196,10 +216,20 @@ class DeepseekV3DecoderLayer(Module):
                 moe = MoE(**moe_kwargs)
 
             if config.ep_config is not None:
+                if not self.use_data_parallel_attention:
+                    raise ValueError(
+                        "Expert-parallel MoE/MLP is only compatible with "
+                        "data-parallel attention."
+                    )
                 moe.sharding_strategy = ShardingStrategy.expert_parallel(
                     len(config.devices)
                 )
             else:
+                if self.use_data_parallel_attention:
+                    raise ValueError(
+                        "Tensor-parallel MoE/MLP is only compatible with "
+                        "tensor-parallel attention."
+                    )
                 moe.sharding_strategy = ShardingStrategy.tensor_parallel(
                     len(config.devices)
                 )
@@ -233,10 +263,8 @@ class DeepseekV3DecoderLayer(Module):
         kv_lookup_table: list[TensorValue],
         kv_max_lengths: list[TensorValue],
         freqs_cis: list[TensorValue],
-        mla_inputs: list[TensorValue],
+        mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
-        input_row_offsets_int64: TensorValue,
-        data_parallel_splits: TensorValue,
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
@@ -252,26 +280,21 @@ class DeepseekV3DecoderLayer(Module):
             for i in range(len(kv_blocks))
         ]
 
-        # we split the inputs outside the layer when using EP
-        if self.config.ep_config is None:
-            original_shape = xs[0].shape
-            xs, input_row_offsets = split_batch_replicated(
-                self.config.devices,
-                xs,
-                input_row_offsets,
-                input_row_offsets_int64,
-                data_parallel_splits,
-            )
-            # Create MLA prefill inputs if not in decode mode
-            if self.config.graph_mode != "decode":
-                mla_inputs = self.self_attn.create_mla_inputs(
-                    input_row_offsets, kv_collections
+        # Re-pack flat MLA inputs into MLAPrefillMetadata dataclasses
+        num_devices = len(kv_blocks)
+        mla_prefill_metadata: list[MLAPrefillMetadata] = []
+        for i in range(num_devices):
+            mla_prefill_metadata.append(
+                MLAPrefillMetadata(
+                    buffer_row_offsets=mla_prefill_metadata_flat[3 * i],
+                    cache_offsets=mla_prefill_metadata_flat[3 * i + 1],
+                    buffer_lengths=mla_prefill_metadata_flat[3 * i + 2],
                 )
+            )
 
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
-        # Data-parallel attention (per-device)
         attn_outs = self.self_attn(
             layer_idx,
             norm_xs,
@@ -279,7 +302,14 @@ class DeepseekV3DecoderLayer(Module):
             kv_collections,
             freqs_cis=freqs_cis,
             input_row_offsets=input_row_offsets,
-            mla_inputs=mla_inputs,
+            mla_prefill_metadata=mla_prefill_metadata,
+        )
+
+        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
+
+        # Post-attention norm (per-device)
+        norm_outs = forward_sharded_layers(
+            self.post_attention_layernorm_shards, hs
         )
 
         if self.config.ep_config is not None:
@@ -287,46 +317,18 @@ class DeepseekV3DecoderLayer(Module):
             if self.ep_manager is not None:
                 self.ep_manager.fetch_buffers(ep_inputs)
 
-            hs = [
-                x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)
-            ]
-            # Post-attention norm (per-device)
-            norm_outs = forward_sharded_layers(
-                self.post_attention_layernorm_shards, hs
-            )
             mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
 
         else:
-            hs = [
-                x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)
-            ]
-
-            hs = ops.allgather(hs, signal_buffers)
-
-            # Use rebind to assert that the gathered shape is the same as the
-            # original input shape
-            hs = [out.rebind(original_shape) for out in hs]
-
-            # Post-attention norm (per-device)
-            norm_outs = forward_sharded_layers(
-                self.post_attention_layernorm_shards, hs
-            )
-            mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
-
             if (
-                self.distributed_gemm_config is None
-                or not self.distributed_gemm_config.enable_matmul_allreduce
+                self.distributed_gemm_config is not None
+                and self.distributed_gemm_config.enable_matmul_allreduce
             ):
-                mlp_outs = self.allreduce(mlp_outs, signal_buffers)
-            else:
-                # Special matmul + allreduce split version
-                # extract the sharded weights from the last linear layers
-                weights = [layer.down_proj.weight for layer in self.mlp_shards]  # type: ignore[union-attr]
-                mlp_outs = matmul_allreduce(
-                    mlp_outs,
-                    weights,
-                    signal_buffers,
+                raise ValueError(
+                    "Split matmul + allreduce is not supported for MoE models."
                 )
+            mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
+            mlp_outs = self.allreduce(mlp_outs, signal_buffers)
 
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
@@ -345,6 +347,10 @@ class DeepseekV3(Module):
         self.config = config
         num_devices = len(config.devices)
         devices = config.devices
+
+        self.use_data_parallel_attention = (
+            num_devices > 1 and config.data_parallel_degree == num_devices
+        )
 
         embedding_output_dtype = config.dtype
         if config.float8_config and config.float8_config.embedding_output_dtype:
@@ -430,10 +436,12 @@ class DeepseekV3(Module):
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
+        host_input_row_offsets: TensorValue,
         data_parallel_splits: TensorValue,
+        batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
     ) -> tuple[TensorValue, ...]:
-        if not input_row_offsets.device == DeviceRef.CPU():
+        if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("input_row_offsets must be located on CPU")
         if not data_parallel_splits.device == DeviceRef.CPU():
             raise ValueError("data_parallel_splits must be located on CPU")
@@ -441,25 +449,44 @@ class DeepseekV3(Module):
         devices = self.config.devices
         h = self.embed_tokens(tokens, signal_buffers)
 
-        mla_inputs: list[TensorValue] = []
+        mla_prefill_metadata: list[MLAPrefillMetadata] = []
         freqs_cis = distribute_value(self.rope.freqs_cis, devices)
         input_row_offsets_ = distribute_value(input_row_offsets, devices)
-        input_row_offsets_int64 = input_row_offsets.cast(DType.int64)
 
-        if self.ep_manager is not None:
+        if self.use_data_parallel_attention:
             h, input_row_offsets_ = split_batch_replicated(
                 devices,
                 h,
                 input_row_offsets_,
-                input_row_offsets_int64,
+                host_input_row_offsets.cast(DType.int64),
                 data_parallel_splits,
             )
 
-            # Create MLA prefill inputs if not in decode mode
-            if self.config.graph_mode != "decode":
-                mla_inputs = self.layers[0].self_attn.create_mla_inputs(  # type: ignore
-                    input_row_offsets_, kv_collections
-                )
+        # Create MLA prefill metadata if not in decode mode
+        if self.config.graph_mode != "decode":
+            mla_prefill_metadata = self.layers[
+                0
+            ].self_attn.create_mla_prefill_metadata(  # type: ignore
+                input_row_offsets_, kv_collections
+            )
+
+            # replace each device's buffer_lengths with the batch context length
+            assert len(mla_prefill_metadata) == len(batch_context_lengths)
+            for i in range(len(batch_context_lengths)):
+                mla_prefill_metadata[i].buffer_lengths = batch_context_lengths[
+                    i
+                ]
+
+        # Flatten MLAPrefillMetadata to list of TensorValues for subgraph calls
+        mla_prefill_metadata_flat: list[TensorValue] = []
+        for metadata in mla_prefill_metadata:
+            mla_prefill_metadata_flat.extend(
+                [
+                    metadata.buffer_row_offsets,
+                    metadata.cache_offsets,
+                    metadata.buffer_lengths,
+                ]
+            )
 
         subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
             TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
@@ -470,10 +497,8 @@ class DeepseekV3(Module):
             [kv_collection[2].type for kv_collection in kv_collections],
             [kv_collection[3].type for kv_collection in kv_collections],
             [freq.type for freq in freqs_cis],
-            [val.type for val in mla_inputs],
+            [val.type for val in mla_prefill_metadata_flat],
             [offset.type for offset in input_row_offsets_],
-            input_row_offsets_int64.type,
-            data_parallel_splits.type,
         ]
 
         if self.ep_manager is not None:
@@ -527,10 +552,8 @@ class DeepseekV3(Module):
                                 for kv_collection in kv_collections
                             ],
                             *freqs_cis,
-                            *mla_inputs,
+                            *mla_prefill_metadata_flat,
                             *input_row_offsets_,
-                            input_row_offsets_int64,
-                            data_parallel_splits,
                             *(ep_inputs if ep_inputs is not None else ()),
                             prefix=f"layers.{idx}.",
                         )
@@ -546,10 +569,8 @@ class DeepseekV3(Module):
                     [kv_collection[2] for kv_collection in kv_collections],
                     [kv_collection[3] for kv_collection in kv_collections],
                     freqs_cis=freqs_cis,
-                    mla_inputs=mla_inputs,
+                    mla_prefill_metadata_flat=mla_prefill_metadata_flat,
                     input_row_offsets=input_row_offsets_,
-                    input_row_offsets_int64=input_row_offsets_int64,
-                    data_parallel_splits=data_parallel_splits,
                     ep_inputs=ep_inputs,
                 )
                 assert isinstance(h, list)
@@ -646,7 +667,15 @@ class DeepseekV3(Module):
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
         )
-        input_row_offsets_type = TensorType(
+        device_input_row_offsets_type = TensorType(
+            DType.uint32,
+            shape=["input_row_offsets_len"],
+            device=device_ref,
+        )
+
+        # Add host input row offsets type, this is used to split the
+        # concatenated DP inputs.
+        host_input_row_offsets_type = TensorType(
             DType.uint32,
             shape=["input_row_offsets_len"],
             device=DeviceRef.CPU(),
@@ -672,12 +701,21 @@ class DeepseekV3(Module):
 
         all_input_types: list[TensorType | BufferType] = [
             tokens_type,
-            input_row_offsets_type,
+            device_input_row_offsets_type,
+            host_input_row_offsets_type,
             return_n_logits_type,
             data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
         all_input_types.extend(flattened_kv_types)
+
+        # Add batch context lengths
+        batch_context_length_type = TensorType(
+            DType.int32, shape=[1], device=DeviceRef.CPU()
+        )
+        all_input_types.extend(
+            [batch_context_length_type for _ in range(len(self.config.devices))]
+        )
 
         if self.ep_manager is not None:
             all_input_types.extend(self.ep_manager.input_types())

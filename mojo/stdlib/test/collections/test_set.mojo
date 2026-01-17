@@ -231,7 +231,8 @@ def test_iter():
     elem = next(it)
     assert_equal(elem[0], 2)
     assert_equal(elem[1], 6)
-    assert_equal(it.__has_next__(), False)
+    with assert_raises():
+        _ = it.__next__()  # raises StopIteration
 
 
 def test_add():
@@ -532,6 +533,29 @@ def test_set_repr_wrap():
         repr(tmp_set),
         "{SIMD[DType.float64, 1](1.0), SIMD[DType.float64, 1](8.0)}",
     )
+
+
+def test_write_to():
+    """Test Writable trait implementation."""
+    var set = Set[Int](10, 20, 30)
+    var output = String()
+    set.write_to(output)
+
+    assert_equal(output, "{10, 20, 30}")
+
+    # Test with different types
+    var string_set = Set[String]("hello", "world")
+    var string_output = String()
+    string_set.write_to(string_output)
+
+    assert_equal(string_output, "{'hello', 'world'}")
+
+    # Test empty set
+    var empty_set = Set[Int]()
+    var empty_output = String()
+    empty_set.write_to(empty_output)
+
+    assert_equal(empty_output, "{}")
 
 
 def main():

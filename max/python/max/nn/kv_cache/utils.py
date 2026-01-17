@@ -13,12 +13,12 @@
 from __future__ import annotations
 
 import numpy as np
-from max.driver import Tensor
+from max.driver import Buffer
 
 
 def build_max_lengths_tensor(
     num_steps: int, max_seq_length: int, max_cache_length: int
-) -> Tensor:
+) -> Buffer:
     # Build a tensor of maximum lengths. Each step slices the first row to
     # advance to the values for the next row.
     max_lengths_np = np.empty((num_steps, 2), np.uint32)
@@ -30,4 +30,4 @@ def build_max_lengths_tensor(
         step_max_seq_length = 1
         step_max_cache_length += 1
 
-    return Tensor.from_numpy(max_lengths_np)
+    return Buffer.from_numpy(max_lengths_np)

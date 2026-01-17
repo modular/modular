@@ -4,11 +4,25 @@ load("@rules_python//python:defs.bzl", "py_test")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", requirement = "pip_requirement")
+load("//bazel/pip/pydeps:pydeps_test.bzl", "pydeps_test")
 load(":modular_py_library.bzl", "modular_py_library")
 load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
 load(":mojo_test_environment.bzl", "mojo_test_environment")
 load(":py_repl.bzl", "py_repl")
+load(":test_resources.bzl", "TEST_RESOURCES")
+
+def _get_resource_tags(use_resource_tags, name):
+    if not use_resource_tags:
+        return []
+    resources = TEST_RESOURCES.get("//" + native.package_name() + ":" + name)
+    tags = []
+    if resources:
+        if "cpu" in resources:
+            tags.append("resources:cpu:{}".format(resources["cpu"]))
+        if "memory" in resources:
+            tags.append("resources:memory:{}".format(resources["memory"]))
+    return tags
 
 def modular_py_test(
         name,
@@ -17,7 +31,8 @@ def modular_py_test(
         env = {},
         args = [],
         data = [],
-        external_noop = False,  # buildifier: disable=unused-variable
+        ignore_extra_deps = [],
+        ignore_unresolved_imports = [],
         mojo_deps = [],
         tags = [],
         exec_properties = {},
@@ -25,6 +40,7 @@ def modular_py_test(
         gpu_constraints = [],
         main = None,
         imports = [],
+        use_resource_tags = False,
         **kwargs):
     """Creates a pytest based python test target.
 
@@ -35,7 +51,8 @@ def modular_py_test(
         env: Any environment variables that should be set during the test runtime
         args: Arguments passed to the test execution
         data: Runtime deps of the test target
-        external_noop: Ignored, for compatibility with the external repo
+        ignore_extra_deps: Forwarded to pydeps_test
+        ignore_unresolved_imports: Forwarded to pydeps_test
         mojo_deps: mojo_library targets the test depends on at runtime
         tags: Tags added to the py_test target
         exec_properties: https://bazel.build/reference/be/common-definitions#common-attributes
@@ -43,13 +60,16 @@ def modular_py_test(
         gpu_constraints: GPU requirements for the tests
         main: If provided, this is the main entry point for the test. If not provided, pytest is used.
         imports: Additional python import paths
+        use_resource_tags: If true, use pregenerated resource tags for the test.
         **kwargs: Extra arguments passed through to py_test
     """
+
+    if len(imports) > 1:
+        fail("modular_py_test only supports a single import path.")
 
     validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
     toolchains = [
         "//bazel/internal:current_gpu_toolchain",
-        "//bazel/internal:lib_toolchain",
     ]
 
     has_test = False
@@ -148,7 +168,8 @@ def modular_py_test(
             name = name + ".mypy_library",
             data = data + extra_data,
             toolchains = toolchains,
-            tags = [ALLOW_UNUSED_TAG],
+            # Pydeps test is added below
+            tags = [ALLOW_UNUSED_TAG, "no-pydeps"],
             deps = deps + [
                 requirement("pytest"),
                 "@rules_python//python/runfiles",
@@ -177,7 +198,7 @@ def modular_py_test(
                 srcs = [src] + non_test_srcs + ["//bazel/internal:pytest_runner"],
                 exec_properties = default_exec_properties | exec_properties,
                 target_compatible_with = gpu_constraints + target_compatible_with,
-                tags = tags,
+                tags = tags + _get_resource_tags(use_resource_tags, test_name),
                 imports = imports,
                 **kwargs
             )
@@ -200,7 +221,26 @@ def modular_py_test(
             srcs = srcs + ["//bazel/internal:pytest_runner"],
             exec_properties = default_exec_properties | exec_properties,
             target_compatible_with = gpu_constraints + target_compatible_with,
-            tags = tags,
+            tags = tags + _get_resource_tags(use_resource_tags, name),
             imports = imports,
             **kwargs
+        )
+
+    if "no-pydeps" not in tags:
+        pydeps_test(
+            name = name + ".pydeps_test",
+            data = data,
+            srcs = srcs,
+            # We provide these as a convenience, okay if not used.
+            ignore_extra_deps = ignore_extra_deps + [
+                requirement("pytest"),
+                "@rules_python//python/runfiles",
+            ],
+            ignore_unresolved_imports = ignore_unresolved_imports,
+            imports = imports,
+            deps = deps + [
+                requirement("pytest"),
+                "@rules_python//python/runfiles",
+            ],
+            tags = ["pydeps"],
         )

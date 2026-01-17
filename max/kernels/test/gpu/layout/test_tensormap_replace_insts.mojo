@@ -25,6 +25,7 @@ from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_sram_to_dram
 from layout.swizzle import make_swizzle
 from layout.tma_async import (
+    create_tensor_tile,
     SharedMemBarrier,
     TMATensorTile,
     TMATensorTileArray,
@@ -110,7 +111,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
     arange(old_src.tensor(), 1)
     arange(new_src.tensor(), 1001)
 
-    var template_tma_tensormap = create_tma_tile[Index(M, N)](
+    var template_tma_tensormap = create_tensor_tile[Index(M, N)](
         ctx, old_src.device_tensor()
     )
 
@@ -146,7 +147,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
         type_of(template_tma_tensormap).layout,  # thread layout
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         new_src.device_tensor(),
         template_tma_tensormap,
@@ -266,7 +267,7 @@ def test_tma_replace_global_addr_in_smem_descriptor[
     arange(old_src.tensor(), 1)
     arange(new_src.tensor(), 1001)
 
-    var template_tma_tensormap = create_tma_tile[Index(M, N)](
+    var template_tma_tensormap = create_tensor_tile[Index(M, N)](
         ctx, old_src.device_tensor()
     )
 
@@ -302,7 +303,7 @@ def test_tma_replace_global_addr_in_smem_descriptor[
         type_of(template_tma_tensormap).layout,  # thread layout
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         new_src.device_tensor(),
         template_tma_tensormap,
@@ -455,7 +456,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     ](ctx)
     arange(old_src.tensor(), 1)
 
-    var template_tma_tensormap = create_tma_tile[
+    var template_tma_tensormap = create_tensor_tile[
         Index(cta_tile_M, cta_tile_N), swizzle_mode=swizzle_mode
     ](ctx, old_src.device_tensor())
 
@@ -498,7 +499,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
         type_of(template_tma_tensormap).desc_layout,  # desc layout
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         new_src.device_tensor(),
         template_tma_tensormap,

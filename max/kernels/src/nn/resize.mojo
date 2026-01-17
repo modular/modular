@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceil, floor
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
@@ -139,8 +141,8 @@ fn resize_nearest_neighbor[
     round_mode: RoundMode,
     dtype: DType,
 ](
-    input: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    input: LayoutTensor[dtype, ...],
+    output: LayoutTensor[mut=True, dtype, ...],
 ) raises:
     __comptime_assert (
         input.rank == output.rank
@@ -239,10 +241,10 @@ fn interpolate_point_1d[
     out_coords: IndexList[in_layout.rank()],
     scale: Float32,
     input: LayoutTensor[
-        dtype, in_layout, address_space = AddressSpace.GENERIC, **_
+        dtype, in_layout, address_space = AddressSpace.GENERIC, ...
     ],
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ):
     var center = (
@@ -253,7 +255,7 @@ fn interpolate_point_1d[
     )
     var filter_scale = 1 / scale if antialias and scale < 1 else 1
     var support = interpolator.filter_length() * filter_scale
-    var xmin = max(0, Int(center - support + 0.5))
+    var xmin = max(Int(center - support + 0.5), 0)
     var xmax = min(input.dim(dim), Int(center + support + 0.5))
     var in_coords = out_coords
     var sum = Scalar[dtype](0)
@@ -284,9 +286,9 @@ fn resize_linear[
     antialias: Bool,
     dtype: DType,
 ](
-    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ):
     """Resizes input to output shape using linear interpolation.
@@ -316,9 +318,9 @@ fn _resize[
     antialias: Bool,
     dtype: DType,
 ](
-    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ):
     __comptime_assert (

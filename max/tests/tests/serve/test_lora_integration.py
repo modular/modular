@@ -19,7 +19,7 @@ import json
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
 import pytest
@@ -31,6 +31,7 @@ from max.interfaces import (
     LoRAStatus,
     RequestID,
 )
+from max.pipelines.core import TextContext
 from max.pipelines.lib.lora import LoRAManager
 from max.pipelines.lib.lora_config import LoRAConfig
 from safetensors.numpy import save_file
@@ -287,7 +288,7 @@ def test_lru_cache_manual_activation(
 
     mock_contexts = []
     for name in ["adapter_0", "adapter_1", "/mock/path"]:
-        ctx = MagicMock()
+        ctx = NonCallableMock(spec=TextContext)
         ctx.model_name = name
         mock_contexts.append(ctx)
 
@@ -515,7 +516,7 @@ def test_lora_allocation_respects_protected_tg_loras(
     active_loras = {"adapter_0", "adapter_1"}
 
     # Try to allocate a CE request with adapter_2
-    ce_ctx = MagicMock(spec=TextContext)
+    ce_ctx = NonCallableMock(spec=TextContext)
     ce_ctx.model_name = "adapter_2"
 
     # Should return False: 2 protected + 1 new = 3 > 2 capacity

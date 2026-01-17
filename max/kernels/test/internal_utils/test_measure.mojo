@@ -12,15 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from internal_utils import correlation, kl_div
-from internal_utils._testing import _assert_with_measure_impl
+from internal_utils._testing import assert_with_measure
 from itertools import product
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 
 fn test_assert_with_custom_measure() raises:
-    var t0 = UnsafePointer[Float32].alloc(100)
-    var t1 = UnsafePointer[Float32].alloc(100)
+    var t0 = alloc[Float32](100)
+    var t1 = alloc[Float32](100)
     for i in range(100):
         t0[i] = 1.0
         t1[i] = 1.0
@@ -28,13 +27,13 @@ fn test_assert_with_custom_measure() raises:
     fn always_zero[
         dtype: DType
     ](
-        lhs: UnsafePointer[Scalar[dtype], mut=False],
-        rhs: UnsafePointer[Scalar[dtype], mut=False],
+        lhs: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+        rhs: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         n: Int,
     ) -> Float64:
         return 0
 
-    _assert_with_measure_impl[always_zero](t0, t1, 100)
+    assert_with_measure[always_zero](t0, t1, 100)
 
     t0.free()
     t1.free()
@@ -44,9 +43,9 @@ fn test_correlation() raises:
     var a = 10
     var b = 10
     var len = a * b
-    var u = UnsafePointer[Float32].alloc(len)
-    var v = UnsafePointer[Float32].alloc(len)
-    var x = UnsafePointer[Float32].alloc(len)
+    var u = alloc[Float32](len)
+    var v = alloc[Float32](len)
+    var x = alloc[Float32](len)
     for i in range(len):
         u.store(i, (0.01 * i).cast[DType.float32]())
         v.store(i, (-0.01 * i).cast[DType.float32]())

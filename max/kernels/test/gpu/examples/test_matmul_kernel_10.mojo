@@ -162,11 +162,8 @@ fn sgemm_warp_tiling_kernel[
         for offset in range(0, Int(BM - row_stride_a + 1), Int(row_stride_a)):
             # Load 4 elements at a time and store to shared memory.
             var tmp = ldg[width=4](
-                aa_ptr.offset(
-                    Int(
-                        (inner_row_a + UInt(offset)) * UInt(K) + inner_col_a * 4
-                    )
-                )
+                aa_ptr
+                + Int((inner_row_a + UInt(offset)) * UInt(K) + inner_col_a * 4)
             )
 
             @parameter
@@ -182,11 +179,8 @@ fn sgemm_warp_tiling_kernel[
         for offset in range(0, Int(BK - row_stride_b + 1), Int(row_stride_b)):
             # Load 4 elements at a time and store to shared memory.
             var tmp = ldg[width=4](
-                bb_ptr.offset(
-                    Int(
-                        (inner_row_b + UInt(offset)) * UInt(N) + inner_co_ib * 4
-                    )
-                )
+                bb_ptr
+                + Int((inner_row_b + UInt(offset)) * UInt(N) + inner_co_ib * 4)
             )
             b_sram.store[alignment=16](
                 Index(
@@ -249,8 +243,8 @@ fn sgemm_warp_tiling_kernel[
                                 reg_m[w_sub_row_idx, res_idx_m].cast[c_type]()
                                 * reg_n[w_sub_col_idx, res_idx_n].cast[c_type]()
                             )
-        aa_ptr = aa_ptr.offset(Int(BK))  # move BK columns to right
-        bb_ptr = bb_ptr.offset(Int(BK * N))  # move BK rows down
+        aa_ptr = aa_ptr + Int(BK)  # move BK columns to right
+        bb_ptr = bb_ptr + Int(BK * N)  # move BK rows down
         barrier()
 
     # Write out the results.
@@ -262,8 +256,8 @@ fn sgemm_warp_tiling_kernel[
             # Move C pointer to current warp sub-tile.
             var M_offset_subtile = w_sub_row_idx * w_sub_m
             var N_offset_subtile = w_sub_col_idx * w_sub_n
-            var C_interim = cc_ptr.offset(
-                Int((M_offset_subtile) * N + N_offset_subtile)
+            var C_interim = cc_ptr + Int(
+                M_offset_subtile * N + N_offset_subtile
             )
 
             @parameter
@@ -469,7 +463,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         @parameter
         @always_inline
         fn run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function_checked[sgemm_type, sgemm_type](
+            ctx.enqueue_function[sgemm_type, sgemm_type](
                 c_buffer,
                 a_buffer,
                 b_buffer,
@@ -503,7 +497,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         @parameter
         @always_inline
         fn run_func_naive(ctx: DeviceContext) raises:
-            ctx.enqueue_function_checked[matmul_naive, matmul_naive](
+            ctx.enqueue_function[matmul_naive, matmul_naive](
                 a_device,
                 b_device,
                 c_device,

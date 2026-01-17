@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
+from max.interfaces import TokenBuffer
 from max.pipelines.core import TextContext
 from max.serve.scheduler.batch_constructor.token_budget import (
     ActiveTokenBudget,
@@ -31,7 +32,7 @@ def test_token_budget__active_token_budget_with_chunking() -> None:
 
     for i in range(11):
         context = TextContext(
-            tokens=np.ones(10, dtype=np.int32), max_length=100
+            tokens=TokenBuffer(np.ones(10, dtype=np.int64)), max_length=100
         )
 
         status = active_token_budget.status_after_context(
@@ -63,7 +64,7 @@ def test_token_budget__active_token_budget_without_chunking() -> None:
 
     for i in range(11):
         context = TextContext(
-            tokens=np.ones(11, dtype=np.int32), max_length=100
+            tokens=TokenBuffer(np.ones(11, dtype=np.int64)), max_length=100
         )
 
         status = active_token_budget.status_after_context(
@@ -99,7 +100,9 @@ def test_token_budget__total_context_budget_num_steps_available_and_reached() ->
     )
 
     # current_length = 10, num_steps = 3 => total_length = 10 + (3 - 1) = 12 < 25
-    context = TextContext(tokens=np.ones(10, dtype=np.int32), max_length=100)
+    context = TextContext(
+        tokens=TokenBuffer(np.ones(10, dtype=np.int64)), max_length=100
+    )
     status = total_budget.status_after_context(
         context, num_steps=3, request_type=RequestType.CE
     )
@@ -114,7 +117,9 @@ def test_token_budget__total_context_budget_num_steps_available_and_reached() ->
 
     # Now with remaining=13, a new 10-token context and num_steps=4 gives
     # total_length = 10 + (4 - 1) = 13, which should exactly reach the budget.
-    context2 = TextContext(tokens=np.ones(10, dtype=np.int32), max_length=100)
+    context2 = TextContext(
+        tokens=TokenBuffer(np.ones(10, dtype=np.int64)), max_length=100
+    )
     status2 = total_budget.status_after_context(
         context2, num_steps=4, request_type=RequestType.CE
     )
@@ -128,45 +133,57 @@ def test_token_budget__total_context_budget_num_steps_exhausted() -> None:
     )
 
     # current_length = 10, num_steps = 6 => total_length = 10 + (6 - 1) = 15 > 14
-    context = TextContext(tokens=np.ones(10, dtype=np.int32), max_length=100)
+    context = TextContext(
+        tokens=TokenBuffer(np.ones(10, dtype=np.int64)), max_length=100
+    )
     status = total_budget.status_after_context(
         context, num_steps=6, request_type=RequestType.CE
     )
     assert status == BudgetStatus.BUDGET_EXHAUSTED
 
 
-def test_token_budget__total_context_budget_with_chunking_shrinks_context() -> (
+def test_token_budget__total_context_budget_with_chunking_exhausts_overage() -> (
     None
 ):
-    """TotalContextTokenBudget with chunking should trim contexts to fit capacity."""
-    # Budget capacity is smaller than the incoming context length; chunking should
-    # reduce the effective total length to exactly the remaining capacity.
+    """TotalContextTokenBudget should not chunk; total-context overage is exhausted."""
     total_budget = TotalContextTokenBudget(
         capacity=20, allow_chunking=True, applicable_types=[RequestType.CE]
     )
 
-    # Initial context is longer than the budget.
-    context = TextContext(tokens=np.ones(30, dtype=np.int32), max_length=100)
-    assert context.current_length == 30
-    assert context.active_length == 30
+    context = TextContext(
+        tokens=TokenBuffer(np.ones(30, dtype=np.int64)), max_length=100
+    )
+    assert len(context.tokens) == 30
+    assert context.tokens.active_length == 30
 
     status = total_budget.status_after_context(
         context, num_steps=1, request_type=RequestType.CE
     )
-    # Chunking should allow the context, exactly reaching the budget.
-    assert status == BudgetStatus.BUDGET_REACHED
+    assert status == BudgetStatus.BUDGET_EXHAUSTED
+    assert len(context.tokens) == 30
+    assert context.tokens.active_length == 30
+    assert total_budget.used == 0
+    assert total_budget.remaining == 20
 
-    # Context should have been chunked down to the remaining capacity.
-    # Current length is not affected by chunking.
-    assert context.current_length == 30
-    assert context.active_length == 20
 
-    # After committing, the budget should be fully used.
-    total_budget.add_to_budget(
+def test_token_budget__total_context_budget_overage_does_not_chunk() -> None:
+    """TotalContextTokenBudget should not chunk even when remaining exceeds active_length."""
+    total_budget = TotalContextTokenBudget(
+        capacity=100, allow_chunking=True, applicable_types=[RequestType.CE]
+    )
+
+    context = TextContext(
+        tokens=TokenBuffer(np.ones(200, dtype=np.int64)), max_length=300
+    )
+    context.tokens.skip_processing(190)
+
+    assert len(context.tokens) == 200
+    assert context.tokens.active_length == 10
+
+    status = total_budget.status_after_context(
         context, num_steps=1, request_type=RequestType.CE
     )
-    assert total_budget.used == 30
-    assert total_budget.remaining == -10
+    assert status == BudgetStatus.BUDGET_EXHAUSTED
 
 
 def test_token_budget__total_context_budget_chunking_disabled_for_unit_active_length() -> (
@@ -179,11 +196,13 @@ def test_token_budget__total_context_budget_chunking_disabled_for_unit_active_le
 
     # Create a context where only a single token is active, but the total
     # sequence length is much larger (simulating TG-style usage).
-    context = TextContext(tokens=np.ones(50, dtype=np.int32), max_length=100)
-    context.skip_processing(49)
+    context = TextContext(
+        tokens=TokenBuffer(np.ones(50, dtype=np.int64)), max_length=100
+    )
+    context.tokens.skip_processing(49)
 
-    assert context.active_length == 1
-    assert context.current_length == 50
+    assert context.tokens.active_length == 1
+    assert len(context.tokens) == 50
 
     status = total_budget.status_after_context(
         context, num_steps=1, request_type=RequestType.CE
@@ -204,9 +223,11 @@ def test_token_budget__total_context_budget__ce_after_tg() -> None:
     )
 
     # Create
-    context = TextContext(tokens=np.ones(20, dtype=np.int32), max_length=100)
+    context = TextContext(
+        tokens=TokenBuffer(np.ones(20, dtype=np.int64)), max_length=100
+    )
     # Move it to the end, assuming it is a TG request
-    context.skip_processing(19)
+    context.tokens.skip_processing(19)
 
     # This should still show as available, as its a TG request, and this budget does not apply
     status = total_budget.status_after_context(
@@ -220,7 +241,9 @@ def test_token_budget__total_context_budget__ce_after_tg() -> None:
     )
 
     # Create a new CE request with a small number of tokens
-    context = TextContext(tokens=np.ones(3, dtype=np.int32), max_length=100)
+    context = TextContext(
+        tokens=TokenBuffer(np.ones(3, dtype=np.int64)), max_length=100
+    )
 
     # This should be rejected, as we already have a TG object in batch that is beyond the threshold.
     status = total_budget.status_after_context(

@@ -78,8 +78,7 @@ Read the `mojo/stdlib/benchmarks/README.md` for details on how to run benchmarks
 ### Documentation Validation
 
 ```bash
-mojo doc --diagnose-missing-doc-strings --validate-doc-strings \
-  -o /dev/null stdlib/std/
+mojo doc --diagnose-missing-doc-strings -Werror -o /dev/null stdlib/std/
 ```
 
 ## High-Level Architecture
@@ -117,7 +116,7 @@ MODULAR_MOJO_MAX_IMPORT_PATH=bazel-bin/mojo/stdlib/std mojo main.mojo
 
 - Follow value semantics and ownership conventions
 - Use `Reference` types and lifetimes in APIs
-- Prefer `AnyType` over `AnyTrivialRegType` (except for MLIR interactions)
+- Prefer `AnyType` over `__TypeOfAllTypes` (except for MLIR interactions)
 
 ## Development Workflow
 

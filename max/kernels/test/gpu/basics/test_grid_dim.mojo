@@ -11,11 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from gpu import barrier, global_idx, grid_dim
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 
@@ -27,11 +29,11 @@ fn kernel(
     if global_tid >= UInt(size):
         return
     if global_tid & 3 == 0:
-        output[global_tid] = grid_dim.x
+        output[global_tid] = Float32(grid_dim.x)
     elif global_tid & 3 == 1:
-        output[global_tid] = grid_dim.y
+        output[global_tid] = Float32(grid_dim.y)
     elif global_tid & 3 == 2:
-        output[global_tid] = grid_dim.z
+        output[global_tid] = Float32(grid_dim.z)
 
 
 fn test_grid_dim(ctx: DeviceContext) raises:
@@ -46,7 +48,7 @@ fn test_grid_dim(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(output_buffer, output_host)
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         output_buffer,
         buffer_size,
         grid_dim=(20, 15, 10),

@@ -15,8 +15,9 @@ from queue import Queue
 from threading import Thread
 
 import numpy as np
+import pytest
 from max.driver import Accelerator
-from max.driver.tensor import Tensor
+from max.driver.buffer import Buffer
 from max.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -40,8 +41,8 @@ def transfer_routine_sender(
     t0 = np.arange(100, dtype=np.float32)
     t1 = np.arange(100, dtype=np.float32) + 1000
     tensors_1 = [
-        Tensor.from_numpy(t0).to(device_0),
-        Tensor.from_numpy(t1).to(device_1),
+        Buffer.from_numpy(t0).to(device_0),
+        Buffer.from_numpy(t1).to(device_1),
     ]
 
     # DP=1, TP=2 (2 GPUs in one replica)
@@ -103,8 +104,8 @@ def transfer_routine_receiver(
     t0 = np.zeros((100,), dtype=np.float32)
     t1 = np.zeros((100,), dtype=np.float32)
     tensors_2 = [
-        Tensor.from_numpy(t0).to(device_2),
-        Tensor.from_numpy(t1).to(device_3),
+        Buffer.from_numpy(t0).to(device_2),
+        Buffer.from_numpy(t1).to(device_3),
     ]
 
     # DP=1, TP=2 (2 GPUs in one replica)
@@ -157,6 +158,7 @@ def transfer_routine_receiver(
     engine_2.cleanup()
 
 
+@pytest.mark.skip(reason="SERVOPT-872: Reenable this test")
 def test_multi_tensor_transfer_threaded() -> None:
     """Test transfer between multiple tensors using threading."""
     sender_md_queue: Queue[KVTransferEngineMetadata] = Queue()

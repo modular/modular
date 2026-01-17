@@ -577,7 +577,7 @@ class CosineSimilarityValidator(DistanceValidatorBase):
         flat_target = target.reshape((-1, target.shape[-1]))
         flat_ref = reference.reshape((-1, reference.shape[-1]))
         flat_distance = np.zeros(flat_ref.shape[:-1], dtype=reference.dtype)
-        for i in range(flat_target.shape[0]):
+        for i in range(flat_target.shape[0]):  # type: ignore
             flat_distance[i] = distance.cosine(flat_target[i], flat_ref[i])
 
         result = flat_distance.reshape(reference.shape[:-1])

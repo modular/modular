@@ -2,16 +2,17 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_test(
     name = "tests",
     srcs = glob(["*.py"]),
     deps = [
-        "//max/python/max/engine",
-        "//max/python/max/graph",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
@@ -21,8 +22,8 @@ modular_py_test(
 modular_py_test(
     name = "gpu_tests",
     srcs = [
+        "accelerator_tests/test_buffer.py",
         "accelerator_tests/test_device.py",
-        "accelerator_tests/test_tensor.py",
     ],
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -30,7 +31,8 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
-        "//max/python/max/engine",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/graph",
         requirement("numpy"),
         requirement("torch"),
@@ -46,9 +48,8 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
-        "//max/python/max/engine",
-        "//max/python/max/graph",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         requirement("numpy"),
-        requirement("torch"),
     ],
 )

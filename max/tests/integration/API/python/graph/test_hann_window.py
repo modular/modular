@@ -16,7 +16,7 @@ import platform
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor, accelerator_count
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, ops
@@ -86,7 +86,7 @@ def test_hann_window(
 
     model = session.load(graph)
     max_window_tensor = model()[output_index]
-    assert isinstance(max_window_tensor, Tensor)
+    assert isinstance(max_window_tensor, Buffer)
     max_window = max_window_tensor.to_numpy()
 
     # Compare shapes

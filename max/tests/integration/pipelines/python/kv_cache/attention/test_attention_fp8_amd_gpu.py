@@ -14,7 +14,7 @@
 
 import numpy as np
 import torch
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
@@ -126,7 +126,7 @@ def _create_attention_state_dict(
     for proj_name, weight, out_dim in weights_info:
         # Add weight
         state_dict[f"{proj_name}.weight"] = WeightData(
-            Tensor.from_dlpack(weight.view(torch.uint8)).view(
+            Buffer.from_dlpack(weight.view(torch.uint8)).view(
                 DType.float8_e4m3fn
             ),
             f"{proj_name}.weight",
@@ -148,7 +148,7 @@ def _create_attention_state_dict(
             scale_shape = Shape(scale_tensor.shape)
 
         state_dict[f"{proj_name}.weight_scale"] = WeightData(
-            Tensor.from_dlpack(scale_tensor),
+            Buffer.from_dlpack(scale_tensor),
             f"{proj_name}.weight_scale",
             DType.float32,
             scale_shape,
@@ -158,7 +158,7 @@ def _create_attention_state_dict(
         if float8_config.input_scale.origin == Float8ScaleOrigin.STATIC:
             input_scale_tensor = torch.tensor([1.0], dtype=torch.float32)
             state_dict[f"{proj_name}.input_scale"] = WeightData(
-                Tensor.from_dlpack(input_scale_tensor),
+                Buffer.from_dlpack(input_scale_tensor),
                 f"{proj_name}.input_scale",
                 DType.float32,
                 Shape([1]),
@@ -247,10 +247,10 @@ def _build_and_execute_attention_graph(
     model = gpu_session.load(graph, weights_registry=attention.state_dict())
 
     # Prepare tensors for execution
-    input_tensor = Tensor.from_dlpack(
+    input_tensor = Buffer.from_dlpack(
         torch.from_numpy(input_data).to(torch.bfloat16)
     ).to(device)
-    input_row_offsets_tensor = Tensor.from_dlpack(
+    input_row_offsets_tensor = Buffer.from_dlpack(
         torch.from_numpy(input_row_offsets_data)
     ).to(device)
 

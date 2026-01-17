@@ -36,6 +36,9 @@ import math
 from collections._index_normalization import normalize_index
 
 from builtin.device_passable import DevicePassable
+from builtin.rebind import downcast
+from builtin.constrained import _constrained_conforms_to
+from builtin.repr import repr
 from compile import get_type_name
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 
@@ -57,10 +60,15 @@ fn _inline_array_construction_checks[size: Int]():
     ), "number of elements in `InlineArray` must be >= 0"
 
 
-struct InlineArray[
-    ElementType: Copyable,
-    size: Int,
-](Defaultable, DevicePassable, ImplicitlyCopyable, Sized):
+struct InlineArray[ElementType: Copyable, size: Int,](
+    Copyable,
+    Defaultable,
+    DevicePassable,
+    Representable,
+    Sized,
+    Stringable,
+    Writable,
+):
     """A fixed-size sequence of homogeneous elements where size is a constant
     expression.
 
@@ -87,7 +95,9 @@ struct InlineArray[
     ```
     """
 
-    comptime __del__is_trivial: Bool = Self.ElementType.__del__is_trivial
+    comptime __del__is_trivial: Bool = downcast[
+        Self.ElementType, ImplicitlyDestructible
+    ].__del__is_trivial
     comptime __copyinit__is_trivial: Bool = Self.ElementType.__copyinit__is_trivial
     comptime __moveinit__is_trivial: Bool = Self.ElementType.__moveinit__is_trivial
 
@@ -110,7 +120,7 @@ struct InlineArray[
         Args:
             target: The target address to store the device type.
         """
-        target.bitcast[Self.device_type]()[] = self
+        target.bitcast[Self.device_type]()[] = self.copy()
 
     @staticmethod
     fn get_type_name() -> String:
@@ -264,7 +274,7 @@ struct InlineArray[
             ptr.init_pointee_copy(fill)
             ptr += 1
         debug_assert(
-            ptr == self.unsafe_ptr().offset(Self.size),
+            ptr == self.unsafe_ptr() + Self.size,
             "error during `InlineArray` initialization , please file a bug",
             " report.",
         )
@@ -300,7 +310,7 @@ struct InlineArray[
         out self,
         *,
         var storage: VariadicListMem[
-            Self.ElementType, origin=origin, is_owned=True
+            elt_is_mutable=True, origin=origin, Self.ElementType, is_owned=True
         ],
     ):
         """Construct an array from a low-level internal representation.
@@ -377,13 +387,23 @@ struct InlineArray[
     fn __del__(deinit self):
         """Deallocates the array and destroys its elements."""
 
+        _constrained_conforms_to[
+            conforms_to(Self.ElementType, ImplicitlyDestructible),
+            Parent=Self,
+            Element = Self.ElementType,
+            ParentConformsTo="ImplicitlyDestructible",
+        ]()
+        comptime TDestructible = downcast[
+            Self.ElementType, ImplicitlyDestructible
+        ]
+
         @parameter
-        if not Bool(Self.ElementType.__del__is_trivial):
+        if not TDestructible.__del__is_trivial:
 
             @parameter
             for idx in range(Self.size):
                 var ptr = self.unsafe_ptr() + idx
-                ptr.destroy_pointee()
+                ptr.bitcast[TDestructible]().destroy_pointee()
 
     # ===------------------------------------------------------------------===#
     # Operator dunders
@@ -616,3 +636,60 @@ struct InlineArray[
             if self[i] == value:
                 return True
         return False
+
+    # ===-------------------------------------------------------------------===#
+    # String representation
+    # ===-------------------------------------------------------------------===#
+
+    @always_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the InlineArray representation to a Writer.
+
+        Constraints:
+            ElementType must conform to `Representable`.
+
+        Args:
+            writer: The object to write to.
+        """
+        _constrained_conforms_to[
+            conforms_to(Self.ElementType, Representable),
+            Parent=Self,
+            Element = Self.ElementType,
+            ParentConformsTo="Stringable",
+            ElementConformsTo="Representable",
+        ]()
+
+        writer.write("InlineArray[")
+        writer.write(get_type_name[Self.ElementType]())
+        writer.write(", ")
+        writer.write(String(Self.size))
+        writer.write("](")
+
+        for i in range(Self.size):
+            ref element = self.unsafe_get(i)
+            ref representable_element = trait_downcast[Representable](element)
+            writer.write(repr(representable_element))
+            if i < Self.size - 1:
+                writer.write(", ")
+
+        writer.write(")")
+
+    @always_inline
+    fn __str__(self) -> String:
+        """Returns a string representation of the InlineArray.
+
+        Returns:
+            A string representation of the array.
+        """
+        output = String()
+        self.write_to(output)
+        return output^
+
+    @always_inline
+    fn __repr__(self) -> String:
+        """Returns a string representation of the InlineArray.
+
+        Returns:
+            A string representation of the array.
+        """
+        return self.__str__()

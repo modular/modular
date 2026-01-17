@@ -14,13 +14,13 @@
 from os.path import exists, lexists
 from pathlib import Path, cwd
 
-from builtin._location import __source_location
+from reflection import source_location
 from testing import TestSuite, assert_false, assert_true
 
 
 def test_exists():
-    assert_true(exists(__source_location().file_name))
-    assert_true(lexists(__source_location().file_name))
+    assert_true(exists(source_location().file_name))
+    assert_true(lexists(source_location().file_name))
 
     assert_false(exists("this/file/does/not/exist"))
     assert_false(lexists("this/file/does/not/exist"))

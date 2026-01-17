@@ -61,7 +61,6 @@ LOGICAL_UNARY = [
 def test_unary(op) -> None:  # noqa: ANN001
     tensor = Tensor.zeros([10], dtype=DType.float32, device=DEVICE)
     result = op(tensor)
-    result._sync_realize()
     assert result.real
     assert list(result.driver_tensor.shape) == tensor.shape
 
@@ -70,6 +69,5 @@ def test_unary(op) -> None:  # noqa: ANN001
 def test_logical_unary(op) -> None:  # noqa: ANN001
     tensor = Tensor.full([10], False, dtype=DType.bool, device=DEVICE)
     result = op(tensor)
-    result._sync_realize()
     assert result.real
     assert list(result.driver_tensor.shape) == tensor.shape

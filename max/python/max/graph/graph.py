@@ -752,7 +752,7 @@ class Graph:
         handle = self._context.attach_diagnostic_handler(handler)
         try:
             yield None
-        except (mlir.MLIRError, ValueError) as e:  # type: ignore
+        except (mlir.MLIRError, ValueError) as e:
             # MLIRError is raised from the MLIR Python bindings on MLIR
             # errors, however so is ValueError when operation create fails.
             # So catch both exception types and report diagnostics here.
@@ -844,7 +844,7 @@ class Graph:
                     staged_op = staged_op.opview
                     self._verify_op(staged_op)
 
-            except (mlir.MLIRError, ValueError) as e:  # type: ignore
+            except (mlir.MLIRError, ValueError) as e:
                 # MLIRError is raised from the MLIR Python bindings on MLIR
                 # errors, however so is ValueError when operation creation fails.
                 # So catch both exception types here.
@@ -948,11 +948,15 @@ class Graph:
             mlir_values.extend(chain._mlir_value for chain in chain_values)
 
         # We have a type mismatch now, these are MLIR types
-        output_types: list[mlir.Type] = [value.type for value in mlir_values]
+        # Convert from max._core.Type to mlir.Type using CAPI bridge
+        output_types = [
+            mlir.Type._CAPICreate(value.type._CAPIPtr)  # type: ignore[attr-defined]
+            for value in mlir_values
+        ]
 
         # Need to set some more stuff.
         function_type = mlir.FunctionType.get(
-            [_Value._from_cmlir(arg).type for arg in graph_body_args],  # type: ignore
+            graph_body_args.types,
             output_types,
         )
         signature = mlir.Type.parse(f"!kgen.generator<{function_type}>")

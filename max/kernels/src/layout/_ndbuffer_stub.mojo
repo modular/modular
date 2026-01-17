@@ -94,7 +94,7 @@ struct TileMask[
                     self.offset[i]
                     + point[i] * Self.element_size[i] * Self.element_stride[i]
                 )
-                size[i] = max(0, self.max_dim[i] - start_index)
+                size[i] = max(self.max_dim[i] - start_index, 0)
 
         return size
 
@@ -262,7 +262,7 @@ fn distribute[
         )
 
     var res = NDBuffer[dtype, rank, buff.origin, _result_shape](
-        buff.data.offset(Int(thread_offset)),
+        buff.data + Int(thread_offset),
         dynamic_shape=res_shape,
         dynamic_stride=res_strides,
     )
@@ -408,7 +408,7 @@ fn vectorize[
     shape: DimList,
     origin: MutOrigin,
     _res_shape: DimList = _vectorize_shape[*sizes](shape),
-](buff: NDBuffer[dtype, rank, origin, shape, *_]) -> Tuple[
+](buff: NDBuffer[dtype, rank, origin, shape, _]) -> Tuple[
     NDBuffer[
         dtype,
         rank,
@@ -461,7 +461,7 @@ fn _copy_nd_buffer_to_layout_tensor[
         mut=True,
         dtype,
         layout,
-        *_, **_,
+        ...,
     ],
     src: NDBuffer[dtype, src_rank, _, shape],
     buff_element_layout: ElementLayout[src_rank, buff_element_layout_shape],
@@ -508,7 +508,7 @@ fn _copy_nd_buffer_to_layout_tensor[
                     eviction_policy=eviction_policy,
                 ](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
-                var src_element = src.data.offset(src_idx).load[
+                var src_element = (src.data + src_idx).load[
                     width=vec_size, alignment=alignment
                 ]()
                 dst.ptr.store[alignment=alignment](dst_idx, src_element)
@@ -595,7 +595,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
         mut=True,
         dtype,
         layout,
-        *_, **_,
+        ...,
     ],
     src: NDBuffer[dtype, src_rank, _, shape],
     buff_element_layout: ElementLayout[src_rank, buff_element_layout_shape],
@@ -654,7 +654,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                     eviction_policy=eviction_policy,
                 ](src_ptr + src_idx, dst_ptr + dst_idx)
             else:
-                var src_element = src.data.offset(src_idx).load[
+                var src_element = (src.data + src_idx).load[
                     width=vec_size, alignment=alignment
                 ]()
                 dst.ptr.store[alignment=alignment](dst_idx, src_element)
@@ -744,7 +744,7 @@ fn _copy_layout_tensor_to_nd_buffer[
     src: LayoutTensor[
         dtype,
         layout,
-        *_, **_,
+        ...,
     ],
 ):
     comptime src_rank = layout.rank()
@@ -778,7 +778,7 @@ fn _copy_layout_tensor_to_nd_buffer[
                 i * vec_size
             )
 
-            var src_element = src.ptr.offset(src_idx).load[
+            var src_element = (src.ptr + src_idx).load[
                 width=vec_size, alignment=alignment
             ]()
             dst.data.store[alignment=alignment](dst_idx, src_element)
@@ -840,7 +840,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
     src: LayoutTensor[
         dtype,
         layout,
-        *_, **_,
+        ...,
     ],
     tile_mask: TileMask[mask_rank, mask_element_size, mask_element_stride],
 ):
@@ -887,10 +887,10 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
                 i * vec_size
             )
 
-            var src_element = src.ptr.offset(src_idx).load[
+            var src_element = (src.ptr + src_idx).load[
                 width=vec_size, alignment=alignment
             ]()
-            dst.data.offset(dst_idx).store[alignment=alignment](src_element)
+            (dst.data + dst_idx).store[alignment=alignment](src_element)
 
     # 2d-vector load/store
     elif (
@@ -958,9 +958,9 @@ fn copy_from_nd_buffer[
         mut=True,
         dtype,
         dst_data_layout,
-        *_, **_,
+        ...,
     ],
-    src: NDBuffer[mut=True, dtype, *_],
+    src: NDBuffer[mut=True, dtype, _, _, _, _],
     thread_id: Int,
 ):
     comptime dst_rank = dst_data_layout.rank()
@@ -1028,7 +1028,7 @@ fn copy_from_nd_buffer_masked[
         mut=True,
         dtype,
         dst_data_layout,
-        *_, **_,
+        ...,
     ],
     src: NDBuffer[mut=True, dtype, src_rank, _, src_buff_shape],
     tile_mask: TileMask,
@@ -1036,6 +1036,7 @@ fn copy_from_nd_buffer_masked[
 ):
     comptime dst_rank = dst_data_layout.rank()
     comptime dst_element_layout = dst_thread_local.element_layout
+    comptime tile_mask_elt_rank = type_of(tile_mask.element_size).size
     # FIXME: Relax this to support any ranked data and thread layouts.
     __comptime_assert src_rank == 2, "Only rank-2 layouts is supported for now."
 
@@ -1055,7 +1056,8 @@ fn copy_from_nd_buffer_masked[
     if dst_element_layout.rank() == 1:
         var src_vectorized = vectorize[1, Int(dst_element_layout.shape[0])](src)
         var vec_mask = _vectorize_mask[
-            sizes = (1, Int(dst_element_layout.shape[0]))
+            rank=tile_mask_elt_rank,
+            sizes = (1, Int(dst_element_layout.shape[0])),
         ](tile_mask)
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
@@ -1081,10 +1083,11 @@ fn copy_from_nd_buffer_masked[
             Int(dst_element_layout.shape[1]),
         ](src)
         var vec_mask = _vectorize_mask[
+            rank=tile_mask_elt_rank,
             sizes = (
                 Int(dst_element_layout.shape[0]),
                 Int(dst_element_layout.shape[1]),
-            )
+            ),
         ](tile_mask)
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
@@ -1120,7 +1123,7 @@ fn copy_to_nd_buffer[
     src_thread_local: LayoutTensor[
         dtype,
         src_data_layout,
-        *_, **_,
+        ...,
     ],
     thread_id: Int,
 ):
@@ -1179,13 +1182,14 @@ fn copy_to_nd_buffer_masked[
     src_thread_local: LayoutTensor[
         dtype,
         src_data_layout,
-        *_, **_,
+        ...,
     ],
     tile_mask: TileMask,
     thread_id: Int,
 ):
     comptime src_rank = src_data_layout.rank()
     comptime src_element_layout = src_thread_local.element_layout
+    comptime tile_mask_elt_rank = type_of(tile_mask.element_size).size
     # FIXME: Relax this to support any ranked data and thread layouts.
     __comptime_assert src_rank == 2, "Only rank-2 layouts is supported for now."
 
@@ -1205,7 +1209,8 @@ fn copy_to_nd_buffer_masked[
     if src_element_layout.rank() == 1:
         var dst_vectorized = vectorize[1, Int(src_element_layout.shape[0])](dst)
         var vectorize_mask = _vectorize_mask[
-            sizes = (1, Int(src_element_layout.shape[0]))
+            rank=tile_mask_elt_rank,
+            sizes = (1, Int(src_element_layout.shape[0])),
         ](tile_mask)
         var dst_vectorized_buffer = dst_vectorized[0]
         var dst_element_layout = dst_vectorized[1]
@@ -1227,10 +1232,11 @@ fn copy_to_nd_buffer_masked[
             Int(src_element_layout.shape[1]),
         ](dst)
         var vectorize_mask = _vectorize_mask[
+            rank=tile_mask_elt_rank,
             sizes = (
                 Int(src_element_layout.shape[0]),
                 Int(src_element_layout.shape[1]),
-            )
+            ),
         ](tile_mask)
         var dst_vectorized_buffer = dst_vectorized[0]
         var dst_element_layout = dst_vectorized[1]
@@ -1264,7 +1270,7 @@ fn copy_from_nd_buffer_async[
         mut=True,
         dtype,
         dst_data_layout,
-        *_, **_,
+        ...,
     ],
     src_buffer: NDBuffer[mut=True, dtype, src_rank, _, src_buff_shape],
 ):

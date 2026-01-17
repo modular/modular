@@ -15,7 +15,9 @@
 from gpu.host import ConstantMemoryMapping, DeviceContext
 from gpu.host.compile import _compile_code
 from gpu import thread_idx
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal, assert_true
 
 
@@ -57,7 +59,7 @@ def test_constant_mem(ctx: DeviceContext):
     res_device.enqueue_fill(0)
 
     comptime kernel = static_constant_kernel[16]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         res_device, grid_dim=1, block_dim=16
     )
 
@@ -93,7 +95,7 @@ def test_constant_mem_via_func(ctx: DeviceContext):
     res_device.enqueue_fill(0)
 
     comptime kernel = static_constant_kernel[_fill_impl[20]]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         res_device, grid_dim=1, block_dim=16
     )
 
@@ -138,7 +140,7 @@ def test_external_constant_mem(ctx: DeviceContext):
     res_device.enqueue_fill(0)
 
     comptime kernel = static_constant_kernel
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         res_device,
         grid_dim=1,
         block_dim=16,

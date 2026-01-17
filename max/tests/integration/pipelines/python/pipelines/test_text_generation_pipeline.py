@@ -58,14 +58,13 @@ def test_mock_text_tokenizer() -> None:
         request_id=RequestID("request_0"),
         model_name=model_path,
         prompt=test_prompt,
-        messages=None,
     )
 
     new_context = asyncio.run(tokenizer.new_context(request))
 
-    assert new_context.current_length == len(test_prompt)
+    assert len(new_context.tokens) == len(test_prompt)
 
-    decoded = asyncio.run(tokenizer.decode(new_context.next_tokens))
+    decoded = asyncio.run(tokenizer.decode(new_context.tokens.active))
     assert test_prompt == decoded
 
 
@@ -137,7 +136,6 @@ def test_text_generation_pipeline(
                 request_id=id,
                 model_name=model_path,
                 prompt=prompt,
-                messages=None,
                 sampling_params=sampling_params,
             )
 

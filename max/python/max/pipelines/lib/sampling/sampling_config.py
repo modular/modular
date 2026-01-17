@@ -17,45 +17,44 @@ from __future__ import annotations
 import enum
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
 
-from max.config import MAXConfig
+from max.config import ConfigFileModel
 from max.dtype import DType
 from max.interfaces import SamplingParamsGenerationConfigDefaults
+from pydantic import Field, PrivateAttr
 
 logger = logging.getLogger("max.pipelines")
 
 
-@dataclass
-class SamplingConfig(MAXConfig):
-    in_dtype: DType = DType.float32
+class SamplingConfig(ConfigFileModel):
+    in_dtype: DType = Field(default=DType.float32)
     """The data type of the input tokens."""
 
-    out_dtype: DType = DType.float32
+    out_dtype: DType = Field(default=DType.float32)
     """The data type of the output logits."""
 
-    enable_structured_output: bool = False
+    enable_structured_output: bool = Field(default=False)
     """Enable structured generation/guided decoding for the server. This allows the user to pass a json
     schema in the response_format field, which the LLM will adhere to."""
 
-    enable_variable_logits: bool = False
+    enable_variable_logits: bool = Field(default=False)
     """Enable the sampling graph to accept a ragged tensor of different sequences as inputs, along with
     their associated logit_offsets. This is needed to produce additional logits for echo and speculative
     decoding purposes."""
 
-    enable_penalties: bool = False
+    enable_penalties: bool = Field(default=False)
     """Whether to apply frequency and presence penalties to the model's output."""
 
-    enable_min_tokens: bool = False
+    enable_min_tokens: bool = Field(default=False)
     """Whether to enable min_tokens, which blocks the model from generating
     stopping tokens before the min_tokens count is reached. This defaults to
     false.
     """
 
-    _config_file_section_name: str = "sampling_config"
-    """The section name to use when loading this config from a MAXConfig file.
+    _config_file_section_name: str = PrivateAttr(default="sampling_config")
+    """The section name to use when loading this config from a ConfigFileModel file.
     This is used to differentiate between different config sections in a single
-    MAXConfig file."""
+    ConfigFileModel file."""
 
     @classmethod
     def from_generation_config_sampling_defaults(

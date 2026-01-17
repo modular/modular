@@ -16,22 +16,30 @@ from collections.string.string_slice import get_static_string
 from math import ceildiv
 from sys import simd_width_of, has_nvidia_gpu_accelerator
 from sys import align_of, size_of
-import gpu.block
+import gpu.primitives.block
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, block_idx, global_idx, thread_idx
-from gpu.grid_controls import PDL, pdl_launch_attributes
+from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    block_idx,
+    global_idx,
+    thread_idx,
+)
+from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import B200, H100
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import LegacyUnsafePointer, bitcast
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from std.bit import log2_floor
 from algorithm import elementwise
-from utils.index import Index, IndexList
+from utils.index import Index, IndexList, StaticTuple
 from utils.numerics import get_accum_type, max_finite, min_finite
 
 from .matmul import matmul
@@ -41,11 +49,13 @@ from .matmul.gpu.sm100.warp_specialized_blockwise_fp8 import (
 from .utils import elementwise_epilogue_type
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 
-########################################################
-# Static scaled fp8 quantization
-########################################################
 
 comptime logger = Logger()
+
+
+########################################################
+# static scaled fp8 quantization
+########################################################
 
 
 @always_inline
@@ -54,8 +64,8 @@ fn quantize_static_scaled_fp8[
     in_dtype: DType,
     scale_is_inverted: Bool = True,
 ](
-    out_buffer: NDBuffer[mut=True, out_dtype, 2, *_],
-    in_buffer: NDBuffer[in_dtype, 2, *_],
+    out_buffer: NDBuffer[mut=True, out_dtype, 2, _, _, _],
+    in_buffer: NDBuffer[in_dtype, 2, _, _, _],
     scale: Float32,
     context: DeviceContext,
 ) raises:
@@ -115,9 +125,9 @@ fn quantize_dynamic_scaled_fp8[
     in_dtype: DType,
     scales_dtype: DType,
     //,
-    input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
-        in_dtype, width
-    ],
+    input_fn: fn[width: Int, alignment: Int] (
+        row: Int, col: Int
+    ) capturing -> SIMD[in_dtype, width],
     group_size_or_per_token: Int,
     num_cols: Int,
 ](
@@ -138,11 +148,17 @@ fn quantize_dynamic_scaled_fp8[
     ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
 
     comptime group_size = num_cols if group_size_or_per_token == -1 else group_size_or_per_token
-    comptime simd_width = simd_width_of[in_dtype, target = get_gpu_target()]()
+    comptime simd_width = 16 if group_size % 16 == 0 else 8 if group_size % 8 == 0 else 4
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime warps_per_block = min(
         ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block
     )
+    comptime num_threads = warps_per_block * WARP_SIZE
+
+    __comptime_assert (
+        group_size % simd_width == 0
+    ), "group size must be multiple of simd size"
+
     with Trace[TraceLevel.OP, target = StaticString("gpu")](
         "quantize_dynamic_scaled_fp8",
         task_id=Int(ctx.id()),
@@ -155,36 +171,39 @@ fn quantize_dynamic_scaled_fp8[
             scales_dtype,
             in_dtype,
             input_fn,
-            warps_per_block,
+            num_threads,
             group_size,
+            simd_width,
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             scaled_output,
             scales,
             scale_ub.cast[scales_dtype](),
             grid_dim=(num_rows, num_cols // group_size, 1),
-            block_dim=warps_per_block * WARP_SIZE,
+            block_dim=num_threads,
             attributes=pdl_launch_attributes(),
         )
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+)
 fn quantize_fp8_kernel[
     out_type: DType,
     scales_type: DType,
     in_type: DType,
-    input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
-        in_type, width
-    ],
-    warps_per_block: Int,
+    input_fn: fn[width: Int, alignment: Int] (
+        row: Int, col: Int
+    ) capturing -> SIMD[in_type, width],
+    num_threads: Int,
     group_size: Int,
+    simd_width: Int,
 ](
     output: NDBuffer[mut=True, out_type, 2, MutAnyOrigin],
     scales: NDBuffer[mut=True, scales_type, 2, MutAnyOrigin],
     scale_ub: Scalar[scales_type],
 ):
-    comptime simd_width = simd_width_of[in_type]()
-    comptime num_threads = warps_per_block * WARP_SIZE
     comptime use_warp_tiling = group_size <= num_threads * simd_width
     comptime fp8_max = Scalar[out_type].MAX_FINITE
     comptime accum_type = get_accum_type[in_type]()
@@ -199,9 +218,9 @@ fn quantize_fp8_kernel[
     with PDL():
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
-            input_vec = input_fn[simd_width](Int(row), Int(idx)).cast[
-                accum_type
-            ]()
+            input_vec = input_fn[simd_width, simd_width](
+                Int(row), Int(idx)
+            ).cast[accum_type]()
             thread_max = max(thread_max, abs(input_vec).reduce_max())
 
         var group_max = block.max[block_size=num_threads, broadcast=True](
@@ -214,7 +233,14 @@ fn quantize_fp8_kernel[
         )
 
         if tid == 0:
-            scales.store[width=1](IndexList[2](group_idx, row), scale_factor)
+            scales.store(Index(group_idx, row), scale_factor)
+
+        # Don't use `math.recip` here to avoid using an reciprocal approximation
+        # that gives up too much precision.
+        var scale_factor_recip = (
+            0.0 if scale_factor
+            == 0.0 else 1.0 / scale_factor.cast[accum_type]()
+        )
 
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
@@ -223,19 +249,13 @@ fn quantize_fp8_kernel[
             if use_warp_tiling:
                 pass
             else:
-                input_vec = input_fn[simd_width](Int(row), Int(idx)).cast[
-                    accum_type
-                ]()
+                input_vec = input_fn[simd_width, simd_width](
+                    Int(row), Int(idx)
+                ).cast[accum_type]()
 
-            var output_vec = input_vec.cast[scales_type]() / scale_factor
+            var output_vec = input_vec * scale_factor_recip
 
-            output_vec = max(
-                SIMD[scales_type, simd_width](-fp8_max),
-                min(SIMD[scales_type, simd_width](fp8_max), output_vec),
-            )
-            output.store[width=simd_width](
-                IndexList[2](row, idx), output_vec.cast[out_type]()
-            )
+            output.store(Index(row, idx), output_vec.cast[out_type]())
 
 
 @always_inline
@@ -244,9 +264,9 @@ fn batched_quantize_dynamic_scaled_fp8[
     in_dtype: DType,
     scales_dtype: DType,
     //,
-    input_fn: fn[width: Int] (batch: Int, row: Int, col: Int) capturing -> SIMD[
-        in_dtype, width
-    ],
+    input_fn: fn[width: Int, alignment: Int] (
+        batch: Int, row: Int, col: Int
+    ) capturing -> SIMD[in_dtype, width],
     group_size_or_per_token: Int,
     num_cols: Int,
 ](
@@ -268,12 +288,16 @@ fn batched_quantize_dynamic_scaled_fp8[
     ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
 
     comptime group_size = num_cols if group_size_or_per_token == -1 else group_size_or_per_token
-    comptime n_groups = num_cols // group_size
-    comptime simd_width = simd_width_of[in_dtype, target = get_gpu_target()]()
+    comptime simd_width = 16 if group_size % 16 == 0 else 8 if group_size % 8 == 0 else 4
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime warps_per_block = min(
         ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block
     )
+    comptime num_threads = warps_per_block * WARP_SIZE
+
+    __comptime_assert (
+        group_size % simd_width == 0
+    ), "group size must be multiple of simd size"
 
     if batch_size == 0 or num_rows == 0:
         return
@@ -283,36 +307,39 @@ fn batched_quantize_dynamic_scaled_fp8[
         scales_dtype,
         in_dtype,
         input_fn,
-        warps_per_block,
+        num_threads,
         group_size,
+        simd_width,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         scaled_output,
         scales,
         scale_ub.cast[scales_dtype](),
-        grid_dim=(num_rows, n_groups, batch_size),
-        block_dim=warps_per_block * WARP_SIZE,
+        grid_dim=(num_rows, num_cols // group_size, batch_size),
+        block_dim=num_threads,
         attributes=pdl_launch_attributes(),
     )
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+)
 fn batched_quantize_fp8_kernel[
     out_type: DType,
     scales_type: DType,
     in_type: DType,
-    input_fn: fn[width: Int] (batch: Int, row: Int, col: Int) capturing -> SIMD[
-        in_type, width
-    ],
-    warps_per_block: Int,
+    input_fn: fn[width: Int, alignment: Int] (
+        batch: Int, row: Int, col: Int
+    ) capturing -> SIMD[in_type, width],
+    num_threads: Int,
     group_size: Int,
+    simd_width: Int,
 ](
     output: NDBuffer[mut=True, out_type, 3, MutAnyOrigin],
     scales: NDBuffer[mut=True, scales_type, 3, MutAnyOrigin],
     scale_ub: Scalar[scales_type],
 ):
-    comptime simd_width = simd_width_of[in_type]()
-    comptime num_threads = warps_per_block * WARP_SIZE
     comptime use_warp_tiling = group_size <= num_threads * simd_width
     comptime fp8_max = Scalar[out_type].MAX_FINITE
     comptime accum_type = get_accum_type[in_type]()
@@ -328,9 +355,9 @@ fn batched_quantize_fp8_kernel[
     with PDL():
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
-            input_vec = input_fn[simd_width](batch_idx, row, idx).cast[
-                accum_type
-            ]()
+            input_vec = input_fn[simd_width, simd_width](
+                batch_idx, row, idx
+            ).cast[accum_type]()
             thread_max = max(thread_max, abs(input_vec).reduce_max())
 
         var group_max = block.max[block_size=num_threads, broadcast=True](
@@ -343,9 +370,14 @@ fn batched_quantize_fp8_kernel[
         )
 
         if tid == 0:
-            scales.store[width=1](
-                IndexList[3](batch_idx, group_idx, row), scale_factor
-            )
+            scales.store(Index(batch_idx, group_idx, row), scale_factor)
+
+        # Don't use `math.recip` here to avoid using an reciprocal approximation
+        # that gives up too much precision.
+        var scale_factor_recip = (
+            0.0 if scale_factor
+            == 0.0 else 1.0 / scale_factor.cast[accum_type]()
+        )
 
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
@@ -354,18 +386,14 @@ fn batched_quantize_fp8_kernel[
             if use_warp_tiling:
                 pass
             else:
-                input_vec = input_fn[simd_width](batch_idx, row, idx).cast[
-                    accum_type
-                ]()
+                input_vec = input_fn[simd_width, simd_width](
+                    batch_idx, row, idx
+                ).cast[accum_type]()
 
-            var output_vec = input_vec.cast[scales_type]() / scale_factor
+            var output_vec = input_vec * scale_factor_recip
 
-            output_vec = max(
-                SIMD[scales_type, simd_width](-fp8_max),
-                min(SIMD[scales_type, simd_width](fp8_max), output_vec),
-            )
-            output.store[width=simd_width](
-                IndexList[3](batch_idx, row, idx), output_vec.cast[out_type]()
+            output.store(
+                Index(batch_idx, row, idx), output_vec.cast[out_type]()
             )
 
 
@@ -390,7 +418,7 @@ fn matmul_dynamic_scaled_fp8[
     transpose_b: Bool = False,
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
+    c: NDBuffer[mut=True, c_type, 2, _, _, _],
     a: NDBuffer[a_type, 2, _, _],
     b: NDBuffer[b_type, 2, _, _],
     a_scales: NDBuffer[a_scales_type, 2, _, _],
@@ -458,7 +486,7 @@ fn matmul_dynamic_scaled_fp8[
         )
 
         @parameter
-        if ctx.default_device_info is B200:
+        if ctx.default_device_info == B200:
 
             @parameter
             @always_inline
@@ -581,14 +609,14 @@ fn naive_blockwise_scaled_fp8_matmul[
     accum_type: DType = get_accum_type[c_type](),
     scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
 ](
-    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, **_],
-    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, **_],
-    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, **_],
+    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, ...],
     a_scales: LayoutTensor[
-        a_scales_type, address_space = AddressSpace.GENERIC, **_
+        a_scales_type, address_space = AddressSpace.GENERIC, ...
     ],
     b_scales: LayoutTensor[
-        b_scales_type, address_space = AddressSpace.GENERIC, **_
+        b_scales_type, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -666,7 +694,7 @@ fn naive_blockwise_scaled_fp8_matmul[
         scales_granularity_mnk=scales_granularity_mnk,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c,
         a,
         b,
@@ -783,7 +811,7 @@ fn naive_blockwise_scaled_fp8_matmul[
         scales_granularity_mnk=scales_granularity_mnk,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c,
         a,
         b,
@@ -999,7 +1027,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
         elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c,
         a,
         b,
@@ -1130,8 +1158,8 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
 
 @always_inline
 fn convert_e4m3fn_to_e4m3fnuz(
-    input_buffer: LayoutTensor[DType.float8_e4m3fn, **_],
-    output_buffer: LayoutTensor[mut=True, DType.float8_e4m3fnuz, **_],
+    input_buffer: LayoutTensor[DType.float8_e4m3fn, ...],
+    output_buffer: LayoutTensor[mut=True, DType.float8_e4m3fnuz, ...],
     context: DeviceContext,
 ) raises:
     """Convert E4M3FN weights to E4M3FNUZ format for AMD GPU compatibility.
@@ -1164,7 +1192,7 @@ fn convert_e4m3fn_to_e4m3fnuz(
         comptime ROCM_FP8_NAN_AS_INT = -128
 
         input_vec_int8 = input_vec_int8.eq(ROCM_FP8_NAN_AS_INT).select(
-            0, input_vec_int8
+            Int8(0), input_vec_int8
         )
         var output_vec = bitcast[DType.float8_e4m3fnuz](input_vec_int8)
         output_buffer.store(idx, output_vec)
@@ -1192,19 +1220,17 @@ fn blockwise_scaled_fp8_with_epilogue[
     //,
     *,
     scales_granularity_mnk: IndexList[3],
-    BLOCK_DIM: Int = 16,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    accum_type: DType = get_accum_type[c_type](),
 ](
-    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, **_],
-    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, **_],
-    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, **_],
+    c: LayoutTensor[c_type, _, _, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[a_type, _, _, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[b_type, _, _, address_space = AddressSpace.GENERIC, ...],
     a_scales: LayoutTensor[
-        a_scales_type, address_space = AddressSpace.GENERIC, **_
+        a_scales_type, _, _, address_space = AddressSpace.GENERIC, ...
     ],
     b_scales: LayoutTensor[
-        b_scales_type, address_space = AddressSpace.GENERIC, **_
+        b_scales_type, _, _, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1217,7 +1243,7 @@ fn blockwise_scaled_fp8_with_epilogue[
     # 1D/2D (1x128)x(128x128) blockwise scaling
     @parameter
     if (
-        ctx.default_device_info is B200
+        ctx.default_device_info == B200
         and transpose_b
         and c_type == DType.bfloat16
         and scales_granularity_mnk[0] == 1

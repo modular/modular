@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 import torch
 from hypothesis import assume, settings
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValueLike, ops
@@ -113,7 +113,7 @@ def load_and_execute_numpy(
     results = model.execute()
     assert len(results) == 1
     result = results[0]
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     return result.to_numpy()
 
 
@@ -354,8 +354,8 @@ def test_rope(
     @modular_graph_test(session, graph, max_magnitude=1.0)
     @settings(max_examples=10)
     def test_correctness(
-        execute: Callable[[Sequence[Tensor]], Tensor],
-        inputs: Sequence[Tensor],
+        execute: Callable[[Sequence[Buffer]], Buffer],
+        inputs: Sequence[Buffer],
         torch_inputs: Sequence[torch.Tensor],
     ) -> None:
         x, _freqs_cis, cache = inputs
@@ -468,7 +468,8 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
     g = construct()
 
     batch = [
-        create_text_context(np.empty(prompt_lens[i])) for i in range(batch_size)
+        create_text_context(np.empty(prompt_lens[i], dtype=np.int64))
+        for i in range(batch_size)
     ]
 
     for context in batch:
@@ -476,7 +477,7 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
         assert isinstance(kv_manager, PagedKVCacheManager)
         kv_manager.alloc(context, num_steps=1)
 
-    input_row_offsets = Tensor(
+    input_row_offsets = Buffer(
         DType.uint32,
         [batch_size + 1],
     )
@@ -506,8 +507,8 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
     )
     @settings(max_examples=10)
     def test_runs_without_nan(
-        execute: Callable[[Sequence[Tensor]], Tensor],
-        inputs: Sequence[Tensor],
+        execute: Callable[[Sequence[Buffer]], Buffer],
+        inputs: Sequence[Buffer],
         torch_inputs: Sequence[torch.Tensor],
     ) -> None:
         inputs = list(inputs)

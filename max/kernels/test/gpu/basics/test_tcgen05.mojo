@@ -13,8 +13,8 @@
 
 from gpu.host import get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.mma_sm100 import MMASmemDescriptor
-from gpu.tcgen05 import (
+from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
+from gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_cp,
     tcgen05_dealloc,
@@ -25,7 +25,9 @@ from gpu.tcgen05 import (
     tcgen05_store_wait,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_true
 
 

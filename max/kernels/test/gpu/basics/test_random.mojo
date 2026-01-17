@@ -56,7 +56,9 @@ def run_elementwise[
 
             @parameter
             for i in range(simd_width):
-                out_buffer[idx + i] = rng[i % len(rng)].cast[dtype]()
+                out_buffer[idx + IndexList[1](i)] = rng[i % len(rng)].cast[
+                    dtype
+                ]()
 
     @always_inline
     @__copy_capture(out_buffer)
@@ -75,7 +77,9 @@ def run_elementwise[
 
             @parameter
             for i in range(simd_width):
-                out_buffer[idx + i] = rng[i % len(rng)].cast[dtype]()
+                out_buffer[idx + IndexList[1](i)] = rng[i % len(rng)].cast[
+                    dtype
+                ]()
 
     @parameter
     if distribution == "uniform":

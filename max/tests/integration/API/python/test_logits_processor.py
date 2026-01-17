@@ -17,8 +17,13 @@ from __future__ import annotations
 from typing import Any, cast
 
 import numpy as np
-from max.driver import Tensor
-from max.interfaces import BatchProcessorInputs, ProcessorInputs, SamplingParams
+from max.driver import Buffer
+from max.interfaces import (
+    BatchProcessorInputs,
+    ProcessorInputs,
+    SamplingParams,
+    TokenBuffer,
+)
 from max.pipelines import TextContext
 from max.pipelines.lib.sampling.logits_processor import apply_logits_processors
 
@@ -38,8 +43,8 @@ class MockTensor:
         self.data[key] = value
 
 
-def create_tensor(shape: tuple[int, ...], dtype: str = "float32") -> Tensor:
-    return cast(Tensor, MockTensor(shape, dtype))
+def create_tensor(shape: tuple[int, ...], dtype: str = "float32") -> Buffer:
+    return cast(Buffer, MockTensor(shape, dtype))
 
 
 class TestLogitsProcessor:
@@ -57,7 +62,7 @@ class TestLogitsProcessor:
         mock_tensor = create_tensor((2, 100))
         context = TextContext(
             max_length=100,
-            tokens=np.empty(1, dtype=np.int32),
+            tokens=TokenBuffer(np.array([42], dtype=np.int64)),
             sampling_params=SamplingParams(),
         )
 
@@ -86,7 +91,7 @@ class TestLogitsProcessor:
         processor = SuppressBeginToken([5, 7], steps=2)
         context = TextContext(
             max_length=100,
-            tokens=np.empty(1, dtype=np.int32),
+            tokens=TokenBuffer(np.array([42], dtype=np.int64)),
             sampling_params=SamplingParams(),
         )
 
@@ -142,7 +147,7 @@ class TestLogitsProcessor:
         tensor = create_tensor((1, 100))
         context = TextContext(
             max_length=100,
-            tokens=np.empty(1, dtype=np.int32),
+            tokens=TokenBuffer(np.array([42], dtype=np.int64)),
             sampling_params=SamplingParams(),
         )
 
@@ -192,14 +197,14 @@ class TestApplyLogitsProcessors:
         context_batch = [
             TextContext(
                 max_length=100,
-                tokens=np.empty(1, dtype=np.int32),
+                tokens=TokenBuffer(np.array([42], dtype=np.int64)),
                 sampling_params=SamplingParams(
                     logits_processors=[add_one, add_two]
                 ),
             ),
             TextContext(
                 max_length=100,
-                tokens=np.empty(1, dtype=np.int32),
+                tokens=TokenBuffer(np.array([42], dtype=np.int64)),
                 sampling_params=SamplingParams(logits_processors=[sub_one]),
             ),
         ]
@@ -208,7 +213,7 @@ class TestApplyLogitsProcessors:
     def test_apply_logits_processors_no_offsets(self) -> None:
         """Test apply_logits_processors with no offsets."""
 
-        logits = Tensor.from_numpy(np.arange(10).reshape(2, 5))
+        logits = Buffer.from_numpy(np.arange(10).reshape(2, 5))
 
         apply_logits_processors(self.create_context_batch(), logits, None)
         final_array = logits.to_numpy()
@@ -223,8 +228,8 @@ class TestApplyLogitsProcessors:
 
         # Assume these 3 logits are returned for the first context
         # and 2 logits are returned for the second context.
-        logits = Tensor.from_numpy(np.arange(30).reshape(5, 6))
-        logit_offsets = Tensor.from_numpy(np.array([0, 3, 5]))
+        logits = Buffer.from_numpy(np.arange(30).reshape(5, 6))
+        logit_offsets = Buffer.from_numpy(np.array([0, 3, 5]))
 
         apply_logits_processors(
             self.create_context_batch(), logits, logit_offsets
@@ -238,11 +243,17 @@ class TestApplyLogitsProcessors:
     def test_apply_logits_processors_with_batch_processors(self) -> None:
         """Test apply_logits_processors with batch processors."""
 
-        logits = Tensor.from_numpy(np.arange(10).reshape(2, 5))
-        logit_offsets = Tensor.from_numpy(np.array([0, 3, 5]))
+        logits = Buffer.from_numpy(np.arange(10).reshape(2, 5))
+        logit_offsets = Buffer.from_numpy(np.array([0, 3, 5]))
         context_batch = [
-            TextContext(max_length=100, tokens=np.empty(1, dtype=np.int32)),
-            TextContext(max_length=100, tokens=np.empty(1, dtype=np.int32)),
+            TextContext(
+                max_length=100,
+                tokens=TokenBuffer(np.array([42], dtype=np.int64)),
+            ),
+            TextContext(
+                max_length=100,
+                tokens=TokenBuffer(np.array([42], dtype=np.int64)),
+            ),
         ]
 
         def add_one(inputs: BatchProcessorInputs) -> None:

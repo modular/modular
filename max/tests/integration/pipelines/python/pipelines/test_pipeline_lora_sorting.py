@@ -17,14 +17,20 @@ from collections import OrderedDict
 from collections.abc import Sequence
 from enum import Enum
 from typing import Any, TypeVar, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, NonCallableMock, patch
 
 import numpy as np
 import pytest
-from max.driver import CPU, Device, Tensor
+from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.interfaces import RequestID, TextGenerationInputs, TextGenerationOutput
+from max.interfaces import (
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+    TokenBuffer,
+)
+from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -41,7 +47,7 @@ from max.pipelines.lib import (
     PipelineModel,
     SupportedEncoding,
 )
-from max.pipelines.lib.lora import LoRAManager
+from max.pipelines.lib.lora import LoRAManager, LoRAModel
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
 )
@@ -98,7 +104,7 @@ class MockPipelineModel(PipelineModel[ContextT]):
         self.devices = [CPU()]
         self.max_seq_len = 2048
 
-        self.kv_manager = MagicMock()
+        self.kv_manager = MagicMock(spec=PagedKVCacheManager)
         self.kv_manager.contains = MagicMock(return_value=True)
         self.kv_manager.claim = MagicMock()
         self.kv_manager.alloc = MagicMock()
@@ -163,8 +169,8 @@ class MockPipelineModel(PipelineModel[ContextT]):
             np.float32
         )
         return ModelOutputs(
-            logits=Tensor.from_numpy(rand_values),
-            next_token_logits=Tensor.from_numpy(rand_values),
+            logits=Buffer.from_numpy(rand_values),
+            next_token_logits=Buffer.from_numpy(rand_values),
         )
 
     def prepare_initial_token_inputs(
@@ -188,7 +194,7 @@ class MockPipelineModel(PipelineModel[ContextT]):
 
     def prepare_next_token_inputs(
         self,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> ModelInputs:
         del next_tokens
@@ -216,16 +222,16 @@ class MockSamplingProcessor:
         self._step = 0
 
     @property
-    def generated_tokens(self) -> Tensor:
-        return Tensor.from_numpy(self._generated_tokens)
+    def generated_tokens(self) -> Buffer:
+        return Buffer.from_numpy(self._generated_tokens)
 
     @property
-    def new_tokens(self) -> Tensor:
+    def new_tokens(self) -> Buffer:
         if self._step < self._num_steps:
             tokens = self._generated_tokens[:, self._step]
             self._step += 1
-            return Tensor.from_numpy(tokens.astype(np.int64))
-        return Tensor.from_numpy(np.zeros(self._batch_size, dtype=np.int64))
+            return Buffer.from_numpy(tokens.astype(np.int64))
+        return Buffer.from_numpy(np.zeros(self._batch_size, dtype=np.int64))
 
 
 def create_context(
@@ -240,13 +246,13 @@ def create_context(
         context: TextContext | TTSContext = TextContext(
             request_id=RequestID(request_id),
             max_length=max_length,
-            tokens=np.array(tokens, dtype=np.int64),
+            tokens=TokenBuffer(np.array(tokens, dtype=np.int64)),
         )
     else:
         context = TTSContext(
             request_id=RequestID(request_id),
             max_length=max_length,
-            tokens=np.array(tokens, dtype=np.int32),
+            tokens=TokenBuffer(np.array(tokens, dtype=np.int64)),
             streaming=False,
         )
 
@@ -282,8 +288,9 @@ def create_lora_manager(
         )
 
     for name in lora_names:
-        fake_lora = MagicMock()
+        fake_lora = NonCallableMock(spec=LoRAModel)
         fake_lora.rank = 8
+        fake_lora.name = name
         manager._loras[name] = fake_lora
         manager._active_loras.put(name, fake_lora)
 
@@ -300,10 +307,10 @@ def create_pipeline_with_lora(
         lora_manager=lora_manager
     )
 
-    mock_config = MagicMock()
+    mock_config = NonCallableMock(spec=PipelineConfig)
     mock_config.max_length = 512
-    mock_config.sampling_config.enable_structured_output = False
-    mock_config.sampling_config.enable_variable_logits = False
+    mock_config.sampling.enable_structured_output = False
+    mock_config.sampling.enable_variable_logits = False
 
     if pipeline_type == PipelineType.TEXT_GENERATION:
 

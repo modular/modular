@@ -32,7 +32,7 @@ _ACTIVATION_FUNCTIONS: dict[str, Callable[[Tensor], Tensor]] = {
 }
 
 
-class MLP(Module):
+class MLP(Module[[Tensor], Tensor]):
     """Simple multi-layer perceptron composed of three :obj:`Linear` layers.
 
     Computes the MLP transformation as:
@@ -87,7 +87,7 @@ class MLP(Module):
         self.activation_function = _ACTIVATION_FUNCTIONS[activation_function]
         self.bias = bias
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """Applies the MLP transformation to the input.
 
         Args:
@@ -99,7 +99,7 @@ class MLP(Module):
 
         # Optimization to compute a single matmul by merging the
         # gate and up projection weights.
-        feed_forward_length = self.gate_proj.weight.shape[0]
+        feed_forward_length = int(self.gate_proj.weight.shape[0])
         gate_proj_weight: Tensor = self.gate_proj.weight.to(x.device)
 
         up_proj_weight: Tensor = self.up_proj.weight.to(x.device)
@@ -118,6 +118,7 @@ class MLP(Module):
         gate_out, up_out = F.split(
             output, [feed_forward_length, feed_forward_length], axis=1
         )
+        assert isinstance(gate_out, Tensor)
 
         hidden = self.activation_function(gate_out) * up_out
         return self.down_proj(hidden)

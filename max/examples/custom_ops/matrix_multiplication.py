@@ -16,7 +16,7 @@
 from pathlib import Path
 
 import numpy as np
-from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -29,13 +29,13 @@ def matrix_multiplication(
     algorithm: str,
     session: InferenceSession,
     device: Device,
-) -> Tensor:
+) -> Buffer:
     dtype = DType.float32
 
     # Create driver tensors from the input arrays, and move them to the
     # accelerator.
-    a_tensor = Tensor.from_numpy(a).to(device)
-    b_tensor = Tensor.from_numpy(b).to(device)
+    a_tensor = Buffer.from_numpy(a).to(device)
+    b_tensor = Buffer.from_numpy(b).to(device)
 
     mojo_kernels = Path(__file__).parent / "kernels"
 
@@ -85,7 +85,7 @@ def matrix_multiplication(
     result = model.execute(a_tensor, b_tensor)[0]
 
     # Copy values back to the CPU to be read.
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     return result.to(CPU())
 
 

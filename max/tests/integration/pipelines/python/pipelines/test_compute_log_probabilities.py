@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.interfaces import LogProbabilities
@@ -122,8 +122,8 @@ def test_compute_log_probabilities(cpu_device: CPU, cpu_model: Model) -> None:
         device,
         model,
         input_row_offsets=input_row_offsets,
-        logits=Tensor.from_numpy(batch_logits).to(device),
-        next_token_logits=Tensor.from_numpy(batch_logits[-1:]).to(device),
+        logits=Buffer.from_numpy(batch_logits).to(device),
+        next_token_logits=Buffer.from_numpy(batch_logits[-1:]).to(device),
         tokens=batch_tokens[:-1],
         sampled_tokens=batch_tokens[-1:],
         batch_top_n=[3],
@@ -156,8 +156,8 @@ def test_compute_log_probabilities(cpu_device: CPU, cpu_model: Model) -> None:
         device,
         model,
         input_row_offsets=input_row_offsets,
-        logits=Tensor.from_numpy(batch_logits).to(device),
-        next_token_logits=Tensor.from_numpy(batch_logits[-1:]).to(device),
+        logits=Buffer.from_numpy(batch_logits).to(device),
+        next_token_logits=Buffer.from_numpy(batch_logits[-1:]).to(device),
         tokens=batch_tokens[:-1],
         sampled_tokens=batch_tokens[-1:],
         batch_top_n=[1],
@@ -221,8 +221,8 @@ def test_compute_log_probabilities_batch(
         device,
         model,
         input_row_offsets=input_row_offsets,
-        logits=Tensor.from_numpy(batch_logits).to(device),
-        next_token_logits=Tensor.from_numpy(batch_next_token_logits).to(device),
+        logits=Buffer.from_numpy(batch_logits).to(device),
+        next_token_logits=Buffer.from_numpy(batch_next_token_logits).to(device),
         tokens=batch_tokens,
         sampled_tokens=batch_sampled_tokens,
         batch_top_n=batch_top_n,
@@ -279,7 +279,7 @@ def test_compute_log_probabilities_ragged(
         device,
         model,
         input_row_offsets=np.array([0, 3, 5, 8]),
-        logits=Tensor.from_numpy(
+        logits=Buffer.from_numpy(
             np.array(
                 [
                     [10, 11],  # batch 0 token 0
@@ -294,7 +294,7 @@ def test_compute_log_probabilities_ragged(
                 dtype=np.float32,
             )
         ).to(device),
-        next_token_logits=Tensor.from_numpy(
+        next_token_logits=Buffer.from_numpy(
             np.array(
                 [
                     [12, 13],  # batch 0 token 2
@@ -536,12 +536,12 @@ def test_log_probabilities_randomized(
         model=model,
         input_row_offsets=packed.input_row_offsets,
         logits=(
-            Tensor.from_numpy(packed.logits).to(device)
+            Buffer.from_numpy(packed.logits).to(device)
             if packed.logits is not None
             else None
         ),
         next_token_logits=(
-            Tensor.from_numpy(packed.next_token_logits).to(device)
+            Buffer.from_numpy(packed.next_token_logits).to(device)
         ),
         tokens=packed.tokens,
         sampled_tokens=packed.sampled_tokens,
@@ -586,12 +586,12 @@ def test_log_probabilities_randomized_gpu(
         model=model,
         input_row_offsets=packed.input_row_offsets,
         logits=(
-            Tensor.from_numpy(packed.logits).to(device)
+            Buffer.from_numpy(packed.logits).to(device)
             if packed.logits is not None
             else None
         ),
         next_token_logits=(
-            Tensor.from_numpy(packed.next_token_logits).to(device)
+            Buffer.from_numpy(packed.next_token_logits).to(device)
         ),
         tokens=packed.tokens,
         sampled_tokens=packed.sampled_tokens,

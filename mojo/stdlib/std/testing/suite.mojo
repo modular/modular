@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements test suite infrastructure for organizing and running tests.
+
+This module provides the `TestSuite` type for collecting, filtering, and
+executing unit tests with automatic discovery, command-line filtering, and
+formatted reporting. It includes support for colored output, timing statistics,
+and flexible test selection via CLI arguments.
+"""
 
 from math import ceil, floor
 from os import sep
@@ -17,8 +24,7 @@ from time import perf_counter_ns
 from utils._ansi import Color, Text
 from collections import Set
 
-from builtin._location import __call_location, _SourceLocation
-from compile.reflection import get_function_name
+from reflection import get_function_name, call_location, SourceLocation
 from sys.intrinsics import _type_is_eq
 from sys import argv
 
@@ -130,7 +136,7 @@ struct TestReport(Copyable, Writable):
     var result: TestResult
     """The result code of the test."""
 
-    var error: Error
+    var error: Optional[Error]
     """The error associated with a failing test."""
 
     @staticmethod
@@ -188,7 +194,7 @@ struct TestReport(Copyable, Writable):
         var name: String,
         duration_ns: UInt,
         result: TestResult,
-        var error: Error = {},
+        var error: Optional[Error] = {},
     ):
         self.name = name^
         self.duration_ns = duration_ns
@@ -240,11 +246,11 @@ struct TestSuiteReport(Copyable, Writable):
     var passed: Int
     """The number of tests that passed."""
 
-    var location: _SourceLocation
+    var location: SourceLocation
     """The source location of the test suite."""
 
     fn __init__(
-        out self, *, var reports: List[TestReport], location: _SourceLocation
+        out self, *, var reports: List[TestReport], location: SourceLocation
     ):
         """Initialize a test suite report.
 
@@ -366,7 +372,7 @@ struct TestSuite(Movable):
     var tests: List[_Test]
     """The list of tests registered in this suite."""
 
-    var location: _SourceLocation
+    var location: SourceLocation
     """The source location where the test suite was created."""
 
     var skip_list: Set[String]
@@ -382,19 +388,19 @@ struct TestSuite(Movable):
     fn __init__(
         out self,
         *,
-        location: Optional[_SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
         var cli_args: Optional[List[StaticString]] = None,
     ):
         """Create a new test suite.
 
         Args:
             location: The location of the test suite (defaults to
-                `__call_location`).
+                `call_location`).
             cli_args: The command line arguments to pass to the test suite
                 (defaults to `sys.argv()`).
         """
         self.tests = List[_Test]()
-        self.location = location.or_else(__call_location())
+        self.location = location.or_else(call_location())
         self.skip_list = {}
         self.allow_list = None  # None means no allow list specified.
         self.cli_args = cli_args.or_else(List[StaticString](argv()))
@@ -425,7 +431,7 @@ struct TestSuite(Movable):
         test_funcs: Tuple, /
     ](
         *,
-        location: Optional[_SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
         var cli_args: Optional[List[StaticString]] = None,
     ) raises -> Self:
         """Discover tests from the given list of functions, and register them.
@@ -436,7 +442,7 @@ struct TestSuite(Movable):
 
         Args:
             location: The location of the test suite (defaults to
-                `__call_location`).
+                `call_location`).
             cli_args: The command line arguments to pass to the test suite
                 (defaults to `sys.argv()`).
 
@@ -449,7 +455,7 @@ struct TestSuite(Movable):
         """
 
         var suite = Self(
-            location=location.or_else(__call_location()), cli_args=cli_args^
+            location=location.or_else(call_location()), cli_args=cli_args^
         )
         try:
             suite._register_tests[test_funcs]()
@@ -615,7 +621,7 @@ struct TestSuite(Movable):
         var report = self.generate_report(skip_all=skip_all)
 
         if report.failures > 0:
-            raise Error(report)
+            raise Error(report^)
         if not quiet:
             print(report)
 

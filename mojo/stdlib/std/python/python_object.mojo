@@ -23,7 +23,7 @@ from os import abort
 from sys import bit_width_of
 from sys.ffi import c_double, c_long, c_size_t, c_ssize_t
 
-from compile.reflection import get_type_name
+from reflection import get_type_name
 
 from ._cpython import CPython, GILAcquired, PyObject, PyObjectPtr, PyTypeObject
 from .bindings import PyMojoObject, _get_type_name, lookup_py_type_object
@@ -39,7 +39,7 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
     # ===-------------------------------------------------------------------===#
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = PythonObject
 
@@ -67,16 +67,15 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return Bool(self.next_item)
-
-    fn __next__(mut self) -> PythonObject:
+    fn __next__(mut self) raises StopIteration -> PythonObject:
         """Return the next item and update to point to subsequent item.
 
         Returns:
             The next item in the traversable object that this iterator
             points to.
         """
+        if not self.next_item:
+            raise StopIteration()
         ref cpy = Python().cpython()
         var curr_item = self.next_item
         self.next_item = cpy.PyIter_Next(self.iterator._obj_ptr)
@@ -189,6 +188,7 @@ struct PythonObject(
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
     @doc_private
+    @implicit
     fn __init__(out self, none: NoneType._mlir_type):
         """Initialize a none value object from a `None` literal.
 
@@ -239,7 +239,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
 
         @parameter
-        if dtype is DType.bool:
+        if dtype == DType.bool:
             var val = c_long(Int(value))
             self = Self(from_owned=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():
@@ -262,6 +262,8 @@ struct PythonObject(
             If the string is not valid UTF-8.
         """
         ref cpy = Python().cpython()
+        # TODO: This should not be necessary, as `StringSlice` is guaranteed to
+        # be valid UTF-8.
         var unicode = cpy.PyUnicode_DecodeUTF8(string)
         if not unicode:
             raise cpy.unsafe_get_error()
@@ -1615,10 +1617,10 @@ struct PythonObject(
 
         try:
             # TODO: Avoid this intermediate String allocation, if possible.
-            writer.write(String(self))
-        except:
+            writer.write(String(py=self))
+        except e:
             # TODO: make this method raising when we can raise parametrically.
-            abort("failed to write PythonObject to writer")
+            abort(String("failed to write PythonObject to writer: ", e))
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -1665,7 +1667,7 @@ struct PythonObject(
             If the operation fails.
         """
         return UnsafePointer[Scalar[dtype], MutAnyOrigin](
-            unsafe_from_address=Int(self)
+            unsafe_from_address=Int(py=self)
         )
 
     fn downcast_value_ptr[
@@ -1748,7 +1750,7 @@ struct PythonObject(
         return None
 
     fn unchecked_downcast_value_ptr[
-        mut: Bool, origin: Origin[mut], //, T: ImplicitlyDestructible
+        mut: Bool, origin: Origin[mut=mut], //, T: ImplicitlyDestructible
     ](ref [origin]self) -> UnsafePointer[T, origin]:
         """Get a pointer to the expected Mojo value of type `T`.
 
@@ -1900,19 +1902,12 @@ fn _slice_to_py_object_ptr(slice: Slice) -> PyObjectPtr:
 
 
 __extension SIMD:
-    # TODO(MSTDL-1587): Remove the dummy parameter.
     @always_inline
-    fn __init__[
-        *, `_`: NoneType = None
-    ](out self: Scalar[dtype], obj: PythonObject, /) raises:
+    fn __init__(out self: Scalar[dtype], *, py: PythonObject) raises:
         """Initialize a SIMD value from a PythonObject.
 
-        Parameters:
-            _: A dummy parameter to ensure this overload has lower priority than
-                the others. Its value is ignored.
-
         Args:
-            obj: The PythonObject to convert.
+            py: The PythonObject to convert.
 
         Raises:
             If the conversion to double fails.
@@ -1921,7 +1916,7 @@ __extension SIMD:
         @parameter
         if dtype.is_floating_point():
             ref cpy = Python().cpython()
-            var float_value = cpy.PyFloat_AsDouble(obj._obj_ptr)
+            var float_value = cpy.PyFloat_AsDouble(py._obj_ptr)
             if float_value == -1.0 and cpy.PyErr_Occurred():
                 # Note that -1.0 does not guarantee an error, it just means we
                 # need to check if there was an exception.
@@ -1929,7 +1924,7 @@ __extension SIMD:
             # NOTE: if dtype is not float64, we truncate.
             self = Scalar[dtype](float_value)
         elif dtype.is_integral() and bit_width_of[dtype]() <= 64:
-            self = Int(obj)
+            self = Int(py=py)
         else:
             self = Scalar[dtype]()
             constrained[False, "unsupported dtype"]()

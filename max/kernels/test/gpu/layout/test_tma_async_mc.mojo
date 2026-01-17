@@ -14,7 +14,7 @@
 from sys import size_of
 
 from gpu import barrier
-from gpu.cluster import block_rank_in_cluster, cluster_sync
+from gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
 from gpu import block_idx, thread_idx
 from gpu.memory import fence_mbarrier_init
@@ -138,7 +138,7 @@ def test_tma_multicast_load_row_major[
         CLUSTER_N,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(dst_N // tileN, dst_M // tileM),
@@ -219,7 +219,7 @@ fn test_tma_sliced_multicast_load_kernel[
     if thread_idx.x == 0:
         mbar[0].expect_bytes(expected_bytes)
         var slice_cord = Int(
-            block_idx.y * UInt(tileM)
+            UInt32(block_idx.y) * tileM
             + Int(block_rank % CLUSTER_N) * tileM // CLUSTER_N
         )
         var multicast_mask = tma_multicast_mask << (rank_m * CLUSTER_N)
@@ -278,7 +278,7 @@ def test_tma_sliced_multicast_load_row_major[
         type_of(tma_tensor).layout,  # smem layout
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(dst_N // tileN, dst_M // tileM),

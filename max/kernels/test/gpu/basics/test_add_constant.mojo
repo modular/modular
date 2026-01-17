@@ -13,7 +13,9 @@
 
 from gpu import *
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import *
 
 
@@ -43,7 +45,7 @@ def run_add_constant(ctx: DeviceContext):
     comptime constant = Float32(33)
 
     comptime kernel = add_constant_fn
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         out_device,
         in_device,
         constant,

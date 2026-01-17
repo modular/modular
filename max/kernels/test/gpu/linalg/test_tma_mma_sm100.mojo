@@ -12,19 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import sqrt
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import LegacyUnsafePointer, bitcast
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from gpu import WARP_SIZE, barrier
 from gpu import lane_id as get_lane_id
-from gpu.cluster import block_rank_in_cluster
+from gpu.primitives.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_idx, lane_id, thread_idx, warp_id as get_warp_id
 from gpu.memory import external_memory
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
+from gpu.compute.arch.mma_nvidia_sm100 import *
+from gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
@@ -34,7 +36,12 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
     tile_to_descriptor,
 )
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tensor_tile,
+    create_tma_tile,
+)
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
@@ -739,11 +746,11 @@ def test_tma_umma[
         Layout.row_major(M, N),
     ](ctx)
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BK, BM) if transpose_a else Index(BM, BK),
         swizzle_mode=a_swizzle,
     ](ctx, a.device_tensor())
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
@@ -771,7 +778,7 @@ def test_tma_umma[
             b_swizzle=b_swizzle,
             num_threads=block_dim,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             a_tma_op,
             b_tma_op,
             c.device_tensor(),
@@ -801,7 +808,7 @@ def test_tma_umma[
             num_threads=block_dim,
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             a.device_tensor(),
             b_tma_op,
             c.device_tensor(),

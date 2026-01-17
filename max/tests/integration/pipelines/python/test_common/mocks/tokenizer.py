@@ -21,6 +21,7 @@ import numpy as np
 from max.interfaces import (
     PipelineTokenizer,
     TextGenerationRequest,
+    TokenBuffer,
 )
 from max.pipelines.core import TextContext
 
@@ -65,13 +66,13 @@ class MockTextTokenizer(
     async def new_context(self, request: TextGenerationRequest) -> TextContext:
         self.i += 1
 
-        if request.prompt is None and request.messages is None:
+        if request.prompt is None and not request.messages:
             raise ValueError("either prompt or messages must be provided.")
 
         prompt: str | Sequence[int]
-        if request.prompt is None and request.messages is not None:
+        if request.prompt is None and request.messages:
             prompt = ".".join(
-                [str(message.get("content")) for message in request.messages]
+                [str(message.content) for message in request.messages]
             )
         elif request.prompt is not None:
             assert request.prompt is not None
@@ -106,7 +107,7 @@ class MockTextTokenizer(
         ctx = TextContext(
             request_id=request.request_id,
             max_length=max_length,
-            tokens=encoded,
+            tokens=TokenBuffer(encoded),
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             json_schema=json_schema,

@@ -14,7 +14,6 @@
 from sys import align_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
@@ -157,7 +156,7 @@ fn cpasync_wgmma_kernel[
 
     c_reg_tile_vec2 = c_reg_tile.vectorize[1, 2]()
     comptime T = c_reg_tile_vec2.element_type
-    c_gmem_ptr = c_gmem_tile.ptr.offset(t_idx)
+    c_gmem_ptr = c_gmem_tile.ptr + t_idx
 
     @parameter
     for mma_id in range(tile_to_idx.size()):
@@ -169,9 +168,7 @@ fn cpasync_wgmma_kernel[
             comptime v_idx = v_to_idx(local_idx)
             comptime c_idx = v_idx + mma_idx
             casted_vec = c_reg_tile_vec2[mma_id, local_idx_v2].cast[c_type]()
-            c_gmem_ptr.offset(c_idx).store[alignment = align_of[T]()](
-                casted_vec
-            )
+            (c_gmem_ptr + c_idx).store[alignment = align_of[T]()](casted_vec)
 
 
 def test_cpasync_wgmma[
@@ -246,7 +243,7 @@ def test_cpasync_wgmma[
         b_swizzle=b_swizzle,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         a.device_tensor(),
         b.device_tensor(),
         c.device_tensor(),
@@ -257,13 +254,9 @@ def test_cpasync_wgmma[
 
     vendor_blas.matmul(
         ctx,
-        rebind[NDBuffer[c_type, 2, MutAnyOrigin]](c_ref.device_buffer()),
-        rebind[NDBuffer[a_type, 2, MutAnyOrigin]](
-            a.device_buffer[update=False]()
-        ),
-        rebind[NDBuffer[b_type, 2, MutAnyOrigin]](
-            b.device_buffer[update=False]()
-        ),
+        c_ref.device_tensor[update=False](),
+        a.device_tensor[update=False](),
+        b.device_tensor[update=False](),
         c_row_major=True,
         transpose_b=transpose_b,
     )

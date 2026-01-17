@@ -17,9 +17,15 @@ from sys.info import has_amd_gpu_accelerator
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
-from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
+from gpu.primitives.cluster import (
+    cluster_sync,
+    cluster_sync_relaxed,
+    elect_one_sync,
+)
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
@@ -37,10 +43,10 @@ from gpu import (
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import external_memory, fence_mbarrier_init
-from gpu.grid_controls import PDLLevel
+from gpu.primitives.grid_controls import PDLLevel
 
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
+from gpu.compute.arch.mma_nvidia_sm100 import *
+from gpu.compute.arch.tcgen05 import *
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import LayoutTensorIter
@@ -50,7 +56,7 @@ from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
-    create_tma_tile,
+    create_tensor_tile,
 )
 
 from utils.fast_div import FastDiv
@@ -114,7 +120,7 @@ fn naive_grouped_matmul[
         b_shape,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c,
         a,
         b,
@@ -188,7 +194,7 @@ fn naive_grouped_matmul_kernel[
     if elementwise_lambda_fn:
         comptime elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](
-            Index(a_start_row + m, n), accum.cast[c_type]()
+            Index(a_start_row + UInt32(m), n), accum.cast[c_type]()
         )
     else:
         c_by_expert = c.data + a_start_row * N
@@ -210,7 +216,7 @@ fn naive_epilogue[
     var N = c.dim[1]()
     comptime simd_size = simd_width_of[c_type]()
     var block_dim = (128 // simd_size, simd_size, 1)
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         c,
         grid_dim=(ceildiv(N, block_dim[0]), ceildiv(M, block_dim[1]), 1),
         block_dim=block_dim,
@@ -621,7 +627,7 @@ fn grouped_matmul_sm100[
     comptime c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
     a_tensor = from_ndbuffer_row_major(a)
-    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
         ctx, a_tensor
     )
     b_tensor = LayoutTensor[
@@ -630,7 +636,7 @@ fn grouped_matmul_sm100[
         MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ](b.data)
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b_tensor)
@@ -662,7 +668,7 @@ fn grouped_matmul_sm100[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         a_offsets,
@@ -1000,7 +1006,7 @@ fn grouped_matmul_amd[
             config,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -1055,8 +1061,8 @@ fn grouped_matmul[
     comptime is_expert_shape_static = b_shape.all_known[
         3
     ]() and a_shape.has_value[1]() and c_shape.has_value[1]()
-    comptime is_sm90_kernel_applicable = ctx.default_device_info is H100 and is_expert_shape_static
-    comptime is_sm100_kernel_applicable = ctx.default_device_info is B200 and is_expert_shape_static
+    comptime is_sm90_kernel_applicable = ctx.default_device_info == H100 and is_expert_shape_static
+    comptime is_sm100_kernel_applicable = ctx.default_device_info == B200 and is_expert_shape_static
     comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and is_expert_shape_static
 
     @parameter

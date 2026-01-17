@@ -385,3 +385,43 @@ def test_supported_architecture__eq__method() -> None:
         weight_adapters={},  # Empty dict
     )
     assert arch15 == arch16
+
+
+def test_architecture_context_types_are_msgspec_compatible() -> None:
+    """Ensure all architecture context_types work with msgspec serialization.
+
+    See PR #74216 and PR #75135 for example bugs this test prevents.
+    """
+    import typing
+
+    import msgspec
+
+    for arch in PIPELINE_REGISTRY.architectures.values():
+        context_type = arch.context_type
+
+        # context_type must not be a Protocol (msgspec can't deserialize them)
+        is_protocol = getattr(context_type, "_is_protocol", False)
+        assert not is_protocol, (
+            f"Architecture '{arch.name}' uses Protocol '{context_type.__name__}' "
+            f"as context_type - use a concrete class instead."
+        )
+
+        # msgspec must be able to create a decoder for this type
+        try:
+            msgspec.msgpack.Decoder(type=context_type)
+        except Exception as e:
+            pytest.fail(
+                f"Architecture '{arch.name}' context_type '{context_type.__name__}' "
+                f"is not msgspec-compatible: {e}"
+            )
+
+        # tokenizer.new_context() return type must match context_type
+        new_context_method = getattr(arch.tokenizer, "new_context", None)
+        if new_context_method:
+            hints = typing.get_type_hints(new_context_method)
+            return_type = hints.get("return")
+            if return_type and isinstance(return_type, type):
+                assert issubclass(return_type, context_type), (
+                    f"Architecture '{arch.name}' has context_type={context_type.__name__} "
+                    f"but tokenizer.new_context() returns {return_type.__name__}."
+                )

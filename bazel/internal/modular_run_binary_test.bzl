@@ -8,7 +8,6 @@ def modular_run_binary_test(
         binary,
         data = [],
         env = {},
-        external_noop = False,  # buildifier: disable=unused-variable
         target_compatible_with = [],
         gpu_constraints = [],
         exec_properties = {},
@@ -22,7 +21,6 @@ def modular_run_binary_test(
         binary: Label of the binary to run
         data: Runtime data required by the binary
         env: Environment variables to set
-        external_noop: Ignored, for compatibility with the external repo
         target_compatible_with: See upstream docs
         gpu_constraints: GPU requirements for the tests
         exec_properties: https://bazel.build/reference/be/common-definitions#common-attributes
@@ -42,7 +40,6 @@ def modular_run_binary_test(
         exec_properties = get_default_exec_properties(tags, gpu_constraints) | exec_properties,
         toolchains = toolchains + [
             "//bazel/internal:current_gpu_toolchain",
-            "//bazel/internal:lib_toolchain",
         ],
         **kwargs
     )

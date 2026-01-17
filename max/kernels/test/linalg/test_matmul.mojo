@@ -27,7 +27,9 @@ from linalg.packing import (
     pack_b_ndbuffer,
     pack_matmul_b_shape_func,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal, assert_equal
 
 from utils.index import Index, IndexList
@@ -38,7 +40,7 @@ comptime alignment = 64
 fn gemm_naive[](
     a: NDBuffer,
     b: NDBuffer,
-    c: NDBuffer[mut=True, *_],
+    c: NDBuffer[mut=True, ...],
     m: Int,
     n: Int,
     k: Int,

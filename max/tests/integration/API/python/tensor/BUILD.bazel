@@ -2,8 +2,9 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_test(
@@ -14,6 +15,10 @@ modular_py_test(
         "-n",
         "auto",
     ],
+    ignore_extra_deps = [
+        # Used for parallel testing
+        requirement("pytest-xdist"),
+    ],
     imports = ["."],
     target_compatible_with = select({
         # Takes too long, this is mostly just testing plumbing into other code so low value.
@@ -23,7 +28,10 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/experimental",
+        "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("pytest-xdist"),
     ],

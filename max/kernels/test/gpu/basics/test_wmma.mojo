@@ -16,12 +16,14 @@ from random import random_si64
 
 from gpu import WARP_SIZE, block_idx
 from gpu.host import DeviceContext
-from gpu.mma import mma
-from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
+from gpu.compute.mma import mma
+from gpu.compute.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_false
 
 from utils.index import IndexList
@@ -265,7 +267,7 @@ fn run_mma_fp32_tf32(
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_tf32
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -321,7 +323,7 @@ fn run_mma_fp32_tf32(
             b_tensor.layout,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -432,7 +434,7 @@ fn run_mma_fp32_bf16(
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_bf16
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -487,7 +489,7 @@ fn run_mma_fp32_bf16(
             b_tensor.layout,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -596,7 +598,7 @@ fn run_mma_fp32_bf16_2(
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_bf16_2
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -652,7 +654,7 @@ fn run_mma_fp32_bf16_2(
             b_tensor.layout,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -761,7 +763,7 @@ fn run_mma_fp32_fp16(
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_fp16
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -817,7 +819,7 @@ fn run_mma_fp32_fp16(
             BLOCK_DIM,
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -926,7 +928,7 @@ fn run_mma_fp16_fp16(
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp16_fp16
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
             b_device,
@@ -981,7 +983,7 @@ fn run_mma_fp16_fp16(
             b_tensor.layout,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             c_tensor,
             a_tensor,
             b_tensor,

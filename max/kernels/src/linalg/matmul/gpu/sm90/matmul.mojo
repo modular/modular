@@ -17,13 +17,13 @@ from sys import size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.globals import WARPGROUP_SIZE
-from gpu.grid_controls import pdl_launch_attributes
+from gpu.primitives.grid_controls import pdl_launch_attributes
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import H100
 from layout import Layout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.tma_async import create_tma_tile, create_tma_tile_template
+from layout.tma_async import create_tensor_tile, create_tma_tile_template
 from logger import Logger
 from std.bit import log2_floor
 
@@ -202,7 +202,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     comptime k_group_size = Int(config.k_group_size)
 
     constrained[
-        (a_type == b_type is DType.float8_e4m3fn)
+        (a_type == b_type == DType.float8_e4m3fn)
         or (a_type == b_type and a_type in (DType.bfloat16, DType.float32)),
         "Unsupported input dtype",
     ]()
@@ -307,7 +307,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
 
     @parameter
     if use_tma_store:
-        c_tma_op = create_tma_tile[
+        c_tma_op = create_tensor_tile[
             c_smem_tile,
             swizzle_mode=c_swizzle,
             __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
@@ -369,14 +369,14 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     # Dispatch kernel using TMA load when the stride is multiple of 16B.
     @parameter
     if k_align == 16:
-        var a_tma_op = create_tma_tile[
+        var a_tma_op = create_tensor_tile[
             Index(
                 BM // Int(CLUSTER_N), BK
             ) if config.partitioned_multicast else Index(BM, BK),
             swizzle_mode=a_swizzle,
         ](ctx, a)
 
-        var b_tma_op = create_tma_tile[
+        var b_tma_op = create_tensor_tile[
             Index(
                 BN // Int(CLUSTER_M), BK
             ) if config.partitioned_multicast else Index(BN, BK),
@@ -396,7 +396,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 schedule=schedule,
             ]
 
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 a_tma_op,
                 b_tma_op,
                 c_tma_op,
@@ -422,7 +422,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 c_tma_op.desc_layout,
             ]
 
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 a_tma_op,
                 b_tma_op,
                 c_tma_op,
@@ -446,7 +446,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
             c_tma_op.layout,
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             c_tma_op,
             a,
             b,
@@ -567,7 +567,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         k_group_size == 1
     ), "Only support k_group_size == 1 for now"
 
-    __comptime_assert (a_type == b_type is DType.float8_e4m3fn) or (
+    __comptime_assert (a_type == b_type == DType.float8_e4m3fn) or (
         a_type == b_type and a_type in (DType.bfloat16, DType.float32)
     ), "Unsupported input dtype"
 
@@ -617,20 +617,20 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         min(log2_floor(c_smem_tile[1] // 8), 3)
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(
             BM // Int(CLUSTER_N), BK
         ) if config.partitioned_multicast else Index(BM, BK),
         swizzle_mode=a_swizzle,
     ](ctx, a)
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // Int(CLUSTER_M), BK
         ) if config.partitioned_multicast else Index(BN, BK),
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    c_tma_op = create_tma_tile[
+    c_tma_op = create_tensor_tile[
         c_smem_tile,
         swizzle_mode=c_swizzle,
         __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
@@ -640,8 +640,8 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         Index(N, K),
         config.block_tile_shape,
         splits,
-        config.num_consumer,
-        config.num_pipeline_stages,
+        UInt32(config.num_consumer),
+        UInt32(config.num_pipeline_stages),
         Index(config.cluster_shape[1], config.cluster_shape[0]),
         raster_order,
     ]
@@ -669,7 +669,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
 
     var locks_buffer_size_bytes = (
         scheduler.get_required_locks_buffer_size_bytes[
-            accum_type, config.num_consumer
+            accum_type, UInt32(config.num_consumer)
         ](
             Index(M, N, K),
             config.block_tile_shape,
@@ -728,7 +728,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         raster_order=raster_order,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

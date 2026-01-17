@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "mojo_kgen_lib", "mojo_library")
+load("//bazel:api.bzl", "mojo_library")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -8,13 +8,6 @@ mogg_primitives_lib_deps = [
     "@mojo//:std",
     "//max:weights_registry",
 ]
-
-# TODO(GEX-924): can we remove O3 and debug level none?
-mojo_kgen_lib(
-    name = "MOGGPrimitivesLib",
-    srcs = glob(["**/*.mojo"]),
-    deps = mogg_primitives_lib_deps,
-)
 
 mojo_library(
     name = "MOGGPrimitives",

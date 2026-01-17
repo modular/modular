@@ -9,9 +9,13 @@ modular_py_binary(
         "mlp.py",
     ],
     imports = ["."],
+    mojo_deps = select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
     deps = [
-        "//max/python/max/entrypoints",
-        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
         "//max/python/max/nn",
     ],
 )

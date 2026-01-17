@@ -20,7 +20,12 @@ from typing import TypeVar, cast
 
 import numpy as np
 from max.driver import CPU, Device
-from max.interfaces import RequestID, SchedulerResult, TextGenerationOutput
+from max.interfaces import (
+    RequestID,
+    SchedulerResult,
+    TextGenerationOutput,
+    TokenBuffer,
+)
 from max.kv_cache.paged_cache.transfer_engine import KVTransferEngineMetadata
 from max.pipelines.core import TextContext
 from max.serve.config import generate_zmq_ipc_path
@@ -80,7 +85,7 @@ def create_text_context(
     prompt_len: int,
     output_len: int | None = None,
 ) -> TextContext:
-    tokens = np.ones(prompt_len, dtype=np.int64)
+    tokens = TokenBuffer(np.ones(prompt_len, dtype=np.int64))
     if output_len is not None:
         max_length = prompt_len + output_len
     else:
@@ -196,8 +201,8 @@ def test_decode_sends_request_to_prefill() -> None:
     assert isinstance(prefill_request, PrefillRequest)
     ctx2 = prefill_request.context
     assert client_identity2 == client_identity
-    assert ctx2.processed_length == 0
-    assert ctx2.active_length == 100
+    assert ctx2.tokens.processed_length == 0
+    assert ctx2.tokens.active_length == 100
 
 
 def test_prefill_sends_new_token_to_decode() -> None:

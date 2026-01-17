@@ -19,9 +19,12 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
 
-from internal_utils import assert_almost_equal, random
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+
+from internal_utils import assert_almost_equal
+from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu.sm100.matmul import (
@@ -57,7 +60,7 @@ def test_matmul_sm100_epilogue[
     test_lambda_fn: Bool = False,
     register_based_epilogue: Bool = False,
     swapAB: Bool = False,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](
     ctx: DeviceContext,
     m: ValOrDim,
@@ -173,8 +176,8 @@ def test_matmul_sm100_epilogue[
         return y
 
     seed(1234)
-    random(a_host)
-    random(b_host)
+    rand(a_host.data, a_host.num_elements())
+    rand(b_host.data, b_host.num_elements())
 
     var scales: List[Int32] = [-2, -1, 0, 1, 2]
 
@@ -279,8 +282,9 @@ def test_matmul_sm100_epilogue[
 
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host,
-            c_host_ref,
+            c_host.data,
+            c_host_ref.data,
+            c_host.num_elements(),
             atol=0.0001,
             rtol=rtol,
         )

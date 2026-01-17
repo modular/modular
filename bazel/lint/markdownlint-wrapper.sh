@@ -16,7 +16,14 @@
 set -euo pipefail
 
 binary=$(find "$PWD" -name markdownlint -path "*markdownlint_*")
-config=$(find "$BUILD_WORKSPACE_DIRECTORY" -name .markdownlint.yaml -path "*bazel/lint*")
+config="$BUILD_WORKSPACE_DIRECTORY/bazel/lint/.markdownlint.yaml"
+if [[ ! -f "$config" ]]; then
+    config="$BUILD_WORKSPACE_DIRECTORY/oss/modular/bazel/lint/.markdownlint.yaml"
+fi
+if [[ ! -f "$config" ]]; then
+    echo "error: could not find .markdownlint.yaml config file" >&2
+    exit 1
+fi
 
 if [[ -n "${FAST:-}" ]]; then
     cd "$BUILD_WORKSPACE_DIRECTORY"

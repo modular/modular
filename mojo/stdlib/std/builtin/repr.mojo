@@ -80,52 +80,23 @@ fn repr[T: Representable](value: T) -> String:
     return value.__repr__()
 
 
-fn repr[U: KeyElement & Representable](value: Set[U]) -> String:
-    """Returns the string representation of an `Set[U]`.
+fn repr[T: Writable, __disambiguate: NoneType = None](value: T) -> String:
+    """Returns the string representation of the given value.
 
     Args:
-        value: A `Set` of elements `U`.
+        value: The value to get the string representation of.
 
     Parameters:
-        U: A type that implements `KeyElement` and `Representable`.
+        T: The type of `value`. Must implement the `Writable` trait.
+        __disambiguate: A temporary dummy parameter to disambiguate the function
+            from the other `repr(Representable)` function.
 
     Returns:
-        The string representation of `Set[U]`.
+        The string representation of the given value.
     """
-    # TODO: remove when `Set` can conform conditionally to `Representable`.
-    return value.__repr__()
-
-
-fn repr[U: Copyable & Writable](value: LinkedList[U]) -> String:
-    """Returns the string representation of an `LinkedList[U]`.
-
-    Args:
-        value: A `LinkedList` of element type `U`.
-
-    Parameters:
-        U: A type that implements `Copyable` and `Writable`.
-
-    Returns:
-        The string representation of `LinkedList[U]`.
-    """
-    # TODO: remove when `LinkedList` can conform conditionally to `Representable`.
-    return value.__repr__()
-
-
-fn repr[T: Representable & Copyable](value: Deque[T]) -> String:
-    """Returns the string representation of an `Deque[U]`.
-
-    Args:
-        value: A `Deque` of element type `U`.
-
-    Parameters:
-        T: A type that implements `Copyable` and `Representable`.
-
-    Returns:
-        The string representation of `Deque[U]`.
-    """
-    # TODO: remove when `Deque` can conform conditionally to `Representable`.
-    return value.__repr__()
+    var string = String()
+    value.write_repr_to(string)
+    return string^
 
 
 fn repr(value: None) -> String:

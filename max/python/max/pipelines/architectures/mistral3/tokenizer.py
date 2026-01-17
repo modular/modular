@@ -35,16 +35,17 @@ class Mistral3Tokenizer(TextTokenizer):
     def __init__(
         self,
         model_path: str,
+        pipeline_config: PipelineConfig,
         *,
         revision: str | None = None,
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
-        pipeline_config: PipelineConfig | None = None,
         **unused_kwargs,
     ) -> None:
         super().__init__(
             model_path=model_path,
+            pipeline_config=pipeline_config,
             revision=revision,
             max_length=max_length,
             max_new_tokens=max_new_tokens,
@@ -62,10 +63,12 @@ class Mistral3Tokenizer(TextTokenizer):
     ) -> None:
         """Load chat template from chat_template.json file and set it on the tokenizer."""
 
-        if pipeline_config and hasattr(pipeline_config, "model_config"):
+        if revision is None:
+            # Prefer revision from pipeline config when not explicitly provided.
+            model_cfg = getattr(pipeline_config, "model", None)
+            candidate = getattr(model_cfg, "huggingface_model_revision", None)
             revision = (
-                revision
-                or pipeline_config.model_config.huggingface_model_revision
+                candidate if isinstance(candidate, str) and candidate else None
             )
         revision = revision or "main"
 

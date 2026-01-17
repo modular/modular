@@ -15,7 +15,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu import block_dim, block_idx, thread_idx
-from gpu.mma import mma
+from gpu.compute.mma import mma
 from gpu.sync import barrier
 from layout import *
 from layout._fillers import arange
@@ -23,7 +23,9 @@ from layout._ndbuffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from layout._utils import ManagedLayoutTensor
 from layout.math import outer_product_acc
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils import IndexList
 from utils.index import Index
 
@@ -73,7 +75,7 @@ fn test_naive_matmul_kernel(ctx: DeviceContext) raises:
         layout_c, layout_a, layout_b, BM, BN
     ]
 
-    ctx.enqueue_function_checked[naive_matmul_kernel, naive_matmul_kernel](
+    ctx.enqueue_function_experimental[naive_matmul_kernel](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),
@@ -210,9 +212,7 @@ fn test_sram_blocked_matmul(ctx: DeviceContext) raises:
         layout_c, layout_a, layout_b, thread_layout, BM, BN, BK
     ]
 
-    ctx.enqueue_function_checked[
-        sram_blocked_matmul_kernel, sram_blocked_matmul_kernel
-    ](
+    ctx.enqueue_function_experimental[sram_blocked_matmul_kernel](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),
@@ -312,9 +312,8 @@ fn test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
         layout_c, layout_a, layout_b, layout_c_mma, layout_a_mma, layout_b_mma
     ]
 
-    ctx.enqueue_function_checked[
-        single_warp_mma_sync_m16n8k8_kernel_kernel,
-        single_warp_mma_sync_m16n8k8_kernel_kernel,
+    ctx.enqueue_function_experimental[
+        single_warp_mma_sync_m16n8k8_kernel_kernel
     ](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
@@ -476,9 +475,8 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
         thread_layout, mat_c.shape, mat_a.shape, mat_b.shape, BM, BN, BK
     ]
 
-    ctx.enqueue_function_checked[
-        sram_blocked_matmul_dynamic_nd_buffer_kernel,
-        sram_blocked_matmul_dynamic_nd_buffer_kernel,
+    ctx.enqueue_function_experimental[
+        sram_blocked_matmul_dynamic_nd_buffer_kernel
     ](
         mat_c,
         mat_a,

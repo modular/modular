@@ -89,8 +89,8 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
     var in1 = ctx.enqueue_create_buffer[T](length)
     in1.enqueue_fill(scalar)
 
-    var compiled_vec_func = ctx.compile_function_checked[vec_func, vec_func]()
-    ctx.enqueue_function_checked(
+    var compiled_vec_func = ctx.compile_function_experimental[vec_func]()
+    ctx.enqueue_function(
         compiled_vec_func,
         in0,
         in1,

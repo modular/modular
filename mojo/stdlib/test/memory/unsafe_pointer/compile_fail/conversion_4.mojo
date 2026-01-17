@@ -15,7 +15,7 @@
 
 
 fn test_cannot_cast_between_different_named_origins[
-    T: AnyType, mut: Bool, //, origin: Origin[mut]
+    T: AnyType, mut: Bool, //, origin: Origin[mut=mut]
 ](p: UnsafePointer[T, origin]):
     pass
 
@@ -25,5 +25,5 @@ def main():
     var y = 55
 
     var p = UnsafePointer(to=x)
-    # CHECK: argument #0 cannot be converted from 'UnsafePointer[Int, x]' to 'UnsafePointer[Int, y]'
+    # CHECK: value passed to 'p' cannot be converted from 'UnsafePointer[Int, x]' to 'UnsafePointer[Int, y]'
     test_cannot_cast_between_different_named_origins[origin_of(y)](p)

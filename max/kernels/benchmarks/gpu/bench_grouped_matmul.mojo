@@ -32,13 +32,13 @@ from internal_utils._utils import (
     InitializationType,
     dynamic,
     init_vector_launch,
-    initialize,
-    random,
     static,
 )
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.matmul.gpu.sm100.config import MatmulConfig
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )

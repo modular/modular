@@ -17,7 +17,9 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu import block_dim, global_idx, thread_idx
 from gpu.memory import external_memory
 from gpu.sync import barrier
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_almost_equal, assert_equal
 
 
@@ -28,7 +30,7 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
         var dynamic_sram = external_memory[
             Float32, address_space = AddressSpace.SHARED, alignment=4
         ]()
-        dynamic_sram[thread_idx.x] = thread_idx.x
+        dynamic_sram[thread_idx.x] = Float32(thread_idx.x)
         barrier()
         data[thread_idx.x] = dynamic_sram[thread_idx.x]
 
@@ -41,7 +43,7 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
     ctx.enqueue_copy(res_device, res_host_ptr)
 
     comptime kernel = dynamic_smem_kernel
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         res_device,
         grid_dim=1,
         block_dim=16,
@@ -138,7 +140,7 @@ fn test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     )
 
     # Compile the simple kernel for occupancy testing
-    var simple_func = ctx.compile_function_checked[
+    var simple_func = ctx.compile_function[
         occupancy_test_kernel, occupancy_test_kernel
     ]()
 
@@ -170,7 +172,7 @@ fn test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
             )
 
     # Test with shared memory usage
-    var shared_func = ctx.compile_function_checked[
+    var shared_func = ctx.compile_function[
         shared_memory_kernel, shared_memory_kernel
     ]()
 
@@ -257,7 +259,7 @@ fn test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     # Launch the kernel
     var grid_dim = (length + optimal_block_size - 1) // optimal_block_size
     comptime kernel = occupancy_test_kernel
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         input_device,
         output_device,
         length,

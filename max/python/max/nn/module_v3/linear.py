@@ -16,13 +16,14 @@ from __future__ import annotations
 
 from typing import Literal
 
+from ...experimental import functional as F
 from ...experimental import random
 from ...experimental.tensor import Tensor
 from ...graph import Dim, DimLike
 from .module import Module
 
 
-class Linear(Module):
+class Linear(Module[[Tensor], Tensor]):
     """A unary linear transformation over an input tensor.
 
     Linear is defined as `f(x) = x @ W.T + B` where `W` is the
@@ -82,7 +83,8 @@ class Linear(Module):
         yield "out_dim", self.out_dim
         yield "bias", isinstance(self.bias, Tensor), True
 
-    def __call__(self, x: Tensor) -> Tensor:
+    @F.functional
+    def forward(self, x: Tensor) -> Tensor:
         """Applies a linear transformation to the input tensor.
 
         Linear is defined as `f(x) = x @ W.T + B` where `W` is the

@@ -16,6 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from builtin.constrained import _constrained_conforms_to
+from builtin.rebind import downcast
 from sys.intrinsics import _type_is_eq_parse_time
 
 
@@ -189,7 +190,7 @@ struct Variadic:
         Reducer = _MapTypeToTypeReducer[From, To, Mapper],
     ]
     """Map a variadic of types to a new variadic of types using a mapper.
-    
+
     Returns a new variadic of types resulting from applying `Mapper[T]` to each
     type in the input variadic.
 
@@ -200,7 +201,7 @@ struct Variadic:
         Mapper: A generator that maps a type to another type. The generator type is `[T: From] -> To`.
 
     Examples:
-    
+
     ```mojo
     from std.builtin.variadics import Variadic
     from testing import *
@@ -304,6 +305,67 @@ struct Variadic:
         values: The values to zip.
     """
 
+    comptime filter_types[
+        T: type_of(AnyType),
+        //,
+        *element_types: T,
+        predicate: _TypePredicateGenerator[T],
+    ] = _ReduceVariadicAndIdxToVariadic[
+        BaseVal = Variadic.empty_of_trait[T],
+        VariadicType=element_types,
+        Reducer = _FilterReducer[T, predicate],
+    ]
+    """Filter types from a variadic sequence based on a predicate function.
+
+    Returns a new variadic containing only the types for which the predicate
+    returns True.
+
+    Parameters:
+        T: The trait that the types conform to.
+        element_types: The input variadic sequence.
+        predicate: A generator function that takes a type and returns Bool.
+
+    Examples:
+
+    ```mojo
+    from std.builtin.variadics import Variadic
+    from utils import Variant
+    from sys.intrinsics import _type_is_eq
+
+    comptime FullVariant = Variant[Int, String, Float64, Bool]
+
+    # Exclude a single type
+    comptime IsNotInt[Type: AnyType] = not _type_is_eq[Type, Int]()
+    comptime WithoutInt = Variadic.filter_types[*FullVariant.Ts, predicate=IsNotInt]
+    comptime FilteredVariant = Variant[*WithoutInt]
+    # FilteredVariant is Variant[String, Float64, Bool]
+
+    # Keep only specific types
+    comptime IsNumeric[Type: AnyType] = (
+        _type_is_eq[Type, Int]() or _type_is_eq[Type, Float64]()
+    )
+    comptime OnlyNumeric = Variadic.filter_types[*FullVariant.Ts, predicate=IsNumeric]
+    # OnlyNumeric is Variadic.types[T=AnyType, Int, Float64]
+
+    # Exclude multiple types using a variadic check
+    comptime ExcludeList = Variadic.types[T=AnyType, Int, Bool]
+    comptime NotInList[Type: AnyType] = not Variadic.contains[
+        type=Type, element_types=ExcludeList
+    ]
+    comptime Filtered = Variadic.filter_types[*FullVariant.Ts, predicate=NotInList]
+    # Filtered is Variadic.types[T=AnyType, String, Float64]
+    ```
+
+    Filter operations can be chained for complex transformations:
+
+    ```mojo
+    comptime IsNotBool[Type: AnyType] = not _type_is_eq[Type, Bool]()
+    comptime Step1 = Variadic.filter_types[*FullVariant.Ts, predicate=IsNotBool]
+    comptime Step2 = Variadic.filter_types[*Step1, predicate=IsNotInt]
+    comptime ChainedVariant = Variant[*Step2]
+    ```
+    """
+
 
 # ===-----------------------------------------------------------------------===#
 # VariadicList / VariadicListMem
@@ -311,7 +373,7 @@ struct Variadic:
 
 
 @fieldwise_init
-struct _VariadicListIter[type: AnyTrivialRegType](
+struct _VariadicListIter[type: __TypeOfAllTypes](
     ImplicitlyCopyable, Iterable, Iterator
 ):
     """Const Iterator for VariadicList.
@@ -322,19 +384,19 @@ struct _VariadicListIter[type: AnyTrivialRegType](
 
     comptime Element = Self.type
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var index: Int
     var src: VariadicList[Self.type]
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.index < len(self.src)
-
-    fn __next__(mut self) -> Self.type:
-        self.index += 1
-        return self.src[self.index - 1]
+    fn __next__(mut self) raises StopIteration -> Self.type:
+        var index = self.index
+        if index >= len(self.src):
+            raise StopIteration()
+        self.index = index + 1
+        return self.src[index]
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
@@ -346,7 +408,7 @@ struct _VariadicListIter[type: AnyTrivialRegType](
 
 
 @register_passable("trivial")
-struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
+struct VariadicList[type: __TypeOfAllTypes](Iterable, Sized):
     """A utility class to access homogeneous variadic function arguments.
 
     `VariadicList` is used when you need to accept variadic arguments where all
@@ -392,7 +454,7 @@ struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
     """The underlying storage for the variadic list."""
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _VariadicListIter[Self.type]
     """The iterator type for this variadic list.
 
@@ -462,8 +524,8 @@ struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
 struct _VariadicListMemIter[
     elt_is_mutable: Bool,
     //,
-    elt_type: ImplicitlyDestructible,
-    elt_origin: Origin[elt_is_mutable],
+    elt_type: AnyType,
+    elt_origin: Origin[mut=elt_is_mutable],
     list_origin: ImmutOrigin,
     is_owned: Bool,
 ]:
@@ -479,7 +541,9 @@ struct _VariadicListMemIter[
     """
 
     comptime variadic_list_type = VariadicListMem[
-        Self.elt_type, Self.elt_origin._mlir_origin, Self.is_owned
+        origin = Self.elt_origin,
+        Self.elt_type,
+        Self.is_owned,
     ]
 
     comptime Element = Self.elt_type
@@ -499,23 +563,23 @@ struct _VariadicListMemIter[
         self.src = Pointer(to=list)
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.index < len(self.src[])
-
-    fn __next_ref__(
+    fn __next__(
         mut self,
-    ) -> ref [Self.elt_origin._mlir_origin] Self.elt_type:
-        self.index += 1
+    ) raises StopIteration -> ref [Self.elt_origin._mlir_origin] Self.elt_type:
+        var index = self.index
+        if index >= len(self.src[]):
+            raise StopIteration()
+        self.index = index + 1
         return rebind[Self.variadic_list_type.reference_type](
-            Pointer(to=self.src[][self.index - 1])
+            Pointer(to=self.src[][index])
         )[]
 
 
 struct VariadicListMem[
     elt_is_mutable: Bool,
+    origin: Origin[mut=elt_is_mutable],
     //,
-    element_type: ImplicitlyDestructible,
-    origin: Origin[elt_is_mutable],
+    element_type: AnyType,
     is_owned: Bool,
 ](Sized):
     """A utility class to access variadic function arguments of memory-only
@@ -525,8 +589,8 @@ struct VariadicListMem[
     Parameters:
         elt_is_mutable: True if the elements of the list are mutable for an
                         mut or owned argument.
-        element_type: The type of the elements in the list.
         origin: The origin of the underlying elements.
+        element_type: The type of the elements in the list.
         is_owned: Whether the elements are owned by the list because they are
                   passed as an 'var' argument.
     """
@@ -574,9 +638,21 @@ struct VariadicListMem[
         # normally torn down when CheckLifetimes is left to its own devices.
         @parameter
         if Self.is_owned:
+            _constrained_conforms_to[
+                conforms_to(Self.element_type, ImplicitlyDestructible),
+                Parent=Self,
+                Element = Self.element_type,
+                ParentConformsTo="ImplicitlyDestructible",
+            ]()
+            comptime TDestructible = downcast[
+                Self.element_type, ImplicitlyDestructible
+            ]
+
             for i in reversed(range(len(self))):
                 # Safety: We own the elements in this list.
-                UnsafePointer(to=self[i]).mut_cast[True]().destroy_pointee()
+                UnsafePointer(to=self[i]).mut_cast[True]().bitcast[
+                    TDestructible
+                ]().destroy_pointee()
 
     fn consume_elements[
         elt_handler: fn (idx: Int, var elt: Self.element_type) capturing
@@ -628,7 +704,7 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[Self.elt_is_mutable].cast_from[origin_of(Self.origin, self)]
+        unsafe_origin_mutcast[origin_of(Self.origin, self), Self.elt_is_mutable]
     ] Self.element_type:
         """Gets a single element on the variadic list.
 
@@ -664,9 +740,9 @@ struct VariadicListMem[
 @register_passable
 struct VariadicPack[
     elt_is_mutable: Bool,
+    origin: Origin[mut=elt_is_mutable],
     //,
     is_owned: Bool,
-    origin: Origin[elt_is_mutable],
     element_trait: type_of(AnyType),
     *element_types: element_trait,
 ](Sized):
@@ -715,9 +791,9 @@ struct VariadicPack[
     Parameters:
         elt_is_mutable: True if the elements of the list are mutable for an
                         mut or owned argument pack.
+        origin: The origin of the underlying elements.
         is_owned: Whether the elements are owned by the pack. If so, the pack
                   will release the elements when it is destroyed.
-        origin: The origin of the underlying elements.
         element_trait: The trait that each element of the pack conforms to.
         element_types: The list of types held by the argument pack.
     """
@@ -855,7 +931,7 @@ struct VariadicPack[
     # ===-------------------------------------------------------------------===#
 
     comptime _kgen_element_types = rebind[
-        Variadic.ValuesOfType[AnyTrivialRegType]
+        Variadic.ValuesOfType[__TypeOfAllTypes]
     ](Self.element_types)
     """This is the element_types list lowered to `variadic<type>` type for kgen.
     """
@@ -863,7 +939,7 @@ struct VariadicPack[
         `#kgen.param.expr<variadic_ptr_map, `,
         Self._kgen_element_types,
         `, 0: index>: `,
-        Variadic.ValuesOfType[AnyTrivialRegType],
+        Variadic.ValuesOfType[__TypeOfAllTypes],
     ]
     """Use variadic_ptr_map to construct the type list of the !kgen.pack that
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
@@ -885,7 +961,7 @@ struct VariadicPack[
         `#kgen.param.expr<variadic_ptrremove_map, `,
         Self._variadic_pointer_types,
         `>: `,
-        Variadic.ValuesOfType[AnyTrivialRegType],
+        Variadic.ValuesOfType[__TypeOfAllTypes],
     ]
     comptime _loaded_kgen_pack_type = __mlir_type[
         `!kgen.pack<:variadic<type> `, Self._variadic_with_pointers_removed, `>`
@@ -1214,6 +1290,42 @@ Parameters:
     Trait: The trait that the types conform to.
     start: The starting index (inclusive).
     end: The ending index (exclusive).
+    Prev: The accumulated result variadic so far.
+    From: The input variadic sequence.
+    idx: The current index being processed.
+"""
+
+comptime _TypePredicateGenerator[T: type_of(AnyType)] = __mlir_type[
+    `!lit.generator<<"Type": `,
+    T,
+    `>`,
+    Bool,
+    `>`,
+]
+"""Generator type for type predicates.
+
+A predicate takes a type and returns a boolean indicating whether to keep it.
+
+Parameters:
+    T: The trait that the types conform to.
+"""
+
+comptime _FilterReducer[
+    Trait: type_of(AnyType),
+    Predicate: _TypePredicateGenerator[Trait],
+    Prev: Variadic.TypesOfTrait[Trait],
+    From: Variadic.TypesOfTrait[Trait],
+    idx: Int,
+] = (
+    Variadic.concat[Prev, Variadic.types[T=Trait, From[idx]]] if Predicate[
+        From[idx]
+    ] else Prev
+)
+"""A reducer that filters types based on a predicate function.
+
+Parameters:
+    Trait: The trait that the types conform to.
+    Predicate: A generator that takes a type and returns Bool.
     Prev: The accumulated result variadic so far.
     From: The input variadic sequence.
     idx: The current index being processed.

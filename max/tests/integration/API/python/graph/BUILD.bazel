@@ -2,8 +2,9 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 _NVIDIA_ONLY_TESTS = [
@@ -19,6 +20,7 @@ _AMD_ONLY_TESTS = [
 _CPU_ONLY_TESTS = [
     "test_matmul_packed.py",
     "test_reduce_add.py",
+    "test_symbolic_dimension_validation.py",
 ]
 
 modular_py_library(
@@ -28,8 +30,10 @@ modular_py_library(
     imports = ["."],
     deps = [
         "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:graph_utils",
         requirement("hypothesis"),
         requirement("torch"),
         requirement("numpy"),
@@ -73,10 +77,16 @@ modular_py_test(
     ],
     deps = [
         ":modular_graph_test",
-        "//max/python/max",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/tests/integration/pipelines/python/test_common:graph_utils",
+        requirement("numpy"),
+        requirement("hypothesis"),
         requirement("torch"),
         requirement("torchvision"),
-        requirement("hypothesis"),
     ],
 )
 
@@ -88,10 +98,18 @@ modular_py_test(
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:nvidia_gpu"],
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+    ],
     deps = [
-        ":modular_graph_test",
-        "//max/python/max",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/tests/integration/pipelines/python/test_common:graph_utils",
+        requirement("hypothesis"),
+        requirement("torch"),
     ],
 )
 
@@ -102,11 +120,18 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+    ],
     target_compatible_with = ["//:amd_gpu"],
     deps = [
-        ":modular_graph_test",
-        "//max/python/max",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("hypothesis"),
+        requirement("numpy"),
     ],
 )
 
@@ -118,11 +143,23 @@ modular_py_test(
         "conftest.py",
         "test_matmul_packed.py",
         "test_reduce_add.py",
+        "test_symbolic_dimension_validation.py",
+    ],
+    mojo_deps = select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "external-exclusive",  # Times out if run with too many other tests (only test_matmul_packed)
     ],
     deps = [
         ":modular_graph_test",
-        "//max/python/max",
-        requirement("torch"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
         requirement("numpy"),
+        requirement("torch"),
     ],
 )

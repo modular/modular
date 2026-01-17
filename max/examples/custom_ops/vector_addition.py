@@ -14,7 +14,7 @@
 from pathlib import Path
 
 import numpy as np
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -74,14 +74,14 @@ if __name__ == "__main__":
     rhs_values = np.random.uniform(size=(vector_width)).astype(np.float32)
 
     # Create driver tensors from this, and move them to the accelerator.
-    lhs_tensor = Tensor.from_numpy(lhs_values).to(device)
-    rhs_tensor = Tensor.from_numpy(rhs_values).to(device)
+    lhs_tensor = Buffer.from_numpy(lhs_values).to(device)
+    rhs_tensor = Buffer.from_numpy(rhs_values).to(device)
 
     # Perform the calculation on the target device.
     result = model.execute(lhs_tensor, rhs_tensor)[0]
 
     # Copy values back to the CPU to be read.
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     result = result.to(CPU())
 
     print("Left-hand-side values:")

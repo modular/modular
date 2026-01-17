@@ -33,13 +33,12 @@ from math import ceildiv
 from sys import simd_width_of
 
 from buffer import NDBuffer
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import UnsafePointer
 from gpu import WARP_SIZE, global_idx, grid_dim
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
 from utils import StaticTuple
 
-# Import P2P detection and synchronization from allreduce
 from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, can_enable_p2p
 
 
@@ -102,9 +101,9 @@ fn _allgather_p2p_kernel[
     *,
     BLOCK_SIZE: Int,
 ](
-    outputs: StaticTuple[UnsafePointer[Scalar[dtype]], ngpus],
-    src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype]], ngpus],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    outputs: StaticTuple[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus],
+    src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     lengths: StaticTuple[Int, ngpus],
     max_num_blocks: Int,
     my_rank: Int,
@@ -118,7 +117,7 @@ fn _allgather_p2p_kernel[
 
     var global_tid = global_idx.x
     var stride = grid_dim.x * UInt(BLOCK_SIZE)
-    var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
+    var my_sig = rank_sigs[my_rank]
 
     # Synchronize before reading.
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
@@ -162,14 +161,16 @@ fn _allgather_p2p[
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
     ctxs: List[DeviceContext],
 ) raises:
     """Performs allgather using peer-to-peer access between GPUs."""
 
     # Prepare input pointers
-    var list_of_in_ptrs = StaticTuple[UnsafePointer[Scalar[dtype]], ngpus]()
+    var list_of_in_ptrs = StaticTuple[
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus
+    ]()
     var lengths = StaticTuple[Int, ngpus]()
 
     @parameter
@@ -184,7 +185,9 @@ fn _allgather_p2p[
         var curr_ctx = ctxs[gpu_idx]
 
         # Prepare output pointers for this GPU.
-        var output_ptrs = StaticTuple[UnsafePointer[Scalar[dtype]], ngpus]()
+        var output_ptrs = StaticTuple[
+            UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
+        ]()
 
         @parameter
         for src_idx in range(ngpus):
@@ -210,9 +213,7 @@ fn _allgather_p2p[
             ngpus,
             BLOCK_SIZE=BLOCK_SIZE,
         ]
-        curr_ctx.enqueue_function_checked[
-            allgather_p2p_kernel, allgather_p2p_kernel
-        ](
+        curr_ctx.enqueue_function_experimental[allgather_p2p_kernel](
             output_ptrs,
             list_of_in_ptrs,
             rank_sigs,
@@ -234,7 +235,7 @@ fn allgather[
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctxs: List[DeviceContext],
     _max_num_blocks: Optional[Int] = None,
 ) raises:

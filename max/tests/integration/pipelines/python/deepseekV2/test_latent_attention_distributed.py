@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 import torch
 from max._core.engine import PrintStyle
-from max.driver import Accelerator, Tensor, accelerator_api
+from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -160,14 +160,14 @@ def _single_gpu_baseline(
     batch.append(ctx)
 
     # Row offsets on host to avoid GPU __setitem__
-    row_off = Tensor(DType.uint32, [batch_size + 1])  # host
+    row_off = Buffer(DType.uint32, [batch_size + 1])  # host
     row_off[0] = 0
     row_off[1] = prompt_lens[0]
 
     if use_prefill:
         kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
         inp = (
-            Tensor.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
+            Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
             .view(DType.bfloat16)
             .to(device0)
         )
@@ -181,7 +181,7 @@ def _single_gpu_baseline(
             kv_manager.alloc(ctx, 1)
         kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
         tok = (
-            Tensor.from_numpy(
+            Buffer.from_numpy(
                 input_tensor[:, tok_idx, :].view(torch.float16).numpy()
             )
             .view(DType.bfloat16)
@@ -396,13 +396,13 @@ def _run_distributed_dp(
         args = []
         for dev in devices:
             inp = (
-                Tensor.from_numpy(
+                Buffer.from_numpy(
                     input_tensor[0, :, :].view(torch.float16).numpy()
                 )
                 .view(DType.bfloat16)
                 .to(dev)
             )
-            ro_host = Tensor(DType.uint32, [2])  # host
+            ro_host = Buffer(DType.uint32, [2])  # host
             ro_host[0] = 0
             ro_host[1] = total_tokens
             ro = ro_host.to(dev)
@@ -422,9 +422,9 @@ def _run_distributed_dp(
         step_args = []
         for dev in devices:
             tok_np = input_tensor[:, tok_idx, :].view(torch.float16).numpy()
-            h = Tensor.from_numpy(tok_np).view(DType.bfloat16).to(dev)
+            h = Buffer.from_numpy(tok_np).view(DType.bfloat16).to(dev)
 
-            ro_host = Tensor(DType.uint32, [2])  # host
+            ro_host = Buffer(DType.uint32, [2])  # host
             ro_host[0] = 0
             ro_host[1] = 1
             ro = ro_host.to(dev)

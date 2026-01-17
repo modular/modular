@@ -43,6 +43,7 @@ _INCLUDES = [
     "usr/include/**",
     "System/Library/Frameworks/CoreFoundation.framework/**",
     "System/Library/Frameworks/Foundation.framework/**",
+    "System/Library/Frameworks/IOKit.framework/**",
     "System/Library/Frameworks/Metal.framework/**",
 ]
 

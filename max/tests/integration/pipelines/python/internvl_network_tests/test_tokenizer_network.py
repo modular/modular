@@ -18,7 +18,11 @@ import io
 import pytest
 from max import pipelines
 from max.driver import DeviceSpec
-from max.interfaces import RequestID, TextGenerationRequest
+from max.interfaces import (
+    RequestID,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+)
 from max.pipelines import PipelineConfig
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from PIL import Image
@@ -62,19 +66,27 @@ async def test_internvl_tokenizer_with_image() -> None:
             prompt=test_text,
         )
     )
+
+    # Messages must be provided when images are provided.
+    messages = [
+        TextGenerationRequestMessage(
+            role="user",
+            content=[{"type": "text", "text": test_text}, {"type": "image"}],
+        )
+    ]
     image_context = await max_tokenizer.new_context(
         TextGenerationRequest(
             request_id=RequestID(),
             model_name=model_id,
-            prompt=test_text,
+            messages=messages,
             images=[test_image],
         )
     )
 
     # Verify image tokens were added
-    assert len(image_context.all_tokens) > len(text_context.all_tokens)
+    assert len(image_context.tokens.all) > len(text_context.tokens.all)
 
-    num_image_tokens = (image_context.all_tokens == image_token_id).sum()
+    num_image_tokens = (image_context.tokens.all == image_token_id).sum()
     assert num_image_tokens == expected_image_tokens
 
 
@@ -92,7 +104,7 @@ async def test_internvl_tokenizer_apply_chat_template(
     mock_tokenizer = mocker.MagicMock()
     mock_tokenizer.apply_chat_template.return_value = "User: What is this?"
 
-    # Create a mock config.
+    # Create a mock config with nested vision_config.
     mock_config = mocker.MagicMock()
     mock_config.vision_config.image_size = 448
     mock_config.vision_config.patch_size = 14
@@ -104,22 +116,26 @@ async def test_internvl_tokenizer_apply_chat_template(
 
     # Test with multimodal message (text + image).
     messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "content": "What is this?"},
-                {"type": "image"},
-                {"type": "text", "content": ", what is this "},
-                {"type": "image"},
-            ],
-        }
+        TextGenerationRequestMessage(
+            **{
+                "role": "user",
+                "content": [
+                    {"type": "text", "content": "What is this?"},
+                    {"type": "image"},
+                    {"type": "text", "content": ", what is this "},
+                    {"type": "image"},
+                ],
+            }
+        )
     ]
 
     # Mock the warning logger.
     mock_warning = mocker.patch("max.pipelines.lib.tokenizer.logger.warning")
 
     result = processor.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
+        [msg.model_dump() for msg in messages],
+        tokenize=False,
+        add_generation_prompt=True,
     )
 
     # Verify no warnings were logged.
@@ -143,10 +159,16 @@ async def test_internvl_tokenizer_apply_chat_template(
 
     # Test with text-only message.
     mock_tokenizer.apply_chat_template.reset_mock()
-    text_only_messages = [{"role": "user", "content": "Hello world"}]
+    text_only_messages = [
+        TextGenerationRequestMessage(
+            **{"role": "user", "content": "Hello world"}
+        )
+    ]
 
     result2 = processor.apply_chat_template(
-        text_only_messages, tokenize=False, add_generation_prompt=True
+        [msg.model_dump() for msg in text_only_messages],
+        tokenize=False,
+        add_generation_prompt=True,
     )
 
     # Verify it still works with text-only.
@@ -160,18 +182,22 @@ async def test_internvl_tokenizer_apply_chat_template(
     )
 
     multi_text_messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "content": "Hello"},
-                {"type": "image"},
-                {"type": "text", "content": "world"},
-            ],
-        }
+        TextGenerationRequestMessage(
+            **{
+                "role": "user",
+                "content": [
+                    {"type": "text", "content": "Hello"},
+                    {"type": "image"},
+                    {"type": "text", "content": "world"},
+                ],
+            }
+        )
     ]
 
     result3 = processor.apply_chat_template(
-        multi_text_messages, tokenize=False, add_generation_prompt=True
+        [msg.model_dump() for msg in multi_text_messages],
+        tokenize=False,
+        add_generation_prompt=True,
     )
 
     called_messages3 = mock_tokenizer.apply_chat_template.call_args[0][0]

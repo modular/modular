@@ -95,9 +95,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             context_batch.append(context)
 
         kv_managers = self.kv_managers
-        data_parallel_degree = (
-            self.pipeline_config.model_config.data_parallel_degree
-        )
+        data_parallel_degree = self.pipeline_config.model.data_parallel_degree
 
         # Create inputs to the model. If data parallelism is enabled, group them
         # by replica.

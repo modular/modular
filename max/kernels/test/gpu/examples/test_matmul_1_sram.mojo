@@ -165,7 +165,7 @@ fn run_matmul(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_function_checked[matmul_sram, matmul_sram](
+    ctx.enqueue_function_experimental[matmul_sram](
         a_device,
         b_device,
         c_device,

@@ -19,7 +19,9 @@ from gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from memory import memcpy, LegacyUnsafePointer as UnsafePointer
+from memory import memcpy, LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
@@ -162,7 +164,6 @@ def execute_ragged_flash_attention(
 
     var head_stride = num_q_heads * Int(kv_params.head_size)
     for bs_idx in range(batch_size):
-        true_ce_prompt_len = true_ce_prompt_lens[bs_idx]
         mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
 
         true_ce_row_offset = Int(true_ce_row_offsets_host_ptr[bs_idx])

@@ -14,6 +14,7 @@
 #ifndef MAX_C_TENSOR_H
 #define MAX_C_TENSOR_H
 
+#include "max/c/device.h"
 #include "max/c/symbol_export.h"
 #include "max/c/types.h"
 #include <stdbool.h>
@@ -38,14 +39,14 @@
 /// @param tensorName The name for the tensor.  This string gets copied as part
 /// of the operation of `M_newTensorSpec`, so your original string need not
 /// remain valid after the completion of this call.
+/// @param device The device on which the tensor resides.
 ///
 /// @returns A pointer to the tensor spec.  You are responsible for the memory
 /// associated with the pointer returned.  The memory can be deallocated by
 /// calling `M_freeTensorSpec()`.
-MODULAR_API_EXPORT M_TensorSpec *M_newTensorSpec(const int64_t *shape,
-                                                 int64_t rankSize,
-                                                 M_Dtype dtype,
-                                                 const char *tensorName);
+MODULAR_API_EXPORT M_TensorSpec *
+M_newTensorSpec(const int64_t *shape, int64_t rankSize, M_Dtype dtype,
+                const char *tensorName, const M_Device *device);
 
 /// Returns if the given spec has a dynamic rank.
 ///
@@ -111,7 +112,7 @@ M_newAsyncTensorMap(const M_RuntimeContext *context);
 /// tensorSpec need not exist through the lifetime of the tensor map.
 /// @param status The status object for reporting errors.
 MODULAR_API_EXPORT void M_borrowTensorInto(M_AsyncTensorMap *tensors,
-                                           const void *input,
+                                           void *input,
                                            const M_TensorSpec *tensorSpec,
                                            M_Status *status);
 
@@ -160,6 +161,44 @@ MODULAR_API_EXPORT const void *M_getTensorData(const M_AsyncTensor *tensor);
 /// @return The tensor spec for the tensor if the tensor is valid.  Otherwise,
 /// `NULL`.
 MODULAR_API_EXPORT M_TensorSpec *M_getTensorSpec(const M_AsyncTensor *tensor);
+
+/// Gets the device type from a tensor specification.
+///
+/// @param spec The tensor spec.
+///
+/// @return The device type (CPU or GPU).
+MODULAR_API_EXPORT M_DeviceType
+M_getDeviceTypeFromSpec(const M_TensorSpec *spec);
+
+/// Gets the device ID from a tensor specification.
+///
+/// @param spec The tensor spec.
+///
+/// @return The device ID. Returns `0` if the spec is invalid.
+MODULAR_API_EXPORT int M_getDeviceIdFromSpec(const M_TensorSpec *spec);
+
+/// Gets the device on which a tensor resides.
+///
+/// @param tensor The tensor.
+///
+/// @return The device on which the tensor resides, or `NULL` if the tensor is
+/// invalid. The caller owns the returned device and must free it with
+/// `M_freeDevice()`.
+MODULAR_API_EXPORT M_Device *M_getTensorDevice(const M_AsyncTensor *tensor);
+
+/// Copies a tensor to a different device.
+///
+/// Creates a copy of the tensor on the specified device.
+///
+/// @param tensor The tensor to copy.
+/// @param device The target device.
+/// @param status The status object for reporting errors.
+///
+/// @returns A pointer to the tensor on the target device. The caller owns the
+/// returned memory and must deallocate it by calling `M_freeTensor()`. Returns
+/// `NULL` if the operation fails, with an error message in the status.
+MODULAR_API_EXPORT M_AsyncTensor *
+M_copyTensorToDevice(M_AsyncTensor *tensor, M_Device *device, M_Status *status);
 
 /// Deallocates the memory for the tensor.  No-op if `tensor` is NULL.
 ///

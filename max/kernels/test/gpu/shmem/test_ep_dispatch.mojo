@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 
-# RUN: NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # RUN: %mojo-build %s -o %t
-# RUN: %mpirun -n $NUM_GPUS %t
+# RUN: %mpirun-gpu-per-process %t
+
+from collections import OptionalReg
 
 import time
 from io.io import _printf
@@ -33,6 +34,7 @@ from shmem import *
 from shmem.ep_comm import (
     BF16TokenFormat,
     EP_DATA_READY_FLAG,
+    EPLocalSyncCounters,
     dispatch_cb_kernel,
     dispatch_kernel,
 )
@@ -134,7 +136,9 @@ fn test_dispatch[
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )
-    var atomic_counter = ctx.enqueue_create_buffer[DType.int32](2 * n_experts)
+    var atomic_counter = ctx.enqueue_create_buffer[DType.int32](
+        EPLocalSyncCounters[n_experts].total_size()
+    )
 
     ctx.enqueue_memset(recv_count_buf, UInt64.MAX_FINITE)
     ctx.enqueue_memset(atomic_counter, Int32(0))
@@ -235,7 +239,7 @@ fn test_dispatch[
         token_fmt_type,
     ]
 
-    var func = ctx.compile_function_checked[dispatch, dispatch]()
+    var func = ctx.compile_function[dispatch, dispatch]()
     shmem_module_init(func)
 
     comptime dispatch_cb = dispatch_cb_kernel[
@@ -252,7 +256,7 @@ fn test_dispatch[
         type_of(format_handler),
     ]
 
-    var func_cb = ctx.compile_function_checked[dispatch_cb, dispatch_cb]()
+    var func_cb = ctx.compile_function[dispatch_cb, dispatch_cb]()
 
     var num_iters: Int = 100 if is_benchmark() or is_pressure_test() else 3
     var dispatch_stat_m: Float64 = 0
@@ -275,14 +279,14 @@ fn test_dispatch[
         recv_buf_ptrs[0] = recv_buf
         recv_count_ptrs[0] = recv_count
 
-        ctx.enqueue_function_checked(
+        ctx.enqueue_function(
             func,
             input_tokens_tensor,
             topk_ids_tensor,
             send_buf,
             recv_buf_ptrs,
             recv_count_ptrs,
-            atomic_counter,
+            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
             Int32(my_rank),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -291,7 +295,7 @@ fn test_dispatch[
     @always_inline
     @parameter
     fn run_dispatch_cb(ctx: DeviceContext) raises:
-        ctx.enqueue_function_checked(
+        ctx.enqueue_function(
             func_cb,
             format_handler,
             row_offsets_tensor,
@@ -299,8 +303,11 @@ fn test_dispatch[
             src_token_info_tensor,
             recv_buf,
             recv_count,
-            atomic_counter,
+            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
             Int32(my_rank),
+            OptionalReg[
+                LayoutTensor[input_type, Layout.row_major[2](), ImmutAnyOrigin]
+            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -379,8 +386,13 @@ fn test_dispatch[
             )
             ctx.enqueue_copy(host_src_token_info, device_src_token_info_buf)
 
-            var host_atomic_counter = alloc[Int32](2 * n_experts)
+            var host_atomic_counter = alloc[Int32](
+                EPLocalSyncCounters[n_experts].total_size()
+            )
             ctx.enqueue_copy(host_atomic_counter, atomic_counter)
+            var host_dispatch_cb_counter = EPLocalSyncCounters[n_experts](
+                host_atomic_counter
+            ).get_dispatch_cb_ptr()
 
             ctx.synchronize()
 
@@ -438,7 +450,7 @@ fn test_dispatch[
                     host_row_offsets[expert_idx + 1],
                 ):
                     while (
-                        host_atomic_counter[
+                        host_dispatch_cb_counter[
                             2 * (curr_local_expert * n_ranks + remote_rank)
                         ]
                         <= Int32(token_idx) + EP_DATA_READY_FLAG

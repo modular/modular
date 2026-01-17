@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -61,9 +61,9 @@ def test_fold(session: InferenceSession) -> None:
         graph.output(output)
 
     model = session.load(graph)
-    input = Tensor.from_numpy(input_tensor).to(model.input_devices[0])
+    input = Buffer.from_numpy(input_tensor).to(model.input_devices[0])
     model_output = model(input)[0]
-    assert isinstance(model_output, Tensor)
+    assert isinstance(model_output, Buffer)
     actual = model_output.to_numpy()
     np.testing.assert_equal(actual, expected)
 
@@ -121,13 +121,13 @@ def test_fold_dynamic_shape(session: InferenceSession) -> None:
         )
         graph.output(output)
     model = session.load(graph)
-    input = Tensor.from_numpy(input_tensor).to(model.input_devices[0])
+    input = Buffer.from_numpy(input_tensor).to(model.input_devices[0])
     model_output = model(
         input,
         # Dummy inputs for output_size and kernel_size
         np.zeros(output_size, dtype=np.float32),
         np.zeros(kernel_size, dtype=np.float32),
     )[0]
-    assert isinstance(model_output, Tensor)
+    assert isinstance(model_output, Buffer)
     actual = model_output.to_numpy()
     np.testing.assert_equal(actual, expected)

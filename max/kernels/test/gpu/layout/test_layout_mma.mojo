@@ -126,7 +126,7 @@ fn test_layout_mma[
     comptime kernel = mma_layout_tc[
         out_type, in_type, shape, layout_c, layout_a, layout_b
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),
@@ -140,7 +140,7 @@ fn test_layout_mma[
     comptime naive_func = matmul_naive[
         out_type, in_type, layout_c, layout_a, layout_b
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         mat_c_n.device_tensor(),
         mat_a_n.device_tensor(),
         mat_b_n.device_tensor(),

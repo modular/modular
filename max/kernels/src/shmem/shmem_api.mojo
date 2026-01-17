@@ -20,7 +20,6 @@ The headings below corrosspond to section 9: OpenSHMEM Library API.
 """
 
 from collections.optional import OptionalReg
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import getenv, setenv
 from sys import (
     CompilationTarget,
@@ -44,7 +43,7 @@ from gpu.host import (
     LaunchAttribute,
 )
 from gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
-from gpu.host._amdgpu_hip import HIP
+from gpu.host._amdgpu_hip import HIP, HIP_MODULE
 from gpu.host.device_context import (
     _ConstCharPtr,
     _checked,
@@ -66,12 +65,15 @@ from ._rocshmem import (
     rocshmem_finalize,
     rocshmem_n_pes,
     rocshmem_malloc,
+    rocshmem_calloc,
     rocshmem_team_my_pe,
     rocshmem_free,
     rocshmem_barrier_all,
     rocshmem_barrier_all_wave,
     rocshmem_p,
+    rocshmemx_hipmodule_init,
     rocshmem_put,
+    rocshmem_init_thread,
 )
 from ._nvshmem import (
     NVSHMEM_CMP_EQ,
@@ -220,6 +222,8 @@ fn shmem_init_thread(
     @parameter
     if has_nvidia_gpu_accelerator():
         nvshmemx_init_thread(ctx, number_of_devices_node)
+    elif has_amd_gpu_accelerator():
+        rocshmem_init_thread(ctx, number_of_devices_node)
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
@@ -308,7 +312,9 @@ fn shmem_n_pes() -> c_int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_malloc[dtype: DType](size: UInt) -> UnsafePointer[Scalar[dtype]]:
+fn shmem_malloc[
+    dtype: DType
+](size: UInt) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     """Collectively allocate symmetric memory.
 
     Parameters:
@@ -343,13 +349,13 @@ fn shmem_malloc[dtype: DType](size: UInt) -> UnsafePointer[Scalar[dtype]]:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name()
         ]()
-        return UnsafePointer[Scalar[dtype]]()
+        return {}
 
 
 fn shmem_calloc[
     dtype: DType
 ](count: UInt, size: UInt = UInt(size_of[dtype]())) -> UnsafePointer[
-    Scalar[dtype]
+    Scalar[dtype], MutExternalOrigin
 ]:
     """Collectively allocate a zeroed block of symmetric memory.
 
@@ -381,14 +387,18 @@ fn shmem_calloc[
     @parameter
     if has_nvidia_gpu_accelerator():
         return nvshmem_calloc[dtype](count, size)
+    elif has_amd_gpu_accelerator():
+        return rocshmem_calloc[dtype](count, size)
     else:
         return CompilationTarget.unsupported_target_error[
-            UnsafePointer[Scalar[dtype]],
+            UnsafePointer[Scalar[dtype], MutExternalOrigin],
             operation = __get_current_function_name(),
         ]()
 
 
-fn shmem_free[dtype: DType](ptr: UnsafePointer[Scalar[dtype]]):
+fn shmem_free[
+    dtype: DType, //
+](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
     """Collectively deallocate symmetric memory.
 
     Parameters:
@@ -627,7 +637,11 @@ fn shmem_put_nbi[
 
 fn shmem_p[
     dtype: DType
-](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int):
+](
+    dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    value: Scalar[dtype],
+    pe: c_int,
+):
     """Copies one data item to a remote PE.
 
     Very low latency put capability for single elements. As with shmem_put,
@@ -768,7 +782,7 @@ fn shmem_barrier_all():
 
 
 fn shmem_signal_wait_until(
-    sig_addr: UnsafePointer[UInt64], cmp: c_int, cmp_value: UInt64
+    sig_addr: UnsafePointer[mut=True, UInt64], cmp: c_int, cmp_value: UInt64
 ):
     """Wait for a variable on the local PE to change from a signaling operation.
 
@@ -836,7 +850,10 @@ fn shmem_fence():
 
 
 fn shmem_signal_op(
-    sig_addr: UnsafePointer[UInt64], signal: UInt64, sig_op: c_int, pe: c_int
+    sig_addr: UnsafePointer[mut=True, UInt64],
+    signal: UInt64,
+    sig_op: c_int,
+    pe: c_int,
 ):
     """The nvshmemx_signal_op operation atomically updates sig_addr with signal
     using operation sig_op on the specified PE. This operation can be used
@@ -890,12 +907,15 @@ fn shmem_barrier_all_on_stream(stream: DeviceStream) raises:
 
 fn shmem_module_init(device_function: DeviceFunction) raises:
     """
-    Initializes the device state in the compiled function module so that it’s
-    able to perform NVSHMEM operations. Must have completed device
+    Initializes the device state in the compiled function module so that it's
+    able to perform SHMEM operations. Must have completed device
     initialization prior to calling this function.
 
+    For NVSHMEM, this calls nvshmemx_cumodule_init().
+    For ROCSHMEM, this calls rocshmemx_hipmodule_init().
+
     Args:
-        device_function: The compiled device function to initialize with NVSHMEM.
+        device_function: The compiled device function to initialize with SHMEM.
 
     Raises:
         String: If module initialization fails.
@@ -904,7 +924,14 @@ fn shmem_module_init(device_function: DeviceFunction) raises:
     @parameter
     if has_nvidia_gpu_accelerator():
         var func = CUDA_MODULE(device_function)
-        _ = nvshmemx_cumodule_init(func)
+        var status = nvshmemx_cumodule_init(func)
+        if status != 0:
+            raise Error("nvshmemx_hipmodule_init failed with status:", status)
+    elif has_amd_gpu_accelerator():
+        var hip_module = HIP_MODULE(device_function)
+        var status = rocshmemx_hipmodule_init(hip_module)
+        if status != 0:
+            raise Error("rocshmemx_hipmodule_init failed with status:", status)
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name(),
@@ -929,6 +956,9 @@ fn shmem_module_finalize(device_function: DeviceFunction) raises:
     if has_nvidia_gpu_accelerator():
         var func = CUDA_MODULE(device_function)
         _ = nvshmemx_cumodule_finalize(func)
+    elif has_amd_gpu_accelerator():
+        # Finalalizing a module is not required on AMD
+        pass
     else:
         CompilationTarget.unsupported_target_error[
             operation = __get_current_function_name(),

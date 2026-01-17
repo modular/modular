@@ -26,14 +26,18 @@ These operations can be used in both graph construction and eager execution.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import functools
-from collections.abc import Callable
-from typing import TypeVar
+from collections.abc import Callable, Coroutine, Generator, Iterable
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, TypeAlias, TypeVar, overload
 
 from typing_extensions import ParamSpec
 
 from .. import driver
-from ..graph import BufferValue, Graph, TensorValue, ops
+from ..graph import BufferValue, Graph, TensorValue, TensorValueLike, ops
+from . import realization_context as rc
 from . import tensor
 
 Args = ParamSpec("Args")
@@ -41,38 +45,195 @@ Result = TypeVar("Result")
 Op = Callable[Args, Result]
 
 
+def _in_running_loop() -> bool:
+    """Checks whether the caller is inside a running asyncio event loop.
+
+    Returns:
+        bool: True if currently inside a running event loop, False otherwise.
+    """
+    # - asyncio.get_event_loop().is_running() works in most scenarios
+    # - asyncio.get_event_loop() raises in some environments
+    # - use asyncio.get_running_loop() and check if it fails instead
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+def _run(coro: Coroutine[Any, Any, Result]) -> Result:
+    """Runs a coroutine synchronously, handling nested event loops.
+
+    If not inside an event loop, uses ``asyncio.run()``. If already inside
+    an event loop (e.g., in Jupyter), runs the coroutine in a separate
+    thread to avoid blocking.
+
+    Args:
+        coro: The coroutine to execute.
+
+    Returns:
+        The result of the coroutine.
+    """
+    # If there's no running loop, just use asyncio.run
+    if not _in_running_loop():
+        return asyncio.run(coro)
+
+    # Run self.realize in another thread
+    loop = asyncio.new_event_loop()
+    with ThreadPoolExecutor() as pool:
+        fut = pool.submit(loop.run_until_complete, coro)
+    return fut.result()
+
+
+_ConvertableToTensor: TypeAlias = (
+    driver.Buffer | tensor.Tensor | TensorValue | BufferValue
+)
+
+
+def _to_tensor(value: _ConvertableToTensor) -> tensor.Tensor:
+    """Converts a tensor-like value to a Tensor.
+
+    Args:
+        value: A driver.Buffer, Tensor, TensorValue, or BufferValue.
+
+    Returns:
+        tensor.Tensor: The converted Tensor object.
+    """
+    if isinstance(value, tensor.Tensor):
+        return value
+    elif isinstance(value, driver.Buffer):
+        return tensor.Tensor(storage=value)
+    return tensor.Tensor.from_graph_value(value)
+
+
+@overload
+def _to_tensors(value: _ConvertableToTensor, /) -> tensor.Tensor: ...
+
+
+@overload
+def _to_tensors(value: None, /) -> None: ...
+
+
+@overload
+def _to_tensors(
+    values: Iterable[_ConvertableToTensor],
+) -> list[tensor.Tensor]: ...
+
+
+def _to_tensors(values):
+    """Converts one or more tensor-like values to Tensors.
+
+    Handles single values, None, or iterables of tensor-like values.
+
+    Args:
+        values: None, a single tensor-like value, or an iterable of them.
+
+    Returns:
+        None if input is None, a single Tensor if input is a single value,
+        or a list of Tensors if input is an iterable.
+    """
+    if values is None:
+        return None
+    if isinstance(values, _ConvertableToTensor):
+        return _to_tensor(values)
+    return [_to_tensor(value) for value in values]
+
+
+def _return_tensors(op: Op) -> Op:
+    """Decorator that converts operation results to Tensors.
+
+    Wraps an operation so its return values are converted from graph values
+    (TensorValue/BufferValue) or driver tensors to Tensor objects.
+
+    Args:
+        op: The operation to wrap.
+
+    Returns:
+        The wrapped operation that returns Tensor objects.
+    """
+
+    @functools.wraps(op)
+    def wrapped(*args, **kwargs):  # noqa: ANN202
+        results = op(*args, **kwargs)
+        return _to_tensors(results)
+
+    return wrapped
+
+
+def in_graph_context() -> bool:
+    """Checks whether the caller is inside a Graph context.
+
+    Returns:
+        bool: True if inside a ``with Graph(...):`` block, False otherwise.
+    """
+    try:
+        _ = Graph.current
+    except LookupError:
+        return False
+    else:
+        return True
+
+
 def functional(op: Op) -> Op:
     """Decorator that converts a graph operation to support multiple tensor
     types."""
 
-    def to_tensor(
-        result: driver.Tensor | tensor.Tensor | TensorValue | BufferValue,
-    ) -> tensor.Tensor:
-        if isinstance(result, tensor.Tensor):
-            return result
-        if isinstance(result, driver.Tensor):
-            return tensor.Tensor(storage=result)
-        return tensor.Tensor.from_graph_value(result)
+    op = _return_tensors(op)
 
     @functools.wraps(op)
     def wrapped(*args, **kwargs):  # noqa: ANN202
-        try:
-            graph = Graph.current
-        except LookupError:
-            # No graph, use Tensor compute graph.
-            graph = tensor.GRAPH.graph
-
-        with graph:
-            results = op(*args, **kwargs)
-        if results is None:
-            return
-        elif isinstance(
-            results, driver.Tensor | tensor.Tensor | TensorValue | BufferValue
-        ):
-            return to_tensor(results)
-        return [to_tensor(result) for result in results]
+        with contextlib.ExitStack() as stack:
+            if tensor.current_realization_context(None) is None:
+                ctx = (
+                    rc.GraphRealizationContext(Graph.current)
+                    if in_graph_context()
+                    else rc.EagerRealizationContext()
+                )
+                stack.enter_context(ctx)
+                stack.enter_context(tensor.realization_context(ctx))
+            return op(*args, **kwargs)
 
     return wrapped
+
+
+@contextlib.contextmanager
+def lazy() -> Generator[None]:
+    """Context manager for lazy tensor evaluation.
+
+    Within this context, tensor operations are recorded but not executed.
+    Tensors remain unrealized until explicitly awaited via ``await tensor.realize``
+    or until their values are needed (e.g., by calling ``.item()``).
+
+    This is particularly useful for creating tensors which may not ever
+    be used. Lazy tensors that aren't used will never allocate memory or perform
+    operations.
+
+    Yields:
+        None
+
+    .. code-block:: python
+
+        from max.experimental import functional as F
+        from max.experimental.tensor import Tensor
+        from max.nn.module_v3 import Linear
+
+        with F.lazy():
+            model = Linear(2, 3)
+
+        print(model)  # Lazy weights not initialized
+        # Executing the model would be fine! The weights would be created
+        # on first use.
+        # output = model(Tensor.ones([5, 2]))
+
+        # Load pretrained weights, never creating the original random weights
+        weights =  {
+            "weight": Tensor.zeros([3, 2]),
+            "bias": Tensor.zeros([3]),
+        }
+        model.load_state_dict(weights)
+    """
+    with rc.LazyRealizationContext() as ctx, tensor.realization_context(ctx):
+        yield
 
 
 #: Computes the absolute value element-wise.
@@ -87,12 +248,44 @@ allgather = functional(ops.allgather)
 #: Sum values from multiple devices.
 #: See :func:`max.graph.ops.allreduce.sum` for details.
 allreduce_sum = functional(ops.allreduce.sum)
-#: Returns the indices of the maximum values along an axis.
-#: See :func:`max.graph.ops.argmax` for details.
-argmax = functional(ops.argmax)
-#: Returns the indices of the minimum values along an axis.
-#: See :func:`max.graph.ops.argmin` for details.
-argmin = functional(ops.argmin)
+
+
+@functional
+def argmax(x: TensorValueLike, axis: int | None = -1) -> TensorValue:
+    """Returns the indices of the maximum values along an axis.
+
+    Args:
+        x: The input tensor.
+        axis: The axis along which to find the maximum indices. If None,
+            finds the index of the maximum across all elements (flattened).
+
+    Returns:
+        A tensor containing the indices of the maximum values.
+    """
+    if axis is None:
+        x = TensorValue(x).reshape([-1])
+        axis = 0
+    return ops.argmax(x, axis=axis)
+
+
+@functional
+def argmin(x: TensorValueLike, axis: int | None = -1) -> TensorValue:
+    """Returns the indices of the minimum values along an axis.
+
+    Args:
+        x: The input tensor.
+        axis: The axis along which to find the minimum indices. If None,
+            finds the index of the minimum across all elements (flattened).
+
+    Returns:
+        A tensor containing the indices of the minimum values.
+    """
+    if axis is None:
+        x = TensorValue(x).reshape([-1])
+        axis = 0
+    return ops.argmin(x, axis=axis)
+
+
 #: Returns the indices that would sort a tensor along an axis.
 #: See :func:`max.graph.ops.argsort` for details.
 argsort = functional(ops.argsort)
@@ -234,18 +427,87 @@ masked_scatter = functional(ops.masked_scatter)
 #: Performs matrix multiplication.
 #: See :func:`max.graph.ops.matmul` for details.
 matmul = functional(ops.matmul)
-#: Returns the maximum values along an axis.
-#: See :func:`max.graph.ops.max` for details.
-max = functional(ops.max)
+
+
+@functional
+def max(
+    x: TensorValueLike,
+    y: TensorValueLike | None = None,
+    /,
+    axis: int | None = -1,
+) -> TensorValue:
+    """Returns the maximum values along an axis, or elementwise maximum of two tensors.
+
+    Args:
+        x: The input tensor.
+        y: Optional second tensor for elementwise maximum.
+        axis: The axis along which to compute the maximum (only for reduction).
+            If None, computes the maximum across all elements (flattened).
+
+    Returns:
+        A tensor containing the maximum values.
+    """
+    if y is not None:
+        # Elementwise max
+        return ops.elementwise.max(x, y)
+    # Reduction max
+    if axis is None:
+        x = TensorValue(x).reshape([-1])
+        axis = 0
+    return ops.reduction.max(x, axis=axis)
+
+
 #: Applies 2D max pooling.
 #: See :func:`max.graph.ops.max_pool2d` for details.
 max_pool2d = functional(ops.max_pool2d)
-#: Computes the mean along specified axes.
-#: See :func:`max.graph.ops.mean` for details.
-mean = functional(ops.mean)
-#: Returns the minimum values along an axis.
-#: See :func:`max.graph.ops.min` for details.
-min = functional(ops.min)
+
+
+@functional
+def mean(x: TensorValueLike, axis: int | None = -1) -> TensorValue:
+    """Computes the mean along specified axes.
+
+    Args:
+        x: The input tensor.
+        axis: The axis along which to compute the mean. If None,
+            computes the mean across all elements (flattened).
+
+    Returns:
+        A tensor containing the mean values.
+    """
+    if axis is None:
+        x = TensorValue(x).reshape([-1])
+        axis = 0
+    return ops.mean(x, axis=axis)
+
+
+@functional
+def min(
+    x: TensorValueLike,
+    y: TensorValueLike | None = None,
+    /,
+    axis: int | None = -1,
+) -> TensorValue:
+    """Returns the minimum values along an axis, or elementwise minimum of two tensors.
+
+    Args:
+        x: The input tensor.
+        y: Optional second tensor for elementwise minimum.
+        axis: The axis along which to compute the minimum (only for reduction).
+            If None, computes the minimum across all elements (flattened).
+
+    Returns:
+        A tensor containing the minimum values.
+    """
+    if y is not None:
+        # Elementwise min
+        return ops.elementwise.min(x, y)
+    # Reduction min
+    if axis is None:
+        x = TensorValue(x).reshape([-1])
+        axis = 0
+    return ops.reduction.min(x, axis=axis)
+
+
 #: Computes the modulo operation element-wise.
 #: See :func:`max.graph.ops.mod` for details.
 mod = functional(ops.mod)
@@ -275,7 +537,7 @@ permute = functional(ops.permute)
 pow = functional(ops.pow)
 #: Creates a tensor with evenly spaced values.
 #: See :func:`max.graph.ops.range` for details.
-range = functional(ops.range)
+arange = functional(ops.range)
 #: Applies the ReLU activation function.
 #: See :func:`max.graph.ops.relu` for details.
 relu = functional(ops.relu)
@@ -312,9 +574,61 @@ slice_tensor = functional(ops.slice_tensor)
 #: Applies the softmax function.
 #: See :func:`max.graph.ops.softmax` for details.
 softmax = functional(ops.softmax)
-#: Splits a tensor into multiple tensors.
-#: See :func:`max.graph.ops.split` for details.
-split = functional(ops.split)
+
+
+def split(
+    x: tensor.Tensor | TensorValue,
+    split_size_or_sections: int | list[int],
+    axis: int = 0,
+) -> list[tensor.Tensor] | list[TensorValue]:
+    """Splits a tensor into multiple tensors along a given dimension.
+
+    This function supports two modes, matching PyTorch's behavior:
+
+    - If ``split_size_or_sections`` is an **int**, splits into chunks of that
+      size (the last chunk may be smaller if the dimension is not evenly
+      divisible).
+    - If ``split_size_or_sections`` is a **list of ints**, splits into chunks
+      with exactly those sizes (must sum to the dimension size).
+
+    .. code-block:: python
+
+        from max.experimental import functional as F, Tensor
+
+        x = Tensor.ones([10, 4])
+
+        # Split into chunks of size 3 (last chunk is size 1)
+        chunks = F.split(x, 3, axis=0)  # shapes: [3,4], [3,4], [3,4], [1,4]
+
+        # Split into exact sizes
+        chunks = F.split(x, [2, 3, 5], axis=0)  # shapes: [2,4], [3,4], [5,4]
+
+    Args:
+        x: The input tensor to split.
+        split_size_or_sections: Either an int (chunk size) or a list of ints
+            (exact sizes for each output tensor).
+        axis: The dimension along which to split. Defaults to 0.
+
+    Returns:
+        A list of tensors resulting from the split.
+    """
+    # Get the dimension size along the split axis
+    shape = x.shape
+    dim_size = int(shape[axis])
+
+    # Convert int split_size to list of sizes
+    if isinstance(split_size_or_sections, int):
+        chunk_size = split_size_or_sections
+        num_full_chunks, remainder = divmod(dim_size, chunk_size)
+        split_sizes = [chunk_size] * num_full_chunks
+        if remainder > 0:
+            split_sizes.append(remainder)
+    else:
+        split_sizes = list(split_size_or_sections)
+
+    return functional(ops.split)(x, split_sizes, axis)
+
+
 #: Computes the square root element-wise.
 #: See :func:`max.graph.ops.sqrt` for details.
 sqrt = functional(ops.sqrt)
@@ -327,9 +641,26 @@ stack = functional(ops.stack)
 #: Subtracts two tensors element-wise.
 #: See :func:`max.graph.ops.sub` for details.
 sub = functional(ops.sub)
-#: Computes the sum along specified axes.
-#: See :func:`max.graph.ops.sum` for details.
-sum = functional(ops.sum)
+
+
+@functional
+def sum(x: TensorValueLike, axis: int | None = -1) -> TensorValue:
+    """Computes the sum along specified axes.
+
+    Args:
+        x: The input tensor.
+        axis: The axis along which to compute the sum. If None,
+            computes the sum across all elements (flattened).
+
+    Returns:
+        A tensor containing the sum values.
+    """
+    if axis is None:
+        x = TensorValue(x).reshape([-1])
+        axis = 0
+    return ops.sum(x, axis=axis)
+
+
 #: Computes the hyperbolic tangent element-wise.
 #: See :func:`max.graph.ops.tanh` for details.
 tanh = functional(ops.tanh)

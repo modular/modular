@@ -13,7 +13,7 @@
 """Test the max.engine Python bindings with Max Graph when using explicit device."""
 
 import numpy as np
-from max.driver import CPU, Accelerator, Tensor
+from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
@@ -82,11 +82,11 @@ def test_cpu_io_graph_execution() -> None:
     a_np = np.ones((1, 1)).astype(np.float32)
     b_np = np.ones((1, 1)).astype(np.float32)
     c_np = np.ones((1, 1)).astype(np.float32)
-    a = Tensor.from_numpy(a_np)
-    b = Tensor.from_numpy(b_np)
-    c = Tensor.from_numpy(b_np)
+    a = Buffer.from_numpy(a_np)
+    b = Buffer.from_numpy(b_np)
+    c = Buffer.from_numpy(b_np)
     output = compiled.execute(a, b, c)
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
     # Check Executed Graph
     assert np.allclose((a_np + b_np + c_np), output[0].to_numpy())
 
@@ -109,10 +109,10 @@ def test_gpu_io_graph_execution() -> None:
     a_np = np.ones((1, 1)).astype(np.float32)
     b_np = np.ones((1, 1)).astype(np.float32)
     c_np = np.ones((1, 1)).astype(np.float32)
-    a = Tensor.from_numpy(a_np).to(device0)
-    b = Tensor.from_numpy(b_np).to(device1)
-    c = Tensor.from_numpy(b_np).to(device0)
+    a = Buffer.from_numpy(a_np).to(device0)
+    b = Buffer.from_numpy(b_np).to(device1)
+    c = Buffer.from_numpy(b_np).to(device0)
     output = compiled.execute(a, b, c)
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
     # Check Executed Graph
     assert np.allclose((a_np + b_np + c_np), output[0].to(host).to_numpy())

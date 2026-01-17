@@ -12,14 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 
-# RUN: NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # RUN: ./bazelw build @nvshmem_prebuilt//:device
 # RUN: BITCODE_PATH=$(./bazelw cquery '@nvshmem_prebuilt//:device' --output=files 2>/dev/null | head -1)
 # RUN: mojo build --bitcode-libs $BITCODE_PATH  <path_to>/modular/max/kernels/benchmarks/gpu/bench_ep_dispatch.mojo -o ./test
-# RUN: %mpirun -n $NUM_GPUS %t
+# RUN: %mpirun-gpu-per-process %t
 #
-# Alternatively, run with:
+# Alternatively, run manually with:
+# NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # br --run_under="mpirun -n $NUM_GPUS --allow-run-as-root --bind-to none" //max/kernels/benchmarks:gpu/bench_ep_dispatch
+
+from collections import OptionalReg
 
 from random import randint, randn, seed
 from sys import align_of, env_get_int, env_get_dtype, simd_width_of, size_of
@@ -34,6 +36,7 @@ from shmem.ep_comm import (
     BF16TokenFormat,
     BlockwiseFP8TokenFormat,
     EP_DATA_READY_FLAG,
+    EPLocalSyncCounters,
     TokenFormat,
     dispatch_cb_kernel,
     dispatch_kernel,
@@ -88,7 +91,9 @@ fn bench_dispatch[
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )
-    var atomic_counter = ctx.enqueue_create_buffer[DType.int32](2 * n_experts)
+    var atomic_counter = ctx.enqueue_create_buffer[DType.int32](
+        EPLocalSyncCounters[n_experts].total_size()
+    )
 
     ctx.enqueue_memset(recv_count_buf, UInt64.MAX_FINITE)
     ctx.enqueue_memset(atomic_counter, Int32(0))
@@ -244,7 +249,7 @@ fn bench_dispatch[
             TokenFmtType,
         ]
 
-        var func = ctx.compile_function_checked[dispatch, dispatch]()
+        var func = ctx.compile_function_experimental[dispatch]()
         shmem_module_init(func)
 
         comptime dispatch_cb = dispatch_cb_kernel[
@@ -261,7 +266,7 @@ fn bench_dispatch[
             FormatHandlerType,
         ]
 
-        var func_cb = ctx.compile_function_checked[dispatch_cb, dispatch_cb]()
+        var func_cb = ctx.compile_function_experimental[dispatch_cb]()
 
         @always_inline
         @parameter
@@ -276,14 +281,14 @@ fn bench_dispatch[
             recv_buf_ptrs[0] = recv_buf
             recv_count_ptrs[0] = recv_count
 
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 func,
                 input_tokens_tensor,
                 topk_ids_tensor,
                 send_buf,
                 recv_buf_ptrs,
                 recv_count_ptrs,
-                atomic_counter.unsafe_ptr(),
+                EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
                 Int32(my_rank),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -292,7 +297,7 @@ fn bench_dispatch[
         @always_inline
         @parameter
         fn run_dispatch_cb(ctx: DeviceContext) raises:
-            ctx.enqueue_function_checked(
+            ctx.enqueue_function(
                 func_cb,
                 format_handler,
                 row_offsets_tensor,
@@ -300,8 +305,13 @@ fn bench_dispatch[
                 src_token_info_tensor,
                 recv_buf,
                 recv_count,
-                atomic_counter.unsafe_ptr(),
+                EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
                 Int32(my_rank),
+                OptionalReg[
+                    LayoutTensor[
+                        DType.bfloat16, Layout.row_major[2](), ImmutAnyOrigin
+                    ]
+                ](),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )

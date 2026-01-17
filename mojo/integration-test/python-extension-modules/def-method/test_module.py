@@ -14,7 +14,7 @@
 import sys
 
 # Imports from 'mojo_module.so'
-import mojo_module as def_method
+import mojo_module as def_method  # type: ignore[import-not-found]
 import pytest
 
 

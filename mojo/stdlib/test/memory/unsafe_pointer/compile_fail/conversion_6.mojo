@@ -15,7 +15,7 @@
 
 
 fn test_cannot_cast_from_immutable_any_to_named[
-    T: AnyType, mut: Bool, //, origin: Origin[mut]
+    T: AnyType, mut: Bool, //, origin: Origin[mut=mut]
 ](p: UnsafePointer[T, origin]):
     pass
 
@@ -24,7 +24,5 @@ def main():
     var x = 42
 
     var p = UnsafePointer(to=x).as_immutable().as_any_origin()
-    # CHECK: argument #0 cannot be converted from 'UnsafePointer[Int, ImmutAnyOrigin]'
-    test_cannot_cast_from_immutable_any_to_named[
-        ImmutOrigin.cast_from[origin_of(x)]
-    ](p)
+    # CHECK: value passed to 'p' cannot be converted from 'UnsafePointer[Int, ImmutAnyOrigin]' to 'UnsafePointer[Int, origin_of((muttoimm x))]'
+    test_cannot_cast_from_immutable_any_to_named[ImmutOrigin(origin_of(x))](p)

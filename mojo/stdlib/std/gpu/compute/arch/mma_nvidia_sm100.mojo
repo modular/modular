@@ -21,6 +21,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
 
 from utils.index import IndexList
+from hashlib.hasher import Hasher
 
 # ===----------------------------------------------------------------------=== #
 # MMA Instruction Descriptor
@@ -29,7 +30,7 @@ from utils.index import IndexList
 
 @fieldwise_init("implicit")
 @register_passable("trivial")
-struct UMMAKind(Stringable, Writable):
+struct UMMAKind(Hashable, Stringable, Writable):
     """Struct for UMMA instruction types.
 
     This struct defines the different types of UMMA instructions that is supported by BlackWell.
@@ -51,6 +52,12 @@ struct UMMAKind(Stringable, Writable):
 
     comptime KIND_MXF8F6F4 = Self(5)
     """MXF8F6F4 type."""
+
+    comptime KIND_MXF4 = Self(6)
+    """MXF4 type."""
+
+    comptime KIND_MXF4NVF4 = Self(7)
+    """MXF4NVF4 type."""
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:
@@ -111,8 +118,24 @@ struct UMMAKind(Stringable, Writable):
             writer.write("kind::mxf8f6f4")
         elif self == Self.KIND_I8:
             writer.write("kind::i8")
+        elif self == Self.KIND_MXF4:
+            writer.write("kind::mxf4")
+        elif self == Self.KIND_MXF4NVF4:
+            writer.write("kind::mxf4nvf4")
         else:
             writer.write("kind::unknown")
+
+    @always_inline
+    fn __hash__[H: Hasher](self, mut hasher: H):
+        """Updates hasher with the underlying UMMAKind value.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        hasher.update(self._value)
 
 
 @always_inline
@@ -782,6 +805,64 @@ struct UMMAInsDescriptor[
         return desc
 
     @staticmethod
+    fn _create_mxf4_mxf4nvf4_desc[
+        d_type: DType, a_type: DType, b_type: DType, scale_type: DType
+    ]() -> UInt32:
+        """Create a descriptor for MXF4/MXF4NVF4 UMMA instructions.
+
+        This function creates a descriptor for MXF4/MXF4NVF4 UMMA instructions based on the provided parameters.
+
+        Parameters:
+            d_type: The data type of matrix D.
+            a_type: The data type of matrix A.
+            b_type: The data type of matrix B.
+            scale_type: The data type of the scale factors.
+
+        Returns:
+            A 32-bit integer containing the descriptor bit layout.
+        """
+
+        comptime available_d_types = (DType.float32,)
+        comptime available_operand_types = (
+            DType.uint8,  # TODO: (KERN-2238) replace with FP4-E2M1
+        )
+        comptime available_scale_types = (
+            DType.float8_e4m3fn,
+            DType.float8_e8m0fnu,
+        )
+
+        constrained[
+            d_type in available_d_types,
+            String("Invalid d data type for UMMA instruction: ", d_type),
+        ]()
+
+        constrained[
+            a_type in available_operand_types
+            and b_type in available_operand_types,
+            String(
+                "Currently only support E2M1 for UMMA kind: ",
+                Self.mma_kind,
+            ),
+        ]()
+
+        constrained[
+            scale_type in available_scale_types,
+            String(
+                "Invalid scale data type for UMMA instruction: ", scale_type
+            ),
+        ]()
+
+        comptime a_type_bit = Self._insert_bit[7](0x0, 1)
+
+        comptime b_type_bit = Self._insert_bit[10](a_type_bit, 1)
+
+        comptime desc = Self._insert_bit[23](
+            b_type_bit, 0 if scale_type == DType.float8_e4m3fn else 1
+        )
+
+        return desc
+
+    @staticmethod
     fn create[
         d_type: DType,
         a_type: DType,
@@ -889,6 +970,17 @@ struct UMMAInsDescriptor[
             return Self(
                 desc
                 | Self._create_mxf8f6f4_desc[
+                    d_type, a_type, b_type, scale_type
+                ]()
+                | transpose_bit
+            )
+        elif (
+            Self.mma_kind == UMMAKind.KIND_MXF4NVF4
+            or Self.mma_kind == UMMAKind.KIND_MXF4
+        ):
+            return Self(
+                desc
+                | Self._create_mxf4_mxf4nvf4_desc[
                     d_type, a_type, b_type, scale_type
                 ]()
                 | transpose_bit
@@ -1373,9 +1465,20 @@ fn mma[
     ]()
 
     constrained[
-        kind == UMMAKind.KIND_MXF8F6F4,
-        "Only MXF8F6F4 MMA kind supports block scale factors",
+        kind == UMMAKind.KIND_MXF8F6F4 or kind == UMMAKind.KIND_MXF4NVF4,
+        "Only MXF8F6F4 or MXF4NVF4 MMA kind supports block scale factors",
     ]()
+
+    @always_inline
+    fn _get_scale_vector_size[kind: UMMAKind]() -> String:
+        var scale_vector_size = String(".block_scale")
+
+        @parameter
+        if kind == UMMAKind.KIND_MXF4NVF4:
+            scale_vector_size = scale_vector_size + String(".block16")
+        return scale_vector_size
+
+    comptime scale_vector_size = _get_scale_vector_size[kind]()
 
     @parameter
     if cta_group == 1:
@@ -1385,7 +1488,7 @@ fn mma[
                 setp.ne.b32 p, $4, 0;
                 tcgen05.mma.cta_group::1."""
             + String(kind)
-            + String(".block_scale")
+            + scale_vector_size
             + """ [$0], $1, $2, $3, [$5], [$6], p;
             }""",
             NoneType,
@@ -1406,7 +1509,7 @@ fn mma[
                 setp.ne.b32 p, $4, 0;
                 tcgen05.mma.cta_group::2."""
             + String(kind)
-            + String(".block_scale")
+            + scale_vector_size
             + """ [$0], $1, $2, $3, [$5], [$6], p;
             }""",
             NoneType,

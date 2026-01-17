@@ -735,7 +735,7 @@ struct AcceleratorArchitectureFamily:
 
 @fieldwise_init
 @register_passable("trivial")
-struct Vendor(Identifiable, Writable):
+struct Vendor(Equatable, Writable):
     """Represents GPU vendors.
 
     This struct provides identifiers for different GPU vendors and utility
@@ -783,17 +783,6 @@ struct Vendor(Identifiable, Writable):
         """
         return not (self == other)
 
-    fn __is__(self, other: Self) -> Bool:
-        """Identity comparison for vendors.
-
-        Args:
-            other: The `Vendor` to compare with.
-
-        Returns:
-            True if vendors are identical, False otherwise.
-        """
-        return self == other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Writes vendor information to a writer.
@@ -801,16 +790,16 @@ struct Vendor(Identifiable, Writable):
         Args:
             writer: The writer to output vendor information to.
         """
-        if self is Vendor.NO_GPU:
+        if self == Vendor.NO_GPU:
             writer.write("no_gpu")
             return
-        if self is Vendor.AMD_GPU:
+        if self == Vendor.AMD_GPU:
             writer.write("amd_gpu")
             return
-        if self is Vendor.APPLE_GPU:
+        if self == Vendor.APPLE_GPU:
             writer.write("apple_gpu")
             return
-        if self is Vendor.NVIDIA_GPU:
+        if self == Vendor.NVIDIA_GPU:
             writer.write("nvidia_gpu")
             return
 
@@ -2009,7 +1998,7 @@ comptime Radeon860m = GPUInfo.from_family(
 
 @fieldwise_init
 @register_passable
-struct GPUInfo(Equatable, Identifiable, Stringable, Writable):
+struct GPUInfo(Equatable, Stringable, Writable):
     """Comprehensive information about a GPU architecture.
 
     This struct contains detailed specifications about GPU capabilities,
@@ -2209,17 +2198,6 @@ struct GPUInfo(Equatable, Identifiable, Stringable, Writable):
             True if both instances represent the same GPU model.
         """
         return self.name == other.name
-
-    fn __is__(self, other: Self) -> Bool:
-        """Identity comparison operator for `GPUInfo` instances.
-
-        Args:
-            other: Another `GPUInfo` instance to compare against.
-
-        Returns:
-            True if both instances represent the same GPU model.
-        """
-        return self == other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):

@@ -174,9 +174,6 @@ typedef struct M_TensorSpec M_TensorSpec;
 /// `M_freeAsyncTensorMap()`.
 typedef struct M_AsyncTensorMap M_AsyncTensorMap;
 
-/// Contains an async value for inference.
-typedef struct M_AsyncValue M_AsyncValue;
-
 /// Contains an `AllocatorType`. You can choose between kCaching and kSystem
 /// kCaching trades off higher memory usage for better performance.
 /// kSystem uses the default system allocator.
@@ -203,6 +200,25 @@ typedef enum M_ValueType {
 
 /// Maps unique weight names to their backing data.
 typedef struct M_WeightsRegistry M_WeightsRegistry;
+
+/// Represents the type of device.
+#ifdef __cplusplus
+typedef enum M_DeviceType : int {
+#else
+typedef enum M_DeviceType {
+#endif
+  M_HOST = 0,
+  M_ACCELERATOR = 1,
+} M_DeviceType;
+
+/// Contains a device handle.
+///
+/// A device represents a computational unit (CPU or GPU) that can execute
+/// operations and hold tensors.
+///
+/// You can create this with `M_newDevice()`. When you're done, call
+/// `M_freeDevice()`.
+typedef struct M_Device M_Device;
 
 /// Represents the result output style for debug printing.
 typedef enum M_ResultOutputStyle {

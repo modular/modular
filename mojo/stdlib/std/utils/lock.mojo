@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements thread synchronization primitives including spin locks.
+
+This module provides low-level locking mechanisms for thread synchronization,
+including spin locks with blocking behavior and scoped lock guards for
+automatic lock management. These primitives enable safe concurrent access to
+shared resources in multi-threaded code.
+"""
 
 from os import Atomic
 from sys import external_call
@@ -22,14 +29,14 @@ from sys import external_call
 struct SpinWaiter(Defaultable):
     """A proxy for the C++ runtime's SpinWaiter type."""
 
-    var storage: OpaquePointer[MutOrigin.external]
+    var storage: OpaquePointer[MutExternalOrigin]
     """Pointer to the underlying SpinWaiter instance."""
 
     fn __init__(out self):
         """Initializes a SpinWaiter instance."""
         self.storage = external_call[
             "KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter",
-            OpaquePointer[MutOrigin.external],
+            OpaquePointer[MutExternalOrigin],
         ]()
 
     fn __del__(deinit self):

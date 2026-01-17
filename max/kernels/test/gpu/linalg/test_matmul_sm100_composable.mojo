@@ -19,17 +19,20 @@ import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
-from gpu.cluster import block_rank_in_cluster
+from gpu.primitives.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_idx, lane_id, thread_idx
 from gpu.memory import external_memory
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
-from memory import LegacyUnsafePointer as UnsafePointer
+from gpu.compute.arch.mma_nvidia_sm100 import *
+from gpu.compute.arch.tcgen05 import *
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 # Additional imports for testing
-from internal_utils import assert_almost_equal, random, zero
+from internal_utils import assert_almost_equal
+from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -110,10 +113,10 @@ def test_blackwell_matmul_tma_umma[
     )
 
     # Initialize matmul operands
-    random(a_host)
-    random(b_host)
-    zero(c_host)
-    zero(c_host_ref)
+    rand(a_host.data, a_host.num_elements())
+    rand(b_host.data, b_host.num_elements())
+    c_host.zero()
+    c_host_ref.zero()
 
     # Move operands to the Device
 
@@ -151,8 +154,9 @@ def test_blackwell_matmul_tma_umma[
     ctx.synchronize()
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
     )

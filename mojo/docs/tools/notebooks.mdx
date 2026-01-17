@@ -32,30 +32,30 @@ Both options use the same notebook model and the same Mojo cell magic.
 2. Install Mojo:
 
     For the nightly release:
-    
+
     ```python
-    !pip install mojo --index-url https://dl.modular.com/public/nightly/python/simple/ --prerelease allow
+    !pip install mojo --extra-index-url https://whl.modular.com/nightly/simple/ --prerelease allow
     ```
-    
+
     For the stable release:
-    
+
     ```python
     !pip install mojo
     ```
-    
+
     Wait for the "Successfully installed" message.
 
 3. Enable Mojo:
 
     In the first cell, run:
-    
+
     ```python
     import mojo.notebook
     ```
-    
+
     This adds the `%%mojo` cell magic, so you can compile and
     run Mojo code.
-    
+
     Your Colab notebook is now ready to run Mojo programs.
 
 ## Using Mojo in Local Jupyter Notebooks
@@ -64,7 +64,7 @@ Local notebooks use `pixi` to manage an environment with
 Jupyter and Mojo.
 
 1. Create a project:
-    
+
     ```shell
     pixi init notebooks \
         -c https://conda.modular.com/max-nightly/ \
@@ -72,7 +72,7 @@ Jupyter and Mojo.
     cd notebooks
     pixi shell
     ```
-    
+
     This creates a project directory and enters the Pixi shell.
 
 2. Install required tools:
@@ -80,7 +80,7 @@ Jupyter and Mojo.
     ```shell
     pixi add mojo jupyterlab ipykernel
     ```
-    
+
     This installs:
     - Mojo
     - JupyterLab
@@ -91,24 +91,24 @@ Jupyter and Mojo.
     ```shell
     jupyter lab
     ```
-    
+
     JupyterLab opens in your browser.
 
 4. Create a Python-backed notebook:
 
     In your web browser:
-    
+
     - Select _File > New > Notebook_.
     - Choose the _Python_ kernel.
 
 5. Enable Mojo support:
 
     In the first cell, run:
-    
+
     ```python
     import mojo.notebook
     ```
-    
+
     This registers the `%%mojo` magic command.
     Your local environment is now ready for interactive Mojo development.
 
@@ -180,7 +180,7 @@ fn kernel():
 def main():
     # Launch GPU kernel
     with DeviceContext() as ctx:
-        ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+        ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
         ctx.synchronize()
 ```
 
@@ -246,7 +246,7 @@ def main():
     _ = right_buffer.enqueue_fill(1)
 
     # Launch GPU kernel
-    ctx.enqueue_function_checked[vector_addition, vector_addition](
+    ctx.enqueue_function_experimental[vector_addition](
         left_tensor,
         right_tensor,
         output_tensor,

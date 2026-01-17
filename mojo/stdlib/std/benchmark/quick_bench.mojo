@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides simplified benchmarking interface with automatic boilerplate handling.
+
+This module implements the `QuickBench` type, which wraps the full `Bench`
+infrastructure to provide a simpler interface for common benchmarking tasks. It
+automatically handles `Bencher` setup and the `keep()` calls needed to prevent
+optimization, supporting functions with 0-10 arguments.
+"""
 
 from .bencher import Bench, Bencher, BenchId, ThroughputMeasure
 
@@ -41,7 +48,7 @@ struct QuickBench:
 
     @always_inline
     fn run[
-        T_out: AnyTrivialRegType
+        T_out: __TypeOfAllTypes
     ](
         mut self,
         func: fn () -> T_out,
@@ -79,7 +86,7 @@ struct QuickBench:
 
     @always_inline
     fn run[
-        T0: AnyTrivialRegType, /, T_out: AnyTrivialRegType
+        T0: __TypeOfAllTypes, /, T_out: __TypeOfAllTypes
     ](
         mut self,
         func: fn (T0) -> T_out,
@@ -120,10 +127,10 @@ struct QuickBench:
 
     @always_inline
     fn run[
-        T0: AnyTrivialRegType,
-        T1: AnyTrivialRegType,
+        T0: __TypeOfAllTypes,
+        T1: __TypeOfAllTypes,
         /,
-        T_out: AnyTrivialRegType,
+        T_out: __TypeOfAllTypes,
     ](
         mut self,
         func: fn (T0, T1) -> T_out,
@@ -167,11 +174,11 @@ struct QuickBench:
 
     @always_inline
     fn run[
-        T0: AnyTrivialRegType,
-        T1: AnyTrivialRegType,
-        T2: AnyTrivialRegType,
+        T0: __TypeOfAllTypes,
+        T1: __TypeOfAllTypes,
+        T2: __TypeOfAllTypes,
         /,
-        T_out: AnyTrivialRegType,
+        T_out: __TypeOfAllTypes,
     ](
         mut self,
         func: fn (T0, T1, T2) -> T_out,
@@ -218,12 +225,12 @@ struct QuickBench:
 
     @always_inline
     fn run[
-        T0: AnyTrivialRegType,
-        T1: AnyTrivialRegType,
-        T2: AnyTrivialRegType,
-        T3: AnyTrivialRegType,
+        T0: __TypeOfAllTypes,
+        T1: __TypeOfAllTypes,
+        T2: __TypeOfAllTypes,
+        T3: __TypeOfAllTypes,
         /,
-        T_out: AnyTrivialRegType,
+        T_out: __TypeOfAllTypes,
     ](
         mut self,
         func: fn (T0, T1, T2, T3) -> T_out,
@@ -273,13 +280,13 @@ struct QuickBench:
 
     @always_inline
     fn run[
-        T0: AnyTrivialRegType,
-        T1: AnyTrivialRegType,
-        T2: AnyTrivialRegType,
-        T3: AnyTrivialRegType,
-        T4: AnyTrivialRegType,
+        T0: __TypeOfAllTypes,
+        T1: __TypeOfAllTypes,
+        T2: __TypeOfAllTypes,
+        T3: __TypeOfAllTypes,
+        T4: __TypeOfAllTypes,
         /,
-        T_out: AnyTrivialRegType,
+        T_out: __TypeOfAllTypes,
     ](
         mut self,
         func: fn (T0, T1, T2, T3, T4) -> T_out,
@@ -332,14 +339,14 @@ struct QuickBench:
 
     @always_inline
     fn run[
-        T0: AnyTrivialRegType,
-        T1: AnyTrivialRegType,
-        T2: AnyTrivialRegType,
-        T3: AnyTrivialRegType,
-        T4: AnyTrivialRegType,
-        T5: AnyTrivialRegType,
+        T0: __TypeOfAllTypes,
+        T1: __TypeOfAllTypes,
+        T2: __TypeOfAllTypes,
+        T3: __TypeOfAllTypes,
+        T4: __TypeOfAllTypes,
+        T5: __TypeOfAllTypes,
         /,
-        T_out: AnyTrivialRegType,
+        T_out: __TypeOfAllTypes,
     ](
         mut self,
         func: fn (T0, T1, T2, T3, T4, T5) -> T_out,
@@ -395,15 +402,15 @@ struct QuickBench:
 
     @always_inline
     fn run[
-        T0: AnyTrivialRegType,
-        T1: AnyTrivialRegType,
-        T2: AnyTrivialRegType,
-        T3: AnyTrivialRegType,
-        T4: AnyTrivialRegType,
-        T5: AnyTrivialRegType,
-        T6: AnyTrivialRegType,
+        T0: __TypeOfAllTypes,
+        T1: __TypeOfAllTypes,
+        T2: __TypeOfAllTypes,
+        T3: __TypeOfAllTypes,
+        T4: __TypeOfAllTypes,
+        T5: __TypeOfAllTypes,
+        T6: __TypeOfAllTypes,
         /,
-        T_out: AnyTrivialRegType,
+        T_out: __TypeOfAllTypes,
     ](
         mut self,
         func: fn (T0, T1, T2, T3, T4, T5, T6) -> T_out,
@@ -462,16 +469,16 @@ struct QuickBench:
 
     @always_inline
     fn run[
-        T0: AnyTrivialRegType,
-        T1: AnyTrivialRegType,
-        T2: AnyTrivialRegType,
-        T3: AnyTrivialRegType,
-        T4: AnyTrivialRegType,
-        T5: AnyTrivialRegType,
-        T6: AnyTrivialRegType,
-        T7: AnyTrivialRegType,
+        T0: __TypeOfAllTypes,
+        T1: __TypeOfAllTypes,
+        T2: __TypeOfAllTypes,
+        T3: __TypeOfAllTypes,
+        T4: __TypeOfAllTypes,
+        T5: __TypeOfAllTypes,
+        T6: __TypeOfAllTypes,
+        T7: __TypeOfAllTypes,
         /,
-        T_out: AnyTrivialRegType,
+        T_out: __TypeOfAllTypes,
     ](
         mut self,
         func: fn (T0, T1, T2, T3, T4, T5, T6, T7) -> T_out,
@@ -533,17 +540,17 @@ struct QuickBench:
 
     @always_inline
     fn run[
-        T0: AnyTrivialRegType,
-        T1: AnyTrivialRegType,
-        T2: AnyTrivialRegType,
-        T3: AnyTrivialRegType,
-        T4: AnyTrivialRegType,
-        T5: AnyTrivialRegType,
-        T6: AnyTrivialRegType,
-        T7: AnyTrivialRegType,
-        T8: AnyTrivialRegType,
+        T0: __TypeOfAllTypes,
+        T1: __TypeOfAllTypes,
+        T2: __TypeOfAllTypes,
+        T3: __TypeOfAllTypes,
+        T4: __TypeOfAllTypes,
+        T5: __TypeOfAllTypes,
+        T6: __TypeOfAllTypes,
+        T7: __TypeOfAllTypes,
+        T8: __TypeOfAllTypes,
         /,
-        T_out: AnyTrivialRegType,
+        T_out: __TypeOfAllTypes,
     ](
         mut self,
         func: fn (T0, T1, T2, T3, T4, T5, T6, T7, T8) -> T_out,
@@ -608,18 +615,18 @@ struct QuickBench:
 
     @always_inline
     fn run[
-        T0: AnyTrivialRegType,
-        T1: AnyTrivialRegType,
-        T2: AnyTrivialRegType,
-        T3: AnyTrivialRegType,
-        T4: AnyTrivialRegType,
-        T5: AnyTrivialRegType,
-        T6: AnyTrivialRegType,
-        T7: AnyTrivialRegType,
-        T8: AnyTrivialRegType,
-        T9: AnyTrivialRegType,
+        T0: __TypeOfAllTypes,
+        T1: __TypeOfAllTypes,
+        T2: __TypeOfAllTypes,
+        T3: __TypeOfAllTypes,
+        T4: __TypeOfAllTypes,
+        T5: __TypeOfAllTypes,
+        T6: __TypeOfAllTypes,
+        T7: __TypeOfAllTypes,
+        T8: __TypeOfAllTypes,
+        T9: __TypeOfAllTypes,
         /,
-        T_out: AnyTrivialRegType,
+        T_out: __TypeOfAllTypes,
     ](
         mut self,
         func: fn (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9) -> T_out,

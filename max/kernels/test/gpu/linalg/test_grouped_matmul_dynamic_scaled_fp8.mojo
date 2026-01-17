@@ -29,7 +29,9 @@ from layout._fillers import random
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils.index import Index, IndexList
 
 
@@ -67,9 +69,9 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     )
 
     # Use minimal buffer size for efficiency since nothing will execute
-    var total_tokens = max(16, max_num_tokens_per_expert)
-    var num_offsets = max(1, num_active_experts + 1)
-    var num_expert_ids = max(0, num_active_experts)
+    var total_tokens = max(max_num_tokens_per_expert, 16)
+    var num_offsets = max(num_active_experts + 1, 1)
+    var num_expert_ids = max(num_active_experts, 0)
 
     # Create host buffers
     comptime static_a_shape = DimList(Dim(), K)

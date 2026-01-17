@@ -13,23 +13,26 @@
 
 
 from math import ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from random import rand
 from sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier, warp
+from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
 from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
-from gpu import block_idx, lane_id, thread_idx, warp_id
+from gpu.primitives import warp
 from gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )
-from internal_utils import assert_almost_equal, random, zero
+from internal_utils import assert_almost_equal
+from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -85,8 +88,12 @@ fn gemv_tma_kernel[
 
     comptime b_smem_layout = Layout.row_major(Int(BLOCK_SIZE_K))
 
-    var descriptor_a_ptr = UnsafePointer(to=descriptor_a).bitcast[NoneType]()
-    var descriptor_b_ptr = UnsafePointer(to=descriptor_b).bitcast[NoneType]()
+    var descriptor_a_ptr = LegacyUnsafePointer(to=descriptor_a).bitcast[
+        NoneType
+    ]()
+    var descriptor_b_ptr = LegacyUnsafePointer(to=descriptor_b).bitcast[
+        NoneType
+    ]()
 
     var a_smem_base = rebind[
         UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED]
@@ -173,7 +180,7 @@ fn gemv_tma_kernel[
             ](
                 a_smem.next(stage)[].ptr,
                 descriptor_a_ptr,
-                UnsafePointer(to=tma_mbar[stage]),
+                LegacyUnsafePointer(to=tma_mbar[stage]),
                 Index(UInt(col_offset), block_row),
             )
             cp_async_bulk_tensor_shared_cluster_global[
@@ -183,7 +190,7 @@ fn gemv_tma_kernel[
             ](
                 b_smem.next(stage)[].ptr,
                 descriptor_b_ptr,
-                UnsafePointer(to=tma_mbar[stage]),
+                LegacyUnsafePointer(to=tma_mbar[stage]),
                 Index(UInt(col_offset)),
             )
             producer_phase.step()
@@ -265,8 +272,8 @@ def gemv_tma[
     )
     var tma_desc_b = create_tma_descriptor[dtype, 1](
         b_device,
-        (K),
-        (1),
+        Index(K),
+        Index(1),
         Index(BLOCK_SIZE_K),
     )
     # Shared memory needed for NUM_PIPELINE_STAGES A and B working tiles.
@@ -291,7 +298,7 @@ def gemv_tma[
         NUM_PIPELINE_STAGES,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         tma_desc_a,
         tma_desc_b,
         c,
@@ -366,8 +373,8 @@ def test_gemv_tma[
 
     rand[dtype](a_host_ptr, M * K)
     rand[dtype](b_host_ptr, K * N)
-    zero(c_host)
-    zero(c_host_ref)
+    c_host.zero()
+    c_host_ref.zero()
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -449,8 +456,9 @@ def test_gemv_tma[
 
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host,
-            c_host_ref,
+            c_host.data,
+            c_host_ref.data,
+            c_host.num_elements(),
             atol=0.0001,
             rtol=rtol,
         )

@@ -2,8 +2,9 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 # Normal CPU tests
@@ -11,8 +12,18 @@ package(default_visibility = [
     modular_py_test(
         name = src.split("/")[-1].split(".")[0],
         srcs = [src],
-        # FIXME: SDLC-2743
-        external_noop = src in ["test_queues.py"],
+        mojo_deps = select({
+            "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+            "//conditions:default": [],
+        }),
+        tags = [
+            "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
+        ] + (
+            ["external-exclusive"] if src in [
+                "test_tts_scheduler.py",
+                "test_paged_scheduler.py",
+            ] else []  # Times out if run with too many other tests
+        ),
         deps = [":common"],
     )
     for src in glob(
@@ -29,8 +40,14 @@ package(default_visibility = [
 modular_py_test(
     name = "test_di",
     srcs = ["test_di.py"],
-    # FIXME: SDLC-2743
-    external_noop = True,
+    mojo_deps = select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "external-exclusive",  # Times out if run with too many other tests
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     target_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
@@ -53,7 +70,14 @@ modular_py_test(
             "//:apple_gpu": ["@platforms//:incompatible"],
             "//conditions:default": [],
         }),
-        tags = ["gpu"],
+        mojo_deps = select({
+            "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+            "//conditions:default": [],
+        }),
+        tags = [
+            "gpu",
+            "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
+        ],
         deps = [":common"],
     )
     for src in glob(
@@ -66,6 +90,7 @@ modular_py_library(
     name = "common",
     srcs = ["common.py"],
     imports = ["../../.."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/nn",
         "//max/python/max/serve",

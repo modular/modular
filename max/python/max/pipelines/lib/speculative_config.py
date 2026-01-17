@@ -17,10 +17,10 @@ from __future__ import annotations
 import enum
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
 from enum import Enum
 
-from max.config import MAXConfig
+from max.config import ConfigFileModel
+from pydantic import Field
 
 logger = logging.getLogger("max.pipelines")
 
@@ -32,14 +32,13 @@ class SpeculativeMethod(str, Enum):
     EAGLE = "eagle"
 
 
-@dataclass
-class SpeculativeConfig(MAXConfig):
+class SpeculativeConfig(ConfigFileModel):
     """Configuration for speculative decoding."""
 
-    speculative_method: SpeculativeMethod | None = None
+    speculative_method: SpeculativeMethod | None = Field(default=None)
     """The speculative decoding method to use."""
 
-    num_speculative_tokens: int = 5
+    num_speculative_tokens: int = Field(default=5)
     """The number of speculative tokens."""
 
     _config_file_section_name: str = "speculative_config"

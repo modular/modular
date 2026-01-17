@@ -25,7 +25,9 @@ There are a few main tools in this module:
     These are useful helpers to specialize for the general bytes implementation.
 """
 
+from builtin.constrained import _constrained_field_conforms_to
 from memory import Span
+from reflection import get_type_name, struct_field_names, struct_field_types
 
 from .hasher import Hasher, default_hasher
 
@@ -45,18 +47,27 @@ trait Hashable:
     hash function doesn't meet this criteria it will get poor performance in
     common hash map implementations.
 
+    The `Hashable` trait has a default implementation of `__hash__()` that uses
+    reflection to hash all fields. This means simple structs can conform to
+    `Hashable` without implementing any methods:
+
     ```mojo
-    from hashlib.hasher import Hasher
-
     @fieldwise_init
-    struct Foo(Hashable):
-        var value: Int
-        fn __hash__[H: Hasher](self, mut hasher: H):
-            hasher.update(self.value)
+    struct Point(Hashable):
+        var x: Int
+        var y: Int
 
-    var foo = Foo()
-    print(hash(foo))
+    var p = Point(1, 2)
+    print(hash(p))
     ```
+
+    All fields must conform to `Hashable`. Override `__hash__()` for custom
+    hashing behavior.
+
+    Note: When implementing both `Hashable` and `Equatable`, ensure that
+    equal values produce equal hashes (i.e., if `a == b` then `hash(a) == hash(b)`).
+    The default implementations of both traits satisfy this property when all
+    fields implement both traits correctly.
     """
 
     fn __hash__[H: Hasher](self, mut hasher: H):
@@ -69,7 +80,19 @@ trait Hashable:
         Args:
             hasher: The hasher instance to contribute to.
         """
-        ...
+        comptime names = struct_field_names[Self]()
+        comptime types = struct_field_types[Self]()
+
+        @parameter
+        for i in range(names.size):
+            comptime T = types[i]
+            _constrained_field_conforms_to[
+                conforms_to(T, Hashable),
+                Parent=Self,
+                FieldIndex=i,
+                ParentConformsTo="Hashable",
+            ]()
+            hasher.update(trait_downcast[Hashable](__struct_field_ref(i, self)))
 
 
 fn hash[

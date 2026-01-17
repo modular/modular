@@ -18,7 +18,9 @@ from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout.tensor_core import TensorCore
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils.index import Index, IndexList
 
 comptime fp8_dtype = (
@@ -85,7 +87,11 @@ fn test_store_d[
     inst_shape: IndexList[3],
 ](d: LayoutTensor[dst_dtype, layout, MutAnyOrigin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
-    var src = type_of(mma).c_reg_tile_type.stack_allocation().fill(lane_id())
+    var src = (
+        type_of(mma)
+        .c_reg_tile_type.stack_allocation()
+        .fill(Scalar[dst_dtype](lane_id()))
+    )
     mma.store_d(d, src)
 
 
@@ -118,7 +124,7 @@ fn test_mma_op[
     mma.store_d(d, d_reg)
 
 
-fn _arange(tensor: LayoutTensor[mut=True, **_]):
+fn _arange(tensor: LayoutTensor[mut=True, ...]):
     # use custom arange and the current arange does not work with fp8
     @parameter
     if tensor.dtype in (DType.bfloat16, DType.float16, DType.float32):
@@ -216,19 +222,19 @@ def test_load_and_mma_and_multiply_operands[
         dst_dtype, dtype, c_dev.layout, shape
     ]
 
-    ctx.enqueue_function_checked[kernel_load_a, kernel_load_a](
+    ctx.enqueue_function[kernel_load_a, kernel_load_a](
         a_dev, a_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
-    ctx.enqueue_function_checked[kernel_load_b, kernel_load_b](
+    ctx.enqueue_function[kernel_load_b, kernel_load_b](
         b_dev, b_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
-    ctx.enqueue_function_checked[kernel_load_c, kernel_load_c](
+    ctx.enqueue_function[kernel_load_c, kernel_load_c](
         c_dev, c_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
-    ctx.enqueue_function_checked[kernel_store_d, kernel_store_d](
+    ctx.enqueue_function[kernel_store_d, kernel_store_d](
         d_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
@@ -242,7 +248,7 @@ def test_load_and_mma_and_multiply_operands[
         transpose_b,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_dev,
         b_dev,
         c_dev,

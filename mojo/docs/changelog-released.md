@@ -224,7 +224,7 @@ This version is still a work in progress.
   statement to the beginning of any files relying on the old pointer type:
 
   ```mojo
-  from memory import LegacyUnsafePointer as UnsafePointer
+  from memory import LegacyUnsafePointer as UnsafePointer, **_]
   # and/or if you use OpaquePointer
   from memory import LegacyOpaquePointer as OpaquePointer
   ```
@@ -646,14 +646,14 @@ This version is still a work in progress.
     - With prelude:
 
       ```mojo
-      open-source/max/mojo/stdlib/std/builtin/_startup.mojo:119:4: error: function instantiation failed
+      oss/modular/mojo/stdlib/std/builtin/_startup.mojo:119:4: error: function instantiation failed
       fn __mojo_main_prototype(
         ^
-      open-source/max/mojo/stdlib/std/builtin/_startup.mojo:119:4: note: call expansion failed with parameter value(s): (...)
-      open-source/max/mojo/stdlib/std/builtin/_startup.mojo:42:4: note: function instantiation failed
+      oss/modular/mojo/stdlib/std/builtin/_startup.mojo:119:4: note: call expansion failed with parameter value(s): (...)
+      oss/modular/mojo/stdlib/std/builtin/_startup.mojo:42:4: note: function instantiation failed
       fn __wrap_and_execute_main[
         ^
-      open-source/max/mojo/stdlib/std/builtin/_startup.mojo:68:14: note: call expansion failed
+      oss/modular/mojo/stdlib/std/builtin/_startup.mojo:68:14: note: call expansion failed
           main_func()
                   ^
       test.mojo:43:4: note: function instantiation failed
@@ -4379,10 +4379,10 @@ detailed information in the following sections:
     ([PR #3524](https://github.com/modular/modular/pull/3524))
 
   - `Arc` has been renamed to
-    [`ArcPointer`](/mojo/std/memory/arc/ArcPointer), for consistency with
+    [`ArcPointer`](/mojo/std/memory/arc_pointer/ArcPointer), for consistency with
     `OwnedPointer`.
 
-  - [`ArcPointer`](/mojo/std/memory/arc/ArcPointer) now implements
+  - [`ArcPointer`](/mojo/std/memory/arc_pointer/ArcPointer) now implements
     [`Identifiable`](/mojo/std/builtin/identifiable/Identifiable), and can be
     compared for pointer equivalence using `a is b`.
 
@@ -4879,7 +4879,7 @@ detailed information in the following sections:
   etc.) and `raises`. Accordingly, both
   [`Coroutine`](/mojo/std/builtin/coroutine/Coroutine) and
   [`RaisingCoroutine`](/mojo/std/builtin/coroutine/RaisingCoroutine) have
-  been changed to accept `AnyType` instead of `AnyTrivialRegType`. This means
+  been changed to accept `AnyType` instead of `__TypeOfAllTypes`. This means
   the result types of `async` functions do not need to be `Movable`.
 
   ```mojo
@@ -5824,8 +5824,8 @@ Big themes for this release:
   `.modular/modular.cfg`, which could result in version conflicts if you
   activated a virtual environment of a different Python version.
 
-- `AnyRegType` has been renamed to `AnyTrivialRegType` and Mojo now forbids
-  binding non-trivial register-passable types to `AnyTrivialRegType`. This
+- `AnyRegType` has been renamed to `__TypeOfAllTypes` and Mojo now forbids
+  binding non-trivial register-passable types to `__TypeOfAllTypes`. This
   closes a major safety hole in the language. Please use `AnyType` for generic
   code going forward.
 
@@ -6286,7 +6286,7 @@ Big themes for this release:
   - Added an [`InlineArray`](/mojo/std/collections/inline_array/InlineArray)
     type that works on memory-only types. Compare with the existing
     [`StaticTuple`](/mojo/std/utils/static_tuple/StaticTuple) type, which is
-    conceptually an array type, but only works on `AnyTrivialRegType`. ([PR
+    conceptually an array type, but only works on `__TypeOfAllTypes`. ([PR
     #2294](https://github.com/modular/modular/pull/2294))
 
   - The [`base64`](/mojo/std/base64/) package now includes encoding and

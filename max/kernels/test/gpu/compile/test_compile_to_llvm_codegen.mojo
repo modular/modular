@@ -15,7 +15,9 @@ from gpu import thread_idx
 from gpu.host import get_gpu_target
 from gpu.host.compile import _compile_code
 from gpu.memory import external_memory
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 # CHECK-LABEL: test_array_offset
@@ -38,7 +40,7 @@ fn test_case_thread_id_nvidia():
     print("== test_case_thread_id_nvidia")
 
     fn kernel(output: UnsafePointer[Int32]):
-        output[] = thread_idx.x + thread_idx.x + thread_idx.x
+        output[] = Int32(thread_idx.x + thread_idx.x + thread_idx.x)
 
     # CHECK-COUNT-1: call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
     print(
@@ -53,7 +55,7 @@ fn test_case_thread_id_mi300x():
     print("== test_case_thread_id_mi300x")
 
     fn kernel(output: UnsafePointer[Int32]):
-        output[] = thread_idx.x + thread_idx.x + thread_idx.x
+        output[] = Int32(thread_idx.x + thread_idx.x + thread_idx.x)
 
     # CHECK-COUNT-1: call i32 @llvm.amdgcn.workitem.id.x()
     print(

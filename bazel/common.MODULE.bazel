@@ -41,10 +41,10 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-PyyBQ1W6kpYFfIsQLLAbP3LmcvVIBA3LYBfwMCKy/ww=",
-    strip_prefix = "rules_mojo-a6252c86d0f413e353157c71bf0f8aa234157e50",
+    integrity = "sha256-f3U53KTSaTz3EPbRJY2O2p4gu0ZaBXEICkoeexWEBio=",
+    strip_prefix = "rules_mojo-9844f8a28c4a74f156fedeeec9f4740a0b403fd7",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/a6252c86d0f413e353157c71bf0f8aa234157e50.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/9844f8a28c4a74f156fedeeec9f4740a0b403fd7.tar.gz",
     ],
 )
 
@@ -221,8 +221,11 @@ environments.create_for_python_toolchains(
     name = "rules_pycross_all_environments",
     platforms = [
         "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu-freethreaded",
         "aarch64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu-freethreaded",
         "aarch64-apple-darwin",
+        "aarch64-apple-darwin-freethreaded",
     ],
     python_versions = [x.replace("_", ".") for x in PYTHON_VERSIONS],
 )
@@ -242,6 +245,10 @@ module_versions(
     default_python_version = DEFAULT_PYTHON_VERSION,
     python_versions = PYTHON_VERSIONS,
 )
+
+# TODO: Drop once we can directly use cc_binary in parent rules
+compat = use_extension("@rules_cc//cc:extensions.bzl", "compatibility_proxy")
+use_repo(compat, "cc_compatibility_proxy")
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
@@ -286,7 +293,7 @@ filegroup(
         "bin/prterun",
         "lib/libmpi.so",
         "lib/libmpi.so.40.40.7",
-        "lib/librocshmem.so",
+        "lib/librocshmem_host.so",
         "lib/libucp.so.0",
         "lib/libucs.so.0",
         "lib/libopen-pal.so.80",
@@ -298,14 +305,27 @@ filegroup(
         "lib/libucm.so.0",
         "lib/libprrte.so.3",
         "lib/libnl-3.so.200",
-        "share/openmpi/help-mpirun.txt",
-        "share/prte/help-pcompress.txt",
-        "share/pmix/help-pcompress.txt",
-    ],
+    ] + glob([
+        "share/openmpi/help-*.txt",
+        "share/pmix/help-*.txt",
+        "share/prte/help-*.txt",
+    ]),
+)
+
+# Individual targets for MPI tools
+filegroup(
+    name = "mpirun",
+    srcs = ["bin/mpirun"],
+)
+
+filegroup(
+    name = "prterun",
+    srcs = ["bin/prterun"],
 )
 """,
-    sha256 = "a94edf6e52add4efe8c417d338d98c8381701c5399b71412020abef31f8b9d9b",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/rocshmem//a94edf6e52add4efe8c417d338d98c8381701c5399b71412020abef31f8b9d9b/rocshmem.tar.gz",
+    # built from commit: https://github.com/modular/rocSHMEM/commit/09569c2c5fa32264f1facbd0357a884089e4c2a4
+    sha256 = "0ed6412e8a2e1021a6b5da3afd4092573a3c75dec75d82c92a46d6f1424b7423",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/rocshmem/3.2.1/0ed6412e8a2e1021a6b5da3afd4092573a3c75dec75d82c92a46d6f1424b7423/rocshmem.tar.gz",
 )
 
 http_archive(
@@ -407,6 +427,13 @@ mojo.gpu_toolchains(
     },
 )
 use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")
+
+http_archive(
+    name = "bazel_clang_tidy",
+    sha256 = "a1d55ba339bf6952c77e5e48c13a4c86b5c63349bf6bd321e0c01e342d31fc3b",
+    strip_prefix = "bazel_clang_tidy-3897fd6fb52c7dd6b99058f13eabba7a4127baa2",
+    url = "https://github.com/erenon/bazel_clang_tidy/archive/3897fd6fb52c7dd6b99058f13eabba7a4127baa2.tar.gz",
+)
 
 http_archive(
     name = "uv_linux_aarch64",

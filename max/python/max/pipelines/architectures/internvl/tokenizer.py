@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import functools
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -305,7 +304,7 @@ def preprocess_image_to_tensor(
     InternVisionEmbeddings.__call__ to move them to preprocessing for memory efficiency.
 
     Returns:
-        Tensor of shape (batch_size, height_patches, width_patches, C, patch_size, patch_size)
+        Buffer of shape (batch_size, height_patches, width_patches, C, patch_size, patch_size)
         where each image's patches preserve spatial dimensions.
     """
     images = crop_into_patches(
@@ -364,21 +363,22 @@ class InternVLProcessor:
 
     def apply_chat_template(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[dict[str, str | dict[str, str]]],
         tokenize: bool = False,
         add_generation_prompt: bool = True,
         **kwargs,
     ) -> str | list[int] | list[str] | list[list[int]] | BatchEncoding:
-        """Converts a list of dictionaries with `"role"` and `"content"` keys to a formatted string.
+        """Converts a list of TextGenerationRequestMessage with `role` and `content` to a formatted string.
 
         This method handles multimodal messages by extracting text content before
         forwarding to the HF tokenizer.
         """
+
         # Convert multimodal messages to text-only for the tokenizer
         text_messages = []
         for message in messages:
-            text_message = {"role": message.get("role")}
-            content = message.get("content")
+            text_message = {"role": message["role"]}
+            content = message["content"]
 
             if isinstance(content, str):
                 text_message["content"] = content
@@ -387,17 +387,11 @@ class InternVLProcessor:
                 # where image content appears to match VLMEvalKit behavior.
                 content_parts = []
                 for item in content:
-                    if isinstance(item, dict):
-                        if item.get("type") == "text":
-                            # Handle both "content" and "text" keys.
-                            text_content = item.get("content") or item.get(
-                                "text", ""
-                            )
-                            if text_content:
-                                content_parts.append(text_content)
-                        elif item.get("type") == "image":
-                            # Insert image placeholder where image content appears.
-                            content_parts.append("<image>")
+                    if item["type"] == "text":
+                        content_parts.append(item["text"])
+                    elif item["type"] == "image":
+                        # Insert image placeholder where image content appears.
+                        content_parts.append("<|image|>")
 
                 # Join content parts preserving order.
                 text_message["content"] = " ".join(content_parts)
@@ -448,9 +442,10 @@ class InternVLProcessor:
             )
 
             # Format text with image tokens
+            num_image_tokens = self.num_image_token * num_patches
             image_tokens = (
                 self.IMG_START_TOKEN
-                + self.IMG_CONTEXT_TOKEN * (self.num_image_token * num_patches)
+                + self.IMG_CONTEXT_TOKEN * num_image_tokens
                 + self.IMG_END_TOKEN
             )
 
@@ -536,12 +531,12 @@ class InternVLTokenizer(TextAndVisionTokenizer):
     def __init__(
         self,
         model_path: str,
+        pipeline_config: PipelineConfig,
         *,
         revision: str | None = None,
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
-        pipeline_config: PipelineConfig | None = None,
         context_validators: list[Callable[[TextAndVisionContext], None]]
         | None = None,
         **unused_kwargs,
@@ -559,33 +554,17 @@ class InternVLTokenizer(TextAndVisionTokenizer):
         # Set max_length after delegate is created (like parent class)
         self.max_length = max_length or self.delegate.model_max_length
 
-        # Set up encode methods (copied from TextAndVisionTokenizer)
-        self._encode_with_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=True
-        )
-        self._encode_without_special_tokens = functools.partial(
-            self.delegate.encode, add_special_tokens=False
-        )
-
-        # Load config for image processing
-        config: Any = AutoConfig.from_pretrained(
-            model_path, revision=revision, trust_remote_code=trust_remote_code
-        )
+        # Use the pre-loaded HuggingFace config from pipeline_config
+        config: Any = pipeline_config.model.huggingface_config
 
         # Set the vision_token_id for use in super's new_context method
         self.vision_token_ids = [_get_image_context_token_id(config)]
 
         # Get vision config overrides from pipeline config.
-        vision_overrides = (
-            pipeline_config.model_config.vision_config_overrides
-            if pipeline_config
-            else {}
-        )
+        vision_overrides = pipeline_config.model.vision_config_overrides
 
         self.enable_prefix_caching = (
-            pipeline_config.model_config.kv_cache_config.enable_prefix_caching
-            if pipeline_config
-            else False
+            pipeline_config.model.kv_cache.enable_prefix_caching
         )
 
         # Create custom processor instead of AutoProcessor (which doesn't exist for InternVL)

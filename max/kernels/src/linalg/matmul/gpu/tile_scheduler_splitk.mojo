@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os.atomic import Atomic
 from sys import size_of
 
@@ -167,34 +169,40 @@ struct SplitKTileScheduler[
 
         @parameter
         if Self.raster_order == RasterOrder.AlongN:
-            self.current_work_linear_idx = (
-                block_idx.x + grid_dim.x * block_idx.y
-            )
+            self.current_work_linear_idx = UInt32(block_idx.x) + UInt32(
+                grid_dim.x
+            ) * UInt32(block_idx.y)
             self.log_cluster_shape_major = log2_floor(self.cluster_shape[1])
             self.log_cluster_shape_minor = log2_floor(self.cluster_shape[0])
-            self.cluster_blk_major = (
-                problem_blocks_n >> self.log_cluster_shape_major
+            self.cluster_blk_major = UInt32(
+                problem_blocks_n >> UInt(self.log_cluster_shape_major)
             )
 
         else:  # rasterize along M
-            self.current_work_linear_idx = (
-                block_idx.x * grid_dim.y + block_idx.y
-            )
+            self.current_work_linear_idx = UInt32(block_idx.x) * UInt32(
+                grid_dim.y
+            ) + UInt32(block_idx.y)
             self.log_cluster_shape_major = log2_floor(self.cluster_shape[0])
             self.log_cluster_shape_minor = log2_floor(self.cluster_shape[1])
-            self.cluster_blk_major = (
-                problem_blocks_m >> self.log_cluster_shape_major
+            self.cluster_blk_major = UInt32(
+                problem_blocks_m >> UInt(self.log_cluster_shape_major)
             )
 
-        self.blocks_per_problem = problem_blocks_m * problem_blocks_n
+        self.blocks_per_problem = UInt32(problem_blocks_m) * UInt32(
+            problem_blocks_n
+        )
 
     @always_inline
     fn get_sm_num(self) -> UInt32:
         @parameter
         if Self.raster_order == RasterOrder.AlongN:
-            return block_idx.x + grid_dim.x * block_idx.y
+            return UInt32(block_idx.x) + UInt32(grid_dim.x) * UInt32(
+                block_idx.y
+            )
         else:
-            return block_idx.x * grid_dim.y + block_idx.y
+            return UInt32(block_idx.x) * UInt32(grid_dim.y) + UInt32(
+                block_idx.y
+            )
 
     @staticmethod
     @always_inline
@@ -349,7 +357,9 @@ struct SplitKTileScheduler[
 
     @always_inline
     fn advance_to_next_work(mut self):
-        self.current_work_linear_idx += grid_dim.x * grid_dim.y * grid_dim.z
+        self.current_work_linear_idx += (
+            UInt32(grid_dim.x) * UInt32(grid_dim.y) * UInt32(grid_dim.z)
+        )
 
     @always_inline
     fn is_last_split(
@@ -528,7 +538,7 @@ struct SplitKTileScheduler[
                     c_reg_tile,
                     reduction_tile_idx,
                     warp_group_local_idx,
-                    warp_group_thread_idx,
+                    UInt32(warp_group_thread_idx),
                 )
 
             else:
@@ -557,8 +567,8 @@ struct SplitKTileScheduler[
                     reduction_workspace,
                     c_reg_tile,
                     reduction_tile_idx,
-                    warp_group_local_idx,
-                    warp_group_thread_idx,
+                    UInt32(warp_group_local_idx),
+                    UInt32(warp_group_thread_idx),
                 )
 
             var increment = work_tile_info.num_k_tiles + work_tile_info.k_start
@@ -585,8 +595,8 @@ struct SplitKTileScheduler[
                 reduction_workspace,
                 c_reg_tile,
                 reduction_tile_idx,
-                warp_group_local_idx,
-                warp_group_thread_idx,
+                UInt32(warp_group_local_idx),
+                UInt32(warp_group_thread_idx),
             )
 
     @staticmethod
@@ -600,7 +610,7 @@ struct SplitKTileScheduler[
     ):
         var sema = NamedBarrierSemaphore[
             Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
-        ](lock_ptr.offset(lock_idx), barrier_group_thread_idx)
+        ](lock_ptr + lock_idx, barrier_group_thread_idx)
         sema.wait_eq(barrier_id, Int32(val))
 
     @staticmethod
@@ -614,7 +624,7 @@ struct SplitKTileScheduler[
     ):
         var sema = NamedBarrierSemaphore[
             Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
-        ](lock_ptr.offset(lock_idx), barrier_group_thread_idx)
+        ](lock_ptr + lock_idx, barrier_group_thread_idx)
         sema.wait_lt(barrier_id, Int32(count))
 
     @staticmethod
@@ -628,7 +638,7 @@ struct SplitKTileScheduler[
     ):
         var sema = NamedBarrierSemaphore[
             Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
-        ](lock_ptr.offset(lock_idx), barrier_group_thread_idx)
+        ](lock_ptr + lock_idx, barrier_group_thread_idx)
         sema.arrive_set(barrier_id, Int32(increment))
 
     @always_inline

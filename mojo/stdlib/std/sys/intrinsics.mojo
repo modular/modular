@@ -37,7 +37,7 @@ from .info import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, size_of
 @always_inline("nodebug")
 fn llvm_intrinsic[
     intrin: StaticString,
-    type: AnyTrivialRegType,
+    type: __TypeOfAllTypes,
     *types: AnyType,
     has_side_effect: Bool = True,
 ](*args: *types) -> type:
@@ -140,7 +140,7 @@ fn gather[
 
     @parameter
     if size == 1:
-        return UnsafePointer[Scalar[dtype], MutOrigin.external](
+        return UnsafePointer[Scalar[dtype], MutExternalOrigin](
             unsafe_from_address=Int(base[0])
         ).load[invariant=invariant]() if mask else passthrough[0]
 
@@ -150,7 +150,7 @@ fn gather[
 
         @parameter
         for i in range(size):
-            result[i] = UnsafePointer[Scalar[dtype], MutOrigin.external](
+            result[i] = UnsafePointer[Scalar[dtype], MutExternalOrigin](
                 unsafe_from_address=Int(base[i])
             ).load[invariant=invariant]() if mask[i] else passthrough[i]
         return result
@@ -236,7 +236,7 @@ fn scatter[
     @parameter
     if size == 1:
         if mask:
-            var ptr = UnsafePointer[Scalar[dtype], MutOrigin.external](
+            var ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
                 unsafe_from_address=Int(base[0])
             )
             ptr.store(value[0])
@@ -476,7 +476,7 @@ struct PrefetchOptions(Defaultable):
 @always_inline("nodebug")
 fn prefetch[
     dtype: DType, //, params: PrefetchOptions = PrefetchOptions()
-](addr: UnsafePointer[Scalar[dtype], **_]):
+](addr: UnsafePointer[Scalar[dtype], ...]):
     """Prefetches an instruction or data into cache before it is used.
 
     The prefetch function provides prefetching hints for the target
@@ -502,6 +502,9 @@ fn prefetch[
             constraints="l,~{memory}",
             has_side_effect=True,
         ](addr.bitcast[NoneType]())
+    elif is_apple_gpu():
+        # Apple GPU officially does not support prefetch intrinsic
+        pass
     else:
         llvm_intrinsic["llvm.prefetch", NoneType](
             addr.bitcast[NoneType](),
@@ -523,7 +526,7 @@ fn masked_load[
     size: Int,
     alignment: Int = 1,
 ](
-    addr: UnsafePointer[mut=False, Scalar[dtype], **_],
+    addr: UnsafePointer[mut=False, Scalar[dtype], ...],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
 ) -> SIMD[dtype, size]:
@@ -571,7 +574,7 @@ fn masked_store[
     alignment: Int = 1,
 ](
     value: SIMD,
-    addr: UnsafePointer[mut=True, Scalar[value.dtype], **_],
+    addr: UnsafePointer[mut=True, Scalar[value.dtype], ...],
     mask: SIMD[DType.bool, size],
 ):
     """Stores a value at a memory location, skipping masked lanes.
@@ -613,7 +616,7 @@ fn compressed_store[
     dtype: DType, size: Int
 ](
     value: SIMD[dtype, size],
-    addr: UnsafePointer[mut=True, Scalar[dtype], **_],
+    addr: UnsafePointer[mut=True, Scalar[dtype], ...],
     mask: SIMD[DType.bool, size],
 ):
     """Compresses the lanes of `value`, skipping `mask` lanes, and stores
@@ -655,7 +658,7 @@ fn compressed_store[
 fn strided_load[
     dtype: DType, //, simd_width: Int, *, invariant: Bool = False
 ](
-    addr: UnsafePointer[mut=False, Scalar[dtype], **_],
+    addr: UnsafePointer[mut=False, Scalar[dtype], ...],
     stride: Int,
     mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
         fill=True
@@ -701,7 +704,7 @@ fn strided_store[
     dtype: DType, //, simd_width: Int
 ](
     value: SIMD[dtype, simd_width],
-    addr: UnsafePointer[mut=True, Scalar[dtype], **_],
+    addr: UnsafePointer[mut=True, Scalar[dtype], ...],
     stride: Int,
     mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
         fill=True
@@ -742,7 +745,7 @@ fn strided_store[
 # ===-------------------------------------------------------------------===#
 
 
-fn _mlirtype_is_eq[t1: AnyTrivialRegType, t2: AnyTrivialRegType]() -> Bool:
+fn _mlirtype_is_eq[t1: __TypeOfAllTypes, t2: __TypeOfAllTypes]() -> Bool:
     """Compares the two type for equality.
 
     Parameters:
@@ -818,7 +821,7 @@ fn _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
 
 
 @register_passable("trivial")
-struct _RegisterPackType[*a: AnyTrivialRegType]:
+struct _RegisterPackType[*a: __TypeOfAllTypes]:
     comptime _mlir_type = __mlir_type[`!kgen.pack<`, Self.a, `>`]
 
     var _mlir_value: Self._mlir_type
@@ -844,7 +847,7 @@ struct _RegisterPackType[*a: AnyTrivialRegType]:
 
 
 @always_inline("nodebug")
-fn expect[T: AnyTrivialRegType, //, expected_val: T](val: T) -> T:
+fn expect[T: __TypeOfAllTypes, //, expected_val: T](val: T) -> T:
     """Provides information about expected (the most probable) value of `val`,
     which can be used by optimizers.
 
@@ -932,7 +935,7 @@ fn assume(val: Bool):
 @always_inline
 fn implicitarg_ptr(
     out result: UnsafePointer[
-        UInt8, MutOrigin.external, address_space = AddressSpace.CONSTANT
+        UInt8, MutExternalOrigin, address_space = AddressSpace.CONSTANT
     ]
 ):
     """
@@ -972,7 +975,7 @@ fn readfirstlane(value: Int32) -> Int32:
     return llvm_intrinsic["llvm.amdgcn.readfirstlane.i32", Int32, Int32](value)
 
 
-# TODO: this can be parameterized for AnyTrivialRegType but I am hitting compiler errors so skipping for now
+# TODO: this can be parameterized for __TypeOfAllTypes but I am hitting compiler errors so skipping for now
 @always_inline
 fn readfirstlane(value: UnsafePointer) -> type_of(value):
     """

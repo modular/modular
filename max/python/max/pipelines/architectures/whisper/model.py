@@ -14,15 +14,15 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.pipelines.lib import (
+    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     PipelineConfig,
@@ -51,8 +51,8 @@ class WhisperInputs(ModelInputs):
         Shape = (batch_size, target_sequence_length)
     """
 
-    input_features: Tensor
-    decoder_input_ids: Tensor
+    input_features: Buffer
+    decoder_input_ids: Buffer
 
 
 # TODO: Need specific Context type, not just this base type.
@@ -86,8 +86,7 @@ class Whisper(PipelineModel[Any]):
         """
         Load the Whisper speech recognition model.
         """
-        logger.info("Building and compiling Whisper encoder-decoder model...")
-        before = time.perf_counter()
+        timer = CompilationTimer("model")
         if self.adapter:
             state_dict = self.adapter(dict(self.weights.items()))
         else:
@@ -100,20 +99,8 @@ class Whisper(PipelineModel[Any]):
             self.encoding.dtype,
             DeviceRef.from_device(self.devices[0]),
         )
-        after_build = time.perf_counter()
-
-        logger.info(f"Building graph took {after_build - before:.6f} seconds")
-
-        before_compile = time.perf_counter()
+        timer.mark_build_complete()
         model = session.load(graph, weights_registry=state_dict)
-        after = time.perf_counter()
-
-        logger.info(
-            f"Compiling model took {after - before_compile:.6f} seconds"
-        )
-
-        logger.info(
-            f"Building and compiling Whisper model took {after - before:.6f} seconds"
-        )
+        timer.done()
 
         return model

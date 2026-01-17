@@ -16,7 +16,7 @@ from buffer import DimList, NDBuffer
 from gpu import barrier, warp_id, lane_id
 from gpu.host import DeviceContext
 from gpu import thread_idx
-from gpu.mma import (
+from gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,
@@ -157,7 +157,7 @@ fn wgmma_bf16_bf16_f32[
         transpose_b=transpose_b,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         a.device_tensor(),
         b.device_tensor(),
         c.device_tensor(),

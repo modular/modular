@@ -15,15 +15,33 @@
 
 import base64
 from io import BytesIO
+from typing import Any
+from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
 from max.interfaces.pipeline_variants.text_generation import (
     TextGenerationRequestMessage,
 )
-from max.pipelines.architectures.qwen2_5vl.tokenizer import (
-    Qwen2_5VLTokenizer,
-)
+from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
+from max.pipelines.lib import KVCacheConfig
 from PIL import Image
+from transformers import AutoConfig
+
+
+def _create_mock_pipeline_config(model_path: str) -> Any:
+    """Create a mock PipelineConfig with real HuggingFace config."""
+    hf_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+
+    mock_kv_cache_config = NonCallableMock(spec=KVCacheConfig)
+    mock_kv_cache_config.enable_prefix_caching = False
+
+    mock_model_config = MagicMock()
+    mock_model_config.huggingface_config = hf_config
+    mock_model_config.kv_cache = mock_kv_cache_config
+
+    pipeline_config = MagicMock()
+    pipeline_config.model = mock_model_config
+    return pipeline_config
 
 
 def test_image(width: int = 224, height: int = 224) -> Image.Image:
@@ -48,8 +66,11 @@ def test_chat_template_preserves_text_with_image() -> None:
     when processing multi-part content containing both images and text.
     """
     # Create tokenizer.
+    model_path = "Qwen/Qwen2.5-VL-7B-Instruct"
+    pipeline_config = _create_mock_pipeline_config(model_path)
     tokenizer = Qwen2_5VLTokenizer(
-        model_path="Qwen/Qwen2.5-VL-7B-Instruct",
+        model_path=model_path,
+        pipeline_config=pipeline_config,
     )
 
     # Create a test image.
@@ -64,13 +85,13 @@ def test_chat_template_preserves_text_with_image() -> None:
     )
 
     messages: list[TextGenerationRequestMessage] = [
-        {
-            "role": "system",
-            "content": "You are a helpful assistant.",
-        },
-        {
-            "role": "user",
-            "content": [
+        TextGenerationRequestMessage(
+            role="system",
+            content="You are a helpful assistant.",
+        ),
+        TextGenerationRequestMessage(
+            role="user",
+            content=[
                 {
                     "type": "image",
                     "image": image_b64,
@@ -80,7 +101,7 @@ def test_chat_template_preserves_text_with_image() -> None:
                     "text": test_question,
                 },
             ],
-        },
+        ),
     ]
 
     # Apply chat template.
@@ -113,8 +134,11 @@ def test_chat_template_preserves_text_with_image() -> None:
 
 def test_chat_template_multiple_text_parts() -> None:
     """Test that chat template handles multiple text parts in content."""
+    model_path = "Qwen/Qwen2.5-VL-7B-Instruct"
+    pipeline_config = _create_mock_pipeline_config(model_path)
     tokenizer = Qwen2_5VLTokenizer(
-        model_path="Qwen/Qwen2.5-VL-7B-Instruct",
+        model_path=model_path,
+        pipeline_config=pipeline_config,
     )
 
     image = test_image(224, 224)
@@ -124,9 +148,9 @@ def test_chat_template_multiple_text_parts() -> None:
     text_part_2 = "Second part of the question."
 
     messages: list[TextGenerationRequestMessage] = [
-        {
-            "role": "user",
-            "content": [
+        TextGenerationRequestMessage(
+            role="user",
+            content=[
                 {
                     "type": "text",
                     "text": text_part_1,
@@ -140,7 +164,7 @@ def test_chat_template_multiple_text_parts() -> None:
                     "text": text_part_2,
                 },
             ],
-        },
+        ),
     ]
 
     prompt = tokenizer.apply_chat_template(messages)
@@ -156,17 +180,20 @@ def test_chat_template_multiple_text_parts() -> None:
 
 def test_chat_template_text_only() -> None:
     """Test that chat template still works correctly for text-only messages."""
+    model_path = "Qwen/Qwen2.5-VL-7B-Instruct"
+    pipeline_config = _create_mock_pipeline_config(model_path)
     tokenizer = Qwen2_5VLTokenizer(
-        model_path="Qwen/Qwen2.5-VL-7B-Instruct",
+        model_path=model_path,
+        pipeline_config=pipeline_config,
     )
 
     test_question = "What is 2 + 2?"
 
     messages: list[TextGenerationRequestMessage] = [
-        {
-            "role": "user",
-            "content": test_question,
-        },
+        TextGenerationRequestMessage(
+            role="user",
+            content=test_question,
+        ),
     ]
 
     prompt = tokenizer.apply_chat_template(messages)

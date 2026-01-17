@@ -14,7 +14,14 @@
 from os import abort
 from sys.ffi import _Global
 
-from test_utils import MoveCopyCounter, ObservableDel, MoveOnly, ExplicitDelOnly
+from test_utils import (
+    MoveCopyCounter,
+    ObservableDel,
+    ConfigureTrivial,
+    MoveOnly,
+    ExplicitDelOnly,
+    NonMovable,
+)
 from testing import TestSuite, assert_equal, assert_false, assert_true
 from benchmark import keep
 
@@ -29,7 +36,7 @@ fn _initialize_poison() -> Bool:
     return False
 
 
-fn _poison_ptr() -> UnsafePointer[Bool, MutOrigin.external]:
+fn _poison_ptr() -> UnsafePointer[Bool, MutExternalOrigin]:
     try:
         return TEST_VARIANT_POISON.get_or_create_ptr()
     except:
@@ -116,7 +123,7 @@ def test_move():
 
 
 def test_del():
-    comptime TestDeleterVariant = Variant[ObservableDel, Poison]
+    comptime TestDeleterVariant = Variant[ObservableDel[], Poison]
     var deleted: Bool = False
     var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
     _ = v1^  # call __del__
@@ -126,7 +133,7 @@ def test_del():
 
 
 def test_set_calls_deleter():
-    comptime TestDeleterVariant = Variant[ObservableDel, Poison]
+    comptime TestDeleterVariant = Variant[ObservableDel[], Poison]
     var deleted: Bool = False
     var deleted2: Bool = False
     var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
@@ -147,11 +154,11 @@ def test_replace():
 
 
 def test_take_doesnt_call_deleter():
-    comptime TestDeleterVariant = Variant[ObservableDel, Poison]
+    comptime TestDeleterVariant = Variant[ObservableDel[], Poison]
     var deleted: Bool = False
     var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
     assert_false(deleted)
-    var v2 = v1.unsafe_take[ObservableDel]()
+    var v2 = v1.unsafe_take[ObservableDel[]]()
     assert_false(deleted)
     _ = v2
     assert_true(deleted)
@@ -217,6 +224,43 @@ def test_variant_linear_type_move():
     var v2 = v1^
 
     v2^.destroy_with(ExplicitDelOnly.destroy)
+
+
+def test_variant_trivial_del():
+    comptime yes = ConfigureTrivial[del_is_trivial=True]
+    comptime no = ConfigureTrivial[del_is_trivial=False]
+
+    assert_true(Variant[yes].__del__is_trivial)
+    assert_false(Variant[no].__del__is_trivial)
+    assert_false(Variant[yes, no].__del__is_trivial)
+
+    # TODO (MOCO-3016):
+    # check variant of linear type
+    # assert_false(Variant[LinearType].__del__is_trivial)
+
+
+def test_variant_trivial_copyinit():
+    comptime yes = ConfigureTrivial[copyinit_is_trivial=True]
+    comptime no = ConfigureTrivial[copyinit_is_trivial=False]
+
+    assert_true(Variant[yes].__copyinit__is_trivial)
+    assert_false(Variant[no].__copyinit__is_trivial)
+    assert_false(Variant[yes, no].__copyinit__is_trivial)
+
+    # check variant of move-only type
+    assert_false(Variant[MoveOnly[Int]].__copyinit__is_trivial)
+
+
+def test_variant_trivial_moveinit():
+    comptime yes = ConfigureTrivial[moveinit_is_trivial=True]
+    comptime no = ConfigureTrivial[moveinit_is_trivial=False]
+
+    assert_true(Variant[yes].__moveinit__is_trivial)
+    assert_false(Variant[no].__moveinit__is_trivial)
+    assert_false(Variant[yes, no].__moveinit__is_trivial)
+
+    # check variant of non-movable type
+    assert_false(Variant[NonMovable].__moveinit__is_trivial)
 
 
 def main():

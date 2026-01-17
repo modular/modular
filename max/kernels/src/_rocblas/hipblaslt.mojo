@@ -19,10 +19,12 @@ from sys.ffi import _Global, OwnedDLHandle
 
 from gpu.host._amdgpu_hip import hipStream_t
 
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from utils import StaticTuple
 
 comptime hipblasLtHandle_t = OpaquePointer
@@ -255,7 +257,7 @@ fn _init_dylib() -> OwnedDLHandle:
 
 @always_inline
 fn _get_dylib_function[
-    func_name: StaticString, result_type: AnyTrivialRegType
+    func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         HIPBLASLT_LIBRARY(), func_name, result_type
@@ -496,20 +498,20 @@ fn _check_hipblas_error(status: Status) raises:
 @always_inline
 fn _convert_to_hip_datatype[dtype: DType]() -> hipDataType_t:
     @parameter
-    if dtype is DType.float32:
+    if dtype == DType.float32:
         return hipDataType_t.R_32F
-    elif dtype is DType.float16:
+    elif dtype == DType.float16:
         return hipDataType_t.R_16F
-    elif dtype is DType.float8_e4m3fn:
+    elif dtype == DType.float8_e4m3fn:
         return hipDataType_t.R_8F_E4M3
-    elif dtype is DType.float8_e5m2:
+    elif dtype == DType.float8_e5m2:
         return hipDataType_t.R_8F_E5M2
-    elif dtype is DType.float8_e4m3fnuz:
+    elif dtype == DType.float8_e4m3fnuz:
         return hipDataType_t.R_8F_E4M3_FNUZ
-    elif dtype is DType.float8_e5m2fnuz:
+    elif dtype == DType.float8_e5m2fnuz:
         return hipDataType_t.R_8F_E5M2_FNUZ
     else:
-        __comptime_assert dtype is DType.bfloat16, (
+        __comptime_assert dtype == DType.bfloat16, (
             "Only support FP32, FP16, BF16, E4M3(FNUZ), and E5M2(FNUZ)."
             " Please extend it if more dtypes are needed."
         )

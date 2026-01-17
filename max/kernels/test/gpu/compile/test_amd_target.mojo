@@ -34,7 +34,7 @@ fn test_amd_dims(ctx: DeviceContext) raises:
             print(block_dim.x, block_dim.y, block_dim.z)
 
     comptime kernel = test_dims_kernel
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         grid_dim=(14, 15, 16),
         block_dim=(2, 3, 4),
     )

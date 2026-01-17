@@ -526,7 +526,7 @@ fn _split_extension(
         # skip all leading dots
         var file_start = head_end + 1
         while file_start < file_end:
-            if path[file_start].as_string_slice() != extension_sep:
+            if path[byte=file_start].as_string_slice() != extension_sep:
                 return String(path[:file_end]), String(path[file_end:])
             file_start += 1
 
@@ -622,7 +622,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
         ord("8"),
         ord("9"),
     )
-    return Int(byte) in shell_variables
+    return Int(byte) in materialize[shell_variables]()
 
 
 fn _is_alphanumeric(byte: Byte) -> Bool:
@@ -708,23 +708,23 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
         if bytes[j] == ord("$") and j + 1 < len(bytes):
             if not buf:
                 buf.reserve(new_capacity=2 * len(bytes))
-            buf.write_bytes(bytes[i:j])
+            buf.write_string(path_str[i:j])
 
             var name, length = _parse_variable_name(bytes[j + 1 :])
 
             # Invalid syntax (`${}` or `${`) or $ was not followed by a name; write as is.
             if name.startswith("{") or name == "":
-                buf.write_bytes(bytes[j : j + length + 1])
+                buf.write_string(path_str[j : j + length + 1])
             # Shell variable (eg `$@` or `$*`); write as is.
             elif _is_shell_special_variable(name.as_bytes()[0]):
-                buf.write_bytes(bytes[j : j + 2])
+                buf.write_string(path_str[j : j + 2])
             # Environment variable; expand it. If no value, write as is.
             else:
                 value = os.getenv(String(name))
                 if value != "":
                     buf.write(value)
                 else:
-                    buf.write_bytes(bytes[j : j + length + 1])
+                    buf.write_string(path_str[j : j + length + 1])
 
             j += length
             i = j + 1
@@ -733,5 +733,5 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     if not buf:
         return path_str
 
-    buf.write_bytes(bytes[i:])
+    buf.write_string(path_str[i:])
     return buf

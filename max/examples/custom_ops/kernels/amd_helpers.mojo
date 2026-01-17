@@ -32,7 +32,7 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from memory import Pointer
+from memory import Pointer, LegacyUnsafePointer
 
 from utils.index import IndexList
 
@@ -164,7 +164,7 @@ fn copy_local_to_dram_32_32_8[
                 dst_idx += dst_fragments.runtime_layout(i)
 
             var src_element = Element[index_type = src.linear_idx_type].load(
-                src.ptr.offset(src_idx),
+                src.ptr + src_idx,
                 src.runtime_element_layout,
             )
 
@@ -242,7 +242,7 @@ fn mma[
 ](
     a_tiles: MMATileBuffers[mma_type=MMAType],
     b_tiles: MMATileBuffers[mma_type=MMAType],
-    c_reg_tile: LayoutTensor[mut=True, **_],
+    c_reg_tile: LayoutTensor[mut=True, ...],
 ):
     """
     AMD-style MMA operation wrapper for the AMD_MMA struct.
@@ -567,9 +567,7 @@ fn compare_equal[
     gpu_ctx.enqueue_memset(
         DeviceBuffer[max_relative_error.dtype](
             gpu_ctx,
-            rebind[LegacyUnsafePointer[Scalar[max_relative_error.dtype]]](
-                max_relative_error.ptr
-            ),
+            max_relative_error.ptr,
             m * n,
             owning=False,
         ),
@@ -578,7 +576,7 @@ fn compare_equal[
 
     # Compute the relative error between the reference and computed tensors
     comptime rel_error_kernel = compute_relative_error_kernel[dtype, layout]
-    gpu_ctx.enqueue_function_checked[rel_error_kernel, rel_error_kernel](
+    gpu_ctx.enqueue_function_experimental[rel_error_kernel](
         reference,
         computed,
         max_relative_error,
@@ -596,7 +594,7 @@ fn compare_equal[
         var num_elements = i if i < 1024 else 1024
 
         comptime reduce_kernel = max_reduce_kernel[dtype, layout]
-        gpu_ctx.enqueue_function_checked[reduce_kernel, reduce_kernel](
+        gpu_ctx.enqueue_function_experimental[reduce_kernel](
             max_relative_error,
             num_elements,
             offset,

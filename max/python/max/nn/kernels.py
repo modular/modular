@@ -32,6 +32,7 @@ from max.graph import (
     Value,
     ops,
 )
+from max.graph.ops import assert_same_device
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.nn.float8_config import (
@@ -72,6 +73,19 @@ _MHA_MASK_CONFIG_DICT = {
 }
 
 
+def ceildiv(n: Dim, d: Dim) -> Dim:
+    """Ceiling division.
+
+    Args:
+        n: The numerator.
+        d: The denominator.
+
+    Returns:
+        The ceiling of dividing n by d.
+    """
+    return (n + d - 1) // d
+
+
 def fused_qkv_padded_matmul(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -92,7 +106,7 @@ def fused_qkv_padded_matmul(
         wqkv: Weight tensor for Q, K, V projections.
         kv_collection: Paged KV cache collection.
         layer_idx: Layer index for cache lookup (must be uint32).
-        valid_lengths: Tensor of shape [batch] containing the valid length for each
+        valid_lengths: Buffer of shape [batch] containing the valid length for each
             sequence (must be uint32). K and V are only written to cache for
             positions within these lengths.
         n_heads: Number of attention heads.
@@ -928,7 +942,7 @@ def fused_qk_padded_rope(
         kv_collection: Paged KV cache collection.
         freqs_cis: Frequency tensor of shape (max_seq_len * 2, head_dim).
         layer_idx: Layer index for KV cache (must be uint32 on CPU).
-        valid_lengths: Tensor of shape [batch] containing the valid length for each
+        valid_lengths: Buffer of shape [batch] containing the valid length for each
             sequence (must be uint32). RoPE is only applied to positions within
             these lengths.
         interleaved: Whether to use interleaved RoPE pattern.
@@ -1009,7 +1023,7 @@ def flash_attention_padded_kv_cache(
         q: Query tensor of shape [batch, seq_len, num_heads, head_dim]
         kv_collection: Paged KV cache collection
         layer_idx: Layer index for cache lookup
-        valid_lengths: Tensor of shape [batch] with dtype uint32 indicating
+        valid_lengths: Buffer of shape [batch] with dtype uint32 indicating
             actual (non-padded) sequence lengths for each batch element
         mask_variant: The mask variant to use for attention
         scale: Scaling factor for attention scores
@@ -1288,7 +1302,7 @@ def flash_attention_ragged_gpu(
         q: Query tensor of shape [total_seq_len, num_heads, head_dim] (ragged)
         k: Key tensor of shape [total_seq_len, num_heads, head_dim] (ragged)
         v: Value tensor of shape [total_seq_len, num_heads, head_dim] (ragged)
-        input_row_offsets: Tensor of shape [batch_size + 1] with dtype uint32.
+        input_row_offsets: Buffer of shape [batch_size + 1] with dtype uint32.
             Indicates where each sequence starts and ends in the ragged tensors.
             The values should be a prefix sum (cumulative sum) of sequence lengths.
         mask_variant: The mask variant to use for attention
@@ -1472,9 +1486,7 @@ def flare_mla_prefill_ragged(
     mask_variant: MHAMaskVariant,
     scale: float,
     qk_rope_dim: int = 64,
-    prev_output: TensorValue | None = None,
-    prev_softmax_info: TensorValue | None = None,
-) -> tuple[TensorValue, TensorValue]:
+) -> TensorValue:
     """Performs MLA prefill. In the MLA prefill, we need to decompress
     the KV tensors, as we store the latent representations in the KV cache.
     We will decompress the KV tensors into a fixed size buffer to avoid
@@ -1499,13 +1511,9 @@ def flare_mla_prefill_ragged(
         mask_variant: Mask variant
         scale: Scale
         qk_rope_dim: QK rope dimension
-        prev_output: Optional. Previous output tensor
-        prev_softmax_info: Optional. Previous softmax info tensor
 
     Returns:
-        A tuple of two tensors:
-            - The first tensor is the output tensor for this iteration
-            - The second tensor is the softmax info tensor for this iteration
+        The output tensor for this iteration
     """
     input_rank_expected = 3
     if input.rank != input_rank_expected:
@@ -1538,8 +1546,7 @@ def flare_mla_prefill_ragged(
         "score_mod_str": mha_mask_config.positional_encoding_variant.value,
     }
 
-    is_init_str = ".init" if prev_output is None else ""
-    op_name = f"mo.mla.prefill{is_init_str}.ragged.paged"
+    op_name = "mo.mla.prefill.ragged.paged"
 
     input_values: MutableSequence[Value[Any]] = [
         input,
@@ -1552,10 +1559,6 @@ def flare_mla_prefill_ragged(
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
-    if prev_output is not None:
-        input_values.append(prev_output)
-    if prev_softmax_info is not None:
-        input_values.append(prev_softmax_info)
 
     results = ops.inplace_custom(
         op_name,
@@ -1570,21 +1573,12 @@ def flare_mla_prefill_ragged(
                     input.shape[2] - qk_rope_dim,
                 ],
                 device=input.device,
-            ),
-            TensorType(
-                dtype=DType.float32,
-                shape=[
-                    input.shape[0],
-                    input.shape[1],
-                    2,
-                ],
-                device=input.device,
-            ),
+            )
         ],
         parameters=parameters,
     )
 
-    return results[0].tensor, results[1].tensor
+    return results[0].tensor
 
 
 def flare_mla_prefill_plan(
@@ -3145,7 +3139,7 @@ def dynamic_block_scaled_matmul_fp4(
     b: TensorValue,
     a_scales: TensorValue,
     b_scales: TensorValue,
-    tensor_sf: float,
+    tensor_sf: TensorValue | float,
     sf_vector_size: int = 16,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
@@ -3157,6 +3151,7 @@ def dynamic_block_scaled_matmul_fp4(
         b: The second tensor to multiply, must be transposed.
         a_scales: The scaling factors for the first tensor.
         b_scales: The scaling factors for the second tensor.
+        tensor_sf: Buffer-wise scaling factor equal to weight_scale_2 * input_scale (non-inverted).
 
     Returns:
         The result of the matmul operation.
@@ -3194,13 +3189,13 @@ def dynamic_block_scaled_matmul_fp4(
 
     # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
     # a_scales_dim_0 = (a.shape[0] + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
-    a_scales_dim_1 = (
-        (a.shape[1] * 2) + SF_K_GROUP_SIZE - 1
-    ) // SF_K_GROUP_SIZE  # each output element (uint8) is 2 fp4-e2m1fn values
-    b_scales_dim_0 = (b.shape[0] + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
-    b_scales_dim_1 = (
-        (b.shape[1] * 2) + SF_K_GROUP_SIZE - 1
-    ) // SF_K_GROUP_SIZE  # each output element (uint8) is 2 fp4-e2m1fn values
+    a_scales_dim_1 = ceildiv(
+        a.shape[1] * 2, Dim(SF_K_GROUP_SIZE)
+    )  # each output element (uint8) is 2 fp4-e2m1fn values
+    b_scales_dim_0 = ceildiv(b.shape[0], Dim(SF_MN_GROUP_SIZE))
+    b_scales_dim_1 = ceildiv(
+        b.shape[1] * 2, Dim(SF_K_GROUP_SIZE)
+    )  # each output element (uint8) is 2 fp4-e2m1fn values
     scales_dim_2 = SF_ATOM_M[0]
     scales_dim_3 = SF_ATOM_M[1]
     scales_dim_4 = SF_ATOM_K
@@ -3226,6 +3221,12 @@ def dynamic_block_scaled_matmul_fp4(
             f"b_scales shape must be {b_scales_dim_0, b_scales_dim_1, scales_dim_2, scales_dim_3, scales_dim_4}, but got {b_scales.shape}"
         )
 
+    if a_scales.shape[1] != b_scales.shape[1]:
+        raise ValueError(
+            "a_scales and b_scales must have the same shape on the K dimension."
+            f" got a_scales.shape={a_scales.shape} and b_scales.shape={b_scales.shape}"
+        )
+
     result = ops.custom(
         "mo.matmul.dynamic.block.scaled",
         device=a.device,
@@ -3234,7 +3235,9 @@ def dynamic_block_scaled_matmul_fp4(
             b,
             a_scales,
             b_scales,
-            ops.constant(tensor_sf, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(tensor_sf, DType.float32, device=DeviceRef.CPU())
+            if isinstance(tensor_sf, float)
+            else tensor_sf,
         ],
         out_types=[
             TensorType(
@@ -3251,7 +3254,7 @@ def dynamic_block_scaled_matmul_fp4(
 
 def quantize_dynamic_block_scaled_fp4(
     input: TensorValue,
-    tensor_sf: float,
+    tensor_sf: TensorValue | float,
     sf_vector_size: int = 16,
     scales_type: DType = DType.float8_e4m3fn,
     out_type: DType = DType.uint8,  # fp4-e2m1fnX2
@@ -3261,7 +3264,7 @@ def quantize_dynamic_block_scaled_fp4(
 
     Args:
         input: The input tensor to quantize. Shape: [seq_len, hidden_size]
-        tensor_sf: The tensor-wise scale factor.
+        tensor_sf: The tensor-wise scale factor (inverted as per quantization kernel requirement).
         sf_vector_size: The block size for the scaling factors.
         out_type: The type of the output tensor.
         scales_type: The type of the scales tensor.
@@ -3296,8 +3299,8 @@ def quantize_dynamic_block_scaled_fp4(
     SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
 
     # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
-    scales_dim_0 = (input.shape[0] + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
-    scales_dim_1 = (input.shape[1] + SF_K_GROUP_SIZE - 1) // SF_K_GROUP_SIZE
+    scales_dim_0 = ceildiv(input.shape[0], Dim(SF_MN_GROUP_SIZE))
+    scales_dim_1 = ceildiv(input.shape[1], Dim(SF_K_GROUP_SIZE))
     scales_dim_2 = SF_ATOM_M[0]
     scales_dim_3 = SF_ATOM_M[1]
     scales_dim_4 = SF_ATOM_K
@@ -3307,7 +3310,9 @@ def quantize_dynamic_block_scaled_fp4(
         device=input.device,
         values=[
             input,
-            ops.constant(tensor_sf, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(tensor_sf, DType.float32, device=DeviceRef.CPU())
+            if isinstance(tensor_sf, float)
+            else tensor_sf,
         ],
         out_types=[
             TensorType(
@@ -3366,11 +3371,10 @@ def block_scales_interleave(
     SF_ATOM_M = [32, 4]
     SF_ATOM_K = 4
     SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
-    SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
 
     # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
-    scales_dim_0 = (scales.shape[0] + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
-    scales_dim_1 = (scales.shape[1] + SF_K_GROUP_SIZE - 1) // SF_K_GROUP_SIZE
+    scales_dim_0 = ceildiv(scales.shape[0], Dim(SF_MN_GROUP_SIZE))
+    scales_dim_1 = ceildiv(scales.shape[1], Dim(SF_ATOM_K))
     scales_dim_2 = SF_ATOM_M[0]
     scales_dim_3 = SF_ATOM_M[1]
     scales_dim_4 = SF_ATOM_K
@@ -3784,6 +3788,52 @@ def scatter_set_constant(
             ops.constant(fill_val, data.dtype, device=DeviceRef.CPU()),
         ],
     )
+
+
+def scatter_nd_skip_neg_indices(
+    input: TensorValueLike,
+    updates: TensorValueLike,
+    indices: TensorValueLike,
+) -> TensorValue:
+    """
+    Creates a new symbolic tensor where the updates are scattered into input at specified indices.
+
+    This differs from scatter_nd in that it handles negative indices by skipping
+    the update for that index.
+
+    Args:
+        input: The input symbolic tensor to write elements to.
+        updates: A symbolic tensor of elements to write to input.
+        indices: A tensor of indices specifying where to write updates.
+            Shape should be [num_updates, rank] for full indexing or
+            [num_updates, k] for partial indexing where k < rank.
+
+    Returns:
+        A new symbolic tensor representing the result of the scatter_nd operation.
+    """
+    input = TensorValue(input)
+    updates = TensorValue(updates)
+    indices = TensorValue(indices)
+
+    if input.dtype != updates.dtype:
+        raise ValueError(
+            f"The input dtype ({input.dtype}) and updates dtype"
+            f" ({updates.dtype}) must match"
+        )
+
+    if indices.dtype not in (DType.int32, DType.int64):
+        raise ValueError(
+            f"Invalid indices dtype: '{indices.dtype}'. Indices must be of type int32 or int64."
+        )
+
+    assert_same_device(input=input, updates=updates, indices=indices)
+
+    return ops.custom(
+        "mo.scatter_nd.skip_neg_indices",
+        device=input.device,
+        values=[input, updates, indices],
+        out_types=[TensorType(input.dtype, input.shape, device=input.device)],
+    )[0].tensor
 
 
 def topk_fused_sampling(
@@ -4492,3 +4542,38 @@ def sliced_add(
             )
         ],
     )[0].tensor
+
+
+def kv_cache_copy_pages_d2h(
+    device_kv_collection: PagedCacheValues,
+    device_page_ids: TensorValue,
+    host_kv_blocks: BufferValue,
+    host_page_ids: TensorValue,
+    layer_idx: int,
+    device_ref: DeviceRef,
+) -> None:
+    """Copy KV cache pages from GPU to CPU for a single layer.
+
+    Performs async GPU->CPU copy of specified pages for layer-wise KV cache
+    offloading.
+
+    Args:
+        device_kv_collection: Source KV cache on GPU.
+        device_page_ids: Source page IDs to read from GPU.
+        host_kv_collection: Destination KV cache on CPU.
+        host_page_ids: Destination page IDs to write to CPU.
+            Must have same length as device_page_ids.
+        layer_idx: Which layer to copy.
+        device_ref: Device for the GPU context.
+    """
+    ops.inplace_custom(
+        name="mo.kv_cache.copy_pages_d2h",
+        device=device_ref,
+        values=[
+            device_kv_collection.kv_blocks,
+            host_kv_blocks,
+            device_page_ids,
+            host_page_ids,
+            ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
+        ],
+    )

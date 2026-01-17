@@ -17,7 +17,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -101,7 +101,7 @@ def conv3d_impl(session: InferenceSession) -> None:
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
 
     graph_api_conv_result = compiled.execute(input_sequence)[0]
-    assert isinstance(graph_api_conv_result, Tensor)
+    assert isinstance(graph_api_conv_result, Buffer)
 
     np.testing.assert_allclose(
         graph_api_conv_result.to_numpy(),
@@ -199,7 +199,7 @@ def conv1d_impl(session: InferenceSession) -> None:
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
     graph_api_conv_result = compiled.execute(input_sequence)[0]
-    assert isinstance(graph_api_conv_result, Tensor)
+    assert isinstance(graph_api_conv_result, Buffer)
 
     np.testing.assert_allclose(
         graph_api_conv_result.to_numpy(),
@@ -297,7 +297,7 @@ def conv1d_tuple_padding_impl(session: InferenceSession) -> None:
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
     graph_api_conv_result = compiled.execute(input_sequence)[0]
-    assert isinstance(graph_api_conv_result, Tensor)
+    assert isinstance(graph_api_conv_result, Buffer)
 
     np.testing.assert_allclose(
         graph_api_conv_result.to_numpy(),
@@ -401,7 +401,7 @@ def conv1d_tuple_padding_nonfcrs_impl(session: InferenceSession) -> None:
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
     graph_api_conv_result = compiled.execute(max_input)[0]
-    assert isinstance(graph_api_conv_result, Tensor)
+    assert isinstance(graph_api_conv_result, Buffer)
 
     np.testing.assert_allclose(
         graph_api_conv_result.to_numpy(),
@@ -505,7 +505,7 @@ def conv2d_tuple_padding_impl(session: InferenceSession) -> None:
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
     graph_api_conv_result = compiled.execute(input_sequence)[0]
-    assert isinstance(graph_api_conv_result, Tensor)
+    assert isinstance(graph_api_conv_result, Buffer)
 
     np.testing.assert_allclose(
         graph_api_conv_result.to_numpy(),
@@ -612,7 +612,7 @@ def conv3d_tuple_padding_impl(session: InferenceSession) -> None:
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
     graph_api_conv_result = compiled.execute(input_sequence)[0]
-    assert isinstance(graph_api_conv_result, Tensor)
+    assert isinstance(graph_api_conv_result, Buffer)
 
     np.testing.assert_allclose(
         graph_api_conv_result.to_numpy(),
@@ -712,7 +712,7 @@ def conv2d_impl(session: InferenceSession) -> None:
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
     graph_api_conv_result = compiled.execute(input_sequence)[0]
-    assert isinstance(graph_api_conv_result, Tensor)
+    assert isinstance(graph_api_conv_result, Buffer)
 
     np.testing.assert_allclose(
         graph_api_conv_result.to_numpy(),

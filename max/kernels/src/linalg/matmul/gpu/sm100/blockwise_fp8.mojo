@@ -17,22 +17,24 @@ from sys import align_of, size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
-from gpu.cluster import block_rank_in_cluster
+from gpu.primitives.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_idx, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.memory import external_memory
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
+from gpu.compute.arch.mma_nvidia_sm100 import *
+from gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
 from logger import Logger
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -569,11 +571,11 @@ fn matmul_sm100_blockwise_scaled_fp8[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, *_, **_],
-    a: LayoutTensor[a_type, a_layout, *_, **_],
-    b: LayoutTensor[b_type, b_layout, *_, **_],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, *_, **_],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, *_, **_],
+    c: LayoutTensor[c_type, c_layout, ...],
+    a: LayoutTensor[a_type, a_layout, ...],
+    b: LayoutTensor[b_type, b_layout, ...],
+    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ...],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
     ctx: DeviceContext,
 ) raises:
     constrained[
@@ -582,12 +584,12 @@ fn matmul_sm100_blockwise_scaled_fp8[
     ]()
 
     constrained[
-        a_type == b_type and a_type is DType.float8_e4m3fn,
+        a_type == b_type and a_type == DType.float8_e4m3fn,
         "Only support float8_e4m3fn",
     ]()
 
     constrained[
-        a_scales_type == b_scales_type and a_scales_type is DType.float32,
+        a_scales_type == b_scales_type and a_scales_type == DType.float32,
         "Only support float32 for scales",
     ]()
 
@@ -698,7 +700,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
         "B Scales Shape: [", b_scales.dim(0), ", ", b_scales.dim(1), "]", sep=""
     )
 
-    var a_tma_op = create_tma_tile[
+    var a_tma_op = create_tensor_tile[
         Index(1, BM, BK),
         swizzle_mode=a_swizzle,
         __tile_layout = Layout.row_major(1, BM, BK),
@@ -708,13 +710,13 @@ fn matmul_sm100_blockwise_scaled_fp8[
         1, BK, BN
     )
 
-    var b_tma_op = create_tma_tile[
+    var b_tma_op = create_tensor_tile[
         b_tile_shape,
         swizzle_mode=b_swizzle,
         __tile_layout = Layout.row_major(b_tile_shape),
     ](ctx, b_3D)
 
-    var a_scales_tma_op = create_tma_tile[
+    var a_scales_tma_op = create_tensor_tile[
         Index(1, 1, BM),
         __tile_layout = Layout.row_major(1, 1, BM),
         __desc_layout = Layout(IntTuple(1, 1, BM), IntTuple(1, 1, 1)),
@@ -752,7 +754,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c,

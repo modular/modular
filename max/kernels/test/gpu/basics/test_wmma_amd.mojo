@@ -16,11 +16,13 @@ from random import random_si64
 
 from gpu import WARP_SIZE, block_idx
 from gpu.host import DeviceContext
-from gpu.mma import mma
-from gpu.mma_util import load_matrix_a_amd as load_matrix_a
-from gpu.mma_util import load_matrix_b_amd as load_matrix_b
-from gpu.mma_util import store_matrix_d
-from memory import LegacyUnsafePointer as UnsafePointer
+from gpu.compute.mma import mma
+from gpu.compute.mma_util import load_matrix_a_amd as load_matrix_a
+from gpu.compute.mma_util import load_matrix_b_amd as load_matrix_b
+from gpu.compute.mma_util import store_matrix_d
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 
@@ -197,7 +199,7 @@ fn run_mma_fp32_fp32(
 
     comptime kernel = mma_kernel_fp32_fp32
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         a_device,
         b_device,
         c_device,
@@ -285,7 +287,7 @@ fn run_mma_fp32_fp16[
 
     comptime kernel = mma_kernel_fp32_fp16[mma_n_blocks]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         a_device,
         b_device,
         c_device,
@@ -379,7 +381,7 @@ fn run_mma_fp32_bf16[
 
     comptime kernel = mma_kernel_fp32_bf16[mma_n_blocks]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         a_device,
         b_device,
         c_device,

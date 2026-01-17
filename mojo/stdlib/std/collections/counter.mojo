@@ -72,7 +72,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[Self.V, Int, Self.H, iterable_origin]
     """The iterator type for this counter.
 
@@ -116,7 +116,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for item in values:
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
-    fn __init__(out self, items: List[Self.V, *_]):
+    fn __init__(out self, items: List[Self.V, ...]):
         """Create a `Counter` from an input iterable.
 
         Args:
@@ -136,7 +136,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
     @staticmethod
-    fn fromkeys(keys: List[Self.V, *_], value: Int) -> Self:
+    fn fromkeys(keys: List[Self.V, ...], value: Int) -> Self:
         """Create a new `Counter` from a list of keys and a default value.
 
         Args:
@@ -245,6 +245,8 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Examples:
 
         ```mojo
+        from collections import Counter
+
         var c = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
         counter_as_string = String(c)
         print(counter_as_string)

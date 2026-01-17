@@ -70,10 +70,10 @@ class EmbeddingModel:
 
     @cached_property
     def mteb_model_meta(self) -> mteb.ModelMeta:
-        name = f"max_{self.pipeline_config.model_config.model_path}"
+        name = f"max_{self.pipeline_config.model.model_path}"
 
         if meta := mteb.models.MODEL_REGISTRY.get(
-            self.pipeline_config.model_config.model_path
+            self.pipeline_config.model.model_path
         ):
             return meta.model_copy(update={"name": name})
         else:
@@ -96,7 +96,7 @@ class EmbeddingModel:
                 training_datasets=None,
             )
 
-    def encode(self, sentences: Sequence[str], **kwargs) -> np.ndarray:  # type: ignore
+    def encode(self, sentences: Sequence[str], **kwargs) -> np.ndarray:
         """Encodes the given sentences using the encoder.
 
         Args:
@@ -123,14 +123,14 @@ class EmbeddingModel:
             start += batch_size
         return np.array(results)
 
-    async def batch_encode(self, sentences: Sequence[str]) -> list[np.ndarray]:  # type: ignore
+    async def batch_encode(self, sentences: Sequence[str]) -> list[np.ndarray]:
         pipeline_request = {}
         for n, sentence in enumerate(sentences):
             pipeline_request[RequestID()] = await self.tokenizer.new_context(
                 TextGenerationRequest(
                     request_id=RequestID(str(n)),
                     prompt=sentence,
-                    model_name=self.pipeline_config.model_config.model_path,
+                    model_name=self.pipeline_config.model.model_path,
                 )
             )
         response = self.pipeline.execute(
@@ -211,7 +211,7 @@ def main(
     model: EmbeddingModel | mteb.encoder_interface.Encoder
     logging.info(f"Loading model with {model_library} library.")
     if model_library == "mteb":
-        model = mteb.get_model(pipeline_config.model_config.model_path)
+        model = mteb.get_model(pipeline_config.model.model_path)
     else:
         tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(
             pipeline_config, task=PipelineTask.EMBEDDINGS_GENERATION
@@ -221,8 +221,8 @@ def main(
         embeddings_pipeline = cast(EmbeddingsPipelineType, pipeline)
 
         huggingface_config = AutoConfig.from_pretrained(
-            pipeline_config.model_config.model_path,
-            trust_remote_code=pipeline_config.model_config.trust_remote_code,
+            pipeline_config.model.model_path,
+            trust_remote_code=pipeline_config.model.trust_remote_code,
         )
         model = EmbeddingModel(
             pipeline_config, tokenizer, embeddings_pipeline, huggingface_config

@@ -21,10 +21,11 @@ from memory import OwnedPointer
 
 from builtin.constrained import _constrained_conforms_to
 from builtin.rebind import downcast, trait_downcast
+from reflection.type_info import _unqualified_type_name
 
 
 @register_passable
-struct OwnedPointer[T: AnyType]:
+struct OwnedPointer[T: AnyType](Writable):
     """A safe, owning, smart pointer.
 
     This smart pointer is designed for cases where there is clear ownership
@@ -39,7 +40,7 @@ struct OwnedPointer[T: AnyType]:
         T: The type to be stored in the `OwnedPointer`.
     """
 
-    var _inner: UnsafePointer[Self.T, MutOrigin.external]
+    var _inner: UnsafePointer[Self.T, MutExternalOrigin]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -101,7 +102,7 @@ struct OwnedPointer[T: AnyType]:
     fn __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutOrigin.external],
+        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutExternalOrigin],
     ):
         """Construct a new `OwnedPointer` by taking ownership of the provided `UnsafePointer`.
 
@@ -111,16 +112,35 @@ struct OwnedPointer[T: AnyType]:
         Safety:
 
         This function is unsafe as the provided `UnsafePointer` must be initialize with a single valid `T`
-        initialliy allocated with this `OwnedPointer`'s backing allocator.
+        initially allocated with this `OwnedPointer`'s backing allocator.
         This function is unsafe as other memory problems can arise such as a double-free if this function
         is called twice with the same pointer or a user manually deallocates the same data.
 
         After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
         In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
         """
-        self._inner = unsafe_from_raw_pointer.unsafe_origin_cast[
-            MutOrigin.external
-        ]()
+        self._inner = unsafe_from_raw_pointer
+
+    fn __init__(out self, *, unsafe_from_opaque_pointer: MutOpaquePointer[_]):
+        """Construct a new `OwnedPointer` by taking ownership of the provided `UnsafePointer`.
+
+        Args:
+            unsafe_from_opaque_pointer: The `OpaquePointer` to take ownership of.
+
+        Safety:
+
+        This function is unsafe as the provided `OpaquePointer` must be initialize with a single valid `T`
+        initially allocated with this `OwnedPointer`'s backing allocator.
+        This function is unsafe as other memory problems can arise such as a double-free if this function
+        is called twice with the same pointer or a user manually deallocates the same data.
+
+        After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
+        In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
+        """
+        var ptr = unsafe_from_opaque_pointer.bitcast[Self.T]()
+        self = Self(
+            unsafe_from_raw_pointer=ptr.unsafe_origin_cast[MutExternalOrigin]()
+        )
 
     fn __del__(deinit self):
         """Destroy the OwnedPointer[]."""
@@ -130,7 +150,7 @@ struct OwnedPointer[T: AnyType]:
             Element = Self.T,
             ParentConformsTo="ImplicitlyDestructible",
         ]()
-        comptime TDestructible = downcast[ImplicitlyDestructible, Self.T]
+        comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
 
         self._inner.bitcast[TDestructible]().destroy_pointee()
         self._inner.free()
@@ -160,7 +180,7 @@ struct OwnedPointer[T: AnyType]:
 
     fn unsafe_ptr[
         mut: Bool,
-        origin: Origin[mut],
+        origin: Origin[mut=mut],
         //,
     ](ref [origin]self) -> UnsafePointer[Self.T, origin]:
         """Returns the backing pointer for this `OwnedPointer`.
@@ -191,7 +211,7 @@ struct OwnedPointer[T: AnyType]:
         self._inner.free()
         return r^
 
-    fn steal_data(deinit self) -> UnsafePointer[Self.T, MutOrigin.external]:
+    fn steal_data(deinit self) -> UnsafePointer[Self.T, MutExternalOrigin]:
         """Take ownership over the heap allocated pointer backing this
         `OwnedPointer`.
 
@@ -208,3 +228,39 @@ struct OwnedPointer[T: AnyType]:
             The pointer owned by this instance.
         """
         return self._inner
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Formats this pointer's value to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+
+        Constraints:
+            `T` must conform to Writable.
+        """
+        _constrained_conforms_to[
+            conforms_to(Self.T, Writable),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="Writable",
+        ]()
+        trait_downcast[Writable](self[]).write_to(writer)
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the `OwnedPointer`.
+
+        Args:
+            writer: The object to write to.
+
+        Constraints:
+            `T` must conform to Writable.
+        """
+        _constrained_conforms_to[
+            conforms_to(Self.T, Writable),
+            Parent=Self,
+            Element = Self.T,
+            ParentConformsTo="Writable",
+        ]()
+        writer.write("OwnedPointer[", _unqualified_type_name[Self.T](), "](")
+        trait_downcast[Writable](self[]).write_repr_to(writer)
+        writer.write_string(")")

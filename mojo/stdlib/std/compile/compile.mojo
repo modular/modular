@@ -43,7 +43,7 @@ from os import PathLike
 from pathlib import Path
 from sys.info import CompilationTarget, _current_target, _TargetType
 
-from .reflection import get_linkage_name
+from reflection import get_linkage_name
 
 # ===-----------------------------------------------------------------------===#
 # compile_info
@@ -64,7 +64,7 @@ struct _Info:
     var asm: __mlir_type.`!kgen.string`
     var module_name: __mlir_type.`!kgen.string`
     var num_captures: __mlir_type.index
-    var capture_sizes: UnsafePointer[UInt64, ImmutOrigin.external]
+    var capture_sizes: UnsafePointer[UInt64, ImmutExternalOrigin]
 
 
 @register_passable("trivial")
@@ -84,7 +84,7 @@ struct _PopulateInfo:
 @fieldwise_init
 @register_passable("trivial")
 struct CompiledFunctionInfo[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     func: func_type,
     target: _TargetType,
 ](Stringable, Writable):
@@ -114,7 +114,7 @@ struct CompiledFunctionInfo[
     var num_captures: Int
     """Number of variables captured by the function closure."""
 
-    var capture_sizes: UnsafePointer[UInt64, ImmutOrigin.external]
+    var capture_sizes: UnsafePointer[UInt64, ImmutExternalOrigin]
     """Pointer to the sizes of the variables captured by the function closure."""
 
     var emission_kind: StaticString
@@ -220,7 +220,7 @@ fn _get_emission_kind_id[emission_kind: StaticString]() -> Int:
 
 @always_inline
 fn compile_info[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     func: func_type,
     /,

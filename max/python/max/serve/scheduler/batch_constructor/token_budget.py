@@ -249,7 +249,7 @@ class ActiveTokenBudget(TokenBudget):
 
     This budget is intended for limiting the number of tokens processed during
     a single context-encoding (CE) step. For each accepted context, the token
-    cost is :attr:`TextGenerationContext.active_length`, and the budget
+    cost is :attr:`TextGenerationContext.tokens.active_length`, and the budget
     may optionally shrink the active window via ``context.chunk`` when
     ``allow_chunking`` is enabled.
 
@@ -270,12 +270,12 @@ class ActiveTokenBudget(TokenBudget):
     ) -> BudgetStatus:
         """Evaluate whether the context's active tokens fit within the budget.
 
-        This method examines ``context.active_length`` relative to the number of
+        This method examines ``context.tokens.active_length`` relative to the number of
         tokens remaining in the budget. It is intentionally **per-step**: the
         ``num_steps`` parameter is accepted for interface compatibility but is
         not used when computing the effective cost of a context. If the active window would
         exceed the remaining capacity and ``allow_chunking`` is enabled, it may
-        call ``context.chunk(tokens_remaining)`` to shrink the active
+        call ``context.tokens.chunk(tokens_remaining)`` to shrink the active
         window so that it fits.
 
         **Important side effects**:
@@ -321,9 +321,9 @@ class ActiveTokenBudget(TokenBudget):
             return BudgetStatus.BUDGET_EXHAUSTED
 
         # Fits without any modification.
-        if context.active_length <= tokens_remaining:
-            if context.active_length == tokens_remaining:
-                return BudgetStatus.BUDGET_REACHED
+        if context.tokens.active_length == tokens_remaining:
+            return BudgetStatus.BUDGET_REACHED
+        elif context.tokens.active_length < tokens_remaining:
             return BudgetStatus.BUDGET_AVAILABLE
 
         # Would exceed the remaining capacity.
@@ -333,10 +333,9 @@ class ActiveTokenBudget(TokenBudget):
 
         # Try to shrink the active window so that it fits.
         try:
-            context.chunk(tokens_remaining)
+            context.tokens.chunk(tokens_remaining)
             return BudgetStatus.BUDGET_REACHED
         except ValueError:
-            print("failed to chunk!")
             return BudgetStatus.BUDGET_EXHAUSTED
 
     def add_to_budget(
@@ -364,7 +363,7 @@ class ActiveTokenBudget(TokenBudget):
         ):
             self.active_request_type = request_type
 
-        self.used += context.active_length
+        self.used += context.tokens.active_length
 
 
 class TotalContextTokenBudget(TokenBudget):
@@ -372,7 +371,7 @@ class TotalContextTokenBudget(TokenBudget):
 
     Unlike :class:`ActiveTokenBudget`, which only costs the active window per
     step, this budget has an effective cost derived from
-    :attr:`TextGenerationContext.current_length` and the planned number of
+    :attr:`len(TextGenerationContext.tokens)` and the planned number of
     generation steps. It is intended for enforcing limits such as
     ``max_batch_context_length`` that bound the total number of tokens resident
     in a batch across multiple steps.
@@ -392,16 +391,16 @@ class TotalContextTokenBudget(TokenBudget):
         """Evaluate whether the context's total length fits within the budget.
 
         This method considers an effective cost based on
-        :attr:`TextGenerationContext.current_length` and ``num_steps`` against
+        :attr:`len(TextGenerationContext.tokens)` and ``num_steps`` against
         the remaining capacity. Concretely, it assumes that over ``num_steps``
         generation steps the context will grow by ``num_steps - 1`` tokens,
         yielding an effective cost of
 
-        ``context.current_length + (num_steps - 1)``.
+        ``len(context.tokens) + (num_steps - 1)``.
 
         If the context would exceed the budget and ``allow_chunking`` is
         enabled, it may call
-        ``context.chunk(tokens_remaining)`` to reduce the effective
+        ``context.tokens.chunk(tokens_remaining)`` to reduce the effective
         cost, though in practice chunking is typically more relevant for
         active-token budgets.
 
@@ -434,22 +433,17 @@ class TotalContextTokenBudget(TokenBudget):
         if tokens_remaining <= 0:
             return BudgetStatus.BUDGET_EXHAUSTED
 
-        total_length = context.current_length + (num_steps - 1)
+        total_length = len(context.tokens) + (num_steps - 1)
 
         if total_length < tokens_remaining:
             return BudgetStatus.BUDGET_AVAILABLE
         elif total_length == tokens_remaining:
             return BudgetStatus.BUDGET_REACHED
 
-        # If we are not allowing chunking or the context has only 1 step, we return BUDGET_EXHAUSTED
-        # This is a hard limit, so we return BUDGET_EXHAUSTED instead of BUDGET_REACHED
-        if not self.allow_chunking or context.active_length == 1:
-            return BudgetStatus.BUDGET_EXHAUSTED
-
-        # Practically, there is no runtime reason to fail chunking.
-        # If it does, it is a bug in this token budget class, and should be fixed.
-        context.chunk(tokens_remaining)
-        return BudgetStatus.BUDGET_REACHED
+        # NOTE: Skip chunking since chunking only reduces the active window and
+        # cannot lower current_length, so it cannot make a total-context overage
+        # fit this budget.
+        return BudgetStatus.BUDGET_EXHAUSTED
 
     def add_to_budget(
         self,
@@ -466,11 +460,11 @@ class TotalContextTokenBudget(TokenBudget):
         **Side effect**:
             Increments :attr:`used` by the same effective cost that was
             evaluated in :meth:`status_after_context`, namely
-            ``context.current_length + (num_steps - 1)``.
+            ``len(context.tokens) + (num_steps - 1)``.
 
         Args:
             context: The context that was just admitted into the batch.
             request_type: The type of request being added to the budget.
             num_steps: Planned number of generation steps for this context.
         """
-        self.used += context.current_length + (num_steps - 1)
+        self.used += len(context.tokens) + (num_steps - 1)

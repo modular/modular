@@ -6,6 +6,7 @@ modular_cc_binary(
     name = "example",
     testonly = True,
     srcs = ["example.c"],
+    target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:CAPI.headers",
         "//max/internal:max",
@@ -21,7 +22,15 @@ modular_py_test(
     env = {
         "GRAPH_EXECUTOR": "$(location :example)",
     },
+    mojo_deps = select({
+        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
     ],

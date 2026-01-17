@@ -19,7 +19,6 @@ functionality in the rest of the Mojo standard library.
 
 from sys import CompilationTarget
 from sys.ffi import c_char, c_int, c_size_t, c_pid_t, get_errno
-
 from utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
@@ -28,7 +27,7 @@ from utils import StaticTuple
 
 
 @always_inline
-fn free(ptr: UnsafePointer[mut=True, NoneType, **_]):
+fn free(ptr: UnsafePointer[mut=True, NoneType, ...]):
     # manually construct the call to free and attach the
     # correct attributes
     __mlir_op.`pop.external_call`[
@@ -48,7 +47,7 @@ fn exit(status: c_int):
 # stdio.h — input/output operations
 # ===-----------------------------------------------------------------------===#
 
-comptime FILE_ptr = OpaquePointer[MutOrigin.external]
+comptime FILE_ptr = OpaquePointer[MutExternalOrigin]
 
 
 @always_inline
@@ -353,15 +352,15 @@ fn fcntl[*types: Intable](fd: c_int, cmd: c_int, *args: *types) -> c_int:
 
 
 @always_inline
-fn dlerror(out result: UnsafePointer[c_char, MutOrigin.external]):
+fn dlerror(out result: UnsafePointer[c_char, MutExternalOrigin]):
     result = external_call["dlerror", type_of(result)]()
 
 
 @always_inline
 fn dlopen(
     filename: UnsafePointer[mut=False, c_char], flags: c_int
-) -> OpaquePointer[MutOrigin.external]:
-    return external_call["dlopen", OpaquePointer[MutOrigin.external]](
+) -> OpaquePointer[MutExternalOrigin]:
+    return external_call["dlopen", OpaquePointer[MutExternalOrigin]](
         filename, flags
     )
 
@@ -378,7 +377,7 @@ fn dlsym[
 ](
     handle: OpaquePointer,
     name: UnsafePointer[mut=False, c_char],
-    out result: UnsafePointer[result_type, MutOrigin.external],
+    out result: UnsafePointer[result_type, MutExternalOrigin],
 ):
     result = external_call["dlsym", type_of(result)](handle, name)
 
@@ -386,7 +385,7 @@ fn dlsym[
 fn realpath(
     path: UnsafePointer[mut=False, c_char],
     resolved_path: UnsafePointer[mut=True, c_char] = {},
-    out result: UnsafePointer[c_char, MutOrigin.external],
+    out result: UnsafePointer[c_char, MutExternalOrigin],
 ):
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a

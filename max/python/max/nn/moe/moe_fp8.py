@@ -47,6 +47,20 @@ class MoEFp8(MoE):
             expert.up_proj.weight_scale for expert in self.experts
         ]
 
+        if (
+            self._ep_batch_manager
+            and self.ep_batch_manager.config.fused_shared_expert
+        ):
+            assert self.has_shared_experts, (
+                "Shared experts must present if fused shared expert is enabled"
+            )
+            gate_proj_scales_list = [
+                self.shared_experts.gate_proj.weight_scale,
+            ] + gate_proj_scales_list
+            up_proj_scales_list = [
+                self.shared_experts.up_proj.weight_scale,
+            ] + up_proj_scales_list
+
         gate_up_proj_scales_list: list[TensorValue] = []
         for tensors in zip(
             gate_proj_scales_list, up_proj_scales_list, strict=True
@@ -55,7 +69,7 @@ class MoEFp8(MoE):
 
         return ops.stack(gate_up_proj_scales_list, axis=0).reshape(
             [
-                self.num_local_experts,
+                len(gate_proj_scales_list),
                 -1,
                 self.hidden_dim
                 // self.float8_config.weight_scale.block_size[1],
@@ -64,10 +78,22 @@ class MoEFp8(MoE):
 
     @property
     def down_proj_scales(self) -> TensorValue:
-        down_proj_scales = ops.stack(
-            [expert.down_proj.weight_scale for expert in self.experts], axis=0
-        )
-        return down_proj_scales
+        down_proj_scales_list = [
+            expert.down_proj.weight_scale for expert in self.experts
+        ]
+
+        if (
+            self._ep_batch_manager
+            and self.ep_batch_manager.config.fused_shared_expert
+        ):
+            assert self.has_shared_experts, (
+                "Shared experts must present if fused shared expert is enabled"
+            )
+            down_proj_scales_list = [
+                self.shared_experts.down_proj.weight_scale,
+            ] + down_proj_scales_list
+
+        return ops.stack(down_proj_scales_list, axis=0)
 
     def _ep_call(
         self,
@@ -77,7 +103,6 @@ class MoEFp8(MoE):
     ) -> TensorValue:
         assert self.float8_config is not None
         assert self.float8_config.input_scale.block_size is not None
-        token_group_size = self.float8_config.input_scale.block_size[1]
         device_id = self.devices[0].id
         self.ep_batch_manager.ep_dispatch(x, router_idx, device_id)
         expert_inputs = self.ep_batch_manager.ep_dispatch_cb(device_id)
@@ -116,17 +141,17 @@ class MoEFp8(MoE):
         )
 
         self.ep_batch_manager.ep_combine(down_projs, device_id)
-        combined_down_projs = self.ep_batch_manager.ep_combine_cb(device_id)
-
-        routed_expert_out = (
-            ops.unsqueeze(router_weight, axis=1) @ combined_down_projs
+        routed_expert_out = self.ep_batch_manager.ep_combine_cb(
+            router_weight, device_id
         )
-        routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(x.dtype)
 
-        if self.has_shared_experts:
+        if (
+            self.has_shared_experts
+            and not self.ep_batch_manager.config.fused_shared_expert
+        ):
             routed_expert_out += self.shared_experts(x)
 
-        return routed_expert_out
+        return routed_expert_out.cast(x.dtype)
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """

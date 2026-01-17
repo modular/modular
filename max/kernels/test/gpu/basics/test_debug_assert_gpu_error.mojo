@@ -36,7 +36,7 @@ def main():
 
         comptime kernel = fail_assert
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             grid_dim=2,
             block_dim=(2, 2),
         )

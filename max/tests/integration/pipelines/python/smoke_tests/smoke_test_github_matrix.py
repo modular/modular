@@ -48,31 +48,49 @@ MULTI_GPUS = {"2xH100"}
 #    3b) For reasoning models, add it to the is_reasoning_model check in smoke_test.py
 MODELS = {
     "allenai/olmOCR-2-7B-1025-FP8": [
-        "sglang",
+        "sglang",  # Unimplemented model type: qwen2_5_vl_text
         "multi",
         "max",  # Wait for 26.1
     ],
+    "bytedance-seed/academic-ds-9b": [
+        "max",
+        "multi",
+        "sglang@B200",
+    ],
     # E2EOPT-571: DeepSeek v2 lite chat not working on MAX
-    "deepseek-ai/deepseek-v2-lite-chat": ["max-ci", "max", "multi"],
-    "google/gemma-3-1b-it": ["multi"],
+    "deepseek-ai/deepseek-v2-lite-chat": [
+        "max-ci",
+        "max",
+        "multi",
+        "vllm@B200",
+    ],  # vLLM 0.13.0 FlashInfer MLA issue
+    "google/gemma-3-1b-it": [
+        "multi",
+        "vllm@B200",
+    ],  # FlashInfer block_size 16 + head_size 256 bug
     "google/gemma-3-12b-it": ["multi"],
     "google/gemma-3-27b-it": [],
     "meta-llama/llama-3.1-8b-instruct": ["multi"],
     "meta-llama/llama-3.2-1b-instruct": ["multi"],
     "microsoft/phi-3.5-mini-instruct": ["multi"],
     "microsoft/phi-4": ["multi"],
-    "mistralai/mistral-nemo-instruct-2407": ["multi"],
-    "mistralai/mistral-small-3.1-24b-instruct-2503": ["multi"],
+    "mistralai/mistral-nemo-instruct-2407": [
+        "multi",
+        "vllm",
+    ],  # vLLM 0.13.0 server crash
+    "mistralai/mistral-small-3.1-24b-instruct-2503": [
+        "multi",
+        "vllm",
+    ],  # vLLM 0.13.0 server crash
     "opengvlab/internvl3-8b-instruct": [
-        "sglang@B200",
         "multi",
         "max@MI355",  # 26.1
+        "sglang",  # Insufficient multimodal embedding length (internvl3 bug)
     ],
     "opengvlab/internvl3_5-8b-instruct": [
         "multi",
-        "sglang@B200",  # FA3 vision enc not supported on B200
-        "vllm@B200",
         "max",
+        "sglang",  # Insufficient multimodal embedding length (internvl3 bug)
     ],
     "qwen/qwen2.5-7b-instruct": ["multi"],
     "qwen/qwen2.5-vl-3b-instruct": [
@@ -84,6 +102,16 @@ MODELS = {
         "max@MI355",  # 26.1
     ],
     "qwen/qwen3-8b": ["multi"],
+    "qwen/qwen3-vl-30b-a3b-instruct": [
+        "max",  # 26.1
+        "max-ci@H100",
+        "max-ci@2xH100",
+    ],
+    "qwen/qwen3-vl-30b-a3b-thinking": [
+        "max",
+        "max-ci@H100",
+        "max-ci@2xH100",
+    ],
     "redhatai/gemma-3-27b-it-fp8-dynamic": [],
     "tbmod/gemma-3-4b-it": [
         "multi",

@@ -64,7 +64,7 @@ def compute_scatter_gather_indices(
             # relative to the ragged next_tokens input sequence.
             # eg: start_idx = 5
             #     indices = [-1, 0, 1, 2]
-            indices = indices - ctx.processed_length
+            indices = indices - ctx.tokens.processed_length
 
             # Filter out any indices that are negative, which means that they
             # are not included in next_tokens. Bump remaining by accumulated
@@ -96,7 +96,7 @@ def compute_scatter_gather_indices(
             image_tokens_in_all_tokens += num_gathered
             gather_indices_list.append(gathered_indices)
 
-        image_tokens_in_active_tokens += ctx.active_length
+        image_tokens_in_active_tokens += ctx.tokens.active_length
 
     # ops.scatter_nd uses int32 indices.
     # ops.gather_nd uses int64 indices.

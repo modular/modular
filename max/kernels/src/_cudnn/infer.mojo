@@ -19,10 +19,12 @@ from sys.ffi import _Global, OwnedDLHandle
 
 from gpu.host._nvidia_cuda import CUstream
 
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
@@ -66,7 +68,7 @@ fn _init_dylib() -> OwnedDLHandle:
 
 @always_inline
 fn _get_dylib_function[
-    func_name: StaticString, result_type: AnyTrivialRegType
+    func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         CUDA_CUDNN_INFER_LIBRARY(),

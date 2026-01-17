@@ -490,17 +490,17 @@ struct Bool(
         return PythonObject(self)
 
     @doc_private
-    fn __init__(out self, obj: PythonObject) raises:
+    fn __init__(out self, *, py: PythonObject) raises:
         """Construct a `Bool` from a PythonObject.
 
         Args:
-            obj: The Python object to convert from.
+            py: The Python object to convert from.
 
         Raises:
             An error if conversion failed.
         """
-        # TODO: return obj.__bool__() when it no longer fails silently.
-        return Python.is_true(obj)
+        # TODO: return py.__bool__() when it no longer fails silently.
+        return Python.is_true(py)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -511,7 +511,8 @@ struct Bool(
 fn any[
     IterableType: Iterable
 ](iterable: IterableType) -> Bool where conforms_to(
-    IterableType.IteratorType[origin_of(iterable)].Element, Boolable
+    IterableType.IteratorType[origin_of(iterable)].Element,
+    Boolable & ImplicitlyDestructible,
 ):
     """Checks if **all** elements in the list are truthy.
 
@@ -525,8 +526,11 @@ fn any[
         `True` if **any** element in the list is truthy, `False` otherwise.
     """
 
-    for item in iterable:
-        if trait_downcast[Boolable](item):
+    for item0 in iterable:
+        var item = trait_downcast_var[
+            ImplicitlyDestructible & Boolable & Movable
+        ](item0^)
+        if item:
             return True
     return False
 
@@ -552,7 +556,8 @@ fn any(value: SIMD) -> Bool:
 fn all[
     IterableType: Iterable
 ](iterable: IterableType) -> Bool where conforms_to(
-    IterableType.IteratorType[origin_of(iterable)].Element, Boolable
+    IterableType.IteratorType[origin_of(iterable)].Element,
+    Boolable & ImplicitlyDestructible,
 ):
     """Checks if **all** elements in the list are truthy.
 
@@ -565,8 +570,11 @@ fn all[
     Returns:
         `True` if **all** elements in the iterable are truthy, `False` otherwise.
     """
-    for item in iterable:
-        if not trait_downcast[Boolable](item):
+    for item0 in iterable:
+        var item = trait_downcast_var[
+            ImplicitlyDestructible & Boolable & Movable
+        ](item0^)
+        if not item:
             return False
     return True
 

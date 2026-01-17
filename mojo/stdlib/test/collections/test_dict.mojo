@@ -205,20 +205,6 @@ def test_key_error():
         _ = dict.pop("a")
 
 
-def test_key_error_hold_key():
-    var dict: Dict[String, Int] = {}
-    var error_raised = False
-
-    var key = "a"
-    try:
-        _ = dict[key]
-    except e:
-        assert_equal(e.key(), key)
-        error_raised = True
-
-    assert_true(error_raised)
-
-
 def _test_iter_bounds[
     I: Iterator, //
 ](var dict_iter: I, dict_len: Int,):
@@ -227,7 +213,9 @@ def _test_iter_bounds[
         var lower, upper = iter.bounds()
         assert_equal(dict_len - i, lower)
         assert_equal(dict_len - i, upper.value())
-        _ = iter.__next__()
+        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
+            iter.__next__()^
+        )
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -247,7 +235,9 @@ def test_iter():
     _test_iter_bounds(dict.__iter__(), len(dict))
 
     var empty_dict: Dict[String, Int] = {}
-    assert_equal(iter(empty_dict).__has_next__(), False)
+    with assert_raises():
+        var it = iter(empty_dict)
+        _ = it.__next__()  # raises StopIteration
 
 
 def test_iter_keys():
@@ -321,7 +311,9 @@ def test_iter_take_items():
     assert_equal(values, "abc")
     assert_equal(keys, 3)
     assert_equal(len(dict), 0)
-    assert_false(dict.take_items().__has_next__())
+    with assert_raises():
+        var it = dict.take_items()
+        _ = it.__next__()  # raises StopIteration
 
     for i in range(3):
         with assert_raises(contains="KeyError"):
@@ -388,7 +380,7 @@ def test_dict_copy_add_new_item():
 
 
 def test_dict_copy_calls_copy_constructor():
-    var orig: Dict[String, CopyCounter] = {}
+    var orig: Dict[String, CopyCounter[]] = {}
     orig["a"] = CopyCounter()
 
     # test values copied to new Dict
@@ -660,7 +652,7 @@ fn test_dict_setdefault() raises:
     assert_equal(some_dict["not_key"], 0)
 
     # Check that there is no copy of the default value, so it's performant
-    var other_dict: Dict[String, CopyCounter] = {}
+    var other_dict: Dict[String, CopyCounter[]] = {}
     var a = CopyCounter()
     var a_def = CopyCounter()
     var b_def = CopyCounter()
@@ -727,7 +719,7 @@ def test_dict_repr_wrap():
 
 
 def test_popitem_no_copies():
-    var dict: Dict[String, CopyCounter] = {}
+    var dict: Dict[String, CopyCounter[]] = {}
     dict["a"] = CopyCounter()
     dict["b"] = CopyCounter()
 

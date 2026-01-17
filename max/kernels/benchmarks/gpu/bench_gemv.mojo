@@ -243,7 +243,7 @@ fn bench_matmul_naive[
                 b_tensor.layout,
                 BLOCK_DIM,
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 c_tensor,
                 a_tensor,
                 b_tensor,

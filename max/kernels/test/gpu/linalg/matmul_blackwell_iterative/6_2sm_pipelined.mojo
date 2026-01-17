@@ -13,13 +13,15 @@
 
 from hashlib import default_comp_time_hasher
 from math import align_up
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import LegacyUnsafePointer, bitcast
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from bit import next_power_of_two, prev_power_of_two
 from gpu import WARP_SIZE, barrier
-from gpu.cluster import (
+from gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
@@ -30,11 +32,12 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.memory import fence_async_view_proxy, external_memory
-from gpu.mma import st_matrix
-from gpu.mma_sm100 import *
+from gpu.compute.mma import st_matrix
+from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.sync import named_barrier
-from gpu.tcgen05 import *
-from internal_utils import assert_almost_equal, ndbuffer_to_str, random, zero
+from gpu.compute.arch.tcgen05 import *
+from internal_utils import assert_almost_equal
+from random import rand
 from layout import (
     UNKNOWN_VALUE,
     IntTuple,
@@ -55,6 +58,7 @@ from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
+    create_tensor_tile,
     create_tma_tile,
 )
 from linalg.arch.sm100 import MmaOpSM100_SS
@@ -529,15 +533,13 @@ fn store_C[
                 var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
 
                 st_matrix[simd_width=4](
-                    upper.ptr.offset(
-                        st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
-                    ),
+                    upper.ptr
+                    + st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args)),
                     d_reg_upper_packed,
                 )
                 st_matrix[simd_width=4](
-                    lower.ptr.offset(
-                        st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
-                    ),
+                    lower.ptr
+                    + st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args)),
                     d_reg_lower_packed,
                 )
 
@@ -552,9 +554,7 @@ fn store_C[
         var col_start = block_idx.y * UInt(MMA_N) + thread_idx.x * UInt(TMA_BN)
 
         fence_async_view_proxy()
-        var c_smem_offset = c_smem_tile.ptr.offset(
-            BM * TMA_BN * Int(thread_idx.x)
-        )
+        var c_smem_offset = c_smem_tile.ptr + BM * TMA_BN * Int(thread_idx.x)
 
         var c_tma_tile = LayoutTensor[
             c_type,
@@ -890,11 +890,11 @@ fn blackwell_kernel_6[
     comptime MMA_N = umma_shape[1]
     comptime MMA_K = umma_shape[2]
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
@@ -954,7 +954,7 @@ fn blackwell_kernel_6[
         num_pipeline_stages = UInt(max_pipeline_stages),
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -1142,7 +1142,7 @@ def test_blackwell_kernel_6[
 
 
 fn get_dic_of_shapes(
-    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], *_, **_]
+    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], ...]
 ) -> Tuple[Int, Int, Int]:
     try:
         return dic_bro[index]

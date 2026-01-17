@@ -13,7 +13,6 @@
 
 from algorithm import parallelize
 from collections.optional import OptionalReg
-from memory import alloc
 from os import abort, getenv, setenv
 from builtin.variadics import Variadic
 from builtin.device_passable import DevicePassable
@@ -178,16 +177,26 @@ struct SHMEMContext(ImplicitlyCopyable):
             has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
         ), "SHMEMContext is currently only available on NVIDIA and AMD GPUs"
         shmem_init()
-        var mype = shmem_team_my_pe(team)
-        self._ctx = DeviceContext(device_id=Int(mype))
+
+        # nvshmem and rocshmem behave differently here, nvshmem requires that
+        # you set the current context to a device ID corrosponding with the
+        # GPU id on the node i.e. if team_my_pe is 3 then DeviceContext.id()
+        # should also be 3. rocshmem does this inside the rocshmem_init()
+        # call, and each process will launch kernels on the associated pe
+        # from MPI, the DeviceContext.id() will always be 0, but it's
+        # associated with a different GPU in each process.
+        @parameter
+        if has_nvidia_gpu_accelerator():
+            var mype = shmem_team_my_pe(team)
+            self._ctx = DeviceContext(device_id=Int(mype))
+        else:
+            self._ctx = DeviceContext()
         # Store main stream to avoid retrieving it in each collective launch.
         self._main_stream = self._ctx.stream()
 
         # Set up priority stream and events to be reused across collective launches
         var priority = self._ctx.stream_priority_range().greatest
-        self._priority_stream = self._ctx.create_stream(
-            priority=priority, blocking=False
-        )
+        self._priority_stream = self._ctx.create_stream(priority=priority)
         self._begin_event = self._ctx.create_event()
         self._end_event = self._ctx.create_event()
 
@@ -195,12 +204,17 @@ struct SHMEMContext(ImplicitlyCopyable):
         self._multiprocessor_count = self._ctx.get_attribute(
             DeviceAttribute.MULTIPROCESSOR_COUNT
         )
-        # TODO(MSTDL-1761): add ability to query AMD cooperative launch
-        # capability with: hipLaunchAttributeCooperative and create function
-        # that works across NVIDIA/AMD.
-        self._cooperative = Bool(
-            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
-        )
+
+        @parameter
+        if has_nvidia_gpu_accelerator():
+            self._cooperative = Bool(
+                self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
+            )
+        else:
+            # TODO(MSTDL-1761): add ability to query AMD cooperative launch
+            # capability with: hipLaunchAttributeCooperative and create function
+            # that works across NVIDIA/AMD. For now assume cooperative capability.
+            self._cooperative = True
         self._thread_per_gpu = False
 
     fn __init__(out self, ctx: DeviceContext) raises:
@@ -217,9 +231,10 @@ struct SHMEMContext(ImplicitlyCopyable):
         Raises:
             If initialization fails.
         """
-        __comptime_assert (
-            has_nvidia_gpu_accelerator()
-        ), "SHMEMContext is currently only available on NVIDIA GPUs"
+        __comptime_assert has_nvidia_gpu_accelerator(), (
+            "SHMEMContext in gpu-per-thread mode is currently only available on"
+            " NVIDIA GPUs"
+        )
 
         shmem_init_thread(ctx)
         self._ctx = ctx
@@ -228,9 +243,7 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         # Set up priority stream and events to be reused across collective launches
         var priority = self._ctx.stream_priority_range().greatest
-        self._priority_stream = self._ctx.create_stream(
-            priority=priority, blocking=False
-        )
+        self._priority_stream = self._ctx.create_stream(priority=priority)
         self._begin_event = self._ctx.create_event()
         self._end_event = self._ctx.create_event()
 
@@ -238,12 +251,17 @@ struct SHMEMContext(ImplicitlyCopyable):
         self._multiprocessor_count = self._ctx.get_attribute(
             DeviceAttribute.MULTIPROCESSOR_COUNT
         )
-        # TODO(MSTDL-1761): add ability to query AMD cooperative launch
-        # capability with: hipLaunchAttributeCooperative and create function
-        # that works across NVIDIA/AMD.
-        self._cooperative = Bool(
-            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
-        )
+
+        @parameter
+        if has_nvidia_gpu_accelerator():
+            self._cooperative = Bool(
+                self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
+            )
+        else:
+            # TODO(MSTDL-1761): add ability to query AMD cooperative launch
+            # capability with: hipLaunchAttributeCooperative and create function
+            # that works across NVIDIA/AMD. For now assume cooperative capability.
+            self._cooperative = True
         self._thread_per_gpu = True
 
     fn __enter__(var self) -> Self:
@@ -303,63 +321,12 @@ struct SHMEMContext(ImplicitlyCopyable):
         """
         return SHMEMBuffer[dtype](self._ctx, size)
 
-    fn enqueue_create_host_buffer[
-        dtype: DType
-    ](self, size: Int) raises -> HostBuffer[dtype]:
-        """Enqueues the creation of a HostBuffer.
-
-        This function allocates memory on the host that is accessible by the device.
-        The memory is page-locked (pinned) for efficient data transfer between host and device.
-
-        Pinned memory is guaranteed to remain resident in the host's RAM, not be
-        paged/swapped out to disk. Memory allocated normally (for example, using
-        [`alloc()`](/mojo/std/memory/unsafe_pointer/alloc)
-        is pageable—individual pages of memory can be moved to secondary storage
-        (disk/SSD) when main memory fills up.
-
-        Using pinned memory allows devices to make fast transfers
-        between host memory and device memory, because they can use direct
-        memory access (DMA) to transfer data without relying on the CPU.
-
-        Allocating too much pinned memory can cause performance issues, since it
-        reduces the amount of memory available for other processes.
-
-        Parameters:
-            dtype: The data type to be stored in the allocated memory.
-
-        Args:
-            size: The number of elements of `type` to allocate memory for.
-
-        Returns:
-            A `HostBuffer` object that wraps the allocated host memory.
-
-        Raises:
-            If memory allocation fails or if the device context is invalid.
-
-        Example:
-
-        ```mojo
-        from gpu.host import DeviceContext
-
-        with DeviceContext() as ctx:
-            # Allocate host memory accessible by the device
-            var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](1024)
-
-            # Use the host buffer for device operations
-            # ...
-        ```
-        """
-        var host_ptr = alloc[Scalar[dtype]](size)
-        return HostBuffer[dtype](self._ctx, host_ptr, size, owning=True)
-
     @always_inline
     @parameter
-    fn enqueue_function_checked[
-        func_type: AnyTrivialRegType,
+    fn enqueue_function[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: func_type,
-        signature_func: fn (* args: * declared_arg_types) -> None,
+        func: fn (* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -379,12 +346,9 @@ struct SHMEMContext(ImplicitlyCopyable):
         """Compiles and enqueues a kernel for execution on this device.
 
         Parameters:
-            func_type: The dtype of the function to launch.
             declared_arg_types: The declared argument types from the function
                 signature (usually inferred).
             func: The function to launch.
-            signature_func: The kernel function, passed again for type checking.
-                Typically the same as `func`.
             actual_arg_types: The types of the arguments being passed (usually inferred).
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
@@ -411,31 +375,18 @@ struct SHMEMContext(ImplicitlyCopyable):
         compiling it first:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from shmem import SHMEMContext
 
         fn kernel():
             print("hello from the GPU")
 
-        with DeviceContext() as ctx:
-            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        If you are reusing the same function and parameters multiple times, this
-        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
-        first to remove the overhead:
-
-        ```mojo
-        with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function_checked[kernel, kernel]()
-            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function_checked(compile_func, grid_dim=1, block_dim=1)
+        with SHMEMContext() as ctx:
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
-        var gpu_kernel = self._ctx.compile_function_checked[
+        var gpu_kernel = self._ctx.compile_function_experimental[
             func,
-            signature_func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
@@ -444,7 +395,7 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         shmem_module_init(gpu_kernel)
 
-        self._ctx._enqueue_function_checked(
+        self._ctx._enqueue_function(
             gpu_kernel,
             args,
             grid_dim=grid_dim,
@@ -460,7 +411,7 @@ struct SHMEMContext(ImplicitlyCopyable):
     @always_inline
     @parameter
     fn enqueue_function_collective_checked[
-        func_type: AnyTrivialRegType,
+        func_type: __TypeOfAllTypes,
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
@@ -532,12 +483,12 @@ struct SHMEMContext(ImplicitlyCopyable):
 
         ```mojo
         with DeviceContext() as ctx:
-            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
-            ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
-        var gpu_kernel = self._ctx.compile_function_checked[
+        var gpu_kernel = self._ctx.compile_function[
             func,
             signature_func,
             dump_asm=dump_asm,
@@ -601,7 +552,7 @@ struct SHMEMContext(ImplicitlyCopyable):
                 "Warning: cooperative launch not supported on at least one PE;"
                 " GPU-side synchronization may cause hang"
             )
-        self._priority_stream._enqueue_function_checked(
+        self._priority_stream._enqueue_function(
             gpu_kernel,
             args,
             grid_dim=Dim(grid_x, grid_y, grid_z),

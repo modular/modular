@@ -14,12 +14,8 @@ modular_py_library(
     ],
     deps = [
         requirement("grpcio"),  # NOTE: Order matters for PYTHONPATH nonsense
-        "//max/python/max/pipelines/core",
-        "//max/python/max/serve:process_control",
-        "//max/python/max/serve/queue",
-        requirement("pyzmq"),
-        requirement("msgspec"),
         ":kvcache_agent_proto_srcs",
+        "//max/python/max/serve/queue",
     ],
 )
 
@@ -31,6 +27,7 @@ modular_py_library(
     ],
     tags = ["no-mypy"],
     deps = [
+        requirement("grpcio"),
         requirement("protobuf"),
     ],
 )

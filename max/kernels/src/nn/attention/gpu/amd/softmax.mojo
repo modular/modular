@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from bit import log2_floor
 from gpu import WARP_SIZE, barrier, lane_id, thread_idx, warp_id as get_warp_id
 from layout import Layout, LayoutTensor
@@ -108,8 +108,8 @@ struct Softmax[
     @always_inline
     fn calculate_qk_max(
         self,
-        score_reg_tile: LayoutTensor[Self.dtype, *_, **_],
-        warp_scratch: LayoutTensor[mut=True, Self.dtype, *_, **_],
+        score_reg_tile: LayoutTensor[Self.dtype, ...],
+        warp_scratch: LayoutTensor[mut=True, Self.dtype, ...],
     ):
         @parameter
         for col_tile in range(Self.num_colwise_tiles):
@@ -237,8 +237,8 @@ struct Softmax[
     @always_inline
     fn calculate_qk_sum(
         self,
-        score_reg_tile: LayoutTensor[Self.dtype, *_, **_],
-        warp_scratch: LayoutTensor[mut=True, Self.dtype, *_, **_],
+        score_reg_tile: LayoutTensor[Self.dtype, ...],
+        warp_scratch: LayoutTensor[mut=True, Self.dtype, ...],
     ):
         @parameter
         for col_tile in range(Self.num_colwise_tiles):
@@ -364,7 +364,7 @@ struct Softmax[
     @always_inline
     fn exp[
         start: Int = 0, stride: Int = 1
-    ](self, score_reg_tile: LayoutTensor[mut=True, Self.dtype, *_, **_]):
+    ](self, score_reg_tile: LayoutTensor[mut=True, Self.dtype, ...]):
         comptime frag_type = score_reg_tile.element_type
 
         @parameter
@@ -407,7 +407,7 @@ struct Softmax[
 
     @always_inline
     fn update_output(
-        self, output_reg_tile: LayoutTensor[mut=True, Self.dtype, *_, **_]
+        self, output_reg_tile: LayoutTensor[mut=True, Self.dtype, ...]
     ):
         comptime num_output_replications = output_reg_tile.layout.shape[
             0
@@ -470,9 +470,9 @@ struct Softmax[
     @always_inline
     fn full(
         self,
-        output_reg_tile: LayoutTensor[mut=True, Self.dtype, *_, **_],
-        score_reg_tile: LayoutTensor[mut=True, Self.dtype, *_, **_],
-        warp_scratch: LayoutTensor[mut=True, Self.dtype, *_, **_],
+        output_reg_tile: LayoutTensor[mut=True, Self.dtype, ...],
+        score_reg_tile: LayoutTensor[mut=True, Self.dtype, ...],
+        warp_scratch: LayoutTensor[mut=True, Self.dtype, ...],
     ):
         self.calculate_qk_max(score_reg_tile, warp_scratch)
         self.exp(score_reg_tile)

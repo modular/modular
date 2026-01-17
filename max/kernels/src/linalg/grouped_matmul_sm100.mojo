@@ -13,14 +13,16 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import LegacyUnsafePointer, bitcast
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 
 from bit import next_power_of_two, prev_power_of_two
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
-from gpu.cluster import (
+from gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
@@ -37,15 +39,15 @@ from gpu.memory import (
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from gpu.mma import st_matrix
-from gpu.mma_sm100 import *
+from gpu.compute.mma import st_matrix
+from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
 )
-from gpu.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -69,7 +71,7 @@ from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
-    create_tma_tile,
+    create_tensor_tile,
 )
 
 from utils.fast_div import FastDiv
@@ -96,7 +98,7 @@ struct WarpRole(ImplicitlyCopyable):
 
     @always_inline
     fn __eq__(self, other: UInt) -> Bool:
-        return self._role == other
+        return self._role == Int32(other)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -108,7 +110,7 @@ struct WarpRole(ImplicitlyCopyable):
 
     @always_inline
     fn __ge__(self, other: UInt) -> Bool:
-        return self._role >= other
+        return self._role >= Int32(other)
 
     @staticmethod
     @always_inline
@@ -197,8 +199,7 @@ fn load_AB[
     mma_mbar[stage].wait(phase)
 
     var a_gmem_slice_coord = (
-        peer_cta_coord[2] * UInt(a_tma_rows)
-        + work_tile_coord[0]
+        Int32(peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0])
         + expert_ids[Int(scheduler.current_group_idx)] * scheduler.static_MN
     )
     var b_gmem_slice_coord = (
@@ -317,7 +318,7 @@ fn stsm_helper[
     transpose_c: Bool = False,
 ](
     vec: SIMD[_, _],
-    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
+    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
     comptime stsmx4_row_size = 32 // size_of[dst.dtype]()
@@ -347,8 +348,8 @@ fn stsm_helper[
     comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
         layout, element_type = DType.uint32, linear_idx_type = DType.uint32
     ]
-    var stsm_lane_offset: UInt32 = (lane & 15) * UInt(stride0) + (
-        lane >> 4
+    var stsm_lane_offset = UInt32(
+        (lane & 15) * UInt(stride0) + (lane >> 4)
     ) * 8 if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(
         Int(lane)
     )
@@ -373,7 +374,8 @@ fn stsm_helper[
             dst.dtype
         ]()
         st_matrix[simd_width=4, transpose=transpose_c](
-            dst.ptr + offset, bitcast[DType.float32, 4](v)
+            dst.ptr.unsafe_mut_cast[True]() + offset,
+            bitcast[DType.float32, 4](v),
         )
 
 
@@ -384,17 +386,17 @@ fn multi_stage_store_C[
     c_layout: Layout,
     c_tensor_layout: Layout,
     c_desc_layout: Layout,
-    num_accum_pipeline_stages: UInt,
+    num_accum_pipeline_stages: Int,
     /,
     *,
     accum_type: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
-    stage_stride_cols: UInt,
+    stage_stride_cols: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
-    num_output_warps: UInt = 4,
-    max_tmem_cols: UInt = 512,
+    num_output_warps: Int = 4,
+    max_tmem_cols: Int = 512,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     transpose_c: Bool = False,
 ](
@@ -407,9 +409,7 @@ fn multi_stage_store_C[
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
-    accum_pipeline_consumer_state: PipelineState[
-        Int(num_accum_pipeline_stages)
-    ],
+    accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
@@ -477,7 +477,7 @@ fn multi_stage_store_C[
     var phase = accum_pipeline_consumer_state.phase()
     accum_full_mbar[index].wait(phase)
     # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
-    var tmem_offset = index * stage_stride_cols + tmem_addr
+    var tmem_offset = index * UInt32(stage_stride_cols) + tmem_addr
 
     @parameter
     for stage in range(num_stages):
@@ -532,7 +532,7 @@ fn multi_stage_store_C[
             )
 
             # Guard the write to shared memory is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
         else:
             var c_smem_warp_tile = c_smem_tile.tile[32, stageN](Int(warp_id), 0)
@@ -551,7 +551,7 @@ fn multi_stage_store_C[
             )
 
             # Guard the write to shared memory is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
         var lane = lane_id()
 
@@ -578,7 +578,7 @@ fn multi_stage_store_C[
             or cta_group == 1 else coord_n_mma_m128
         )
 
-        var n_inbound_size = group_end_idx - coord_n
+        var n_inbound_size = group_end_idx - UInt32(coord_n)
 
         comptime M = c_smem_tile.layout.shape[1].value()
 
@@ -644,18 +644,18 @@ fn multi_stage_store_C[
             comptime logical_c_layout = Layout.row_major(
                 chunk_num, stageN, vec_chunkM
             )
-            comptime thread_num = num_output_warps * UInt(WARP_SIZE)
-            __comptime_assert logical_c_layout.size() % Int(thread_num) == 0, (
+            comptime thread_num = num_output_warps * WARP_SIZE
+            __comptime_assert logical_c_layout.size() % thread_num == 0, (
                 "logical_c_layout.size() must be a multiple of thread_num. Got "
                 + String(logical_c_layout.size())
                 + "."
             )
-            comptime value_shape = logical_c_layout.size() // Int(thread_num)
+            comptime value_shape = logical_c_layout.size() // thread_num
             comptime cM = c.shape[1]()
 
             @parameter
             for v in range(value_shape):
-                comptime thread_offset = v * Int(thread_num)
+                comptime thread_offset = v * thread_num
                 var thread_index = UInt32(thread_idx.x) + UInt32(thread_offset)
                 # idx2crd but RuntimeTuple.idx2crd is too hard to use
                 var vec_chunkM_idx = thread_index % vec_chunkM
@@ -670,9 +670,9 @@ fn multi_stage_store_C[
                     width=simd_size, alignment=alignment
                 ]()
                 var chunk_idx = rest // stageN
-                var n = coord_n + n_idx
+                var n = UInt32(coord_n) + n_idx
                 var m = (
-                    work_tile_coord[0]
+                    UInt32(work_tile_coord[0])
                     + (chunk_idx * vec_chunkM + vec_chunkM_idx) * simd_size
                 )
                 if m < cM:
@@ -689,7 +689,7 @@ fn multi_stage_store_C[
         @parameter
         if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
 fn zero_output[
@@ -760,7 +760,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
     num_pipeline_stages: UInt,
-    num_accum_pipeline_stages: UInt,
+    num_accum_pipeline_stages: Int,
     num_output_stages: UInt = 2,
     output_tile_shape: IndexList[2] = Index(128, 32),
     transpose_b: Bool = True,
@@ -780,7 +780,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
     mnk: StaticTuple[UInt32, 3],
 ):
-    __comptime_assert c_type is not DType.float32, "c_type cannot be float32"
+    __comptime_assert c_type != DType.float32, "c_type cannot be float32"
 
     comptime num_output_warps = 4
 
@@ -796,7 +796,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     # For ld from TMEM, use same per-stage stride in column field.
     comptime NUM_TMEM_COLS = 512
-    comptime stage_stride_cols = NUM_TMEM_COLS // Int(num_accum_pipeline_stages)
+    comptime stage_stride_cols = NUM_TMEM_COLS // num_accum_pipeline_stages
 
     comptime clc_throttle_producer_arv_count = TMA_LOAD_THREADS
     comptime clc_throttle_consumer_arv_count = SCHEDULER_THREADS
@@ -934,10 +934,10 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var producer_phase = PipelineState[Int(num_pipeline_stages)](0, 1, 0)
 
     var accum_pipeline_producer_state = PipelineState[
-        Int(num_accum_pipeline_stages)
+        num_accum_pipeline_stages
     ](0, 1, 0)
     var accum_pipeline_consumer_state = PipelineState[
-        Int(num_accum_pipeline_stages)
+        num_accum_pipeline_stages
     ]()
 
     var mma_op = MmaOpSM100_SS[
@@ -992,9 +992,9 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= 1 << (i * cta_group)
 
-    a_multicast_mask <<= rank_m
-    b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
+    a_multicast_mask <<= UInt16(rank_m)
+    b_multicast_mask <<= UInt16(peer_cta_coord[0])
+    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
@@ -1141,7 +1141,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 accum_type=accum_type,
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,
-                stage_stride_cols = UInt(stage_stride_cols),
+                stage_stride_cols = Int(stage_stride_cols),
                 c_swizzle=c_swizzle,
                 cta_group=cta_group,
                 num_output_warps=num_output_warps,
@@ -1266,10 +1266,10 @@ fn _grouped_matmul_sm100_persistent[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c_device: LayoutTensor[c_type, c_layout, *_, **_],
-    a_device: LayoutTensor[a_type, a_layout, *_, **_],
+    c_device: LayoutTensor[c_type, c_layout, ...],
+    a_device: LayoutTensor[a_type, a_layout, ...],
     expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
-    b_device: LayoutTensor[b_type, b_layout, *_, **_],
+    b_device: LayoutTensor[b_type, b_layout, ...],
     b_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -1298,11 +1298,11 @@ fn _grouped_matmul_sm100_persistent[
     if M == 0 or N == 0 or K == 0:
         return
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a_device)
 
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
@@ -1331,7 +1331,7 @@ fn _grouped_matmul_sm100_persistent[
     __comptime_assert (
         not (transpose_c and cta_group == 2)
     ) or MMA_M == 256, "swapAB is only supported for MMA_M == 256"
-    var c_tma_op = create_tma_tile[
+    var c_tma_op = create_tensor_tile[
         c_tma_tile_shape if not transpose_c else Index(
             c_tma_tile_shape[0], c_swizzle.bytes() // size_of[c_type]()
         ),
@@ -1427,7 +1427,7 @@ fn _grouped_matmul_sm100_persistent[
         c_swizzle=c_swizzle,
         cta_group=cta_group,
         num_pipeline_stages = UInt(pipeline_stage),
-        num_accum_pipeline_stages = UInt(max_accum_pipeline_stages),
+        num_accum_pipeline_stages=max_accum_pipeline_stages,
         num_output_stages = UInt(num_output_stages),
         output_tile_shape=output_tile_shape,
         transpose_c=transpose_c,
@@ -1446,7 +1446,7 @@ fn _grouped_matmul_sm100_persistent[
 
     var mnk = StaticTuple[UInt32, 3](M, N, K)
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         num_active_experts,
         a_tma_op,
         expert_ids,

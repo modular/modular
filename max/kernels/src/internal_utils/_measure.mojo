@@ -18,7 +18,6 @@ from sys import simd_width_of
 from algorithm import elementwise, mean, sum, vectorize
 from algorithm.functional import unswitch
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from utils import IndexList
 
 # ===----------------------------------------------------------------------=== #
@@ -26,7 +25,9 @@ from utils import IndexList
 # ===----------------------------------------------------------------------=== #
 
 
-fn kl_div(x: SIMD, y: type_of(x)) -> type_of(x):
+fn kl_div(
+    x: SIMD, y: type_of(x)
+) -> type_of(x) where x.dtype.is_floating_point():
     """Elementwise function for computing Kullback-Leibler divergence.
 
     $$
@@ -50,11 +51,11 @@ fn kl_div(x: SIMD, y: type_of(x)) -> type_of(x):
 fn kl_div[
     dtype: DType, //
 ](
-    output: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     x: type_of(output),
     y: type_of(output),
     len: Int,
-) raises:
+) raises where dtype.is_floating_point():
     @parameter
     fn kl_div_elementwise[
         simd_width: Int, rank: Int, alignment: Int = 1
@@ -73,12 +74,12 @@ fn kl_div[
 fn kl_div[
     dtype: DType, //, out_type: DType = DType.float64
 ](
-    x: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     y: type_of(x),
     len: Int,
 ) -> Scalar[
     out_type
-]:
+] where dtype.is_floating_point() where out_type.is_floating_point():
     comptime simd_width = simd_width_of[dtype]()
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
@@ -109,11 +110,11 @@ fn kl_div[
 fn correlation[
     dtype: DType, //, out_type: DType = dtype
 ](
-    u: UnsafePointer[Scalar[dtype]],
-    v: type_of(u),
+    u: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     len: Int,
     *,
-    w: OptionalReg[type_of(u)] = None,
+    w: OptionalReg[UnsafePointer[u.type, MutAnyOrigin]] = None,
     centered: Bool = True,
 ) raises -> Scalar[out_type]:
     """Compute the correlation distance between two 1-D arrays.
@@ -131,9 +132,10 @@ fn correlation[
     """
     var umu = Scalar[out_type]()
     var vmu = Scalar[out_type]()
-    var w_val = type_of(u)()
+    var w_val = UnsafePointer[u.type, MutAnyOrigin]()
     if w:
-        w_val = type_of(u).alloc(len)
+        # TODO: this is a memory leak and needs to be freed
+        w_val = alloc[Scalar[dtype]](len)
         _div(w_val, w.value(), _sum(w.value(), len), len)
     if centered:
         if w:
@@ -196,12 +198,10 @@ fn correlation[
 fn uncentered_unweighted_correlation[
     dtype: DType, //, out_type: DType = dtype
 ](
-    u: UnsafePointer[Scalar[dtype]],
+    u: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     v: type_of(u),
     len: Int,
-) -> Scalar[
-    out_type
-]:
+) -> Scalar[out_type]:
     """Compute the uncentered and unweighted correlation
     distance between two 1-D arrays.
     Unlike `correlation` with arguments set, this does not raise.
@@ -232,7 +232,11 @@ fn uncentered_unweighted_correlation[
 fn cosine[
     dtype: DType,
     //,
-](u: UnsafePointer[Scalar[dtype]], v: type_of(u), len: Int,) -> Float64:
+](
+    u: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    v: type_of(u),
+    len: Int,
+) -> Float64:
     """Compute the Cosine distance between 1-D arrays.
 
     The Cosine distance between `u` and `v`, is defined as
@@ -255,7 +259,7 @@ fn relative_difference[
     dtype: DType,
     //,
 ](
-    output: UnsafePointer[Scalar[dtype], mut=False],
+    output: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     ref_out: type_of(output),
     len: Int,
 ) -> Float64:
@@ -285,7 +289,11 @@ fn relative_difference[
 
 fn _sqrt[
     dtype: DType, //
-](output: UnsafePointer[Scalar[dtype]], x: type_of(output), len: Int) raises:
+](
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    x: type_of(output),
+    len: Int,
+) raises:
     @parameter
     fn apply_fn[
         simd_width: Int, rank: Int, alignment: Int = 1
@@ -303,7 +311,7 @@ fn _sqrt[
 fn _mul[
     dtype: DType, //
 ](
-    output: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     x: type_of(output),
     y: type_of(output),
     len: Int,
@@ -326,7 +334,7 @@ fn _mul[
 fn _div[
     dtype: DType, //
 ](
-    output: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     x: type_of(output),
     c: Scalar[dtype],
     len: Int,
@@ -346,19 +354,25 @@ fn _div[
 
 fn _sum[
     dtype: DType, //
-](src: UnsafePointer[Scalar[dtype]], len: Int) raises -> Scalar[dtype]:
+](src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], len: Int) raises -> Scalar[
+    dtype
+]:
     return sum(Span[Scalar[dtype]](ptr=src, length=len))
 
 
 fn _mean[
     dtype: DType, //
-](src: UnsafePointer[Scalar[dtype]], len: Int) raises -> Scalar[dtype]:
+](src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], len: Int) raises -> Scalar[
+    dtype
+]:
     return mean(Span[Scalar[dtype]](ptr=src, length=len))
 
 
 fn _dot[
     dtype: DType, //, out_type: DType = dtype
-](x: UnsafePointer[Scalar[dtype]], y: type_of(x), len: Int) -> Scalar[out_type]:
+](
+    x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], y: type_of(x), len: Int
+) -> Scalar[out_type]:
     # loads are the expensive part, so we use the (probably) smaller
     # input type for determining simd width.
     comptime simd_width = simd_width_of[dtype]()

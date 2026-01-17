@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import ceildiv, isclose
 from random import rand
 from sys.info import simd_width_of
@@ -64,8 +66,8 @@ fn test[
         filter_dims=Index(S),
         c=C,
         f=F,
-        stride=stride,
-        dilation=dilation,
+        stride=Index(stride),
+        dilation=Index(dilation),
         pad_d=Index(0, 0),
         pad_h=Index(0, 0),
         pad_w=pad_w,

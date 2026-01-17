@@ -22,8 +22,6 @@ print(CompilationTarget.is_x86())
 """
 
 from collections.string.string_slice import _get_kgen_string
-from memory import LegacyOpaquePointer as OpaquePointer
-
 from .ffi import _external_call_const, external_call
 
 comptime _TargetType = __mlir_type.`!kgen.target`
@@ -998,7 +996,7 @@ fn align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 @always_inline("nodebug")
 fn bit_width_of[
-    type: AnyTrivialRegType, target: _TargetType = _current_target()
+    type: __TypeOfAllTypes, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the size of (in bits) of the type.
 
@@ -1029,7 +1027,7 @@ fn bit_width_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 @always_inline("nodebug")
 fn simd_width_of[
-    type: AnyTrivialRegType, target: _TargetType = _current_target()
+    type: __TypeOfAllTypes, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the vector size of the type on the host system.
 
@@ -1114,7 +1112,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         "kern.osproductversion".as_c_string_slice().unsafe_ptr(),
         osver.unsafe_ptr(),
         Pointer(to=buf_len),
-        OpaquePointer(),
+        OpaquePointer[origin=MutAnyOrigin](),
         Int(0),
     )
     if err:

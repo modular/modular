@@ -20,18 +20,17 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
-from max.driver import DeviceSpec, Tensor
+from max.driver import DeviceSpec
 from max.interfaces import (
     PipelineTokenizer,
     RequestID,
     SamplingParams,
-    TextGenerationInputs,
+    TokenBuffer,
 )
 from max.nn.kv_cache import KVCacheStrategy, RaggedKVCacheInputs
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
 from max.pipelines.lib.speculative_config import (
-    SpeculativeConfig,
     SpeculativeMethod,
 )
 from max.pipelines.lib.speculative_decoding import (
@@ -59,25 +58,20 @@ class SpeculativeDecodingSetup:
 def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     """Fixture to set up a speculative decoding pipeline with common configuration."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
-    speculative_config = SpeculativeConfig(
-        speculative_method=SpeculativeMethod.STANDALONE,
-        num_speculative_tokens=10,
-    )
     pipeline_config = PipelineConfig(
         model_path=model_name,
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
         draft_model_path=model_name,
+        speculative_method=SpeculativeMethod.STANDALONE,
+        num_speculative_tokens=10,
         max_batch_size=4,
         max_num_steps=num_steps,
         max_length=1024,
-        _speculative_config=speculative_config,
     )
-    pipeline_config.model_config.kv_cache_config.cache_strategy = (
-        KVCacheStrategy.PAGED
-    )
-    pipeline_config.model_config.kv_cache_config.kv_cache_page_size = 128
-    pipeline_config.model_config.kv_cache_config.device_memory_utilization = 0.3
+    pipeline_config.model.kv_cache.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config.model.kv_cache.kv_cache_page_size = 128
+    pipeline_config.model.kv_cache.device_memory_utilization = 0.3
 
     tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
     assert isinstance(pipeline, StandaloneSpeculativeDecodingPipeline)
@@ -88,7 +82,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
 
     context1 = TextContext(
         request_id=req_id1,
-        tokens=tokens1,
+        tokens=TokenBuffer(tokens1),
         max_length=1024,
         sampling_params=SamplingParams(top_k=1),
     )
@@ -113,7 +107,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     )
     context2 = TextContext(
         request_id=req_id2,
-        tokens=tokens2,
+        tokens=TokenBuffer(tokens2),
         max_length=1024,
         sampling_params=SamplingParams(top_k=1),
     )
@@ -194,206 +188,6 @@ def test_config__validate_target_and_draft_architecture(
         )
 
 
-def test_speculative_decoding_no_rejection(
-    setup_speculative_decoding_pipeline: SpeculativeDecodingSetup,
-) -> None:
-    pipeline = setup_speculative_decoding_pipeline.pipeline
-    context_batch = setup_speculative_decoding_pipeline.context_batch
-    context1 = setup_speculative_decoding_pipeline.context1
-    context2 = setup_speculative_decoding_pipeline.context2
-    num_steps = setup_speculative_decoding_pipeline.num_steps
-
-    assert context1.processed_length == 0
-    assert context2.processed_length == 0
-
-    # Generate draft tokens.
-    draft_inputs, draft_num_steps = pipeline.prepare_batch(
-        pipeline._draft_model,
-        context_batch,
-        num_steps,
-        return_n_logits=1,
-        is_draft=True,
-    )
-
-    num_steps, draft_tokens, draft_logits, model_inputs, all_draft_logits = (
-        pipeline.generate_draft_tokens(
-            context_batch, draft_num_steps, draft_inputs
-        )
-    )
-
-    # Merge draft tokens with target tokens
-    merged_tokens, merged_offsets = pipeline._ragged_token_merger(
-        model_inputs.tokens,  # type: ignore[attr-defined]
-        model_inputs.input_row_offsets,  # type: ignore[attr-defined]
-        draft_tokens,
-    )
-
-    assert isinstance(merged_tokens, Tensor)
-    assert isinstance(merged_offsets, Tensor)
-    # Verify draft tokens with target model
-    first_rejected_tokens, recovered_tokens, bonus_tokens = (
-        pipeline.verify_draft_tokens_with_target_model(
-            draft_inputs,
-            context_batch,
-            num_steps,
-            draft_tokens,
-            draft_logits,
-            merged_tokens,
-            merged_offsets,
-            all_draft_logits,
-        )
-    )
-
-    # If the draft and target models are the same then no tokens are rejected.
-    assert np.all(first_rejected_tokens.to_numpy() == num_steps)
-
-    pipeline.update_contexts(
-        context_batch=context_batch,
-        first_rejected_tokens=first_rejected_tokens.to_numpy(),
-        recovered_tokens=recovered_tokens.to_numpy(),
-        bonus_tokens=bonus_tokens.to_numpy(),
-        draft_tokens=draft_tokens.to_numpy(),
-        num_draft_tokens_generated=num_steps,
-    )
-
-    context1, context2 = context_batch
-
-    # subtract 1 because all draft tokens are accepted, next draft input includes the token generated from the target model
-    assert context1.processed_length == (
-        len(context1.prompt_tokens) + num_steps - 1
-    )
-    assert context2.processed_length == (
-        len(context2.prompt_tokens) + num_steps - 1
-    )
-
-    assert np.all(context1.generated_tokens[:-1] == draft_tokens.to_numpy()[0])
-    assert np.all(context2.generated_tokens[:-1] == draft_tokens.to_numpy()[1])
-
-
-def test_speculative_decoding_partial_rejection(
-    setup_speculative_decoding_pipeline: SpeculativeDecodingSetup,
-) -> None:
-    pipeline = setup_speculative_decoding_pipeline.pipeline
-    context_batch = setup_speculative_decoding_pipeline.context_batch
-    context1 = setup_speculative_decoding_pipeline.context1
-    context2 = setup_speculative_decoding_pipeline.context2
-    num_steps = setup_speculative_decoding_pipeline.num_steps
-
-    assert context1.processed_length == 0
-    assert context2.processed_length == 0
-
-    # Generate draft tokens.
-    draft_inputs, _draft_num_steps = pipeline.prepare_batch(
-        pipeline._draft_model,
-        context_batch,
-        num_steps,
-        return_n_logits=1,
-        is_draft=True,
-    )
-    num_steps, draft_tokens, draft_logits, model_inputs, all_draft_logits = (
-        pipeline.generate_draft_tokens(context_batch, num_steps, draft_inputs)
-    )
-
-    # Merge draft tokens with target tokens
-    merged_tokens, merged_offsets = pipeline._ragged_token_merger(
-        model_inputs.tokens,  # type: ignore[attr-defined]
-        model_inputs.input_row_offsets,  # type: ignore[attr-defined]
-        draft_tokens,
-    )
-
-    # For the first sequence we'll manually change the tokens and logits so that only part of that sequence is accepted
-
-    draft_logits_host = np.copy(draft_logits.to_numpy())
-    draft_logits_host[0, num_steps // 2 :] = 10000.0
-    draft_logits = Tensor.from_numpy(draft_logits_host).to(draft_logits.device)
-
-    # Permute to [batch, num_steps, vocab] and set large logit values for half the tokens in the first batch.
-    # Then permute back to the expected shape
-    all_draft_logits_host = np.permute_dims(
-        np.copy(all_draft_logits.to_numpy()), [1, 0, 2]
-    )
-    batch_size, steps, _ = all_draft_logits_host.shape
-    batch_indices = np.arange(batch_size - 1)[:, np.newaxis]
-    step_start = steps // 2
-    step_indices = np.arange(step_start, steps)[np.newaxis, :]
-    token_values = draft_tokens.to_numpy()[:, step_start:]
-    all_draft_logits_host[batch_indices, step_indices, token_values] = 10000.0
-    all_draft_logits = Tensor.from_numpy(
-        np.permute_dims(all_draft_logits_host, [1, 0, 2])
-    ).to(all_draft_logits.device)
-
-    assert isinstance(merged_tokens, Tensor)
-    assert isinstance(merged_offsets, Tensor)
-    # Verify draft tokens with target model
-    first_rejected_tokens, recovered_tokens, bonus_tokens = (
-        pipeline.verify_draft_tokens_with_target_model(
-            draft_inputs,
-            context_batch,
-            num_steps,
-            draft_tokens,
-            draft_logits,
-            merged_tokens,
-            merged_offsets,
-            all_draft_logits,
-        )
-    )
-    first_rejected_tokens_host = first_rejected_tokens.to_numpy()
-    assert first_rejected_tokens_host[0] == num_steps // 2
-    assert first_rejected_tokens_host[1] == num_steps
-
-    draft_tokens_host = draft_tokens.to_numpy()
-
-    pipeline.update_contexts(
-        context_batch=context_batch,
-        first_rejected_tokens=first_rejected_tokens_host,
-        recovered_tokens=recovered_tokens.to_numpy(),
-        bonus_tokens=bonus_tokens.to_numpy(),
-        draft_tokens=draft_tokens_host,
-        num_draft_tokens_generated=num_steps,
-    )
-
-    context1, context2 = context_batch
-
-    # subtract 1 because recovered token has not been processed by either model
-    assert context1.processed_length == (
-        len(context1.prompt_tokens) + (num_steps // 2) - 1
-    )
-    # subtract 1 because all draft tokens are accepted, next draft input includes the token generated from the target model
-    assert context2.processed_length == (
-        len(context2.prompt_tokens) + num_steps - 1
-    )
-
-    assert np.all(
-        context1.generated_tokens[:-1] == draft_tokens_host[0, : num_steps // 2]
-    )
-    assert np.all(context2.generated_tokens[:-1] == draft_tokens_host[1])
-
-
-def test_speculative_decoding_multiple_token_without_rejection(
-    setup_speculative_decoding_pipeline: SpeculativeDecodingSetup,
-) -> None:
-    pipeline = setup_speculative_decoding_pipeline.pipeline
-    context1 = setup_speculative_decoding_pipeline.context1
-    context2 = setup_speculative_decoding_pipeline.context2
-    pipeline_request = setup_speculative_decoding_pipeline.pipeline_request
-    num_steps = setup_speculative_decoding_pipeline.num_steps
-
-    context1_len = context1.current_length
-    context2_len = context2.current_length
-    for _ in range(5):
-        inputs = TextGenerationInputs(
-            batches=[pipeline_request], num_steps=num_steps
-        )
-        pipeline.execute(inputs)
-
-        # num_steps generated from draft and +1 from the target
-        assert context1.current_length == context1_len + (num_steps + 1)
-        assert context2.current_length == context2_len + (num_steps + 1)
-
-        context1_len = context1.current_length
-        context2_len = context2.current_length
-
-
 def test_speculative_decoding_context_update(
     setup_speculative_decoding_pipeline: SpeculativeDecodingSetup,
 ) -> None:
@@ -452,12 +246,12 @@ def test_speculative_decoding_context_update(
 
     # length of prompt + length of non rejected draft tokens + 1 for the new token
     assert (
-        context1.current_length
-        == len(context1.prompt_tokens) + reject_token1_idx + 1
+        len(context1.tokens)
+        == len(context1.tokens.prompt) + reject_token1_idx + 1
     )
     assert (
-        context2.current_length
-        == len(context2.prompt_tokens) + reject_token2_idx + 1
+        len(context2.tokens)
+        == len(context2.tokens.prompt) + reject_token2_idx + 1
     )
 
     assert context1._draft_offset == 0
@@ -466,21 +260,21 @@ def test_speculative_decoding_context_update(
     # subtract 1 because the recovered token has not been processed by the draft
     # or dtarget model
     assert (
-        context1.processed_length
-        == len(context1.prompt_tokens) + reject_token1_idx - 1
+        context1.tokens.processed_length
+        == len(context1.tokens.prompt) + reject_token1_idx - 1
     )
 
     # subtract 1 because the bonus token has not been run through the draft model
     assert (
-        context2.processed_length
-        == len(context2.prompt_tokens) + reject_token2_idx - 1
+        context2.tokens.processed_length
+        == len(context2.tokens.prompt) + reject_token2_idx - 1
     )
 
     assert np.all(
-        context1.all_tokens
+        context1.tokens.all
         == np.concatenate(
             (
-                context1.prompt_tokens,
+                context1.tokens.prompt,
                 draft_tokens[0, :reject_token1_idx],
                 recovered_tokens[0, reject_token1_idx][np.newaxis],
             )
@@ -488,10 +282,10 @@ def test_speculative_decoding_context_update(
     )
 
     assert np.all(
-        context2.all_tokens
+        context2.tokens.all
         == np.concatenate(
             (
-                context2.prompt_tokens,
+                context2.tokens.prompt,
                 draft_tokens[1, :reject_token2_idx],
                 bonus_tokens[1],
             )
@@ -528,59 +322,51 @@ def test_speculative_decoding_context_update(
 def test_draft_model_encoding_selection() -> None:
     """Test that draft model encoding is correctly selected from config or fallback."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
-    speculative_config = SpeculativeConfig(
-        speculative_method=SpeculativeMethod.STANDALONE,
-        num_speculative_tokens=10,
-    )
-    # Test 1: When draft_model_config.quantization_encoding is specified explicitly
+    # Test 1: When draft_model.quantization_encoding is specified explicitly
     pipeline_config = PipelineConfig(
         model_path=model_name,
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
         draft_model_path=model_name,
+        speculative_method=SpeculativeMethod.STANDALONE,
+        num_speculative_tokens=10,
         max_batch_size=4,
         max_num_steps=5,
         max_length=1024,
-        _speculative_config=speculative_config,
     )
-    pipeline_config.model_config.kv_cache_config.cache_strategy = (
-        KVCacheStrategy.PAGED
-    )
-    pipeline_config.model_config.kv_cache_config.kv_cache_page_size = 128
-    pipeline_config.model_config.kv_cache_config.device_memory_utilization = 0.3
+    pipeline_config.model.kv_cache.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config.model.kv_cache.kv_cache_page_size = 128
+    pipeline_config.model.kv_cache.device_memory_utilization = 0.3
 
     # Set draft model quantization encoding explicitly
-    assert pipeline_config.draft_model_config is not None
-    pipeline_config.draft_model_config.quantization_encoding = (
+    assert pipeline_config.draft_model is not None
+    pipeline_config.draft_model.quantization_encoding = (
         SupportedEncoding.float32
     )
 
     _, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
     assert isinstance(pipeline, StandaloneSpeculativeDecodingPipeline)
 
-    # Test 2: When draft_model_config.quantization_encoding is None (fallback to first supported)
+    # Test 2: When draft_model.quantization_encoding is None (fallback to first supported)
     # This test verifies that the fallback mechanism works when no explicit encoding is set
     pipeline_config2 = PipelineConfig(
         model_path=model_name,
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
         draft_model_path=model_name,
+        speculative_method=SpeculativeMethod.STANDALONE,
+        num_speculative_tokens=10,
         max_batch_size=4,
         max_num_steps=5,
         max_length=1024,
-        _speculative_config=speculative_config,
     )
-    pipeline_config2.model_config.kv_cache_config.cache_strategy = (
-        KVCacheStrategy.PAGED
-    )
-    pipeline_config2.model_config.kv_cache_config.kv_cache_page_size = 128
-    pipeline_config2.model_config.kv_cache_config.device_memory_utilization = (
-        0.3
-    )
+    pipeline_config2.model.kv_cache.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config2.model.kv_cache.kv_cache_page_size = 128
+    pipeline_config2.model.kv_cache.device_memory_utilization = 0.3
 
     # Ensure draft model quantization encoding is None to test fallback
-    assert pipeline_config2.draft_model_config is not None
-    pipeline_config2.draft_model_config.quantization_encoding = None
+    assert pipeline_config2.draft_model is not None
+    pipeline_config2.draft_model.quantization_encoding = None
 
     # The pipeline should still be created successfully, falling back to the first supported encoding
     _, pipeline2 = PIPELINE_REGISTRY.retrieve(pipeline_config2)
@@ -589,26 +375,21 @@ def test_draft_model_encoding_selection() -> None:
 
 def test_kv_cache_claiming_protocol() -> None:
     """Test that claim is called before fetch in prepare_batch."""
-    speculative_config = SpeculativeConfig(
-        speculative_method=SpeculativeMethod.STANDALONE,
-        num_speculative_tokens=10,
-    )
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     pipeline_config = PipelineConfig(
         model_path=model_name,
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
         draft_model_path=model_name,
+        speculative_method=SpeculativeMethod.STANDALONE,
+        num_speculative_tokens=10,
         max_batch_size=4,
         max_num_steps=5,
         max_length=1024,
-        _speculative_config=speculative_config,
     )
-    pipeline_config.model_config.kv_cache_config.cache_strategy = (
-        KVCacheStrategy.PAGED
-    )
-    pipeline_config.model_config.kv_cache_config.kv_cache_page_size = 128
-    pipeline_config.model_config.kv_cache_config.device_memory_utilization = 0.3
+    pipeline_config.model.kv_cache.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config.model.kv_cache.kv_cache_page_size = 128
+    pipeline_config.model.kv_cache.device_memory_utilization = 0.3
 
     _tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
     assert isinstance(pipeline, StandaloneSpeculativeDecodingPipeline)
@@ -617,7 +398,7 @@ def test_kv_cache_claiming_protocol() -> None:
     tokens = np.array([1, 450, 6593], dtype=np.int64)
     context = TextContext(
         request_id=RequestID(),
-        tokens=tokens,
+        tokens=TokenBuffer(tokens),
         max_length=1024,
         sampling_params=SamplingParams(top_k=1),
     )

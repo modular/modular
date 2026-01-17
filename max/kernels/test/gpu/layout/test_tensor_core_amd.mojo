@@ -17,7 +17,9 @@ from gpu.host.info import MI300X, MI355X
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout.tensor_core import TensorCore, load_b_tr
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
 from testing import assert_equal
 from utils.index import Index, IndexList
@@ -2100,7 +2102,7 @@ fn test_load_b_tr(ctx: DeviceContext) raises:
     var flag = ctx.enqueue_create_buffer[DType.bool](WARP_SIZE)
 
     comptime kernel_32_32_16 = kernel[IndexList[3](32, 32, 16)]
-    ctx.enqueue_function_checked[kernel_32_32_16, kernel_32_32_16](
+    ctx.enqueue_function_experimental[kernel_32_32_16](
         flag, grid_dim=(1), block_dim=(WARP_SIZE)
     )
     with flag.map_to_host() as flag_host:
@@ -2109,7 +2111,7 @@ fn test_load_b_tr(ctx: DeviceContext) raises:
                 assert_equal(flag_host[i], True, "frags_simd != frags_tr")
 
     comptime kernel_16_16_32 = kernel[IndexList[3](16, 16, 32)]
-    ctx.enqueue_function_checked[kernel_16_16_32, kernel_16_16_32](
+    ctx.enqueue_function_experimental[kernel_16_16_32](
         flag, grid_dim=(1), block_dim=(WARP_SIZE)
     )
     with flag.map_to_host() as flag_host:

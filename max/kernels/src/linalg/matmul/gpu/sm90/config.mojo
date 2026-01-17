@@ -14,7 +14,7 @@
 from hashlib.hasher import Hasher
 
 from collections.set import Set
-from gpu.grid_controls import PDLLevel
+from gpu.primitives.grid_controls import PDLLevel
 from gpu.host.info import H100
 from utils.index import Index, IndexList
 from ....utils_gpu import MatmulConfig as BaseMatmulConfig

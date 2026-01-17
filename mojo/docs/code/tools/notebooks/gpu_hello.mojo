@@ -24,5 +24,5 @@ fn kernel():
 def main():
     # Launch GPU kernel
     with DeviceContext() as ctx:
-        ctx.enqueue_function_checked[kernel, kernel](grid_dim=1, block_dim=1)
+        ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
         ctx.synchronize()

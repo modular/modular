@@ -24,10 +24,12 @@ from utils import StaticTuple
 from .cublas import ComputeType
 from .dtype import DataType, Property
 from .result import Result
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 
 comptime Context = NoneType
 
@@ -74,7 +76,7 @@ fn _init_dylib() -> OwnedDLHandle:
 
 @always_inline
 fn _get_dylib_function[
-    func_name: StaticString, result_type: AnyTrivialRegType
+    func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         CUDA_CUBLASLT_LIBRARY(),

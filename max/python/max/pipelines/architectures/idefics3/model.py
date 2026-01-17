@@ -15,18 +15,17 @@ from __future__ import annotations
 
 import logging
 import math
-import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Device, DLPackArray, Tensor
+from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
-from max.graph.tensor_utils import cast_dlpack_to
+from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -37,6 +36,7 @@ from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
+    CompilationTimer,
     KVCacheConfig,
     KVCacheMixin,
     ModelInputs,
@@ -59,7 +59,7 @@ logger = logging.getLogger("max.pipelines")
 
 
 def _assert_image_embeddings_invariant(
-    image_embeddings: Tensor, image_token_indices: Tensor
+    image_embeddings: Buffer, image_token_indices: Buffer
 ) -> None:
     """Validates that image embeddings count matches image token indices count.
 
@@ -157,30 +157,30 @@ class _VisionStacker:
 class Idefics3Inputs(ModelInputs):
     """A class representing inputs for the Idefics3 model."""
 
-    input_ids: Tensor
+    input_ids: Buffer
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: Tensor
+    input_row_offsets: Buffer
     """Tensor containing the offsets for each row in the ragged input sequence."""
 
     # Vision inputs
-    pixel_values: Tensor | None = None
+    pixel_values: Buffer | None = None
     """Pixel values for vision inputs."""
 
-    image_token_indices: Tensor | None = None
+    image_token_indices: Buffer | None = None
     """Pre-computed indices of image tokens in the input sequence."""
 
-    return_n_logits: Tensor
+    return_n_logits: Buffer
     """Number of logits to return, used by speculative decoding for example."""
 
     def __init__(
         self,
-        input_ids: Tensor,
-        input_row_offsets: Tensor,
-        return_n_logits: Tensor,
-        pixel_values: Tensor | None = None,
+        input_ids: Buffer,
+        input_row_offsets: Buffer,
+        return_n_logits: Buffer,
+        pixel_values: Buffer | None = None,
         kv_cache_inputs: KVCacheInputs | None = None,
-        image_token_indices: Tensor | None = None,
+        image_token_indices: Buffer | None = None,
     ) -> None:
         self.input_ids = input_ids
         self.input_row_offsets = input_row_offsets
@@ -204,7 +204,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
     language_model: Model
     """The compiled language model for text generation."""
 
-    _input_row_offsets_prealloc: Tensor
+    _input_row_offsets_prealloc: Buffer
     """Pre-allocated tensor for input row offsets in multi-step execution."""
 
     def __init__(
@@ -285,7 +285,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = Tensor.from_numpy(
+        self._input_row_offsets_prealloc = Buffer.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
@@ -319,56 +319,26 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
         # Build and compile vision model
-        logger.info("Building and compiling vision model...")
-        before = time.perf_counter()
+        timer = CompilationTimer("vision model")
         vision_graph, vision_model_state_dict = self._build_vision_graph(
             idefics3_config, vision_model_weights_dict
         )
-        after_build = time.perf_counter()
-
-        logger.info(
-            f"Building vision graph took {after_build - before:.6f} seconds"
-        )
-
-        before_compile = time.perf_counter()
+        timer.mark_build_complete()
         vision_model = session.load(
             vision_graph, weights_registry=vision_model_state_dict
         )
-        after = time.perf_counter()
-
-        logger.info(
-            f"Compiling vision model took {after - before_compile:.6f} seconds"
-        )
-
-        logger.info(
-            f"Building and compiling vision model took {after - before:.6f} seconds"
-        )
+        timer.done()
 
         # Build and compile language model
-        logger.info("Building and compiling language model...")
-        before = time.perf_counter()
+        timer = CompilationTimer("language model")
         language_graph, language_model_state_dict = self._build_language_graph(
             idefics3_config, llm_weights_dict
         )
-        after_build = time.perf_counter()
-
-        logger.info(
-            f"Building language graph took {after_build - before:.6f} seconds"
-        )
-
-        before_compile = time.perf_counter()
+        timer.mark_build_complete()
         language_model = session.load(
             language_graph, weights_registry=language_model_state_dict
         )
-        after = time.perf_counter()
-
-        logger.info(
-            f"Compiling language model took {after - before_compile:.6f} seconds"
-        )
-
-        logger.info(
-            f"Building and compiling language model took {after - before:.6f} seconds"
-        )
+        timer.done()
 
         return vision_model, language_model
 
@@ -543,7 +513,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def _prepare_vision_inputs(
         self, context_batch: Sequence[TextAndVisionContext]
-    ) -> Tensor | None:
+    ) -> Buffer | None:
         """Batches up pixel_values for vision processing."""
         images = []
         for context in context_batch:
@@ -564,7 +534,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def _batch_image_token_indices(
         self, context_batch: Sequence[TextAndVisionContext]
-    ) -> Tensor | None:
+    ) -> Buffer | None:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
 
@@ -576,19 +546,19 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 indices
 
         Returns:
-            Tensor containing all batched indices, or None if no indices found
+            Buffer containing all batched indices, or None if no indices found
         """
         # Collect indices and offsets.
         indices_and_offsets = []
         batch_offset = 0
 
         for ctx in context_batch:
-            input_ids = ctx.next_tokens
+            input_ids = ctx.tokens.active
             special_image_token_mask = input_ids == self.image_token_id
             indices = np.where(special_image_token_mask)[0].tolist()
 
             indices_and_offsets.append([idx + batch_offset for idx in indices])
-            batch_offset += ctx.active_length
+            batch_offset += ctx.tokens.active_length
 
         if not indices_and_offsets:
             return None
@@ -598,18 +568,18 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
         # Create tensor and distribute to device
-        return Tensor.from_numpy(np_indices).to(self.devices[0])
+        return Buffer.from_numpy(np_indices).to(self.devices[0])
 
-    def _create_empty_image_embeddings(self) -> Tensor:
+    def _create_empty_image_embeddings(self) -> Buffer:
         """Create empty image embeddings for text-only inputs on single GPU."""
-        return Tensor.zeros(
+        return Buffer.zeros(
             shape=[0, self.huggingface_config.text_config.hidden_size],
             dtype=self.dtype,
         ).to(self.devices[0])
 
-    def _create_empty_indices(self) -> Tensor:
+    def _create_empty_indices(self) -> Buffer:
         """Create empty image token indices tensor for single GPU."""
-        return Tensor.zeros(shape=[0], dtype=DType.int32).to(self.devices[0])
+        return Buffer.zeros(shape=[0], dtype=DType.int32).to(self.devices[0])
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Idefics3 model with the prepared inputs."""
@@ -619,8 +589,8 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         assert isinstance(model_inputs, Idefics3Inputs)
 
         # Process vision inputs if present.
-        image_embeddings: Tensor
-        image_token_indices: Tensor
+        image_embeddings: Buffer
+        image_token_indices: Buffer
         if model_inputs.has_vision_inputs:
             assert model_inputs.pixel_values is not None
             assert model_inputs.image_token_indices is not None
@@ -630,7 +600,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 model_inputs.pixel_values,
             )
 
-            assert isinstance(vision_outputs[0], Tensor)
+            assert isinstance(vision_outputs[0], Buffer)
 
             image_embeddings = vision_outputs[0]
             image_token_indices = model_inputs.image_token_indices
@@ -660,16 +630,16 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Return model outputs based on what the language model returns
         if len(language_outputs) == 3:
-            assert isinstance(language_outputs[0], Tensor)
-            assert isinstance(language_outputs[1], Tensor)
-            assert isinstance(language_outputs[2], Tensor)
+            assert isinstance(language_outputs[0], Buffer)
+            assert isinstance(language_outputs[1], Buffer)
+            assert isinstance(language_outputs[2], Buffer)
             return ModelOutputs(
                 next_token_logits=language_outputs[0],
                 logits=language_outputs[1],
                 logit_offsets=language_outputs[2],
             )
         else:
-            assert isinstance(language_outputs[0], Tensor)
+            assert isinstance(language_outputs[0], Buffer)
             return ModelOutputs(
                 next_token_logits=language_outputs[0],
                 logits=language_outputs[0],
@@ -692,17 +662,17 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         pixel_values = self._prepare_vision_inputs(context_batch)
 
         # Input row offset type: ["input_row_offsets_len"], UInt32
-        input_row_offsets = Tensor.from_numpy(
+        input_row_offsets = Buffer.from_numpy(
             np.cumsum(
-                [0] + [ctx.active_length for ctx in context_batch],
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
         ).to(self.devices[0])
 
         # Input Ids: ["total_seq_len"], Int64
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
-        input_ids = Tensor.from_numpy(tokens).to(self.devices[0])
+        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
+        input_ids = Buffer.from_numpy(tokens).to(self.devices[0])
 
         # Batch image token indices, offsetting for position in the batch.
         image_token_indices = self._batch_image_token_indices(context_batch)
@@ -710,7 +680,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         return Idefics3Inputs(
             input_ids=input_ids,
             input_row_offsets=input_row_offsets,
-            return_n_logits=Tensor.from_numpy(
+            return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             pixel_values=pixel_values,
@@ -720,7 +690,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def prepare_next_token_inputs(
         self,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> Idefics3Inputs:
         prev_model_inputs = cast(Idefics3Inputs, prev_model_inputs)

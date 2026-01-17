@@ -31,7 +31,7 @@ fn _argsort_cpu[
     *,
     ascending: Bool = True,
 ](
-    indices: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, **_],
+    indices: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
     input: LayoutTensor,
 ) raises:
     """
@@ -95,7 +95,7 @@ fn _argsort_gpu_impl[
     *,
     ascending: Bool = True,
 ](
-    indices: LayoutTensor[mut=True, **_],
+    indices: LayoutTensor[mut=True, ...],
     input: LayoutTensor,
     ctx: DeviceContext,
 ) raises:
@@ -176,7 +176,7 @@ fn _argsort_gpu_impl[
             comptime kernel = bitonic_sort_step[
                 indices.dtype, input.dtype, indices.layout, input.layout
             ]
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 indices,
                 input,
                 n,
@@ -193,7 +193,7 @@ fn _argsort_gpu[
     *,
     ascending: Bool = True,
 ](
-    indices: LayoutTensor[mut=True, **_],
+    indices: LayoutTensor[mut=True, ...],
     input: LayoutTensor,
     ctx: DeviceContext,
 ) raises:
@@ -347,7 +347,7 @@ fn argsort[
     ascending: Bool = True,
     target: StaticString = "cpu",
 ](
-    output: LayoutTensor[mut=True, **_], input: LayoutTensor, ctx: DeviceContext
+    output: LayoutTensor[mut=True, ...], input: LayoutTensor, ctx: DeviceContext
 ) raises:
     """
     Performs argsort on input buffer, storing indices in output buffer.
@@ -378,7 +378,7 @@ fn argsort[
 
 fn argsort[
     ascending: Bool = True
-](output: LayoutTensor[mut=True, **_], input: LayoutTensor) raises:
+](output: LayoutTensor[mut=True, ...], input: LayoutTensor) raises:
     """
     CPU-only version of argsort.
 

@@ -195,9 +195,9 @@ def test_comparison_operators():
 
 def test_indexing():
     var s = "hello"
-    assert_equal(s[False], "h")
-    assert_equal(s[Int(1)], "e")
-    assert_equal(s[2], "l")
+    assert_equal(s[byte=False], "h")
+    assert_equal(s[byte = Int(1)], "e")
+    assert_equal(s[byte=2], "l")
 
 
 def test_intable():
@@ -285,7 +285,7 @@ def test_repr():
     assert_equal(StringLiteral.__repr__("\x0e"), r"'\x0e'")
     assert_equal(StringLiteral.__repr__("\x1f"), r"'\x1f'")
     assert_equal(StringLiteral.__repr__(" "), "' '")
-    assert_equal(StringLiteral.__repr__("'"), '"\'"')
+    assert_equal(StringLiteral.__repr__("'"), r"'\''")
     assert_equal(StringLiteral.__repr__("A"), "'A'")
     assert_equal(StringLiteral.__repr__("\\"), r"'\\'")
     assert_equal(StringLiteral.__repr__("~"), "'~'")

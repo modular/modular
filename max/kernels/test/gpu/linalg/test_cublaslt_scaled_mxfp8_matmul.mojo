@@ -15,8 +15,11 @@ from math import ceildiv
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
-from internal_utils import assert_almost_equal, random, zero, fill
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from internal_utils import assert_almost_equal
+from random import rand
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.vendor.blas import Backend, Handle, matmul
 from internal_utils._utils import ValOrDim, dynamic, static
@@ -109,8 +112,8 @@ fn test_scaled_mxfp8_cublaslt[
         ref_scales_type, 2, _, static_ref_b_scales_shape
     ](b_scales_device_ref.unsafe_ptr(), dynamic_ref_b_scales_shape)
 
-    fill(a_scales_host_ref, Scalar[ref_scales_type](1.0))
-    fill(b_scales_host_ref, Scalar[ref_scales_type](1.0))
+    a_scales_host_ref.fill(Scalar[ref_scales_type](1.0))
+    b_scales_host_ref.fill(Scalar[ref_scales_type](1.0))
 
     # NOTE: We can't initialize this scales randomly as our naive kernel cannot handle mxfp8 style scaling.
     for i in range(a_scales_host_ref.dim(0)):
@@ -240,14 +243,14 @@ fn test_scaled_mxfp8_cublaslt[
         m,
         n,
         k,
-        a_scales_host_ref,
-        b_scales_host_ref,
-        a_scales_host,
-        b_scales_host,
+        from_ndbuffer_row_major(a_scales_host_ref),
+        from_ndbuffer_row_major(b_scales_host_ref),
+        from_ndbuffer_row_major(a_scales_host),
+        from_ndbuffer_row_major(b_scales_host),
     )
 
-    random(a_host)
-    random(b_host)
+    rand(a_host.data, a_host.num_elements())
+    rand(b_host.data, b_host.num_elements())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -295,8 +298,9 @@ fn test_scaled_mxfp8_cublaslt[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=0.01,
         rtol=0.01,
     )

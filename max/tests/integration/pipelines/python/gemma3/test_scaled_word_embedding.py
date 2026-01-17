@@ -13,7 +13,7 @@
 
 import torch
 from max._core.engine import PrintStyle
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType
@@ -97,7 +97,7 @@ def generate_max_outputs(
     compiled = session.load(graph, weights_registry=state_dict)
 
     # Create signal buffers for execution
-    signal_tensor = Tensor.zeros(
+    signal_tensor = Buffer.zeros(
         shape=(signals.NUM_BYTES,), dtype=DType.uint8, device=Accelerator()
     )
 

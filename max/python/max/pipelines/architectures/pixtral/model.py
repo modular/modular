@@ -15,12 +15,11 @@ from __future__ import annotations
 
 import logging
 import math
-import time
 from collections.abc import Sequence
 from typing import cast
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
@@ -34,6 +33,7 @@ from max.nn import Module, ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
+    CompilationTimer,
     KVCacheConfig,
     KVCacheMixin,
     ModelInputs,
@@ -60,21 +60,21 @@ _DO_PARALLEL_COMPILATION = False
 class PixtralInputs(ModelInputs):
     """Holds inputs for the Pixtral model."""
 
-    input_ids: Tensor
-    input_row_offsets: Tensor
-    return_n_logits: Tensor
+    input_ids: Buffer
+    input_row_offsets: Buffer
+    return_n_logits: Buffer
 
     # Image inputs
-    _pixel_values: Tensor
-    _attention_mask: Tensor
+    _pixel_values: Buffer
+    _attention_mask: Buffer
 
     def __init__(
         self,
-        input_ids: Tensor,
-        input_row_offsets: Tensor,
-        return_n_logits: Tensor,
-        pixel_values: Tensor,
-        attention_mask: Tensor,
+        input_ids: Buffer,
+        input_row_offsets: Buffer,
+        return_n_logits: Buffer,
+        pixel_values: Buffer,
+        attention_mask: Buffer,
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         self.input_ids = input_ids
@@ -90,11 +90,11 @@ class PixtralInputs(ModelInputs):
         return self._pixel_values is not None
 
     @property
-    def pixel_values(self) -> Tensor:
+    def pixel_values(self) -> Buffer:
         return self._pixel_values
 
     @property
-    def attention_mask(self) -> Tensor:
+    def attention_mask(self) -> Buffer:
         return self._attention_mask
 
 
@@ -151,16 +151,16 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
-            assert isinstance(model_outputs[0], Tensor)
-            assert isinstance(model_outputs[1], Tensor)
-            assert isinstance(model_outputs[2], Tensor)
+            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(model_outputs[1], Buffer)
+            assert isinstance(model_outputs[2], Buffer)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
             )
         else:
-            assert isinstance(model_outputs[0], Tensor)
+            assert isinstance(model_outputs[0], Buffer)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[0],
@@ -178,9 +178,9 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         context_batch = replica_batches[0]
 
         # Input row offset type: ["input_row_offsets_len"], UInt32
-        input_row_offsets = Tensor.from_numpy(
+        input_row_offsets = Buffer.from_numpy(
             np.cumsum(
-                [0] + [ctx.active_length for ctx in context_batch],
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
         ).to(self.devices[0])
@@ -188,9 +188,9 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Input Ids: ["total_seq_len"], Int64
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.ascontiguousarray(
-            np.concatenate([ctx.next_tokens for ctx in context_batch])
+            np.concatenate([ctx.tokens.active for ctx in context_batch])
         )
-        input_ids = Tensor.from_numpy(tokens).to(self.devices[0])
+        input_ids = Buffer.from_numpy(tokens).to(self.devices[0])
 
         num_images = sum(len(ctx.next_images) for ctx in context_batch)
 
@@ -208,7 +208,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             if len(next_images) != 1:
                 raise ValueError("Pixtral only supports one image per request")
             image = np.ascontiguousarray(next_images[0].pixel_values)
-            pixel_values = Tensor.from_numpy(image).to(self.devices[0])
+            pixel_values = Buffer.from_numpy(image).to(self.devices[0])
             # TODO(KERN-782): This should be -inf but softmax saturates with NaNs.
             fill_val = -10000.0
             attention_mask = causal_attention_mask_2d_from_imgs(
@@ -217,7 +217,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 1,
                 fill_val,
             )
-            attention_mask_tensor = Tensor.from_numpy(attention_mask).to(
+            attention_mask_tensor = Buffer.from_numpy(attention_mask).to(
                 self.devices[0]
             )
             return PixtralInputs(
@@ -225,7 +225,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 input_row_offsets=input_row_offsets,
                 pixel_values=pixel_values,
                 attention_mask=attention_mask_tensor,
-                return_n_logits=Tensor.from_numpy(
+                return_n_logits=Buffer.from_numpy(
                     np.array([return_n_logits], dtype=np.int64)
                 ),
                 kv_cache_inputs=kv_cache_inputs,
@@ -234,21 +234,21 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         return PixtralInputs(
             input_ids=input_ids,
             input_row_offsets=input_row_offsets,
-            pixel_values=Tensor.zeros(shape=(0, 0, 0), dtype=DType.float32).to(
+            pixel_values=Buffer.zeros(shape=(0, 0, 0), dtype=DType.float32).to(
                 self.devices[0]
             ),
-            attention_mask=Tensor.zeros(
+            attention_mask=Buffer.zeros(
                 shape=(0, 1, 0, 0), dtype=DType.float32
             ).to(self.devices[0]),
             kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Tensor.from_numpy(
+            return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
         )
 
     def prepare_next_token_inputs(
         self,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> PixtralInputs:
         assert isinstance(prev_model_inputs, PixtralInputs)
@@ -263,10 +263,10 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         return PixtralInputs(
             input_ids=next_tokens,
             input_row_offsets=next_row_offsets,
-            pixel_values=Tensor.zeros(shape=(0, 0, 0), dtype=DType.float32).to(
+            pixel_values=Buffer.zeros(shape=(0, 0, 0), dtype=DType.float32).to(
                 self.devices[0]
             ),
-            attention_mask=Tensor.zeros(
+            attention_mask=Buffer.zeros(
                 shape=(0, 1, 0, 0), dtype=DType.float32
             ).to(self.devices[0]),
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
@@ -375,7 +375,6 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     ) -> Graph:
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
-
         model_config = PixtralConfig(
             image_token_index=self.huggingface_config.image_token_index,
             vocab_size=self.huggingface_config.text_config.vocab_size,
@@ -464,7 +463,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = Tensor.from_numpy(
+        self._input_row_offsets_prealloc = Buffer.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
@@ -473,23 +472,10 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 "only safetensors weights are currently supported in Pixtral models."
             )
 
-        logger.info("Building and compiling model...")
-        before = time.perf_counter()
+        timer = CompilationTimer("model")
         graph = self._build_graph(self.weights, self.adapter)
-        after_build = time.perf_counter()
-
-        logger.info(f"Building graph took {after_build - before:.6f} seconds")
-
-        before_compile = time.perf_counter()
+        timer.mark_build_complete()
         model = session.load(graph, weights_registry=self.state_dict)
-        after = time.perf_counter()
-
-        logger.info(
-            f"Compiling model took {after - before_compile:.6f} seconds"
-        )
-
-        logger.info(
-            f"Building and compiling model took {after - before:.6f} seconds"
-        )
+        timer.done()
 
         return model

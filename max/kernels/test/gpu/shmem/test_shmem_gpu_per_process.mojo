@@ -19,12 +19,13 @@ if running on a single node you can run the compiled binary directly without
 mpirun.
 """
 
-# RUN: NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # RUN: %mojo-build %s -o %t
-# RUN: %mpirun -n $NUM_GPUS %t
+# RUN: %mpirun-gpu-per-process %t
 
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer, alloc
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os.path import dirname
 from pathlib import Path
 from shmem import *
@@ -47,11 +48,11 @@ def main():
     with SHMEMContext() as ctx:
         # Set up buffers to test devices are communicating with the correct IDs
         var target_device = ctx.enqueue_create_buffer[DType.int32](1)
-        var target_host = ctx.enqueue_create_host_buffer[DType.int32](1)
+        var target_host = alloc[Int32](1)
 
         # SHMEMContext takes care of initializing device state into
         # `simple_shift_kernel` constant memory
-        ctx.enqueue_function_checked[simple_shift_kernel, simple_shift_kernel](
+        ctx.enqueue_function[simple_shift_kernel](
             target_device, grid_dim=1, block_dim=1
         )
         ctx.barrier_all()

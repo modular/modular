@@ -11,23 +11,29 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from gpu.memory import AddressSpace
-from layout.layout_tensor import LayoutTensorIter
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
-from ..tile_scheduler import RasterOrder
+from linalg.matmul.gpu.tile_scheduler import RasterOrder
 from layout.tma_async import SharedMemBarrier, PipelineState
 from utils.static_tuple import StaticTuple
-from gpu.id import grid_dim, thread_idx, lane_id
-from gpu.cluster import elect_one_sync
-from gpu import NamedBarrierSemaphore, WARP_SIZE
+from gpu import (
+    grid_dim,
+    thread_idx,
+    lane_id,
+    NamedBarrierSemaphore,
+    WARP_SIZE,
+)
+from gpu.primitives.cluster import elect_one_sync
 from gpu.globals import WARPGROUP_SIZE
-from gpu.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from gpu.sync import named_barrier
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.bit import prev_power_of_two
 
-from ....structuring import SMemPtr
-from .pipeline import ProducerConsumerPipeline
+from linalg.structuring import SMemPtr
+from .tmem import TmemAddress, TmemTensor
 
 
 @fieldwise_init
@@ -373,13 +379,16 @@ struct TileScheduler[
     comptime ROW_SIZE = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
     comptime ThrottlePipeline = Self.UnderlyingScheduler.ThrottlePipeline
 
+    # Typed barrier array aliases (delegate to underlying scheduler)
+    comptime ClcResponseArray = Self.UnderlyingScheduler.ClcResponseArray
+    comptime ClcBarrierArray = Self.UnderlyingScheduler.ClcBarrierArray
+    comptime ThrottleBarrierArray = Self.UnderlyingScheduler.ThrottleBarrierArray
+
     var locks_ptr: UnsafePointer[Int32]
     var scheduler: Self.UnderlyingScheduler
     var total_k_tiles: UInt32
     var k_tiles_per_split: UInt32
     var throttle_pipeline: Self.ThrottlePipeline
-
-    # ========== Barrier Initialization (called once) ==========
 
     @staticmethod
     fn init_throttle_barriers(
@@ -393,30 +402,29 @@ struct TileScheduler[
             storage_ptr, producer_arv_count, consumer_arv_count
         )
 
-    # ========== Constructor ==========
-
     @always_inline
     fn __init__(
         out self,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
-        clc_response_ptr: SMemPtr[UInt128],
-        full_mbar_ptr: SMemPtr[SharedMemBarrier],
-        empty_mbar_ptr: SMemPtr[SharedMemBarrier],
-        throttle_storage_ptr: SMemPtr[SharedMemBarrier],
+        clc_response: Self.ClcResponseArray,
+        clc_full: Self.ClcBarrierArray,
+        clc_empty: Self.ClcBarrierArray,
+        clc_throttle: Self.ThrottleBarrierArray,
         locks_ptr: UnsafePointer[UInt8],
     ):
+        """Initialize from typed barrier arrays."""
         self.scheduler = Self.UnderlyingScheduler(
             cluster_dim,
-            clc_response_ptr,
-            full_mbar_ptr,
-            empty_mbar_ptr,
-            throttle_storage_ptr,
+            clc_response,
+            clc_full,
+            clc_empty,
+            clc_throttle,
         )
         self.total_k_tiles = ceildiv(mnk[2], Self.reduction_tile_shape[2])
         self.k_tiles_per_split = ceildiv(self.total_k_tiles, Self.num_split_k)
         self.locks_ptr = locks_ptr.bitcast[Int32]()
-        self.throttle_pipeline = Self.ThrottlePipeline(throttle_storage_ptr)
+        self.throttle_pipeline = Self.ThrottlePipeline(clc_throttle.ptr)
 
     @always_inline
     fn convert_to_splitk_work_info(self, work_info: B200WorkInfo) -> WorkInfo:
@@ -552,7 +560,7 @@ struct TileScheduler[
 
     @always_inline
     fn output_tile_index(self, work_info: WorkInfo) -> UInt32:
-        return work_info.m * grid_dim.y + work_info.n
+        return work_info.m * UInt32(grid_dim.y) + work_info.n
 
     @always_inline
     fn _get_workspace_tile[
@@ -595,7 +603,7 @@ struct TileScheduler[
             i += 1
             current_width = second_width
 
-        return (arr, i)
+        return (arr^, i)
 
     @staticmethod
     @always_inline
@@ -616,7 +624,7 @@ struct TileScheduler[
         widths: InlineArray[Int, 4],
         curr_stage: Int,
     ](
-        tensor: LayoutTensor[accum_type, layout, MutAnyOrigin, **_],
+        tensor: LayoutTensor[accum_type, layout, MutAnyOrigin, ...],
         out result: LayoutTensor[
             accum_type,
             Self._get_new_layout[layout, widths[curr_stage]](),
@@ -647,25 +655,22 @@ struct TileScheduler[
         write_back: Bool = False,
     ](
         self,
-        tmem_addr: UInt32,
+        tmem: TmemAddress,
         reduction_workspace: LayoutTensor[accum_type, workspace_layout],
         epilogue_thread_idx: UInt,
         reduction_tile_idx: UInt32,
     ):
-        comptime data_paths = 16  # same as lanes
-        comptime bits = 256
-        # only load from TMEM when not using split-k
-        comptime total_rep = Self.ROW_SIZE // 8
-
         # 128 is a magic number that is provided by the NVCC backend.
         # register size that is greater than that will not compile.
         comptime widths_per_stage = Self._get_widths_per_stage[128]()
         comptime widths = widths_per_stage[0]
         comptime num_widths = widths_per_stage[1]
 
-        # comptime stage_rep = width_per_stage // 8
-        comptime fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
-        # comptime stage_frag_size = stage_rep * fragment_size
+        # TmemTensor for split-K reduction.
+        # Use cta_group=2 to force is_lower_required=True - split-K always
+        # needs both upper and lower fragments for the full reduction.
+        comptime accum_layout = Layout.row_major(Self.BM, Self.ROW_SIZE)
+        comptime AccumTmem = TmemTensor[accum_type, accum_layout, cta_group=2]
 
         var local_warp_id = epilogue_thread_idx // UInt(WARP_SIZE)
 
@@ -684,50 +689,35 @@ struct TileScheduler[
         )
         var reduction_upper = reduction_frag.tile[16, REDUCTION_BN](0, 0)
         var reduction_lower = reduction_frag.tile[16, REDUCTION_BN](1, 0)
-        var stage_tmem_addr = tmem_addr
+        var stage_addr = tmem  # Track address for iteration
 
         @parameter
         for stage in range(num_widths):
             comptime stage_width = widths[stage]
             comptime stage_rep = stage_width // 8
-            comptime stage_frag_size = stage_rep * fragment_size
 
-            var stage_frag_upper = tcgen05_ld[
-                datapaths=data_paths,
-                bits=bits,
-                repeat=stage_rep,
-                dtype=accum_type,
-                pack=False,
-                width=stage_frag_size,
-            ](stage_tmem_addr)
+            var stage_tmem = AccumTmem(stage_addr)
+            var frags = stage_tmem.load_fragments[stage_rep]()
+            AccumTmem.wait_load()
 
-            var stage_frag_lower = tcgen05_ld[
-                datapaths=data_paths,
-                bits=bits,
-                repeat=stage_rep,
-                dtype=accum_type,
-                pack=False,
-                width=stage_frag_size,
-            ](stage_tmem_addr + (16 << 16))
-            tcgen05_load_wait()
+            # Get workspace subtiles for this stage
+            var ws_upper = (
+                Self._to_next_subtile[widths=widths, curr_stage=stage](
+                    reduction_upper
+                )
+                .vectorize[1, 2]()
+                .distribute[Layout.row_major(8, 4)](lane_id())
+            )
+            var ws_lower = (
+                Self._to_next_subtile[widths=widths, curr_stage=stage](
+                    reduction_lower
+                )
+                .vectorize[1, 2]()
+                .distribute[Layout.row_major(8, 4)](lane_id())
+            )
 
-            var reduction_upper_subtile = Self._to_next_subtile[
-                widths=widths, curr_stage=stage
-            ](reduction_upper)
-            var reduction_lower_subtile = Self._to_next_subtile[
-                widths=widths, curr_stage=stage
-            ](reduction_lower)
-
-            var reduction_frag_upper = reduction_upper_subtile.vectorize[
-                1, 2
-            ]().distribute[Layout.row_major(8, 4)](lane_id())
-
-            var reduction_frag_lower = reduction_lower_subtile.vectorize[
-                1, 2
-            ]().distribute[Layout.row_major(8, 4)](lane_id())
-
-            comptime num_m = reduction_frag_upper.layout.shape[0].value()
-            comptime num_n = reduction_frag_upper.layout.shape[1].value()
+            comptime num_m = ws_upper.layout.shape[0].value()
+            comptime num_n = ws_upper.layout.shape[1].value()
 
             @parameter
             for m in range(num_m):
@@ -736,50 +726,39 @@ struct TileScheduler[
                 for n in range(num_n):
                     comptime i = m * num_n + n
 
-                    var v2_upper = rebind[reduction_frag_upper.element_type](
+                    var v2_upper = rebind[ws_upper.element_type](
                         SIMD[accum_type, 2](
-                            stage_frag_upper[2 * i], stage_frag_upper[2 * i + 1]
+                            frags.upper[2 * i], frags.upper[2 * i + 1]
                         )
                     )
-                    var v2_lower = rebind[reduction_frag_lower.element_type](
+                    var v2_lower = rebind[ws_lower.element_type](
                         SIMD[accum_type, 2](
-                            stage_frag_lower[2 * i], stage_frag_lower[2 * i + 1]
+                            frags.lower[2 * i], frags.lower[2 * i + 1]
                         )
                     )
 
                     @parameter
                     if do_reduction:
-                        v2_upper += reduction_frag_upper[m, n]
-                        v2_lower += reduction_frag_lower[m, n]
+                        v2_upper += ws_upper[m, n]
+                        v2_lower += ws_lower[m, n]
 
                     @parameter
                     if write_back:
-                        reduction_frag_upper[m, n] = v2_upper
-                        reduction_frag_lower[m, n] = v2_lower
+                        ws_upper[m, n] = v2_upper
+                        ws_lower[m, n] = v2_lower
                     else:
-                        stage_frag_upper[2 * i] = v2_upper[0]
-                        stage_frag_upper[2 * i + 1] = v2_upper[1]
-                        stage_frag_lower[2 * i] = v2_lower[0]
-                        stage_frag_lower[2 * i + 1] = v2_lower[1]
+                        frags.upper[2 * i] = v2_upper[0]
+                        frags.upper[2 * i + 1] = v2_upper[1]
+                        frags.lower[2 * i] = v2_lower[0]
+                        frags.lower[2 * i + 1] = v2_lower[1]
 
-            # we can't hold all accumulators in registers, so we need to store to TMEM
+            # Store modified fragments back to TMEM
             @parameter
             if not write_back:
-                tcgen05_st[
-                    datapaths=data_paths,
-                    bits=bits,
-                    repeat=stage_rep,
-                    pack=False,
-                ](stage_tmem_addr, stage_frag_upper)
-                tcgen05_st[
-                    datapaths=data_paths,
-                    bits=bits,
-                    repeat=stage_rep,
-                    pack=False,
-                ](stage_tmem_addr + (16 << 16), stage_frag_lower)
-                tcgen05_store_wait()
+                stage_tmem.store_fragments[stage_rep](frags)
+                AccumTmem.wait_store()
 
-            stage_tmem_addr += stage_width
+            stage_addr = stage_addr + stage_width
 
     @always_inline
     fn reduction[
@@ -788,7 +767,7 @@ struct TileScheduler[
     ](
         self,
         reduction_workspace: LayoutTensor[accum_type, workspace_layout],
-        tmem_addr: UInt32,
+        tmem: TmemAddress,
         epilogue_thread_idx: UInt,
         work_info: WorkInfo,
     ) -> Bool:
@@ -800,7 +779,7 @@ struct TileScheduler[
             if work_info.k_start == 0:
                 # first split don't wait and just write to workspace.
                 self.store_to_workspace[do_reduction=False, write_back=True](
-                    tmem_addr,
+                    tmem,
                     reduction_workspace,
                     epilogue_thread_idx,
                     reduction_tile_idx,
@@ -815,7 +794,7 @@ struct TileScheduler[
                 )
 
                 self.store_to_workspace[do_reduction=True, write_back=True](
-                    tmem_addr,
+                    tmem,
                     reduction_workspace,
                     epilogue_thread_idx,
                     reduction_tile_idx,
@@ -841,7 +820,7 @@ struct TileScheduler[
                 work_info.k_start,
             )
             self.store_to_workspace[do_reduction=True, write_back=False](
-                tmem_addr,
+                tmem,
                 reduction_workspace,
                 epilogue_thread_idx,
                 reduction_tile_idx,
@@ -859,7 +838,7 @@ struct TileScheduler[
         val: UInt32,
     ):
         var sema = NamedBarrierSemaphore[Int32(WARPGROUP_SIZE), 4, 1](
-            lock_ptr.offset(lock_idx), barrier_group_thread_idx
+            lock_ptr + lock_idx, barrier_group_thread_idx
         )
         sema.wait_eq(barrier_id, Int32(val))
 
@@ -884,7 +863,7 @@ struct TileScheduler[
         val: UInt32,
     ):
         var sema = NamedBarrierSemaphore[Int32(WARPGROUP_SIZE), 4, 1](
-            lock_ptr.offset(lock_idx), barrier_group_thread_idx
+            lock_ptr + lock_idx, barrier_group_thread_idx
         )
         sema.arrive_set(barrier_id, Int32(val))
 

@@ -41,7 +41,7 @@ fn _static_tuple_construction_checks[size: Int]():
 
 
 @register_passable("trivial")
-struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
+struct StaticTuple[element_type: __TypeOfAllTypes, size: Int](
     Defaultable, DevicePassable, ImplicitlyCopyable, Sized
 ):
     """A statically sized tuple type which contains elements of homogeneous types.
@@ -227,7 +227,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer(to=self._mlir_value).address, idx._mlir_value
         )
-        return UnsafePointer(ptr)[]
+        return UnsafePointer[origin = origin_of(self)](ptr)[]
 
     @always_inline("nodebug")
     fn _replace[idx: Int](self, val: Self.element_type) -> Self:

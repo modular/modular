@@ -65,7 +65,7 @@ fn compile_sm90_matmul_ptx[
     comptime BN = config.block_tile_shape[1]
     comptime BK = config.block_tile_shape[2]
 
-    __comptime_assert (a_type == b_type is DType.float8_e4m3fn) or (
+    __comptime_assert (a_type == b_type == DType.float8_e4m3fn) or (
         a_type == b_type and a_type in (DType.bfloat16, DType.float32)
     ), "Unsupported input dtype"
 

@@ -16,9 +16,13 @@ from sys import size_of
 
 from buffer.buffer import NDBuffer
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
-from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
+from gpu.primitives.cluster import (
+    cluster_sync,
+    cluster_sync_relaxed,
+    elect_one_sync,
+)
 from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
-from gpu.grid_controls import (
+from gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
@@ -48,8 +52,9 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     TMATensorTile,
 )
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
 
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
@@ -274,7 +279,7 @@ struct HopperMatmulSM90Kernel[
     ]
 
     comptime RingBufferConsumer[
-        origin: Origin[True], tma_transfer: Bool
+        origin: MutOrigin, tma_transfer: Bool
     ] = RingBufferConsumer[origin, Self.RingBuffer[tma_transfer]]
 
     comptime WgmmaOp = TensorCoreAsync[
@@ -371,7 +376,9 @@ struct HopperMatmulSM90Kernel[
             multicast_column_mask |= Int(1 << (i * CLUSTER_N))
         multicast_column_mask <<= Int(rank_n)
 
-        var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (rank_m * CLUSTER_N)
+        var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (
+            Int32(rank_m) * CLUSTER_N
+        )
         return (multicast_row_mask, multicast_column_mask)
 
     @staticmethod
@@ -400,14 +407,6 @@ struct HopperMatmulSM90Kernel[
 
         var rank_m = block_id_in_cluster.y
         var rank_n = block_id_in_cluster.x
-
-        # Check and wait for PDL grids if needed
-        @parameter
-        if (
-            Self.pdl_level > PDLLevel.OFF
-            and Self.pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
-        ):
-            wait_on_dependent_grids()
 
         var warp_id = get_warp_id()
         var lane_predicate = elect_one_sync()
@@ -523,7 +522,7 @@ struct HopperMatmulSM90Kernel[
         ] = Self.elementwise_lambda_fn
     ](
         c_tma_op: TMATensorTile[Self.c_type, _, _],
-        c: LayoutTensor[Self.c_type, _, MutAnyOrigin, *_, **_],
+        c: LayoutTensor[Self.c_type, _, MutAnyOrigin, ...],
         c_tile: Self.SMem.CTile,
         output_reg_tile: Self.AccumRegTileType,
         warp_group_thread_idx: UInt,
@@ -810,6 +809,15 @@ struct HopperMatmulSM90Kernel[
         # Split thread blocks into producer and consumer warp groups
         if warp_group_idx == 0:
             # Producer warp group
+
+            # Check and wait for PDL grids if needed
+            @parameter
+            if (
+                Self.pdl_level > PDLLevel.OFF
+                and Self.pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+            ):
+                wait_on_dependent_grids()
+
             _ = Self.setup_producer()
 
             if warp_id == 0 and lane_predicate:
@@ -839,7 +847,7 @@ struct HopperMatmulSM90Kernel[
 
             var output_reg_tile = (
                 final_c_reg_tile if Self.a_type
-                is DType.float8_e4m3fn else c_reg_tile
+                == DType.float8_e4m3fn else c_reg_tile
             )
 
             Self.consumer_output(
@@ -979,7 +987,7 @@ struct HopperMatmulSM90Kernel[
             var work_tile_info = scheduler.initial_work_tile_info()
 
             @parameter
-            if Self.a_type is DType.float8_e4m3fn:
+            if Self.a_type == DType.float8_e4m3fn:
                 _ = final_c_reg_tile.fill(0.0)
             else:
                 _ = c_reg_tile.fill(0.0)
@@ -999,15 +1007,15 @@ struct HopperMatmulSM90Kernel[
 
                     var output_reg_tile = (
                         final_c_reg_tile if Self.a_type
-                        is DType.float8_e4m3fn else c_reg_tile
+                        == DType.float8_e4m3fn else c_reg_tile
                     )
 
                     scheduler.reduction(
                         reduction_workspace,
                         output_reg_tile,
                         work_tile_info,
-                        Self.num_consumer,
-                        local_warp_group_idx,
+                        UInt32(Self.num_consumer),
+                        UInt32(local_warp_group_idx),
                     )
 
                     # check if this is the reduction tile
@@ -1164,7 +1172,7 @@ struct HopperMatmulSM90Kernel[
 
             var output_reg_tile = (
                 final_c_reg_tile if Self.a_type
-                is DType.float8_e4m3fn else c_reg_tile
+                == DType.float8_e4m3fn else c_reg_tile
             )
 
             # C layout for current expert
@@ -1220,7 +1228,7 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @always_inline
     fn consumer_main_loop[
-        ring_buffer_origin: Origin[True],
+        ring_buffer_origin: MutOrigin,
         //,
         num_k_iters: Int,
     ](
@@ -1248,7 +1256,7 @@ struct HopperMatmulSM90Kernel[
         """
 
         @parameter
-        if Self.a_type is DType.float8_e4m3fn:
+        if Self.a_type == DType.float8_e4m3fn:
             _ = final_c_reg_tile.fill(0.0)
         else:
             _ = c_reg_tile.fill(0.0)
@@ -1289,7 +1297,7 @@ struct HopperMatmulSM90Kernel[
                         )
 
                 @parameter
-                if Self.a_type is DType.float8_e4m3fn:
+                if Self.a_type == DType.float8_e4m3fn:
                     fp8_promotion_iter += 1
                     if fp8_promotion_iter == Self.promotion_frequency:
                         Self.promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
@@ -1306,7 +1314,7 @@ struct HopperMatmulSM90Kernel[
 
         # Final promotion for fp8 data type if num_k_iters % promotion_frequency != 0
         @parameter
-        if Self.a_type is DType.float8_e4m3fn:
+        if Self.a_type == DType.float8_e4m3fn:
             if fp8_promotion_iter != 0:
                 Self.promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
 
@@ -1356,13 +1364,13 @@ struct HopperMatmulSM90Kernel[
     fn wgmma(
         wgmma_op: Self.WgmmaOp,
         local_warp_group_idx: UInt,
-        a_tile: SMemTileType[Self.a_type, _, **_],
-        b_tile: SMemTileType[Self.b_type, _, **_],
+        a_tile: SMemTileType[Self.a_type, _, ...],
+        b_tile: SMemTileType[Self.b_type, _, ...],
         c_reg_tile: Self.AccumRegTileType,
     ):
         warpgroup_fence(c_reg_tile)
         wgmma_op.arrive()
-        comptime scale_c = 0 if Self.a_type is DType.float8_e4m3fn else 1
+        comptime scale_c = 0 if Self.a_type == DType.float8_e4m3fn else 1
         wgmma_op.wgmma[Self.num_consumer, scale_c=scale_c](
             a_tile,
             b_tile,

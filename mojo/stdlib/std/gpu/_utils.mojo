@@ -24,7 +24,7 @@ from utils import StaticTuple
 fn to_llvm_shared_cluster_mem_ptr[
     type: AnyType
 ](
-    ptr: UnsafePointer[type, address_space = AddressSpace.SHARED_CLUSTER, **_]
+    ptr: UnsafePointer[type, address_space = AddressSpace.SHARED_CLUSTER, ...]
 ) -> __mlir_type.`!llvm.ptr<7>`:
     """Cast shared cluster memory pointer to LLVMPointer Type.
 
@@ -40,7 +40,7 @@ fn to_llvm_shared_cluster_mem_ptr[
 fn to_llvm_shared_mem_ptr[
     type: AnyType
 ](
-    ptr: UnsafePointer[type, address_space = AddressSpace.SHARED, **_]
+    ptr: UnsafePointer[type, address_space = AddressSpace.SHARED, ...]
 ) -> __mlir_type.`!llvm.ptr<3>`:
     """Cast shared memory pointer to LLVMPointer Type.
 
@@ -58,7 +58,7 @@ fn to_llvm_shared_mem_ptr[
 @always_inline
 fn to_llvm_ptr[
     type: AnyType
-](ptr: UnsafePointer[type, **_]) -> __mlir_type.`!llvm.ptr`:
+](ptr: UnsafePointer[type, ...]) -> __mlir_type.`!llvm.ptr`:
     """Cast a pointer to LLVMPointer Type.
 
     Args:
@@ -128,25 +128,25 @@ comptime _dtype_to_llvm_type_f8[dtype: DType] = __mlir_type.`i8` if dtype in (
 
 comptime _dtype_to_llvm_type_bf16[
     dtype: DType
-] = __mlir_type.`bf16` if dtype is DType.bfloat16 else _dtype_to_llvm_type_f8[
+] = __mlir_type.`bf16` if dtype == DType.bfloat16 else _dtype_to_llvm_type_f8[
     dtype
 ]
 
 comptime _dtype_to_llvm_type_f16[
     dtype: DType
-] = __mlir_type.`f16` if dtype is DType.float16 else _dtype_to_llvm_type_bf16[
+] = __mlir_type.`f16` if dtype == DType.float16 else _dtype_to_llvm_type_bf16[
     dtype
 ]
 
 comptime _dtype_to_llvm_type_f32[
     dtype: DType
-] = __mlir_type.`f32` if dtype is DType.float32 else _dtype_to_llvm_type_f16[
+] = __mlir_type.`f32` if dtype == DType.float32 else _dtype_to_llvm_type_f16[
     dtype
 ]
 
 comptime _dtype_to_llvm_type_f64[
     dtype: DType
-] = __mlir_type.`f64` if dtype is DType.float64 else _dtype_to_llvm_type_f32[
+] = __mlir_type.`f64` if dtype == DType.float64 else _dtype_to_llvm_type_f32[
     dtype
 ]
 
@@ -163,7 +163,7 @@ comptime _dtype_to_llvm_type_i64[dtype: DType] = __mlir_type.`i64` if dtype in (
 comptime dtype_to_llvm_type[dtype: DType] = _dtype_to_llvm_type_i64[dtype]
 
 comptime llvm_struct_splat[
-    field_type: AnyTrivialRegType, repeat: Int
+    field_type: __TypeOfAllTypes, repeat: Int
 ] = __mlir_type[
     `!llvm.struct<(`,
     __mlir_type[
@@ -177,7 +177,7 @@ comptime llvm_struct_splat[
 ]
 
 comptime kgen_struct_splat[
-    field_type: AnyTrivialRegType, repeat: Int
+    field_type: __TypeOfAllTypes, repeat: Int
 ] = __mlir_type[
     `!kgen.struct<(`,
     __mlir_type[

@@ -17,11 +17,14 @@ import time
 
 import numpy as np
 from max.driver import Accelerator
-from max.driver.tensor import Tensor
+from max.driver.buffer import Buffer
 from max.kv_cache import KVTransferEngine, TransferReqData
 
 """
 This test launches 32 concurrent transfers at once.
+
+Note: The payload size is intentionally kept small (512MB) to ensure the test
+completes in a reasonable time while still validating concurrent transfer logic.
 """
 
 
@@ -33,12 +36,12 @@ def transfer_routine_sender(
     receiver_done_queue: mp.Queue,
     total_num_pages: int,
     total_bytes: int,
-    GB: float,
+    MB: int,
 ) -> None:
     device = Accelerator(0)
 
     blocks_np = np.full(total_bytes, 42, dtype=np.int8)
-    blocks = Tensor.from_numpy(blocks_np).to(device)
+    blocks = Buffer.from_numpy(blocks_np).to(device)
 
     # Create engine (DP=1, TP=1)
     engine = KVTransferEngine(
@@ -65,11 +68,11 @@ def transfer_routine_sender(
         engine.sync_and_release(transfer_req)
 
     t1 = time.time()
-    bw = total_bytes / (t1 - t0) / GB
+    bw = total_bytes / (t1 - t0) / MB
     ms = (t1 - t0) * 1000
 
     print(
-        f"[SENDER] Transferring {total_bytes / GB:.2f} GB took {ms:.2f} ms ({bw:.2f} GB/s)"
+        f"[SENDER] Transferring {total_bytes / MB:.2f} MB took {ms:.2f} ms ({bw:.2f} MB/s)"
     )
 
     # Verify results
@@ -92,7 +95,7 @@ def transfer_routine_receiver(
     device = Accelerator(1)
 
     blocks_np = np.full(total_bytes, 99, dtype=np.int8)
-    blocks = Tensor.from_numpy(blocks_np).to(device)
+    blocks = Buffer.from_numpy(blocks_np).to(device)
 
     # Create engine (DP=1, TP=1)
     engine = KVTransferEngine(
@@ -127,8 +130,8 @@ def test_send_recv_basic() -> None:
     receiver_done_queue: mp.Queue = ctx.Queue()
 
     # Transfer parameters
-    GB = 1024 * 1024 * 1024
-    total_bytes = int(6 * GB)
+    MB = 1024 * 1024
+    total_bytes = int(512 * MB)  # 512MB - reduced from 6GB for faster CI runs
     total_num_pages = 32
 
     sender_proc = ctx.Process(
@@ -141,7 +144,7 @@ def test_send_recv_basic() -> None:
             receiver_done_queue,
             total_num_pages,
             total_bytes,
-            GB,
+            MB,
         ),
     )
     receiver_proc = ctx.Process(

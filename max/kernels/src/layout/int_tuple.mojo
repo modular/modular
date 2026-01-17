@@ -103,7 +103,7 @@ fn _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
         return DType.int32
     else:
         var dtype = _get_index_type(address_space)
-        return DType.int32 if dtype is DType.int32 else DType.int64
+        return DType.int32 if dtype == DType.int32 else DType.int64
 
 
 fn _get_layout_type(layout: Layout, address_space: AddressSpace) -> DType:
@@ -133,7 +133,7 @@ struct IntArray(ImplicitlyCopyable):
     data structures, optimized for high-performance tensor operations.
     """
 
-    var _data: UnsafePointer[Int, MutOrigin.external]
+    var _data: UnsafePointer[Int, MutExternalOrigin]
     var _size: Int
 
     @always_inline("nodebug")
@@ -247,7 +247,7 @@ struct IntArray(ImplicitlyCopyable):
             source: Source array to copy from.
             size: Number of elements to copy.
         """
-        memcpy(dest=self._data.offset(offset), src=source._data, count=size)
+        memcpy(dest=self._data + offset, src=source._data, count=size)
 
     @always_inline("nodebug")
     fn copy_from(
@@ -262,8 +262,8 @@ struct IntArray(ImplicitlyCopyable):
             size: Number of elements to copy.
         """
         memcpy(
-            dest=self._data.offset(dst_offset),
-            src=source._data.offset(src_offset),
+            dest=self._data + dst_offset,
+            src=source._data + src_offset,
             count=size,
         )
 
@@ -281,7 +281,7 @@ struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
     """Iterator for traversing elements of an IntTuple."""
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     """The iterator type for IntTuple iteration.
 
@@ -305,15 +305,25 @@ struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
         self.idx = idx
 
     @always_inline("nodebug")
-    fn __has_next__(self) -> Bool:
-        return self.idx < len(self.src[])
-
-    @always_inline("nodebug")
-    fn __next__(mut self) -> IntTuple:
+    fn __next__(mut self) raises StopIteration -> IntTuple:
         """Get the next element and advance the iterator."""
+        var idx = self.idx
+        if idx >= len(self.src[]):
+            raise StopIteration()
+        self.idx += 1
+        return self.src[][idx]
+
+    # FIXME(GENAI-359): Remove __next_old__ and __has_next__ once we figure out
+    # why doing so regresses code generation.
+    @always_inline
+    fn __next_old__(mut self) -> Self.Element:
         var idx = self.idx
         self.idx += 1
         return self.src[][idx]
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self.idx < len(self.src[])
 
     @always_inline("nodebug")
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -346,8 +356,8 @@ struct IntTuple(
     """
 
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _IntTupleIter[ImmutOrigin.cast_from[iterable_origin]]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = _IntTupleIter[ImmutOrigin(iterable_origin)]
     """The iterator type for IntTuple iteration.
 
     Parameters:

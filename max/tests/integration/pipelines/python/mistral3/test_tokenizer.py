@@ -28,18 +28,37 @@
 
 import json
 from typing import Any
-from unittest.mock import MagicMock, mock_open
+from unittest.mock import MagicMock, NonCallableMock, mock_open
 
 import pytest
 from max.pipelines.architectures.mistral3.tokenizer import Mistral3Tokenizer
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from pytest_mock import MockerFixture
+from transformers import MistralConfig
+
+
+@pytest.fixture
+def mock_pipeline_config() -> NonCallableMock:
+    """Create a mock PipelineConfig for testing."""
+    mock_model_config = NonCallableMock(spec=MAXModelConfig)
+    mock_model_config.huggingface_model_revision = None
+    mock_model_config.huggingface_config = NonCallableMock(spec=MistralConfig)
+
+    pipeline_config = NonCallableMock(spec=PipelineConfig)
+    pipeline_config.model = mock_model_config
+    return pipeline_config
 
 
 @pytest.fixture
 def mock_tokenizer_base(mocker: MockerFixture) -> None:
     """Mock the base TextTokenizer initialization."""
 
-    def mock_init(instance: Any, model_path: str, **kwargs: Any) -> None:
+    def mock_init(
+        instance: Any,
+        model_path: str,
+        pipeline_config: Any = None,
+        **kwargs: Any,
+    ) -> None:
         # Set the essential attributes that parent class would set
         instance.model_path = model_path
         instance.delegate = MagicMock()
@@ -62,6 +81,7 @@ def sample_chat_template():  # noqa: ANN201
 def test_load_chat_template_from_cache_success(
     mocker: MockerFixture,
     mock_tokenizer_base: Any,
+    mock_pipeline_config: MagicMock,
     sample_chat_template: dict[str, str],
 ) -> None:
     """Test successful loading of chat template from cache."""
@@ -75,7 +95,7 @@ def test_load_chat_template_from_cache_success(
     )
     mocker.patch("pathlib.Path.exists", return_value=True)
 
-    tokenizer = Mistral3Tokenizer("test/model")
+    tokenizer = Mistral3Tokenizer("test/model", mock_pipeline_config)
 
     # Verify cache was queried
     mock_cache.assert_called_once_with(
@@ -94,6 +114,7 @@ def test_load_chat_template_from_cache_success(
 def test_load_chat_template_download_fallback_success(
     mocker: MockerFixture,
     mock_tokenizer_base: Any,
+    mock_pipeline_config: MagicMock,
     sample_chat_template: dict[str, str],
 ) -> None:
     """Test successful downloading when not in cache."""
@@ -111,7 +132,7 @@ def test_load_chat_template_download_fallback_success(
     )
     mocker.patch("pathlib.Path.exists", return_value=True)
 
-    tokenizer = Mistral3Tokenizer("test/model")
+    tokenizer = Mistral3Tokenizer("test/model", mock_pipeline_config)
 
     # Verify download was attempted
     mock_download.assert_called_once_with(
@@ -130,6 +151,7 @@ def test_load_chat_template_download_fallback_success(
 def test_load_chat_template_with_revision(
     mocker: MockerFixture,
     mock_tokenizer_base: Any,
+    mock_pipeline_config: MagicMock,
     sample_chat_template: dict[str, str],
 ) -> None:
     """Test loading with custom revision."""
@@ -143,7 +165,9 @@ def test_load_chat_template_with_revision(
     )
     mocker.patch("pathlib.Path.exists", return_value=True)
 
-    tokenizer = Mistral3Tokenizer("test/model", revision="v1.0")
+    tokenizer = Mistral3Tokenizer(
+        "test/model", mock_pipeline_config, revision="v1.0"
+    )
 
     # Verify cache was queried with correct revision
     mock_cache.assert_called_once_with(
@@ -159,11 +183,11 @@ def test_load_chat_template_with_pipeline_config_revision(
     sample_chat_template: dict[str, str],
 ) -> None:
     """Test loading with revision from pipeline config."""
-    mock_model_config = MagicMock()
+    mock_model_config = NonCallableMock(spec=MAXModelConfig)
     mock_model_config.huggingface_model_revision = "config-revision"
 
-    pipeline_config = MagicMock()
-    pipeline_config.model_config = mock_model_config
+    pipeline_config = NonCallableMock(spec=PipelineConfig)
+    pipeline_config.model = mock_model_config
 
     mock_cache = mocker.patch(
         "max.pipelines.architectures.mistral3.tokenizer.try_to_load_from_cache",
@@ -175,7 +199,7 @@ def test_load_chat_template_with_pipeline_config_revision(
     )
     mocker.patch("pathlib.Path.exists", return_value=True)
 
-    tokenizer = Mistral3Tokenizer("test/model", pipeline_config=pipeline_config)
+    tokenizer = Mistral3Tokenizer("test/model", pipeline_config)
 
     # Verify cache was queried with config revision
     mock_cache.assert_called_once_with(
@@ -191,11 +215,11 @@ def test_load_chat_template_revision_precedence(
     sample_chat_template: dict[str, str],
 ) -> None:
     """Test that explicit revision takes precedence over config revision."""
-    mock_model_config = MagicMock()
+    mock_model_config = NonCallableMock(spec=MAXModelConfig)
     mock_model_config.huggingface_model_revision = "config-revision"
 
-    pipeline_config = MagicMock()
-    pipeline_config.model_config = mock_model_config
+    pipeline_config = NonCallableMock(spec=PipelineConfig)
+    pipeline_config.model = mock_model_config
 
     mock_cache = mocker.patch(
         "max.pipelines.architectures.mistral3.tokenizer.try_to_load_from_cache",
@@ -209,8 +233,8 @@ def test_load_chat_template_revision_precedence(
 
     tokenizer = Mistral3Tokenizer(
         "test/model",
+        pipeline_config,
         revision="explicit-revision",
-        pipeline_config=pipeline_config,
     )
 
     # Verify explicit revision is used

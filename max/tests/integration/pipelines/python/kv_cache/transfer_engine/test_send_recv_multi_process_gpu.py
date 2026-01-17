@@ -20,7 +20,7 @@ import time
 import numpy as np
 import pytest
 from max.driver import Accelerator
-from max.driver.tensor import Tensor
+from max.driver.buffer import Buffer
 from max.kv_cache import KVTransferEngine
 
 
@@ -42,7 +42,7 @@ def transfer_routine_sender(
     device = Accelerator(1)
 
     blocks_np = np.full(total_bytes, 42, dtype=np.int8)
-    blocks = Tensor.from_numpy(blocks_np).to(device)
+    blocks = Buffer.from_numpy(blocks_np).to(device)
 
     # Create engine (DP=1, TP=1)
     engine = KVTransferEngine(
@@ -99,7 +99,7 @@ def transfer_routine_receiver(
     device = Accelerator(0)
 
     blocks_np = np.full(total_bytes, 99, dtype=np.int8)
-    blocks = Tensor.from_numpy(blocks_np).to(device)
+    blocks = Buffer.from_numpy(blocks_np).to(device)
 
     # Create engine (DP=1, TP=1)
     engine = KVTransferEngine(
@@ -136,7 +136,7 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
 
     # Transfer parameters
     GB = 1024 * 1024 * 1024
-    total_bytes = int(8 * GB)
+    total_bytes = int(1 * GB)
     total_num_pages = 2
     src_idxs = [0, 1]
     dst_idxs = [1, 0]

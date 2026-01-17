@@ -1,4 +1,8 @@
-# Introduction
+# `comptime` Expression Syntax
+
+**Status**: Implemented.
+
+## Introduction
 
 Mojo has a hard divide between compile time and runtime evaluation.  This exists
 for a number of reasons, including that function calls can have side effects

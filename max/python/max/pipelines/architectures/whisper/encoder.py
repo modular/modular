@@ -180,7 +180,7 @@ class WhisperEncoder(Module):
                 for i in range(huggingface_config.encoder_layers)
             ]
         )
-        # Hugging Face model uses default eps for nn.LayerNormV1 which is = 1e-5
+        # Hugging Face model uses default eps for nn.LayerNorm which is = 1e-5
         # TODO: Is LayerNorm here not the same as nn.LayerNorm
         self.norm = LayerNorm(
             huggingface_config.d_model, devices=[device], dtype=dtype, eps=1e-5
@@ -189,7 +189,7 @@ class WhisperEncoder(Module):
     def __call__(self, input_features: TensorValue) -> tuple[TensorValue, ...]:
         """
         Args:
-            input_features: Tensor of shape (batch_size, feature_size, sequence_length)
+            input_features: Buffer of shape (batch_size, feature_size, sequence_length)
         """
         # Encoder stem: two convolution layers and the GELU activation function.
         inputs_embeds = ops.gelu(self.conv1(input_features))

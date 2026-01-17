@@ -17,13 +17,18 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import numpy as np
-from max.driver import CPU, Device, Tensor
+from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
+from max.kv_cache import PagedKVCacheManager
 from max.nn import ReturnHiddenStates, ReturnLogits
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    KVCacheStrategy,
+)
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -83,7 +88,7 @@ class MockPipelineModel(PipelineModel):
 
         # This is required to smuggle these parameters in.
         self.max_length = pipeline_config.max_length
-        self.kv_manager = MagicMock()
+        self.kv_manager = MagicMock(spec=PagedKVCacheManager)
 
         # These mypy ignores, are needed to smuggle in these settings without
         # reworking these globally.
@@ -93,16 +98,16 @@ class MockPipelineModel(PipelineModel):
         )
         self._lora_manager = (
             LoRAManager(
-                config=self.pipeline_config.lora_config,
-                base_model_path=pipeline_config.model_config.model_path,
+                config=self.pipeline_config.lora,
+                base_model_path=pipeline_config.model.model_path,
                 base_dtype=self.encoding.dtype,
                 n_heads=huggingface_config.num_attention_heads,
                 n_kv_heads=huggingface_config.num_key_value_heads,
                 head_dim=huggingface_config.head_dim,
                 zmq_endpoint_base=self.pipeline_config.zmq_endpoint_base,
             )
-            if self.pipeline_config.lora_config
-            and self.pipeline_config.lora_config.enable_lora
+            if self.pipeline_config.lora
+            and self.pipeline_config.lora.enable_lora
             else None
         )
 
@@ -133,7 +138,7 @@ class MockPipelineModel(PipelineModel):
             enable_prefix_caching=False,
             cache_strategy=KVCacheStrategy.PAGED,
             devices=devices,
-            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
     @classmethod
@@ -173,8 +178,8 @@ class MockPipelineModel(PipelineModel):
                 rand_values[i, self.eos_token] += 0.9
 
         return ModelOutputs(
-            logits=Tensor.from_numpy(rand_values),
-            next_token_logits=Tensor.from_numpy(rand_values),
+            logits=Buffer.from_numpy(rand_values),
+            next_token_logits=Buffer.from_numpy(rand_values),
         )
 
     def prepare_initial_token_inputs(
@@ -193,7 +198,7 @@ class MockPipelineModel(PipelineModel):
 
     def prepare_next_token_inputs(
         self,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> ModelInputs:
         prev_model_inputs = cast(MockModelInputs, prev_model_inputs)

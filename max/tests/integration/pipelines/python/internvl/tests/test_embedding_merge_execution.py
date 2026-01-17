@@ -19,7 +19,7 @@ import os
 
 import pytest
 import torch
-from max.driver import CPU, Tensor
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -143,9 +143,9 @@ def test_single_image_merge_execution(config_name: ConfigNames) -> None:
     compiled = session.load(graph)
 
     # Convert inputs to MAX tensors
-    text_embeds_tensor = Tensor.from_numpy(text_embeds.numpy()).to(device)
-    vision_embeds_tensor = Tensor.from_numpy(vision_embeds.numpy()).to(device)
-    indices_tensor = Tensor.from_numpy(image_token_indices.numpy()).to(device)
+    text_embeds_tensor = Buffer.from_numpy(text_embeds.numpy()).to(device)
+    vision_embeds_tensor = Buffer.from_numpy(vision_embeds.numpy()).to(device)
+    indices_tensor = Buffer.from_numpy(image_token_indices.numpy()).to(device)
 
     # Execute
     results = compiled.execute(
@@ -156,7 +156,7 @@ def test_single_image_merge_execution(config_name: ConfigNames) -> None:
 
     # Convert result back to torch
     result_tensor = results[0]
-    assert isinstance(result_tensor, Tensor)
+    assert isinstance(result_tensor, Buffer)
     actual_output = torch.from_numpy(result_tensor.to_numpy())
 
     # Verify the output matches the reference implementation
@@ -286,14 +286,14 @@ def test_batch_merge_variable_positions_execution(
 
     # Execute
     results = compiled.execute(
-        Tensor.from_numpy(text_embeds.numpy()).to(device),
-        Tensor.from_numpy(vision_embeds.numpy()).to(device),
-        Tensor.from_numpy(image_token_indices.numpy()).to(device),
+        Buffer.from_numpy(text_embeds.numpy()).to(device),
+        Buffer.from_numpy(vision_embeds.numpy()).to(device),
+        Buffer.from_numpy(image_token_indices.numpy()).to(device),
     )
 
     # Convert result back to torch
     result_tensor = results[0]
-    assert isinstance(result_tensor, Tensor)
+    assert isinstance(result_tensor, Buffer)
     actual_output = torch.from_numpy(result_tensor.to_numpy())
 
     # Verify against reference
@@ -413,14 +413,14 @@ def test_ragged_multimodal_embeddings_execution() -> None:
 
     # Execute
     results = compiled.execute(
-        Tensor.from_numpy(text_embeds.numpy()).to(device),
-        Tensor.from_numpy(vision_embeds.numpy()).to(device),
-        Tensor.from_numpy(image_token_indices.numpy()).to(device),
+        Buffer.from_numpy(text_embeds.numpy()).to(device),
+        Buffer.from_numpy(vision_embeds.numpy()).to(device),
+        Buffer.from_numpy(image_token_indices.numpy()).to(device),
     )
 
     # Convert result back to torch
     result_tensor = results[0]
-    assert isinstance(result_tensor, Tensor)
+    assert isinstance(result_tensor, Buffer)
     actual_output = torch.from_numpy(result_tensor.to_numpy())
 
     # Verify against reference
@@ -477,14 +477,14 @@ def test_no_image_context_tokens_fast_path_execution() -> None:
 
     # Execute
     results = compiled.execute(
-        Tensor.from_numpy(text_embeds.numpy()).to(device),
-        Tensor.from_numpy(vision_embeds.numpy()).to(device),
-        Tensor.from_numpy(image_token_indices.numpy()).to(device),
+        Buffer.from_numpy(text_embeds.numpy()).to(device),
+        Buffer.from_numpy(vision_embeds.numpy()).to(device),
+        Buffer.from_numpy(image_token_indices.numpy()).to(device),
     )
 
     # Convert result back to torch
     result_tensor = results[0]
-    assert isinstance(result_tensor, Tensor)
+    assert isinstance(result_tensor, Buffer)
     actual_output = torch.from_numpy(result_tensor.to_numpy())
 
     # Should return inputs_embeds unchanged
@@ -552,14 +552,14 @@ def test_count_mismatch_error() -> None:
 
     # Execute
     results = compiled.execute(
-        Tensor.from_numpy(text_embeds.numpy()).to(device),
-        Tensor.from_numpy(vision_embeds.numpy()).to(device),
-        Tensor.from_numpy(mismatched_indices.numpy()).to(device),
+        Buffer.from_numpy(text_embeds.numpy()).to(device),
+        Buffer.from_numpy(vision_embeds.numpy()).to(device),
+        Buffer.from_numpy(mismatched_indices.numpy()).to(device),
     )
 
     # Convert result back to torch
     result_tensor = results[0]
-    assert isinstance(result_tensor, Tensor)
+    assert isinstance(result_tensor, Buffer)
     actual_output = torch.from_numpy(result_tensor.to_numpy())
 
     # Check that first two image context tokens were replaced
@@ -629,14 +629,14 @@ def test_large_sequence_performance() -> None:
 
     # Execute
     results = compiled.execute(
-        Tensor.from_numpy(text_embeds.numpy()).to(device),
-        Tensor.from_numpy(vision_embeds.numpy()).to(device),
-        Tensor.from_numpy(image_token_indices.numpy()).to(device),
+        Buffer.from_numpy(text_embeds.numpy()).to(device),
+        Buffer.from_numpy(vision_embeds.numpy()).to(device),
+        Buffer.from_numpy(image_token_indices.numpy()).to(device),
     )
 
     # Convert result back to torch
     result_tensor = results[0]
-    assert isinstance(result_tensor, Tensor)
+    assert isinstance(result_tensor, Buffer)
     actual_output = torch.from_numpy(result_tensor.to_numpy())
 
     # Verify against reference

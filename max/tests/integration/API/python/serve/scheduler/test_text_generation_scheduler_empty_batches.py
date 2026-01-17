@@ -80,7 +80,6 @@ def test_text_generation_scheduler__empty_batches() -> None:
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
-        offload_queue_draining=False,
         support_empty_batches=True,
     )
 

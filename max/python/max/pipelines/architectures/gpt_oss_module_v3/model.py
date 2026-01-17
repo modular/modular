@@ -14,20 +14,21 @@
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Callable, Sequence
 from typing import Any, cast
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental import functional as F
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence, KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
+    CompilationTimer,
     KVCacheConfig,
     KVCacheMixin,
     ModelInputs,
@@ -51,18 +52,18 @@ class GptOssInputs(ModelInputs):
     execution.
     """
 
-    tokens: Tensor
-    """Tensor containing the input token IDs."""
+    tokens: Buffer
+    """Buffer containing the input token IDs."""
 
-    input_row_offsets: Tensor
-    """Tensor containing the offsets for each row in the ragged input sequence.
+    input_row_offsets: Buffer
+    """Buffer containing the offsets for each row in the ragged input sequence.
     """
 
     def __init__(
         self,
-        tokens: Tensor,
-        input_row_offsets: Tensor,
-        return_n_logits: Tensor,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        return_n_logits: Buffer,
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         """
@@ -216,13 +217,11 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = Tensor.from_numpy(
+        self._input_row_offsets_prealloc = Buffer.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
-        logger.info("Building and compiling model...")
-        before = time.perf_counter()
-
+        timer = CompilationTimer("model")
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
@@ -260,14 +259,16 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
-        nn_model = GptOss(model_config, self.kv_manager)
-        nn_model.to(self.devices[0])
+        with F.lazy():
+            nn_model = GptOss(model_config, self.kv_manager)
+            nn_model.to(self.devices[0])
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
         flattened_kv_types = [
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]
 
+        timer.mark_build_complete()
         compiled_model = nn_model.compile(
             tokens_type,
             return_n_logits_type,
@@ -275,11 +276,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             *flattened_kv_types,
             weights=state_dict,
         )
-        after = time.perf_counter()
-
-        logger.info(
-            f"Building and compiling model took {after - before:.6f} seconds"
-        )
+        timer.done()
 
         return compiled_model
 
@@ -299,7 +296,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         # For backward compatibility, distribute the single tensor to all devices
         if isinstance(model_inputs.input_row_offsets, np.ndarray):
             # Convert numpy array to tensor first
-            tensor = Tensor.from_numpy(model_inputs.input_row_offsets)
+            tensor = Buffer.from_numpy(model_inputs.input_row_offsets)
             input_row_offsets = tensor.to(self.devices[0])
         else:
             # Already a tensor
@@ -313,14 +310,14 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         )
         if len(model_outputs) == 3:
             return ModelOutputs(
-                logits=cast(Tensor, model_outputs[1].driver_tensor),
-                next_token_logits=cast(Tensor, model_outputs[0].driver_tensor),
-                logit_offsets=cast(Tensor, model_outputs[2].driver_tensor),
+                logits=cast(Buffer, model_outputs[1].driver_tensor),
+                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
+                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
             )
         else:
             return ModelOutputs(
-                logits=cast(Tensor, model_outputs[0].driver_tensor),
-                next_token_logits=cast(Tensor, model_outputs[0].driver_tensor),
+                logits=cast(Buffer, model_outputs[0].driver_tensor),
+                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
             )
 
     def prepare_initial_token_inputs(
@@ -350,28 +347,29 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
-            [0] + [ctx.active_length for ctx in context_batch], dtype=np.uint32
+            [0] + [ctx.tokens.active_length for ctx in context_batch],
+            dtype=np.uint32,
         )
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
+        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
 
         # Create input_row_offsets
-        input_row_offsets_tensor = Tensor.from_numpy(input_row_offsets).to(
+        input_row_offsets_tensor = Buffer.from_numpy(input_row_offsets).to(
             self.devices[0]
         )
 
         return GptOssInputs(
-            tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
+            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
             input_row_offsets=input_row_offsets_tensor,
-            return_n_logits=Tensor.from_numpy(
+            return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
         )
 
     def prepare_next_token_inputs(
-        self, next_tokens: Tensor, prev_model_inputs: ModelInputs
+        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
     ) -> ModelInputs:
         """Prepares the inputs for subsequent execution steps in a multi-step generation.
 

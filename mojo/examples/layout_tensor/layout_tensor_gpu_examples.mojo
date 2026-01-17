@@ -73,7 +73,7 @@ def initialize_tensor_from_cpu_example():
         ctx.enqueue_copy(dev_buf, host_buf)
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             tensor,
             grid_dim=(col_blocks, row_blocks),
             block_dim=(block_size, block_size),
@@ -125,7 +125,7 @@ def shared_memory_alloc_example():
 
         # Put some data into the shared tile that we can verify on the host.
         if global_idx.x < in_size and global_idx.y < in_size:
-            shared_tile[thread_idx.y, thread_idx.x] = (
+            shared_tile[thread_idx.y, thread_idx.x] = Float32(
                 global_idx.y * in_size + global_idx.x
             )
 
@@ -141,7 +141,7 @@ def shared_memory_alloc_example():
         ctx.enqueue_memset(dev_buf, 0.0)
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             tensor,
             grid_dim=(num_blocks, num_blocks),
             block_dim=(block_size, block_size),
@@ -212,7 +212,7 @@ fn layout_tensor_distribute_example():
             host_buf[i] = i
         var tensor = LayoutTensor[dtype, layout](dev_buf)
         ctx.enqueue_copy(dev_buf, host_buf)
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             tensor,
             grid_dim=(1, 1),
             block_dim=(8, 1),
@@ -272,7 +272,7 @@ fn simple_copy_example():
         ctx.enqueue_copy(dev_buf, host_buf)
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function[kernel, kernel](
             tensor,
             grid_dim=(num_row_blocks, num_col_blocks),
             block_dim=(block_size, block_size),
@@ -349,7 +349,7 @@ fn copy_from_async_example():
                 host_buf[i] = i
             var tensor = LayoutTensor[dtype, input_layout](dev_buf)
             ctx.enqueue_copy(dev_buf, host_buf)
-            ctx.enqueue_function_checked[kernel, kernel](
+            ctx.enqueue_function[kernel, kernel](
                 tensor,
                 grid_dim=(num_row_blocks, num_col_blocks),
                 block_dim=(block_size, block_size),

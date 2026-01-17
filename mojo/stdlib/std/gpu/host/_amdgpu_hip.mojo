@@ -13,11 +13,12 @@
 
 from sys import external_call
 
-from gpu.host import DeviceContext, DeviceStream
+from gpu.host import DeviceContext, DeviceFunction, DeviceStream
 from gpu.host.device_context import (
     _ConstCharPtr,
     _checked,
     _DeviceContextPtr,
+    _DeviceFunctionPtr,
     _DeviceStreamPtr,
 )
 
@@ -30,8 +31,13 @@ struct _ihipStream_t:
     pass
 
 
+struct _ihipModule_t:
+    pass
+
+
 comptime hipDevice_t = UnsafePointer[_ihipDevice_t, MutAnyOrigin]
 comptime hipStream_t = UnsafePointer[_ihipStream_t, MutAnyOrigin]
+comptime hipModule_t = UnsafePointer[_ihipModule_t, MutAnyOrigin]
 
 
 # Accessor function to get access to the underlying hipDevice_t from an abstract DeviceContext.
@@ -70,6 +76,25 @@ fn HIP(stream: DeviceStream) raises -> hipStream_t:
         ](
             UnsafePointer(to=result),
             stream._handle,
+        )
+    )
+    return result
+
+
+# Accessor function to get access to the underlying hipModule_t from a DeviceFunction.
+@always_inline
+fn HIP_MODULE(func: DeviceFunction) raises -> hipModule_t:
+    var result = hipModule_t()
+    # const char *AsyncRT_DeviceFunction_hip_module(hipModule_t *result, const DeviceFunction *func)
+    _checked(
+        external_call[
+            "AsyncRT_DeviceFunction_hip_module",
+            _ConstCharPtr,
+            UnsafePointer[hipModule_t, origin_of(result)],
+            _DeviceFunctionPtr,
+        ](
+            UnsafePointer(to=result),
+            func._handle,
         )
     )
     return result

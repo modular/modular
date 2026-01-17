@@ -5,12 +5,27 @@ package(default_visibility = ["//max:consumers"])
 mojo_library(
     name = "shmem",
     srcs = glob(["**/*.mojo"]),
-    additional_compiler_inputs = ["@nvshmem_prebuilt//:device"],
-    copts = [
-        "--bitcode-libs",
-        "$(location @nvshmem_prebuilt//:device)",
-    ],
-    data = ["@nvshmem_prebuilt//:host"],
+    additional_compiler_inputs = select({
+        "//:nvidia_gpu": ["@nvshmem_prebuilt//:device"],
+        "//:amd_gpu": ["@rocshmem//:device"],
+        "//conditions:default": [],
+    }),
+    copts = select({
+        "//:nvidia_gpu": [
+            "--bitcode-libs",
+            "$(location @nvshmem_prebuilt//:device)",
+        ],
+        "//:amd_gpu": [
+            "--bitcode-libs",
+            "$(location @rocshmem//:device)",
+        ],
+        "//conditions:default": [],
+    }),
+    data = select({
+        "//:nvidia_gpu": ["@nvshmem_prebuilt//:host"],
+        "//:amd_gpu": ["@rocshmem//:host"],
+        "//conditions:default": [],
+    }),
     validate_missing_docs = False,
     deps = [
         "//max:layout",

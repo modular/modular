@@ -13,13 +13,15 @@
 
 from hashlib import default_comp_time_hasher
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer, bitcast
+from memory import LegacyUnsafePointer, bitcast
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from bit import prev_power_of_two
 from gpu import WARP_SIZE, barrier, block_idx
-from gpu.cluster import (
+from gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
@@ -36,16 +38,17 @@ from gpu.memory import (
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from gpu.mma import st_matrix
-from gpu.mma_sm100 import *
+from gpu.compute.mma import st_matrix
+from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
 )
-from gpu.tcgen05 import *
-from internal_utils import assert_almost_equal, ndbuffer_to_str, random, zero
+from gpu.compute.arch.tcgen05 import *
+from internal_utils import assert_almost_equal
+from random import rand
 from layout import (
     UNKNOWN_VALUE,
     IntTuple,
@@ -62,6 +65,7 @@ from layout.tensor_core_async import (
     tile_to_descriptor,
 )
 from layout.tma_async import (
+    create_tensor_tile,
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
@@ -316,7 +320,7 @@ fn stsm_helper[
     swizzle: Swizzle
 ](
     vec: SIMD,
-    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
+    dst: LayoutTensor[mut=True, _, _, address_space = AddressSpace.SHARED, ...],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
     comptime stsmx4_row_size = 32 // size_of[dst.dtype]()
@@ -349,17 +353,17 @@ fn multi_stage_store_C[
     c_smem_layout: Layout,
     c_layout: Layout,
     c_desc_layout: Layout,
-    num_accum_pipeline_stages: UInt,
+    num_accum_pipeline_stages: Int,
     /,
     *,
     accum_type: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
-    stage_stride_cols: UInt,
+    stage_stride_cols: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
-    num_output_warps: UInt = 4,
-    max_tmem_cols: UInt = 512,
+    num_output_warps: Int = 4,
+    max_tmem_cols: Int = 512,
 ](
     c_iter: LayoutTensorIter[
         c_type,
@@ -369,9 +373,7 @@ fn multi_stage_store_C[
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    accum_pipeline_consumer_state: PipelineState[
-        Int(num_accum_pipeline_stages)
-    ],
+    accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
@@ -466,7 +468,7 @@ fn multi_stage_store_C[
         )
 
         # Guard the write to shared memory is done.
-        named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+        named_barrier[num_output_warps * WARP_SIZE]()
         var lane = lane_id()
         if elect_one_warp and lane == 0:
             fence_async_view_proxy()
@@ -492,7 +494,7 @@ fn multi_stage_store_C[
         if stage > 0 and stage < num_stages - 1:
             # Guard the tma read from shared memory is done.
             # E.g. stage = 1, this guards the TMA store using buffer 0 is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+            named_barrier[num_output_warps * WARP_SIZE]()
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -938,7 +940,7 @@ fn kernel_8[
                 accum_type=accum_type,
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,
-                stage_stride_cols = UInt(stage_stride_cols),
+                stage_stride_cols=stage_stride_cols,
                 c_swizzle=c_swizzle,
                 cta_group=cta_group,
                 num_output_warps=num_output_warps,
@@ -1001,11 +1003,11 @@ fn blackwell_kernel_8[
     comptime MMA_N = umma_shape[1]
     comptime MMA_K = umma_shape[2]
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
@@ -1014,9 +1016,9 @@ fn blackwell_kernel_8[
 
     comptime output_tile_shape = Index(BM, 32)
     comptime c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-    var c_tma_op = create_tma_tile[output_tile_shape, swizzle_mode=c_swizzle](
-        ctx, c
-    )
+    var c_tma_op = create_tensor_tile[
+        output_tile_shape, swizzle_mode=c_swizzle
+    ](ctx, c)
 
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
@@ -1122,7 +1124,7 @@ fn blackwell_kernel_8[
         grid_dim[0] // cluster_shape[0], grid_dim[1] // cluster_shape[1], 1
     )
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -1317,7 +1319,7 @@ def test_blackwell_kernel_8[
 
 
 fn get_dic_of_shapes(
-    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], *_, **_]
+    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], ...]
 ) -> Tuple[Int, Int, Int]:
     try:
         return dic_bro[index]

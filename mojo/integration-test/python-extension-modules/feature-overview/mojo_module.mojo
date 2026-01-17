@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import abort
 
 from python import Python, PythonObject
@@ -154,14 +156,14 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
     fn change_name(
         self_: PythonObject, new_name: PythonObject
     ) raises -> PythonObject:
-        var self0 = UnsafePointer[Self, **_](
+        var self0 = LegacyUnsafePointer[Self, ...](
             unchecked_downcast_value=self_
         ).unsafe_mut_cast[True]()
 
         if len(new_name) > len(self0[].name.codepoints()):
             raise Error("cannot make name longer than current name")
 
-        self0[].name = String(new_name)
+        self0[].name = String(py=new_name)
 
         return PythonObject(None)
 

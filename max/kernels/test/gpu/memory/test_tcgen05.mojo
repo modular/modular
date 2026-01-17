@@ -15,9 +15,9 @@ from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import thread_idx, warp_id
-from gpu.mma_sm100 import *
+from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.sync import barrier
-from gpu.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from memory import stack_allocation
@@ -86,7 +86,7 @@ def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext):
     ](ctx)
 
     comptime kernel = tcgen05_st_ld_roundtrip_kernel[M, N]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         data.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(M),
@@ -239,7 +239,7 @@ def test_tcgen05_cp_ld_roundtrip(ctx: DeviceContext):
         Layout.row_major(M, N),
     ](ctx)
     comptime kernel = tcgen05_cp_ld_roundtrip_kernel[M, N]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         data.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(M),

@@ -16,12 +16,59 @@ from max.graph import TensorValue
 
 from .float8_config import Float8Config
 from .kernels import (
+    block_scales_interleave,
     convert_weights_to_fp8_fnuz_if_needed,
+    dynamic_block_scaled_matmul_fp4,
     dynamic_scaled_matmul,
     matmul_static_scaled_float8,
+    quantize_dynamic_block_scaled_fp4,
     quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
 )
+
+
+def matmul_float4(
+    x: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+    input_scale: TensorValue,
+    weight_scale_2: TensorValue,
+    float8_config: Float8Config,
+) -> TensorValue:
+    """Computes x @ weight.T with modelopt NVFP4 quantization.
+
+    Args:
+        x: The input tensor in bf16.
+        weight: The weight tensor in uint8 (float4-e2m1x2).
+        weight_scale: The weight scale tensor in f8e4m3fn.
+        input_scale: The input scale factor in f32 (used with vLLM convention by kernel).
+        weight_scale_2: Additional weight scale factor in f32.
+        float8_config: The float8 configuration.
+
+    Returns:
+        The output tensor in bf16.
+    """
+    x, x_scales = quantize_dynamic_block_scaled_fp4(
+        x,
+        tensor_sf=1.0 / input_scale,
+        scales_type=DType.float8_e4m3fn,
+        out_type=DType.uint8,  # fp4-e2m1fnX2
+    )
+
+    weight_scale = weight_scale.to(x.device)
+    weight_scale = block_scales_interleave(
+        weight_scale,
+    )
+
+    res = dynamic_block_scaled_matmul_fp4(
+        x,
+        weight,
+        x_scales,
+        weight_scale,
+        tensor_sf=weight_scale_2 * input_scale,
+        out_type=DType.bfloat16,
+    )
+    return res
 
 
 def matmul_float8(

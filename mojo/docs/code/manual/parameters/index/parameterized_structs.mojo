@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct GenericArray[ElementType: Copyable]:
-    var data: UnsafePointer[Self.ElementType, MutOrigin.external]
+struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
+    var data: UnsafePointer[Self.ElementType, MutExternalOrigin]
     var size: Int
 
     fn __init__(out self, var *elements: Self.ElementType):

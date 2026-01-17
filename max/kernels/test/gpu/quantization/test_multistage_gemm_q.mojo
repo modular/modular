@@ -31,7 +31,8 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.intrinsics import lop
 from gpu.memory import external_memory
 
-from internal_utils import assert_almost_equal, random, zero
+from internal_utils import assert_almost_equal
+from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -40,7 +41,9 @@ from layout.layout import *
 from layout.layout_tensor import LayoutTensor, Layout, copy_dram_to_sram
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulKernels
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from memory.unsafe import bitcast
 from quantization import Q4sym
 from quantization.qmatmul_gpu import multistage_gemm_q, pack_Q_tile
@@ -482,7 +485,7 @@ fn test_repack_Q4_0_for_sm8x(
         repacked_dequan_host_ptr, dynamic_dequan_shape
     )
 
-    zero(repacked_b_host)
+    repacked_b_host.zero()
     build_b_buffer(N, K, gguf_b_host_ptr)
     var gguf_dequan_ref_host_tensor = from_ndbuffer_row_major(
         gguf_dequan_ref_host
@@ -494,7 +497,7 @@ fn test_repack_Q4_0_for_sm8x(
             gguf_dequan_ref_host_tensor.runtime_layout.shape.value.canonicalize()
         ),
     )
-    zero(repacked_dequan_host)
+    repacked_dequan_host.zero()
 
     var gguf_b_device = ctx.enqueue_create_buffer[DType.uint8](gguf_b_size)
     var repacked_b_device = ctx.enqueue_create_buffer[DType.uint8](
@@ -572,7 +575,7 @@ fn test_repack_Q4_0_for_sm8x(
         DType.bfloat16,
     ]
 
-    ctx.enqueue_function_checked[repack, repack](
+    ctx.enqueue_function[repack, repack](
         gguf_b_tensor,
         repacked_b_tensor,
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
@@ -590,7 +593,7 @@ fn test_repack_Q4_0_for_sm8x(
         pack_factor,
     ]
 
-    ctx.enqueue_function_checked[dequan, dequan](
+    ctx.enqueue_function[dequan, dequan](
         repacked_b_tensor,
         repacked_dequan_tensor,
         grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),
@@ -606,8 +609,9 @@ fn test_repack_Q4_0_for_sm8x(
 
     comptime rtol = 2e-2
     assert_almost_equal(
-        gguf_dequan_ref_host,
-        repacked_dequan_host,
+        gguf_dequan_ref_host.data,
+        repacked_dequan_host.data,
+        gguf_dequan_ref_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
     )
@@ -682,15 +686,15 @@ fn test_quantized[
         c_host_ref_ptr, dynamic_c_shape
     )
 
-    zero(c_host)
-    random(a_host)
+    c_host.zero()
+    rand(a_host.data, a_host.num_elements())
 
     var b_scales_ptr = (b_host_ptr + N * K // 2).bitcast[Scalar[a_type]]()
     var b_scales_view = NDBuffer[
         a_type, 2, _, DimList(k.dim // group_size, n.dim)
     ](b_scales_ptr)
     # elements of b matrix is between [-1, 1]
-    random(b_scales_view, 0, 0.125)
+    rand(b_scales_view.data, b_scales_view.num_elements(), min=0, max=0.125)
     randint(
         b_host_ptr.bitcast[UInt32](),
         n.value * (k.value // pack_factor),
@@ -824,7 +828,7 @@ fn test_quantized[
         pack_factor,
     ]
 
-    ctx.enqueue_function_checked[dequan, dequan](
+    ctx.enqueue_function[dequan, dequan](
         b_tensor,
         b_ref_tensor,
         grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),
@@ -850,8 +854,9 @@ fn test_quantized[
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
     )

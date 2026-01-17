@@ -147,7 +147,7 @@ class ParameterAttr(Protocol):
     @property
     def constant(self) -> bool: ...
     def is_less_than(self, arg: max._core.Attribute, /) -> bool: ...
-    def validate_for_elaborator(self) -> bool: ...
+    def validate_for_elaborator(self) -> None: ...
 
 class ParameterScopeAttrInterface(Protocol):
     """
@@ -681,6 +681,29 @@ class GetWitnessAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
+class IsStructTypeAttr(max._core.Attribute):
+    """
+    The `#kgen.is_struct_type` attribute returns true if the given type value
+    refers to a Mojo struct type, false otherwise. This is useful for guarding
+    reflection code that needs to avoid compiler errors on non-struct types.
+
+    Example:
+
+    ```mlir
+    #kgen.is_struct_type<#MyStruct> : i1
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        type: max._core.dialects.builtin.IntegerType,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.dialects.builtin.IntegerType: ...
+
 class LLVMBitcodeLibArrayAttr(max._core.Attribute):
     """
     The `#kgen.llvm.bitcode.libs` attribute represents an array of LLVM
@@ -1106,16 +1129,20 @@ class StructDefFieldAttr(max._core.Attribute):
 
     @overload
     def __init__(
-        self, name: max._core.dialects.builtin.StringAttr, type: max._core.Type
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        type_value: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
-        self, name: max._core.dialects.builtin.StringAttr, type: max._core.Type
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        type_value: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def name(self) -> max._core.dialects.builtin.StringAttr: ...
     @property
-    def type(self) -> max._core.Type | None: ...
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class StructExtractAttr(max._core.Attribute):
     """
@@ -1147,6 +1174,35 @@ class StructExtractAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
+class StructFieldIndexByNameAttr(max._core.Attribute):
+    """
+    The `#kgen.struct_field_index_by_name` attribute returns the index of a field
+    in a struct type given the field name. Produces a compile error if the
+    field name does not exist in the struct.
+
+    The fieldName parameter should resolve to a StringAttr (kgen.string) after
+    parameter evaluation.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_index_by_name<#MyStruct, "x"> : index
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        field_name: max._core.dialects.builtin.TypedAttr,
+        type: max._core.dialects.builtin.IndexType,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def field_name(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.dialects.builtin.IndexType: ...
+
 class StructFieldNamesAttr(max._core.Attribute):
     """
     The `#kgen.struct_field_names` attribute returns the names of all fields
@@ -1168,6 +1224,35 @@ class StructFieldNamesAttr(max._core.Attribute):
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def type(self) -> VariadicType: ...
+
+class StructFieldTypeByNameAttr(max._core.Attribute):
+    """
+    The `#kgen.struct_field_type_by_name` attribute returns the type of a field
+    in a struct given the field name. Produces a compile error if the field
+    name does not exist in the struct.
+
+    The fieldName parameter should resolve to a StringAttr (kgen.string) after
+    parameter evaluation.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_type_by_name<#MyStruct, "x"> : !kgen.type
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        field_name: max._core.dialects.builtin.TypedAttr,
+        type: TypeType,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def field_name(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> TypeType: ...
 
 class StructFieldTypesAttr(max._core.Attribute):
     """
@@ -3671,14 +3756,26 @@ class StructExtractOp(max._core.Operation):
 
 class StructGepOp(max._core.Operation):
     """
-    The `kgen.struct.gep` operation takes a pointer to a `!kgen.struct` and a
-    constant index and returns a pointer to the struct element at that index.
+    The `kgen.struct.gep` operation takes a pointer to a `!kgen.struct` and an
+    index and returns a pointer to the struct element at that index. The index
+    can be either a constant integer or a parametric expression that is resolved
+    post-elaboration.
 
     Example:
 
     ```mlir
     %struct = pop.stack_allocation 1 : !kgen.struct<(i32, i64)>
+    // Constant index - result type is inferred
     %i64Ptr = kgen.struct.gep %struct[1] : <struct<(i32, i64)>>
+    ```
+
+    With a parametric index:
+
+    ```mlir
+    kgen.generator @example<I: index>(%struct: !kgen.pointer<struct<(i32, i64)>>) {
+      // Parametric index - result type must be specified
+      %ptr = kgen.struct.gep %struct[I] : <struct<(i32, i64)>> -> <i64>
+    }
     ```
 
     To get a pointer to a struct from a value-semantic struct, the struct value
@@ -3696,24 +3793,24 @@ class StructGepOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: PointerType,
-        container: max._core.Value[PointerType],
-        index: max._core.dialects.builtin.IntegerAttr,
+        container: max._core.Value,
+        index: int,
     ) -> None: ...
     @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        container: max._core.Value[PointerType],
-        index: max._core.dialects.builtin.IntegerAttr,
+        result_type: max._core.Type,
+        container: max._core.Value,
+        index: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def container(self) -> max._core.Value[PointerType]: ...
     @property
-    def index(self) -> int: ...
+    def index(self) -> max._core.dialects.builtin.TypedAttr: ...
     @index.setter
-    def index(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
+    def index(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
 
 class StructGeneratorOp(max._core.Operation):
     """
@@ -4473,12 +4570,21 @@ class StructType(max._core.Type):
     def __init__(self, types: Sequence[max._core.Type]) -> None: ...
     @overload
     def __init__(
-        self, element_types: Sequence[max._core.Type], is_memory_only: bool
+        self, types: Sequence[max._core.Type], is_memory_only: bool
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        element_types: Sequence[max._core.Type],
+        is_memory_only: bool,
+        min_alignment: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def element_types(self) -> Sequence[max._core.Type]: ...
     @property
     def is_memory_only(self) -> bool: ...
+    @property
+    def min_alignment(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class TargetType(max._core.Type):
     """

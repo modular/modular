@@ -14,7 +14,7 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.interfaces import PipelineTask, RequestID, TextGenerationInputs
 from max.pipelines.core import TextContext
@@ -69,7 +69,7 @@ def test_text_generation_pipeline__empty_batches(
             model_inputs,  # noqa: ANN001
         ) -> ModelOutputs:  # matches call style execute(model_inputs=...)
             # Return empty-shaped tensors to mimic an empty batch execution
-            empty_logits = Tensor.zeros((0, 0), DType.float32)
+            empty_logits = Buffer.zeros((0, 0), DType.float32)
             return ModelOutputs(
                 logits=empty_logits, next_token_logits=empty_logits
             )

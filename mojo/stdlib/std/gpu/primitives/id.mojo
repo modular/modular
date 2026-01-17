@@ -58,7 +58,7 @@ fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
         "llvm.amdgcn.implicitarg.ptr",
         UnsafePointer[
             Scalar[dtype],
-            MutOrigin.external,
+            MutExternalOrigin,
             address_space = AddressSpace.CONSTANT,
         ],
         has_side_effect=False,

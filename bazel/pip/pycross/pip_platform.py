@@ -17,6 +17,9 @@ from download import Download
 from packaging.tags import Tag, compatible_tags, cpython_tags, mac_platforms
 
 SUPPORTED_PYTHON_VERSIONS = {"3.10", "3.11", "3.12", "3.13", "3.14"}
+FREETHREADED_PYTHON_VERSIONS = {
+    "3.14",
+}
 SUPPORTED_PLATFORMS = {
     ("linux", "aarch64"),
     ("linux", "x86_64"),
@@ -72,14 +75,29 @@ class Platform:
     python_version: str
     operating_system: str
     arch: str
+    is_freethreaded: bool
 
-    def __init__(self, python_version: str, operating_system: str, arch: str):
+    def __init__(
+        self,
+        python_version: str,
+        operating_system: str,
+        arch: str,
+        is_freethreaded: bool = False,
+    ):
         self.operating_system = operating_system
         self.python_version = python_version
         self.arch = arch
+        self.is_freethreaded = is_freethreaded
 
     def __hash__(self) -> int:
-        return hash((self.python_version, self.operating_system, self.arch))
+        return hash(
+            (
+                self.python_version,
+                self.operating_system,
+                self.arch,
+                self.is_freethreaded,
+            )
+        )
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Platform):
@@ -89,14 +107,16 @@ class Platform:
             self.python_version == other.python_version
             and self.operating_system == other.operating_system
             and self.arch == other.arch
+            and self.is_freethreaded == other.is_freethreaded
         )
 
     def __repr__(self) -> str:
-        return f"Platform(python_version={self.python_version!r}, operating_system={self.operating_system!r}, arch={self.arch!r})"
+        return f"Platform(python_version={self.python_version!r}, operating_system={self.operating_system!r}, arch={self.arch!r}, is_freethreaded={self.is_freethreaded!r})"
 
     @property
     def tag(self) -> str:
-        return f"cp{self.python_version.replace('.', '')}"
+        suffix = "t" if self.is_freethreaded else ""
+        return f"cp{self.python_version.replace('.', '')}{suffix}"
 
     @functools.cached_property
     def tags(self) -> list[Tag]:
@@ -111,14 +131,25 @@ class Platform:
             platforms.append(f"linux_{self.arch}")
 
         python_version = tuple(map(int, self.python_version.split(".")))
+        cp_abi = "cp" + self.python_version.replace(".", "")
+
+        if self.is_freethreaded:
+            abis = [
+                "abi3t",
+                "none",
+                cp_abi + "t",
+            ]
+        else:
+            abis = [
+                "abi3",
+                "none",
+                cp_abi,
+            ]
+
         return list(
             cpython_tags(
                 python_version=python_version,
-                abis=[
-                    "abi3",
-                    "none",
-                    "cp" + self.python_version.replace(".", ""),
-                ],
+                abis=abis,
                 platforms=platforms,
             )
         ) + list(
@@ -144,11 +175,10 @@ class Platform:
     @property
     def constraint(self) -> str:
         """Return the platform constraint for bazel."""
+        suffix = "-freethreaded" if self.is_freethreaded else ""
         if self.operating_system == "darwin":
-            return f":_env_python_{self.python_version}_aarch64-apple-darwin"
-        return (
-            f":_env_python_{self.python_version}_{self.arch}-unknown-linux-gnu"
-        )
+            return f":_env_python_{self.python_version}_aarch64-apple-darwin{suffix}"
+        return f":_env_python_{self.python_version}_{self.arch}-unknown-linux-gnu{suffix}"
 
     @property
     def supports_gpu(self) -> bool:
@@ -158,9 +188,22 @@ class Platform:
 ALL_PLATFORMS = frozenset(
     {
         Platform(
-            python_version=py, operating_system=operating_system, arch=arch
+            python_version=py,
+            operating_system=operating_system,
+            arch=arch,
+            is_freethreaded=False,
         )
         for py in SUPPORTED_PYTHON_VERSIONS
+        for operating_system, arch in SUPPORTED_PLATFORMS
+    }
+    | {
+        Platform(
+            python_version=py,
+            operating_system=operating_system,
+            arch=arch,
+            is_freethreaded=True,
+        )
+        for py in FREETHREADED_PYTHON_VERSIONS
         for operating_system, arch in SUPPORTED_PLATFORMS
     }
 )

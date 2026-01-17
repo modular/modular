@@ -28,7 +28,9 @@ from layout import (
 # TODO Refactor -- we should decide on and put them into a more common file
 from linalg.transpose import _fill_strides
 from memory import memcpy
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils import IndexList, StaticTuple
 
@@ -57,7 +59,7 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
 
     comptime Element = IndexList[Self.n_loops]
     comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var cur: Self.Element
@@ -105,9 +107,11 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
-    fn __next__(mut self) -> Self.Element:
-        var cur = self.cur
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        if self.__len__() <= 0:
+            raise StopIteration()
 
+        var cur = self.cur
         self.cur[len(self.cur) - 1] += 1
 
         for i in range(Self.n_loops - 1, 0, -1):
@@ -118,9 +122,6 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
         return cur
 
     @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
     fn __len__(self) -> Int:
         if self.cur[0] >= self._ub_loop(0) or self.early_stop:
             return 0
@@ -139,10 +140,11 @@ fn pad_constant[
         mut=True,
         dtype,
         output_layout,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     input: LayoutTensor[
-        dtype, input_layout, address_space = AddressSpace.GENERIC, **_
+        dtype, input_layout, address_space = AddressSpace.GENERIC, ...
     ],
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: Scalar[constant_type],
@@ -173,10 +175,10 @@ fn pad_constant[
     @parameter
     fn pad_constant_wrapper(
         output: UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+            Scalar[dtype], address_space = AddressSpace.GENERIC, ...
         ],
         input: UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+            Scalar[dtype], address_space = AddressSpace.GENERIC, ...
         ],
         paddings: UnsafePointer[Scalar[paddings_type]],
         output_shape: IndexList[output_layout.rank()],
@@ -212,10 +214,11 @@ fn pad_reflect[
         mut=True,
         dtype,
         output_layout,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     input: LayoutTensor[
-        dtype, input_layout, address_space = AddressSpace.GENERIC, **_
+        dtype, input_layout, address_space = AddressSpace.GENERIC, ...
     ],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
@@ -245,10 +248,10 @@ fn pad_reflect[
     @parameter
     fn pad_reflect_wrapper(
         output: UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+            Scalar[dtype], address_space = AddressSpace.GENERIC, ...
         ],
         input: UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+            Scalar[dtype], address_space = AddressSpace.GENERIC, ...
         ],
         paddings: UnsafePointer[Scalar[paddings_type]],
         output_shape: IndexList[output_layout.rank()],
@@ -274,8 +277,8 @@ fn pad_shape[
     paddings_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: LayoutTensor[input_type, **_],
-    paddings_buf: LayoutTensor[paddings_type, **_],
+    input_buf: LayoutTensor[input_type, ...],
+    paddings_buf: LayoutTensor[paddings_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
@@ -319,8 +322,8 @@ fn _do_pad[
     dtype: DType,
     paddings_type: DType,
     pad_impl_fn: fn (
-        UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, **_],
-        UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, **_],
+        UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, ...],
+        UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, ...],
         UnsafePointer[Scalar[paddings_type]],
         IndexList[output_layout.rank()],
         UnsafePointer[Scalar[DType.int]],
@@ -331,10 +334,11 @@ fn _do_pad[
         mut=True,
         dtype,
         output_layout,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
     input: LayoutTensor[
-        dtype, input_layout, address_space = AddressSpace.GENERIC, **_
+        dtype, input_layout, address_space = AddressSpace.GENERIC, ...
     ],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
@@ -444,15 +448,15 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
         constant: Scalar[Self.dtype],
         axis_dim: Int,
     ):
-        var pre_pad_start_ptr = output.offset(self.output_offset)
+        var pre_pad_start_ptr = output + self.output_offset
 
         # setting values
         if self.pad_with_constant:
             _fill(pre_pad_start_ptr, constant, axis_dim)
         else:
-            var non_pad_start_ptr = pre_pad_start_ptr.offset(self.pre_pad)
-            var post_pad_start_ptr = non_pad_start_ptr.offset(self.non_pad)
-            var input_start_ptr = input.offset(self.input_offset)
+            var non_pad_start_ptr = pre_pad_start_ptr + self.pre_pad
+            var post_pad_start_ptr = non_pad_start_ptr + self.non_pad
+            var input_start_ptr = input + self.input_offset
             _fill(pre_pad_start_ptr, constant, self.pre_pad)
             memcpy(
                 dest=non_pad_start_ptr, src=input_start_ptr, count=self.non_pad
@@ -666,15 +670,17 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         output_offset: Int,
         input_offset: Int,
         output: UnsafePointer[
-            Scalar[Self.dtype], address_space = AddressSpace.GENERIC, **_
+            Scalar[Self.dtype],
+            address_space = AddressSpace.GENERIC,
+            ...,
         ],
         input: UnsafePointer[
-            Scalar[Self.dtype], address_space = AddressSpace.GENERIC, **_
+            Scalar[Self.dtype], address_space = AddressSpace.GENERIC, ...
         ],
     ):
         # no more dimensions to recurse, copy from input to unpadded region
-        var non_pad_start_ptr = output.offset(output_offset + self.pre_pad)
-        var input_start_ptr = input.offset(input_offset)
+        var non_pad_start_ptr = output + (output_offset + self.pre_pad)
+        var input_start_ptr = input + input_offset
         memcpy(dest=non_pad_start_ptr, src=input_start_ptr, count=self.non_pad)
 
     @always_inline
@@ -684,7 +690,7 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         output_offset: Int,
         output: UnsafePointer[Scalar[Self.dtype]],
     ):
-        var pre_pad_start_ptr = output.offset(output_offset)
+        var pre_pad_start_ptr = output + output_offset
 
         _memcpy_regions_fast(
             self.pre_pad,
@@ -703,10 +709,10 @@ fn _pad_reflect_axis[
     axis: Int,
 ](
     output: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+        Scalar[dtype], address_space = AddressSpace.GENERIC, ...
     ],
     input: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+        Scalar[dtype], address_space = AddressSpace.GENERIC, ...
     ],
     output_strides: UnsafePointer[Scalar[DType.int]],
     input_strides: UnsafePointer[Scalar[DType.int]],
@@ -763,10 +769,10 @@ fn _pad_reflect_impl[
     paddings_type: DType,
 ](
     output: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+        Scalar[dtype], address_space = AddressSpace.GENERIC, ...
     ],
     input: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+        Scalar[dtype], address_space = AddressSpace.GENERIC, ...
     ],
     paddings: UnsafePointer[Scalar[paddings_type]],
     output_shape: IndexList[rank],
@@ -807,8 +813,8 @@ fn pad_repeat[
     dtype: DType,
     paddings_type: DType,
 ](
-    output: LayoutTensor[mut=True, dtype, output_layout, **_],
-    input: LayoutTensor[dtype, input_layout, **_],
+    output: LayoutTensor[mut=True, dtype, output_layout, ...],
+    input: LayoutTensor[dtype, input_layout, ...],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
     """
@@ -853,7 +859,7 @@ fn pad_repeat[
         post_pads[axis] = Int(paddings[2 * axis + 1])
 
     var loop_bounds = _NestedLoopIter[output_layout.rank()].LoopBoundSpec(
-        fill=output_layout.rank()
+        fill=IndexList[2](0)
     )
 
     for i in range(output_layout.rank()):

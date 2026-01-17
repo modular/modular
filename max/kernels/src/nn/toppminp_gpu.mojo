@@ -13,7 +13,9 @@
 
 
 from math import ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, bit_width_of
 
 from builtin.dtype import _uint_type_of_width
@@ -222,18 +224,18 @@ fn normalize(
     comptime dtype = value.dtype
 
     @parameter
-    if dtype is DType.int32:
+    if dtype == DType.int32:
         return normalize(rebind[Int32](value)).cast[result.dtype]()
-    elif dtype is DType.uint32:
+    elif dtype == DType.uint32:
         return normalize(rebind[UInt32](value)).cast[result.dtype]()
-    elif dtype is DType.float32:
+    elif dtype == DType.float32:
         return normalize(rebind[Float32](value)).cast[result.dtype]()
     # TODO: These below don't return uint32 so must generalize and fix
-    elif dtype is DType.uint16:
+    elif dtype == DType.uint16:
         return normalize(rebind[UInt16](value)).cast[result.dtype]()
-    elif dtype is DType.float16:
+    elif dtype == DType.float16:
         return normalize(rebind[Float16](value)).cast[result.dtype]()
-    elif dtype is DType.bfloat16:
+    elif dtype == DType.bfloat16:
         return normalize(rebind[BFloat16](value)).cast[result.dtype]()
     else:
         constrained[False, "unhandled normalize type"]()
@@ -453,7 +455,7 @@ fn radix_sort_pairs_kernel[
 
             @parameter
             if current_bit == 0:
-                output_key_ids[global_offset] = index
+                output_key_ids[global_offset] = Scalar[out_idx_type](index)
             else:
                 output_key_ids[global_offset] = input_key_ids[index]
 
@@ -479,6 +481,11 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
         self._d_buffers = [current, alternate]
         self._selection = 0
         self._size = size
+
+    fn __copyinit__(out self, rhs: Self):
+        self._d_buffers = rhs._d_buffers.copy()
+        self._selection = rhs._selection
+        self._size = rhs._size
 
     @always_inline
     fn current(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
@@ -512,8 +519,8 @@ fn run_radix_sort_pairs_gpu[
     NUM_BITS_PER_PASS: Int = 4,
 ](
     ctx: DeviceContext,
-    mut keys: DoubleBuffer[dtype, **_],
-    mut key_ids: DoubleBuffer[out_idx_type, **_],
+    mut keys: DoubleBuffer[dtype, ...],
+    mut key_ids: DoubleBuffer[out_idx_type, ...],
     skip_sort: UnsafePointer[Scalar[DType.bool]],
     in_shape: IndexList,
 ) raises:
@@ -533,7 +540,7 @@ fn run_radix_sort_pairs_gpu[
             dtype, out_idx_type, current_bit, ascending, BLOCK_SIZE
         ]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             keys.current(ctx),
             keys.alternate(ctx),
             key_ids.current(ctx),
@@ -661,12 +668,12 @@ fn _topp_minp_sampling_gpu[
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    p_thresholds: LayoutTensor[dtype, **_],
+    p_thresholds: LayoutTensor[dtype, ...],
     input_logits: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, **_
+        dtype, address_space = AddressSpace.GENERIC, ...
     ],
     out_token_ids: LayoutTensor[
-        out_idx_type, address_space = AddressSpace.GENERIC, **_
+        out_idx_type, address_space = AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -776,7 +783,7 @@ fn _topp_minp_sampling_gpu[
     comptime topk_kernel = topk_wrapper[
         dtype, out_idx_type, is_top_p, _test_sort=_test_sort
     ]
-    ctx.enqueue_function_checked[topk_kernel, topk_kernel](
+    ctx.enqueue_function_experimental[topk_kernel](
         K,
         vocab_size,
         num_blocks_per_input,
@@ -796,12 +803,12 @@ fn _topp_minp_sampling_gpu[
     var ids_buf = ctx.enqueue_create_buffer[out_idx_type](input_size * 2)
     var probs_double_buffer = DoubleBuffer(
         probs_buf.unsafe_ptr(),
-        probs_buf.unsafe_ptr().offset(input_size),
+        probs_buf.unsafe_ptr() + input_size,
         input_size,
     )
     var keys_double_buffer = DoubleBuffer(
         ids_buf.unsafe_ptr(),
-        ids_buf.unsafe_ptr().offset(input_size),
+        ids_buf.unsafe_ptr() + input_size,
         input_size,
     )
 
@@ -827,7 +834,7 @@ fn _topp_minp_sampling_gpu[
     comptime topp_minp_kernel = topp_minp_sampling_kernel[
         dtype, out_idx_type, is_top_p
     ]
-    ctx.enqueue_function_checked[topp_minp_kernel, topp_minp_kernel](
+    ctx.enqueue_function_experimental[topp_minp_kernel](
         p_thresholds.to_device_buffer(ctx),
         probs_buf,
         ids_buf,
@@ -851,12 +858,12 @@ fn top_p_sampling_gpu[
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    top_ps: LayoutTensor[dtype, **_],
+    top_ps: LayoutTensor[dtype, ...],
     input_logits: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, **_
+        dtype, address_space = AddressSpace.GENERIC, ...
     ],
     out_token_ids: LayoutTensor[
-        out_idx_type, address_space = AddressSpace.GENERIC, **_
+        out_idx_type, address_space = AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -883,12 +890,12 @@ fn min_p_sampling_gpu[
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    min_ps: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    min_ps: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     input_logits: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, **_
+        dtype, address_space = AddressSpace.GENERIC, ...
     ],
     out_token_ids: LayoutTensor[
-        out_idx_type, address_space = AddressSpace.GENERIC, **_
+        out_idx_type, address_space = AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:

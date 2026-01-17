@@ -10,6 +10,7 @@ Benchmarks comparing MAX kernels against external baselines on NVIDIA B200 GPUs.
 | `bench_decode` | MHA decode (single token) | FlashInfer (TRT-LLM backend) |
 | `bench_mla_decode` | Multi-head Latent Attention decode | FlashInfer (TRT-LLM MLA) |
 | `bench_grouped_gemm` | Grouped GEMM | DeepGEMM |
+| `bench_ep_baseline` | Expert Parallelism dispatch/combine (adhoc) | DeepEP (optional) |
 
 ## Running Benchmarks
 
@@ -19,6 +20,11 @@ kbench bench_prefill.yaml
 kbench bench_decode.yaml
 kbench bench_mla_decode.yaml
 kbench bench_grouped_gemm.yaml
+
+# Via Bazel directly
+./bazelw run //max/kernels/benchmarks/misc/comparison:bench_prefill
+./bazelw run //max/kernels/benchmarks/misc/comparison:bench_decode
+./bazelw run //max/kernels/benchmarks/misc/comparison:bench_ep_baseline
 ```
 
 ## Architecture
@@ -28,11 +34,11 @@ kbench bench_grouped_gemm.yaml
 External baselines require SM100-specific builds not available on PyPI. The infrastructure:
 
 ```text
-MODULE.bazel                    # http_file: fetch wheels from S3
+MODULE.bazel                             # http_file: fetch wheels from S3
     ↓
-bazel/pip/blackwell_bench/      # pycross_wheel_library targets
+bazel/pip/blackwell_bench/               # pycross_wheel_library targets
     ↓
-Kernels/benchmarks/comparison/  # modular_py_binary executables
+max/kernels/benchmarks/misc/comparison/  # modular_py_binary executables
 ```
 
 **Key files:**
@@ -134,3 +140,49 @@ Bazel's `http_file` doesn't encode special characters, causing 403 errors.
 **Solution:** `setup_bench_env.py --build-wheels` automatically renames
 wheels to replace `+` with `_` (e.g., `deep_gemm-2.2.0_38f8ef7-...whl`).
 The wheel contents are unchanged—only the filename is sanitized.
+
+## EP Baseline Benchmark (Adhoc)
+
+The `bench_ep_baseline` benchmark compares MAX EP dispatch/combine operations
+against DeepSeek-AI's DeepEP library for expert parallelism.
+
+### Running
+
+```bash
+br //max/kernels/benchmarks/misc/comparison:bench_ep_baseline -- \
+    --num-tokens 128 --hidden 7168 --num-topk 8 --num-experts 288
+```
+
+### DeepEP Installation (Optional)
+
+DeepEP is an optional baseline. If not installed, only MAX results are shown.
+
+```bash
+# Install DeepEP with NVSHMEM support
+NVSHMEM_DIR=/path/to/installed/nvshmem python -m pip install \
+    git+https://github.com/deepseek-ai/DeepEP.git
+```
+
+**Requirements:**
+
+- NVSHMEM library installed
+- CUDA 12.3+ for SM90 or CUDA 11.0+ for SM80
+- NVLink for intranode communication
+- RDMA network for internode communication
+
+See [DeepEP repository](https://github.com/deepseek-ai/DeepEP) for detailed
+setup instructions.
+
+### Parameters
+
+```text
+--num-tokens         Number of tokens per device (default: 128)
+--hidden             Hidden size (default: 7168)
+--num-topk           Number of experts per token (default: 8)
+--num-experts        Total number of experts (default: 288)
+--dispatch-dtype     Dispatch dtype: bf16/fp16/fp32 (default: bf16)
+--combine-dtype      Combine dtype: bf16/fp16/fp32 (default: bf16)
+--iters              Number of test iterations (default: 30)
+--gpus-per-node      GPUs to use (0 = all visible, default: 0)
+--profile            Print detailed Kineto profiling tables
+```

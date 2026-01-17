@@ -265,7 +265,7 @@ struct OwnedDLHandle(Movable):
         return self._handle.check_symbol(name)
 
     fn get_function[
-        result_type: AnyTrivialRegType
+        result_type: __TypeOfAllTypes
     ](self, var name: String) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
@@ -283,7 +283,7 @@ struct OwnedDLHandle(Movable):
 
     @always_inline
     fn _get_function[
-        func_name: StaticString, result_type: AnyTrivialRegType
+        func_name: StaticString, result_type: __TypeOfAllTypes
     ](self) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
@@ -299,7 +299,7 @@ struct OwnedDLHandle(Movable):
 
     @always_inline
     fn _get_function[
-        result_type: AnyTrivialRegType
+        result_type: __TypeOfAllTypes
     ](self, *, cstr_name: UnsafePointer[mut=False, c_char]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
@@ -354,7 +354,7 @@ struct OwnedDLHandle(Movable):
     @always_inline
     fn call[
         name: StaticString,
-        return_type: AnyTrivialRegType = NoneType,
+        return_type: __TypeOfAllTypes = NoneType,
         *T: AnyType,
     ](self, *args: *T) -> return_type:
         """Call a function with any amount of arguments.
@@ -373,7 +373,7 @@ struct OwnedDLHandle(Movable):
         return self._handle.call[name, return_type](args)
 
     fn call[
-        name: StaticString, return_type: AnyTrivialRegType = NoneType
+        name: StaticString, return_type: __TypeOfAllTypes = NoneType
     ](self, args: VariadicPack[element_trait=AnyType]) -> return_type:
         """Call a function with any amount of arguments.
 
@@ -408,7 +408,7 @@ struct _DLHandle(Boolable, Copyable):
         library. For safer usage, prefer `OwnedDLHandle`.
     """
 
-    var handle: OpaquePointer[MutOrigin.external]
+    var handle: OpaquePointer[MutExternalOrigin]
     """The handle to the dynamic library."""
 
     @always_inline
@@ -426,7 +426,7 @@ struct _DLHandle(Boolable, Copyable):
         Raises:
             If `dlopen(nullptr, flags)` fails.
         """
-        self = Self._dlopen(UnsafePointer[c_char, MutOrigin.external](), flags)
+        self = Self._dlopen(UnsafePointer[c_char, MutExternalOrigin](), flags)
 
     fn __init__[
         PathLike: os.PathLike, //
@@ -499,7 +499,7 @@ struct _DLHandle(Boolable, Copyable):
         return self.handle.__bool__()
 
     fn get_function[
-        result_type: AnyTrivialRegType
+        result_type: __TypeOfAllTypes
     ](self, var name: String) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
@@ -520,7 +520,7 @@ struct _DLHandle(Boolable, Copyable):
 
     @always_inline
     fn _get_function[
-        func_name: StaticString, result_type: AnyTrivialRegType
+        func_name: StaticString, result_type: __TypeOfAllTypes
     ](self) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
@@ -540,7 +540,7 @@ struct _DLHandle(Boolable, Copyable):
 
     @always_inline
     fn _get_function[
-        result_type: AnyTrivialRegType
+        result_type: __TypeOfAllTypes
     ](self, *, cstr_name: UnsafePointer[mut=False, c_char]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
@@ -643,7 +643,7 @@ struct _DLHandle(Boolable, Copyable):
     @always_inline
     fn call[
         name: StaticString,
-        return_type: AnyTrivialRegType = NoneType,
+        return_type: __TypeOfAllTypes = NoneType,
         *T: AnyType,
     ](self, *args: *T) -> return_type:
         """Call a function with any amount of arguments.
@@ -662,7 +662,7 @@ struct _DLHandle(Boolable, Copyable):
         return self.call[name, return_type](args)
 
     fn call[
-        name: StaticString, return_type: AnyTrivialRegType = NoneType
+        name: StaticString, return_type: __TypeOfAllTypes = NoneType
     ](self, args: VariadicPack[element_trait=AnyType]) -> return_type:
         """Call a function with any amount of arguments.
 
@@ -690,9 +690,9 @@ struct _DLHandle(Boolable, Copyable):
 
 @always_inline
 fn _get_dylib_function[
-    dylib_global: _Global[StorageType=OwnedDLHandle, *_, **_],
+    dylib_global: _Global[StorageType=OwnedDLHandle, ...],
     func_name: StaticString,
-    result_type: AnyTrivialRegType,
+    result_type: __TypeOfAllTypes,
 ]() raises -> result_type:
     var func_cache_name = String(dylib_global.name, "/", func_name)
     var func_ptr = _get_global_or_null(func_cache_name)
@@ -707,7 +707,7 @@ fn _get_dylib_function[
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(func_cache_name),
         UnsafePointer(to=new_func).bitcast[
-            OpaquePointer[MutOrigin.external]
+            OpaquePointer[MutExternalOrigin]
         ]()[],
     )
 
@@ -848,13 +848,13 @@ struct _Global[
     init_fn: fn () -> StorageType,
     on_error_msg: Optional[fn () -> Error] = None,
 ](Defaultable):
-    comptime ResultType = UnsafePointer[Self.StorageType, MutOrigin.external]
+    comptime ResultType = UnsafePointer[Self.StorageType, MutExternalOrigin]
 
     fn __init__(out self):
         pass
 
     @staticmethod
-    fn _init_wrapper() -> OpaquePointer[MutOrigin.external]:
+    fn _init_wrapper() -> OpaquePointer[MutExternalOrigin]:
         # Heap allocate space to store this "global"
         # TODO:
         #   Any way to avoid the move, e.g. by calling this function
@@ -864,7 +864,7 @@ struct _Global[
         return ptr^.steal_data().bitcast[NoneType]()
 
     @staticmethod
-    fn _deinit_wrapper(opaque_ptr: OpaquePointer[MutOrigin.external]):
+    fn _deinit_wrapper(opaque_ptr: OpaquePointer[MutExternalOrigin]):
         # Deinitialize and deallocate the storage.
         _ = OwnedPointer(
             unsafe_from_raw_pointer=opaque_ptr.bitcast[Self.StorageType]()
@@ -898,7 +898,7 @@ struct _Global[
     fn get_or_create_indexed_ptr(idx: Int) raises -> Self.ResultType:
         var ptr = external_call[
             "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
-            OpaquePointer[MutOrigin.external],
+            OpaquePointer[MutExternalOrigin],
         ](
             idx,
             Self._init_wrapper,
@@ -916,11 +916,11 @@ struct _Global[
 @always_inline
 fn _get_global[
     name: StaticString,
-    init_fn: fn () -> OpaquePointer[MutOrigin.external],
-    destroy_fn: fn (OpaquePointer[MutOrigin.external]) -> None,
-]() -> OpaquePointer[MutOrigin.external]:
+    init_fn: fn () -> OpaquePointer[MutExternalOrigin],
+    destroy_fn: fn (OpaquePointer[MutExternalOrigin]) -> None,
+]() -> OpaquePointer[MutExternalOrigin]:
     return external_call[
-        "KGEN_CompilerRT_GetOrCreateGlobal", OpaquePointer[MutOrigin.external]
+        "KGEN_CompilerRT_GetOrCreateGlobal", OpaquePointer[MutExternalOrigin]
     ](
         name,
         init_fn,
@@ -929,9 +929,9 @@ fn _get_global[
 
 
 @always_inline
-fn _get_global_or_null(name: StringSlice) -> OpaquePointer[MutOrigin.external]:
+fn _get_global_or_null(name: StringSlice) -> OpaquePointer[MutExternalOrigin]:
     return external_call[
-        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutOrigin.external]
+        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutExternalOrigin]
     ](name.unsafe_ptr(), name.byte_length())
 
 
@@ -943,7 +943,7 @@ fn _get_global_or_null(name: StringSlice) -> OpaquePointer[MutOrigin.external]:
 @always_inline("nodebug")
 fn external_call[
     callee: StaticString,
-    return_type: AnyTrivialRegType,
+    return_type: __TypeOfAllTypes,
     *types: AnyType,
 ](*args: *types) -> return_type:
     """Calls an external function.
@@ -965,7 +965,7 @@ fn external_call[
 @always_inline("nodebug")
 fn external_call[
     callee: StaticString,
-    return_type: AnyTrivialRegType,
+    return_type: __TypeOfAllTypes,
 ](args: VariadicPack[element_trait=AnyType]) -> return_type:
     """Calls an external function.
 
@@ -1007,7 +1007,7 @@ fn external_call[
 @always_inline("nodebug")
 fn _external_call_const[
     callee: StaticString,
-    return_type: AnyTrivialRegType,
+    return_type: __TypeOfAllTypes,
     *types: AnyType,
 ](*args: *types) -> return_type:
     """Mark the external function call as having no observable effects to the

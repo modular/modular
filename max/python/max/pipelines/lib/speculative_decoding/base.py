@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Device, Tensor, load_devices, scan_available_devices
+from max.driver import Buffer, Device, load_devices, scan_available_devices
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import (
@@ -144,8 +144,8 @@ def hidden_states_return_config(
     For Eagle and DeepSeek MTP, we share the embedding and lm_head weights between the target and draft models and only take the last hidden state from the target model.
 
     """
-    assert pipeline_config._speculative_config is not None
-    if pipeline_config._speculative_config.is_eagle():
+    assert pipeline_config._speculative is not None
+    if pipeline_config._speculative.is_eagle():
         if is_draft:
             return ReturnHiddenStates.LAST
         else:
@@ -182,15 +182,15 @@ class SpeculativeDecodingPipelineBase(
 
         # Load target model
         self.target_devices = load_devices(
-            self.pipeline_config.model_config.device_specs
+            self.pipeline_config.model.device_specs
         )
-        target_config = self.pipeline_config.model_config.huggingface_config
+        target_config = self.pipeline_config.model.huggingface_config
         target_session = InferenceSession(devices=self.target_devices)
         self.pipeline_config.configure_session(target_session)
         target_config = AutoConfig.from_pretrained(
-            self.pipeline_config.model_config.model_path,
-            trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
-            revision=self.pipeline_config.model_config.huggingface_model_revision,
+            self.pipeline_config.model.model_path,
+            trust_remote_code=self.pipeline_config.model.trust_remote_code,
+            revision=self.pipeline_config.model.huggingface_model_revision,
         )
 
         # Expand EOS
@@ -214,47 +214,44 @@ class SpeculativeDecodingPipelineBase(
         else:
             self._eos_token_id = set([eos_token_id])
 
-        target_hf_repo = (
-            self.pipeline_config.model_config.huggingface_weight_repo
-        )
+        target_hf_repo = self.pipeline_config.model.huggingface_weight_repo
 
         weight_paths: list[Path] = []
         if (
-            self.pipeline_config.model_config.huggingface_weight_repo.repo_type
+            self.pipeline_config.model.huggingface_weight_repo.repo_type
             == RepoType.online
         ):
             # Download weight files if not existent.
             weight_paths = download_weight_files(
                 huggingface_model_id=target_hf_repo.repo_id,
                 filenames=[
-                    str(x)
-                    for x in self.pipeline_config.model_config.weight_path
+                    str(x) for x in self.pipeline_config.model.weight_path
                 ],
-                revision=self.pipeline_config.model_config.huggingface_weight_revision,
+                revision=self.pipeline_config.model.huggingface_weight_revision,
                 max_workers=8,
             )
         else:
             # Make sure the weight paths are absolute paths
             weight_paths = [
-                self.pipeline_config.model_config.model_path / x
-                for x in self.pipeline_config.model_config.weight_path
+                self.pipeline_config.model.model_path / x
+                for x in self.pipeline_config.model.weight_path
             ]
 
         target_weights = load_weights(weight_paths)
         _target_weights_format = weights_format(weight_paths)
 
-        if not self.pipeline_config.model_config.quantization_encoding:
+        if not self.pipeline_config.model.quantization_encoding:
             raise ValueError(
-                f"quantization_encoding must be provided, {self.pipeline_config.model_config.quantization_encoding}"
+                f"quantization_encoding must be provided, {self.pipeline_config.model.quantization_encoding}"
             )
 
         self._target_model = pipeline_model(
             pipeline_config=self.pipeline_config,
             session=target_session,
             huggingface_config=target_config,
-            encoding=self.pipeline_config.model_config.quantization_encoding,
+            encoding=self.pipeline_config.model.quantization_encoding,
             devices=self.target_devices,
-            kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
+            kv_cache_config=self.pipeline_config.model.kv_cache,
             weights=target_weights,
             adapter=weight_adapters.get(_target_weights_format),
             return_logits=ReturnLogits.VARIABLE,
@@ -266,7 +263,7 @@ class SpeculativeDecodingPipelineBase(
         # Calculate Max Length
         self._max_length = self._target_model.calculate_max_seq_len(
             self.pipeline_config,
-            huggingface_config=self.pipeline_config.model_config.huggingface_config,
+            huggingface_config=self.pipeline_config.model.huggingface_config,
         )
 
         # Load draft model
@@ -275,25 +272,21 @@ class SpeculativeDecodingPipelineBase(
         draft_session = InferenceSession(devices=self.draft_devices)
         self.pipeline_config.configure_session(draft_session)
 
-        assert self.pipeline_config.draft_model_config is not None
-        draft_config = (
-            self.pipeline_config.draft_model_config.huggingface_config
-        )
+        assert self.pipeline_config.draft_model is not None
+        draft_config = self.pipeline_config.draft_model.huggingface_config
 
-        if hasattr(
-            self.pipeline_config.model_config.huggingface_config, "vocab_size"
-        ):
+        if hasattr(self.pipeline_config.model.huggingface_config, "vocab_size"):
             self.vocab_size = (
-                self.pipeline_config.model_config.huggingface_config.vocab_size
+                self.pipeline_config.model.huggingface_config.vocab_size
             )
         elif hasattr(
-            self.pipeline_config.model_config.huggingface_config, "text_config"
+            self.pipeline_config.model.huggingface_config, "text_config"
         ):
             if hasattr(
-                self.pipeline_config.model_config.huggingface_config.text_config,
+                self.pipeline_config.model.huggingface_config.text_config,
                 "vocab_size",
             ):
-                self.vocab_size = self.pipeline_config.model_config.huggingface_config.text_config.vocab_size
+                self.vocab_size = self.pipeline_config.model.huggingface_config.text_config.vocab_size
             else:
                 raise ValueError(
                     "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
@@ -305,19 +298,17 @@ class SpeculativeDecodingPipelineBase(
             )
 
         # Retrieve Encoding, and Files for Draft Model
-        if self.pipeline_config.draft_model_config is None:
+        if self.pipeline_config.draft_model is None:
             raise ValueError(
                 "draft_model must be provided for speculative decoding"
             )
 
-        draft_hf_repo = (
-            self.pipeline_config.draft_model_config.huggingface_weight_repo
-        )
+        draft_hf_repo = self.pipeline_config.draft_model.huggingface_weight_repo
 
-        # Use the quantization_encoding from draft_model_config if provided
-        if self.pipeline_config.draft_model_config.quantization_encoding:
+        # Use the quantization_encoding from draft_model if provided
+        if self.pipeline_config.draft_model.quantization_encoding:
             draft_encoding = (
-                self.pipeline_config.draft_model_config.quantization_encoding
+                self.pipeline_config.draft_model.quantization_encoding
             )
         else:
             # Fall back to first supported encoding if not specified
@@ -331,32 +322,31 @@ class SpeculativeDecodingPipelineBase(
             )
             draft_encoding = encodings[0]
 
-        # Use already-resolved weight paths from draft_model_config
+        # Use already-resolved weight paths from draft_model
         draft_weight_paths: list[Path] = []
         if (
-            self.pipeline_config.draft_model_config.huggingface_weight_repo.repo_type
+            self.pipeline_config.draft_model.huggingface_weight_repo.repo_type
             == RepoType.online
         ):
             # Download weight files if not existent.
             draft_weight_paths = download_weight_files(
-                huggingface_model_id=self.pipeline_config.draft_model_config.model_path,
+                huggingface_model_id=self.pipeline_config.draft_model.model_path,
                 filenames=[
-                    str(x)
-                    for x in self.pipeline_config.draft_model_config.weight_path
+                    str(x) for x in self.pipeline_config.draft_model.weight_path
                 ],
-                revision=self.pipeline_config.draft_model_config.huggingface_weight_revision,
+                revision=self.pipeline_config.draft_model.huggingface_weight_revision,
                 max_workers=8,
             )
         else:
             # Make sure the weight paths are absolute paths
             draft_weight_paths = [
-                self.pipeline_config.draft_model_config.model_path / x
-                for x in self.pipeline_config.draft_model_config.weight_path
+                self.pipeline_config.draft_model.model_path / x
+                for x in self.pipeline_config.draft_model.weight_path
             ]
 
         draft_weights = load_weights(draft_weight_paths)
         _draft_weights_format = weights_format(draft_weight_paths)
-        assert self.pipeline_config._speculative_config is not None
+        assert self.pipeline_config._speculative is not None
 
         # Use draft model's pipeline model and weight adapters if provided
         # Otherwise fall back to target model's (for backward compatibility)
@@ -377,7 +367,7 @@ class SpeculativeDecodingPipelineBase(
             huggingface_config=draft_config,
             encoding=draft_encoding,
             devices=self.draft_devices,
-            kv_cache_config=self.pipeline_config.draft_model_config.kv_cache_config,
+            kv_cache_config=self.pipeline_config.draft_model.kv_cache,
             weights=draft_weights,
             adapter=actual_draft_weight_adapters.get(_draft_weights_format),
             return_logits=ReturnLogits.LAST_TOKEN,
@@ -387,7 +377,7 @@ class SpeculativeDecodingPipelineBase(
         )
 
         # Load draft sampler
-        draft_sampling_config = self.pipeline_config.sampling_config
+        draft_sampling_config = self.pipeline_config.sampling
         draft_sampling_config.enable_variable_logits = False
         self._draft_sampler = draft_session.load(
             token_sampler(
@@ -429,7 +419,7 @@ class SpeculativeDecodingPipelineBase(
         self._target_session = target_session
 
         self._num_draft_steps = (
-            self.pipeline_config._speculative_config.num_speculative_tokens
+            self.pipeline_config._speculative.num_speculative_tokens
         )
 
     @traced
@@ -450,7 +440,7 @@ class SpeculativeDecodingPipelineBase(
 
         if num_available_steps <= 0:
             raise ValueError(
-                f"Request {context.request_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
+                f"Request {context.request_id} length ({len(context.tokens)}) is larger than or equal to the configured max_length ({max_seq_len})"
             )
 
         return min(num_available_steps, num_steps)
@@ -473,7 +463,7 @@ class SpeculativeDecodingPipelineBase(
         self,
         batch: list[TextContext],
         device: Device,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[Buffer, Buffer, Buffer, Buffer, Buffer, Buffer]:
         """Create sampling parameter tensors from context batch.
 
         Args:
@@ -486,26 +476,26 @@ class SpeculativeDecodingPipelineBase(
         top_k_np = np.array(
             [context.sampling_params.top_k for context in batch], dtype=np.int64
         )
-        top_k = Tensor.from_numpy(top_k_np).to(device)
+        top_k = Buffer.from_numpy(top_k_np).to(device)
         max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
-        max_k = Tensor.from_numpy(max_k_np)
+        max_k = Buffer.from_numpy(max_k_np)
         temperature_np = np.array(
             [context.sampling_params.temperature for context in batch],
             dtype=np.float32,
         )
-        temperature = Tensor.from_numpy(temperature_np).to(device)
+        temperature = Buffer.from_numpy(temperature_np).to(device)
         top_p_np = np.array(
             [context.sampling_params.top_p for context in batch],
             dtype=np.float32,
         )
-        top_p = Tensor.from_numpy(top_p_np).to(device)
+        top_p = Buffer.from_numpy(top_p_np).to(device)
         # min_top_p must be provided as a scalar CPU tensor
         min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
-        min_top_p = Tensor.from_numpy(min_top_p_np)
+        min_top_p = Buffer.from_numpy(min_top_p_np)
         seed_np = np.array(
             [context.sampling_params.seed for context in batch], dtype=np.uint64
         )
-        seed = Tensor.from_numpy(seed_np).to(device)
+        seed = Buffer.from_numpy(seed_np).to(device)
 
         return (top_k, max_k, temperature, top_p, min_top_p, seed)
 
@@ -513,15 +503,15 @@ class SpeculativeDecodingPipelineBase(
     def sample_draft_logits(
         self,
         model_outputs: ModelOutputs,
-        prev_tokens: Tensor,
-        prev_logits: Tensor,
-        top_k: Tensor,
-        max_k: Tensor,
-        temperature: Tensor,
-        top_p: Tensor,
-        min_top_p: Tensor,
-        seed: Tensor,
-    ) -> tuple[Tensor, Tensor, Tensor]:
+        prev_tokens: Buffer,
+        prev_logits: Buffer,
+        top_k: Buffer,
+        max_k: Buffer,
+        temperature: Buffer,
+        top_p: Buffer,
+        min_top_p: Buffer,
+        seed: Buffer,
+    ) -> tuple[Buffer, Buffer, Buffer]:
         graph_inputs = [
             model_outputs.logits,
             prev_tokens,
@@ -534,9 +524,9 @@ class SpeculativeDecodingPipelineBase(
             prev_logits,
         ]
         a, b, c = self._draft_sampler(*graph_inputs)[:3]
-        assert isinstance(a, Tensor)
-        assert isinstance(b, Tensor)
-        assert isinstance(c, Tensor)
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        assert isinstance(c, Buffer)
         return (a, b, c)
 
     @property
@@ -610,7 +600,7 @@ class SpeculativeDecodingPipelineBase(
             # If all draft tokens are accepted, then the draft model has not
             # processed the bonus token. In this case only the draft needs to
             # go one step back. At the moment we do this for all cases.
-            context.rewind_processing(1)
+            context.tokens.rewind_processing(1)
 
         # Update metrics
         self._metrics.update(
@@ -640,7 +630,7 @@ class SpeculativeDecodingPipelineBase(
             )
 
             # Break early if beyond max length
-            current_length = context.processed_length + 1
+            current_length = context.tokens.processed_length + 1
             if current_length >= context_max_length:
                 context.status = GenerationStatus.MAXIMUM_LENGTH
 

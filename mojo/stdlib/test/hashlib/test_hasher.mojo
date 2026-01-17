@@ -44,9 +44,6 @@ struct DummyHasher(Hasher):
 struct SomeHashableStruct(Hashable, ImplicitlyCopyable):
     var _value: Int64
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
-        hasher._update_with_simd(self._value)
-
 
 def test_hasher():
     var hasher = DummyHasher()

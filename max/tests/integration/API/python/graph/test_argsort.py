@@ -16,7 +16,7 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -59,7 +59,7 @@ def test_argsort_execution(
 
     # Execute MAX model.
     max_indices = model.execute(
-        Tensor.from_numpy(np_input).to(model.input_devices[0])
+        Buffer.from_numpy(np_input).to(model.input_devices[0])
     )[0]
 
     # Get torch reference results.
@@ -72,6 +72,6 @@ def test_argsort_execution(
     # This handles potential index ordering differences when sorted=False
     # (once this test supports that).
     np.testing.assert_array_equal(
-        cast(Tensor, max_indices).to_numpy(),
+        cast(Buffer, max_indices).to_numpy(),
         torch_indices.numpy(),
     )

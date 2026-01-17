@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string.format import _CurlyEntryFormattable, _FormatUtils
+from collections.string.format import _FormatUtils
 from collections.string.string_slice import CodepointSliceIter, StaticString
 from os import PathLike
 from sys.ffi import c_char, CStringSlice
@@ -41,7 +41,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Sized,
     Stringable,
     Writable,
-    _CurlyEntryFormattable,
 ):
     """This type represents a string literal.
 
@@ -324,6 +323,57 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return Int(mlir_value=__mlir_op.`pop.string.size`(self.value))
 
+    @always_inline
+    fn count_codepoints(self) -> Int:
+        """Calculates the length in Unicode codepoints encoded in the
+        UTF-8 representation of this string.
+
+        This is an O(n) operation, where n is the length of the string, as it
+        requires scanning the full string contents.
+
+        Returns:
+            The length in Unicode codepoints.
+
+        Examples:
+
+            Query the length of a string, in bytes and Unicode codepoints:
+
+            ```mojo
+            %# from testing import assert_equal
+
+            var s = StringSlice("ನಮಸ್ಕಾರ")
+            assert_equal(s.count_codepoints(), 7)
+            assert_equal(s.byte_length(), 21)
+            ```
+
+            Strings containing only ASCII characters have the same byte and
+            Unicode codepoint length:
+
+            ```mojo
+            %# from testing import assert_equal
+
+            var s = StringSlice("abc")
+            assert_equal(s.count_codepoints(), 3)
+            assert_equal(s.byte_length(), 3)
+            ```
+
+            The character length of a string with visual combining characters is
+            the length in Unicode codepoints, not grapheme clusters:
+
+            ```mojo
+            %# from testing import assert_equal
+
+            var s = StringSlice("á")
+            assert_equal(s.count_codepoints(), 2)
+            assert_equal(s.byte_length(), 3)
+            ```
+
+        Notes:
+            This method needs to traverse the whole string to count, so it has
+            a performance hit compared to using the byte length.
+        """
+        return self.as_string_slice().count_codepoints()
+
     @always_inline("nodebug")
     fn unsafe_ptr(
         self,
@@ -406,6 +456,14 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
 
         writer.write(self.as_string_slice())
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the string literal".
+
+        Args:
+            writer: The value to write to.
+        """
+        self.as_string_slice().write_repr_to(writer)
 
     fn find(self, substr: StaticString, start: Int = 0) -> Int:
         """Finds the offset of the first occurrence of `substr` starting at
@@ -693,7 +751,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return self.as_string_slice().lstrip()
 
-    fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) -> String:
+    fn format[*Ts: AnyType](self, *args: *Ts) -> String:
         """Produce a formatted string using the current string as a template.
 
         The template, or "format string" can contain literal text and/or
@@ -705,8 +763,8 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         [`format` module](/mojo/std/collections/string/format/).
 
         Parameters:
-            Ts: The types of substitution values that implement `Representable`
-                and `Stringable` (to be changed and made more flexible).
+            Ts: The types of substitution values that implement `Representable &
+                Stringable` or `Writable`.
 
         Args:
             args: The substitution values.
@@ -730,15 +788,24 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             __comptime_assert not result.isa[Error](), String(result[Error])
             return {}
         else:
+            comptime PackType = type_of(args)
+            comptime AnyTypePack = VariadicPack[
+                elt_is_mutable = PackType.elt_is_mutable,
+                origin = PackType.origin,
+                PackType.is_owned,
+                AnyType,
+                *PackType.element_types,
+            ]
+
             var buffer = String()
             _FormatUtils.format_precompiled[*Ts](
                 buffer,
                 result[type_of(result).Ts[0]],
-                args,
+                rebind[AnyTypePack](args),
             )
             return buffer^
 
-    fn join[T: Copyable & Writable, //](self, elems: Span[T, *_]) -> String:
+    fn join[T: Copyable & Writable, //](self, elems: Span[T, ...]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
         `buffer_size`, otherwise will allocate once to the heap and write

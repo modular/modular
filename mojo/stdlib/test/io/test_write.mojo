@@ -11,12 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from io.write import Writable, Writer, _hex_digits_to_hex_chars, _write_hex
-
+from format import Writable, Writer
+from format._utils import _hex_digits_to_hex_chars, _write_hex
 from memory.memory import memset_zero
-from testing import assert_equal
-
-from testing import TestSuite
+from testing import assert_equal, TestSuite
 
 
 @fieldwise_init

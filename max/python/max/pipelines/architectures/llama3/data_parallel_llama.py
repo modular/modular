@@ -87,9 +87,9 @@ class DataParallelLlama(Module):
         expected by `__call__`.
 
         A single device model expects the inputs:
-        - tokens: Tensor of shape [total_seq_len]
-        - input_row_offsets: Tensor of shape [batch_size + 1]
-        - return_n_logits: Tensor of shape [1]
+        - tokens: Buffer of shape [total_seq_len]
+        - input_row_offsets: Buffer of shape [batch_size + 1]
+        - return_n_logits: Buffer of shape [1]
         - kv_cache_inputs: list of KV cache inputs.
 
         This class's `__call__` method expects the inputs above for each device.
@@ -221,7 +221,7 @@ def compute_data_parallel_splits(
         that are on the same replica.
 
     Returns:
-        Tensor: An int64 tensor with shape (self.num_replicas + 1) that
+        Buffer: An int64 tensor with shape (self.num_replicas + 1) that
         contains the number of requests on each device:
         [0, num_requests_on_replica_0, num_requests_on_replica_1, ...]
         or None if there is only one replica.

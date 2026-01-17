@@ -26,7 +26,9 @@ from .embeddings_generation import (
 )
 from .text_generation import (
     BatchType,
+    ImageContentPart,
     ImageMetadata,
+    TextContentPart,
     TextGenerationContext,
     TextGenerationContextType,
     TextGenerationInputs,
@@ -51,7 +53,9 @@ __all__ = [
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",
     "EmbeddingsGenerationOutput",
+    "ImageContentPart",
     "ImageMetadata",
+    "TextContentPart",
     "TextGenerationContext",
     "TextGenerationContextType",
     "TextGenerationInputs",

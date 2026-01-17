@@ -49,9 +49,9 @@ fn make_string[
             while length > len(items):
                 items.append(items[i])
                 i = i + 1 if i < len(items) - 1 else 0
-            return String(bytes=items)
+            return String(unsafe_from_utf8=items)
         else:
-            return String(bytes=f.read_bytes())
+            return String(unsafe_from_utf8=f.read_bytes())
     except e:
         print(e, file=stderr)
     abort(String())
@@ -229,10 +229,10 @@ fn bench_string_replace[
 
 
 # ===-----------------------------------------------------------------------===#
-# Benchmark string char_length
+# Benchmark string count_codepoints
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_char_length[
+fn bench_string_count_codepoints[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
@@ -240,7 +240,7 @@ fn bench_string_char_length[
     @always_inline
     @parameter
     fn call_fn() raises:
-        var res = items.as_string_slice().char_length()
+        var res = items.count_codepoints()
         keep(res)
 
     b.iter[call_fn]()
@@ -456,8 +456,8 @@ def main():
             m.bench_function[bench_string_replace[length, fname, old, new]](
                 BenchId(String("bench_string_replace", suffix))
             )
-            m.bench_function[bench_string_char_length[length, fname]](
-                BenchId(String("bench_string_char_length", suffix))
+            m.bench_function[bench_string_count_codepoints[length, fname]](
+                BenchId(String("bench_string_count_codepoints", suffix))
             )
             m.bench_function[bench_string_find_single[length, fname]](
                 BenchId(String("bench_string_find_single", suffix))

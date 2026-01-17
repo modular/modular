@@ -23,6 +23,7 @@ import numpy.typing as npt
 from max.interfaces.context import BaseContext
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import RequestID
+from max.interfaces.tokens import TokenBuffer
 
 
 @runtime_checkable
@@ -44,7 +45,7 @@ class EmbeddingsContext(BaseContext, Protocol):
     """
 
     @property
-    def tokens(self) -> npt.NDArray[np.integer[Any]]:
+    def tokens(self) -> TokenBuffer:
         """The input tokens to be embedded.
 
         Returns:
@@ -59,15 +60,6 @@ class EmbeddingsContext(BaseContext, Protocol):
 
         Returns:
             A string identifying the specific embeddings model for this request.
-        """
-        ...
-
-    @property
-    def active_length(self) -> int:
-        """The length of the active array.
-
-        Returns:
-            The length as int.
         """
         ...
 

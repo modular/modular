@@ -15,7 +15,7 @@ from io.io import _printf
 from math import erf
 from sys.info import is_nvidia_gpu, simd_width_of
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from algorithm.functional import elementwise
 from bit import log2_floor
 from gpu import (
@@ -30,11 +30,9 @@ from gpu import (
 )
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.compile import _compile_code
-from memory import (
-    LegacyUnsafePointer as UnsafePointer,
-    memset_zero,
-    stack_allocation,
-)
+from memory import LegacyUnsafePointer, memset_zero, stack_allocation
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import *
 
 from utils.index import IndexList

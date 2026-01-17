@@ -14,7 +14,9 @@
 from collections import OptionalReg, Set
 from math import rsqrt
 from memory import memcpy
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from random import random_ui64, seed
 
 from gpu.host import DeviceContext
@@ -396,7 +398,7 @@ def execute_ragged_flash_attention[
                                         ref_val,
                                         test_val,
                                         rtol=1e-2 if dtype
-                                        is DType.bfloat16 else 1e-4,
+                                        == DType.bfloat16 else 1e-4,
                                         atol=5e-3,  # numerical instability between naive and optimized kernels
                                     )
                                 except e:

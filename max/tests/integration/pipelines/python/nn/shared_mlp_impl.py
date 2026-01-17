@@ -21,7 +21,7 @@ import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -151,7 +151,7 @@ def mlp_output(
     bias: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     use_subgraphs: bool = True,
     enable_matmul_allreduce: bool = False,
-) -> Sequence[Tensor]:
+) -> Sequence[Buffer]:
     # Initialize the device-contexts
     devices: list[Device] = (
         [Accelerator(id) for id in range(n_gpus)] if n_gpus > 0 else [CPU(0)]
@@ -247,14 +247,14 @@ def mlp_output(
     compiled = session.load(graph, weights_registry=mlp.state_dict())
 
     signal_buffers = [
-        Tensor.zeros(shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev)
+        Buffer.zeros(shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev)
         for dev in devices
     ]
 
     returned = compiled.execute(x, *signal_buffers)
     returned_tensors = []
     for tensor in returned:
-        assert isinstance(tensor, Tensor)
+        assert isinstance(tensor, Buffer)
         returned_tensors.append(tensor)
     return returned_tensors
 

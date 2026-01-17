@@ -87,7 +87,6 @@ def load_scheduler(
             ),
             response_queue=response_queue,
             cancel_queue=cancel_queue,
-            offload_queue_draining=pipeline_config.experimental_background_queue,
         )
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         assert hasattr(pipeline, "kv_manager")
@@ -111,7 +110,7 @@ def load_scheduler(
             min_batch_size_tg=pipeline_config.min_batch_size_tg,
             ce_delay_ms=pipeline_config.ce_delay_ms,
             enable_prioritize_first_decode=pipeline_config.enable_prioritize_first_decode,
-            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
         audio_pipeline = cast(AudioGeneratorPipelineType, pipeline)
 
@@ -122,7 +121,6 @@ def load_scheduler(
             response_queue=response_queue,
             cancel_queue=cancel_queue,
             paged_manager=paged_manager,
-            offload_queue_draining=pipeline_config.experimental_background_queue,
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
         assert isinstance(pipeline, Pipeline)

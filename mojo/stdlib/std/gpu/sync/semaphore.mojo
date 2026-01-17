@@ -40,9 +40,11 @@ from .sync import MaxHardwareBarriers, barrier, named_barrier
 
 
 @always_inline
-fn _barrier_and(state: Int32) -> Int32:
+fn _barrier_and(state: Bool) -> Bool:
     __comptime_assert is_nvidia_gpu(), "target must be an nvidia GPU"
-    return llvm_intrinsic["llvm.nvvm.barrier0.and", Int32](state)
+    return llvm_intrinsic["llvm.nvvm.barrier.cta.red.and.aligned.all", Bool](
+        Int32(0), state
+    )
 
 
 @register_passable("trivial")
@@ -107,7 +109,7 @@ struct Semaphore:
         Args:
             status: The state value to wait for (defaults to 0).
         """
-        while _barrier_and(self._state.eq(status).select(Int32(0), Int32(1))):
+        while _barrier_and(self._state.eq(status).select(False, True)):
             self.fetch()
         barrier()
 

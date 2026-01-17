@@ -20,7 +20,7 @@ from tempfile import gettempdir
 """
 
 import os
-from io.write import _WriteBufferStack
+from format._utils import _WriteBufferStack
 from pathlib import Path
 from sys import CompilationTarget
 

@@ -10,6 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
 
 from os import abort
 from pathlib import Path
@@ -21,10 +33,12 @@ from gpu.host._nvidia_cuda import CUstream
 
 from .dtype import DataType, Property
 from .result import Result
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 
 comptime cublasContext = NoneType
 
@@ -71,7 +85,7 @@ fn _init_dylib() -> OwnedDLHandle:
 
 @always_inline
 fn _get_dylib_function[
-    func_name: StaticString, result_type: AnyTrivialRegType
+    func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         CUDA_CUBLAS_LIBRARY(),
@@ -100,20 +114,20 @@ fn check_cublas_error(stat: Result, msg: StringSlice) raises:
 @always_inline
 fn _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
     @parameter
-    if mojo_type is DType.float32:
+    if mojo_type == DType.float32:
         return DataType.R_32F
-    elif mojo_type is DType.float16:
+    elif mojo_type == DType.float16:
         return DataType.R_16F
-    elif mojo_type is DType.float8_e4m3fn:
+    elif mojo_type == DType.float8_e4m3fn:
         return DataType.R_8F_E4M3
-    elif mojo_type is DType.float8_e5m2:
+    elif mojo_type == DType.float8_e5m2:
         return DataType.R_8F_E5M2
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # Replace this with float4-e2m1fn when GENAI-337 is fixed.
-    elif mojo_type is DType.uint8:
+    elif mojo_type == DType.uint8:
         return DataType.R_4F_E2M1
     else:
-        __comptime_assert mojo_type is DType.bfloat16, (
+        __comptime_assert mojo_type == DType.bfloat16, (
             "Only support FP32, FP16, BF16, E4M3, E5M2, and E2M1x2 (UInt8)."
             " Please extend it if more types are needed."
         )

@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of
 
 from algorithm.functional import vectorize
@@ -219,13 +221,13 @@ fn mha_cross_gpu_naive[
     //,
     rank: Int,
 ](
-    output: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    q_input_row_offsets: LayoutTensor[DType.uint32, **_],
+    output: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q_input_row_offsets: LayoutTensor[DType.uint32, ...],
     q_max_seq_len: Int,
     k: cache_t,
     v: cache_t,
-    kv_input_row_offsets: LayoutTensor[DType.uint32, **_],
+    kv_input_row_offsets: LayoutTensor[DType.uint32, ...],
     mask_functor: mask_t,
     scale: Float32,
     ctx: DeviceContext,
@@ -259,7 +261,7 @@ fn mha_cross_gpu_naive[
         q.dtype == cache_t.dtype == cache_t.dtype == output.dtype
     ), "Q, K, V, output should have same type."
     __comptime_assert (
-        q.dtype is DType.float32 or q.dtype.is_half_float()
+        q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
     comptime config = MHAConfig[dtype](
@@ -303,7 +305,7 @@ fn mha_cross_gpu_naive[
         q_type,
         p_type,
     ]
-    ctx.enqueue_function_checked[kernel_0, kernel_0](
+    ctx.enqueue_function_experimental[kernel_0](
         p_device,
         q_device,
         k,
@@ -347,7 +349,7 @@ fn mha_cross_gpu_naive[
         p_type,
         output.dtype,
     ]
-    ctx.enqueue_function_checked[kernel_1, kernel_1](
+    ctx.enqueue_function_experimental[kernel_1](
         output_device,
         p_device,
         v,

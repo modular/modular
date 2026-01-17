@@ -11,7 +11,7 @@ mojo_binary(
     ],
     deps = [
         "@mojo//:std",
-        requirement("pygame"),
+        requirement("pygame-ce"),
     ],
 )
 
@@ -24,7 +24,7 @@ mojo_binary(
     ],
     deps = [
         "@mojo//:std",
-        requirement("pygame"),
+        requirement("pygame-ce"),
     ],
 )
 
@@ -37,7 +37,7 @@ mojo_binary(
     ],
     deps = [
         "@mojo//:std",
-        requirement("pygame"),
+        requirement("pygame-ce"),
     ],
 )
 

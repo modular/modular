@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from hashlib import default_comp_time_hasher
-from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys import size_of
 
@@ -45,10 +44,10 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
-    var data: UnsafePointer[Scalar[Self.dtype]]
+    var data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     var nd: Int
-    var dimensions: UnsafePointer[Int]
-    var strides: UnsafePointer[Int]
+    var dimensions: UnsafePointer[Int, MutAnyOrigin]
+    var strides: UnsafePointer[Int, MutAnyOrigin]
     var base: PyObjectPtr
     var descr: PyObjectPtr
     var flags: Int
@@ -90,7 +89,7 @@ fn _mojo_block_hasher[
     var num_bytes = block_size * size_of[dtype]()
     var hash_ptr_base = py_array_object_ptr[].data
     for block_idx in range(num_hashes):
-        var hash_ptr_ints = hash_ptr_base.offset(block_idx * block_size)
+        var hash_ptr_ints = hash_ptr_base + block_idx * block_size
         var hash_ptr_bytes = hash_ptr_ints.bitcast[Byte]()
         var token_hash = hash[HasherType=default_comp_time_hasher](
             hash_ptr_bytes, num_bytes
@@ -113,12 +112,12 @@ fn mojo_block_hasher(
     block_size_obj: PythonObject,
 ) raises -> PythonObject:
     # Parse np array tokens input
-    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int32], **_](
+    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int32]](
         unchecked_downcast_value=py_array_object
     )
 
     # Parse block size
-    var block_size = Int(block_size_obj)
+    var block_size = Int(py=block_size_obj)
 
     # Performing hashing
     var results = _mojo_block_hasher(py_array_object_ptr, block_size)

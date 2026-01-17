@@ -32,7 +32,7 @@ _TESTONLY_DEPS = [
     "lm-eval",
     "mteb",
     "peft",
-    "pygame",
+    "pygame-ce",
     "reference_residual_fsq",
     "sentence-transformers",
     "soxr",
@@ -101,6 +101,32 @@ def targets():
         }}),
     )
 
+    native.alias(
+        name = "numpy@multiple",
+        testonly = True,
+        actual = select({{
+            ":_env_python_3.10_aarch64-apple-darwin": ":numpy@2.2.6",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": ":numpy@2.2.6",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": ":numpy@2.2.6",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": ":numpy@2.2.6",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": ":numpy@2.2.6",
+            "//conditions:default": ":numpy@2.3.5",
+        }}),
+    )
+
+    native.alias(
+        name = "scipy@multiple",
+        testonly = True,
+        actual = select({{
+            ":_env_python_3.10_aarch64-apple-darwin": ":scipy@1.14.1",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": ":scipy@1.14.1",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": ":scipy@1.14.1",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": ":scipy@1.14.1",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": ":scipy@1.14.1",
+            "//conditions:default": ":scipy@1.16.3",
+        }}),
+    )
+
     extra_build_args = {{
         "copts": ["-fvisibility=default", "-w"],
         "linkopts": select({{
@@ -130,6 +156,24 @@ def targets():
                 match_all = [
                     "@@//:{{}}_gpu".format(gpu),
                     "_env_python_{{}}_x86_64-unknown-linux-gnu".format(version),
+                ],
+            )
+
+    for version in [v for v in PYTHON_VERSIONS_DOTTED if v >= "3.14"]:
+        for platform in ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]:
+            alias_name = "_env_python_{{}}_{{}}-freethreaded".format(version, platform)
+            build_targets[":" + alias_name] = "@@rules_pycross++environments+rules_pycross_all_environments//:python_{{}}_{{}}-freethreaded.json".format(version, platform)
+            native.alias(
+                name = alias_name,
+                actual = "@@rules_pycross++environments+rules_pycross_all_environments//:python_{{}}_{{}}-freethreaded_config".format(version, platform),
+            )
+
+        for gpu in ["nvidia", "amd"]:
+            selects.config_setting_group(
+                name = "_env_python_{{}}_x86_64-unknown-linux-gnu-freethreaded_{{}}_gpu".format(version, gpu),
+                match_all = [
+                    "@@//:{{}}_gpu".format(gpu),
+                    "_env_python_{{}}_x86_64-unknown-linux-gnu-freethreaded".format(version),
                 ],
             )
 

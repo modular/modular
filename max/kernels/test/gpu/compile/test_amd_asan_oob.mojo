@@ -22,7 +22,7 @@
 # RUN: export LD_PRELOAD=/opt/rocm/lib/llvm/lib/clang/18/lib/linux/libclang_rt.asan-x86_64.so:/opt/rocm/lib/asan/libamdhip64.so
 # RUN: export ASAN_OPTIONS=detect_leaks=0
 # RUN: export HSA_XNACK=1
-# RUN: export MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT=0
+# RUN: export MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT=0
 # RUN: not %t 5 2>&1 | FileCheck %s
 
 # CHECK: AddressSanitizer: heap-buffer-overflow on amdgpu device
@@ -31,7 +31,9 @@
 from sys import argv
 
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn bad_func(ptr: UnsafePointer[Int32], i: Int):
@@ -44,7 +46,7 @@ fn test(ctx: DeviceContext, i: Int) raises:
     var buf = ctx.enqueue_create_buffer[DType.int32](n)
 
     comptime kernel = bad_func
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         buf, i, grid_dim=(1), block_dim=(1)
     )
     ctx.synchronize()

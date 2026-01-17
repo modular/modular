@@ -33,11 +33,11 @@ def convert_safetensor_state_dict(
 ) -> dict[str, WeightData]:
     """Convert safetensor state dict for EAGLE draft models.
 
-    Uses the shared Llama conversion logic with draft_model_config.
+    Uses the shared Llama conversion logic with draft_model.
     """
-    assert pipeline_config.draft_model_config is not None
+    assert pipeline_config.draft_model is not None
     return _convert_safetensor_with_model_config(
-        state_dict, huggingface_config, pipeline_config.draft_model_config
+        state_dict, huggingface_config, pipeline_config.draft_model
     )
 
 

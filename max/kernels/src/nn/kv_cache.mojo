@@ -11,13 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import unswitch
 from buffer import DimList, NDBuffer
 from compiler_internal import StaticTensorSpec
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -61,15 +63,15 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     target: StaticString = "cpu",
 ](
     hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, **_
+        dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -140,15 +142,15 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_paged[
     target: StaticString = "cpu",
 ](
     hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, **_
+        dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -223,15 +225,15 @@ fn _fused_qkv_matmul_kv_cache[
     target: StaticString,
 ](
     hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, **_
+        dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     context: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -285,15 +287,15 @@ fn _fused_qkv_matmul_kv_cache_impl[
     k_embed_fn: OptionalReg[embed_fn_type] = None,
 ](
     hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, **_
+        dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     context: Optional[DeviceContext],
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -397,9 +399,9 @@ fn _matmul_common[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, **_
+        dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     context: Optional[DeviceContext],
 ) raises:
     var BS = hidden_state.dim[0]()
@@ -462,14 +464,14 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
     interleaved: Bool,
     target: StaticString,
 ](
-    q_proj: LayoutTensor[dtype, **_],
+    q_proj: LayoutTensor[dtype, ...],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    freqs_cis: LayoutTensor[dtype, **_],
+    freqs_cis: LayoutTensor[dtype, ...],
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Performs a fused RoPE projection for Q and K projections.
@@ -550,14 +552,14 @@ fn generic_fused_qk_rope_bshd_paged[
     interleaved: Bool,
     target: StaticString,
 ](
-    q_proj: LayoutTensor[dtype, **_],
+    q_proj: LayoutTensor[dtype, ...],
     kv_collection: PagedKVCacheCollection,
-    freqs_cis: LayoutTensor[dtype, **_],
+    freqs_cis: LayoutTensor[dtype, ...],
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: LayoutTensor[mut=True, dtype, ...],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Performs a fused RoPE projection for Q and K with paged KV cache.
@@ -642,7 +644,7 @@ fn generic_flash_attention_kv_cache_padded[
     local_window_size: Int = -1,
     num_heads: Int = -1,
 ](
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -650,7 +652,7 @@ fn generic_flash_attention_kv_cache_padded[
     ],
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
@@ -718,16 +720,16 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     local_window_size: Int = -1,
     num_heads: Int = -1,
 ](
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    mask: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    mask: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     valid_lengths: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
@@ -790,7 +792,7 @@ fn _flash_attention_dispatch[
     score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     kv_cache: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -798,7 +800,7 @@ fn _flash_attention_dispatch[
     ],
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
@@ -848,16 +850,16 @@ fn _flash_attention_dispatch_materialized_mask[
     score_mod_str: String,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     kv_cache: collection_t,
     layer_idx: UInt32,
-    mask_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    mask_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     valid_lengths: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
@@ -935,12 +937,12 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         dtype,
         params,
     ],
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
-    input_row_offsets: LayoutTensor[DType.uint32, **_],
+    input_row_offsets: LayoutTensor[DType.uint32, ...],
     context: DeviceContextPtr,
 ):
     """Performs RMSNorm in place on new entries in the key cache.
@@ -1100,12 +1102,12 @@ def rms_norm_kv_cache_ragged_paged[
         params,
         page_size,
     ],
-    gamma: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
-    input_row_offsets: LayoutTensor[DType.uint32, **_],
+    input_row_offsets: LayoutTensor[DType.uint32, ...],
     context: DeviceContextPtr,
 ):
     """Performs RMSNorm in place on new entries in the key cache.
@@ -1261,7 +1263,7 @@ def _print_cache[
 ](
     cache: collection_t.CacheType,
     kv_collection: collection_t,
-    valid_lengths: LayoutTensor[DType.uint32, **_],
+    valid_lengths: LayoutTensor[DType.uint32, ...],
     is_print_compact: Bool,
 ) -> None:
     """Prints a cache buffer, abbreviating output with ellipses."""
@@ -1300,7 +1302,7 @@ def _print_cache[
 def print_kv_cache_cont_batch_generic_cpu[
     target: StaticString, dtype: DType, kv_params: KVCacheStaticParams
 ](
-    valid_lengths: LayoutTensor[DType.uint32, **_],
+    valid_lengths: LayoutTensor[DType.uint32, ...],
     kv_collection: ContinuousBatchingKVCacheCollection[dtype, kv_params],
     layer_idx: UInt32,
     is_print_compact: Bool,
@@ -1332,7 +1334,7 @@ def print_kv_cache_paged_generic_cpu[
     kv_params: KVCacheStaticParams,
     page_size: Int,
 ](
-    valid_lengths: LayoutTensor[DType.uint32, **_],
+    valid_lengths: LayoutTensor[DType.uint32, ...],
     kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
@@ -1362,7 +1364,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     target: StaticString, dtype: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: ContinuousBatchingKVCacheCollection[dtype, kv_params],
     layer_idx: UInt32,
@@ -1477,7 +1479,7 @@ def print_kv_cache_paged_generic_gpu[
     page_size: Int,
 ](
     valid_lengths: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, **_
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
     layer_idx: UInt32,
@@ -1691,3 +1693,66 @@ fn generic_get_paged_cache[
         max_seq_length = max_lengths[0, 0][0],
         max_cache_length = max_lengths[0, 1][0],
     }
+
+
+# ===-----------------------------------------------------------------------===#
+# GPU→CPU Page Copy for KV Cache Offloading
+# ===-----------------------------------------------------------------------===#
+
+
+fn copy_kv_pages_d2h[
+    dtype: DType,
+](
+    device_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
+    host_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
+    src_page_ids: LayoutTensor[DType.int64, Layout.row_major[1]()],
+    dst_page_ids: LayoutTensor[DType.int64, Layout.row_major[1]()],
+    layer_idx: Int,
+    ctx: DeviceContext,
+) raises:
+    """Copy selected pages for a single layer from device to host KV cache.
+
+    This function performs true GPU→CPU async copy using enqueue_copy.
+    It copies only the specified layer for each page, with separate source
+    and destination page IDs to support independent page ID spaces.
+
+    The 6D tensor layout is: [num_pages, kv_dim, num_layers, page_size, num_heads, head_dim]
+
+    Args:
+        device_kv_blocks: Source GPU KV cache blocks .
+        host_kv_blocks: Destination CPU KV cache blocks.
+        src_page_ids: Pointer to GPU page IDs.
+        dst_page_ids: Pointer to CPU page IDs.
+        layer_idx: Which layer to copy.
+        ctx: Device context for GPU operations.
+    """
+
+    var kv_dim = device_kv_blocks.dim[1]()
+    var page_size = device_kv_blocks.dim[3]()
+    var num_heads = device_kv_blocks.dim[4]()
+    var head_size = device_kv_blocks.dim[5]()
+    var num_pages_to_copy = src_page_ids.dim[0]()
+
+    var elements_per_layer_slice = page_size * num_heads * head_size
+
+    for i in range(num_pages_to_copy):
+        var src_page_id = Int(src_page_ids[i])
+        var dst_page_id = Int(dst_page_ids[i])
+
+        for kv_idx in range(kv_dim):
+            var src_offset = device_kv_blocks._offset(
+                IndexList[6](src_page_id, kv_idx, layer_idx, 0, 0, 0)
+            )
+
+            var dst_offset = host_kv_blocks._offset(
+                IndexList[6](dst_page_id, kv_idx, layer_idx, 0, 0, 0)
+            )
+
+            var src_buf = DeviceBuffer[dtype](
+                ctx,
+                device_kv_blocks.ptr + src_offset,
+                elements_per_layer_slice,
+                owning=False,
+            )
+
+            ctx.enqueue_copy(host_kv_blocks.ptr + dst_offset, src_buf)

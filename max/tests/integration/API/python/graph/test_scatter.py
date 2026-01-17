@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.driver import Tensor, accelerator_count
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -61,10 +61,10 @@ def test_scatter(
         graph.output(out)
 
     model = session.load(graph)
-    input_tensor = Tensor.from_numpy(input_np).to(model.input_devices[0])
+    input_tensor = Buffer.from_numpy(input_np).to(model.input_devices[0])
 
     result = model.execute(input_tensor)[0]
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
 
     np.testing.assert_equal(
         result.to_numpy(), np.array(expected, dtype=np.float32)
@@ -123,10 +123,10 @@ def test_scatter_nd(
         graph.output(out)
 
     model = session.load(graph)
-    input_tensor = Tensor.from_numpy(input_array).to(model.input_devices[0])
+    input_tensor = Buffer.from_numpy(input_array).to(model.input_devices[0])
 
     result = model.execute(input_tensor)[0]
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
 
     np.testing.assert_equal(
         result.to_numpy(), np.array(expected, dtype=np.float32)

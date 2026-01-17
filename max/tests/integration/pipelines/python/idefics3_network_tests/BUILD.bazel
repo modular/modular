@@ -9,8 +9,9 @@ load(
 
 package(default_visibility = [
     "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
-    "//open-source/max/max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_test(
@@ -18,6 +19,10 @@ modular_py_test(
     size = "large",
     srcs = ["test_tokenizer.py"],
     env_inherit = ["HF_TOKEN"],
+    ignore_extra_deps = [
+        # Undeclared dep of transformers
+        requirement("jinja2"),
+    ],
     tags = [
         "gpu",
         "manual",  # TODO(AITLIB-293): Remove this once we have a way to run these tests on CI.
@@ -26,10 +31,12 @@ modular_py_test(
         "run-in-hf-workflow",
     ],
     deps = [
-        "//max/python/max/engine",
-        "//max/python/max/nn",
-        "//max/python/max/pipelines",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/pipelines/python/test_common:mocks",
+        requirement("jinja2"),
         requirement("pytest-asyncio"),
-        requirement("transformers"),
+        requirement("pillow"),
     ],
 )

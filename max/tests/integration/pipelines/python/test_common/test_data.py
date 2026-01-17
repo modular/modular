@@ -18,11 +18,15 @@ Separates test data from business logic for better maintainability.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
-from max.interfaces import RequestID, SamplingParams, TextGenerationRequest
-
-from .storage import load_bytes
+from max.interfaces import (
+    RequestID,
+    SamplingParams,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+)
+from max.support import fetch_bytes_from_s3
 
 
 @dataclass(frozen=True)
@@ -35,7 +39,7 @@ class MockTextGenerationRequest:
     images: list[str]
     """List of image URLs or file paths. Empty for text-only requests."""
 
-    messages: list[dict[str, Any]]
+    messages: list[TextGenerationRequestMessage]
     """List of messages to be processed by the model. If this is provided, the
     prompt is used to identify the request, while the messages are processed by
     the model."""
@@ -51,11 +55,37 @@ class MockTextGenerationRequest:
 
     @classmethod
     def with_images(
-        cls, prompt: str, images: list[str]
+        cls,
+        prompt: str,
+        images: list[str],
+        messages: list[dict[str, str | Any]] | None = None,
     ) -> MockTextGenerationRequest:
-        """Creates a multimodal generation request."""
+        """Creates a multimodal generation request.
+
+        Images are embedded in message content with their URLs/paths for
+        extraction later when converting to TextGenerationRequest.
+        """
+        if messages is None:
+            proper_messages = [
+                TextGenerationRequestMessage(
+                    role="user",
+                    content=[{"type": "text", "text": prompt}]
+                    + [{"type": "image"} for _ in images],
+                )
+            ]
+        else:
+            proper_messages = []
+            for message in messages:
+                if isinstance(message, dict):
+                    proper_messages.append(
+                        TextGenerationRequestMessage(**message)
+                    )
+
         return cls(
-            prompt=prompt, images=images, messages=[], is_multimodal=True
+            prompt=prompt,
+            images=images,
+            messages=proper_messages,
+            is_multimodal=True,
         )
 
     @classmethod
@@ -67,30 +97,36 @@ class MockTextGenerationRequest:
         Note that the prompt still needs to be passed in since it is used to
         identify the request.
         """
+        # Extract image URLs/paths from messages content
+
         return cls(
             prompt=prompt,
             images=[],
-            messages=messages,
+            messages=[
+                cast(TextGenerationRequestMessage, message)
+                for message in messages
+            ],
             is_multimodal=is_multimodal,
         )
 
     def to_text_generation_request(
         self, request_id: RequestID, sampling_params: SamplingParams
     ) -> TextGenerationRequest:
-        payload: dict[str, Any] = {}
         if self.messages:
-            payload["messages"] = self.messages
+            return TextGenerationRequest(
+                request_id=request_id,
+                model_name=self.model_name,
+                sampling_params=sampling_params,
+                messages=self.messages,
+                images=[fetch_bytes_from_s3(img) for img in self.images],
+            )
         else:
-            payload["prompt"] = self.prompt
-            payload["images"] = [
-                load_bytes(image_url) for image_url in self.images
-            ]
-        return TextGenerationRequest(
-            request_id=request_id,
-            model_name=self.model_name,
-            sampling_params=sampling_params,
-            **payload,
-        )
+            return TextGenerationRequest(
+                request_id=request_id,
+                model_name=self.model_name,
+                sampling_params=sampling_params,
+                prompt=self.prompt,
+            )
 
 
 # Existing test data extracted from evaluate.py
@@ -120,7 +156,28 @@ MULTIMODAL_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata
 PIXTRAL_PROMPT = "<s>[INST]Describe the images.\n[IMG][/INST]"
 PIXTRAL_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/pixtral_image.jpg"
 
-INTERNVL_INSTRUCT_PROMPT = "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|image|>\nDescribe the image; where are these people and what are they doing?<|im_end|>\n<|im_start|>assistant\n"
+INTERNVL_INSTRUCT_PROMPT = "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|image|> Describe the image; where are these people and what are they doing?<|im_end|>\n<|im_start|>assistant\n"
+INTERNVL_INSTRUCT_MESSAGES = [
+    {
+        "role": "system",
+        "content": [
+            {
+                "type": "text",
+                "text": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant.",
+            }
+        ],
+    },
+    {
+        "role": "user",
+        "content": [
+            {"type": "image"},
+            {
+                "type": "text",
+                "text": "Describe the image; where are these people and what are they doing?",
+            },
+        ],
+    },
+]
 INTERNVL_INSTRUCT_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/internvl_instruct_image.jpg"
 
 IDEFICS3_INSTRUCT_PROMPT = "<image> Describe the image:"
@@ -150,6 +207,7 @@ INTERNVL_INSTRUCT_REQUESTS = [
     MockTextGenerationRequest.with_images(
         prompt=INTERNVL_INSTRUCT_PROMPT,
         images=[INTERNVL_INSTRUCT_IMAGE],
+        messages=INTERNVL_INSTRUCT_MESSAGES,
     )
 ]
 

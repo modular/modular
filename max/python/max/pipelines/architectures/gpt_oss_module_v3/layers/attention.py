@@ -36,7 +36,7 @@ from .functional_kernels import (
 from .rotary_embedding import YarnRotaryEmbedding
 
 
-class GptOssAttention(Module):
+class GptOssAttention(Module[..., Tensor]):
     """Implementation of the distributed attention layer for the GptOss text model.
 
     Depending on the layer type, the attention layer can be either a full attention
@@ -154,7 +154,7 @@ class GptOssAttention(Module):
             [self.q_proj.bias, self.k_proj.bias, self.v_proj.bias], axis=0
         )
 
-    def __call__(
+    def forward(
         self,
         x: Tensor,
         kv_collection: PagedCacheValues,

@@ -14,7 +14,7 @@
 
 import pytest
 import torch
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
 from max.nn import YarnRotaryEmbedding, YarnScalingParams
@@ -86,7 +86,7 @@ def generate_max_yarn_rope_outputs(
     compiled = session.load(graph)
 
     frequencies_tensor = compiled.execute()[0]
-    assert isinstance(frequencies_tensor, Tensor)
+    assert isinstance(frequencies_tensor, Buffer)
     frequencies_np = frequencies_tensor.to_numpy()
 
     # Convert position_ids to CPU and extract the sequence positions (remove batch dimension)

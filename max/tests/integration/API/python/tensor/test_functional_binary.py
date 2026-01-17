@@ -51,7 +51,6 @@ def test_binary(op) -> None:  # noqa: ANN001
     a = Tensor.zeros([10, 1], dtype=DType.float32, device=DEVICE)
     b = Tensor.zeros([10], dtype=DType.float32, device=DEVICE)
     result = op(a, b)
-    result._sync_realize()
     assert result.real
     assert list(result.driver_tensor.shape) == [10, 10]
 
@@ -61,6 +60,5 @@ def test_logical_binary(op) -> None:  # noqa: ANN001
     a = Tensor.full([10, 1], False, dtype=DType.bool, device=DEVICE)
     b = Tensor.full([10], False, dtype=DType.bool, device=DEVICE)
     result = op(a, b)
-    result._sync_realize()
     assert result.real
     assert list(result.driver_tensor.shape) == [10, 10]

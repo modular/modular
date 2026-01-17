@@ -17,11 +17,14 @@ from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import assert_almost_equal, random, zero
+from internal_utils import assert_almost_equal
+from random import rand
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from linalg.matmul.vendor.blas import matmul
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import LegacyUnsafePointer
+
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn test_matmul[
@@ -29,14 +32,13 @@ fn test_matmul[
 ](ctx: DeviceContext) raises:
     print("== test_vendor_blas", input_type, "x", M, "x", N, "x", K)
 
-    comptime transpose_b = True
     comptime static_a_shape = DimList(M, K)
-    comptime static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
+    comptime static_b_shape = DimList(N, K)
     comptime static_c_shape = DimList(M, N)
 
     var a_host_ptr = UnsafePointer[Scalar[input_type]].alloc(M * K)
     var a_host = NDBuffer[input_type, 2, _, static_a_shape](a_host_ptr)
-    var b_size = N * K if transpose_b else K * N
+    var b_size = N * K
     var b_host_ptr = UnsafePointer[Scalar[input_type]].alloc(b_size)
     var b_host = NDBuffer[input_type, 2, _, static_b_shape](b_host_ptr)
     var c_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(M * N)
@@ -46,11 +48,11 @@ fn test_matmul[
         c_host_ref_ptr
     )
 
-    random(a_host)
-    random(b_host)
+    rand(a_host.data, a_host.num_elements())
+    rand(b_host.data, b_host.num_elements())
 
-    zero(c_host)
-    zero(c_host_ref)
+    c_host.zero()
+    c_host_ref.zero()
 
     var a_device = ctx.enqueue_create_buffer[input_type](M * K)
     var a_device_nd = NDBuffer[input_type, 2, _, static_a_shape](
@@ -99,7 +101,7 @@ fn test_matmul[
         BLOCK_DIM,
         transpose_b=True,
     ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         c_tensor_ref,
         a_tensor,
         b_tensor,
@@ -115,8 +117,9 @@ fn test_matmul[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
         atol=0.01,
         rtol=0.01,
     )

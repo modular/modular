@@ -170,14 +170,16 @@ class TextBatchConstructor:
 
     - Each replica maintains its own CE and TG queues and forms batches
       independently using the same policy.
-    - New requests are assigned to replicas in a straightforward round-robin
-      fashion, which keeps load approximately balanced without inspecting
-      per-replica cache state. Round-robin does not account for prompt length,
-      so replicas may become imbalanced if request sizes vary significantly.
-    - When a paged KV cache manager is present, all replicas share the same
-      logical KV memory budget, but the high-level placement policy remains
-      round-robin and budget-based rather than attempting fine-grained
-      load-balancing.
+    - New requests are assigned to replicas using load-based assignment,
+      which selects the replica with the fewest active requests. This
+      provides better load balancing than round-robin, particularly when
+      request sizes vary significantly or when requests complete at
+      different rates.
+    - The replica with the minimum request count is selected based on
+      information from the paged KV cache manager. This accounts for
+      both active processing and queued requests.
+    - All replicas share the same logical KV memory budget through the
+      paged KV cache manager.
 
     **Non-LoRA batch construction**
 
@@ -342,7 +344,7 @@ class TextBatchConstructor:
         pipeline: Pipeline[
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
-        paged_cache: PagedKVCacheManager | None = None,
+        paged_cache: PagedKVCacheManager | None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -360,11 +362,10 @@ class TextBatchConstructor:
             ReplicaRequests() for _ in range(self.num_replicas)
         ]
         self._request_id_to_replica_idx: dict[RequestID, int] = {}
+        self._request_id_to_lora_name: dict[RequestID, str | None] = {}
 
         self.total_preemption_count: int = 0
         self.last_preemption_logging_time: float = time.monotonic()
-
-        self._round_robin_counter: int = 0
 
     def _create_new_token_budget(self) -> TokenBudgetCollection:
         token_budgets: list[TokenBudget] = [
@@ -391,16 +392,44 @@ class TextBatchConstructor:
             token_budgets=token_budgets,
         )
 
-    def get_next_replica_idx(self) -> int:
-        """Returns the next replica index to assign the request to."""
+    def get_next_replica_idx(self, use_paged_cache_counts: bool = False) -> int:
+        """Returns the next replica index to assign the request to.
 
-        # TODO: Make this decision based on KVCache state.
-        # if self.paged_cache is not None:
-        #     replica_idx = self.paged_cache.get_or_recommend_replica(ctx)
+        Uses load-based assignment by selecting the replica with the fewest
+        active requests. This provides better load balancing than round-robin,
+        especially when request sizes vary or when requests complete at
+        different rates.
 
-        replica_idx = self._round_robin_counter
-        self._round_robin_counter += 1
-        self._round_robin_counter %= self.num_replicas
+        Args:
+            use_paged_cache_counts: If True, count requests claimed in paged cache
+                (used by decode scheduler before enqueue). If False, count requests
+                in CE/TG queues (used during enqueue_new_request). These sources
+                overlap once requests are enqueued, so only one should be used.
+
+        Returns:
+            The replica index that should receive the next request.
+        """
+        if use_paged_cache_counts and self.paged_cache is None:
+            raise ValueError(
+                "use_paged_cache_counts=True requires a paged_cache, but paged_cache is None"
+            )
+
+        if use_paged_cache_counts:
+            # This is already verified to be true above. Assign to local variable for mypy.
+            paged_cache = self.paged_cache
+            assert paged_cache is not None
+            replica_idx = min(
+                range(self.num_replicas),
+                key=lambda idx: paged_cache.get_replica_request_count(idx),
+            )
+        else:
+            replica_idx = min(
+                range(self.num_replicas),
+                key=lambda idx: (
+                    len(self.replicas[idx].ce_reqs)
+                    + len(self.replicas[idx].tg_reqs)
+                ),
+            )
         return replica_idx
 
     def enqueue_new_request(
@@ -419,9 +448,14 @@ class TextBatchConstructor:
             replica_idx = self.get_next_replica_idx()
         replica = self.replicas[replica_idx]
         self._request_id_to_replica_idx[ctx.request_id] = replica_idx
+        self._request_id_to_lora_name[ctx.request_id] = (
+            ctx.model_name
+            if self._lora_manager and is_lora(ctx, self._lora_manager)
+            else None
+        )
 
         # Add the request to the appropriate dict based on whether it needs CE.
-        if ctx.needs_ce:
+        if ctx.tokens.generated_length == 0:
             replica.ce_reqs[ctx.request_id] = ctx
         else:
             replica.tg_reqs[ctx.request_id] = ctx
@@ -460,7 +494,7 @@ class TextBatchConstructor:
 
             # Move Chunked requests back to the CE request queue
             last_request = next(reversed(per_replica_batch.values()))
-            if last_request.needs_ce:
+            if last_request.tokens.generated_length == 0:
                 del replica.tg_reqs[last_request.request_id]
                 replica.ce_reqs[last_request.request_id] = last_request
                 replica.ce_reqs.move_to_end(last_request.request_id, last=False)
@@ -489,18 +523,38 @@ class TextBatchConstructor:
 
         # Retrieve the replica index for the request
         replica_idx = self._request_id_to_replica_idx[request_id]
-        if request_id in self.replicas[replica_idx].ce_reqs:
-            del self.replicas[replica_idx].ce_reqs[request_id]
-            self.pipeline.release(request_id)
-            del self._request_id_to_replica_idx[request_id]
-        elif request_id in self.replicas[replica_idx].tg_reqs:
-            del self.replicas[replica_idx].tg_reqs[request_id]
-            self.pipeline.release(request_id)
-            del self._request_id_to_replica_idx[request_id]
-        else:
-            raise ValueError(
-                f"Request {request_id} not found in the ce or tg requests of its assigned replica."
+        replica = self.replicas[replica_idx]
+
+        if request_id in replica.ce_reqs:
+            del replica.ce_reqs[request_id]
+        elif request_id in replica.tg_reqs:
+            del replica.tg_reqs[request_id]
+        elif request_id in replica.deferred_lora_requests:
+            del replica.deferred_lora_requests[request_id]
+        # Note: Request might not be in any queue if it was moved to a batch
+        # during construct_batch() and then an exception occurred during execution.
+        # In this case, we still need to release pipeline resources and clean up tracking.
+
+        # Clean up LoRA state if no other request uses this adapter.
+        # Note: We only check the current replica because LoRA currently requires
+        # data_parallel_degree == 1. If DP > 1 LoRA becomes supported, this check
+        # would need to search across all replicas.
+        lora_name = self._request_id_to_lora_name.pop(request_id, None)
+        if lora_name is not None:
+            # Check _request_id_to_lora_name rather than the queues because
+            # requests may be in the active batch (not in any queue) but still
+            # using this LoRA adapter.
+            lora_still_needed = (
+                lora_name in self._request_id_to_lora_name.values()
             )
+            if not lora_still_needed:
+                replica.active_loras.discard(lora_name)
+
+        self.pipeline.release(request_id)
+        # _request_id_to_replica_idx is the source of truth for whether a request
+        # is managed by the scheduler (checked by contains()).
+        # Remove from here, marking the request as fully released.
+        del self._request_id_to_replica_idx[request_id]
 
     def clear_tg_reqs(self) -> None:
         """Clears all TG requests from all replicas."""

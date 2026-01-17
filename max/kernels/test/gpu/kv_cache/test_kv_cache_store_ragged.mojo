@@ -70,7 +70,7 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     var total_length = 0
     var max_full_context_length = 0
     var max_prompt_length = 0
-    input_row_offsets_buf = input_row_offsets_managed.buffer()
+    input_row_offsets_buf = input_row_offsets_managed.tensor()
     for i in range(batch_size):
         input_row_offsets_buf[i] = total_length
         cache_lengths_tensor[i] = cache_lengths[i]

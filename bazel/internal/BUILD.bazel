@@ -1,7 +1,6 @@
 load("@rules_mypy//mypy:mypy.bzl", "mypy_cli")
 load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "requirement")
 load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
-load(":lib_toolchain.bzl", "lib_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -55,10 +54,6 @@ modular_py_binary(
     ],
 )
 
-lib_toolchain(
-    name = "lib_toolchain",
-)
-
 modular_py_library(
     name = "bazel_sitecustomize",
     srcs = [
@@ -89,6 +84,7 @@ modular_cc_binary(
 modular_py_binary(
     name = "sphinx",
     srcs = ["sphinx.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         # Each invocation has different deps depending on what you are doing.
         # TODO: Handle this at each call site instead of here.

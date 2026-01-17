@@ -15,9 +15,8 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-
+from format._utils import _WriteBufferHeap
 from io.io import _printf
-from io.write import _WriteBufferHeap
 from os import abort
 from sys import is_amd_gpu, is_apple_gpu, is_compile_time, is_gpu, is_nvidia_gpu
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
@@ -25,7 +24,7 @@ from sys._build import is_debug_build
 from sys.intrinsics import assume
 from sys.param_env import env_get_string
 
-from builtin._location import __call_location, _SourceLocation
+from reflection import call_location, SourceLocation
 
 comptime ASSERT_MODE = env_get_string["ASSERT", "safe"]()
 """The compile-time assertion mode from the ASSERT environment variable."""
@@ -144,7 +143,7 @@ fn debug_assert[
         cpu_only: If true, only run the assert on CPU.
 
     Args:
-        messages: A set of [`Writable`](/mojo/std/io/write/Writable/)
+        messages: A set of [`Writable`](/mojo/std/format/Writable/)
             arguments to convert to a `String` message.
     """
 
@@ -161,8 +160,10 @@ fn debug_assert[
 
         message.nul_terminate()
 
-        var span = message.as_span()
-        _debug_assert_msg(span.unsafe_ptr(), len(span), __call_location())
+        var slice = message.as_string_slice()
+        _debug_assert_msg(
+            slice.unsafe_ptr(), slice.byte_length(), call_location()
+        )
 
 
 @always_inline
@@ -253,7 +254,7 @@ fn debug_assert[
 
     Args:
         cond: The bool value to assert.
-        messages: A set of [`Writable`](/mojo/std/io/write/Writable/)
+        messages: A set of [`Writable`](/mojo/std/format/Writable/)
             arguments to convert to a `String` message.
     """
 
@@ -270,8 +271,10 @@ fn debug_assert[
 
         message.nul_terminate()
 
-        var span = message.as_span()
-        _debug_assert_msg(span.unsafe_ptr(), len(span), __call_location())
+        var slice = message.as_string_slice()
+        _debug_assert_msg(
+            slice.unsafe_ptr(), slice.byte_length(), call_location()
+        )
 
     elif _use_compiler_assume:
         assume(cond)
@@ -372,7 +375,7 @@ fn debug_assert[
         _debug_assert_msg(
             message.unsafe_ptr(),
             len(message) + 1,  # include null terminator
-            __call_location(),
+            call_location(),
         )
     elif _use_compiler_assume:
         assume(cond)
@@ -380,7 +383,7 @@ fn debug_assert[
 
 @no_inline
 fn _debug_assert_msg(
-    message: UnsafePointer[mut=False, Byte], length: Int, loc: _SourceLocation
+    message: UnsafePointer[mut=False, Byte], length: Int, loc: SourceLocation
 ):
     """Aborts with (or prints) the given message and location.
 
@@ -452,10 +455,4 @@ fn _debug_assert_msg(
 
     @parameter
     if ASSERT_MODE != "warn":
-        # TODO(MSTDL-2072): Work around PTXAS bug where abort() causes a compile
-        # error.
-        @parameter
-        if is_nvidia_gpu():
-            __mlir_op.`llvm.intr.trap`()
-        else:
-            abort()
+        abort()
