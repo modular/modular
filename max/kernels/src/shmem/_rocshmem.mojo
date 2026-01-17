@@ -406,11 +406,50 @@ fn rocshmem_n_pes() -> c_int:
 
 fn rocshmem_malloc[
     dtype: DType
-](size: c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
-    return _get_rocshmem_function[
+](size: c_size_t) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+    var ptr = _get_rocshmem_function[
         "rocshmem_malloc",
         fn (c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(size)
+
+    return _check_rocshmem_allocation(ptr, "rochsmem_malloc", size)
+
+
+fn rocshmem_calloc[
+    dtype: DType
+](count: c_size_t, size: c_size_t) raises -> UnsafePointer[
+    Scalar[dtype], MutExternalOrigin
+]:
+    var ptr = _get_rocshmem_function[
+        "rocshmem_calloc",
+        fn (
+            c_size_t, c_size_t
+        ) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    ]()(count, size)
+
+    return _check_rocshmem_allocation(ptr, "rochsmem_calloc", count * size)
+
+
+fn _check_rocshmem_allocation[
+    dtype: DType
+](
+    ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    func_name: StaticString,
+    requested_bytes: c_size_t,
+) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+    if not ptr:
+        raise Error(
+            func_name,
+            " failed to allocate ",
+            requested_bytes,
+            " bytes of ",
+            dtype,
+            (
+                ". Increase allocatable bytes by setting the ROCSHMEM_HEAP_SIZE"
+                " env var"
+            ),
+        )
+    return ptr
 
 
 fn rocshmem_free[
@@ -420,19 +459,6 @@ fn rocshmem_free[
         "rocshmem_free",
         fn (type_of(ptr)) -> NoneType,
     ]()(ptr)
-
-
-fn rocshmem_calloc[
-    dtype: DType
-](count: c_size_t, size: c_size_t) -> UnsafePointer[
-    Scalar[dtype], MutExternalOrigin
-]:
-    return _get_rocshmem_function[
-        "rocshmem_calloc",
-        fn (
-            c_size_t, c_size_t
-        ) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    ]()(count, size)
 
 
 # ===----------------------------------------------------------------------=== #

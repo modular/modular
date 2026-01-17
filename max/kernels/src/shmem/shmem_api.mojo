@@ -314,7 +314,7 @@ fn shmem_n_pes() -> c_int:
 
 fn shmem_malloc[
     dtype: DType
-](size: UInt) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+](size: UInt) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     """Collectively allocate symmetric memory.
 
     Parameters:
@@ -338,6 +338,10 @@ fn shmem_malloc[
     memory allocation, and that the memory on other PEs can be used as soon as
     the local PE returns. The value of the size argument must be identical on
     all PEs; otherwise, the behavior is undefined.
+
+    Note: on ROCSHMEM this will raise an error if exceeding the default static
+    symmetric heap size of 1GB across all GPUs, while NVSHMEM uses dynamic
+    symmetric heap allocation and won't error.
     """
 
     @parameter
@@ -354,7 +358,7 @@ fn shmem_malloc[
 
 fn shmem_calloc[
     dtype: DType
-](count: UInt, size: UInt = UInt(size_of[dtype]())) -> UnsafePointer[
+](count: UInt, size: UInt = UInt(size_of[dtype]())) raises -> UnsafePointer[
     Scalar[dtype], MutExternalOrigin
 ]:
     """Collectively allocate a zeroed block of symmetric memory.
@@ -382,6 +386,10 @@ fn shmem_calloc[
     undefined. When count or size is 0, the `shmem_calloc` routine returns
     without performing a barrier. Otherwise, this routine calls a procedure that
     is semantically equivalent to `shmem_barrier_all` on exit.
+
+    Note: on ROCSHMEM this will raise an error if exceeding the default static
+    symmetric heap size of 1GB across all GPUs, while NVSHMEM uses dynamic
+    symmetric heap allocation and won't error.
     """
 
     @parameter
