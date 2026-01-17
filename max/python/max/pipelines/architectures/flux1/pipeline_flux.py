@@ -720,6 +720,9 @@ class FluxPipeline(DiffusionPipeline):
                     negative_text_ids,
                     guidance,
                 )[0]
+                # TODO: negative prompt path is very slow, need to optimize.
+                noise_pred = Tensor_v3.from_dlpack(noise_pred)
+                neg_noise_pred = Tensor_v3.from_dlpack(neg_noise_pred)
                 noise_pred = neg_noise_pred + true_cfg_scale * (
                     noise_pred - neg_noise_pred
                 )
