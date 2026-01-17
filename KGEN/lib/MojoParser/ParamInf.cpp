@@ -1157,6 +1157,15 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
         if (eltsTypesIfResolved &&
             types.size() < eltsTypesIfResolved.getValues().size()) {
           attrForElementType = eltsTypesIfResolved.getValues()[types.size()];
+          RefType refType = packType.getElementRefTypeFor(
+              ASTType(attrForElementType).mlirType);
+          ArgConvention packEltConvention =
+              signature.getPackVarArgConvention(expectedArgIdx);
+          if (failed(inferOneOperand(operand, expectedArgIdx, refType,
+                                     packEltConvention, argPogs,
+                                     operands.syntax))) {
+            return failure();
+          }
         } else {
           // Otherwise, infer the variadic element type from the value's type.
           ASTType toPush = operand.ir.getRValueTypeIfResolvable();
