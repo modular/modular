@@ -348,6 +348,10 @@ modular_py_binary(
         "run_lm_eval.py",
         "//max/tests/integration/pipelines/python/eval_tasks",
     ],
+    env = {
+        # required by models that use Expert Parallelism.
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
     imports = ["."],
     main = "pipelines_lm_eval.py",
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
