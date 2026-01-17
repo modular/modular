@@ -13,12 +13,7 @@
 
 from collections import OptionalReg, Dict
 from math import align_down, ceildiv
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
+from memory import alloc, LegacyUnsafePointer
 
 from os import abort
 from sys.ffi import _get_global_or_null, external_call
@@ -110,9 +105,9 @@ struct Naive2dConvolution[
     """Struct wrapper for naive 2d convolution implementation."""
 
     # Input params.
-    var output: UnsafePointer[Scalar[Self.output_type]]
-    var input: UnsafePointer[Scalar[Self.input_type]]
-    var filter: UnsafePointer[Scalar[Self.filter_type]]
+    var output: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]
+    var input: UnsafePointer[Scalar[Self.input_type], MutAnyOrigin]
+    var filter: UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]
     var pad_d: IndexList[2]
     var pad_h: IndexList[2]
     var pad_w: IndexList[2]
@@ -127,9 +122,9 @@ struct Naive2dConvolution[
 
     @staticmethod
     fn run(
-        output: UnsafePointer[Scalar[Self.output_type]],
-        input: UnsafePointer[Scalar[Self.input_type]],
-        filter: UnsafePointer[Scalar[Self.filter_type]],
+        output: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
+        input: UnsafePointer[Scalar[Self.input_type], MutAnyOrigin],
+        filter: UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin],
         output_shape: IndexList[5],
         input_shape: IndexList[5],
         filter_shape: IndexList[5],
@@ -163,9 +158,9 @@ struct Naive2dConvolution[
 
     fn __init__(
         out self,
-        output: UnsafePointer[Scalar[Self.output_type]],
-        input: UnsafePointer[Scalar[Self.input_type]],
-        filter: UnsafePointer[Scalar[Self.filter_type]],
+        output: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
+        input: UnsafePointer[Scalar[Self.input_type], MutAnyOrigin],
+        filter: UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin],
         output_shape: IndexList[5],
         input_shape: IndexList[5],
         filter_shape: IndexList[5],
@@ -312,8 +307,8 @@ fn _reduce_output[
     simd_size: Int,
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    scratch: UnsafePointer[Scalar[dtype]],
-    output: UnsafePointer[Scalar[dtype]],
+    scratch: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     N: Int,
     output_space_dims: IndexList,
     F: Int,
@@ -484,7 +479,7 @@ struct ConvDirectNHWC[
         var output_size = output.size()
         var scratch_size = num_partitions[1] * output_size
         if num_partitions[1] > 1:
-            output_ptr = UnsafePointer[Scalar[Self.output_type]].alloc(
+            output_ptr = alloc[Scalar[Self.output_type]](
                 scratch_size
             )
         var output_scratch = LayoutTensor[
@@ -561,8 +556,8 @@ struct ConvDirectNHWC[
                 elementwise_epilogue = Self.elementwise_epilogue if input.rank
                 == 4 else None,
             ](
-                output_scratch.ptr,
-                output.ptr,
+                output_scratch.ptr.bitcast[UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]]()[],
+                output.ptr.bitcast[UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]]()[],
                 conv_shape.n,
                 conv_shape.output_space_dims(),
                 conv_shape.f,
@@ -809,8 +804,8 @@ struct ConvDirectNHWC[
                 self.conv_shape.f_per_group() % simd_size,
             )
         var filter_ptr: UnsafePointer[
-            Scalar[Self.filter_type]
-        ] = self.filter.ptr
+            Scalar[Self.filter_type], MutAnyOrigin
+        ] = self.filter.ptr.bitcast[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]]()[]
 
         @parameter
         if Self.filter_packed:
@@ -845,13 +840,13 @@ struct ConvDirectNHWC[
                 # These contiguous segments are strided by F.
                 @parameter
                 if not Self.filter_packed:
-                    filter_ptr = self.filter.ptr + (
+                    filter_ptr = (self.filter.ptr + (
                         (s + r * self.conv_shape.s())
                         * self.conv_shape.c
                         * self.conv_shape.f
                         + c_tile_offset * self.conv_shape.f
                         + f_tile_offset
-                    )
+                    )).bitcast[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]]()[]
 
                 self._accumulate[
                     micro_kernel_height,
@@ -863,7 +858,7 @@ struct ConvDirectNHWC[
                     input_base_offsets,
                     input_offset,
                     c_tile_size,
-                    self.input.ptr,
+                    self.input.ptr.bitcast[UnsafePointer[Scalar[Self.input_type], MutAnyOrigin]]()[],
                     filter_ptr,
                     acc,
                 )
@@ -952,7 +947,7 @@ struct ConvDirectNHWC[
         has_residual: Bool,
     ](
         self,
-        output_base: UnsafePointer[Scalar[Self.output_type]],
+        output_base: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
         output_micro_tile: LayoutTensor[
             mut=True,
             Self.output_type,
@@ -1022,7 +1017,7 @@ struct ConvDirectNHWC[
                 micro_kernel_height, micro_kernel_width * simd_size
             ),
         ],
-        output_base: UnsafePointer[Scalar[Self.output_type]],
+        output_base: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
     ):
         """Store a micro tile from the output buffer.
         Parameters:
@@ -1084,8 +1079,8 @@ struct ConvDirectNHWC[
         ],
         input_offset: Int,
         c_tile_size: Int,
-        input: UnsafePointer[Scalar[Self.input_type]],
-        filter: UnsafePointer[Scalar[Self.filter_type]],
+        input: UnsafePointer[Scalar[Self.input_type], MutAnyOrigin],
+        filter: UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin],
         mut acc: _Accumulator[
             Self.output_type,
             micro_kernel_height,
@@ -1124,8 +1119,8 @@ struct ConvDirectNHWC[
         self,
         c_tile_size: Int,
         input_stride: Int,
-        input_base: UnsafePointer[Scalar[Self.input_type]],
-        filter_base: UnsafePointer[Scalar[Self.filter_type]],
+        input_base: UnsafePointer[Scalar[Self.input_type], MutAnyOrigin],
+        filter_base: UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin],
         mut acc_in: _Accumulator[
             Self.output_type, micro_kernel_height, micro_kernel_width, simd_size
         ],
@@ -1225,7 +1220,7 @@ struct ConvDirectNHWC[
         var g = self.conv_shape.f_to_group(f_tile_offset)
 
         # Filter pointer to the current cf tile offset location.
-        var filter_ptr: UnsafePointer[Scalar[Self.filter_type]]
+        var filter_ptr: UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]
 
         @parameter
         if Self.filter_packed:
@@ -1245,19 +1240,19 @@ struct ConvDirectNHWC[
                 * micro_kernel_f_size
             )
         else:
-            filter_ptr = self.filter.ptr + (
+            filter_ptr = (self.filter.ptr + (
                 c_tile_offset * self.conv_shape.f + f_tile_offset
-            )
+            )).bitcast[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]]()[]
 
         # Pointer to input and output of the current sample (batch dim).
         # fmt: off
-        var input_ptr  = self.input.ptr + c_tile_offset \
+        var input_ptr  = (self.input.ptr + c_tile_offset \
                        + self.conv_shape.input_image_flat_size() \
-                       * self.conv_shape.c * n
+                       * self.conv_shape.c * n).bitcast[UnsafePointer[Scalar[Self.input_type], MutAnyOrigin]]()[]
 
-        var output_ptr = self.output.ptr + f_tile_offset \
+        var output_ptr = (self.output.ptr + f_tile_offset \
                        + self.conv_shape.output_image_flat_size() \
-                       * self.conv_shape.f * n
+                       * self.conv_shape.f * n).bitcast[UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]]()[]
         # fmt: on
 
         # Divide each row into three part:
@@ -1341,9 +1336,9 @@ struct ConvDirectNHWC[
         filter_dt: DType,
     ](
         self,
-        output: UnsafePointer[Scalar[output_dt]],
-        input: UnsafePointer[Scalar[input_dt]],
-        filter: UnsafePointer[Scalar[filter_dt]],
+        output: UnsafePointer[Scalar[output_dt], MutAnyOrigin],
+        input: UnsafePointer[Scalar[input_dt], MutAnyOrigin],
+        filter: UnsafePointer[Scalar[filter_dt], MutAnyOrigin],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -1414,9 +1409,9 @@ struct ConvDirectNHWC[
         filter_dt: DType,
     ](
         self,
-        output: UnsafePointer[Scalar[output_dt]],
-        input: UnsafePointer[Scalar[input_dt]],
-        filter: UnsafePointer[Scalar[filter_dt]],
+        output: UnsafePointer[Scalar[output_dt], MutAnyOrigin],
+        input: UnsafePointer[Scalar[input_dt], MutAnyOrigin],
+        filter: UnsafePointer[Scalar[filter_dt], MutAnyOrigin],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -1498,9 +1493,9 @@ struct ConvDirectNHWC[
         filter_dt: DType,
     ](
         self,
-        output: UnsafePointer[Scalar[output_dt]],
-        input: UnsafePointer[Scalar[input_dt]],
-        filter: UnsafePointer[Scalar[filter_dt]],
+        output: UnsafePointer[Scalar[output_dt], MutAnyOrigin],
+        input: UnsafePointer[Scalar[input_dt], MutAnyOrigin],
+        filter: UnsafePointer[Scalar[filter_dt], MutAnyOrigin],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -1664,18 +1659,18 @@ struct ConvDirectNHWC[
         comptime WO = Int(Self.output_layout.shape[2])  # NHWC
         comptime F = Int(Self.output_layout.shape[3])  # NHWC
 
-        var filter_base: UnsafePointer[Scalar[Self.filter_type]]
+        var filter_base: UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]
 
         @parameter
         if Self.filter_packed:
-            filter_base = self.filter.ptr + (
+            filter_base = (self.filter.ptr + (
                 f_tile_offset * C * R * S + c_tile_offset * micro_kernel_f_size
-            )
+            )).bitcast[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]]()[]
         else:
-            filter_base = self.filter.ptr + (c_tile_offset * F + f_tile_offset)
+            filter_base = (self.filter.ptr + (c_tile_offset * F + f_tile_offset)).bitcast[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]]()[]
 
-        var input_curr_image = self.input.ptr + n * W * H * C
-        var output_curr_image = self.output.ptr + n * WO * HO * F
+        var input_curr_image = (self.input.ptr + n * W * H * C).bitcast[UnsafePointer[Scalar[Self.input_type], MutAnyOrigin]]()[]
+        var output_curr_image = (self.output.ptr + n * WO * HO * F).bitcast[UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]]()[]
         var conv_attr_dyn = materialize[Self.conv_attr]()
 
         for ho in range(
@@ -1821,13 +1816,13 @@ struct ConvDirectNHWC[
     ](
         self,
         input_base: UnsafePointer[
-            Scalar[Self.input_type]
+            Scalar[Self.input_type], MutAnyOrigin
         ],  # points to (ho, wo) mapped in input
         filter_base: UnsafePointer[
-            Scalar[Self.filter_type]
+            Scalar[Self.filter_type], MutAnyOrigin
         ],  # point to filter in cf tile
         output_base: UnsafePointer[
-            Scalar[Self.output_type]
+            Scalar[Self.output_type], MutAnyOrigin
         ],  # point to (ho, wo) in output
         f_tile_offset: Int,
         f_tile_size: Int,
@@ -1996,10 +1991,10 @@ fn accumulate_wo_tile_1d[
     c_tile_size: Int,
     S: Int,
     mut acc: _Accumulator,
-    input: UnsafePointer[Scalar[input_dt]],
+    input: UnsafePointer[Scalar[input_dt], MutAnyOrigin],
     input_stride: Int,
     input_stride_to_nbr: Int,
-    filter: UnsafePointer[Scalar[filter_dt]],
+    filter: UnsafePointer[Scalar[filter_dt], MutAnyOrigin],
     filter_stride: Int,
     filter_stride_to_nbr: Int,
     partial_load_filter_size: Int,
@@ -2076,9 +2071,9 @@ fn conv1d_update_wo_tile[
     filter_dt: DType,
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    output: UnsafePointer[Scalar[output_dt]],
-    input: UnsafePointer[Scalar[input_dt]],
-    filter: UnsafePointer[Scalar[filter_dt]],
+    output: UnsafePointer[Scalar[output_dt], MutAnyOrigin],
+    input: UnsafePointer[Scalar[input_dt], MutAnyOrigin],
+    filter: UnsafePointer[Scalar[filter_dt], MutAnyOrigin],
     first_c_tile: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,
@@ -2189,10 +2184,10 @@ fn accumulate_wo_tile_2d[
     c_tile_size: Int,
     RS: IndexList[2],
     mut acc: _Accumulator,
-    input: UnsafePointer[Scalar[input_dt]],
+    input: UnsafePointer[Scalar[input_dt], MutAnyOrigin],
     input_stride: Int,
     input_stride_to_nbr: IndexList[2],
-    filter: UnsafePointer[Scalar[filter_dt]],
+    filter: UnsafePointer[Scalar[filter_dt], MutAnyOrigin],
     filter_stride: Int,
     filter_stride_to_nbr: IndexList[2],
     partial_load_filter_size: Int,
@@ -2245,9 +2240,9 @@ fn conv2d_update_wo_tile[
     filter_dt: DType,
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    output: UnsafePointer[Scalar[output_dt]],
-    input: UnsafePointer[Scalar[input_dt]],
-    filter: UnsafePointer[Scalar[filter_dt]],
+    output: UnsafePointer[Scalar[output_dt], MutAnyOrigin],
+    input: UnsafePointer[Scalar[input_dt], MutAnyOrigin],
+    filter: UnsafePointer[Scalar[filter_dt], MutAnyOrigin],
     first_c_tile: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,
@@ -2372,10 +2367,10 @@ fn accumulate_wo_tile_3d[
     c_tile_size: Int,
     QRS: IndexList[3],
     mut acc: _Accumulator,
-    input: UnsafePointer[Scalar[input_dt]],
+    input: UnsafePointer[Scalar[input_dt], MutAnyOrigin],
     input_stride: Int,
     input_stride_to_nbr: IndexList[3],
-    filter: UnsafePointer[Scalar[filter_dt]],
+    filter: UnsafePointer[Scalar[filter_dt], MutAnyOrigin],
     filter_stride: Int,
     filter_stride_to_nbr: IndexList[3],
     partial_load_filter_size: Int,
@@ -2427,9 +2422,9 @@ fn conv3d_update_wo_tile[
     filter_dt: DType,
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    output: UnsafePointer[Scalar[output_dt]],
-    input: UnsafePointer[Scalar[input_dt]],
-    filter: UnsafePointer[Scalar[filter_dt]],
+    output: UnsafePointer[Scalar[output_dt], MutAnyOrigin],
+    input: UnsafePointer[Scalar[input_dt], MutAnyOrigin],
+    filter: UnsafePointer[Scalar[filter_dt], MutAnyOrigin],
     first_c_tile: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,
@@ -2700,7 +2695,7 @@ fn pack_filter_shape[
 fn _get_group_filter_base(
     packed_filter: LayoutTensor, group_idx: Int, f_per_group: Int
 ) -> UnsafePointer[
-    Scalar[packed_filter.dtype], address_space = packed_filter.address_space
+    Scalar[packed_filter.dtype], MutAnyOrigin, address_space = packed_filter.address_space
 ]:
     """Returns the pointer of the input group's start in the packed filter."""
     # Each group is zero padded to
@@ -2728,7 +2723,7 @@ fn _get_group_filter_base(
                    * micro_kernel_f_size
     # fmt: on
 
-    return packed_filter.ptr + group_idx * group_size
+    return (packed_filter.ptr + group_idx * group_size).bitcast[UnsafePointer[Scalar[packed_filter.dtype], MutAnyOrigin, address_space=packed_filter.address_space]]()[]
 
 
 @always_inline
@@ -3191,36 +3186,36 @@ fn check_cudnn_error(stat: cudnnStatus_t):
 
 @register_passable
 struct CuDNNConvMeta(ImplicitlyCopyable):
-    var ptr_handle: UnsafePointer[cudnnContext]
-    var ptr_input_desc: UnsafePointer[cudnnTensorStruct]
-    var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]
-    var ptr_conv_desc: UnsafePointer[cudnnConvolutionStruct]
-    var ptr_output_desc: UnsafePointer[cudnnTensorStruct]
+    var ptr_handle: UnsafePointer[cudnnContext, MutAnyOrigin]
+    var ptr_input_desc: UnsafePointer[cudnnTensorStruct, MutAnyOrigin]
+    var ptr_filter_desc: UnsafePointer[cudnnFilterStruct, MutAnyOrigin]
+    var ptr_conv_desc: UnsafePointer[cudnnConvolutionStruct, MutAnyOrigin]
+    var ptr_output_desc: UnsafePointer[cudnnTensorStruct, MutAnyOrigin]
 
     fn __init__(out self) raises:
-        self.ptr_handle = UnsafePointer[cudnnContext]()
-        check_cudnn_error(cudnnCreate(UnsafePointer(to=self.ptr_handle)))
+        self.ptr_handle = UnsafePointer[cudnnContext, MutAnyOrigin]()
+        check_cudnn_error(cudnnCreate(UnsafePointer(to=self.ptr_handle).unsafe_origin_cast[MutAnyOrigin]().bitcast[LegacyUnsafePointer[mut=True, cudnnContext]]()))
 
-        self.ptr_input_desc = UnsafePointer[cudnnTensorStruct]()
+        self.ptr_input_desc = UnsafePointer[cudnnTensorStruct, MutAnyOrigin]()
         check_cudnn_error(
-            cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_input_desc))
+            cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_input_desc).unsafe_origin_cast[MutAnyOrigin]().bitcast[LegacyUnsafePointer[mut=True, cudnnTensorStruct]]())
         )
 
-        self.ptr_filter_desc = UnsafePointer[cudnnFilterStruct]()
+        self.ptr_filter_desc = UnsafePointer[cudnnFilterStruct, MutAnyOrigin]()
         check_cudnn_error(
-            cudnnCreateFilterDescriptor(UnsafePointer(to=self.ptr_filter_desc))
+            cudnnCreateFilterDescriptor(UnsafePointer(to=self.ptr_filter_desc).unsafe_origin_cast[MutAnyOrigin]().bitcast[LegacyUnsafePointer[mut=True, cudnnFilterStruct]]())
         )
 
-        self.ptr_conv_desc = UnsafePointer[cudnnConvolutionStruct]()
+        self.ptr_conv_desc = UnsafePointer[cudnnConvolutionStruct, MutAnyOrigin]()
         check_cudnn_error(
             cudnnCreateConvolutionDescriptor(
-                UnsafePointer(to=self.ptr_conv_desc)
+                UnsafePointer(to=self.ptr_conv_desc).unsafe_origin_cast[MutAnyOrigin]().bitcast[LegacyUnsafePointer[mut=True, cudnnConvolutionStruct]]()
             )
         )
 
-        self.ptr_output_desc = UnsafePointer[cudnnTensorStruct]()
+        self.ptr_output_desc = UnsafePointer[cudnnTensorStruct, MutAnyOrigin]()
         check_cudnn_error(
-            cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_output_desc))
+            cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_output_desc).unsafe_origin_cast[MutAnyOrigin]().bitcast[LegacyUnsafePointer[mut=True, cudnnTensorStruct]]())
         )
 
     fn __del__(deinit self):
@@ -3240,7 +3235,7 @@ struct CuDNNConvMeta(ImplicitlyCopyable):
             abort(String(e))
 
 
-fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
+fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta, MutAnyOrigin]:
     """Get the cuDNN metadata with proper device context management.
 
     If the metadata is not found for this device, create a new one and insert
@@ -3273,7 +3268,7 @@ fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
         )
         return ptr_meta
 
-    ptr_meta = UnsafePointer[CuDNNConvMeta].alloc(1)
+    ptr_meta = alloc[CuDNNConvMeta](1)
     ptr_meta.init_pointee_move(CuDNNConvMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
@@ -3409,16 +3404,16 @@ fn _conv_cudnn[
             ptr_meta[].ptr_handle,
             UnsafePointer(to=alpha).bitcast[NoneType](),
             ptr_meta[].ptr_input_desc,
-            rebind[OpaquePointer](input.ptr.bitcast[NoneType]()),
+            input.ptr.bitcast[LegacyUnsafePointer[mut=True, NoneType]]()[],
             ptr_meta[].ptr_filter_desc,
-            rebind[OpaquePointer](filter.ptr.bitcast[NoneType]()),
+            filter.ptr.bitcast[LegacyUnsafePointer[mut=True, NoneType]]()[],
             ptr_meta[].ptr_conv_desc,
             algo,
             workspace_buffer.unsafe_ptr().bitcast[NoneType](),
             workspace_size_var,
             UnsafePointer(to=beta).bitcast[NoneType](),
             ptr_meta[].ptr_output_desc,
-            rebind[OpaquePointer](output.ptr.bitcast[NoneType]()),
+            output.ptr.bitcast[LegacyUnsafePointer[mut=True, NoneType]]()[],
         )
     )
     _ = workspace_buffer^
