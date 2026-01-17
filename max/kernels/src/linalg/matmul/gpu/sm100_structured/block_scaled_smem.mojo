@@ -60,15 +60,13 @@ struct BlockScaledSmem[
     comptime MMA_N = Self.config.mma_shape[1]
 
     # Pipeline stage counts
-    comptime num_pipeline_stages = Int(Self.config.num_pipeline_stages)
+    comptime num_pipeline_stages = Self.config.num_pipeline_stages
     comptime num_group_pipeline_stages = (
-        Self.num_pipeline_stages // Int(Self.config.k_group_size)
+        Self.num_pipeline_stages // Self.config.k_group_size
     )
     comptime num_output_stages = Int(Self.config.num_output_stages)
-    comptime num_accum_pipeline_stages = Int(
-        Self.config.num_accum_pipeline_stages
-    )
-    comptime num_clc_pipeline_stages = Int(Self.config.num_clc_pipeline_stages)
+    comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
+    comptime num_clc_pipeline_stages: Int = Self.config.num_clc_pipeline_stages
 
     # ========== Layout Definitions ==========
     comptime a_smem_layout = tile_layout_k_major[

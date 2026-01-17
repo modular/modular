@@ -65,7 +65,7 @@ def test_blackwell_matmul[
     transpose_b: Bool = True,
     block_swizzle_size: Int = 0,
     swapAB: Bool = False,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
     num_split_k: Int = 1,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     """Generic test function for SM100 matmul kernel variants."""

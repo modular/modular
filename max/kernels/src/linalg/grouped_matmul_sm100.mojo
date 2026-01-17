@@ -760,7 +760,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
     num_pipeline_stages: UInt,
-    num_accum_pipeline_stages: UInt,
+    num_accum_pipeline_stages: Int,
     num_output_stages: UInt = 2,
     output_tile_shape: IndexList[2] = Index(128, 32),
     transpose_b: Bool = True,
@@ -796,7 +796,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     # For ld from TMEM, use same per-stage stride in column field.
     comptime NUM_TMEM_COLS = 512
-    comptime stage_stride_cols = NUM_TMEM_COLS // Int(num_accum_pipeline_stages)
+    comptime stage_stride_cols = NUM_TMEM_COLS // num_accum_pipeline_stages
 
     comptime clc_throttle_producer_arv_count = TMA_LOAD_THREADS
     comptime clc_throttle_consumer_arv_count = SCHEDULER_THREADS
@@ -934,10 +934,10 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var producer_phase = PipelineState[Int(num_pipeline_stages)](0, 1, 0)
 
     var accum_pipeline_producer_state = PipelineState[
-        Int(num_accum_pipeline_stages)
+        num_accum_pipeline_stages
     ](0, 1, 0)
     var accum_pipeline_consumer_state = PipelineState[
-        Int(num_accum_pipeline_stages)
+        num_accum_pipeline_stages
     ]()
 
     var mma_op = MmaOpSM100_SS[
@@ -1427,7 +1427,7 @@ fn _grouped_matmul_sm100_persistent[
         c_swizzle=c_swizzle,
         cta_group=cta_group,
         num_pipeline_stages = UInt(pipeline_stage),
-        num_accum_pipeline_stages = UInt(max_accum_pipeline_stages),
+        num_accum_pipeline_stages=max_accum_pipeline_stages,
         num_output_stages = UInt(num_output_stages),
         output_tile_shape=output_tile_shape,
         transpose_c=transpose_c,

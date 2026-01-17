@@ -31,9 +31,9 @@ struct TuningConfigSM100(TuningConfig):
     var rasterize_order: RasterOrder
     var cta_group: Int
     var swapAB: Bool
-    var k_group_size: UInt
-    var num_accum_pipeline_stages: UInt
-    var num_clc_pipeline_stages: UInt
+    var k_group_size: Int
+    var num_accum_pipeline_stages: Int
+    var num_clc_pipeline_stages: Int
     var num_split_k: Int
 
     fn __init__(
@@ -48,9 +48,9 @@ struct TuningConfigSM100(TuningConfig):
         rasterize_order: RasterOrder,
         cta_group: Int = 2,
         swapAB: Bool = False,
-        k_group_size: UInt = 1,
-        num_accum_pipeline_stages: UInt = 2,
-        num_clc_pipeline_stages: UInt = 2,
+        k_group_size: Int = 1,
+        num_accum_pipeline_stages: Int = 2,
+        num_clc_pipeline_stages: Int = 2,
         num_split_k: Int = 1,
     ):
         self.M = M
@@ -84,9 +84,9 @@ struct TuningConfigSM100(TuningConfig):
         block_swizzle_size: UInt,
         rasterize_order: RasterOrder,
         swapAB: Bool = False,
-        k_group_size: UInt = 1,
-        num_accum_pipeline_stages: UInt = 2,
-        num_clc_pipeline_stages: UInt = 2,
+        k_group_size: Int = 1,
+        num_accum_pipeline_stages: Int = 2,
+        num_clc_pipeline_stages: Int = 2,
         num_split_k: Int = 1,
     ):
         self.M = M

@@ -471,7 +471,7 @@ fn matmul_dispatch_sm100[
             raster_order=RasterOrder(RASTERIZE_ORDER),
             cta_group=CTA_GROUP,
             AB_swapped=AB_SWAPPED,
-            k_group_size=UInt(K_GROUP_SIZE),
+            k_group_size=K_GROUP_SIZE,
         )
 
         return blackwell_matmul_tma_umma_warp_specialized[
@@ -2142,7 +2142,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
                 block_swizzle_size=1,
-                num_pipeline_stages=UInt(7),
+                num_pipeline_stages=7,
             )
             _matmul_dispatch_sm100[
                 transpose_b=transpose_b,

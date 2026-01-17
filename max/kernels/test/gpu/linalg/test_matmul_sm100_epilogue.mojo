@@ -52,7 +52,7 @@ def test_matmul_sm100_epilogue[
     test_lambda_fn: Bool = False,
     register_based_epilogue: Bool = False,
     swapAB: Bool = False,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value
@@ -316,7 +316,7 @@ def main():
                     fn run[
                         cluster_m: Int,
                         cluster_n: Int,
-                        k_group: UInt = 1,
+                        k_group: Int = 1,
                     ](m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
                         test_matmul_sm100_epilogue[
                             dtype,

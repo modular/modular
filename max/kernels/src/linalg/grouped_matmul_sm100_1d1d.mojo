@@ -778,12 +778,8 @@ struct B200BlockScaledMatmulSmem[
     comptime AScalesType = Scalar[Self.sfa_dtype]
     comptime BScalesType = Scalar[Self.sfb_dtype]
 
-    comptime a_smem_size = Self.BM * Self.BK * Int(
-        Self.config.num_pipeline_stages
-    )
-    comptime b_smem_size = Self.BN * Self.BK * Int(
-        Self.config.num_pipeline_stages
-    )
+    comptime a_smem_size = Self.BM * Self.BK * Self.config.num_pipeline_stages
+    comptime b_smem_size = Self.BN * Self.BK * Self.config.num_pipeline_stages
     comptime c_smem_size = Self.OutputM * Self.OutputN * Int(
         Self.config.num_output_stages
     )
@@ -792,13 +788,13 @@ struct B200BlockScaledMatmulSmem[
         Self.config.num_sf_k_tiles
         * (Self.BM // SF_MN_GROUP_SIZE)
         * Self.config.sf_block_atom_size
-        * Int(Self.config.num_pipeline_stages)
+        * Self.config.num_pipeline_stages
     )
     comptime sfb_smem_size = (
         Self.config.num_sf_k_tiles
         * (Self.MMA_N // SF_MN_GROUP_SIZE)
         * Self.config.sf_block_atom_size
-        * Int(Self.config.num_pipeline_stages)
+        * Self.config.num_pipeline_stages
     )
 
     comptime num_group_pipeline_stages = Self.config.num_pipeline_stages // Self.config.k_group_size
@@ -811,26 +807,24 @@ struct B200BlockScaledMatmulSmem[
     var sfb_smem: InlineArray[Self.BScalesType, Self.sfb_smem_size]
 
     var tma_mma_mbars: InlineArray[
-        SharedMemBarrier, Int(Self.num_group_pipeline_stages) * 2
+        SharedMemBarrier, Self.num_group_pipeline_stages * 2
     ]
     # ACCUM
     var accum_mbars: InlineArray[
-        SharedMemBarrier, Int(Self.config.num_accum_pipeline_stages) * 2
+        SharedMemBarrier, Self.config.num_accum_pipeline_stages * 2
     ]
 
     # CLC
     var clc_mbars_full: InlineArray[
-        SharedMemBarrier, Int(Self.config.num_clc_pipeline_stages)
+        SharedMemBarrier, Self.config.num_clc_pipeline_stages
     ]
     var clc_mbars_empty: InlineArray[
-        SharedMemBarrier, Int(Self.config.num_clc_pipeline_stages)
+        SharedMemBarrier, Self.config.num_clc_pipeline_stages
     ]
     var clc_throttle_mbars: InlineArray[
-        SharedMemBarrier, Int(Self.config.num_clc_pipeline_stages) * 2
+        SharedMemBarrier, Self.config.num_clc_pipeline_stages * 2
     ]
-    var clc_response: InlineArray[
-        UInt128, Int(Self.config.num_clc_pipeline_stages)
-    ]
+    var clc_response: InlineArray[UInt128, Self.config.num_clc_pipeline_stages]
 
     # TMEM
     var tmem_dealloc_mbar: InlineArray[SharedMemBarrier, 1]
@@ -855,7 +849,7 @@ fn load_AB[
     b_smem_layout: Layout,
     sfa_smem_layout: Layout,
     sfb_smem_layout: Layout,
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     expert_ids_layout: Layout,
     a_scale_offsets_layout: Layout,
     /,
@@ -898,7 +892,7 @@ fn load_AB[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
-    load_mma_pipeline: ProducerConsumerPipeline[Int(num_pipeline_stages)],
+    load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
     work_tile_coord: Tuple[UInt, UInt],
     a_multicast_mask: UInt16,
@@ -1593,8 +1587,8 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     comptime stage_stride_cols = config.mma_shape[1]
 
     constrained[
-        config.num_accum_pipeline_stages * UInt(MMA_N)
-        + UInt(SFA_NUM_COLS + SFB_NUM_COLS) * config.num_pipeline_stages
+        config.num_accum_pipeline_stages * MMA_N
+        + (SFA_NUM_COLS + SFB_NUM_COLS) * config.num_pipeline_stages
         <= NUM_TMEM_COLS,
         "sfa_tmem and sfb_tmem exceed tmem_cols",
     ]()
@@ -1723,7 +1717,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     # Conumer phase = 1 so that producer's wait on consumer passes trivially
     # at the start when buffer is empty.
     var load_mma_pipeline = ProducerConsumerPipeline[
-        Int(config.num_pipeline_stages // config.k_group_size)
+        config.num_pipeline_stages // config.k_group_size
     ](
         tma_mma_mbars_storage.unsafe_ptr(),
     )
@@ -1731,7 +1725,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     # MMA warp as producer and Output warp as consumer.
     # Dependence on MMA output in TMEM.
     var mma_output_pipeline = ProducerConsumerPipeline[
-        Int(config.num_accum_pipeline_stages)
+        config.num_accum_pipeline_stages
     ](
         accum_mbars_storage.unsafe_ptr(),
     )
@@ -1741,7 +1735,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     # In the extreme case, all ctas keep querying next work simultaneously,
     # there will be no guarantee they get balanced number of tiles.
     var load_clc_pipeline = ProducerConsumerPipeline[
-        Int(config.num_clc_pipeline_stages)
+        config.num_clc_pipeline_stages
     ](
         clc_throttle_storage.unsafe_ptr(),
     )
@@ -1892,7 +1886,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         block_tile_shape = config.block_tile_shape,
                         mma_shape = config.mma_shape,
                         cta_group = config.cta_group,
-                        k_group_size = config.k_group_size,
+                        k_group_size = UInt(config.k_group_size),
                         num_sf_k_tiles = config.num_sf_k_tiles,
                     ](
                         a_tma_op,
@@ -1934,11 +1928,9 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             named_barrier_arrive[MMA_THREADS + EPILOGUE_THREADS](1)
 
             tmem_addr = ptr_tmem_addr[0]
-            var sfa_tmem = tmem_addr + config.num_accum_pipeline_stages * UInt(
-                MMA_N
-            )
-            var sfb_tmem = (
-                sfa_tmem + UInt(SFA_NUM_COLS) * config.num_pipeline_stages
+            var sfa_tmem = tmem_addr + config.num_accum_pipeline_stages * MMA_N
+            var sfb_tmem = sfa_tmem + UInt(SFA_NUM_COLS) * UInt(
+                config.num_pipeline_stages
             )
 
             while not work_info.is_done():
@@ -1968,7 +1960,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                             SFB_NUM_COLS=SFB_NUM_COLS,
                             cta_group = config.cta_group,
                             cluster_shape = config.cluster_shape,
-                            k_group_size = Int(config.k_group_size),
+                            k_group_size = config.k_group_size,
                         ](
                             tmem_offset,
                             sfa_tmem,

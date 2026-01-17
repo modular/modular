@@ -203,14 +203,10 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # ========== Pipeline Configuration ==========
 
-    comptime num_pipeline_stages = Int(Self.config.num_pipeline_stages)
-    comptime num_group_pipeline_stages = Self.num_pipeline_stages // Int(
-        Self.config.k_group_size
-    )
-    comptime num_clc_pipeline_stages = Int(Self.config.num_clc_pipeline_stages)
-    comptime num_accum_pipeline_stages = Int(
-        Self.config.num_accum_pipeline_stages
-    )
+    comptime num_pipeline_stages = Self.config.num_pipeline_stages
+    comptime num_group_pipeline_stages = Self.num_pipeline_stages // Self.config.k_group_size
+    comptime num_clc_pipeline_stages: Int = Self.config.num_clc_pipeline_stages
+    comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_output_stages = Int(Self.config.num_output_stages)
 
     # TMEM configuration
@@ -364,7 +360,7 @@ struct BlackwellBlockScaledMatmulKernel[
     # ========== TMEM and Output Pipeline Types ==========
     comptime Tmem = TmemAllocation[Self.cta_group]
     comptime OutputPipeline = OutputTilePipeline[
-        Int(Self.config.num_accum_pipeline_stages),
+        Self.config.num_accum_pipeline_stages,
         Self.stage_stride_cols,
         Self.cta_group,
     ]
@@ -378,7 +374,7 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # MMA warp context (TMEM + dealloc + OutputPipeline)
     comptime MmaCtx = MmaWarpContext[
-        Int(Self.config.num_accum_pipeline_stages),
+        Self.config.num_accum_pipeline_stages,
         Self.stage_stride_cols,
         Self.cta_group,
         Self.MMA_THREADS,
@@ -387,7 +383,7 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # Epilogue warp context
     comptime EpilogueCtx = EpilogueWarpContext[
-        Int(Self.config.num_accum_pipeline_stages),
+        Self.config.num_accum_pipeline_stages,
         Self.stage_stride_cols,
         Self.cta_group,
         Self.MMA_THREADS,
@@ -402,7 +398,7 @@ struct BlackwellBlockScaledMatmulKernel[
         block_tile_shape = Self.config.block_tile_shape,
         mma_shape = Self.config.mma_shape,
         cta_group = Self.cta_group,
-        num_accum_pipeline_stages = Int(Self.config.num_accum_pipeline_stages),
+        num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
         c_swizzle = Self.config.c_swizzle,
         transpose_c = Self.config.AB_swapped,
         c_smem_layout = Self.SmemType.c_smem_layout,
@@ -622,7 +618,7 @@ struct BlackwellBlockScaledMatmulKernel[
         c_tiles: Self.SmemType.CTileArray,
         c_tma_op: TMATensorTile[Self.c_type, Self.c_layout, Self.c_desc_layout],
         mma_output_pipeline: ProducerConsumerPipeline[
-            Int(Self.config.num_accum_pipeline_stages)
+            Self.config.num_accum_pipeline_stages
         ],
         tmem_addr: UInt32,
         work_tile_coord: Tuple[UInt32, UInt32, UInt32],

@@ -66,7 +66,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     block_swizzle_size: Int = 0,
     benchmark: Bool = False,
     swapAB: Bool = False,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value

@@ -377,10 +377,8 @@ struct B200MatmulSmem[
         Self.num_pipeline_stages // Int(Self.config.k_group_size)
     )
     comptime num_output_stages = Int(Self.config.num_output_stages)
-    comptime num_accum_pipeline_stages = Int(
-        Self.config.num_accum_pipeline_stages
-    )
-    comptime num_clc_pipeline_stages = Int(Self.config.num_clc_pipeline_stages)
+    comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
+    comptime num_clc_pipeline_stages: Int = Self.config.num_clc_pipeline_stages
 
     # ========== Layout Definitions ==========
     comptime a_smem_layout = tile_layout_k_major[
@@ -577,8 +575,8 @@ struct BlackwellMatmulSM100Kernel[
     comptime accum_type = Self.config.accum_type
     comptime cta_group = Self.config.cta_group
 
-    comptime CLUSTER_M = Int(Self.config.cluster_shape[0])
-    comptime CLUSTER_N = Int(Self.config.cluster_shape[1])
+    comptime CLUSTER_M: Int = Self.config.cluster_shape[0]
+    comptime CLUSTER_N: Int = Self.config.cluster_shape[1]
     comptime CLUSTER_SIZE = Self.CLUSTER_M * Self.CLUSTER_N
 
     # MMA tile counts
@@ -608,10 +606,8 @@ struct BlackwellMatmulSM100Kernel[
     comptime num_group_pipeline_stages = Self.num_pipeline_stages // Int(
         Self.config.k_group_size
     )
-    comptime num_clc_pipeline_stages = Int(Self.config.num_clc_pipeline_stages)
-    comptime num_accum_pipeline_stages = Int(
-        Self.config.num_accum_pipeline_stages
-    )
+    comptime num_clc_pipeline_stages: Int = Self.config.num_clc_pipeline_stages
+    comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_output_stages = Int(Self.config.num_output_stages)
 
     # TMEM configuration
@@ -755,7 +751,7 @@ struct BlackwellMatmulSM100Kernel[
     # Manages MMA→Epilogue pipeline for TMEM accumulator stages
 
     comptime OutputPipeline = OutputTilePipeline[
-        Int(Self.config.num_accum_pipeline_stages),
+        Self.config.num_accum_pipeline_stages,
         Self.stage_stride_cols,
         Self.cta_group,
     ]
@@ -770,7 +766,7 @@ struct BlackwellMatmulSM100Kernel[
 
     # MMA warp context (TMEM + dealloc + OutputPipeline)
     comptime MmaCtx = MmaWarpContext[
-        Int(Self.config.num_accum_pipeline_stages),
+        Self.config.num_accum_pipeline_stages,
         Self.stage_stride_cols,
         Self.cta_group,
         Self.MMA_THREADS,
@@ -779,7 +775,7 @@ struct BlackwellMatmulSM100Kernel[
 
     # Epilogue warp context (works in run_splitk, issues in run with k_group>1)
     comptime EpilogueCtx = EpilogueWarpContext[
-        Int(Self.config.num_accum_pipeline_stages),
+        Self.config.num_accum_pipeline_stages,
         Self.stage_stride_cols,
         Self.cta_group,
         Self.MMA_THREADS,
@@ -795,7 +791,7 @@ struct BlackwellMatmulSM100Kernel[
         block_tile_shape = Self.config.block_tile_shape,
         mma_shape = Self.config.mma_shape,
         cta_group = Self.cta_group,
-        num_accum_pipeline_stages = Int(Self.config.num_accum_pipeline_stages),
+        num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
         c_swizzle = Self.config.c_swizzle,
         transpose_c = Self.config.AB_swapped,
         c_smem_layout = Self.SmemType.c_smem_layout,
@@ -1347,7 +1343,7 @@ struct BlackwellMatmulSM100Kernel[
 
         # Scheduler owns CLC throttle pipeline internally
         var scheduler = TileSchedulerSplitK[
-            num_stages = Int(Self.config.num_clc_pipeline_stages),
+            num_stages = Self.config.num_clc_pipeline_stages,
             reduction_tile_shape = Index(Self.BM, Self.MMA_N, Self.BK),
             cluster_shape = Index[dtype = DType.uint32](
                 Self.config.cluster_shape[0],
@@ -1528,7 +1524,7 @@ struct BlackwellMatmulSM100FallbackKernel[
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    num_threads: UInt = 128,
+    num_threads: Int = 128,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ]:
     """Simple fallback matmul kernel for SM100 (B200).
@@ -1579,7 +1575,7 @@ struct BlackwellMatmulSM100FallbackKernel[
     ]
 
     comptime accum_type = get_accum_type[Self.a_type]()
-    comptime c_frag_size = Self.MMA_M * Self.MMA_N // Int(Self.num_threads)
+    comptime c_frag_size = Self.MMA_M * Self.MMA_N // Self.num_threads
     comptime max_tmem_cols = 512
 
     # ========== Validation ==========
@@ -1734,7 +1730,7 @@ struct BlackwellMatmulSM100FallbackKernel[
             tcgen05_dealloc[1](tmem_addr, Self.max_tmem_cols)
 
         # Write output to global memory
-        comptime num_warps = Self.num_threads // UInt(WARP_SIZE)
+        comptime num_warps = Self.num_threads // WARP_SIZE
         var warp_id = get_warp_id()
 
         ctile, ctile_coords, _ = c.tile_with_offset[Self.BM, Self.BN](
@@ -1753,9 +1749,9 @@ struct BlackwellMatmulSM100FallbackKernel[
                 comptime mma_id = n_mma * Self.num_m_mmas + m_mma
 
                 var c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
-                    ctile.tile_with_offset[
-                        Self.MMA_M // Int(num_warps), Self.MMA_N
-                    ](4 * m_mma + Int(warp_id), n_mma)
+                    ctile.tile_with_offset[Self.MMA_M // num_warps, Self.MMA_N](
+                        4 * m_mma + Int(warp_id), n_mma
+                    )
                 )
                 var c_gmem_warp_tile_coords = ctile_coords + rebind[
                     c_coord_type

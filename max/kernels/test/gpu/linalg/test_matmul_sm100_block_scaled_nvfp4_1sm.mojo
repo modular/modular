@@ -71,7 +71,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     block_swizzle_size: Int = 0,
     benchmark: Bool = False,
     swapAB: Bool = False,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
@@ -332,7 +332,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         cta_group=cta_group,
         AB_swapped=swapAB,
         k_group_size=k_group_size,
-        num_accum_pipeline_stages=UInt(1) if mma_shape[1] == 256 else UInt(2),
+        num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
     )
 
     blackwell_block_scaled_matmul_tma_umma_warp_specialized[
