@@ -126,6 +126,7 @@ from nn.flash_attention import flash_attention_split_kv
 from nn.fold import fold, fold_shape
 from nn.gather_scatter import (
     Axis,
+    ScatterNegativeIndexStrategy,
     _unsafe_normalize_neg_index,
     gather,
     gather_nd,
@@ -1060,7 +1061,12 @@ struct ScatterND:
         ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
-        scatter_nd[output.dtype, indices.dtype, False, target,](
+        scatter_nd[
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            target=target,
+        ](
             input.to_layout_tensor(),
             indices.to_layout_tensor(),
             updates.to_layout_tensor(),
@@ -1080,6 +1086,43 @@ struct ScatterND:
                 updates.to_layout_tensor(),
                 indices.to_layout_tensor(),
             )
+        )
+
+
+@compiler.register("mo.scatter_nd.skip_neg_indices")
+struct ScatterNDSkipNegIndices:
+    @staticmethod
+    fn execute[
+        target: StaticString,
+    ](
+        output: OutputTensor,
+        input: InputTensor[dtype = output.dtype, rank = output.rank],
+        updates: InputTensor[dtype = output.dtype, ...],
+        indices: InputTensor,
+        ctx: DeviceContextPtr,
+    ) raises:
+        # This is identical to mo.scatter_nd except in how we handle negative indices.
+        # In mo.scatter_nd, it is well defined to pass indices between [-dim_size, dim_size).
+        # Negative indices will be normalized by incrementing them by dim_size.
+        # This allows the kernel to support negative relative indexing.
+        # eg: x[-1] == x[dim_size - 1]
+        #
+        # In mo.scatter_nd.skip_neg_indices, we handle negative indices by skipping
+        # the update for that index instead.
+        scatter_nd_generator[
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            negative_index_strategy = ScatterNegativeIndexStrategy.SKIP,
+            target=target,
+            reduce_fn=None,
+            _trace_description="scatter_nd.skip_neg_indices",
+        ](
+            input.to_layout_tensor(),
+            indices.to_layout_tensor(),
+            updates.to_layout_tensor(),
+            output.to_layout_tensor(),
+            context=ctx,
         )
 
 
@@ -1105,10 +1148,10 @@ struct ScatterNDAdd:
             return lhs + rhs
 
         scatter_nd_generator[
-            output.dtype,
-            indices.dtype,
-            False,
-            target,
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.add",
         ](
@@ -1156,10 +1199,10 @@ struct ScatterNDMul:
             return lhs * rhs
 
         scatter_nd_generator[
-            output.dtype,
-            indices.dtype,
-            False,
-            target,
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.mul",
         ](
@@ -1207,10 +1250,10 @@ struct ScatterNDMin:
             return min(lhs, rhs)
 
         scatter_nd_generator[
-            output.dtype,
-            indices.dtype,
-            False,
-            target,
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.min",
         ](
@@ -1258,10 +1301,11 @@ struct ScatterNDMax:
             return max(lhs, rhs)
 
         scatter_nd_generator[
-            output.dtype,
-            indices.dtype,
-            False,
-            target,
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            negative_index_strategy = ScatterNegativeIndexStrategy.NORMALIZE,
+            target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.max",
         ](

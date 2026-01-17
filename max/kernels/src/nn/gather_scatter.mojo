@@ -833,13 +833,30 @@ fn gather[
 # ===-----------------------------------------------------------------------===#
 
 
+@fieldwise_init
+struct ScatterNegativeIndexStrategy(Equatable, ImplicitlyCopyable, Writable):
+    var _value: Int32
+
+    comptime NORMALIZE = Self(0)
+    """Indices must be within the range [-dim_size, dim_size). Negative indices
+    are normalized to the positive range via incrementing by dim_size:
+        Eg: idx + dim_size if idx < 0 else idx.
+    This mode supports negative relative indexing:
+        Eg: x[-1] == x[dim_size - 1].
+    """
+    comptime SKIP = Self(1)
+    """Indices must be within the range [-inf, dim_size). Negative indices are
+    are skipped and the update is not applied.
+    """
+
+
 @always_inline
 fn scatter_nd_generator[
     output_type: DType,
     indices_type: DType,
     single_thread_blocking_override: Bool,
+    negative_index_strategy: ScatterNegativeIndexStrategy = ScatterNegativeIndexStrategy.NORMALIZE,
     target: StaticString = "cpu",
-    /,
     reduce_fn: OptionalReg[
         fn[
             dtype: DType, width: Int
@@ -870,6 +887,7 @@ fn scatter_nd_generator[
         indices_type: Type of the indices tensor.
         single_thread_blocking_override: If True, then the operation is run
           synchronously using a single thread.
+        negative_index_strategy: Strategy to handle negative indices.
         target: Target cpu or cuda.
         reduce_fn: Reduction function to apply: none (default), add, mul, max,
                    min.
@@ -1011,10 +1029,16 @@ fn scatter_nd_generator[
                 indices_index[indices.rank - 1] = dim
 
                 var idx_on_axis = indices.load[width=1](indices_index)
-                var pos_idx_on_axis = Int(
-                    _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
-                )
-                output_index_tensor[dim] = pos_idx_on_axis
+
+                @parameter
+                if negative_index_strategy == ScatterNegativeIndexStrategy.SKIP:
+                    if idx_on_axis < 0:
+                        return
+                    output_index_tensor[dim] = Int(idx_on_axis)
+                else:
+                    output_index_tensor[dim] = Int(
+                        _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
+                    )
 
             # Calculate the updates_offset from where to copy the updates.
             var updates_offset = 0
@@ -1096,7 +1120,8 @@ fn scatter_nd[
         output_type,
         indices_type,
         single_thread_blocking_override,
-        target,
+        negative_index_strategy = ScatterNegativeIndexStrategy.NORMALIZE,
+        target=target,
         reduce_fn=None,
     ](data, indices, updates, output, context)
 

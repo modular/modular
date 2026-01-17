@@ -16,7 +16,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from layout import Layout, LayoutTensor, RuntimeLayout
-from nn.gather_scatter import scatter_nd_generator
+from nn.gather_scatter import scatter_nd_generator, ScatterNegativeIndexStrategy
 from testing import assert_equal
 
 from utils.index import Index
@@ -233,7 +233,11 @@ def main():
         )
 
         scatter_nd_generator[
-            DType.float32, DType.int64, False, reduce_fn=use_update
+            DType.float32,
+            DType.int64,
+            False,
+            ScatterNegativeIndexStrategy.NORMALIZE,
+            reduce_fn=use_update,
         ](data, indices, updates, output)
 
         for i in range(64):
@@ -452,9 +456,13 @@ def main():
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
-        scatter_nd_generator[DType.float32, DType.int64, False, reduce_fn=_add](
-            data, indices, updates, output
-        )
+        scatter_nd_generator[
+            DType.float32,
+            DType.int64,
+            False,
+            ScatterNegativeIndexStrategy.NORMALIZE,
+            reduce_fn=_add,
+        ](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])
@@ -672,9 +680,13 @@ def main():
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)
 
-        scatter_nd_generator[DType.float32, DType.int64, False, reduce_fn=_max](
-            data, indices, updates, output
-        )
+        scatter_nd_generator[
+            DType.float32,
+            DType.int64,
+            False,
+            ScatterNegativeIndexStrategy.NORMALIZE,
+            reduce_fn=_max,
+        ](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])
@@ -892,9 +904,13 @@ def main():
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return min(v1, v2)
 
-        scatter_nd_generator[DType.float32, DType.int64, False, reduce_fn=_min](
-            data, indices, updates, output
-        )
+        scatter_nd_generator[
+            DType.float32,
+            DType.int64,
+            False,
+            ScatterNegativeIndexStrategy.NORMALIZE,
+            reduce_fn=_min,
+        ](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])
@@ -1112,9 +1128,13 @@ def main():
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 * v2
 
-        scatter_nd_generator[DType.float32, DType.int64, False, reduce_fn=_mul](
-            data, indices, updates, output
-        )
+        scatter_nd_generator[
+            DType.float32,
+            DType.int64,
+            False,
+            ScatterNegativeIndexStrategy.NORMALIZE,
+            reduce_fn=_mul,
+        ](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])

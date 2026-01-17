@@ -32,6 +32,7 @@ from max.graph import (
     Value,
     ops,
 )
+from max.graph.ops import assert_same_device
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.nn.float8_config import (
@@ -3787,6 +3788,52 @@ def scatter_set_constant(
             ops.constant(fill_val, data.dtype, device=DeviceRef.CPU()),
         ],
     )
+
+
+def scatter_nd_skip_neg_indices(
+    input: TensorValueLike,
+    updates: TensorValueLike,
+    indices: TensorValueLike,
+) -> TensorValue:
+    """
+    Creates a new symbolic tensor where the updates are scattered into input at specified indices.
+
+    This differs from scatter_nd in that it handles negative indices by skipping
+    the update for that index.
+
+    Args:
+        input: The input symbolic tensor to write elements to.
+        updates: A symbolic tensor of elements to write to input.
+        indices: A tensor of indices specifying where to write updates.
+            Shape should be [num_updates, rank] for full indexing or
+            [num_updates, k] for partial indexing where k < rank.
+
+    Returns:
+        A new symbolic tensor representing the result of the scatter_nd operation.
+    """
+    input = TensorValue(input)
+    updates = TensorValue(updates)
+    indices = TensorValue(indices)
+
+    if input.dtype != updates.dtype:
+        raise ValueError(
+            f"The input dtype ({input.dtype}) and updates dtype"
+            f" ({updates.dtype}) must match"
+        )
+
+    if indices.dtype not in (DType.int32, DType.int64):
+        raise ValueError(
+            f"Invalid indices dtype: '{indices.dtype}'. Indices must be of type int32 or int64."
+        )
+
+    assert_same_device(input=input, updates=updates, indices=indices)
+
+    return ops.custom(
+        "mo.scatter_nd.skip_neg_indices",
+        device=input.device,
+        values=[input, updates, indices],
+        out_types=[TensorType(input.dtype, input.shape, device=input.device)],
+    )[0].tensor
 
 
 def topk_fused_sampling(
