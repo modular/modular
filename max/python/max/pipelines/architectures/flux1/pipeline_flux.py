@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import inspect
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -410,23 +409,7 @@ class FluxPipeline(DiffusionPipeline):
             )
             return latents.to(device).cast(dtype), latent_image_ids
 
-        # NOTE: Max random generation uses different seed with torch.randn.
-        # So, we currently leave torch randn as optional for
-        # functionality comparison with the original diffusers pipeline.
-        if os.environ.get("USE_TORCH_RANDN", "0") == "1":
-            import torch
-
-            seed = int(os.environ.get("SEED", 42))
-            generator = torch.Generator(device="cuda").manual_seed(seed)
-            latents = torch.randn(
-                shape,
-                generator=generator,
-                device="cuda",
-                dtype=dtype.to_torch(),
-            )
-            latents = Tensor_v3.from_dlpack(latents)
-        else:
-            latents = random.normal(shape, device=device, dtype=dtype)
+        latents = random.normal(shape, device=device, dtype=dtype)
         latents = self._pack_latents(
             latents, batch_size, num_channels_latents, height, width
         )
