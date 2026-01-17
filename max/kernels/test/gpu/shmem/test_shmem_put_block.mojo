@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build %s -o %t
-# RUN: %t
+# RUN: %mpirun-gpu-per-thread %t
 
 from os import abort
 

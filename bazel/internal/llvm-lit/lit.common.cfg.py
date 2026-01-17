@@ -163,24 +163,20 @@ llvm_config.add_tool_substitutions(
     ]
 )
 
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mpirun",
-            os.environ.get("ROCSHMEM_MPIRUN", "mpirun"),
-            extra_args=[
-                "--allow-run-as-root",
-                "--bind-to",
-                "none",
-            ],
-        )
-    ]
+# For %mpirun-gpu-per-thread, we set -n to 1 (one MPI process), as the Mojo code
+# uses shmem_launch which internally detects GPUs and spawns one thread per GPU.
+mpirun_gpu_per_thread = (
+    "bash -c '"
+    'MPIRUN="${ROCSHMEM_MPIRUN:-mpirun}"; '
+    '"$MPIRUN" --allow-run-as-root --bind-to none -n 1 "$@"\' _'
 )
 
-# For %mpirun-all-gpus, we dynamically detect the number of GPUs at runtime
+config.substitutions.append(("%mpirun-gpu-per-thread", mpirun_gpu_per_thread))
+
+# For %mpirun-gpu-per-process, we dynamically detect the number of GPUs at runtime
 # and run mpirun with -n set to that count. This uses nvidia-smi for NVIDIA GPUs
 # or rocm-smi for AMD GPUs. Uses ROCSHMEM_MPIRUN env var if set (for AMD).
-mpirun_all_gpus_cmd = (
+mpirun_gpu_per_process = (
     "bash -c '"
     'MPIRUN="${ROCSHMEM_MPIRUN:-mpirun}"; '
     "if command -v nvidia-smi &> /dev/null; then "
@@ -190,6 +186,6 @@ mpirun_all_gpus_cmd = (
     "else N=1; fi; "
     '"$MPIRUN" --allow-run-as-root --bind-to none -n $N "$@"\' _'
 )
-config.substitutions.append(("%mpirun-all-gpus", mpirun_all_gpus_cmd))
+config.substitutions.append(("%mpirun-gpu-per-process", mpirun_gpu_per_process))
 
 config.substitutions.append(("%bare-mojo", mojo_exe))
