@@ -208,6 +208,11 @@ class PipelineConfig(ConfigFileModel):
     use_module_v3: bool = Field(default=False)
     """Whether to use the ModuleV3 architecture if it exists."""
 
+    # TODO(SERVSYS-1096): Remove this field once we've reworked how required
+    # config fields are validated.
+    defer_resolve: bool = Field(default=False)
+    """Whether to defer resolving the pipeline config."""
+
     _model: MAXModelConfig = PrivateAttr(default_factory=MAXModelConfig)
     """The model config."""
 
@@ -510,7 +515,9 @@ class PipelineConfig(ConfigFileModel):
         if unmatched_kwargs:
             raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")
 
-        self.resolve()
+        defer_resolve = os.getenv("MODULAR_PIPELINE_DEFER_RESOLVE", "").lower()
+        if defer_resolve not in {"1", "true", "yes"}:
+            self.resolve()
         return self
 
     def retrieve_chat_template(self) -> str | None:
