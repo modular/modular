@@ -556,8 +556,8 @@ struct ConvDirectNHWC[
                 elementwise_epilogue = Self.elementwise_epilogue if input.rank
                 == 4 else None,
             ](
-                output_scratch.ptr.bitcast[UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]]()[],
-                output.ptr.bitcast[UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]]()[],
+                rebind[UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]](output_scratch.ptr.bitcast[Scalar[Self.output_type]]()),
+                rebind[UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]](output.ptr.bitcast[Scalar[Self.output_type]]()),
                 conv_shape.n,
                 conv_shape.output_space_dims(),
                 conv_shape.f,
@@ -805,7 +805,7 @@ struct ConvDirectNHWC[
             )
         var filter_ptr: UnsafePointer[
             Scalar[Self.filter_type], MutAnyOrigin
-        ] = self.filter.ptr.bitcast[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]]()[]
+        ] = rebind[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]](self.filter.ptr.bitcast[Scalar[Self.filter_type]]())
 
         @parameter
         if Self.filter_packed:
@@ -840,13 +840,13 @@ struct ConvDirectNHWC[
                 # These contiguous segments are strided by F.
                 @parameter
                 if not Self.filter_packed:
-                    filter_ptr = (self.filter.ptr + (
+                    filter_ptr = rebind[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]]((self.filter.ptr + (
                         (s + r * self.conv_shape.s())
                         * self.conv_shape.c
                         * self.conv_shape.f
                         + c_tile_offset * self.conv_shape.f
                         + f_tile_offset
-                    )).bitcast[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]]()[]
+                    )).bitcast[Scalar[Self.filter_type]]())
 
                 self._accumulate[
                     micro_kernel_height,
@@ -858,7 +858,7 @@ struct ConvDirectNHWC[
                     input_base_offsets,
                     input_offset,
                     c_tile_size,
-                    self.input.ptr.bitcast[UnsafePointer[Scalar[Self.input_type], MutAnyOrigin]]()[],
+                    rebind[UnsafePointer[Scalar[Self.input_type], MutAnyOrigin]](self.input.ptr.bitcast[Scalar[Self.input_type]]()),
                     filter_ptr,
                     acc,
                 )
@@ -1240,19 +1240,19 @@ struct ConvDirectNHWC[
                 * micro_kernel_f_size
             )
         else:
-            filter_ptr = (self.filter.ptr + (
+            filter_ptr = rebind[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]]((self.filter.ptr + (
                 c_tile_offset * self.conv_shape.f + f_tile_offset
-            )).bitcast[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]]()[]
+            )).bitcast[Scalar[Self.filter_type]]())
 
         # Pointer to input and output of the current sample (batch dim).
         # fmt: off
-        var input_ptr  = (self.input.ptr + c_tile_offset \
+        var input_ptr  = rebind[UnsafePointer[Scalar[Self.input_type], MutAnyOrigin]]((self.input.ptr + c_tile_offset \
                        + self.conv_shape.input_image_flat_size() \
-                       * self.conv_shape.c * n).bitcast[UnsafePointer[Scalar[Self.input_type], MutAnyOrigin]]()[]
+                       * self.conv_shape.c * n).bitcast[Scalar[Self.input_type]]())
 
-        var output_ptr = (self.output.ptr + f_tile_offset \
+        var output_ptr = rebind[UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]]((self.output.ptr + f_tile_offset \
                        + self.conv_shape.output_image_flat_size() \
-                       * self.conv_shape.f * n).bitcast[UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]]()[]
+                       * self.conv_shape.f * n).bitcast[Scalar[Self.output_type]]())
         # fmt: on
 
         # Divide each row into three part:
@@ -1663,14 +1663,14 @@ struct ConvDirectNHWC[
 
         @parameter
         if Self.filter_packed:
-            filter_base = (self.filter.ptr + (
+            filter_base = rebind[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]]((self.filter.ptr + (
                 f_tile_offset * C * R * S + c_tile_offset * micro_kernel_f_size
-            )).bitcast[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]]()[]
+            )).bitcast[Scalar[Self.filter_type]]())
         else:
-            filter_base = (self.filter.ptr + (c_tile_offset * F + f_tile_offset)).bitcast[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]]()[]
+            filter_base = rebind[UnsafePointer[Scalar[Self.filter_type], MutAnyOrigin]]((self.filter.ptr + (c_tile_offset * F + f_tile_offset)).bitcast[Scalar[Self.filter_type]]())
 
-        var input_curr_image = (self.input.ptr + n * W * H * C).bitcast[UnsafePointer[Scalar[Self.input_type], MutAnyOrigin]]()[]
-        var output_curr_image = (self.output.ptr + n * WO * HO * F).bitcast[UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]]()[]
+        var input_curr_image = rebind[UnsafePointer[Scalar[Self.input_type], MutAnyOrigin]]((self.input.ptr + n * W * H * C).bitcast[Scalar[Self.input_type]]())
+        var output_curr_image = rebind[UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]]((self.output.ptr + n * WO * HO * F).bitcast[Scalar[Self.output_type]]())
 
         var conv_attr_dyn = materialize[Self.conv_attr]()
 
@@ -2724,7 +2724,7 @@ fn _get_group_filter_base(
                    * micro_kernel_f_size
     # fmt: on
 
-    return (packed_filter.ptr + group_idx * group_size).bitcast[UnsafePointer[Scalar[packed_filter.dtype], MutAnyOrigin, address_space=packed_filter.address_space]]()[]
+    return rebind[UnsafePointer[Scalar[packed_filter.dtype], MutAnyOrigin, address_space=packed_filter.address_space]]((packed_filter.ptr + group_idx * group_size).bitcast[Scalar[packed_filter.dtype]]())
 
 
 @always_inline
