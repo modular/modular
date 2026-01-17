@@ -44,6 +44,7 @@ _EXTRA_CONSTRAINTS = {
     "test_matmul_sm90_hilbert.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_bf16.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_deepseek_scheduler.mojo": ["//:h100_gpu"],
+    "test_matmul_sm90_swapAB.mojo": ["//:h100_gpu"],
     "test_sm90_splitk.mojo": ["//:h100_gpu"],
     "test_multistage_gemm_kernel.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],

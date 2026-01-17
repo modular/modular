@@ -529,6 +529,49 @@ fn st_matrix_n_atom[num_stmatrix: Int]() -> Layout:
     )
 
 
+fn st_matrix_m_atom[num_stmatrix: Int, num_consumer: Int]() -> Layout:
+    """Creates a layout for M-major `st_matrix` atom in the context of WGMMA C
+    matrix.
+
+    The domain of this layout is the warp group local thread index. Thus, the
+    layout takes [0, 128) as input and returns an offset for a logical array
+    with an element size of 128-bit.
+
+    Assume num_consumer = 2, and num_stmatrix = 2 then a single atom for one warp would look like this
+    Each block contains the thread_idx, each thread idx will hold the address of the next 128-bit fragment.
+
+    |  0  |  8  |
+    |  1  |  9  |
+    |  2  | 10  |
+    | ... | ... |
+    |  7  | 15  |
+
+    | 16  | 24  |
+    | 17  | 25  |
+    | 18  | 26  |
+    | ... | ... |
+    | 23  | 31  |
+
+    All 4 warps in the warp group will then be laid out next to each other
+
+    |  w1  |  w2  | w3  | w4  |
+
+    Parameters:
+        num_stmatrix: Number of N-dimension tiles in the C matrix.
+        num_consumer: Number of consumers.
+
+    Returns:
+        `Layout` - A layout that maps warp group local thread index to an offset
+        for a logical array with an element size of 128-bit.
+    """
+    # C with the granularity of 128-bit per element
+    comptime C = Layout.row_major(2 * num_stmatrix, 8 * num_consumer)
+    return Layout(
+        [8, 2, 2, 4],
+        [C([1, 0]), C([0, 1]), C([8, 0]), C([0, 2])],
+    )
+
+
 fn st_matrix_n_layout[
     c_type: DType, WG_BN: Int, num_m_mmas: Int, num_consumer: Int
 ]() -> Layout:
@@ -555,6 +598,37 @@ fn st_matrix_n_layout[
     comptime b128_layout = logical_product(
         atom, Layout.col_major(n_stmatrix, num_m_mmas, num_consumer)
     )
+    return downcast(b128_layout, 128 // (8 * size_of[c_type]()))
+
+
+fn st_matrix_m_layout[
+    c_type: DType, WG_BM: Int, num_m_mmas: Int, num_consumer: Int
+]() -> Layout:
+    """Creates a layout for M-major `st_matrix` in the context of WGMMA C
+    matrix. This meant to be used with swapAB, since the C
+    matrix must be transposed during the write phase. This must also be used
+    in conjuction with st_matrix transposed modifier.
+
+    The M-dimension tiling size `WG_BM // 16`, the number of MMA tiles `num_m_mmas`
+    in the N-dimension, and the number of consumers `num_consumer`. The output is an
+    offset for a logical array with the element type `c_type`.
+
+    Parameters:
+        c_type: Data type of the C matrix.
+        WG_BM: Size of the K dimension in the C matrix in shared memory.
+        num_m_mmas: Number of MMA tiles in the M dimension.
+        num_consumer: Number of consumers.
+
+    Returns:
+        `Layout` - A layout that maps warp group local thread index to an offset
+        for a logical array with the element type `c_type`.
+    """
+    comptime n_stmatrix = WG_BM // 16
+    comptime atom = st_matrix_m_atom[n_stmatrix, num_consumer]()
+    comptime b128_layout = logical_product(
+        atom, Layout.row_major(n_stmatrix, num_m_mmas, num_consumer)
+    )
+
     return downcast(b128_layout, 128 // (8 * size_of[c_type]()))
 
 

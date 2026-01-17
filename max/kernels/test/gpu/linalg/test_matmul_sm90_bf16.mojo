@@ -186,3 +186,58 @@ def main():
             num_consumer=1,
             num_pipeline_stages=17,
         ](ctx, dynamic(2), static[4096](), static[1536]())
+
+        test_matmul_sm90[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),  # cluster_shape
+            Index(64, 8, 64),
+            Index(64, 8, 16),
+            num_consumer=1,
+            num_pipeline_stages=20,
+        ](ctx, dynamic(16), static[64](), static[256]())
+
+        test_matmul_sm90[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),  # cluster_shape
+            Index(64, 256, 64),
+            Index(64, 256, 16),
+            num_consumer=1,
+            num_pipeline_stages=5,
+        ](ctx, dynamic(20), static[84](), static[4096]())
+
+        test_matmul_sm90[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),  # cluster_shape
+            Index(128, 256, 64),
+            Index(64, 256, 16),
+            num_consumer=2,
+            num_pipeline_stages=2,
+        ](ctx, dynamic(476), static[1024](), static[128]())
+
+        test_matmul_sm90[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),  # cluster_shape
+            Index(128, 48, 64),
+            Index(64, 48, 16),
+            num_consumer=2,
+            num_pipeline_stages=2,
+        ](ctx, dynamic(1536), static[48](), static[4096]())
+
+        test_matmul_sm90[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),  # cluster_shape
+            Index(128, 8, 64),
+            Index(64, 8, 16),
+            num_consumer=2,
+            num_pipeline_stages=2,
+        ](ctx, dynamic(1536), static[13](), static[4096]())
