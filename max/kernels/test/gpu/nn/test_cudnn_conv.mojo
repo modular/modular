@@ -14,9 +14,6 @@
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.conv import conv_cudnn, conv_gpu
 from testing import assert_almost_equal
 
@@ -77,19 +74,19 @@ fn test_conv_cudnn[
     comptime output_dim_flattened = Nout * Hout * Wout * Cout
 
     # Allocate host memory
-    var input_host_ptr = UnsafePointer[Scalar[input_type]].alloc(
+    var input_host_ptr = alloc[Scalar[input_type]](
         input_dim_flattened
     )
-    var filter_host_ptr = UnsafePointer[Scalar[filter_type]].alloc(
+    var filter_host_ptr = alloc[Scalar[filter_type]](
         filter_dim_flattened
     )
-    var filter_nchw_host_ptr = UnsafePointer[Scalar[filter_type]].alloc(
+    var filter_nchw_host_ptr = alloc[Scalar[filter_type]](
         filter_dim_flattened
     )
-    var output_ref_host_ptr = UnsafePointer[Scalar[output_type]].alloc(
+    var output_ref_host_ptr = alloc[Scalar[output_type]](
         output_dim_flattened
     )
-    var output_host_ptr = UnsafePointer[Scalar[output_type]].alloc(
+    var output_host_ptr = alloc[Scalar[output_type]](
         output_dim_flattened
     )
 

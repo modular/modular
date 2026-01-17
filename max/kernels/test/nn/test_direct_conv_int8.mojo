@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import ceildiv, isclose
 from random import rand
 from sys.info import num_physical_cores, simd_width_of
@@ -82,10 +79,10 @@ fn test[
         num_groups=1,
     )
 
-    var input_ptr = UnsafePointer[Scalar[input_type]].alloc(N * H * W * C)
-    var filter_ptr = UnsafePointer[Scalar[filter_type]].alloc(R * S * C * F)
-    var output_ptr = UnsafePointer[Scalar[output_type]].alloc(N * HO * WO * F)
-    var output_ref_ptr = UnsafePointer[Scalar[output_type]].alloc(
+    var input_ptr = alloc[Scalar[input_type]](N * H * W * C)
+    var filter_ptr = alloc[Scalar[filter_type]](R * S * C * F)
+    var output_ptr = alloc[Scalar[output_type]](N * HO * WO * F)
+    var output_ref_ptr = alloc[Scalar[output_type]](
         N * HO * WO * F
     )
 
@@ -105,7 +102,7 @@ fn test[
     # Rounded C and F size for pre-packed filter.
     comptime micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
-    var packed_filter_ptr = UnsafePointer[Scalar[filter_type]].alloc(
+    var packed_filter_ptr = alloc[Scalar[filter_type]](
         R * S * C * rounded_F
     )
 

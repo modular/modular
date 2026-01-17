@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import ceildiv
 from random import rand
 
@@ -68,10 +65,10 @@ fn test_conv3d_gpu[
     var output_size = comptime (output_layout.size())
 
     # allocate host memory and initialize with random data
-    var input_host = UnsafePointer[Scalar[dtype]].alloc(input_size)
-    var filter_host = UnsafePointer[Scalar[dtype]].alloc(filter_size)
-    var output_gpu_host = UnsafePointer[Scalar[dtype]].alloc(output_size)
-    var output_ref_host = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var input_host = alloc[Scalar[dtype]](input_size)
+    var filter_host = alloc[Scalar[dtype]](filter_size)
+    var output_gpu_host = alloc[Scalar[dtype]](output_size)
+    var output_ref_host = alloc[Scalar[dtype]](output_size)
 
     # initialize with random data
     rand[dtype](input_host, input_size)

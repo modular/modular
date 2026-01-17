@@ -13,7 +13,7 @@
 
 from collections import OptionalReg, Dict
 from math import align_down, ceildiv
-from memory import alloc, LegacyUnsafePointer
+from memory import alloc
 
 from os import abort
 from sys.ffi import _get_global_or_null, external_call
@@ -1671,6 +1671,7 @@ struct ConvDirectNHWC[
 
         var input_curr_image = (self.input.ptr + n * W * H * C).bitcast[UnsafePointer[Scalar[Self.input_type], MutAnyOrigin]]()[]
         var output_curr_image = (self.output.ptr + n * WO * HO * F).bitcast[UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]]()[]
+
         var conv_attr_dyn = materialize[Self.conv_attr]()
 
         for ho in range(
