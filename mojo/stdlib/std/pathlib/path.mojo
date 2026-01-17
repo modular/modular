@@ -33,6 +33,18 @@ fn cwd() raises -> Path:
 
     Raises:
         If the operation fails.
+
+    Examples:
+
+    ```mojo
+    from pathlib import cwd
+
+    try:
+        var string_path = cwd()
+        print(string_path)
+    except e:
+        print(e)
+    ```
     """
     comptime MAX_CWD_BUFFER_SIZE = 1024
     var buf = InlineArray[c_char, MAX_CWD_BUFFER_SIZE](uninitialized=True)
@@ -237,6 +249,18 @@ struct Path(
 
         Raises:
             If the operation fails.
+
+        Examples:
+
+        ```mojo
+        from pathlib import Path
+
+        try:
+            p = Path()       # Path to cwd
+            print(p.stat())  # os.stat_result(...)
+        except e:
+            print(e)
+        ```
         """
         return os.stat(self)
 
@@ -259,6 +283,15 @@ struct Path(
 
         Returns:
           True if the path exists on disk and False otherwise.
+
+        Examples:
+
+        ```mojo
+        from pathlib import Path
+
+        var p = Path("./path-to-nowhere")
+        print("Exists" if p.exists() else "Does not exist") # Does not exist
+        ```
         """
         return os.path.exists(self)
 
@@ -272,6 +305,18 @@ struct Path(
 
         Raises:
             If the operation fails.
+
+        Examples:
+
+        ```mojo
+        from pathlib import Path
+
+        try:
+            var p = Path("~")
+            assert_true(p.expanduser() == Path.home())
+        except e:
+            print(e)
+        ```
         """
         return os.path.expanduser(self)
 
@@ -285,6 +330,18 @@ struct Path(
 
         Raises:
             If the operation fails.
+
+        Examples:
+
+        ```mojo
+        from pathlib import Path
+
+        try:
+            var p = Path("~")
+            assert_true(p.expanduser() == Path.home())
+        except e:
+            print(e)
+        ```
         """
         return os.path.expanduser("~")
 
@@ -294,6 +351,17 @@ struct Path(
         Returns:
           Return True if the path points to a directory (or a link pointing to
           a directory).
+
+        Examples:
+
+        ```mojo
+        from pathlib import Path
+
+        try:
+            assert_true(Path.home().is_dir())
+        except e:
+            print(e)
+        ```
         """
         return os.path.isdir(self)
 
@@ -303,6 +371,17 @@ struct Path(
         Returns:
           Return True if the path points to a file (or a link pointing to
           a file).
+
+        Examples:
+
+        ```mojo
+        from pathlib import Path
+
+        try:
+            assert_false(Path.home().is_file())
+        except e:
+            print(e)
+        ```
         """
         return os.path.isfile(self)
 
@@ -314,6 +393,21 @@ struct Path(
 
         Raises:
             If the operation fails.
+
+        Examples:
+
+        ```mojo
+        from pathlib import Path
+
+        try:
+            var p = Path("testfile")
+            p.write_text("test passes")
+            if p.exists():
+                var contents = p.read_text()
+                print(contents) # test passes
+        except e:
+            print(e)
+        ```
         """
         with open(self, "r") as f:
             return f.read()
@@ -326,6 +420,21 @@ struct Path(
 
         Raises:
             If the operation fails.
+
+        Examples:
+
+        ```mojo
+        from pathlib import Path
+
+        try:
+            var p = Path("testfile")
+            p.write_text("test passes")
+            if p.exists():
+                var contents = p.read_bytes()
+                assert_true(contents[0] == 116)
+        except e:
+            print(e)
+        ```
         """
         with open(self, "r") as f:
             return f.read_bytes()
@@ -341,6 +450,21 @@ struct Path(
 
         Raises:
             If the operation fails.
+
+        Examples:
+
+        ```mojo
+        from pathlib import Path
+
+        try:
+            var p = Path("testfile")
+            p.write_text("test passes")
+            if p.exists():
+                var contents = p.read_text()
+                print(contents) # test passes
+        except e:
+            print(e)
+        ```
         """
         with open(self, "w") as f:
             f.write(value)
@@ -353,6 +477,22 @@ struct Path(
 
         Raises:
             If the operation fails.
+
+        Examples:
+
+        ```mojo
+        from pathlib import Path
+
+        try:
+            var p = Path("testfile")
+            var s = "Hello"
+            p.write_bytes(s.as_bytes())
+            if p.exists():
+                var contents = p.read_text()
+                print(contents) # Hello
+        except e:
+            print(e)
+        ```
         """
         with open(self, "w") as f:
             f.write_bytes(bytes)
@@ -364,6 +504,19 @@ struct Path(
 
         Returns:
             The path's extension.
+
+        Examples:
+
+        ```mojo
+        from pathlib import Path
+
+        try:
+            var p = Path("testfile.txt")
+            print(p.suffix())
+            assert_true(p.suffix() == ".txt")
+        except e:
+            print(e)
+        ```
         """
         # +2 to skip both `DIR_SEPARATOR` and the first ".".
         # For example /a/.foo's suffix is "" but /a/b.foo's suffix is .foo.
@@ -386,6 +539,18 @@ struct Path(
         Returns:
             The path concatenation with the pathsegments using the
             directory separator.
+
+        Examples:
+
+        ```mojo
+        from pathlib import Path
+        from tempfile import gettempdir
+
+        var p = Path(gettempdir().or_else("/tmp/")) # Both end with trailing /
+        var path = p.joinpath("intermediate/") # Trailing / for intermediate
+        path = path.joinpath("tempfile.txt")   # No / for file name
+        print(path) # legal path
+        ```
         """
         if len(pathsegments) == 0:
             return self
@@ -405,6 +570,18 @@ struct Path(
 
         Raises:
             If the operation fails.
+
+        Examples:
+
+        ```mojo
+        from pathlib import Path, cwd
+
+        try:
+            for item in cwd().listdir():
+                print(item) # each item name in working directory
+        except e:
+            print(e)
+        ```
         """
 
         var ls = listdir(self)
@@ -416,6 +593,8 @@ struct Path(
 
     fn name(self) -> String:
         """Returns the name of the path.
+
+        Examples:
 
         ```mojo
         from pathlib import Path
@@ -430,6 +609,15 @@ struct Path(
 
     fn parts(self) -> List[StringSlice[origin_of(self.path)]]:
         """Returns the parts of the path separated by `DIR_SEPARATOR`.
+
+        Examples:
+
+        ```mojo
+        from pathlib import Path
+
+        for p in Path("a/path/foo.txt").parts():
+            print(p) # a, path, foo.txt
+        ```
 
         Returns:
             The parts of the path separated by `DIR_SEPARATOR`.
