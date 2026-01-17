@@ -500,12 +500,10 @@ def diffusion_generate(
 ) -> None:
     """Generate images using a diffusion pipeline."""
     from max.entrypoints.cli.generate import generate_image
+    from max.experimental.realization_context import set_seed
     from max.pipelines import PipelineConfig
 
-    if use_torch_randn:
-        os.environ["USE_TORCH_RANDN"] = "1"
-        os.environ["SEED"] = str(seed)
-
+    set_seed(seed)
     pipeline_config = PipelineConfig(**config_kwargs)
     pipeline_config.log_basic_config()
 

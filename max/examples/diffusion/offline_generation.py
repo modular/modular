@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 import argparse
-import os
 from pathlib import Path
 
 from max.entrypoints.diffusion import DiffusionPipeline
+from max.experimental.realization_context import set_seed
 from max.pipelines import PipelineConfig
 
 
@@ -24,17 +24,11 @@ def main() -> None:
     parser.add_argument(
         "--model-path", type=str, default="black-forest-labs/FLUX.1-dev"
     )
-    parser.add_argument("--use-torch-randn", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     model_path = args.model_path
-    if args.use_torch_randn:
-        # NOTE: Use torch randn for latent initialization.
-        # Currently, It's not possible to set seed for Max random generation,
-        # so, use torch randn to test different seeds.
-        os.environ["USE_TORCH_RANDN"] = "1"
-        os.environ["SEED"] = str(args.seed)
+    set_seed(args.seed)
     pipeline_config = PipelineConfig(model_path=model_path)
     pipe = DiffusionPipeline(pipeline_config)
 
