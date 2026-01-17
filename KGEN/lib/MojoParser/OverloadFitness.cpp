@@ -331,7 +331,8 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
 
   /// This creates and returns an instance of a diagnostic.
   auto getDiag = [&]() -> MojoInflightDiag {
-    return callable.getShared().emitError(loc);
+    llvm_unreachable("Operand convertibility should have been guaranteed by "
+                     "parameter inference");
   };
 
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag {
