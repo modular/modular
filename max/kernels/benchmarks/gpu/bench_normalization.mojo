@@ -24,30 +24,23 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
 )
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout.int_tuple import fill_like
 from nn.normalization import layer_norm_gpu, rms_norm_gpu
 
-from utils.index import IndexList
+from utils.index import Index, IndexList
 
 
 fn bench_layer_norm_gpu[
-    dtype: DType, rank: Int
-](
-    ctx: DeviceContext,
-    mut b: Bench,
-    fn_name: String,
-    shape: IndexList[rank],
-) raises:
-    var cols = shape[rank - 1]
-    var rows = shape.flattened_length() // cols
+    rank: Int, //, dtype: DType, shape: IndexList[rank]
+](ctx: DeviceContext, mut b: Bench, fn_name: String) raises:
+    comptime cols = shape[rank - 1]
+    comptime rows = shape.flattened_length() // cols
 
-    var data_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var res = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(cols)
-    var beta_h = UnsafePointer[Scalar[dtype]].alloc(cols)
+    var data_h = alloc[Scalar[dtype]](rows * cols)
+    var res = alloc[Scalar[dtype]](rows * cols)
+    var gamma_h = alloc[Scalar[dtype]](cols)
+    var beta_h = alloc[Scalar[dtype]](cols)
 
     for i in range(rows * cols):
         var val = Scalar[dtype](random_float64(0, 100).cast[dtype]())
@@ -61,10 +54,17 @@ fn bench_layer_norm_gpu[
     var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
     var beta_d = ctx.enqueue_create_buffer[dtype](cols)
 
-    var param_shape = IndexList[1](cols)
+    var param_shape = Index(cols)
 
-    comptime layout = Layout.row_major[rank]()
-    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    fn build_data_layout() -> Layout:
+        # While the entire static shape could be used for this layout, to better model
+        # real world usage, use only the column count.
+        var layout_shape = IndexList[rank](UNKNOWN_VALUE)
+        layout_shape[rank - 1] = cols
+        return Layout.row_major(layout_shape)
+
+    comptime layout = build_data_layout()
+    comptime layout_1d = Layout.row_major(cols)
     var data_buf = LayoutTensor[dtype, layout](
         data_d, RuntimeLayout[layout].row_major(shape)
     )
@@ -152,19 +152,14 @@ fn bench_layer_norm_gpu[
 
 
 fn bench_rms_norm_gpu[
-    dtype: DType, rank: Int
-](
-    ctx: DeviceContext,
-    mut b: Bench,
-    fn_name: String,
-    shape: IndexList[rank],
-) raises:
-    var cols = shape[rank - 1]
-    var rows = shape.flattened_length() // cols
+    rank: Int, //, dtype: DType, shape: IndexList[rank]
+](ctx: DeviceContext, mut b: Bench, fn_name: String) raises:
+    comptime cols = shape[rank - 1]
+    comptime rows = shape.flattened_length() // cols
 
-    var data_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var res = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(cols)
+    var data_h = alloc[Scalar[dtype]](rows * cols)
+    var res = alloc[Scalar[dtype]](rows * cols)
+    var gamma_h = alloc[Scalar[dtype]](cols)
 
     for i in range(rows * cols):
         var val = Scalar[dtype](random_float64(0, 100).cast[dtype]())
@@ -176,10 +171,17 @@ fn bench_rms_norm_gpu[
     var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
 
-    var param_shape = IndexList[1](cols)
+    var param_shape = Index(cols)
 
-    comptime layout = Layout.row_major[rank]()
-    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    fn build_data_layout() -> Layout:
+        # While the entire static shape could be used for this layout, to better model
+        # real world usage, use only the column count.
+        var layout_shape = IndexList[rank](UNKNOWN_VALUE)
+        layout_shape[rank - 1] = cols
+        return Layout.row_major(layout_shape)
+
+    comptime layout = build_data_layout()
+    comptime layout_1d = Layout.row_major(cols)
     var data_buf = LayoutTensor[dtype, layout](
         data_d, RuntimeLayout[layout].row_major(shape)
     )
@@ -255,8 +257,8 @@ def main():
 
         @parameter
         if len(shape) == 2:
-            bench_layer_norm_gpu[dtype](ctx, m, "layer_norm_gpu", shape)
+            bench_layer_norm_gpu[dtype, shape](ctx, m, "layer_norm_gpu")
         elif len(shape) == 3:
-            bench_rms_norm_gpu[dtype](ctx, m, "rms_norm_gpu", shape)
+            bench_rms_norm_gpu[dtype, shape](ctx, m, "rms_norm_gpu")
 
     m.dump_report()
