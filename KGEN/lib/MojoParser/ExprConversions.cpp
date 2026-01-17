@@ -1522,18 +1522,6 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
   return failure();
 }
 
-FailureOr<bool>
-IREmitter::canTypeValueUpCastToTrait(SharedState &shared,
-                                     ASTExprAnd<CValue> valueExpr,
-                                     ASTType fromType, ASTType toType) {
-  // Can only convert static types to traits, not existentials (The check is
-  // probably redundant since we don't allow materializing type value anyway?).
-  if (auto pval = valueExpr.ir.getIfPValue(); pval && LIT::isTypeExpr(pval))
-    return canMetaTypeUpCastTo(shared, valueExpr.expr->getLoc(), fromType,
-                               toType);
-  return failure();
-}
-
 //===----------------------------------------------------------------------===//
 // Generalized Implicit Conversions
 //===----------------------------------------------------------------------===//
@@ -1578,7 +1566,7 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   };
 
   FailureOr<bool> canUpCast =
-      canTypeValueUpCastToTrait(shared, value, rvType, requiredType);
+      canMetaTypeUpCastTo(shared, value.expr->getLoc(), rvType, requiredType);
   if (succeeded(canUpCast))
     return cacheAndReturnVal(rvType, requiredType, canUpCast.value());
 
@@ -1591,43 +1579,12 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     //
     // Notably, this does NOT support implicit conversion between from
     // `Variadic[Int]` to `Variadic[UInt]`
-
     ASTType toEltTp = sugarCast<VariadicType>(requiredType).getElementType();
-    TypedAttr val = value.ir.getIfPValue().get();
-    if (auto vVal = sugarDynCastIfPresent<VariadicAttr>(val)) {
-      // This is a concrete variadic of type value to convert, check every type
-      // value to sure it is convertible.
-      for (auto elt : vVal.getValues()) {
-        if (!LIT::isTypeExpr(elt))
-          return false;
-
-        // Get the tightest metatype for the element type value, so that
-        // `#kgen.type<!Int> : !AnyType` will be converted to
-        // `#kgen.type<!Int> : !mt_Int`, so that
-        // `#kgen.type<!Int> : !AnyType` is convertible to `!Copyable`
-        ASTType fromEltTp = ASTType(elt).getMetaType();
-        rvType = VariadicType::get(fromEltTp);
-
-        if (fromEltTp.mlirType != toEltTp.mlirType) {
-          FailureOr<bool> canUpCast = canTypeValueUpCastToTrait(
-              shared, {elt, value.expr}, fromEltTp, toEltTp);
-          // If there is one element that we can not convert, return false. Note
-          // that We also only to handle conversions between type value at the
-          // moment and would return false when `canTypeValueUpCastToTrait`
-          // returns failure (meaning case not handled).
-          if (failed(canUpCast) || !canUpCast.value())
-            return cacheAndReturnVal(rvType, requiredType, false);
-        }
-      }
-      // Every element is convertible, return true;
-      return cacheAndReturnVal(rvType, requiredType, true);
-    } else {
-      ASTType fromEltTp = sugarCast<VariadicType>(rvType).getElementType();
-      FailureOr<bool> canUpCast = canTypeValueUpCastToTrait(
-          shared, {fromEltTp, value.expr}, fromEltTp, toEltTp);
-      if (succeeded(canUpCast))
-        return cacheAndReturnVal(rvType, requiredType, canUpCast.value());
-    }
+    ASTType fromEltTp = sugarCast<VariadicType>(rvType).getElementType();
+    FailureOr<bool> canUpCast =
+        canMetaTypeUpCastTo(shared, value.expr->getLoc(), fromEltTp, toEltTp);
+    if (succeeded(canUpCast))
+      return cacheAndReturnVal(rvType, requiredType, canUpCast.value());
   }
 
   // Support implicit conversions of generator types (incl. non-trivial function
@@ -1642,6 +1599,12 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 
   // We can implicitly convert to the specified type if we can construct it with
   // the value as an implicit conversion.
+  //
+  // TODO: can we make `canConstructType` working without passing in the ir
+  // here? This is the only reason that prevent us from turning
+  // `ASTExprAnd<CValue> value` into a `ASTType actualType` in the signature
+  // (such that we can ensure type conversion not looking at the value itself
+  // for future changes to guarantee referential transparency).
   FailureOr<PValue> result = OverloadSet::canConstructType(
       requiredType,
       CallOperands{CallSyntax::kImplicitConvert, value.expr, {value}},
@@ -1798,8 +1761,8 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
       return emitCResult(VariadicAttr::get(converted, dstVATp), expr, dest);
     } else {
       // Make sure this is convertible.
-      FailureOr<bool> canUpCast = canTypeValueUpCastToTrait(
-          shared, {fromEltTp, valueExpr.expr}, fromEltTp, toEltTp);
+      FailureOr<bool> canUpCast = canMetaTypeUpCastTo(
+          shared, valueExpr.expr->getLoc(), fromEltTp, toEltTp);
       if (failed(canUpCast) || !canUpCast.value())
         return emitVariadicError();
 
