@@ -17,9 +17,6 @@ from math import exp2
 
 import testing
 from reflection import call_location, SourceLocation
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing.testing import _assert_cmp_error
 
 from utils.numerics import FPUtils
@@ -89,7 +86,7 @@ fn assert_almost_equal[
     //,
 ](
     x: UnsafePointer[Scalar[dtype]],
-    y: type_of(x),
+    y: UnsafePointer[Scalar[dtype]],
     num_elements: Int,
     msg: String = "",
     *,
@@ -155,7 +152,7 @@ fn assert_equal[
     //,
 ](
     x: UnsafePointer[Scalar[dtype]],
-    y: type_of(x),
+    y: UnsafePointer[Scalar[dtype]],
     num_elements: Int,
     msg: String = "",
     *,
@@ -208,13 +205,13 @@ fn assert_with_measure[
     dtype: DType,
     //,
     measure: fn[dtype: DType] (
-        LegacyUnsafePointer[mut=False, Scalar[dtype]],
-        LegacyUnsafePointer[mut=False, Scalar[dtype]],
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         Int,
     ) -> Float64,
 ](
-    x: UnsafePointer[Scalar[dtype], ...],
-    y: type_of(x),
+    x: UnsafePointer[Scalar[dtype]],
+    y: UnsafePointer[Scalar[dtype]],
     num_elements: Int,
     msg: String = "",
     *,

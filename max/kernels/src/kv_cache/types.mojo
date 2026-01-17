@@ -32,12 +32,6 @@ from layout.tma_async import (
     create_split_tma,
     RaggedTMA3DTile,
 )
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
 
 from utils import Index, IndexList
 from sys import size_of
@@ -188,7 +182,7 @@ trait KVCacheT(DevicePassable, ImplicitlyCopyable):
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype]]:
+    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         """Returns a LayoutTensor pointing to the KVCache block at the given index.
 
         Paged KVCache implementations must have a block_size which is a multiple of the
@@ -511,7 +505,7 @@ struct ContinuousBatchingKVCache[
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype]]:
+    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         var block_idx = Int(self.lookup_table[batch_idx])
         var full_block_idx = self._get_idx_tuple(
             block_idx, head_idx, start_tok_idx, head_dim_idx
@@ -818,7 +812,7 @@ struct PagedKVCache[
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype]]:
+    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         __comptime_assert (
             tile_size <= Self.page_size and Self.page_size % tile_size == 0
         ), (

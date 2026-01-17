@@ -163,7 +163,6 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
     comptime errorTolerance = 1e-2
-    var failed = False
     assert_almost_equal(
         c_host,
         c_host_naive,
@@ -348,7 +347,6 @@ fn run_matvec_with_epilogue_fn(
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
     comptime errorTolerance = 1e-2
-    var failed = False
     assert_almost_equal(
         c_host,
         c_host_naive,

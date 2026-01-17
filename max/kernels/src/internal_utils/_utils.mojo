@@ -14,12 +14,6 @@
 import time
 from collections import OptionalReg
 from math import ceildiv, floor
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
 from sys import argv, env_get_string
 from builtin.device_passable import DevicePassable
 
@@ -373,7 +367,7 @@ struct Timer:
 fn init_vector_gpu[
     dtype: DType
 ](
-    x: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     len: Int,
     mode: InitializationType,
     value: Scalar[dtype],
