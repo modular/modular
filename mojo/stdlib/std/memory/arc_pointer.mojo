@@ -25,6 +25,9 @@ from reflection.type_info import _unqualified_type_name
 from builtin.constrained import _constrained_conforms_to
 
 
+# Cache-line aligned to prevent false sharing when multiple ArcPointer
+# instances have their refcounts accessed concurrently from different threads.
+@align(64)
 struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
     var refcount: Atomic[DType.uint64]
     var payload: Self.T
