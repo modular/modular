@@ -36,6 +36,8 @@ class DiffusionPipeline:
     def __call__(
         self,
         prompt: str,
+        negative_prompt: str | None = None,
+        true_cfg_scale: float = 1.0,
         height: int = 1024,
         width: int = 1024,
         num_inference_steps: int = 50,
@@ -47,6 +49,8 @@ class DiffusionPipeline:
         # e.g. T2I, I2I, T2V, I2V, V2V.
         inputs = ImageGenerationInputs(
             prompt=prompt,
+            negative_prompt=negative_prompt,
+            true_cfg_scale=true_cfg_scale,
             height=height,
             width=width,
             num_inference_steps=num_inference_steps,
