@@ -299,9 +299,8 @@ static BodyT printGeneratorInterface(raw_ostream &os,
 /// knows what is going on, and we don't get a T != T error.
 ///
 /// This returns success when handled, failure otherwise.
-static void prettyPrintParamName(ParamDeclRefAttr declRef, SharedState &shared,
-                                 raw_ostream &os) {
-
+static void prettyPrintParamName(ParamDeclRefAttr declRef, bool elideOriginOf,
+                                 SharedState &shared, raw_ostream &os) {
   // If this is an implicit parameter injected due to auto-parameterization,
   // then it will have a uniquing identifier on it, rip that off.
   auto demangledName = demangleParameterName(declRef.getName());
@@ -314,7 +313,6 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, SharedState &shared,
 
   // Walk up the decl hierarchy to find the one that contains the parameter.
   auto [curDecl, paramDecls, paramIdx] = ctxDecl->lookupParamReference(declRef);
-
   if (!curDecl) {
     os << demangledName;
     return;
@@ -322,7 +320,11 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, SharedState &shared,
 
   // Handle implicit origins.
   if (isa<OriginType>(paramDecls[paramIdx].getType())) {
-    os << "origin_of(" << demangledName << ")";
+    if (!elideOriginOf)
+      os << "origin_of(";
+    os << demangledName;
+    if (!elideOriginOf)
+      os << ")";
     return;
   }
 
@@ -407,7 +409,8 @@ static LogicalResult prettyPrintParamName(ParamIndexRefAttr idxRef,
         auto paramDecls = fn.collectAllParams(/*implicitOrigins*/ false);
         if (idxRef.getIndex() < paramDecls.size()) {
           prettyPrintParamName(
-              ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]), shared, os);
+              ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]),
+              /*elideOriginOf=*/false, shared, os);
           return success();
         }
 
@@ -415,8 +418,8 @@ static LogicalResult prettyPrintParamName(ParamIndexRefAttr idxRef,
           ArrayRef<ParamDeclAttr> paramDecls = declIntf.getInputParams();
           if (idxRef.getIndex() < paramDecls.size()) {
             prettyPrintParamName(
-                ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]), shared,
-                os);
+                ParamDeclRefAttr::get(paramDecls[idxRef.getIndex()]),
+                /*elideOriginOf=*/false, shared, os);
             return success();
           }
         }
@@ -855,17 +858,18 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     if (typeName == "IntLiteral" || typeName == "FloatLiteral" ||
         typeName == "StringLiteral") {
       auto structType = cast<LIT::StructType>(param.getType());
-      if (structType.getParamValues().size() == 1) {
-        printParam(os, structType.getParamValues()[0], diagShared);
-        return;
-      }
+      assert(structType.getParamValues().size() == 1 &&
+             "Literal type should have one parameter");
+      printParam(os, structType.getParamValues()[0], diagShared);
+      return;
     }
   }
 
   // Print ParamDeclRefAttr as the name of the parameter.
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(param)) {
     if (diagShared)
-      return prettyPrintParamName(declRef, *diagShared, os);
+      return prettyPrintParamName(declRef, /*elideOriginOf=*/false, *diagShared,
+                                  os);
     // Escape any weird characters in the parameter name that might have
     // been introduced with backticks.
     return printAsMojoStringLiteral(declRef.getName(), os);
@@ -1034,16 +1038,15 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
   }
 
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(param)) {
-    // If the parameter is an implicit parameter injected due to
-    // auto-parameterization, print the thing that is being parameterized.
-    StringRef name = declRef.getName();
-
-    if (diagShared)
-      name = demangleParameterName(name);
     // Escape any weird characters in the parameter name that might have
     // been introduced with backticks.
-    printAsMojoStringLiteral(name, os);
-    return;
+    if (!diagShared) {
+      printAsMojoStringLiteral(declRef.getName(), os);
+      return;
+    }
+
+    return prettyPrintParamName(declRef, /*elideOriginOf=*/true, *diagShared,
+                                os);
   }
 
   if (isa<StructExtractAttr, ParamIndexRefAttr, ParamOperatorAttr, UnknownAttr>(

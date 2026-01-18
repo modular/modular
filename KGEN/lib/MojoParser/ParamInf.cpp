@@ -69,7 +69,7 @@ calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature,
   VariadicAttr packed = // See if resolved.
       sugarDynCast<VariadicAttr>(variadicPackType.getVariadicPackTypeList());
 
-  // The caller should know the concrete type list unless we binded the pack
+  // The caller should know the concrete type list unless we bound the pack
   // directly as a parameter.  This is an unpack like situation.
   // TODO: This happens in error cases and needs to be re-evaluated.
   if (!packed)
@@ -1294,8 +1294,10 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
   //         pass
   // All of the arguments have been resolved here so all parameters must be
   // inferred (or not able to).
-  if (returnsSelf && failed(inferSelfFromInitResult(signature)))
-    return failure();
+  if (returnsSelf) {
+    if (failed(inferSelfFromInitResult(signature)))
+      return failure();
+  }
 
   // Check to see if this is a CTAD parameter - a parameter on the struct
   // that encloses the method.  Consider "conditional conformance" cases like:
@@ -1410,8 +1412,6 @@ LogicalResult ParamInf::inferFromDefaults() {
       continue;
 
     // If available, we use a default parameter value.
-    // FIXME: Shouldn't this go into inference itself like empty variadic
-    // binding is?
     if (TypedAttr defaultParam = defaultHandler.getDefault(idx);
         defaultParam && !sugarIsa<UnknownAttr>(defaultParam)) {
 
@@ -1431,6 +1431,7 @@ LogicalResult ParamInf::inferFromDefaults() {
       if (!paramFinder.hasReferences(defaultParam)) {
         if (failed(setInferredValue(idx, defaultParam)))
           return failure();
+        continue;
       }
     }
 
@@ -1456,6 +1457,7 @@ LogicalResult ParamInf::inferFromDefaults() {
         TypedAttr defaultCTAD = defaults[normalizedIdx - defaultStartIdx];
         if (failed(setInferredValue(idx, defaultCTAD)))
           return failure();
+        continue;
       }
     }
 
@@ -1467,6 +1469,7 @@ LogicalResult ParamInf::inferFromDefaults() {
       auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
       if (failed(setInferredValue(idx, empty)))
         return failure();
+      continue;
     }
   }
 
