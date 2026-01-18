@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, ops
@@ -202,7 +202,7 @@ class Qwen3EmbeddingPipelineModel(Qwen3Model):
         )
 
         # Our graph outputs a single tensor (embeddings)
-        assert isinstance(model_outputs[0], Tensor)
+        assert isinstance(model_outputs[0], Buffer)
         # Store embeddings in the logits field for pipeline compatibility
         return ModelOutputs(logits=model_outputs[0])
 
