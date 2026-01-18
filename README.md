@@ -86,7 +86,7 @@ Highlights include:
 - MAX GPU and CPU kernels: [/max/kernels](max/kernels) (Mojo kernels)
 - MAX inference server: [/max/python/max/serve](max/python/max/serve) (OpenAI-compatible endpoint)
 - MAX model pipelines: [/max/python/max/pipelines](max/python/max/pipelines) (Python-based graphs)
-- Code example: [/examples](examples)
+- Code examples: [/max/examples](max/examples) + [/mojo/examples](mojo/examples)
 
 This repo has two major branches:
 
