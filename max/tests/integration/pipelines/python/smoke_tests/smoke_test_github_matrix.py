@@ -54,8 +54,10 @@ MODELS = {
     ],
     "bytedance-seed/academic-ds-9b": [
         "max",
+        "max-ci@MI355",
         "multi",
         "sglang@B200",
+        "vllm@B200",
     ],
     # E2EOPT-571: DeepSeek v2 lite chat not working on MAX
     "deepseek-ai/deepseek-v2-lite-chat": [
