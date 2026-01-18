@@ -11,12 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
 from collections import OptionalReg
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import (
     CompilationTarget,
     align_of,
@@ -812,7 +808,7 @@ trait MHAPartitionScheme(Copyable):
     @always_inline
     fn get_exp_sum_qk_max_pointer(
         self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
+    ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
         ...
 
 
@@ -834,24 +830,26 @@ struct NoPartition[dtype: DType](
     @always_inline
     fn get_exp_sum_qk_max_pointer(
         self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
-        return UnsafePointer[Scalar[Self.accum_dtype]]()
+    ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
+        return UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
 
 
 @register_passable("trivial")
 struct SplitKPartition[dtype: DType](ImplicitlyCopyable, MHAPartitionScheme):
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
-    var ptr: UnsafePointer[Scalar[Self.accum_dtype]]
+    var ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]
     var num_partitions_value: UInt32
 
     @always_inline
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.accum_dtype]],
+        ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
     ):
-        debug_assert(ptr != UnsafePointer[Scalar[Self.accum_dtype]]())
+        debug_assert(
+            ptr != UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
+        )
         self.ptr = ptr
         self.num_partitions_value = num_partitions_value
 
@@ -862,5 +860,5 @@ struct SplitKPartition[dtype: DType](ImplicitlyCopyable, MHAPartitionScheme):
     @always_inline
     fn get_exp_sum_qk_max_pointer(
         self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
+    ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
         return self.ptr

@@ -12,12 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
 from os.atomic import Atomic
 
 import gpu.primitives.warp as warp
@@ -104,7 +99,9 @@ struct SeqInfo(ImplicitlyCopyable):
         @parameter
         if not ValidLengthType.is_null:
             # treat valid_lengths as a input_row_offsets
-            ptr = rebind[UnsafePointer[UInt32]](valid_length.value())
+            ptr = rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](
+                valid_length.value()
+            )
             seq = ptr.load[width=2](batch_idx)
             start_of_seq = warp.broadcast(seq[0])
             end_of_seq = warp.broadcast(seq[1])
@@ -140,14 +137,18 @@ struct MHASchedulerSynchronization(ImplicitlyCopyable):
 struct MHATileState:
     # Linear work tile index i.e. idx-th work among all possible workload.
     var idx: UInt32
-    var sidx_ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED]
+    var sidx_ptr: UnsafePointer[
+        UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+    ]
     var max_idx: UInt32
 
     @always_inline
     fn __init__(
         out self,
         idx: UInt32,
-        sidx_ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
+        sidx_ptr: UnsafePointer[
+            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        ],
         max_idx: UInt32,
     ):
         self.idx = idx
@@ -380,7 +381,9 @@ trait MHATileScheduler(Copyable, DevicePassable):
         //,
     ](
         self,
-        ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
+        ptr: UnsafePointer[
+            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         """Create the initial state object."""
@@ -498,7 +501,9 @@ struct TransientScheduler[
         //,
     ](
         self,
-        ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
+        ptr: UnsafePointer[
+            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         return MHATileState.__init__(0, ptr, 1)
@@ -614,7 +619,9 @@ struct TileScheduler[
         //,
     ](
         self,
-        ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
+        ptr: UnsafePointer[
+            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         return MHATileState(
@@ -648,7 +655,9 @@ struct QueuedTileScheduler[
     """
 
     # Linear work tile index i.e. idx-th work among all possible workload.
-    var gidx_ptr: UnsafePointer[UInt32, address_space = AddressSpace.GLOBAL]
+    var gidx_ptr: UnsafePointer[
+        UInt32, MutAnyOrigin, address_space = AddressSpace.GLOBAL
+    ]
 
     comptime may_advance: Bool = True
     comptime mha_schedule: MHASchedule = Self.schedule
@@ -656,7 +665,7 @@ struct QueuedTileScheduler[
     @always_inline
     fn __init__(
         out self,
-        gidx_ptr: UnsafePointer[UInt32],
+        gidx_ptr: UnsafePointer[UInt32, MutAnyOrigin],
     ):
         self.gidx_ptr = gidx_ptr.address_space_cast[AddressSpace.GLOBAL]()
 
@@ -762,7 +771,9 @@ struct QueuedTileScheduler[
         //,
     ](
         self,
-        ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
+        ptr: UnsafePointer[
+            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         state = MHATileState(

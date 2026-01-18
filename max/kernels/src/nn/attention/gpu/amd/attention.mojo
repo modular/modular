@@ -14,9 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import size_of, simd_width_of
 from sys.info import _cdna_4_or_newer
 from sys.intrinsics import _type_is_eq
@@ -427,7 +425,7 @@ struct Attention[
     var smem_manager: Self.SharedMemoryManagerType
 
     var q_buffer: Self.QRegisterBufferType
-    var output_ptr: UnsafePointer[Scalar[Self.output_type],]
+    var output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]
 
     var batch_idx: Int
 
@@ -672,8 +670,8 @@ struct Attention[
     fn __init__(
         out self,
         attention_config: Self.attention_config_t,
-        output_ptr: UnsafePointer[Scalar[Self.output_type],],
-        q: UnsafePointer[Scalar[Self.q_type]],
+        output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
+        q: UnsafePointer[Scalar[Self.q_type], MutAnyOrigin],
         k: Self.k_t,
         v: Self.v_t,
         mask: Self.mask_t,
@@ -846,8 +844,12 @@ struct Attention[
     fn store_partition_info(
         self,
         num_partitions: Int,
-        exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
-        qk_max_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
+        exp_sum_ptr: UnsafePointer[
+            Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
+        ],
+        qk_max_ptr: UnsafePointer[
+            Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
+        ],
     ):
         @parameter
         if not Self.token_gen:

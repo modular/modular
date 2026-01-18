@@ -12,9 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys.info import _cdna_4_or_newer
 from sys import env_get_bool
 
@@ -228,8 +225,12 @@ __extension Attention:
     @always_inline
     fn mha_decoding(
         mut self,
-        exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
-        qk_max_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
+        exp_sum_ptr: UnsafePointer[
+            Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
+        ],
+        qk_max_ptr: UnsafePointer[
+            Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
+        ],
         num_partitions: Int,
     ):
         __comptime_assert Self.BK == 32, "BK must be 32"

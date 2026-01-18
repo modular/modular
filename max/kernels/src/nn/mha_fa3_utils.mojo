@@ -17,12 +17,7 @@ from math.constants import log2e
 from memory import (
     bitcast,
 )
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
 from sys import size_of
 
 import gpu.primitives.warp as warp
@@ -83,7 +78,7 @@ trait OptionalPointer(Copyable):
     comptime is_null: Bool
 
     @always_inline
-    fn value(self) -> UnsafePointer[Scalar[Self.dtype]]:
+    fn value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         ...
 
 
@@ -92,10 +87,12 @@ struct NonNullPointer[dtype_: DType](OptionalPointer):
     comptime dtype: DType = Self.dtype_
     comptime is_null: Bool = False
 
-    var ptr: UnsafePointer[Scalar[Self.dtype]]
+    var ptr: UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]
 
     @always_inline
-    fn __init__(out self, ptr: UnsafePointer[Scalar[Self.dtype]]):
+    fn __init__(
+        out self, ptr: UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]
+    ):
         self.ptr = ptr
 
     @always_inline
@@ -103,7 +100,7 @@ struct NonNullPointer[dtype_: DType](OptionalPointer):
         self.ptr = ptr.unsafe_ptr()
 
     @always_inline
-    fn value(self) -> UnsafePointer[Scalar[Self.dtype]]:
+    fn value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         debug_assert(
             Bool(self.ptr),
             (
@@ -124,7 +121,7 @@ struct NullPointer[dtype_: DType](OptionalPointer):
         pass
 
     @always_inline
-    fn value(self) -> UnsafePointer[Scalar[Self.dtype]]:
+    fn value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         return {}
 
 
@@ -363,8 +360,8 @@ struct MHAPosition[
         partition: partition_t,
         batch_size: UInt32,
     ) -> Tuple[
-        UnsafePointer[Scalar[partition_t.accum_dtype]],
-        UnsafePointer[Scalar[partition_t.accum_dtype]],
+        UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
+        UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
     ]:
         exp_sum_offset = Self.q_num_heads * (
             self.prompt_idx + batch_size * self.prompt_offset
@@ -462,7 +459,9 @@ fn get_seq_info[
     )
     scheduler = TransientScheduler[BM, num_heads]()
     var state: MHATileState = scheduler.initial_state(
-        UnsafePointer[UInt32, address_space = AddressSpace.SHARED](),
+        UnsafePointer[
+            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        ](),
         tile_summary,
     )
     return scheduler.unsafe_seq_info(tile_summary, state)
@@ -747,7 +746,7 @@ fn q_tma[
     decoding: Bool,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     rows: Int,
 ) raises -> QTMATile[
     dtype,
@@ -1066,22 +1065,22 @@ fn produce[
         BK=padded_depth,
     ],
     q_smem: UnsafePointer[
-        Scalar[qkv_type], address_space = AddressSpace.SHARED
+        Scalar[qkv_type], MutAnyOrigin, address_space = AddressSpace.SHARED
     ],
     kv_smem: UnsafePointer[
-        Scalar[qkv_type], address_space = AddressSpace.SHARED
+        Scalar[qkv_type], MutAnyOrigin, address_space = AddressSpace.SHARED
     ],
     produced_mbar_kv: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
     ],
     consumed_mbar_kv: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
     ],
     produced_mbar_q: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
     ],
     consumed_mbar_q: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
     ],
     kv_lut: KVLUTType,
     initial_position: MHAPosition[
@@ -1485,7 +1484,7 @@ fn output_reg_to_smem[
     local_warp_group_idx: UInt32,
     warp_y: UInt32,
     q_smem: UnsafePointer[
-        Scalar[output_type], address_space = AddressSpace.SHARED
+        Scalar[output_type], MutAnyOrigin, address_space = AddressSpace.SHARED
     ],
     output_reg_tile: LayoutTensor[
         accum_type,
