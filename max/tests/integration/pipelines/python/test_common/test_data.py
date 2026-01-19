@@ -180,7 +180,16 @@ INTERNVL_INSTRUCT_MESSAGES = [
 ]
 INTERNVL_INSTRUCT_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/internvl_instruct_image.jpg"
 
-IDEFICS3_INSTRUCT_PROMPT = "<image> Describe the image:"
+IDEFICS3_INSTRUCT_PROMPT = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n<image> Describe the image:<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+IDEFICS3_INSTRUCT_MESSAGES = [
+    {
+        "role": "user",
+        "content": [
+            {"type": "image"},
+            {"type": "text", "text": "Describe the image:"},
+        ],
+    }
+]
 IDEFICS3_INSTRUCT_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/idefics3_instruct_image.jpg"
 
 
@@ -213,9 +222,13 @@ INTERNVL_INSTRUCT_REQUESTS = [
 
 IDEFICS3_INSTRUCT_REQUESTS = [
     MockTextGenerationRequest.with_images(
-        IDEFICS3_INSTRUCT_PROMPT, [MULTIMODAL_IMAGE]
+        IDEFICS3_INSTRUCT_PROMPT,
+        [MULTIMODAL_IMAGE],
+        messages=IDEFICS3_INSTRUCT_MESSAGES,
     ),
     MockTextGenerationRequest.with_images(
-        IDEFICS3_INSTRUCT_PROMPT, [IDEFICS3_INSTRUCT_IMAGE]
+        IDEFICS3_INSTRUCT_PROMPT,
+        [IDEFICS3_INSTRUCT_IMAGE],
+        messages=IDEFICS3_INSTRUCT_MESSAGES,
     ),
 ]
