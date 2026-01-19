@@ -16,6 +16,7 @@
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include <cstddef>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <sched.h>
@@ -78,6 +79,32 @@ struct CPUSystemInfo {
   std::vector<size_t> getPreferredCpuIDs(size_t numThreads) const;
 
   void print(raw_ostream &os) const;
+};
+
+/// Describes the NUMA topology of the system, including NUMA nodes, CPU IDs
+/// per node, and PCI bus to NUMA node mappings.
+struct NUMATopology {
+  std::vector<int> numaNodes;
+  std::map<int, std::vector<size_t>> cpuIdsPerNumaNode;
+  std::map<int, std::vector<std::string>> pciBusesPerNumaNode;
+  std::map<std::string, int> pciBusToNumaNode;
+
+  /// Returns NUMA topology if it can be determined. Returns an error if NUMA
+  /// topology cannot be determined.
+  static ErrorOr<NUMATopology> get();
+
+  /// Returns the list of NUMA node IDs available in the system.
+  const std::vector<int> &getNumaNodes() const { return numaNodes; }
+
+  /// Returns the list of CPU IDs belonging to a NUMA node.
+  std::vector<size_t> getCpuIdsForNumaNode(int numaNode) const;
+
+  /// Returns the list of PCI bus addresses belonging to a NUMA node.
+  std::vector<std::string> getPciBusesForNumaNode(int numaNode) const;
+
+  /// Returns the NUMA node ID for a given PCI bus address, or -1 if the PCI
+  /// bus is not found.
+  int getNumaNodeForPciBus(StringRef pciBusId) const;
 };
 
 inline raw_ostream &operator<<(raw_ostream &os, const CPUSystemInfo &info) {
