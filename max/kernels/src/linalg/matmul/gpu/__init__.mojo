@@ -18,6 +18,7 @@ from sys import (
     env_get_int,
     has_accelerator,
     has_amd_gpu_accelerator,
+    has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     simd_width_of,
     size_of,
@@ -527,6 +528,7 @@ fn _matmul_gpu[
     if (
         matmul_supported_format
         and has_accelerator()
+        and not has_apple_gpu_accelerator()
         and use_tensor_core
         and has_static_NK
     ):
@@ -744,6 +746,7 @@ fn _matmul_gpu[
         a_type in vendor_blas_fallback_dtypes
         and b_type in vendor_blas_fallback_dtypes
         and c_type in vendor_blas_fallback_dtypes
+        and not has_apple_gpu_accelerator()
         # to disable vendor fallback, run export MODULAR_DISABLE_VENDOR_FALLBACK=1 in the environment
         and not env_get_bool["MODULAR_DISABLE_VENDOR_FALLBACK", False]()
     ):
