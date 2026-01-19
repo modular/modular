@@ -229,10 +229,8 @@ modular_py_test(
     }),
     tags = [
         "gpu",
-        "manual",  # TODO(SERVOPT-900)
         "no-sandbox",
         "requires-network",
-        "run-in-hf-workflow",  # TODO(SERVOPT-900)
     ],
     deps = [
         ":hf_repo_lock",

@@ -248,7 +248,11 @@ def mock_huggingface_hub_repo_exists_with_retry(
     @wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         with patch("huggingface_hub.revision_exists", return_value=True):
-            return func(*args, **kwargs)
+            with patch(
+                "max.pipelines.lib.hf_utils.generate_local_model_path",
+                return_value="/fake/cache/path",
+            ):
+                return func(*args, **kwargs)
 
     return wrapper
 
@@ -264,20 +268,43 @@ def mock_huggingface_hub_file_exists(
     return wrapper
 
 
+def mock_generate_local_model_path(
+    func: Callable[_P, _R],
+) -> Callable[_P, _R]:
+    """Mock generate_local_model_path to return a fake path.
+
+    This allows tests to run with HF_HUB_OFFLINE=1 without requiring
+    models to be in the local cache.
+    """
+
+    @wraps(func)
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        with patch(
+            "max.pipelines.lib.hf_utils.generate_local_model_path",
+            return_value="/fake/cache/path",
+        ):
+            return func(*args, **kwargs)
+
+    return wrapper
+
+
 def mock_pipeline_config_hf_dependencies(
     func: Callable[_P, _R],
 ) -> Callable[_P, _R]:
     """Decorator that combines multiple mock decorators for pipeline testing.
 
     Combines:
+    - mock_generate_local_model_path
     - mock_huggingface_hub_repo_exists_with_retry
     - mock_huggingface_hub_file_exists
     - mock_huggingface_config
     - mock_estimate_memory_footprint
     """
-    return mock_huggingface_hub_repo_exists_with_retry(
-        mock_huggingface_hub_file_exists(
-            mock_huggingface_config(mock_estimate_memory_footprint(func))
+    return mock_generate_local_model_path(
+        mock_huggingface_hub_repo_exists_with_retry(
+            mock_huggingface_hub_file_exists(
+                mock_huggingface_config(mock_estimate_memory_footprint(func))
+            )
         )
     )
 

@@ -264,6 +264,12 @@ def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
     See huggingface_hub.revision_exists for details
     """
 
+    if huggingface_hub.constants.HF_HUB_OFFLINE:
+        generate_local_model_path(
+            repo_id, revision
+        )  # raises if repo not cached
+        return True
+
     max_attempts = 5
     base_delays = [2**i for i in range(max_attempts)]
     retry_delays_in_seconds = [
@@ -332,6 +338,13 @@ class HuggingFaceRepo:
         # Get repo type.
         if not self.repo_type:
             if os.path.exists(self.repo_id):
+                object.__setattr__(self, "repo_type", RepoType.local)
+            elif huggingface_hub.constants.HF_HUB_OFFLINE:
+                # Respect HF_HUB_OFFLINE, resolve from local cache
+                local_path = generate_local_model_path(
+                    self.repo_id, self.revision
+                )
+                object.__setattr__(self, "repo_id", local_path)
                 object.__setattr__(self, "repo_type", RepoType.local)
             else:
                 object.__setattr__(self, "repo_type", RepoType.online)
@@ -485,6 +498,18 @@ class HuggingFaceRepo:
                                     f"unknown dtype found in safetensors file: {weight_dtype}"
                                 )
 
+                # Workaround for FP8/FP4 models that don't have proper safetensors metadata.
+                # Check the path for fp8/fp4 hints (works for both local paths and HF cache paths
+                # since cache paths preserve the model name: models--org--model-FP8/snapshots/...)
+                if not supported_encodings and re.search(
+                    r"FP8|fp8", self.repo_id, re.IGNORECASE
+                ):
+                    supported_encodings.add(SupportedEncoding.float8_e4m3fn)
+                if not supported_encodings and re.search(
+                    r"FP4|fp4", self.repo_id, re.IGNORECASE
+                ):
+                    supported_encodings.add(SupportedEncoding.float4_e2m1fnx2)
+
             elif self.repo_type == RepoType.online:
                 safetensors_info = self.info.safetensors
 
@@ -607,10 +632,8 @@ class HuggingFaceRepo:
 def generate_local_model_path(repo_id: str, revision: str) -> str:
     """Generate the local filesystem path where a HuggingFace model repo is cached.
 
-    This function takes a HuggingFace repository ID and revision hash and returns the full local
-    filesystem path where the model files are cached by the huggingface_hub library. The path
-    follows the standard HuggingFace caching convention of:
-    ~/.cache/huggingface/hub/models--{org}--{model}/snapshots/{revision}
+    This function uses HuggingFace's official snapshot_download with local_files_only=True
+    to resolve the local cache path for a model repository.
 
     Args:
         repo_id: The HuggingFace repository ID in the format "org/model"
@@ -619,22 +642,18 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
 
     Returns:
         str: The absolute path to the cached model files for the specified revision.
-            For example: "~/.cache/huggingface/hub/models--HuggingFaceTB--SmolLM2-135M/snapshots/abc123"
 
     Raises:
-        FileNotFoundError: If the model path does not exist locally
+        FileNotFoundError: If the model is not found in the local cache
     """
-    # Convert repo_id to format used in local path
-    temp_model_path = repo_id.replace("/", "--")
-    # Build full path with revision hash and expand user directory
-    path = (
-        Path(os.environ.get("HF_HOME", "~/.cache/huggingface"))
-        / "hub"
-        / f"models--{temp_model_path}"
-        / "snapshots"
-        / revision
-    ).expanduser()
-
-    if not path.is_dir():
-        raise FileNotFoundError(f"Model path does not exist: {path}")
-    return str(path)
+    try:
+        return huggingface_hub.snapshot_download(
+            repo_id=repo_id,
+            revision=revision,
+            local_files_only=True,
+        )
+    except huggingface_hub.utils.LocalEntryNotFoundError as e:
+        raise FileNotFoundError(
+            f"Model path does not exist: HF cache for '{repo_id}' "
+            f"(revision: {revision}) not found."
+        ) from e

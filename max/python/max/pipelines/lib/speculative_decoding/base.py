@@ -231,10 +231,10 @@ class SpeculativeDecodingPipelineBase(
                 max_workers=8,
             )
         else:
-            # Make sure the weight paths are absolute paths
+            # Use the resolved repo_id (which points to local cache in offline mode)
+            local_path = Path(target_hf_repo.repo_id)
             weight_paths = [
-                self.pipeline_config.model.model_path / x
-                for x in self.pipeline_config.model.weight_path
+                local_path / x for x in self.pipeline_config.model.weight_path
             ]
 
         target_weights = load_weights(weight_paths)
@@ -338,9 +338,12 @@ class SpeculativeDecodingPipelineBase(
                 max_workers=8,
             )
         else:
-            # Make sure the weight paths are absolute paths
+            # Use the resolved repo_id (which points to local cache in offline mode)
+            draft_local_path = Path(
+                self.pipeline_config.draft_model.huggingface_weight_repo.repo_id
+            )
             draft_weight_paths = [
-                self.pipeline_config.draft_model.model_path / x
+                draft_local_path / x
                 for x in self.pipeline_config.draft_model.weight_path
             ]
 
