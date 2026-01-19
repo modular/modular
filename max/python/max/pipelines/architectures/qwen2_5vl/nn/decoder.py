@@ -59,7 +59,7 @@ from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings_with_gather,
+    merge_multimodal_embeddings,
 )
 from max.pipelines.architectures.internvl.internvl import distribute_value
 from max.pipelines.architectures.llama3.model_config import Llama3Config
@@ -591,8 +591,7 @@ class Qwen25VLDecoder(Module):
         tokens: TensorValueLike,
         return_n_logits: TensorValue,
         image_embeddings: list[TensorValue],
-        scatter_indices: list[TensorValue],
-        gather_indices: list[TensorValue],
+        image_token_indices: list[TensorValue],
         position_ids: TensorValue,
         mrope_section: list[int],
         kv_collections: list[PagedCacheValues],
@@ -605,17 +604,15 @@ class Qwen25VLDecoder(Module):
         # Let the kernel handle the no-image embeddings case.
         # And use the first device's image embeddings since they're replicated.
         h = [
-            merge_multimodal_embeddings_with_gather(
+            merge_multimodal_embeddings(
                 inputs_embeds=h_device,
-                multimodal_embeddings=img_embed,
-                scatter_indices=scatter_indices,
-                gather_indices=gather_indices,
+                multimodal_embeddings=image_embeddings_device,
+                image_token_indices=image_token_indices_device,
             )
-            for h_device, img_embed, scatter_indices, gather_indices in zip(
+            for h_device, image_embeddings_device, image_token_indices_device in zip(
                 h,
                 image_embeddings,
-                scatter_indices,
-                gather_indices,
+                image_token_indices,
                 strict=True,
             )
         ]
