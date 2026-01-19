@@ -16,8 +16,6 @@ The module includes the `ConstantMemoryMapping` struct which represents a mappin
 constant memory that can be used for efficient data transfer between host and GPU device.
 """
 
-from memory import LegacyUnsafePointer
-
 
 @fieldwise_init
 @register_passable("trivial")
@@ -42,7 +40,7 @@ struct ConstantMemoryMapping(ImplicitlyCopyable):
     kernel references to constant memory symbols.
     """
 
-    var ptr: LegacyUnsafePointer[mut=True, NoneType, origin=MutAnyOrigin]
+    var ptr: OpaquePointer[MutAnyOrigin]
     """Pointer to the host memory location that will be mapped to device constant memory.
 
     This raw pointer represents the starting address of the memory region that will be

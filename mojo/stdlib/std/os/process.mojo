@@ -22,9 +22,6 @@ _ = Process.run("echo", ["== TEST_ECHO"])
 """
 from collections import List, Optional
 from collections.string import StringSlice
-
-from memory import LegacyUnsafePointer
-
 from sys import CompilationTarget
 from sys._libc import (
     waitpid,

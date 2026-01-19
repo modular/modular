@@ -12,9 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 @parameter
@@ -23,7 +20,7 @@ fn bench_allocation(mut b: Bencher) raises:
     @parameter
     fn call_fn():
         for _ in range(10000):
-            var a = UnsafePointer[Int].alloc(100)
+            var a = alloc[Int](100)
             keep(a)
             a.free()
 
