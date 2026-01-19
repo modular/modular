@@ -22,6 +22,7 @@ from max.nn import ReturnLogits
 from max.nn.comm.ep import EPConfig
 from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.transformer import ReturnHiddenStates
 from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
 from pydantic import model_validator
 from transformers import AutoConfig
@@ -80,6 +81,9 @@ class DeepseekV3Config(MAXModelConfigBase):
 
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     """Whether to return the last token, all logits, or a variable number of logits."""
+
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    """Whether to return hidden states and which type (none, last, all, last_normalized, all_normalized)."""
 
     @model_validator(mode="after")
     def _validate(self) -> Self:

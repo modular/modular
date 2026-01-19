@@ -253,6 +253,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             data_parallel_degree=self.pipeline_config.model.data_parallel_degree,
             use_subgraphs=self.pipeline_config.model.use_subgraphs,
             return_logits=self.return_logits,
+            return_hidden_states=self.return_hidden_states,
         )
 
     @classmethod
@@ -552,7 +553,18 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             *model_inputs.batch_context_lengths,
             *ep_inputs,
         )
-        if len(model_outputs) == 3:
+        if len(model_outputs) == 4:
+            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(model_outputs[1], Buffer)
+            assert isinstance(model_outputs[2], Buffer)
+            assert isinstance(model_outputs[3], Buffer)
+            return ModelOutputs(
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[1],
+                logit_offsets=model_outputs[2],
+                hidden_states=model_outputs[3],
+            )
+        elif len(model_outputs) == 3:
             assert isinstance(model_outputs[0], Buffer)
             assert isinstance(model_outputs[1], Buffer)
             assert isinstance(model_outputs[2], Buffer)
@@ -642,7 +654,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
-            ).to(device0),
+            ),
             data_parallel_splits=data_parallel_splits,
         )
 
