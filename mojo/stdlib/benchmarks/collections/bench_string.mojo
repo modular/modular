@@ -93,6 +93,101 @@ fn bench_string_count[
     keep(Bool(items))
 
 
+@parameter
+fn bench_string_count_multi[
+    length: Int = 0,
+    filename: StaticString = "UN_charter_EN",
+    sequence: StaticString = "the",
+](mut b: Bencher) raises:
+    """Benchmark counting multi-character substrings.
+
+    This specifically tests the SIMD-optimized path that matches first and last
+    characters simultaneously before doing full comparison.
+    """
+    var items = make_string[length](filename + ".txt")
+
+    @always_inline
+    @parameter
+    fn call_fn() raises:
+        var amnt = items.count(sequence)
+        keep(amnt)
+
+    b.iter[call_fn]()
+    keep(Bool(items))
+
+
+@parameter
+fn bench_string_count_long_needle[
+    length: Int = 0,
+    filename: StaticString = "UN_charter_EN",
+](mut b: Bencher) raises:
+    """Benchmark counting longer substrings (8+ chars).
+
+    Tests performance with longer needles where the first/last character
+    optimization provides more benefit by filtering out more candidates.
+    """
+    var items = make_string[length](filename + ".txt")
+    # "Nations" appears in UN Charter
+    var needle = String("Nations")
+
+    @always_inline
+    @parameter
+    fn call_fn() raises:
+        var amnt = items.count(needle)
+        keep(amnt)
+
+    b.iter[call_fn]()
+    keep(Bool(items))
+
+
+@parameter
+fn bench_string_count_not_found[
+    length: Int = 0,
+    filename: StaticString = "UN_charter_EN",
+](mut b: Bencher) raises:
+    """Benchmark counting substring that doesn't exist.
+
+    Tests the worst-case scenario where the entire string must be scanned
+    without finding any matches.
+    """
+    var items = make_string[length](filename + ".txt")
+    # This pattern won't appear in the UN Charter
+    var needle = String("xyz123xyz")
+
+    @always_inline
+    @parameter
+    fn call_fn() raises:
+        var amnt = items.count(needle)
+        keep(amnt)
+
+    b.iter[call_fn]()
+    keep(Bool(items))
+
+
+@parameter
+fn bench_string_count_high_frequency[
+    length: Int = 0,
+](mut b: Bencher) raises:
+    """Benchmark counting high-frequency patterns.
+
+    Tests performance when there are many matches, which exercises the
+    non-overlapping skip logic.
+    """
+    # Create a string with many repeated patterns
+    var base = String("abcabc")
+    var items = base * (length // 6 + 1)
+    items = String(items[:length])
+
+    @always_inline
+    @parameter
+    fn call_fn() raises:
+        var amnt = items.count("abc")
+        keep(amnt)
+
+    b.iter[call_fn]()
+    keep(Bool(items))
+
+
 # ===-----------------------------------------------------------------------===#
 # Benchmark string split
 # ===-----------------------------------------------------------------------===#
@@ -438,6 +533,15 @@ def main():
             m.bench_function[bench_string_count[length, fname, old]](
                 BenchId(String("bench_string_count", suffix))
             )
+            m.bench_function[bench_string_count_multi[length, fname, "the"]](
+                BenchId(String("bench_string_count_multi", suffix))
+            )
+            m.bench_function[bench_string_count_long_needle[length, fname]](
+                BenchId(String("bench_string_count_long_needle", suffix))
+            )
+            m.bench_function[bench_string_count_not_found[length, fname]](
+                BenchId(String("bench_string_count_not_found", suffix))
+            )
             m.bench_function[bench_string_split[length, fname, old]](
                 BenchId(String("bench_string_split", suffix))
             )
@@ -471,6 +575,15 @@ def main():
             m.bench_function[bench_write_utf8[length, fname]](
                 BenchId(String("bench_write_utf8", suffix))
             )
+
+    # High frequency count benchmarks (don't depend on filenames)
+    @parameter
+    for i in range(len(lengths)):
+        comptime length = lengths[i]
+        comptime suffix = String("[", length, "]")
+        m.bench_function[bench_string_count_high_frequency[length]](
+            BenchId(String("bench_string_count_high_frequency", suffix))
+        )
 
     m.bench_function[bench_string_join[True]](
         BenchId(String("bench_string_join_short"))
