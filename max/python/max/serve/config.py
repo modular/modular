@@ -18,6 +18,7 @@ Placeholder file for any configs (runtime, models, pipelines, etc)
 from __future__ import annotations
 
 import logging
+import os
 from enum import Enum, IntEnum
 from pathlib import Path
 
@@ -248,6 +249,23 @@ class Settings(BaseSettings):
         ),
         alias="MAX_SERVE_DI_BIND_ADDRESS",
     )
+
+    @field_validator("di_bind_address", mode="before")
+    def validate_di_bind_address(cls, value: str) -> str:
+        """Validate that deprecated MAX_SERVE_DISPATCHER_CONFIG is not being used.
+
+        This validator checks if the deprecated environment variable
+        MAX_SERVE_DISPATCHER_CONFIG is set and fails loudly if it is,
+        directing users to use MAX_SERVE_DI_BIND_ADDRESS instead.
+        """
+        deprecated_var = "MAX_SERVE_DISPATCHER_CONFIG"
+        if deprecated_var in os.environ:
+            raise ValueError(
+                f"The environment variable '{deprecated_var}' is deprecated and no longer supported. "
+                f"Please use 'MAX_SERVE_DI_BIND_ADDRESS' instead. "
+                f"For more information, see: https://linear.app/modularml/issue/CLIN-608"
+            )
+        return value
 
     log_prefix: str | None = Field(
         default=None,
