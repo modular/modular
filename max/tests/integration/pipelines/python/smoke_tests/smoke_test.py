@@ -441,16 +441,20 @@ def smoke_test(
     is_vision_model = any(
         kw in model
         for kw in (
+            "gemma-3",
             "idefics",
             "internvl",
             "olmocr",
             "pixtral",
             "qwen2.5-vl",
             "qwen3-vl",
-            "tbmod/gemma-3-4b-it",
             "vision",
         )
     )
+    # 1b is non-vision, tbmod is temporary to test legacy impl
+    if "gemma-3-1b" in model or model == "tbmod/gemma-3-4b-it":
+        is_vision_model = False
+
     tasks = ["gsm8k_cot_llama"]
     if is_vision_model:
         tasks = ["chartqa"] + tasks
@@ -460,7 +464,7 @@ def smoke_test(
     all_samples = []
     extra_env = {}
     if model == "tbmod/gemma-3-4b-it":
-        extra_env = {"MODULAR_MAX_ENABLE_GEMMA3_VISION": "1"}
+        extra_env = {"MODULAR_MAX_DISABLE_GEMMA3_VISION": "1"}
 
     server_process, startup_time = start_server(cmd, extra_env)
     try:

@@ -26,8 +26,8 @@ from max.pipelines.lib import (
 )
 
 ENABLE_NEW_IMPL = os.environ.get(
-    "MODULAR_MAX_ENABLE_GEMMA3_VISION", "0"
-).lower() in (
+    "MODULAR_MAX_DISABLE_GEMMA3_VISION", "0"
+).lower() not in (
     "1",
     "true",
 )
