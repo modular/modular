@@ -216,16 +216,19 @@ def write_github_output(key: str, value: str) -> None:
 
 
 def gracefully_stop_process(process: Popen[bytes]) -> None:
-    process.send_signal(signal.SIGINT)  # Sends ctrl-c (usually works)
+    start_time = time.time()
+    process.send_signal(signal.SIGINT)
     try:
-        process.wait(5)
+        process.wait(25)
+        shutdown_seconds = int(time.time() - start_time)
+        logger.info(f"Server shutdown took {shutdown_seconds} seconds")
     except TimeoutExpired:
         logger.warning("Server did not stop after ctrl-c, trying SIGTERM")
         try:
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
             process.wait(5)
         except ProcessLookupError:
-            pass  # process already dead
+            pass
         except TimeoutExpired:
             logger.warning("Process did not terminate gracefully, forcing kill")
             os.killpg(os.getpgid(process.pid), signal.SIGKILL)
@@ -478,16 +481,16 @@ def smoke_test(
             results.append(result)
             all_samples.append(samples)
     finally:
+        summary = build_eval_summary(results, startup_time_seconds=startup_time)
+
+        if output_path is not None:
+            path = output_path / safe_model_name(model)
+            path.mkdir(parents=True, exist_ok=True)
+            write_results(path, summary, results, all_samples, tasks)
+
+        logger.info(pformat(summary, indent=2))
+
         gracefully_stop_process(server_process)
-
-    summary = build_eval_summary(results, startup_time_seconds=startup_time)
-
-    if output_path is not None:
-        path = output_path / safe_model_name(model)
-        path.mkdir(parents=True, exist_ok=True)
-        write_results(path, summary, results, all_samples, tasks)
-
-    logger.info(pformat(summary, indent=2))
 
 
 if __name__ == "__main__":
