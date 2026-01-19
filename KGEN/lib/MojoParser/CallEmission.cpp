@@ -767,22 +767,6 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   return {};
 }
 
-PValue
-OverloadSet::filterOverloadSetForValueType(ASTType functionType,
-                                           ASTDecl &declScope,
-                                           bool emitDiagnosticOnFailure) const {
-  if (!emitDiagnosticOnFailure) {
-    return filterOverloadSetForValueType(functionType, declScope,
-                                         /*emitError=*/nullptr);
-  }
-
-  std::optional<MojoInflightDiag> diag;
-  auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
-    return diag.emplace(getShared().emitError(loc));
-  };
-  return filterOverloadSetForValueType(functionType, declScope, emitError);
-}
-
 PValue OverloadSet::filterOverloadSetForValueType(
     ASTType functionType, ASTDecl &declScope,
     function_ref<MojoInflightDiag &(SMLoc)> emitError) const {
@@ -1124,8 +1108,11 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType,
   // With an emitter and an expected type, the overload set can definitely be
   // resolved to a single candidate or not.
   if (expectedType) {
-    return filterOverloadSetForValueType(expectedType, declScope,
-                                         /*emitDiagnosticOnFailure=*/true);
+    std::optional<MojoInflightDiag> diag;
+    auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
+      return diag.emplace(getShared().emitError(loc));
+    };
+    return filterOverloadSetForValueType(expectedType, declScope, emitError);
   }
 
   // If the overload set has parameter bindings, try to resolve the candidates
