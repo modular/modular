@@ -217,4 +217,33 @@ TEST(Host, ParseV2CPUCgroupHybrid) {
   EXPECT_EQ(*errOrCgroup, "/user.slice/user-1000.slice/session-1.scope");
 }
 
+TEST(Host, NUMATopologyQueries) {
+  // Get NUMATopology instance.
+  auto errOrTopo = NUMATopology::get();
+  ASSERT_FALSE(errOrTopo.isError()) << errOrTopo.getError();
+  const NUMATopology &topo = *errOrTopo;
+
+  // Check that getNumaNodes returns at least one NUMA node.
+  const auto &numaNodes = topo.getNumaNodes();
+  ASSERT_FALSE(numaNodes.empty());
+
+  for (int node : numaNodes) {
+    // Check that getCpuIdsForNumaNode returns at least one CPU core.
+    auto cpuIds = topo.getCpuIdsForNumaNode(node);
+    EXPECT_FALSE(cpuIds.empty());
+
+    // Check that getPciBusesForNumaNode succeeds (may return empty list).
+    auto pciBuses = topo.getPciBusesForNumaNode(node);
+  }
+
+  // Check that getNumaNodeForPciBus returns the correct NUMA node for a PCI bus
+  // address.
+  auto pciBuses = topo.getPciBusesForNumaNode(0);
+  if (!pciBuses.empty()) {
+    const std::string &firstPciBus = pciBuses[0];
+    int numaNode = topo.getNumaNodeForPciBus(firstPciBus);
+    EXPECT_EQ(numaNode, 0);
+  }
+}
+
 #endif

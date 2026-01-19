@@ -68,7 +68,7 @@ static inline void native_cpuid(unsigned int *eax, unsigned int *ebx,
 std::unique_ptr<llvm::MemoryBuffer> fileBuffer(StringRef path) {
   auto errOrBuf = llvm::MemoryBuffer::getFileAsStream(path);
   if (std::error_code ec = errOrBuf.getError()) {
-    LDBG() << "getLinuxCPULimits: Could not open " << path;
+    LDBG() << "fileBuffer: Could not open " << path;
     return nullptr;
   }
   return std::move(errOrBuf.get());
@@ -314,6 +314,31 @@ ErrorOr<CPUSystemInfo> M::Detail::getLinuxX86CPUSystemInfoImpl(
   return systemInfo;
 }
 
+/// Helper to parse CPU list strings like "0-3,5,7-9" into a vector of CPU IDs.
+static ErrorOr<std::vector<size_t>> parseCpuList(StringRef cpuList) {
+  std::vector<size_t> cpuIds;
+  SmallVector<StringRef> ranges;
+  cpuList.trim().split(ranges, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+
+  for (StringRef range : ranges) {
+    if (range.contains('-')) {
+      auto [startStr, endStr] = range.split('-');
+      size_t start, end;
+      if (startStr.getAsInteger(10, start) || endStr.getAsInteger(10, end))
+        return Error("Failed to parse CPU range: " + range.str());
+      for (size_t i = start; i <= end; ++i)
+        cpuIds.push_back(i);
+    } else {
+      size_t cpuId;
+      if (range.getAsInteger(10, cpuId))
+        return Error("Failed to parse CPU ID: " + range.str());
+      cpuIds.push_back(cpuId);
+    }
+  }
+
+  return cpuIds;
+}
+
 /// On X86 Linux systems /proc/cpuinfo allows us to distinguish
 /// virtual cores, physical cores and sockets.
 ///
@@ -534,4 +559,93 @@ ErrorOr<CPULimits> CPULimits::get() {
   return limits;
 #endif
   return Error("CPULimits are not supported by this build");
+}
+
+ErrorOr<NUMATopology> NUMATopology::get() {
+#if HAVE_LINUX_X86_SYSTEM_INFO
+  NUMATopology topology;
+
+  // Enumerate NUMA nodes from /sys/devices/system/node/
+  std::error_code err;
+  for (const auto &entry :
+       std::filesystem::directory_iterator("/sys/devices/system/node", err)) {
+    if (err)
+      break;
+    std::string filename = entry.path().filename().string();
+    if (filename.rfind("node", 0) == 0) {
+      int nodeId;
+      if (!StringRef(filename).substr(4).getAsInteger(10, nodeId))
+        topology.numaNodes.push_back(nodeId);
+    }
+  }
+  if (err)
+    return Error("Failed to enumerate NUMA nodes: " + err.message());
+
+  if (topology.numaNodes.empty())
+    return Error("No NUMA nodes found");
+
+  llvm::sort(topology.numaNodes);
+
+  // For each NUMA node, get CPU IDs from cpulist file.
+  for (int node : topology.numaNodes) {
+    std::string cpuListPath =
+        "/sys/devices/system/node/node" + std::to_string(node) + "/cpulist";
+    auto buf = fileBuffer(cpuListPath);
+    if (buf) {
+      auto cpuIdsOr = parseCpuList(buf->getBuffer());
+      if (!cpuIdsOr.isError())
+        topology.cpuIdsPerNumaNode[node] = std::move(*cpuIdsOr);
+    }
+  }
+
+  // Enumerate PCI devices and map them to NUMA nodes.
+  for (const auto &entry :
+       std::filesystem::directory_iterator("/sys/bus/pci/devices", err)) {
+    if (err)
+      break;
+    std::string pciBusId = entry.path().filename().string();
+    std::string numaPath = entry.path().string() + "/numa_node";
+
+    auto buf = fileBuffer(numaPath);
+    if (!buf)
+      continue;
+
+    int deviceNumaNode;
+    if (buf->getBuffer().trim().getAsInteger(10, deviceNumaNode))
+      continue;
+
+    topology.pciBusToNumaNode[pciBusId] = deviceNumaNode;
+    topology.pciBusesPerNumaNode[deviceNumaNode].push_back(pciBusId);
+  }
+
+  // Sort PCI buses per NUMA node for consistent ordering.
+  for (auto &[node, buses] : topology.pciBusesPerNumaNode)
+    llvm::sort(buses);
+
+  return topology;
+#else
+  return Error("NUMATopology is only supported on Linux x86");
+#endif
+}
+
+std::vector<size_t> NUMATopology::getCpuIdsForNumaNode(int numaNode) const {
+  auto it = cpuIdsPerNumaNode.find(numaNode);
+  if (it != cpuIdsPerNumaNode.end())
+    return it->second;
+  return {};
+}
+
+std::vector<std::string>
+NUMATopology::getPciBusesForNumaNode(int numaNode) const {
+  auto it = pciBusesPerNumaNode.find(numaNode);
+  if (it != pciBusesPerNumaNode.end())
+    return it->second;
+  return {};
+}
+
+int NUMATopology::getNumaNodeForPciBus(StringRef pciBusId) const {
+  auto it = pciBusToNumaNode.find(pciBusId.str());
+  if (it != pciBusToNumaNode.end())
+    return it->second;
+  return -1;
 }
