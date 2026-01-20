@@ -109,11 +109,11 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Representable):
             try:
                 # Check for 'first' keyword argument
                 if "first" in kwargs:
-                    first_val = Int(py=kwargs[PythonObject("first")])
+                    first_val = Int(py=kwargs["first"])
 
                 # Check for 'second' keyword argument
                 if "second" in kwargs:
-                    second_val = Int(py=kwargs[PythonObject("second")])
+                    second_val = Int(py=kwargs["second"])
             except e:
                 raise Error("Failed to process keyword arguments: ", e)
 

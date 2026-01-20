@@ -80,7 +80,7 @@ fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
     with dev_buf.map_to_host() as host_buf:
         var host_tensor = LayoutTensor[int_dtype, layout](host_buf)
         # Return the ASCII art string representation to Python.
-        return PythonObject(draw_mandelbrot(host_tensor, Int(py=iterations)))
+        return draw_mandelbrot(host_tensor, Int(py=iterations))
 
 
 fn mandelbrot(
