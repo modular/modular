@@ -37,9 +37,9 @@ This project uses Bazel for building. Commands should be run through the
 ./bazelw test //max/kernels/test/linalg/...
 
 # Run GPU tests with specific hardware
-./bazelw test --config=remote-a10 //max/kernels/test/gpu/...  # For A10 GPU
-./bazelw test --config=remote-h100 //max/kernels/test/gpu/... # For H100 GPU
-./bazelw test --config=remote-mi355 //max/kernels/test/gpu/... # For MI300 GPU
+./bazelw test --config=remote-h100 //max/kernels/test/gpu/...  # For H100 GPU
+./bazelw test --config=remote-b200 //max/kernels/test/gpu/...  # For B200 GPU
+./bazelw test --config=remote-mi355 //max/kernels/test/gpu/... # For MI355 GPU
 ```
 
 ### Running Mojo Files Directly
