@@ -85,9 +85,13 @@ private:
       llvm::cl::cat(RuntimeOptionsCategory)};
 
   // Specify whether the workqueue should be created using thread affinity.
+  // Can also be controlled via MODULAR_DISABLE_AFFINITY environment variable.
   M::cl::MOpt<bool, true> cpuAffinity{
       "cpu-affinity",
-      llvm::cl::desc("Assign CPU affinity to threads within the work queue."),
+      llvm::cl::desc(
+          "Assign CPU affinity to threads within the work queue. "
+          "This flag takes precedence over the MODULAR_DISABLE_AFFINITY "
+          "environment variable."),
       llvm::cl::location(options.withAffinity),
       llvm::cl::cat(RuntimeOptionsCategory)};
 

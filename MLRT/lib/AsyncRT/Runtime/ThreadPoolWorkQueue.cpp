@@ -1186,9 +1186,6 @@ std::unique_ptr<WorkQueue> M::AsyncRT::createThreadPoolWorkQueue(
     CompactRuntimePtr runtimePtr, size_t numThreads, size_t maxThreads,
     bool mainWillDonate, bool withAffinity,
     std::chrono::microseconds threadBusyWaitTime, std::string_view poolName) {
-#if ASYNCRT_NO_AFFINITY
-  withAffinity = false;
-#endif // ASYNCRT_NO_AFFINITY
   // Using numThreads as a hint, figure out a CPU for each worker thread and
   // the main thread. The CPU ids may end up as kNoAffinity, but the vector
   // size will still guide the construction of worker threads.

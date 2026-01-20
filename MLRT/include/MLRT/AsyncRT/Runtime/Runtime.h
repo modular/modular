@@ -23,9 +23,11 @@
 #include "MLRT/AsyncRT/Support/Chain.h"
 #include "Support/Context.h"
 #include "Support/STLExtras.h"
+#include "Support/StringExtras.h"
 #include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Process.h"
 
 #include <atomic>
 
@@ -121,7 +123,12 @@ struct RuntimeOptions {
   //  std::chrono::microseconds threadBusyWaitTime = 200us;
   size_t threadBusyWaitTime = 200;
   // For legacy reasons, withAffinity is true by default.
-  bool withAffinity = true;
+  // Can be overridden by MODULAR_DISABLE_AFFINITY environment variable,
+  // which in turn can be overridden by --cpu-affinity CLI flag.
+  bool withAffinity = []() {
+    auto env = llvm::sys::Process::GetEnv("MODULAR_DISABLE_AFFINITY");
+    return !(env.has_value() && M::isTrueLike(*env));
+  }();
   std::string_view poolName = "🔥 Thread";
   AllocatorOptions allocatorOptions = AllocatorOptions::fromConfig();
   OnFailure onFailure{RuntimeOptions::OnFailure::kExit};
