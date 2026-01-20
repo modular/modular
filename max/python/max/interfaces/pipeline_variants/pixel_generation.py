@@ -80,6 +80,10 @@ class PixelGenerationRequest(Request):
     """
     Optional dictionary of options to pass when applying the chat template.
     """
+    seed: int | None = None
+    """
+    Optional random number generator.
+    """
 
     def __post_init__(self) -> None:
         """Validates mutual exclusivity and converts dict messages after initialization."""
