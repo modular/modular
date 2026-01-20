@@ -340,8 +340,11 @@ static void printSIMDValue(raw_ostream &os, const POP::DTypeValue &value,
   } else if (dtype.isBool()) {
     os << (value.getBoolVal() ? "True" : "False");
   } else {
-    assert(dtype.isIndex() || dtype.isAddress());
-    os << value.getIndexVal();
+    assert(dtype.isIndex() || dtype.isUIndex() || dtype.isAddress());
+    if (dtype.isIndex())
+      os << value.getIndexVal();
+    else
+      os << uint64_t(value.getIndexVal());
   }
 }
 
