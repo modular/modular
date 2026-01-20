@@ -13,7 +13,12 @@
 
 from math import iota
 from random import rand
-from sys import argv, has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from sys import (
+    argv,
+    has_amd_gpu_accelerator,
+    has_apple_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+)
 
 from benchmark import (
     Bench,
@@ -189,7 +194,11 @@ def matmul():
     bench.bench_function[matmul_cpu](BenchId("cpu", "naive"), metrics)
 
     @parameter
-    if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+    if (
+        has_amd_gpu_accelerator()
+        or has_apple_gpu_accelerator()
+        or has_nvidia_gpu_accelerator()
+    ):
         var gpu_ctx = DeviceContext()
         var a_dev = Tensor[Input, a_spec](gpu_ctx).rand()
         var b_dev = Tensor[Input, b_spec](gpu_ctx).rand()
@@ -213,7 +222,10 @@ def matmul():
         bench_matmul_kernel["tiled_register"]()
         bench_matmul_kernel["block_tiled"]()
         bench_matmul_kernel["block_tiled_vectorized"]()
-        bench_matmul_kernel["tensor_core"]()
+
+        @parameter
+        if not has_apple_gpu_accelerator():
+            bench_matmul_kernel["tensor_core"]()
 
     bench.config.verbose_metric_names = False
     print(bench)

@@ -159,12 +159,14 @@ if __name__ == "__main__":
         print(block_tiled_vectorized_result.to_numpy())
         print()
 
-        tensor_core_result = matrix_multiplication(
-            a, b, "tensor_core", session, device
-        )
-        print("Matrix multiplication using Tensor Cores:")
-        print(tensor_core_result.to_numpy())
-        print()
+        # Note: Apple silicon GPUs do not yet support Tensor Core operations.
+        if device.api != "metal":
+            tensor_core_result = matrix_multiplication(
+                a, b, "tensor_core", session, device
+            )
+            print("Matrix multiplication using Tensor Cores:")
+            print(tensor_core_result.to_numpy())
+            print()
     else:
         print(
             "No MAX-compatible accelerator detected, only running a naive matrix multiplication:"
