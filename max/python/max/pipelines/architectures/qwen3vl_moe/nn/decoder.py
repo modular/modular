@@ -335,6 +335,9 @@ class Qwen3VLMoEDecoder(Module):
         if visual_embeds.dtype != hidden_states.dtype:
             visual_embeds = ops.cast(visual_embeds, hidden_states.dtype)
 
+        # FIXME(SERVOPT-924): Fuse the scatter_nd and add op into a single kernel.
+        # This will improve perf and reduce size of activations.
+
         # Create a tensor of zeros with the same shape as hidden_states
         zeros = ops.constant(0, hidden_states.dtype, hidden_states.device)
         zeros_like = ops.broadcast_to(zeros, hidden_states.shape)

@@ -126,7 +126,7 @@ from nn.flash_attention import flash_attention_split_kv
 from nn.fold import fold, fold_shape
 from nn.gather_scatter import (
     Axis,
-    ScatterNegativeIndexStrategy,
+    ScatterOobIndexStrategy,
     _unsafe_normalize_neg_index,
     gather,
     gather_nd,
@@ -1113,7 +1113,7 @@ struct ScatterNDSkipNegIndices:
             output_type = output.dtype,
             indices_type = indices.dtype,
             single_thread_blocking_override=False,
-            negative_index_strategy = ScatterNegativeIndexStrategy.SKIP,
+            oob_index_strategy = ScatterOobIndexStrategy.SKIP,
             target=target,
             reduce_fn=None,
             _trace_description="scatter_nd.skip_neg_indices",
@@ -1304,7 +1304,7 @@ struct ScatterNDMax:
             output_type = output.dtype,
             indices_type = indices.dtype,
             single_thread_blocking_override=False,
-            negative_index_strategy = ScatterNegativeIndexStrategy.NORMALIZE,
+            oob_index_strategy = ScatterOobIndexStrategy.UNDEFINED,
             target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.max",

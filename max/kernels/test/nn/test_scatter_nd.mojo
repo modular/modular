@@ -16,7 +16,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from layout import Layout, LayoutTensor, RuntimeLayout
-from nn.gather_scatter import scatter_nd_generator, ScatterNegativeIndexStrategy
+from nn.gather_scatter import scatter_nd_generator, ScatterOobIndexStrategy
 from testing import assert_equal
 
 from utils.index import Index
@@ -236,7 +236,7 @@ def main():
             DType.float32,
             DType.int64,
             False,
-            ScatterNegativeIndexStrategy.NORMALIZE,
+            ScatterOobIndexStrategy.UNDEFINED,
             reduce_fn=use_update,
         ](data, indices, updates, output)
 
@@ -460,7 +460,7 @@ def main():
             DType.float32,
             DType.int64,
             False,
-            ScatterNegativeIndexStrategy.NORMALIZE,
+            ScatterOobIndexStrategy.UNDEFINED,
             reduce_fn=_add,
         ](data, indices, updates, output)
 
@@ -684,7 +684,7 @@ def main():
             DType.float32,
             DType.int64,
             False,
-            ScatterNegativeIndexStrategy.NORMALIZE,
+            ScatterOobIndexStrategy.UNDEFINED,
             reduce_fn=_max,
         ](data, indices, updates, output)
 
@@ -908,7 +908,7 @@ def main():
             DType.float32,
             DType.int64,
             False,
-            ScatterNegativeIndexStrategy.NORMALIZE,
+            ScatterOobIndexStrategy.UNDEFINED,
             reduce_fn=_min,
         ](data, indices, updates, output)
 
@@ -1132,7 +1132,7 @@ def main():
             DType.float32,
             DType.int64,
             False,
-            ScatterNegativeIndexStrategy.NORMALIZE,
+            ScatterOobIndexStrategy.UNDEFINED,
             reduce_fn=_mul,
         ](data, indices, updates, output)
 
