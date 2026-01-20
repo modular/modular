@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for type and function name introspection APIs."""
 
-from sys.info import CompilationTarget, _current_target
+from sys.info import CompilationTarget, _current_target, is_64bit
 
 from reflection import (
     get_linkage_name,
@@ -260,6 +260,43 @@ def test_get_type_name_through_generic():
     """Test get_type_name through a generic function."""
     assert_equal(_get_type_name_generic[Int](), "Int")
     assert_equal(_get_type_name_generic[String](), "String")
+
+
+struct UIndexParam[value: Scalar[DType.uint]]:
+    pass
+
+
+struct IndexParam[value: Scalar[DType.int]]:
+    pass
+
+
+def test_get_type_name_uindex_index_simd_value():
+    """Test that DType.uint and DType.int SIMD values are printed correctly."""
+
+    # Test unsigned uindex value - should print as large positive number
+    comptime uint_max: Scalar[DType.uint] = Scalar[DType.uint].MAX
+    var name = get_type_name[UIndexParam[uint_max]]()
+    if is_64bit():
+        assert_equal(
+            name,
+            (
+                "test_type_info.UIndexParam[18446744073709551615 :"
+                " SIMD[DType.uindex, 1]]"
+            ),
+        )
+    else:
+        assert_equal(
+            name,
+            "test_type_info.UIndexParam[4294967295 : SIMD[DType.uindex, 1]]",
+        )
+
+    # Test signed index value for comparison - should print as -1
+    comptime neg_one: Scalar[DType.int] = -1
+    name = get_type_name[IndexParam[neg_one]]()
+    assert_equal(
+        name,
+        "test_type_info.IndexParam[-1 : SIMD[DType.index, 1]]",
+    )
 
 
 def main():
