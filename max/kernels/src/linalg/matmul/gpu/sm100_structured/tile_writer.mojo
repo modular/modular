@@ -312,8 +312,10 @@ struct TMAStoreCoords[
         self.elect_one_warp = cg2_elect if Self.cta_group == 2 else cg1_elect
 
         # N coordinate
-        var n_base = c_coord[1] * UInt(Self.MMA_N) + UInt(Self.stage_n_offset)
-        var n_mma128 = n_base + UInt(Self.BN * Int(warp_id // 2))
+        var n_base = c_coord[1] * UInt32(Self.MMA_N) + UInt32(
+            Self.stage_n_offset
+        )
+        var n_mma128 = n_base + UInt32(Self.BN * Int(warp_id // 2))
         var cg2_n = n_base if Self.MMA_M == 256 else n_mma128
         self.coord_n = UInt(cg2_n if Self.cta_group == 2 else n_base)
 

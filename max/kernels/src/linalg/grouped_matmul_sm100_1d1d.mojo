@@ -569,8 +569,8 @@ fn copy_accum_to_gmem[
                         )
                         var local_i = cmem_crd[0].get_int()
                         var local_j = cmem_crd[1].get_int()
-                        var global_i = coord_m + UInt(local_i)
-                        var global_j = coord_n + UInt(local_j)
+                        var global_i = coord_m + UInt32(local_i)
+                        var global_j = coord_n + UInt32(local_j)
                         if global_i < M:
                             # src_ptr = c_smem_split.ptr + swizzle(linear_idx)
                             src_ptr = c_smem_split.ptr + (
@@ -958,11 +958,12 @@ fn load_AB[
         if elect_one_cta:
             tma_mbar[0].expect_bytes(expected_bytes)
 
-        for j in range(k_group_size):
-            var a_smem_tile = a_smem.next(stage * k_group_size + j)[]
-            var b_smem_tile = b_smem.next(stage * k_group_size + j)[]
-            var sfa_smem_tile = sfa_smem.next(stage * k_group_size + j)[]
-            var sfb_smem_tile = sfb_smem.next(stage * k_group_size + j)[]
+        for j in range(UInt32(k_group_size)):
+            var offset = stage * UInt32(k_group_size) + UInt32(j)
+            var a_smem_tile = a_smem.next(offset)[]
+            var b_smem_tile = b_smem.next(offset)[]
+            var sfa_smem_tile = sfa_smem.next(offset)[]
+            var sfb_smem_tile = sfb_smem.next(offset)[]
 
             var a_smem_slice = type_of(a_smem_tile)(
                 a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
@@ -1861,9 +1862,9 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     for i in range(CLUSTER_M // config.cta_group):
         b_multicast_mask |= 1 << (i * config.cta_group)
 
-    a_multicast_mask <<= rank_m
-    b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
+    a_multicast_mask <<= UInt16(rank_m)
+    b_multicast_mask <<= UInt16(peer_cta_coord[0])
+    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
@@ -1939,8 +1940,8 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
             tmem_addr = ptr_tmem_addr[0]
             var sfa_tmem = tmem_addr + config.num_accum_pipeline_stages * MMA_N
-            var sfb_tmem = sfa_tmem + UInt(SFA_NUM_COLS) * UInt(
-                config.num_pipeline_stages
+            var sfb_tmem = sfa_tmem + UInt32(
+                UInt(SFA_NUM_COLS) * UInt(config.num_pipeline_stages)
             )
 
             while not work_info.is_done():
