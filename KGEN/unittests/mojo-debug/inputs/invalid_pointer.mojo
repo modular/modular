@@ -5,13 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from debug_test_utils import keep_alive
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn main():
-    var base = UnsafePointer[Float32].alloc(1)
+    var base = alloc[Float32](1)
     var ptr = base.bitcast[Scalar[DType.invalid]]()
     keep_alive(ptr)  # breakpoint
     base.free()

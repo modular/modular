@@ -4,17 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 
 @fieldwise_init
 struct A(ImplicitlyCopyable):
-    var x: UnsafePointer[Scalar[DType.invalid]]
+    var x: UnsafePointer[Scalar[DType.invalid], MutExternalOrigin]
 
     fn __init__(out self):
-        var y = UnsafePointer[Int8].alloc(1)
+        var y = alloc[Int8](1)
         self.x = y.bitcast[Scalar[DType.invalid]]()
 
 

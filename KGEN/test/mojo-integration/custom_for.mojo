@@ -6,10 +6,6 @@
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 
 struct my_iter:
     var start: Int
@@ -42,7 +38,7 @@ struct my_iter:
 
 @fieldwise_init
 struct MyList(ImplicitlyCopyable):
-    var start: UnsafePointer[Int]
+    var start: UnsafePointer[Int, MutAnyOrigin]
     var size: Int
 
     fn __setitem__(mut self, idx: Int, val: Int):
@@ -66,7 +62,7 @@ fn main():
         count = Int(3)._mlir_value,
         _type = __mlir_type[`!kgen.pointer<`, Int, `>`],
     ]()
-    var my_pointer = UnsafePointer[Int](buffer)
+    var my_pointer = UnsafePointer[Int, MutAnyOrigin](buffer)
 
     var my_list = MyList(my_pointer, 3)
     my_list[0] = 25

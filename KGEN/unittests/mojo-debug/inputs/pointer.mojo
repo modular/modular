@@ -5,12 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from debug_test_utils import keep_alive
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn main():
-    var int_pointer = UnsafePointer[Int].alloc(1)
+    var int_pointer = alloc[Int](1)
     int_pointer[0] = 101
     keep_alive(int_pointer)  # breakpoint

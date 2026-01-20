@@ -5,18 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
-
 @no_inline
 fn takeIt[F: fn[width: Int] (idx: Int) unified -> Scalar[DType.int]](impl: F):
     print(impl.__call__[1](0))
 
 
 fn emitLoad(x: SIMD[DType.int, 1]):
-    var ptr = UnsafePointer[SIMD[DType.int, 1]].alloc(1)
+    var ptr = alloc[SIMD[DType.int, 1]](1)
     ptr.store(x)
     var count = Scalar[DType.int](0)
 

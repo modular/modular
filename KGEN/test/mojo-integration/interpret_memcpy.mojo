@@ -5,14 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import llvm_intrinsic, size_of
 
 
 fn memcpy(
-    dst: UnsafePointer[Int],
+    dst: UnsafePointer[mut=True, Int],
     src: UnsafePointer[Int],
     count: Int,
 ):
@@ -29,25 +26,25 @@ fn memcpy(
 
 
 struct Data(ImplicitlyCopyable, Stringable):
-    var _data: UnsafePointer[Int]
+    var _data: UnsafePointer[Int, MutExternalOrigin]
     var _size: Int
 
     fn __init__(out self, *, size: Int):
-        self._data = UnsafePointer[Int].alloc(size)
+        self._data = alloc[Int](size)
         self._size = size
         for i in range(size):
             self._data[i] = 0
 
     fn __init__(out self, *data: Int):
         var num_elems = len(data)
-        self._data = UnsafePointer[Int].alloc(num_elems)
+        self._data = alloc[Int](num_elems)
         self._size = num_elems
         for i in range(num_elems):
             self._data[i] = data[i]
 
     fn __copyinit__(out self, existing: Self):
         self._size = existing._size
-        self._data = UnsafePointer[Int].alloc(self._size)
+        self._data = alloc[Int](self._size)
         for i in range(self._size):
             self._data[i] = existing._data[i]
 

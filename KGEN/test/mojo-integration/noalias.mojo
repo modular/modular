@@ -5,15 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen --emit=llvm-opt %s | FileCheck %s
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 
 # CHECK: ; Function Attrs: {{.*}}memory(argmem: readwrite)
 # CHECK-LABEL: @mayalias(
 @export
-fn mayalias(a: UnsafePointer[Float32], b: UnsafePointer[Float32]) -> Float32:
+fn mayalias(
+    a: UnsafePointer[Float32, ImmutAnyOrigin],
+    b: UnsafePointer[Float32, MutAnyOrigin],
+) -> Float32:
     # CHECK: store
     b[] += a[] * b[]
     # CHECK-NEXT: load
@@ -23,7 +22,10 @@ fn mayalias(a: UnsafePointer[Float32], b: UnsafePointer[Float32]) -> Float32:
 
 # CHECK-LABEL: @noalias(
 @export
-fn noalias(a0: UnsafePointer[Float32], b: UnsafePointer[Float32]) -> Float32:
+fn noalias(
+    a0: UnsafePointer[Float32, ImmutAnyOrigin],
+    b: UnsafePointer[Float32, MutAnyOrigin],
+) -> Float32:
     a = a0.as_noalias_ptr()
 
     # CHECK: store

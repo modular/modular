@@ -5,9 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from debug_test_utils import keep_alive
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 struct MyPair:
