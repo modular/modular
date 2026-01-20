@@ -117,10 +117,6 @@ fn matmul_kernel[
     # Result of current thread in C.
     var result = Scalar[s_type](0)
 
-    var K_roundbytile = align_down(k, tile_size)
-    # Can't use 0 as tile size so set to 1 when the remainder is 0.
-    var K_remainder = k - K_roundbytile if k - K_roundbytile > 0 else 1
-
     @parameter
     @__copy_capture(row, localCol, a, b, localRow, col, a_shared, b_shared)
     @always_inline
@@ -129,20 +125,23 @@ fn matmul_kernel[
         # tile_size elements. The thread block needs to take addition bound check
         # when loading elements into shared memory.
 
-        # Load A tile into shared memory.
-        var a_val: Scalar[a_type]
+        var current_tile_size = tile_size if full_tile else end - offset
 
+        # Load A tile into shared memory.
         @parameter
         if not full_tile:
-            a_val = a[Int(row), Int(offset + Int(localCol))] if (
-                row < UInt(m) and offset + Int(localCol) < k
-            ) else 0.0
+            if offset + Int(localCol) < k:
+                a_shared[localRow * UInt(current_tile_size) + localCol] = (
+                    a[Int(row), Int(offset + Int(localCol))] if (
+                        row < UInt(m)
+                    ) else 0.0
+                )
         else:
-            a_val = (
-                a[Int(row), Int(offset + Int(localCol))] if row
-                < UInt(m) else 0.0
+            a_shared[localRow * UInt(current_tile_size) + localCol] = (
+                a[Int(row), Int(offset + Int(localCol))] if (
+                    row < UInt(m)
+                ) else 0.0
             )
-        a_shared[localRow * UInt(tile_size) + localCol] = a_val
 
         # Load B tile into shared memory.
         var b_val: Scalar[b_type]
@@ -161,16 +160,16 @@ fn matmul_kernel[
 
         barrier()
 
-        for kk in range(tile_size):
+        for kk in range(current_tile_size):
             result += (
-                a_shared[localRow * UInt(tile_size) + UInt(kk)].cast[s_type]()
+                a_shared[localRow * UInt(current_tile_size) + UInt(kk)].cast[s_type]()
                 * b_shared[kk * tile_size + Int(localCol)].cast[s_type]()
             )
 
         barrier()
 
     tile_and_unswitch[update_tile](
-        0, k, VariadicList[Int](tile_size, K_remainder)
+        0, k, VariadicList[Int](tile_size)
     )
 
     if row < UInt(m) and col < UInt(n):
