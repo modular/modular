@@ -939,15 +939,17 @@ fn load_AB[
         peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0]
     )
     var expert_id = expert_ids[Int(scheduler.current_group_idx)]
-    var b_offset = expert_id * scheduler.static_MN
-    var b_gmem_slice_coord = (
+    var b_offset_vec = expert_id * scheduler.static_MN
+    var b_gmem_slice_coord_vec = (
         type_of(expert_id)(
             peer_cta_coord[1] * UInt(b_tma_rows)
             + peer_cta_coord[0] * UInt(BN)
             + work_tile_coord[1]
         )
-        + b_offset
+        + b_offset_vec
     )
+    __comptime_assert b_gmem_slice_coord_vec.size == 1
+    var b_gmem_slice_coord = b_gmem_slice_coord_vec[0]
 
     # Wait until MMA (consumer) has used the buffer.
     load_mma_pipeline.wait_consumer()
@@ -982,6 +984,11 @@ fn load_AB[
                 (UInt(iter_idx + j) * UInt(BK), UInt(b_gmem_slice_coord)),
                 b_multicast_mask,
             )
+
+            var a_scale_offset_vec = a_scale_offsets[
+                Int(scheduler.current_group_idx)
+            ]
+            __comptime_assert a_scale_offset_vec.size == 1
             sfa_tma_op.async_copy_4d[cta_group](
                 sfa_smem_tile,
                 tma_mbar[0],
@@ -990,9 +997,12 @@ fn load_AB[
                     UInt(0),
                     UInt(iter_idx + j) * UInt(num_sf_k_tiles),
                     work_tile_coord[0] // UInt(SF_MN_GROUP_SIZE)
-                    + UInt(a_scale_offsets[Int(scheduler.current_group_idx)]),
+                    + UInt(a_scale_offset_vec[0]),
                 ),
             )
+
+            __comptime_assert b_offset_vec.size == 1
+            var b_offset = b_offset_vec[0]
             sfb_tma_op.async_copy_4d[cta_group](
                 sfb_smem_tile,
                 tma_mbar[0],
