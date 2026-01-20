@@ -27,18 +27,19 @@
 import math
 from dataclasses import dataclass
 
-import max.nn as nn
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue, ops
-from max.nn import GroupNorm
-from max.nn.layer.layer_list import LayerList
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
+from max.graph import DeviceRef, TensorType
+from max.nn.module_v3 import Conv2d, GroupNorm, Linear, Module
+from max.nn.module_v3.sequential import ModuleList
 
 from .layers import Upsample2D
 from .model_config import AutoencoderKLConfig
 
 
-class ResnetBlock2D(nn.Module):
-    """Residual block for 2D VAE decoder.
+class ResnetBlock2D(Module[[Tensor], Tensor]):
+    """Residual block for 2D VAE decoder using module_v3.
 
     This module implements a residual block with two convolutional layers,
     group normalization, and optional shortcut connection. It supports
@@ -84,11 +85,9 @@ class ResnetBlock2D(nn.Module):
             num_channels=in_channels,
             eps=eps,
             affine=True,
-            device=device,
-            dtype=dtype,
         )
 
-        self.conv1 = nn.Conv2d(
+        self.conv1 = Conv2d(
             kernel_size=3,
             in_channels=in_channels,
             out_channels=out_channels,
@@ -107,11 +106,9 @@ class ResnetBlock2D(nn.Module):
             num_channels=out_channels,
             eps=eps,
             affine=True,
-            device=device,
-            dtype=dtype,
         )
 
-        self.conv2 = nn.Conv2d(
+        self.conv2 = Conv2d(
             kernel_size=3,
             in_channels=out_channels,
             out_channels=out_channels,
@@ -125,9 +122,9 @@ class ResnetBlock2D(nn.Module):
             permute=True,
         )
 
-        self.conv_shortcut = None
+        self.conv_shortcut: Conv2d | None = None
         if self.use_conv_shortcut:
-            self.conv_shortcut = nn.Conv2d(
+            self.conv_shortcut = Conv2d(
                 kernel_size=1,
                 in_channels=in_channels,
                 out_channels=out_channels,
@@ -141,7 +138,7 @@ class ResnetBlock2D(nn.Module):
                 permute=True,
             )
         elif in_channels != out_channels:
-            self.conv_shortcut = nn.Conv2d(
+            self.conv_shortcut = Conv2d(
                 kernel_size=1,
                 in_channels=in_channels,
                 out_channels=out_channels,
@@ -155,9 +152,7 @@ class ResnetBlock2D(nn.Module):
                 permute=True,
             )
 
-    def __call__(
-        self, x: TensorValue, temb: TensorValue | None = None
-    ) -> TensorValue:
+    def forward(self, x: Tensor, temb: Tensor | None = None) -> Tensor:
         """Apply ResnetBlock2D forward pass.
 
         Args:
@@ -171,16 +166,16 @@ class ResnetBlock2D(nn.Module):
             self.conv_shortcut(x) if self.conv_shortcut is not None else x
         )
 
-        h = ops.silu(self.norm1(x))
+        h = F.silu(self.norm1(x))
         h = self.conv1(h)
 
-        h = ops.silu(self.norm2(h))
+        h = F.silu(self.norm2(h))
         h = self.conv2(h)
 
         return h + shortcut
 
 
-class UpDecoderBlock2D(nn.Module):
+class UpDecoderBlock2D(Module[[Tensor], Tensor]):
     """Upsampling decoder block for 2D VAE.
 
     This module consists of multiple ResNet blocks followed by an optional
@@ -244,7 +239,7 @@ class UpDecoderBlock2D(nn.Module):
                 dtype=dtype,
             )
             resnets_list.append(resnet)
-        self.resnets = LayerList(resnets_list)
+        self.resnets = ModuleList(resnets_list)
 
         if add_upsample:
             upsampler = Upsample2D(
@@ -259,13 +254,13 @@ class UpDecoderBlock2D(nn.Module):
                 device=device,
                 dtype=dtype,
             )
-            self.upsamplers = LayerList([upsampler])
+            self.upsamplers = ModuleList([upsampler])
         else:
             self.upsamplers = None
 
-    def __call__(
-        self, hidden_states: TensorValue, temb: TensorValue | None = None
-    ) -> TensorValue:
+    def forward(
+        self, hidden_states: Tensor, temb: Tensor | None = None
+    ) -> Tensor:
         """Apply UpDecoderBlock2D forward pass.
 
         Args:
@@ -287,8 +282,8 @@ class UpDecoderBlock2D(nn.Module):
         return hidden_states
 
 
-class VAEAttention(nn.Module):
-    """Spatial attention module for VAE models.
+class VAEAttention(Module[[Tensor], Tensor]):
+    """Spatial attention module for VAE models using module_v3.
 
     This module performs self-attention on 2D spatial features by:
     1. Converting [N, C, H, W] to [N, H*W, C] sequence format
@@ -332,34 +327,37 @@ class VAEAttention(nn.Module):
             num_channels=query_dim,
             eps=eps,
             affine=True,
-            device=device,
-            dtype=dtype,
         )
 
-        self.to_q = nn.Linear(
-            query_dim, self.inner_dim, has_bias=True, device=device, dtype=dtype
+        self.to_q = Linear(
+            in_dim=query_dim,
+            out_dim=self.inner_dim,
+            bias=True,
         )
-        self.to_k = nn.Linear(
-            query_dim, self.inner_dim, has_bias=True, device=device, dtype=dtype
+        self.to_k = Linear(
+            in_dim=query_dim,
+            out_dim=self.inner_dim,
+            bias=True,
         )
-        self.to_v = nn.Linear(
-            query_dim, self.inner_dim, has_bias=True, device=device, dtype=dtype
+        self.to_v = Linear(
+            in_dim=query_dim,
+            out_dim=self.inner_dim,
+            bias=True,
         )
-        self.to_out = LayerList(
+        # Use ModuleList to match original weights format (to_out.0.*)
+        self.to_out = ModuleList(
             [
-                nn.Linear(
-                    self.inner_dim,
-                    query_dim,
-                    has_bias=True,
-                    device=device,
-                    dtype=dtype,
+                Linear(
+                    in_dim=self.inner_dim,
+                    out_dim=query_dim,
+                    bias=True,
                 )
             ]
         )
 
         self.scale = 1.0 / math.sqrt(dim_head)
 
-    def __call__(self, x: TensorValue) -> TensorValue:
+    def forward(self, x: Tensor) -> Tensor:
         """Apply spatial attention to 2D image tensor.
 
         Args:
@@ -375,37 +373,37 @@ class VAEAttention(nn.Module):
         n, c, h, w = x.shape
         seq_len = h * w
 
-        x = ops.reshape(x, (n, c, seq_len))
-        x = ops.permute(x, (0, 2, 1))
+        x = F.reshape(x, [n, c, seq_len])
+        x = F.permute(x, [0, 2, 1])
 
         q = self.to_q(x)
         k = self.to_k(x)
         v = self.to_v(x)
 
-        q = ops.reshape(q, (n, seq_len, self.heads, self.dim_head))
-        q = ops.permute(q, (0, 2, 1, 3))
-        k = ops.reshape(k, (n, seq_len, self.heads, self.dim_head))
-        k = ops.permute(k, (0, 2, 1, 3))
-        v = ops.reshape(v, (n, seq_len, self.heads, self.dim_head))
-        v = ops.permute(v, (0, 2, 1, 3))
+        q = F.reshape(q, [n, seq_len, self.heads, self.dim_head])
+        q = F.permute(q, [0, 2, 1, 3])
+        k = F.reshape(k, [n, seq_len, self.heads, self.dim_head])
+        k = F.permute(k, [0, 2, 1, 3])
+        v = F.reshape(v, [n, seq_len, self.heads, self.dim_head])
+        v = F.permute(v, [0, 2, 1, 3])
 
-        attn = q @ ops.permute(k, (0, 1, 3, 2)) * self.scale
-        attn = ops.softmax(attn, axis=-1)
+        attn = q @ F.permute(k, [0, 1, 3, 2]) * self.scale
+        attn = F.softmax(attn, axis=-1)
         out = attn @ v
 
-        out = ops.permute(out, (0, 2, 1, 3))
-        out = ops.reshape(out, (n, seq_len, self.inner_dim))
+        out = F.permute(out, [0, 2, 1, 3])
+        out = F.reshape(out, [n, seq_len, self.inner_dim])
 
         out = self.to_out[0](out)
 
-        out = ops.permute(out, (0, 2, 1))
-        out = ops.reshape(out, (n, c, h, w))
+        out = F.permute(out, [0, 2, 1])
+        out = F.reshape(out, [n, c, h, w])
 
         return residual + out
 
 
-class MidBlock2D(nn.Module):
-    """Internal MAX module for MidBlock2D graph generation."""
+class MidBlock2D(Module[[Tensor], Tensor]):
+    """Internal MAX module for MidBlock2D graph generation using module_v3."""
 
     def __init__(
         self,
@@ -474,14 +472,29 @@ class MidBlock2D(nn.Module):
             )
             resnets_list.append(resnet)
 
-        self.resnets = LayerList(resnets_list)
-        self.attentions = (
-            LayerList(attentions_list) if attentions_list else None
-        )
+        self.resnets = ModuleList(resnets_list)
 
-    def __call__(
-        self, hidden_states: TensorValue, temb: TensorValue | None = None
-    ) -> TensorValue:
+        if attentions_list:
+            non_none_attentions = [
+                attn for attn in attentions_list if attn is not None
+            ]
+            if non_none_attentions:
+                self.attentions = ModuleList(non_none_attentions)
+                self.attention_indices = {
+                    i
+                    for i, attn in enumerate(attentions_list)
+                    if attn is not None
+                }
+            else:
+                self.attentions = None
+                self.attention_indices = set()
+        else:
+            self.attentions = None
+            self.attention_indices = set()
+
+    def forward(
+        self, hidden_states: Tensor, temb: Tensor | None = None
+    ) -> Tensor:
         """Apply MidBlock2D forward pass.
 
         Args:
@@ -493,9 +506,11 @@ class MidBlock2D(nn.Module):
         """
         hidden_states = self.resnets[0](hidden_states, temb)
 
+        attention_idx = 0
         for i in range(len(self.resnets) - 1):
-            if self.attentions is not None and self.attentions[i] is not None:
-                hidden_states = self.attentions[i](hidden_states)
+            if self.attentions is not None and i in self.attention_indices:
+                hidden_states = self.attentions[attention_idx](hidden_states)
+                attention_idx += 1
             hidden_states = self.resnets[i + 1](hidden_states, temb)
 
         return hidden_states
@@ -506,16 +521,16 @@ class DecoderOutput:
     r"""Output of decoding method.
 
     Args:
-        sample (`TensorValue` of shape `(batch_size, num_channels, height, width)`):
+        sample (`Tensor` of shape `(batch_size, num_channels, height, width)`):
             The decoded output sample from the last layer of the model.
     """
 
-    sample: TensorValue
-    commit_loss: TensorValue | None = None
+    sample: Tensor
+    commit_loss: Tensor | None = None
 
 
-class Decoder(nn.Module):
-    """VAE decoder for generating images from latent representations.
+class Decoder(Module[[Tensor], Tensor]):
+    """VAE decoder for generating images from latent representations using module_v3.
 
     This decoder progressively upsamples latent features through multiple
     decoder blocks, applying ResNet layers and attention mechanisms to
@@ -560,9 +575,9 @@ class Decoder(nn.Module):
         self.device = device
         self.dtype = dtype
 
-        self.post_quant_conv = None
+        self.post_quant_conv: Conv2d | None = None
         if use_post_quant_conv:
-            self.post_quant_conv = nn.Conv2d(
+            self.post_quant_conv = Conv2d(
                 kernel_size=1,
                 in_channels=in_channels,
                 out_channels=in_channels,
@@ -576,7 +591,7 @@ class Decoder(nn.Module):
                 permute=True,
             )
 
-        self.conv_in = nn.Conv2d(
+        self.conv_in = Conv2d(
             kernel_size=3,
             in_channels=in_channels,
             out_channels=block_out_channels[-1],
@@ -642,7 +657,7 @@ class Decoder(nn.Module):
 
             prev_output_channel = output_channel
 
-        self.up_blocks = LayerList(up_blocks_list)
+        self.up_blocks = ModuleList(up_blocks_list)
 
         if norm_type == "spatial":
             raise NotImplementedError("SpatialNorm not implemented in MAX VAE")
@@ -652,11 +667,9 @@ class Decoder(nn.Module):
                 num_channels=block_out_channels[0],
                 eps=1e-6,
                 affine=True,
-                device=device,
-                dtype=dtype,
             )
 
-        self.conv_out = nn.Conv2d(
+        self.conv_out = Conv2d(
             kernel_size=3,
             in_channels=block_out_channels[0],
             out_channels=out_channels,
@@ -670,9 +683,7 @@ class Decoder(nn.Module):
             permute=True,
         )
 
-    def __call__(
-        self, z: TensorValue, temb: TensorValue | None = None
-    ) -> TensorValue:
+    def forward(self, z: Tensor, temb: Tensor | None = None) -> Tensor:
         """Apply Decoder forward pass.
 
         Args:
@@ -692,7 +703,7 @@ class Decoder(nn.Module):
             sample = up_block(sample, temb)
 
         sample = self.conv_norm_out(sample)
-        sample = ops.silu(sample)
+        sample = F.silu(sample)
         sample = self.conv_out(sample)
 
         return sample
@@ -717,8 +728,8 @@ class Decoder(nn.Module):
         return (latent_type,)
 
 
-class AutoencoderKL(nn.Module):
-    r"""A VAE model with KL loss for encoding images into latents and decoding latent representations into images."""
+class AutoencoderKL(Module[[Tensor], Tensor]):
+    r"""A VAE model with KL loss for encoding images into latents and decoding latent representations into images using module_v3."""
 
     def __init__(
         self,
@@ -746,5 +757,14 @@ class AutoencoderKL(nn.Module):
             dtype=config.dtype,
         )
 
-    def __call__(self, *args, **kwargs):
-        pass
+    def forward(self, z: Tensor, temb: Tensor | None = None) -> Tensor:
+        """Apply AutoencoderKL forward pass (decoding only).
+
+        Args:
+            z: Input latent tensor of shape [N, C_latent, H_latent, W_latent].
+            temb: Optional time embedding tensor.
+
+        Returns:
+            Decoded image tensor of shape [N, C_out, H, W].
+        """
+        return self.decoder(z, temb)

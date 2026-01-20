@@ -13,78 +13,83 @@
 
 """Upsampling utilities for MAX framework."""
 
-import max.nn as nn
 from max.dtype import DType
-from max.experimental import tensor
-from max.graph import DeviceRef, TensorValue, ops
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
+from max.graph import DeviceRef, TensorValue, TensorValueLike
+from max.nn.module_v3 import Conv2d, Module
 
 
-class Interpolate2DNearest(nn.Module):
-    """2D nearest-neighbor upsampling module.
+def interpolate_2d_nearest(
+    x: TensorValueLike,
+    scale_factor: int = 2,
+) -> TensorValue:
+    """Upsamples a 2D tensor using nearest-neighbor interpolation.
 
-    This is a workaround implementation because MAX framework does not have
-    a native `interpolate` operation. The workaround uses reshape and broadcast
-    operations to achieve nearest-neighbor upsampling by a factor of 2.
+    This is a workaround implementation because MAX framework's ops.resize
+    does not support NEAREST mode (only BICUBIC is currently supported).
+    The workaround uses reshape and broadcast operations to achieve
+    nearest-neighbor upsampling by a factor of 2.
+
+    This function works in both Graph context and eager execution contexts,
+    compatible with module_v3 style.
 
     Note:
-        This workaround can be removed once MAX framework adds native interpolate support.
+        This workaround can be removed once ops.resize supports NEAREST mode.
+
+    Args:
+        x: Input tensor of shape [N, C, H, W] in NCHW format.
+            Can be Tensor or TensorValue.
+        scale_factor: Upsampling factor. Currently only 2 is supported.
+            Default: 2
+
+    Returns:
+        Upsampled tensor of shape [N, C, H*scale_factor, W*scale_factor].
+
+    Raises:
+        ValueError: If input tensor doesn't have rank 4.
+        NotImplementedError: If scale_factor is not 2.
     """
+    x = TensorValue(x)
 
-    def __init__(
-        self,
-        scale_factor: int = 2,
-        device: DeviceRef = None,
-        dtype: DType = None,
-    ):
-        """Initialize 2D nearest-neighbor interpolation module.
+    if x.rank != 4:
+        raise ValueError(f"Input tensor must have rank 4, got {x.rank}")
 
-        Args:
-            scale_factor: Upsampling factor (currently only 2 is supported).
-            device: Device reference for creating intermediate tensors.
-            dtype: Data type for intermediate tensors.
-        """
-        super().__init__()
-        if scale_factor != 2:
-            raise NotImplementedError(
-                f"Only scale_factor=2 is currently supported, got {scale_factor}"
-            )
-
-        self.scale_factor = scale_factor
-        self.device = device
-        self.dtype = dtype
-
-    def __call__(self, x: TensorValue) -> TensorValue:
-        """Upsample a 2D tensor using nearest-neighbor interpolation.
-
-        Args:
-            x: Input tensor of shape [N, C, H, W].
-
-        Returns:
-            Upsampled tensor of shape [N, C, H*scale_factor, W*scale_factor].
-        """
-        n, c, h, w = x.shape
-        target_shape = [n, c, h * self.scale_factor, w * self.scale_factor]
-
-        x_reshaped = ops.reshape(x, [n, c, h, 1, w, 1])
-
-        ones = tensor.Tensor.ones(
-            shape=(1, 1, 1, self.scale_factor, 1, self.scale_factor),
-            dtype=self.dtype,
-            device=self.device,
+    if scale_factor != 2:
+        raise NotImplementedError(
+            f"Only scale_factor=2 is currently supported, got {scale_factor}"
         )
-        x_expanded = x_reshaped * ones
 
-        x = ops.reshape(x_expanded, target_shape)
+    n, c, h, w = x.shape
+    target_shape = [n, c, h * scale_factor, w * scale_factor]
 
-        return x
+    # Reshape: [N, C, H, W] -> [N, C, H, 1, W, 1]
+    x_reshaped = F.reshape(x, [n, c, h, 1, w, 1])
+
+    ones_scalar = F.constant(1.0, dtype=x.dtype, device=x.device)
+    ones = F.broadcast_to(
+        ones_scalar,
+        [1, 1, 1, scale_factor, 1, scale_factor],
+    )
+
+    # Broadcast: [N, C, H, 1, W, 1] * [1, 1, 1, 2, 1, 2] -> [N, C, H, 2, W, 2]
+    x_expanded = F.mul(x_reshaped, ones)
+
+    # Reshape: [N, C, H, 2, W, 2] -> [N, C, H*2, W*2]
+    return F.reshape(x_expanded, target_shape)
 
 
-class Upsample2D(nn.Module):
-    """2D upsampling module with optional convolution.
+class Upsample2D(Module[[Tensor], Tensor]):
+    """2D upsampling module with optional convolution using module_v3.
 
     This module performs 2D upsampling using nearest-neighbor interpolation
-    (via Interpolate2DNearest workaround) followed by an optional convolution layer.
+    (via interpolate_2d_nearest function) followed by an optional convolution layer.
+
+    This is a module_v3-compatible version that uses Tensor instead of TensorValue
     """
+
+    conv: Conv2d | None
+    """Optional Conv2d layer applied after upsampling."""
 
     def __init__(
         self,
@@ -112,10 +117,9 @@ class Upsample2D(nn.Module):
             padding: Padding for the convolution.
             bias: Whether to use bias in the convolution.
             interpolate: Whether to perform interpolation upsampling.
-            device: Device reference.
-            dtype: Data type.
+            device: Device reference (optional in module_v3).
+            dtype: Data type (optional in module_v3).
         """
-        super().__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
         self.use_conv = use_conv
@@ -124,13 +128,6 @@ class Upsample2D(nn.Module):
         self.device = device
         self.dtype = dtype
 
-        self.interpolate_module = None
-        if interpolate:
-            self.interpolate_module = Interpolate2DNearest(
-                scale_factor=2, device=device, dtype=dtype
-            )
-
-        self.conv = None
         if use_conv_transpose:
             raise NotImplementedError(
                 "Upsample2D does not support use_conv_transpose=True yet."
@@ -138,7 +135,7 @@ class Upsample2D(nn.Module):
         elif use_conv:
             if kernel_size is None:
                 kernel_size = 3
-            self.conv = nn.Conv2d(
+            self.conv = Conv2d(
                 kernel_size=kernel_size,
                 in_channels=self.channels,
                 out_channels=self.out_channels,
@@ -149,8 +146,10 @@ class Upsample2D(nn.Module):
                 device=device,
                 permute=True,
             )
+        else:
+            self.conv = None
 
-    def __call__(self, x: TensorValue) -> TensorValue:
+    def forward(self, x: Tensor) -> Tensor:
         """Apply 2D upsampling with optional convolution.
 
         Args:
@@ -159,10 +158,10 @@ class Upsample2D(nn.Module):
         Returns:
             Upsampled tensor, optionally convolved.
         """
-        if self.interpolate_module is not None:
-            x = self.interpolate_module(x)
+        if self.interpolate:
+            x = interpolate_2d_nearest(x, scale_factor=2)
 
-        if self.use_conv:
+        if self.use_conv and self.conv is not None:
             x = self.conv(x)
 
         return x

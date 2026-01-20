@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.driver import CPU, Accelerator, Device
-from max.engine import InferenceSession, Model
-from max.graph import Graph
+from max.driver import Device
+from max.engine import Model
+from max.experimental import functional as F
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.max_model import MaxModel
@@ -41,24 +41,12 @@ class T5Model(MaxModel):
         self.load_model()
 
     def load_model(self) -> Model:
-        t5 = T5EncoderModel(self.config)
-
-        if self.config.device.is_cpu():
-            session = InferenceSession([CPU()])
-        else:
-            session = InferenceSession([Accelerator()])
         state_dict = {key: value.data() for key, value in self.weights.items()}
-        t5.load_state_dict(state_dict)
-        with Graph("t5_encoder_model", input_types=t5.input_types()) as graph:
-            outputs = t5(
-                input_ids=graph.inputs[0],
-                attention_mask=None,
-            )
-            graph.output(outputs)
-            compiled_graph = graph
-        self.session = session.load(
-            compiled_graph, weights_registry=t5.state_dict()
-        )
+        with F.lazy():
+            t5 = T5EncoderModel(self.config)
+            t5.to(self.devices[0])
+        self.model = t5.compile(*t5.input_types(), weights=state_dict)
+        return self.model
 
     def __call__(self, *args, **kwargs):
-        return self.session.execute(*args, **kwargs)
+        return self.model(*args, **kwargs)

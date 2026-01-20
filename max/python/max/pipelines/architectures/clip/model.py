@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.driver import CPU, Accelerator, Device
-from max.engine import InferenceSession, Model
-from max.graph import Graph
+from max.driver import Device
+from max.engine import Model
+from max.experimental import functional as F
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.max_model import MaxModel
@@ -46,25 +46,12 @@ class ClipModel(MaxModel):
         self.load_model()
 
     def load_model(self) -> Model:
-        clip = CLIPTextModel(self.config)
-
-        if self.config.device.is_cpu():
-            session = InferenceSession([CPU()])
-        else:
-            session = InferenceSession([Accelerator()])
         state_dict = {key: value.data() for key, value in self.weights.items()}
-        clip.load_state_dict(state_dict)
-        with Graph("clip_text_model", input_types=clip.input_types()) as graph:
-            outputs = clip(
-                *graph.inputs,
-                attention_mask=None,
-                position_ids=None,
-            )
-            graph.output(*outputs)
-            compiled_graph = graph
-        self.session = session.load(
-            compiled_graph, weights_registry=clip.state_dict()
-        )
+        with F.lazy():
+            clip = CLIPTextModel(self.config)
+            clip.to(self.devices[0])
+        self.model = clip.compile(*clip.input_types(), weights=state_dict)
+        return self.model
 
     def __call__(self, *args, **kwargs):
-        return self.session.execute(*args, **kwargs)
+        return self.model(*args, **kwargs)

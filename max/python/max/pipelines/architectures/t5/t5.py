@@ -12,11 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 import math
+from collections.abc import Iterable
 
-import max.nn as nn
+from max.driver import Device
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue, Weight, ops
-from max.nn import Module
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
+from max.graph import TensorType
+from max.nn.module_v3 import Embedding, Linear, Module
+from max.nn.module_v3.sequential import ModuleList
 
 from .model_config import T5Config
 
@@ -26,7 +30,6 @@ class T5LayerNorm(Module):
         self,
         hidden_size: int,
         eps: float = 1e-6,
-        device: DeviceRef = DeviceRef.CPU(),
         dtype: DType = DType.float32,
     ):
         """Construct a layernorm module in the T5 style. No bias and no subtraction of mean.
@@ -34,15 +37,14 @@ class T5LayerNorm(Module):
         Args:
             hidden_size: Hidden size.
             eps: Epsilon.
-            device: Device to place the module on.
             dtype: Data type for the module.
         """
         super().__init__()
-        self.weight = Weight("weight", dtype, (hidden_size,), device=device)
+        self.weight = Tensor.ones([hidden_size])
         self.variance_epsilon = eps
         self.dtype = dtype
 
-    def __call__(self, hidden_states: TensorValue) -> TensorValue:
+    def forward(self, hidden_states: Tensor) -> Tensor:
         """Process hidden states through the T5 layer norm.
 
         Args:
@@ -56,15 +58,15 @@ class T5LayerNorm(Module):
         # w/o mean and there is no bias. Additionally we want to make sure that the accumulation for
         # half-precision inputs is done in fp32
 
-        hidden_states_f32 = ops.cast(hidden_states, DType.float32)
-        variance = ops.mean(ops.pow(hidden_states_f32, 2), axis=-1)
-        hidden_states = hidden_states * ops.rsqrt(
+        hidden_states_f32 = F.cast(hidden_states, DType.float32)
+        variance = F.mean(F.pow(hidden_states_f32, 2), axis=-1)
+        hidden_states = hidden_states * F.rsqrt(
             variance + self.variance_epsilon
         )
 
         # convert into half-precision if necessary
         if self.dtype in [DType.float16, DType.bfloat16]:
-            hidden_states = ops.cast(hidden_states, self.dtype)
+            hidden_states = F.cast(hidden_states, self.dtype)
 
         return self.weight * hidden_states
 
@@ -80,32 +82,28 @@ class T5DenseActDense(Module):
             config: T5 configuration for feed-forward dimensions and dtype.
         """
         super().__init__()
-        self.wi = nn.Linear(
+        self.wi = Linear(
             config.d_model,
             config.d_ff,
-            has_bias=False,
-            device=config.device,
-            dtype=config.dtype,
+            bias=False,
         )
-        self.wo = nn.Linear(
+        self.wo = Linear(
             config.d_ff,
             config.d_model,
-            has_bias=False,
-            device=config.device,
-            dtype=config.dtype,
+            bias=False,
         )
         self.act_fn = (
             lambda x: 0.5
             * x
             * (
                 1.0
-                + ops.tanh(
-                    math.sqrt(2.0 / math.pi) * (x + 0.044715 * ops.pow(x, 3.0))
+                + F.tanh(
+                    math.sqrt(2.0 / math.pi) * (x + 0.044715 * F.pow(x, 3.0))
                 )
             )
         )
 
-    def __call__(self, hidden_states: TensorValue) -> TensorValue:
+    def forward(self, hidden_states: Tensor) -> Tensor:
         """Process hidden states through the dense-activation-dense block.
 
         Args:
@@ -131,39 +129,33 @@ class T5DenseGatedActDense(Module):
             config: T5 configuration for feed-forward dimensions and dtype.
         """
         super().__init__()
-        self.wi_0 = nn.Linear(
+        self.wi_0 = Linear(
             config.d_model,
             config.d_ff,
-            has_bias=False,
-            device=config.device,
-            dtype=config.dtype,
+            bias=False,
         )
-        self.wi_1 = nn.Linear(
+        self.wi_1 = Linear(
             config.d_model,
             config.d_ff,
-            has_bias=False,
-            device=config.device,
-            dtype=config.dtype,
+            bias=False,
         )
-        self.wo = nn.Linear(
+        self.wo = Linear(
             config.d_ff,
             config.d_model,
-            has_bias=False,
-            device=config.device,
-            dtype=config.dtype,
+            bias=False,
         )
         self.act_fn = (
             lambda x: 0.5
             * x
             * (
                 1.0
-                + ops.tanh(
-                    math.sqrt(2.0 / math.pi) * (x + 0.044715 * ops.pow(x, 3.0))
+                + F.tanh(
+                    math.sqrt(2.0 / math.pi) * (x + 0.044715 * F.pow(x, 3.0))
                 )
             )
         )
 
-    def __call__(self, hidden_states: TensorValue) -> TensorValue:
+    def forward(self, hidden_states: Tensor) -> Tensor:
         """Process hidden states through the dense-gated-activation-dense block.
 
         Args:
@@ -198,11 +190,10 @@ class T5LayerFF(Module):
         self.layer_norm = T5LayerNorm(
             config.d_model,
             eps=config.layer_norm_epsilon,
-            device=config.device,
             dtype=config.dtype,
         )
 
-    def __call__(self, hidden_states: TensorValue) -> TensorValue:
+    def forward(self, hidden_states: Tensor) -> Tensor:
         """Process hidden states through the feed-forward layer.
 
         Args:
@@ -248,50 +239,40 @@ class T5Attention(Module):
         self.device = config.device
         self.dtype = config.dtype
 
-        self.q = nn.Linear(
+        self.q = Linear(
             self.d_model,
             self.inner_dim,
-            has_bias=False,
-            device=config.device,
-            dtype=config.dtype,
+            bias=False,
         )
-        self.k = nn.Linear(
+        self.k = Linear(
             self.d_model,
             self.inner_dim,
-            has_bias=False,
-            device=config.device,
-            dtype=config.dtype,
+            bias=False,
         )
-        self.v = nn.Linear(
+        self.v = Linear(
             self.d_model,
             self.inner_dim,
-            has_bias=False,
-            device=config.device,
-            dtype=config.dtype,
+            bias=False,
         )
-        self.o = nn.Linear(
+        self.o = Linear(
             self.inner_dim,
             self.d_model,
-            has_bias=False,
-            device=config.device,
-            dtype=config.dtype,
+            bias=False,
         )
 
         if self.has_relative_attention_bias:
-            self.relative_attention_bias = nn.Embedding(
+            self.relative_attention_bias = Embedding(
                 self.relative_attention_num_buckets,
-                self.n_heads,
-                device=config.device,
-                dtype=config.dtype,
+                dim=self.n_heads,
             )
 
     def _relative_position_bucket(
         self,
-        relative_position: TensorValue,
+        relative_position: Tensor,
         bidirectional: bool = True,
         num_buckets: int = 32,
         max_distance: int = 128,
-    ) -> TensorValue:
+    ) -> Tensor:
         """Compute relative position bucket.
 
         Adapted from Mesh Tensorflow:
@@ -306,35 +287,39 @@ class T5Attention(Module):
         Returns:
             TensorValue: Relative position buckets.
         """
-        relative_buckets = ops.constant(0, DType.int32, self.device)
+        relative_buckets = Tensor.constant(
+            0, dtype=DType.int32, device=relative_position.device
+        )
 
         if bidirectional:
             num_buckets = num_buckets // 2
-            is_positive = ops.greater(relative_position, 0)
+            is_positive = F.greater(relative_position, 0)
             relative_buckets = relative_buckets + (
-                is_positive.cast(DType.int32) * num_buckets
+                F.cast(is_positive, DType.int32) * num_buckets
             )
-            relative_position = ops.abs(relative_position)
+            relative_position = F.abs(relative_position)
         else:
-            relative_position = -ops.min(relative_position, 0)
+            relative_position = -F.min(relative_position, 0)
 
         max_exact = num_buckets // 2
-        is_small = ops.greater(max_exact, relative_position)
+        is_small = F.greater(max_exact, relative_position)
 
         scale = (num_buckets - max_exact) / math.log(max_distance / max_exact)
-        rel_pos_float = relative_position.cast(DType.float32)
-        val_log = ops.log(rel_pos_float / float(max_exact))
-        relative_position_if_large = max_exact + (val_log * scale).cast(
-            DType.int32
+        rel_pos_float = F.cast(relative_position, DType.float32)
+        val_log = F.log(rel_pos_float / float(max_exact))
+        relative_position_if_large = max_exact + F.cast(
+            val_log * scale, DType.int32
         )
-        relative_position_if_large = ops.min(
+        relative_position_if_large = F.min(
             relative_position_if_large, num_buckets - 1
         )
-        return relative_buckets + ops.where(
+        return relative_buckets + F.where(
             is_small, relative_position, relative_position_if_large
         )
 
-    def compute_bias(self, query_length: int, key_length: int) -> TensorValue:
+    def compute_bias(
+        self, query_length: int, key_length: int, device: Device
+    ) -> Tensor:
         """Compute relative attention bias.
 
         Args:
@@ -344,15 +329,15 @@ class T5Attention(Module):
         Returns:
             TensorValue: Relative attention bias tensor.
         """
-        context_position = ops.range(
-            0, query_length, step=1, dtype=DType.int32, device=self.device
+        context_position = F.arange(
+            0, query_length, step=1, dtype=DType.int32, device=device
         )
-        context_position = ops.unsqueeze(context_position, 1)
+        context_position = F.unsqueeze(context_position, 1)
 
-        memory_position = ops.range(
-            0, key_length, step=1, dtype=DType.int32, device=self.device
+        memory_position = F.arange(
+            0, key_length, step=1, dtype=DType.int32, device=device
         )
-        memory_position = ops.unsqueeze(memory_position, 0)
+        memory_position = F.unsqueeze(memory_position, 0)
 
         relative_position = memory_position - context_position
         relative_position_bucket = self._relative_position_bucket(
@@ -362,23 +347,23 @@ class T5Attention(Module):
             max_distance=self.relative_attention_max_distance,
         )
         values = self.relative_attention_bias(relative_position_bucket)
-        values = ops.permute(values, (2, 0, 1))
-        values = ops.unsqueeze(values, 0)
+        values = F.permute(values, (2, 0, 1))
+        values = F.unsqueeze(values, 0)
         return values
 
-    def __call__(
+    def forward(
         self,
-        hidden_states: TensorValue,
-        mask: TensorValue | None = None,
-        key_value_states: TensorValue | None = None,
-        position_bias: TensorValue | None = None,
-        past_key_values: TensorValue | None = None,
-        layer_head_mask: TensorValue | None = None,
+        hidden_states: Tensor,
+        mask: Tensor | None = None,
+        key_value_states: Tensor | None = None,
+        position_bias: Tensor | None = None,
+        past_key_values: Tensor | None = None,
+        layer_head_mask: Tensor | None = None,
         query_length: int | None = None,
         use_cache: bool = False,
         output_attentions: bool = False,
-        cache_position: TensorValue | None = None,
-    ) -> tuple[TensorValue, TensorValue]:
+        cache_position: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor]:
         """Process hidden states through the attention layer.
 
         Args:
@@ -414,27 +399,29 @@ class T5Attention(Module):
         value = self.v(hidden_states)
 
         # Reshape to (batch, seq, heads, head_dim)
-        query = ops.reshape(
+        query = F.reshape(
             query,
             (batch_size, seq_length, self.n_heads, self.key_value_proj_dim),
         )
-        key = ops.reshape(
+        key = F.reshape(
             key, (batch_size, seq_length, self.n_heads, self.key_value_proj_dim)
         )
-        value = ops.reshape(
+        value = F.reshape(
             value,
             (batch_size, seq_length, self.n_heads, self.key_value_proj_dim),
         )
 
         # Transpose to (batch, heads, seq, head_dim)
-        query = ops.permute(query, (0, 2, 1, 3))
-        key = ops.permute(key, (0, 2, 1, 3))
-        value = ops.permute(value, (0, 2, 1, 3))
+        query = F.permute(query, (0, 2, 1, 3))
+        key = F.permute(key, (0, 2, 1, 3))
+        value = F.permute(value, (0, 2, 1, 3))
 
-        scores = ops.matmul(query, ops.permute(key, (0, 1, 3, 2)))
+        scores = F.matmul(query, F.permute(key, (0, 1, 3, 2)))
 
         if position_bias is None and self.has_relative_attention_bias:
-            position_bias = self.compute_bias(seq_length, seq_length)
+            position_bias = self.compute_bias(
+                seq_length, seq_length, hidden_states.device
+            )
 
         if position_bias is not None:
             scores = scores + position_bias
@@ -442,15 +429,15 @@ class T5Attention(Module):
         if mask is not None:
             scores = scores + mask
 
-        attn_weights = ops.softmax(ops.cast(scores, DType.float32), axis=-1)
-        attn_weights = ops.cast(attn_weights, self.dtype)
+        attn_weights = F.softmax(F.cast(scores, DType.float32), axis=-1)
+        attn_weights = F.cast(attn_weights, self.dtype)
 
         if layer_head_mask is not None:
             attn_weights = attn_weights * layer_head_mask
 
-        attn_output = ops.matmul(attn_weights, value)
-        attn_output = ops.permute(attn_output, (0, 2, 1, 3))
-        attn_output = ops.reshape(
+        attn_output = F.matmul(attn_weights, value)
+        attn_output = F.permute(attn_output, (0, 2, 1, 3))
+        attn_output = F.reshape(
             attn_output, (batch_size, seq_length, self.inner_dim)
         )
         attn_output = self.o(attn_output)
@@ -484,21 +471,20 @@ class T5LayerSelfAttention(Module):
         self.layer_norm = T5LayerNorm(
             config.d_model,
             eps=config.layer_norm_epsilon,
-            device=config.device,
             dtype=config.dtype,
         )
 
-    def __call__(
+    def forward(
         self,
-        hidden_states: TensorValue,
-        attention_mask: TensorValue | None = None,
-        position_bias: TensorValue | None = None,
-        layer_head_mask: TensorValue | None = None,
-        past_key_values: TensorValue | None = None,
+        hidden_states: Tensor,
+        attention_mask: Tensor | None = None,
+        position_bias: Tensor | None = None,
+        layer_head_mask: Tensor | None = None,
+        past_key_values: Tensor | None = None,
         use_cache: bool = False,
         output_attentions: bool = False,
-        cache_position: TensorValue | None = None,
-    ) -> TensorValue:
+        cache_position: Tensor | None = None,
+    ) -> Tensor:
         """Process hidden states through the self-attention layer.
 
         Args:
@@ -560,23 +546,23 @@ class T5Block(Module):
             )
         )
         layers.append(T5LayerFF(config))
-        self.layer = nn.LayerList(layers)
+        self.layer = ModuleList(layers)
 
-    def __call__(
+    def forward(
         self,
-        hidden_states: TensorValue,
-        attention_mask: TensorValue | None = None,
-        position_bias: TensorValue | None = None,
-        encoder_hidden_states: TensorValue | None = None,
-        encoder_attention_mask: TensorValue | None = None,
-        encoder_decoder_position_bias: TensorValue | None = None,
-        cross_attn_layer_head_mask: TensorValue | None = None,
-        layer_head_mask: TensorValue | None = None,
-        past_key_values: TensorValue | None = None,
+        hidden_states: Tensor,
+        attention_mask: Tensor | None = None,
+        position_bias: Tensor | None = None,
+        encoder_hidden_states: Tensor | None = None,
+        encoder_attention_mask: Tensor | None = None,
+        encoder_decoder_position_bias: Tensor | None = None,
+        cross_attn_layer_head_mask: Tensor | None = None,
+        layer_head_mask: Tensor | None = None,
+        past_key_values: Tensor | None = None,
         use_cache: bool = False,
         output_attentions: bool = False,
-        cache_position: TensorValue | None = None,
-    ) -> tuple[TensorValue, TensorValue]:
+        cache_position: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor]:
         """Process hidden states through the T5 block.
 
         Args:
@@ -611,8 +597,8 @@ class T5Block(Module):
 
         if hidden_states.dtype == DType.float16:
             clamp_value = DType.finfo(hidden_states.dtype).max - 1000
-            hidden_states = nn.clamp(
-                hidden_states, min=-clamp_value, max=clamp_value
+            hidden_states = hidden_states.clip(
+                min=-clamp_value, max=clamp_value
             )
 
         do_cross_attention = (
@@ -626,8 +612,8 @@ class T5Block(Module):
         hidden_states = self.layer[-1](hidden_states)
         if hidden_states.dtype == DType.float16:
             clamp_value = DType.finfo(hidden_states.dtype).max - 1000
-            hidden_states = nn.clamp(
-                hidden_states, min=-clamp_value, max=clamp_value
+            hidden_states = hidden_states.clip(
+                min=-clamp_value, max=clamp_value
             )
 
         outputs = (hidden_states,)
@@ -638,7 +624,7 @@ class T5Stack(Module):
     def __init__(
         self,
         config: T5Config,
-        embed_tokens: nn.Embedding | None = None,
+        embed_tokens: Embedding | None = None,
     ):
         """Construct a T5 stack.
 
@@ -651,7 +637,7 @@ class T5Stack(Module):
         self.embed_tokens = embed_tokens
         self.is_decoder = config.is_decoder
 
-        self.block = nn.LayerList(
+        self.block = ModuleList(
             [
                 T5Block(
                     config,
@@ -664,28 +650,40 @@ class T5Stack(Module):
         self.final_layer_norm = T5LayerNorm(
             config.d_model,
             eps=config.layer_norm_epsilon,
-            device=config.device,
             dtype=config.dtype,
         )
         self.dropout = config.dropout_rate
         self.device = config.device
         self.dtype = config.dtype
 
-    def __call__(
+    @property
+    def children(self) -> Iterable[tuple[str, Module[..., object]]]:
+        """Iterate child modules, excluding shared embeddings.
+
+        The shared embedding module is registered on T5EncoderModel as
+        ``shared``. Avoid registering it twice under ``encoder.embed_tokens``.
+        """
+        for name, value in vars(self).items():
+            if name == "embed_tokens":
+                continue
+            if isinstance(value, Module):
+                yield name, value
+
+    def forward(
         self,
-        input_ids: TensorValue | None = None,
-        attention_mask: TensorValue | None = None,
-        inputs_embeds: TensorValue | None = None,
-        encoder_hidden_states: TensorValue | None = None,
-        encoder_attention_mask: TensorValue | None = None,
-        encoder_decoder_position_bias: TensorValue | None = None,
-        cross_attn_layer_head_mask: TensorValue | None = None,
-        layer_head_mask: TensorValue | None = None,
-        past_key_values: TensorValue | None = None,
+        input_ids: Tensor | None = None,
+        attention_mask: Tensor | None = None,
+        inputs_embeds: Tensor | None = None,
+        encoder_hidden_states: Tensor | None = None,
+        encoder_attention_mask: Tensor | None = None,
+        encoder_decoder_position_bias: Tensor | None = None,
+        cross_attn_layer_head_mask: Tensor | None = None,
+        layer_head_mask: Tensor | None = None,
+        past_key_values: Tensor | None = None,
         use_cache: bool = False,
         output_attentions: bool = False,
-        cache_position: TensorValue | None = None,
-    ) -> TensorValue:
+        cache_position: Tensor | None = None,
+    ) -> Tensor:
         """Process input through the T5 stack.
 
         Args:
@@ -714,11 +712,15 @@ class T5Stack(Module):
             else self.config.output_attentions
         )
         if input_ids is not None:
+            if input_ids.rank == 1:
+                input_ids = F.unsqueeze(input_ids, 0)
             inputs_embeds = self.embed_tokens(input_ids)
         elif inputs_embeds is None:
             raise ValueError(
                 "You have to specify either input_ids or inputs_embeds"
             )
+        elif inputs_embeds.rank == 2:
+            inputs_embeds = F.unsqueeze(inputs_embeds, 0)
 
         if self.is_decoder or use_cache:
             raise NotImplementedError("T5 decoder is not implemented yet.")
@@ -726,11 +728,23 @@ class T5Stack(Module):
         hidden_states = inputs_embeds
 
         if attention_mask is not None:
+            if attention_mask.rank == 1:
+                attention_mask = F.unsqueeze(attention_mask, 0)
+            mask_multiplier = F.constant(
+                DType.finfo(hidden_states.dtype).min,
+                dtype=hidden_states.dtype,
+                device=hidden_states.device,
+            )
             causal_mask = (
-                1.0 - ops.cast(attention_mask, hidden_states.dtype)
-            ) * DType.finfo(hidden_states.dtype).min
-            causal_mask = ops.unsqueeze(causal_mask, 1)
-            causal_mask = ops.unsqueeze(causal_mask, 1)
+                F.constant(
+                    1.0,
+                    dtype=hidden_states.dtype,
+                    device=hidden_states.device,
+                )
+                - F.cast(attention_mask, hidden_states.dtype)
+            ) * mask_multiplier
+            causal_mask = F.unsqueeze(causal_mask, 1)
+            causal_mask = F.unsqueeze(causal_mask, 1)
         else:
             causal_mask = None
         encoder_extended_attention_mask = None
@@ -776,11 +790,9 @@ class T5EncoderModel(Module):
         config.dense_act_fn = act_info[-1]
         config.is_gated_act = act_info[0] == "gated"
 
-        self.shared = nn.Embedding(
+        self.shared = Embedding(
             config.vocab_size,
-            config.d_model,
-            device=config.device,
-            dtype=config.dtype,
+            dim=config.d_model,
         )
 
         encoder_config = config
@@ -806,11 +818,11 @@ class T5EncoderModel(Module):
             ),
         )
 
-    def __call__(
+    def forward(
         self,
-        input_ids: TensorValue | None = None,
-        attention_mask: TensorValue | None = None,
-    ) -> TensorValue:
+        input_ids: Tensor | None = None,
+        attention_mask: Tensor | None = None,
+    ) -> Tensor:
         """Process input through the T5 encoder model.
 
         Args:

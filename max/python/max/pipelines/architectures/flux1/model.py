@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.driver import CPU, Accelerator, Device
-from max.engine import InferenceSession, Model
-from max.graph import Graph
+from max.driver import Device
+from max.engine import Model
+from max.experimental import functional as F
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.max_model import MaxModel
@@ -47,31 +47,13 @@ class Flux1Model(MaxModel):
         self.load_model()
 
     def load_model(self) -> Model:
-        flux = FluxTransformer2DModel(self.config)
-
-        if self.config.device.is_cpu():
-            session = InferenceSession([CPU()])
-        else:
-            session = InferenceSession([Accelerator()])
         state_dict = {key: value.data() for key, value in self.weights.items()}
         state_dict = convert_safetensor_state_dict(state_dict)
-        flux.load_state_dict(state_dict)
-        with Graph(
-            "flux_transformer_2d_model", input_types=flux.input_types()
-        ) as graph:
-            outputs = flux(
-                *graph.inputs,
-                joint_attention_kwargs={},
-                controlnet_block_samples=None,
-                controlnet_single_block_samples=None,
-                return_dict=False,
-                controlnet_blocks_repeat=False,
-            )
-            graph.output(*outputs)
-            compiled_graph = graph
-        self.session = session.load(
-            compiled_graph, weights_registry=flux.state_dict()
-        )
+        with F.lazy():
+            flux = FluxTransformer2DModel(self.config)
+            flux.to(self.devices[0])
+        self.model = flux.compile(*flux.input_types(), weights=state_dict)
+        return self.model
 
     def __call__(self, *args, **kwargs):
-        return self.session.execute(*args, **kwargs)
+        return self.model(*args, **kwargs)

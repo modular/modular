@@ -11,20 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import max.nn as nn
-from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
+from max.nn.module_v3 import Linear, Module
 
 
-class GELU(nn.Module):
+class GELU(Module):
     def __init__(
         self,
         dim_in: int,
         dim_out: int,
         approximate: str = "none",
         bias: bool = True,
-        device: DeviceRef = DeviceRef.CPU(),
-        dtype: DType = DType.bfloat16,
     ):
         """Initialize GELU activation layer with linear projection.
 
@@ -33,16 +31,12 @@ class GELU(nn.Module):
             dim_out: Output dimension.
             approximate: Approximation type for GELU ("none" or "tanh").
             bias: Whether to include bias in the linear projection.
-            device: Device to place the layer on.
-            dtype: Data type for the layer.
         """
         super().__init__()
-        self.proj = nn.Linear(
-            dim_in, dim_out, has_bias=bias, dtype=dtype, device=device
-        )
+        self.proj = Linear(dim_in, dim_out, bias=bias)
         self.approximate = approximate
 
-    def __call__(self, hidden_states: TensorValue) -> TensorValue:
+    def forward(self, hidden_states: Tensor) -> Tensor:
         """Apply GELU activation to the input.
 
         Args:
@@ -52,5 +46,5 @@ class GELU(nn.Module):
             Output tensor after linear projection and GELU activation.
         """
         hidden_states = self.proj(hidden_states)
-        hidden_states = ops.gelu(hidden_states, approximate=self.approximate)
+        hidden_states = F.gelu(hidden_states, approximate=self.approximate)
         return hidden_states
