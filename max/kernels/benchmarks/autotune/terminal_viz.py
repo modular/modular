@@ -80,9 +80,16 @@ def get_display_df(
     # Build display DataFrame
     display_df = spec_df[pivot_cols].copy() if pivot_cols else pd.DataFrame()
 
-    # Time: "met (s)" is seconds, legacy "met (ms)" was also seconds (mislabeled)
-    time_col = "met (s)" if "met (s)" in merged_df.columns else "met (ms)"
-    time_ms = merged_df[time_col] * 1000
+    # Time: "met (s)" is in seconds, "met (ms)" is in milliseconds (fixed as of Dec 2025)
+    if "met (s)" in merged_df.columns:
+        # Values are in seconds, convert to milliseconds
+        time_ms = merged_df["met (s)"] * 1000
+    elif "met (ms)" in merged_df.columns:
+        # Values are already in milliseconds (no conversion needed)
+        time_ms = merged_df["met (ms)"]
+    else:
+        time_ms = pd.Series([0])
+
     display_df["time_ms"] = time_ms
     display_df["time"] = time_ms.apply(format_time)
 
