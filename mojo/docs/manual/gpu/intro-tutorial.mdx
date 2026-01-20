@@ -317,27 +317,19 @@ information on Mojo function arguments and the
 [Parameters](/mojo/manual/parameters) section for more information on Mojo
 compile-time parameters and metaprogramming.)
 
-:::note
+:::note API variants
 
-`DeviceContext` also includes
-[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function)
-and
-[`compile_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#compile_function)
-methods. However, these methods currently don't typecheck the arguments to the
-compiled kernel function, which can lead to obscure run-time errors if the
-argument ordering, types, or count doesn't match the kernel function's
-definition. Additionally, these methods currently have known issues with Apple
-silicon GPUs.
+The `compile_function_unchecked()` and `enqueue_function_unchecked()` methods
+are deprecated and will be removed in a future release because they don't
+perform compile-time type checking of the kernel function arguments. You'll
+encounter run-time errors if the values you pass don't conform to the expected
+argument types.
 
-For compile-time typechecking, we recommend that you use the
-`enqueue_function()` and `compile_function()` methods, which
-also work correctly on Apple silicon GPUs.
-
-Note that `enqueue_function()` and `compile_function()`
-currently require the kernel function to be provided *twice* as parameters. This
-requirement will be removed in a future API update, when typechecking will
-become the default behavior for both `enqueue_function()` and
-`compile_function()`.
+The `compile_function_experimental()` and `enqueue_function_experimental()`
+methods perform compile-time type checking but require the kernel function as a
+parameter only once instead of twice. Once we verify these APIs work correctly,
+we'll rename them to `compile_function()` and `enqueue_function()` to make
+type-checking the default behavior.
 
 :::
 

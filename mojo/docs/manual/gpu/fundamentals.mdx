@@ -287,7 +287,7 @@ method. For example:
 
 ```mojo
 # Enqueue the print_threads() kernel function
-ctx.enqueue_function_experimental[print_threads](
+ctx.enqueue_function[print_threads, print_threads](
     grid_dim=(2, 2, 1),   # 2x2x1 blocks per grid
     block_dim=(4, 4, 2),  # 4x4x2 threads per block
 )
@@ -374,7 +374,7 @@ def main():
         # Initialize GPU context for device 0 (default GPU device).
         ctx = DeviceContext()
 
-        ctx.enqueue_function_experimental[print_threads](
+        ctx.enqueue_function[print_threads, print_threads](
             grid_dim=(2, 2, 1),  # 2x2x1 blocks per grid
             block_dim=(4, 4, 2),  # 4x4x2 threads per block
         )
@@ -672,7 +672,7 @@ demonstrated this pattern:
 
 ```mojo title="scalar_add.mojo"
 ...
-scalar_add_kernel = ctx.compile_function_experimental[scalar_add]()
+scalar_add_kernel = ctx.compile_function[scalar_add, scalar_add]()
 
 ctx.enqueue_function(
     scalar_add_kernel,
@@ -697,23 +697,19 @@ Refer to the [Multidimensional grids and thread
 organization](#multidimensional-grids-and-thread-organization) section for more
 information on grid and thread block dimensions.
 
-:::note
+:::note API variants
 
-The current implementations of
-[`compile_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#compile_function)
-and
-[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function)
-don't typecheck the arguments to the compiled kernel function, which can lead
-to obscure run-time errors if the argument ordering, types, or count doesn't
-match the kernel function's definition. Additionally, these methods currently
-have known issues with Apple silicon GPUs.
+The `compile_function_unchecked()` and `enqueue_function_unchecked()` methods
+are deprecated and will be removed in a future release because they don't
+perform compile-time type checking of the kernel function arguments. You'll
+encounter run-time errors if the values you pass don't conform to the expected
+argument types.
 
-For compile-time typechecking, we recommend that you use the
-`compile_function()` and `enqueue_function()` methods, which
-also work correctly on Apple silicon GPUs.
-
-Note that `compile_function()` requires the kernel function to be provided
-*twice* as parameters to enable compile-time typechecking of kernel arguments.
+The `compile_function_experimental()` and `enqueue_function_experimental()`
+methods perform compile-time type checking but require the kernel function as a
+parameter only once instead of twice. Once we verify these APIs work correctly,
+we'll rename them to `compile_function()` and `enqueue_function()` to make
+type-checking the default behavior.
 
 :::
 
@@ -729,7 +725,7 @@ shown above (note that the kernel function is provided as a compile-time
 parameter in this case):
 
 ```mojo
-ctx.enqueue_function_experimental[scalar_add](
+ctx.enqueue_function[scalar_add, scalar_add](
     device_buffer,
     num_elements,
     Float32(20.0),

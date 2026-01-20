@@ -16,8 +16,7 @@
 
 from gpu import thread_idx
 from gpu.host import DeviceContext
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
+from layout import Layout, LayoutTensor
 from sys import has_accelerator
 
 comptime VECTOR_WIDTH = 10
@@ -72,7 +71,7 @@ def main():
     _ = right_buffer.enqueue_fill(1)
 
     # Launch GPU kernel
-    ctx.enqueue_function_experimental[vector_addition](
+    ctx.enqueue_function[vector_addition, vector_addition](
         left_tensor,
         right_tensor,
         output_tensor,
