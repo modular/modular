@@ -147,14 +147,12 @@ class ZImageSingleStreamAttention(nn.Module):
             return x_out.cast(x_in.dtype)
 
         if freqs_cis is not None:
-            # For graph compilation, use fixed batch_size=1 and known heads/head_dim
-            # S (sequence length) comes from the reshaped query which has shape (B, S, H, D)
-            # We use symbolic S from reshape, but H and D are known Python ints
+            # Apply RoPE using the actual batch size and sequence length from the tensors
             query = apply_rotary_emb(
-                query, freqs_cis, 1, query.shape[1], self.heads, self.head_dim
+                query, freqs_cis, B, S, self.heads, self.head_dim
             )
             key = apply_rotary_emb(
-                key, freqs_cis, 1, key.shape[1], self.heads, self.head_dim
+                key, freqs_cis, B, S, self.heads, self.head_dim
             )
 
         # Compute joint attention
@@ -511,19 +509,17 @@ class ZImageTransformer2DModel(nn.Module):
         t: Tensor,
         cap_feats: Tensor,
     ):
-        """Graph-compilable forward pass for batch_size=1.
-
-        Args:
-            x: Image latent tensor of shape (C, F_dim, H_dim, W_dim)
-            t: Timestep tensor of shape (1,)
-            cap_feats: Caption features tensor of shape (cap_seq_len, hidden_dim)
-        """
-        # Use fixed shape parameters from class attributes
-        C = self._compile_C
-        F_dim = self._compile_F_dim
-        H_dim = self._compile_H_dim
-        W_dim = self._compile_W_dim
         cap_seq_len = self._compile_cap_seq_len
+
+        B = x.shape[0] if len(x.shape) == 5 else 1
+        device = x.device
+
+        # Ensure x is (B, C, F, H, W)
+        if len(x.shape) == 4:
+            x = x.unsqueeze(0)
+            B = 1
+
+        C, F_dim, H_dim, W_dim = x.shape[1], x.shape[2], x.shape[3], x.shape[4]
 
         patch_size: int = 2
         f_patch_size: int = 1
@@ -540,10 +536,10 @@ class ZImageTransformer2DModel(nn.Module):
         x_size = (F_dim, H_dim, W_dim)
         F_tokens, H_tokens, W_tokens = F_dim // pF, H_dim // pH, W_dim // pW
 
-        # Reshape to patches: (C, F, H, W) -> (F_tokens * H_tokens * W_tokens, pF * pH * pW * C)
-        x = x.reshape((C, F_tokens, pF, H_tokens, pH, W_tokens, pW))
-        x = x.permute((1, 3, 5, 2, 4, 6, 0)).reshape(
-            (F_tokens * H_tokens * W_tokens, pF * pH * pW * C)
+        # Reshape to patches: (B, C, F, H, W) -> (B, F_tokens * H_tokens * W_tokens, pF * pH * pW * C)
+        x = x.reshape((B, C, F_tokens, pF, H_tokens, pH, W_tokens, pW))
+        x = x.permute((0, 2, 4, 6, 3, 5, 7, 1)).reshape(
+            (B, F_tokens * H_tokens * W_tokens, pF * pH * pW * C)
         )
 
         image_seq_len = F_tokens * H_tokens * W_tokens
@@ -566,6 +562,9 @@ class ZImageTransformer2DModel(nn.Module):
         x_freqs_cis = self.rope_embedder(x_pos_ids)
 
         # Embed caption features
+        if len(cap_feats.shape) == 2:
+            cap_feats = cap_feats.unsqueeze(0)
+
         cap_feats = self.cap_embedder(cap_feats)
 
         # Create position IDs for caption
@@ -582,11 +581,14 @@ class ZImageTransformer2DModel(nn.Module):
         # RoPE embeddings for caption
         cap_freqs_cis = self.rope_embedder(cap_pos_ids)
 
-        # Add batch dimension: (seq_len, dim) -> (1, seq_len, dim)
-        x = x.unsqueeze(0)
+        # Ensure batch dimension for RoPE: (seq_len, dim/2, 2) -> (1, seq_len, dim/2, 2)
         x_freqs_cis = x_freqs_cis.unsqueeze(0)
-        cap_feats = cap_feats.unsqueeze(0)
         cap_freqs_cis = cap_freqs_cis.unsqueeze(0)
+
+        # Repeat for batch if B > 1
+        if B > 1:
+            x_freqs_cis = F.broadcast_to(x_freqs_cis, (B, x_freqs_cis.shape[1], x_freqs_cis.shape[2], 2))
+            cap_freqs_cis = F.broadcast_to(cap_freqs_cis, (B, cap_seq_len, cap_freqs_cis.shape[2], 2))
 
         # Noise refiner layers (process image patches)
         for layer in self.noise_refiner:
@@ -597,7 +599,7 @@ class ZImageTransformer2DModel(nn.Module):
             cap_feats = layer(cap_feats, cap_freqs_cis)
 
         # Unified: concatenate image and caption features along sequence dimension
-        # Shape: (1, image_seq_len + cap_seq_len, hidden_dim)
+        # Shape: (B, image_seq_len + cap_seq_len, hidden_dim)
         unified = F.concat([x, cap_feats], axis=1)
         unified_freqs_cis = F.concat([x_freqs_cis, cap_freqs_cis], axis=1)
 
@@ -605,22 +607,16 @@ class ZImageTransformer2DModel(nn.Module):
         for layer in self.layers:
             unified = layer(unified, unified_freqs_cis, adaln_input)
 
-        # Final layer
-        unified = self.all_final_layer[f"{patch_size}-{f_patch_size}"](
-            unified, adaln_input
-        )
-
         # Remove batch dimension and split: take only image portion
-        unified = unified.squeeze(0)  # (total_seq_len, hidden_dim)
-        x = unified[:image_seq_len]  # (image_seq_len, hidden_dim)
+        # Shape: (B, image_seq_len + cap_seq_len, hidden_dim) -> (B, image_seq_len, hidden_dim)
+        x = unified[:, :image_seq_len, :]
 
-        # Unpatchify: (image_seq_len, hidden_dim) -> (out_channels, F, H, W)
-        # The hidden_dim after final layer should be pF * pH * pW * out_channels
+        # Unpatchify: (B, image_seq_len, hidden_dim) -> (B, out_channels, F, H, W)
         out_channels = self.out_channels
-        x = x.reshape((F_tokens, H_tokens, W_tokens, pF, pH, pW, out_channels))
+        x = x.reshape((B, F_tokens, H_tokens, W_tokens, pF, pH, pW, out_channels))
         x = x.permute(
-            (6, 0, 3, 1, 4, 2, 5)
-        )  # (out_channels, F_tokens, pF, H_tokens, pH, W_tokens, pW)
-        x = x.reshape((out_channels, F_dim, H_dim, W_dim))
+            (0, 7, 1, 4, 2, 5, 3, 6)
+        )  # (B, out_channels, F_tokens, pF, H_tokens, pH, W_tokens, pW)
+        x = x.reshape((B, out_channels, F_dim, H_dim, W_dim))
 
         return x
