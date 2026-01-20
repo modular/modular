@@ -45,6 +45,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
+    SamplingConfig,
     SupportedEncoding,
 )
 from max.pipelines.lib.lora import LoRAManager, LoRAModel
@@ -307,8 +308,9 @@ def create_pipeline_with_lora(
         lora_manager=lora_manager
     )
 
-    mock_config = NonCallableMock(spec=PipelineConfig)
-    mock_config.max_length = 512
+    mock_config = PipelineConfig.model_construct(max_length=512)
+    mock_config.model.quantization_encoding = SupportedEncoding.float32
+    mock_config.sampling = SamplingConfig()
     mock_config.sampling.enable_structured_output = False
     mock_config.sampling.enable_variable_logits = False
 

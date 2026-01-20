@@ -213,22 +213,22 @@ class PipelineConfig(ConfigFileModel):
     defer_resolve: bool = Field(default=False)
     """Whether to defer resolving the pipeline config."""
 
-    _model: MAXModelConfig = PrivateAttr(default_factory=MAXModelConfig)
+    model: MAXModelConfig = Field(default_factory=MAXModelConfig)
     """The model config."""
 
-    _draft_model: MAXModelConfig | None = PrivateAttr(default=None)
+    draft_model: MAXModelConfig | None = Field(default=None)
     """The draft model config."""
 
-    _sampling: SamplingConfig = PrivateAttr(default_factory=SamplingConfig)
+    sampling: SamplingConfig = Field(default_factory=SamplingConfig)
     """The sampling config."""
 
-    _profiling: ProfilingConfig = PrivateAttr(default_factory=ProfilingConfig)
+    profiling: ProfilingConfig = Field(default_factory=ProfilingConfig)
     """The profiling config."""
 
-    _lora: LoRAConfig | None = PrivateAttr(default=None)
+    lora: LoRAConfig | None = Field(default=None)
     """The LoRA config."""
 
-    _speculative: SpeculativeConfig | None = PrivateAttr(default=None)
+    speculative: SpeculativeConfig | None = Field(default=None)
     """The SpeculativeConfig."""
 
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
@@ -297,7 +297,7 @@ class PipelineConfig(ConfigFileModel):
         )
 
         if lora_kwargs.get("enable_lora", False):
-            self._lora = LoRAConfig(**lora_kwargs)
+            self.lora = LoRAConfig(**lora_kwargs)
         # TODO: We should add an elif to check / error out if other LoRA params
         # are provided, but enable_lora is not. We can't do this today as our
         # click PipelineConfig autogenerates defaults for all fields, including
@@ -313,7 +313,7 @@ class PipelineConfig(ConfigFileModel):
         )
 
         if draft_kwargs.get("model_path", "") != "":
-            self._draft_model = MAXModelConfig(**draft_kwargs)
+            self.draft_model = MAXModelConfig(**draft_kwargs)
         # TODO: We should add an elif to check / error out if other draft model
         # params are provided, but model_path is not. We can't do this today
         # as our click PipelineConfig autogenerates defaults for all fields,
@@ -336,21 +336,21 @@ class PipelineConfig(ConfigFileModel):
                 k: v for k, v in speculative_kwargs.items() if v is not None
             }
             if filtered_kwargs:
-                self._speculative = SpeculativeConfig(**filtered_kwargs)
-                assert self._draft_model is not None
+                self.speculative = SpeculativeConfig(**filtered_kwargs)
+                assert self.draft_model is not None
                 # We need to set the architecture to EagleLlamaForCausalLM for Eagle speculative decoding
-                if self._speculative.is_eagle():
+                if self.speculative.is_eagle():
                     assert (
-                        len(self._draft_model.huggingface_config.architectures)
+                        len(self.draft_model.huggingface_config.architectures)
                         == 1
                     )
-                    hf_arch = (
-                        self._draft_model.huggingface_config.architectures[0]
-                    )
+                    hf_arch = self.draft_model.huggingface_config.architectures[
+                        0
+                    ]
                     if hf_arch == "LlamaForCausalLM":
-                        self._draft_model.huggingface_config.architectures[
-                            0
-                        ] = "EagleLlamaForCausalLM"
+                        self.draft_model.huggingface_config.architectures[0] = (
+                            "EagleLlamaForCausalLM"
+                        )
 
     def _process_remaining_config_classes(
         self, unmatched_kwargs: dict[str, Any]
@@ -364,11 +364,11 @@ class PipelineConfig(ConfigFileModel):
         # TODO(zheng): Make this more efficient by using MaxConfig instance
         # instead of hardcoding the config names.
         config_mappings = [
-            # NOTE: _model must come before _sampling so that
+            # NOTE: model must come before sampling so that
             # SamplingConfig can use generation_config from the model
-            "_model",
-            "_sampling",
-            "_profiling",
+            "model",
+            "sampling",
+            "profiling",
         ]
 
         for config_name in config_mappings:
@@ -381,8 +381,7 @@ class PipelineConfig(ConfigFileModel):
                     matched_kwargs[key] = value
                 # Check if this is a KVCache config param
                 elif (
-                    config_name == "_model"
-                    and key in KVCacheConfig.model_fields
+                    config_name == "model" and key in KVCacheConfig.model_fields
                 ):
                     kv_cache_kwargs[key] = value
 
@@ -408,16 +407,16 @@ class PipelineConfig(ConfigFileModel):
         Create and set a config object with special handling for different config types.
 
         Args:
-            config_name: Name of the config attribute (e.g., "_model")
+            config_name: Name of the config attribute (e.g., "model")
             config_class: The config class to instantiate
             matched_kwargs: kwargs that matched the config class fields
             kv_cache_kwargs: kwargs for KVCache config (model config only)
         """
-        if config_name == "_model" and kv_cache_kwargs:
+        if config_name == "model" and kv_cache_kwargs:
             # Create new model config with updated KVCache config
             model_config = config_class(**matched_kwargs)
 
-            if self._draft_model:
+            if self.draft_model:
                 memory_util = kv_cache_kwargs.get(
                     "device_memory_utilization", 0.9
                 )
@@ -426,27 +425,27 @@ class PipelineConfig(ConfigFileModel):
 
                 kv_cache_kwargs["device_memory_utilization"] = main_model_util
 
-            model_config._kv_cache = KVCacheConfig(**kv_cache_kwargs)
+            model_config.kv_cache = KVCacheConfig(**kv_cache_kwargs)
             setattr(self, config_name, model_config)
 
-            if self._draft_model:
+            if self.draft_model:
                 kv_cache_kwargs["device_memory_utilization"] = draft_model_util
-                self._draft_model._kv_cache = KVCacheConfig(**kv_cache_kwargs)
+                self.draft_model.kv_cache = KVCacheConfig(**kv_cache_kwargs)
 
-        elif config_name == "_sampling":
-            if hasattr(self, "_model") and self._model:
-                assert isinstance(self._model, MAXModelConfig)
+        elif config_name == "sampling":
+            if hasattr(self, "model") and self.model:
+                assert isinstance(self.model, MAXModelConfig)
                 assert hasattr(
                     config_class, "from_generation_config_sampling_defaults"
                 )
                 sampling_config = config_class.from_generation_config_sampling_defaults(
-                    sampling_params_defaults=self._model.sampling_params_defaults,
+                    sampling_params_defaults=self.model.sampling_params_defaults,
                     **matched_kwargs,
                 )
             else:
                 sampling_config = config_class(**matched_kwargs)
 
-            if self.enable_echo or self._draft_model:
+            if self.enable_echo or self.draft_model:
                 sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
@@ -647,19 +646,19 @@ class PipelineConfig(ConfigFileModel):
 
         config_objects = [
             ("PipelineConfig", self),
-            ("MAXModelConfig", self._model),
-            ("SamplingConfig", self._sampling),
-            ("KVCacheConfig", self._model._kv_cache),
+            ("MAXModelConfig", self.model),
+            ("SamplingConfig", self.sampling),
+            ("KVCacheConfig", self.model.kv_cache),
         ]
 
         # Add draft model configurations if present
-        if self._draft_model is not None:
+        if self.draft_model is not None:
             config_objects.extend(
                 [
-                    ("Draft_MAXModelConfig", self._draft_model),
+                    ("Draft_MAXModelConfig", self.draft_model),
                     (
                         "Draft_KVCacheConfig",
-                        self._draft_model._kv_cache,
+                        self.draft_model.kv_cache,
                     ),
                 ]
             )
@@ -713,7 +712,7 @@ class PipelineConfig(ConfigFileModel):
             self.sampling.enable_penalties = False
 
         # Validate LoRA compatibility with model configuration
-        if self._lora and self._lora.enable_lora:
+        if self.lora and self.lora.enable_lora:
             self.model.validate_lora_compatibility()
 
         # By this point, we should have a valid model_path.
@@ -746,7 +745,7 @@ class PipelineConfig(ConfigFileModel):
         Validate the pipeline configs when used in speculative decoding mode.
         """
         assert self.draft_model is not None
-        assert self._speculative is not None
+        assert self.speculative is not None
 
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
@@ -770,7 +769,7 @@ class PipelineConfig(ConfigFileModel):
             )
 
         # Validate that their tokenizers are identical.
-        if self._speculative.is_standalone():
+        if self.speculative.is_standalone():
             if draft_arch != target_arch:
                 raise ValueError(
                     f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
@@ -858,7 +857,7 @@ class PipelineConfig(ConfigFileModel):
         devices = load_devices(model_config.device_specs)
 
         # Validate LoRA support - currently only Llama3 models support LoRA
-        if self._lora and self._lora.enable_lora:
+        if self.lora and self.lora.enable_lora:
             # Check if the architecture is Llama3 (LlamaForCausalLM)
             if arch.name != "LlamaForCausalLM":
                 raise ValueError(
@@ -876,8 +875,8 @@ class PipelineConfig(ConfigFileModel):
         # Gemma has a MHA head size of 256.
         # This requires a kv cache page size of at least 256.
         if "Gemma3" in arch.name:
-            model_config._kv_cache.kv_cache_page_size = max(
-                model_config._kv_cache.kv_cache_page_size, 256
+            model_config.kv_cache.kv_cache_page_size = max(
+                model_config.kv_cache.kv_cache_page_size, 256
             )
 
         model_config.validate_multi_gpu_supported(
@@ -957,7 +956,7 @@ class PipelineConfig(ConfigFileModel):
         Returns:
             The graph quantization encoding corresponding to the CLI encoding.
         """
-        return self._model.graph_quantization_encoding
+        return self.model.graph_quantization_encoding
 
     def log_pipeline_info(self) -> None:
         """Log comprehensive pipeline and KVCache configuration information.
@@ -1092,7 +1091,7 @@ class PipelineConfig(ConfigFileModel):
         logger.info("=" * 60)
 
         # Primary model kvcache config
-        kv_config = self.model._kv_cache
+        kv_config = self.model.kv_cache
         _log_kvcache_details(kv_config)
 
         # Draft model kvcache config (if using speculative decoding)
@@ -1100,8 +1099,8 @@ class PipelineConfig(ConfigFileModel):
             logger.info("")
             logger.info("Draft Model KVCache Configuration:")
             logger.info("-" * 40)
-            assert self._draft_model is not None
-            draft_kv_config = self._draft_model._kv_cache
+            assert self.draft_model is not None
+            draft_kv_config = self.draft_model.kv_cache
             _log_kvcache_details(draft_kv_config)
 
         logger.info("")
@@ -1139,7 +1138,7 @@ class PipelineConfig(ConfigFileModel):
         pipeline_class = get_pipeline_for_task(task, self)
 
         # Get reserved memory info from KVCache config
-        kv_config = self.model._kv_cache
+        kv_config = self.model.kv_cache
         if kv_config._available_cache_memory is None:
             raise ValueError(
                 "KVCache config is not available after config resolution."
@@ -1189,27 +1188,6 @@ class PipelineConfig(ConfigFileModel):
             "custom_architectures": "A list of custom architecture implementations to register. Each input can either be a raw module name or an import path followed by a colon and the module name.",
             "kvcache_ce_watermark": "Projected cache usage threshold for scheduling CE requests, considers current + incoming request. CE is scheduled if either projected usage stays below this threshold OR no active requests exist. Greater KVCache utilization (as controlled by this parameter) was found to cause more preemptions. Default watermark value is 0.95.",
         }
-
-    @property
-    def model(self) -> MAXModelConfig:
-        """Accessor for the MAXModelConfig instance."""
-        return self._model
-
-    @property
-    def draft_model(self) -> MAXModelConfig | None:
-        return self._draft_model
-
-    @property
-    def sampling(self) -> SamplingConfig:
-        return self._sampling
-
-    @property
-    def profiling(self) -> ProfilingConfig:
-        return self._profiling
-
-    @property
-    def lora(self) -> LoRAConfig | None:
-        return self._lora
 
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:

@@ -460,22 +460,16 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
     # to a PipelineConfig. We should just use the PipelineConfig class directly
     # instead of this translation layer.
     pipeline_config_dict = benchmark_config.pipeline.model_dump()
+    model_path = pipeline_config_dict.pop("model", None)
+    if model_path:
+        pipeline_config_dict["model_path"] = model_path
     if pipeline_config_dict.get("devices") is not None:
         pipeline_config_dict["device_specs"] = DevicesOptionType.device_specs(
             pipeline_config_dict["devices"]
         )
-    if pipeline_config_dict.get("kv_cache_page_size") is not None:
-        pipeline_config_dict["kv_cache_page_size"] = pipeline_config_dict[
-            "kv_cache_page_size"
-        ]
-    if pipeline_config_dict.get("cache_strategy") is not None:
-        pipeline_config_dict["cache_strategy"] = pipeline_config_dict[
-            "cache_strategy"
-        ]
-    if pipeline_config_dict.get("enable_prefix_caching") is not None:
-        pipeline_config_dict["enable_prefix_caching"] = pipeline_config_dict[
-            "enable_prefix_caching"
-        ]
+    pipeline_config_dict.pop("devices", None)
+    pipeline_config_dict.pop("config_file", None)
+    pipeline_config_dict.pop("section_name", None)
     if pipeline_config_dict.get("weight_path") is None:
         pipeline_config_dict.pop("weight_path", None)
     elif isinstance(pipeline_config_dict["weight_path"], str):

@@ -23,11 +23,8 @@ from max.graph.weights import WeightsFormat
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
     KVCacheConfig,
-    LoRAConfig,
     MAXModelConfig,
     PipelineConfig,
-    ProfilingConfig,
-    SamplingConfig,
     SupportedEncoding,
 )
 from transformers import AutoConfig
@@ -100,27 +97,12 @@ class DummyPipelineConfig(PipelineConfig):
             if hasattr(base, attr):
                 object.__setattr__(self, attr, getattr(base, attr))
 
-        # Back-compat: some mocks historically accessed these directly from the
-        # pipeline config, even though they're conceptually model config fields.
-        object.__setattr__(self, "model_path", model_path)
-        object.__setattr__(self, "quantization_encoding", quantization_encoding)
-
-        # `PipelineConfig` stores nested configs in Pydantic PrivateAttrs, which
-        # live in `__pydantic_private__`. Since we used `model_construct()`,
-        # validators (including the one that would initialize PrivateAttrs) did
-        # not run, so we must initialize private attrs explicitly.
-        pydantic_private = getattr(self, "__pydantic_private__", None)
-        if pydantic_private is None:
-            pydantic_private = {}
-            object.__setattr__(self, "__pydantic_private__", pydantic_private)
-        assert isinstance(pydantic_private, dict)
-
         model_config = DummyMAXModelConfig.model_construct(
             model_path=model_path,
             device_specs=device_specs,
             quantization_encoding=quantization_encoding,
         )
-        model_config._kv_cache = KVCacheConfig(
+        model_config.kv_cache = KVCacheConfig(
             cache_strategy=kv_cache_strategy,
         )
         # NOTE: Using MagicMock without spec here because HuggingFace configs
@@ -130,15 +112,8 @@ class DummyPipelineConfig(PipelineConfig):
         # TODO: Consider accepting huggingface_config as an optional parameter
         # to allow tests to provide model-specific spec'd mocks.
         model_config._huggingface_config = MagicMock()
-        # Populate the private attrs that callers expect.
-        pydantic_private["_model"] = model_config
-        pydantic_private["_draft_model"] = None
-        pydantic_private["_sampling"] = SamplingConfig()
-        pydantic_private["_profiling"] = ProfilingConfig()
-        pydantic_private["_lora"] = LoRAConfig()
-        pydantic_private["_speculative"] = None
-        pydantic_private["_config_file_section_name"] = "pipeline_config"
-        pydantic_private["_unmatched_kwargs"] = {}
+        # Populate the model field so callers see the configured model.
+        object.__setattr__(self, "model", model_config)
 
         # These values don't belong in PipelineConfig, but are used by
         # MockPipelineModel in pipeline_model.py.

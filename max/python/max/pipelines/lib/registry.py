@@ -76,21 +76,21 @@ def get_pipeline_for_task(
     | type[EAGLESpeculativeDecodingPipeline]
 ):
     if task == PipelineTask.TEXT_GENERATION:
-        if pipeline_config._speculative is not None:
-            assert pipeline_config._speculative.speculative_method is not None
+        if pipeline_config.speculative is not None:
+            assert pipeline_config.speculative.speculative_method is not None
             if (
-                pipeline_config._speculative.speculative_method
+                pipeline_config.speculative.speculative_method
                 == SpeculativeMethod.STANDALONE
             ):
                 return StandaloneSpeculativeDecodingPipeline
             elif (
-                pipeline_config._speculative.speculative_method
+                pipeline_config.speculative.speculative_method
                 == SpeculativeMethod.EAGLE
             ):
                 return EAGLESpeculativeDecodingPipeline
             else:
                 raise ValueError(
-                    f"Unsupported speculative method: {pipeline_config._speculative.speculative_method}"
+                    f"Unsupported speculative method: {pipeline_config.speculative.speculative_method}"
                 )
         else:
             return TextGenerationPipeline[TextContext]

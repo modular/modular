@@ -144,8 +144,8 @@ def hidden_states_return_config(
     For Eagle and DeepSeek MTP, we share the embedding and lm_head weights between the target and draft models and only take the last hidden state from the target model.
 
     """
-    assert pipeline_config._speculative is not None
-    if pipeline_config._speculative.is_eagle():
+    assert pipeline_config.speculative is not None
+    if pipeline_config.speculative.is_eagle():
         if is_draft:
             return ReturnHiddenStates.LAST
         else:
@@ -349,7 +349,7 @@ class SpeculativeDecodingPipelineBase(
 
         draft_weights = load_weights(draft_weight_paths)
         _draft_weights_format = weights_format(draft_weight_paths)
-        assert self.pipeline_config._speculative is not None
+        assert self.pipeline_config.speculative is not None
 
         # Use draft model's pipeline model and weight adapters if provided
         # Otherwise fall back to target model's (for backward compatibility)
@@ -422,7 +422,7 @@ class SpeculativeDecodingPipelineBase(
         self._target_session = target_session
 
         self._num_draft_steps = (
-            self.pipeline_config._speculative.num_speculative_tokens
+            self.pipeline_config.speculative.num_speculative_tokens
         )
 
     @traced

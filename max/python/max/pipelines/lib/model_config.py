@@ -32,11 +32,9 @@ from pydantic import (
     Field,
     PrivateAttr,
     computed_field,
-    model_validator,
 )
 from transformers import AutoConfig
 from transformers.generation import GenerationConfig
-from typing_extensions import Self
 
 from .config_enums import RepoType, RopeType, SupportedEncoding
 from .hf_utils import (
@@ -87,14 +85,7 @@ class MAXModelConfig(MAXModelConfigBase):
     # it be Optional to check for None and then littering the codebase with
     # asserts just to keep mypy happy.
     model_path: str = Field(default="")
-    """:obj:`repo_id` of a Hugging Face model repository to use. This is functionally equivalent to `model` flag."""
-
-    model: str = Field(default="")
-    """:obj:`repo_id` of a Hugging Face model repository to use.
-    The only entrypoint for this model attribute is via --model max cli flag. Everything under the hood
-    after this MAXModelConfig is initialized should be handled via model_path, for now.
-    See post_init for more details on how this is done.
-    """
+    """:obj:`repo_id` of a Hugging Face model repository to use."""
 
     served_model_name: str | None = Field(default=None)
     """Optional override for client-facing model name. Defaults to model_path."""
@@ -140,6 +131,9 @@ class MAXModelConfig(MAXModelConfigBase):
     rope_type: RopeType | None = Field(default=None)
     """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
 
+    kv_cache: KVCacheConfig = Field(default_factory=KVCacheConfig)
+    """The KVCache config."""
+
     _applied_dtype_cast_from: SupportedEncoding | None = PrivateAttr(
         default=None
     )
@@ -158,9 +152,6 @@ class MAXModelConfig(MAXModelConfigBase):
     # also autopopulates default values.
     _quant: QuantizationConfig | None = PrivateAttr(default=None)
     """Optional config for specifying quantization parameters. This should only be set by internal code."""
-
-    _kv_cache: KVCacheConfig = PrivateAttr(default_factory=KVCacheConfig)
-    """The KVCache config."""
 
     _config_file_section_name: str = PrivateAttr(default="model_config")
     """The section name to use when loading this config from a MAXConfig file.
@@ -189,24 +180,6 @@ class MAXModelConfig(MAXModelConfigBase):
             if seeded_huggingface_config is not None:
                 self._huggingface_config = seeded_huggingface_config
 
-    @model_validator(mode="after")
-    def _normalize_model_path(self) -> Self:
-        """Normalize model and model_path fields after validation.
-
-        If both are specified, throw an error. Otherwise, sync model_path from model
-        if model is provided, then clear model since we use model_path from here on out.
-        """
-        # if both are specified, throw an error.
-        if self.model_path != "" and self.model != "":
-            raise ValueError(
-                "model_path and model cannot both be specified. Please use only one of them."
-            )
-        elif self.model != "":
-            self.model_path = self.model
-        # We use self.model_path from here on out.
-        self.model = ""
-        return self
-
     # TODO(SERVSYS-1085): Figure out a better way to avoid having to roll our
     # own custom __getstate__/__setstate__ methods.
     def __getstate__(self) -> dict[str, Any]:
@@ -234,16 +207,13 @@ class MAXModelConfig(MAXModelConfigBase):
         `_huggingface_config` is restored as None to preserve the lazy
         loading behavior defined in `huggingface_config`.
         """
-        private_state = state.pop("__pydantic_private__", None)
+        private_state = dict(state.pop("__pydantic_private__", None) or {})
+
         self.__dict__.update(state)
 
         # Restore pydantic private attrs (and fill any missing defaults).
-        if private_state is None:
-            private_state = {}
-        private_state = dict(private_state)
         private_state.setdefault("_huggingface_config", None)
         private_state.setdefault("_weights_repo_id", None)
-        private_state.setdefault("_kv_cache", KVCacheConfig())
         private_state.setdefault("_applied_dtype_cast_from", None)
         private_state.setdefault("_applied_dtype_cast_to", None)
         private_state.setdefault("_quant", None)
@@ -308,14 +278,6 @@ class MAXModelConfig(MAXModelConfigBase):
             # At this point, we should have a resolved weight path - be it local or remote HF.
             # weight_path should not be used directly anymore.
             self.model_path = self._weights_repo_id
-
-    @property
-    def kv_cache(self) -> KVCacheConfig:
-        # `_kv_cache` is a PrivateAttr. Some construction paths (notably
-        # unpickling) can bypass __init__, so the PrivateAttr may be absent.
-        if not hasattr(self, "_kv_cache"):
-            self._kv_cache = KVCacheConfig()
-        return self._kv_cache
 
     @property
     def model_name(self) -> str:
@@ -539,7 +501,7 @@ class MAXModelConfig(MAXModelConfigBase):
         Raises:
             ValueError: If LoRA is enabled but incompatible with current model configuration.
         """
-        if self._kv_cache.enable_prefix_caching:
+        if self.kv_cache.enable_prefix_caching:
             raise ValueError(
                 "LoRA is not compatible with prefix caching. "
                 "Please disable prefix caching by using the --no-enable-prefix-caching flag."
@@ -998,8 +960,7 @@ class MAXModelConfig(MAXModelConfigBase):
     @staticmethod
     def help() -> dict[str, str]:
         max_model_help = {
-            "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights. Equivalent to --model flag.",
-            "model": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
+            "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
             "served_model_name": "Optional override for client-facing model name. Defaults to model_path.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
             "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
