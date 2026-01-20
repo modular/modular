@@ -492,6 +492,9 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
 
   // Trait values are generic and therefore use the default specification.
   if (auto trait = dyn_cast_or_null<TraitDeclOp>(decl->getIfOperation())) {
+    if (type.isAnyTrivialRegType(decl->getLoc(), shared))
+      return TypeConvention::RegisterPassableTrivial;
+
     TypeConvention convention = trait.getConvention();
     if (convention == TypeConvention::Unspecified)
       return genericDefault;
@@ -520,6 +523,9 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
 
   auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation());
   assert(structOp && "only one user-defined type so far");
+  if (type.isAnyTrivialRegType(decl->getLoc(), shared))
+    return TypeConvention::RegisterPassableTrivial;
+
   return structOp.getConvention();
 }
 
@@ -656,6 +662,23 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
     return false;
 
   return isMovable(value.expr->getLoc(), shared);
+}
+
+bool ASTType::isAnyTrivialRegType(llvm::SMLoc loc, SharedState &shared) const {
+  ASTDecl *typeDecl = getDecl(shared);
+  if (!typeDecl)
+    return true; // MLIR Types are trivial register passable.
+
+  // Check whether the type conforms to `AnyTrivialRegType` trait.
+  ASTDecl *traitDecl = shared.lookupBuiltinTrait("AnyTrivialRegType", typeDecl,
+                                                 typeDecl->getLoc());
+
+  if (!traitDecl)
+    return false;
+  auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
+  if (!trait)
+    return false;
+  return typeDecl->doesNominalTypeConformTo(trait.bindReference());
 }
 
 /// Given a reference, return the element as an ASTType.  This aborts
