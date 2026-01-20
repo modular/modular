@@ -19,7 +19,7 @@ import max.tests.integration.tools.debugging_utils as dbg
 import numpy as np
 import pytest
 import torch
-from max.driver.tensor import Tensor as MaxTensor
+from max.driver.buffer import Buffer as MaxBuffer
 from pytest_mock import MockerFixture
 
 
@@ -60,8 +60,8 @@ def test_load_max_intermediates(tmp_path: Path, mocker: MockerFixture) -> None:
         (output_path / "node0-output.max").write_bytes(b"dummy")
         (output_path / "node1-output.max").write_bytes(b"dummy")
 
-    def fake_load_max_tensor(path: PathLike[str]) -> MaxTensor:
-        return MaxTensor.from_numpy(np.ones((3, 3), dtype=np.float32))
+    def fake_load_max_buffer(path: PathLike[str]) -> MaxBuffer:
+        return MaxBuffer.from_numpy(np.ones((3, 3), dtype=np.float32))
 
     mocker.patch.object(
         dbg,
@@ -70,7 +70,7 @@ def test_load_max_intermediates(tmp_path: Path, mocker: MockerFixture) -> None:
         side_effect=fake_run_debug_model,
     )
     mocker.patch.object(
-        dbg, "load_max_tensor", autospec=True, side_effect=fake_load_max_tensor
+        dbg, "load_max_buffer", autospec=True, side_effect=fake_load_max_buffer
     )
 
     tensors = dbg.load_intermediate_tensors(

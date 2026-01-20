@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from max.driver import Tensor
+from max.driver import Buffer
 from max.graph.weights import WeightData, Weights
 
 # Maps from InternVL checkpoint names to InternVLLanguageModel weight names.
@@ -130,7 +130,7 @@ def convert_internvl_vision_model_state_dict(
             # Need to reshape to: (embed_dim, 3 * patch_size * patch_size)
 
             # Get the weight array
-            weight_array = Tensor.from_dlpack(weight_data.data)
+            weight_array = Buffer.from_dlpack(weight_data.data)
 
             # Get dimensions
             out_channels, in_channels, kernel_h, kernel_w = weight_array.shape

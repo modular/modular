@@ -47,10 +47,10 @@ from layout.layout import coalesce
 from layout import Layout
 from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 
-from gpu.mma import st_matrix
+from gpu.compute.mma import st_matrix
 from memory import bitcast
 from layout import RuntimeLayout, RuntimeTuple, IntTuple
-from layout.tensor_core_async import st_matrix_n_layout
+from layout.tensor_core_async import st_matrix_n_layout, st_matrix_m_layout
 from layout.runtime_layout import UNKNOWN_VALUE
 from ....utils import elementwise_epilogue_type, elementwise_compute_lambda_type
 from utils.index import IndexList
@@ -60,7 +60,6 @@ from layout.layout_tensor import copy_local_to_dram
 import itertools
 from memory.pointer import _GPUAddressSpace
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle
-from layout.tensor_core_async import st_matrix_n_layout
 from std.bit import log2_floor
 
 
@@ -248,7 +247,8 @@ struct TileWriterThreadwise[
     //,
     thread_layout: Layout,
     simd_size: Int,
-    half_tile: Bool = False,  # Handle masked x2 case
+    half_tile: Bool = False,  # Handle masked x2 case,
+    swapAB: Bool = False,
 ](SMemTileWriter):
     comptime _dtype = Self.dtype
 
@@ -308,38 +308,79 @@ struct TileWriterThreadwise[
 
         @parameter
         if Self.half_tile:
-            # Handle masked x2 case - write only half the tile width
-            # Get compile-time layout dimensions
-            comptime dst_height = Self.dst_layout.shape[0].value()
-            comptime dst_width = Self.dst_layout.shape[1].value()
-            comptime half_width = dst_width // 2
+            if Self.swapAB:
+                comptime threads_per_row = Self.thread_layout.shape[1].value()
+                comptime num_threads = Int(Self.thread_layout.size())
 
-            # Slice both source and destination to half width internally
-            var masked_src = src.slice[
-                Slice(0, dst_height),
-                Slice(0, half_width),
-            ]()
-            var masked_dst = self.dst.slice[
-                Slice(0, dst_height),
-                Slice(0, half_width),
-            ]()
+                comptime dst_height = Self.dst_layout.shape[0].value() // 2
+                comptime dst_width = Self.dst_layout.shape[1].value()
 
-            # Compute half-width thread layout
-            comptime half_thread_layout = Layout.row_major(
-                Self.thread_layout.shape[0].value(),
-                Self.thread_layout.shape[1].value() // 2,
-            )
+                # Slice both source and destination to half height internally
+                var masked_src = src.slice[
+                    Slice(0, dst_height),
+                    Slice(0, dst_width),
+                ]()
 
-            # Only first half of threads participate
-            comptime num_threads = Self.thread_layout.size()
-            if self.thread_idx < UInt(num_threads // 2):
-                copy_sram_to_dram[
-                    thread_layout=half_thread_layout,
-                    swizzle=swizzle,
-                ](
-                    masked_dst.vectorize[1, Self.simd_size](),
-                    masked_src.vectorize[1, Self.simd_size](),
+                var masked_dst = self.dst.slice[
+                    Slice(0, dst_height),
+                    Slice(0, dst_width),
+                ]()
+
+                var casted_thread_idx = Int(self.thread_idx)
+
+                var rows = self.dst.dim(0)
+                var cols = self.dst.dim(1) // Self.simd_size
+
+                var row_check = casted_thread_idx // threads_per_row < rows
+                var col_check = (casted_thread_idx % threads_per_row) < cols
+
+                comptime half_thread_layout = Layout.row_major(
+                    Self.thread_layout.shape[0].value() // 2,
+                    Self.thread_layout.shape[1].value(),
                 )
+
+                if row_check and col_check:
+                    copy_sram_to_dram[
+                        thread_layout=half_thread_layout,
+                        swizzle=swizzle,
+                    ](
+                        masked_dst.vectorize[1, Self.simd_size](),
+                        masked_src.vectorize[1, Self.simd_size](),
+                    )
+
+            else:
+                # Handle masked x2 case - write only half the tile width
+                # Get compile-time layout dimensions
+                comptime dst_height = Self.dst_layout.shape[0].value()
+                comptime dst_width = Self.dst_layout.shape[1].value() // 2
+
+                # Slice both source and destination to half width internally
+                var masked_src = src.slice[
+                    Slice(0, dst_height),
+                    Slice(0, dst_width),
+                ]()
+
+                var masked_dst = self.dst.slice[
+                    Slice(0, dst_height),
+                    Slice(0, dst_width),
+                ]()
+
+                # Compute half-width thread layout
+                comptime half_thread_layout = Layout.row_major(
+                    Self.thread_layout.shape[0].value(),
+                    Self.thread_layout.shape[1].value() // 2,
+                )
+
+                # Only first half of threads participate
+                comptime num_threads = Self.thread_layout.size()
+                if self.thread_idx < UInt(num_threads // 2):
+                    copy_sram_to_dram[
+                        thread_layout=half_thread_layout,
+                        swizzle=swizzle,
+                    ](
+                        masked_dst.vectorize[1, Self.simd_size](),
+                        masked_src.vectorize[1, Self.simd_size](),
+                    )
         else:
             # Normal case - write full tile
             copy_sram_to_dram[
@@ -386,6 +427,7 @@ struct FragmentToSMemWriter[
     WG_BM: Int,  # Warp group M dimension
     WG_BN: Int,  # Warp group N dimension
     sub_wg_id: Int,  # Sub warp group ID in N dimension
+    swapAB: Bool = False,
 ](RegTileWriter):
     """Writes WGMMA accumulator results from registers to shared memory using st.matrix.
 
@@ -402,29 +444,37 @@ struct FragmentToSMemWriter[
         WG_BM: Warp group tile height.
         WG_BN: Warp group tile width.
         sub_wg_id: Which portion of WG_BN this instance handles.
+        swapAB: Whether to swap the A and B matrices.
     """
 
     comptime st_matrix_swizzle = make_ldmatrix_swizzle[
-        Self.c_type, Self.tile_n_size, log2_floor(16 // size_of[Self.c_type]())
+        Self.c_type,
+        Self.tile_n_size if not Self.swapAB else Self.WG_BN,
+        log2_floor(16 // size_of[Self.c_type]()),
     ]()
+
+    comptime st_matrix_layout_regular = st_matrix_n_layout[
+        Self.c_type, Self.tile_n_size, Self.num_m_mmas, Self.num_consumer
+    ]()
+
+    comptime st_matrix_layout_transpose = st_matrix_m_layout[
+        Self.c_type, Self.tile_n_size, Self.num_m_mmas, Self.num_consumer
+    ]()
+
     comptime st_matrix_rt_layout_type = RuntimeLayout[
-        st_matrix_n_layout[
-            Self.c_type, Self.tile_n_size, Self.num_m_mmas, Self.num_consumer
-        ](),
+        Self.st_matrix_layout_regular if not Self.swapAB else Self.st_matrix_layout_transpose,
         element_type = DType.int32,
         linear_idx_type = DType.int32,
     ]
+
+    comptime st_matrix_layout = Layout.row_major(
+        Self.WG_BM, Self.tile_n_size
+    ) if not Self.swapAB else Layout.row_major(Self.tile_n_size, Self.WG_BN)
 
     var c_tile: SMemTileType[Self.c_type, Self.c_tile_layout, alignment=128]
     var warp_group_thread_idx: UInt
     var local_warp_group_idx: UInt
-    var st_matrix_rt_layout: RuntimeLayout[
-        st_matrix_n_layout[
-            Self.c_type, Self.tile_n_size, Self.num_m_mmas, Self.num_consumer
-        ](),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ]
+    var st_matrix_rt_layout: Self.st_matrix_rt_layout_type
 
     @always_inline
     fn __init__(
@@ -470,8 +520,6 @@ struct FragmentToSMemWriter[
         var linear_idx = self.st_matrix_rt_layout(layout_coords)
         return self.st_matrix_swizzle(linear_idx)
 
-    comptime st_matrix_layout = Layout.row_major(Self.WG_BM, Self.tile_n_size)
-
     @always_inline
     fn _store_fragment[
         elements_per_op: Int,  # 8 for normal mode, 4 for x2 mode
@@ -502,7 +550,7 @@ struct FragmentToSMemWriter[
         var swizzled_offset = self._compute_swizzled_offset[n_frag, m_frag]()
 
         # Execute st.matrix hardware instruction
-        st_matrix[simd_width=packed_width](
+        st_matrix[simd_width=packed_width, transpose = Self.swapAB](
             smem_tile.ptr + swizzled_offset, packed_data
         )
 
@@ -520,7 +568,13 @@ struct FragmentToSMemWriter[
         """
         # Locate destination tile in shared memory
         var tile_linear_idx = Int(coords[0]) + Int(coords[1])
-        comptime elements_per_tile = Self.WG_BM * Self.tile_n_size
+
+        # Elements per tile: rows * cols
+        # For normal: WG_BM rows, tile_n_size cols
+        # For swapAB: WG_BN rows, tile_n_size cols
+        comptime elements_per_tile_reg = Self.WG_BM * Self.tile_n_size
+        comptime elements_per_tile_swapAB = Self.WG_BN * Self.tile_n_size
+        comptime elements_per_tile = elements_per_tile_reg if not Self.swapAB else elements_per_tile_swapAB
         comptime total_tiles = Self.c_tile_layout.size() // elements_per_tile
 
         # Reshape shared memory to access individual tiles
@@ -539,9 +593,16 @@ struct FragmentToSMemWriter[
         comptime reg_fragment_scale = 2 if Self.half_tile else 1
 
         comptime ST_MATRIX_WIDTH_BYTES = 16  # Fragment size: st.matrix operates on 16-byte chunks
+
+        # Sub-warp group offset: each sub-warp handles a portion of the tile
+        # For normal: sub_wg_id * WG_BN
+        # For swapAB: sub_wg_id * WG_BM
+        comptime sub_wg_offset_reg = Self.WG_BN
+        comptime sub_wg_offset_swapAB = Self.WG_BM
+        comptime sub_wg_offset = sub_wg_offset_reg if not Self.swapAB else sub_wg_offset_swapAB
+
         var n_fragment_base = (
-            Int(coords[1]) * Self.tile_n_size
-            + Self.sub_wg_id * Self.WG_BN  # Sub-warp handles portion of WG_BN
+            Int(coords[1]) * Self.tile_n_size + Self.sub_wg_id * sub_wg_offset
         ) // ST_MATRIX_WIDTH_BYTES
 
         # Store all fragments using st.matrix
@@ -582,6 +643,7 @@ struct RegisterToGMemWriter[
     epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
     compute_lambda_fn: OptionalReg[elementwise_compute_lambda_type] = None,
     check_runtime_bounds: Bool = False,  # New parameter for N-dimension bounds checking
+    swapAB: Bool = False,
 ](RegTileWriter):
     """Writer for transferring accumulator registers directly to global memory.
 
@@ -604,7 +666,7 @@ struct RegisterToGMemWriter[
         epilogue_fn: Optional epilogue function (mutates value in place).
         compute_lambda_fn: Optional compute lambda function (returns new value).
         check_runtime_bounds: Whether to perform bounds checking on N dimension.
-
+        swapAB: Whether to swap the A and B matrices.
     Note:
         At most one of epilogue_fn or compute_lambda_fn should be set.
     """
@@ -696,7 +758,7 @@ struct RegisterToGMemWriter[
         var mma_id = self._get_mma_id(m_mma, n_mma)
 
         @parameter
-        if Self.check_runtime_bounds:
+        if Self.check_runtime_bounds or Self.swapAB:
             # Element-by-element with runtime bounds checking
             self._write_with_runtime_bounds(c_reg_tile, m_mma, n_mma, mma_id)
         elif Self.epilogue_fn is not None or Self.compute_lambda_fn is not None:
@@ -829,10 +891,25 @@ struct RegisterToGMemWriter[
             n_mma: MMA tile index in N dimension.
             mma_id: Linearized MMA tile ID.
         """
+
+        comptime warp_tile_size_m = Self.wgmma_shape[
+            0
+        ] // 4 if not Self.swapAB else Self.wgmma_shape[1]
+        comptime warp_tile_size_n = Self.wgmma_shape[
+            1
+        ] if not Self.swapAB else Self.wgmma_shape[0] // 4
+
+        var coord_0 = Int(
+            m_mma * 4 + Int(self.thread_info.warp_id)
+        ) if not Self.swapAB else Int(n_mma)
+        var coord_1 = Int(n_mma) if not Self.swapAB else Int(
+            m_mma * 4 + Int(self.thread_info.warp_id)
+        )
+
         # Get warp tile with bounds checking
         var warp_tile, warp_tile_coords_raw, _ = self.dst.tile_with_offset[
-            Self.wgmma_shape[0] // 4, Self.wgmma_shape[1]
-        ](Int(m_mma * 4 + Int(self.thread_info.warp_id)), n_mma, 0, 0)
+            warp_tile_size_m, warp_tile_size_n
+        ](coord_0, coord_1, 0, 0)
 
         var warp_tile_coords = rebind[IndexList[2]](warp_tile_coords_raw)
         if self.tile_coords:
@@ -844,7 +921,13 @@ struct RegisterToGMemWriter[
             range(Self.num_m_frag_mat), range(Self.num_n_frag_mat)
         ):
             comptime frag_mat_id = n_frag * Self.num_m_frag_mat + m_frag
-            var frag_mat_gmem = warp_tile.tile[8, 8](m_frag, n_frag)
+
+            # Fragment tile position in warp tile
+            # For normal: (m_frag, n_frag)
+            # For swapAB: (n_frag, m_frag) - transposed
+            var frag_row = m_frag if not Self.swapAB else n_frag
+            var frag_col = n_frag if not Self.swapAB else m_frag
+            var frag_mat_gmem = warp_tile.tile[8, 8](frag_row, frag_col)
 
             # Get runtime bounds
             var max_row = UInt32(frag_mat_gmem.runtime_layout.shape[0].value[0])
@@ -852,24 +935,49 @@ struct RegisterToGMemWriter[
 
             @parameter
             for i in range(2):
-                if (
-                    self.thread_info.lane_row < max_row
-                    and self.thread_info.lane_col * 2 + i < max_col
-                ):
+                # Bounds check coordinates
+                # For normal: row = lane_row, col = lane_col * 2 + i
+                # For swapAB: row = lane_col * 2 + i, col = lane_row (transposed)
+                var lane_row_idx = self.thread_info.lane_row
+                var lane_col_idx = self.thread_info.lane_col * 2 + i
+                var check_row = (
+                    lane_row_idx if not Self.swapAB else lane_col_idx
+                )
+                var check_col = (
+                    lane_col_idx if not Self.swapAB else lane_row_idx
+                )
+
+                if check_row < max_row and check_col < max_col:
                     var reg_val = c_reg_tile[mma_id, frag_mat_id * 2 + i].cast[
                         Self.c_type
                     ]()
 
                     @parameter
                     fn epilogue_coordinates() -> Tuple[Int, Int]:
-                        return (
-                            Int(warp_tile_coords[0])
-                            + Int(m_frag * 8 + self.thread_info.lane_row),
-                            Int(warp_tile_coords[1])
-                            + Int(
-                                n_frag * 8 + self.thread_info.lane_col * 2 + i
-                            ),
-                        )
+                        @parameter
+                        if Self.swapAB:
+                            # In swapAB mode, coordinates are transposed
+                            return (
+                                Int(warp_tile_coords[0])
+                                + Int(
+                                    n_frag * 8
+                                    + self.thread_info.lane_col * 2
+                                    + i
+                                ),
+                                Int(warp_tile_coords[1])
+                                + Int(m_frag * 8 + self.thread_info.lane_row),
+                            )
+                        else:
+                            return (
+                                Int(warp_tile_coords[0])
+                                + Int(m_frag * 8 + self.thread_info.lane_row),
+                                Int(warp_tile_coords[1])
+                                + Int(
+                                    n_frag * 8
+                                    + self.thread_info.lane_col * 2
+                                    + i
+                                ),
+                            )
 
                     @parameter
                     if Self.epilogue_fn:
@@ -888,7 +996,15 @@ struct RegisterToGMemWriter[
                                 alignment = align_of[Scalar[Self.c_type]]()
                             ]((frag_m, frag_n), reg_val)
 
-                        frag_mat_gmem[
-                            Int(self.thread_info.lane_row),
-                            Int(self.thread_info.lane_col * 2 + i),
-                        ] = rebind[frag_mat_gmem.element_type](reg_val)
+                        # Store coordinates
+                        # For normal: (lane_row, lane_col * 2 + i)
+                        # For swapAB: (lane_col * 2 + i, lane_row) - transposed
+                        var store_row = Int(
+                            lane_row_idx
+                        ) if not Self.swapAB else Int(lane_col_idx)
+                        var store_col = Int(
+                            lane_col_idx
+                        ) if not Self.swapAB else Int(lane_row_idx)
+                        frag_mat_gmem[store_row, store_col] = rebind[
+                            frag_mat_gmem.element_type
+                        ](reg_val)

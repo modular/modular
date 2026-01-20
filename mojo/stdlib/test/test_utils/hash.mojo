@@ -14,7 +14,7 @@
 from hashlib.hasher import Hasher
 
 from bit import pop_count
-from builtin._location import __call_location
+from reflection import call_location
 from testing import assert_true
 
 
@@ -85,7 +85,7 @@ def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int):
                 assert_true(
                     False,
                     "Hash difference threshold violated (see details above)",
-                    location=__call_location(),
+                    location=call_location(),
                 )
 
 
@@ -176,5 +176,5 @@ def assert_fill_factor[
     assert_true(
         fill_factor >= lower_bound,
         "Fill factor threshold violated (see details above)",
-        location=__call_location(),
+        location=call_location(),
     )

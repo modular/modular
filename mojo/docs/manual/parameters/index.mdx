@@ -742,8 +742,8 @@ by keyword. For example, the
 is parametric on [origin](/mojo/manual/values/lifetimes):
 
 ```mojo
-struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut], ...]:
-    ...
+struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]]:
+    # ... implementation omitted
 ```
 
 Here, the `mut` parameter is infer-only. The value is usually inferred when you
@@ -1066,7 +1066,7 @@ struct _ListIter[
     var index: Int
     var src: Pointer[List[Self.Element], Self.origin]
 
-    ...
+    # ... implementation omitted
 
 struct List[T: Copyable](
     Boolable, Copyable, Defaultable, Iterable, Sized
@@ -1075,11 +1075,12 @@ struct List[T: Copyable](
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _ListIter[Self.T, iterable_origin]
 
-    ...
+    # ... code omitted
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return {0, Pointer(to=self)}
-    ...
+
+    # ... code omitted
 ```
 
 The `IteratorType` member is parameterized on an origin, so it can
@@ -1153,8 +1154,9 @@ It can appear in code in the following forms:
       pass
   ```
 
-You can also use the star-underscore expression `...` to unbind an arbitrary
-number of parameters at the end of a parameter list:
+You can also use three dots (`...`) to unbind an arbitrary
+number of parameters at the end of a parameter list (including any
+keyword-only parameters):
 
 ```mojo
 # These two types are equivalent

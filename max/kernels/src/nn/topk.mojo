@@ -18,7 +18,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of, env_get_bool
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from bit import log2_floor
@@ -33,7 +33,7 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.grid_controls import PDL, pdl_launch_attributes
+from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.dim import Dim
 from gpu.host.info import is_cpu

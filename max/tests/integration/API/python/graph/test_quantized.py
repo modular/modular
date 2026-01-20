@@ -13,7 +13,7 @@
 
 import numpy as np
 import pytest
-from max.driver import Tensor, accelerator_count
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -55,7 +55,7 @@ def test_qmatmul(session: InferenceSession) -> None:
         np.zeros((5, 32), dtype="float32"),
         np.zeros((32, 18), dtype="uint8"),
     )[0]
-    assert isinstance(generated, Tensor)
+    assert isinstance(generated, Buffer)
     expected = np.zeros((5, 32))
     np.testing.assert_equal(generated.to_numpy(), expected)
 
@@ -84,6 +84,6 @@ def test_dequantize(session: InferenceSession) -> None:
     # TODO: This is more of a smoke test than anything; we should really add a
     # test that uses some non-zero inputs and outputs (MSDK-820).
     generated = compiled.execute(np.zeros((1, 18), dtype="uint8"))[0]
-    assert isinstance(generated, Tensor)
+    assert isinstance(generated, Buffer)
     expected = np.zeros((1, 32))
     np.testing.assert_equal(generated.to_numpy(), expected)

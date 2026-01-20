@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 
@@ -77,7 +77,7 @@ def convert_qwen2_5vl_model_state_dict(
             llm_state_dict[llm_name] = weight_data
         elif "patch_embed.proj." in checkpoint_name:
             # Convert Conv3D weight to a Linear-equivalent format. MAX uses Linear layer instead of Conv3D for patch embedding.
-            weight_array = Tensor.from_dlpack(weight_data.data)
+            weight_array = Buffer.from_dlpack(weight_data.data)
             out_channels, in_channels, kernel_h, kernel_w, kernel_d = (
                 weight_array.shape
             )

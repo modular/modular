@@ -11,14 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections.abc import Generator, Iterator
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, NonCallableMock, patch
 
 import numpy as np
 import pytest
-from max.driver import CPU, Tensor
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph.weights import WeightData
 from max.interfaces import LoRAOperation, LoRARequest, LoRAResponse, LoRAStatus
+from max.pipelines.core import TextContext
 from max.pipelines.lib.lora import LoRAManager
 from max.pipelines.lib.lora_config import LoRAConfig
 
@@ -224,16 +225,16 @@ def test_model_name_base_model_mapping(
     device = CPU()
     input_row_offsets = np.array([0, 8, 16, 24, 32])
 
-    context_empty = MagicMock()
+    context_empty = NonCallableMock(spec=TextContext)
     context_empty.model_name = ""
 
-    context_none = MagicMock()
+    context_none = NonCallableMock(spec=TextContext)
     del context_none.model_name
 
-    context_base = MagicMock()
+    context_base = NonCallableMock(spec=TextContext)
     context_base.model_name = lora_manager.base_model_path
 
-    context_lora = MagicMock()
+    context_lora = NonCallableMock(spec=TextContext)
     context_lora.model_name = "test_lora"
 
     contexts = [
@@ -283,10 +284,10 @@ def test_served_model_name_base_model_mapping(
     device = CPU()
     input_row_offsets = np.array([0, 8, 16, 24])
 
-    context_served = MagicMock()
+    context_served = NonCallableMock(spec=TextContext)
     context_served.model_name = served_name
 
-    context_lora = MagicMock()
+    context_lora = NonCallableMock(spec=TextContext)
     context_lora.model_name = "test_lora"
 
     contexts = [context_lora, context_served]
@@ -323,16 +324,16 @@ def test_update_alias_buffers_copies_lora_a_weight(
     in_features = 64
 
     buffer_key = "layers.0.self_attn.qkv_lora.lora_A.weight"
-    buffer = Tensor.zeros(
+    buffer = Buffer.zeros(
         (max_num_loras, 3 * max_rank, in_features), dtype=DType.float32
     )
     lora_manager._alias_buffers[buffer_key] = buffer
 
     mock_lora = MagicMock()
     weight_data = np.random.randn(3 * max_rank, in_features).astype(np.float32)
-    weight_tensor = Tensor.from_numpy(weight_data)
+    weight_tensor = Buffer.from_numpy(weight_data)
 
-    mock_weight = MagicMock(spec=WeightData)
+    mock_weight = NonCallableMock(spec=WeightData)
     mock_weight.data = weight_tensor
     mock_lora.get.side_effect = lambda key: (
         mock_weight if key == buffer_key else None
@@ -341,7 +342,7 @@ def test_update_alias_buffers_copies_lora_a_weight(
     slot = 2
     lora_manager._update_alias_buffers_for_lora(mock_lora, slot)
 
-    result = Tensor.from_dlpack(lora_manager._alias_buffers[buffer_key])
+    result = Buffer.from_dlpack(lora_manager._alias_buffers[buffer_key])
     result_np = result.to_numpy()
 
     assert np.allclose(result_np[slot, :, :], weight_data)
@@ -358,7 +359,7 @@ def test_update_alias_buffers_copies_lora_b_kv_weight(
     kv_features = 32
 
     buffer_key = "layers.0.self_attn.qkv_lora.lora_B_kv.weight"
-    buffer = Tensor.zeros(
+    buffer = Buffer.zeros(
         (2 * max_num_loras, kv_features, max_rank), dtype=DType.float32
     )
     lora_manager._alias_buffers[buffer_key] = buffer
@@ -367,9 +368,9 @@ def test_update_alias_buffers_copies_lora_b_kv_weight(
     k_weight = np.random.randn(kv_features, max_rank).astype(np.float32)
     v_weight = np.random.randn(kv_features, max_rank).astype(np.float32)
     weight_data = np.stack([k_weight, v_weight])
-    weight_tensor = Tensor.from_numpy(weight_data)
+    weight_tensor = Buffer.from_numpy(weight_data)
 
-    mock_weight = MagicMock(spec=WeightData)
+    mock_weight = NonCallableMock(spec=WeightData)
     mock_weight.data = weight_tensor
     mock_lora.get.side_effect = lambda key: (
         mock_weight if key == buffer_key else None
@@ -378,7 +379,7 @@ def test_update_alias_buffers_copies_lora_b_kv_weight(
     slot = 1
     lora_manager._update_alias_buffers_for_lora(mock_lora, slot)
 
-    result = Tensor.from_dlpack(lora_manager._alias_buffers[buffer_key])
+    result = Buffer.from_dlpack(lora_manager._alias_buffers[buffer_key])
     result_np = result.to_numpy()
 
     assert np.allclose(result_np[slot, :, :], k_weight)
@@ -398,7 +399,7 @@ def test_update_alias_buffers_zeros_missing_weight(
     initial_data = np.ones(
         (max_num_loras, 3 * max_rank, in_features), dtype=np.float32
     )
-    buffer = Tensor.from_numpy(initial_data.copy())
+    buffer = Buffer.from_numpy(initial_data.copy())
     lora_manager._alias_buffers[buffer_key] = buffer
 
     mock_lora = MagicMock()
@@ -407,7 +408,7 @@ def test_update_alias_buffers_zeros_missing_weight(
     slot = 2
     lora_manager._update_alias_buffers_for_lora(mock_lora, slot)
 
-    result = Tensor.from_dlpack(lora_manager._alias_buffers[buffer_key])
+    result = Buffer.from_dlpack(lora_manager._alias_buffers[buffer_key])
     result_np = result.to_numpy()
 
     assert np.allclose(result_np[slot, :, :], 0.0)
@@ -427,7 +428,7 @@ def test_update_alias_buffers_zeros_missing_b_kv_weight(
     initial_data = np.ones(
         (2 * max_num_loras, kv_features, max_rank), dtype=np.float32
     )
-    buffer = Tensor.from_numpy(initial_data.copy())
+    buffer = Buffer.from_numpy(initial_data.copy())
     lora_manager._alias_buffers[buffer_key] = buffer
 
     mock_lora = MagicMock()
@@ -436,7 +437,7 @@ def test_update_alias_buffers_zeros_missing_b_kv_weight(
     slot = 1
     lora_manager._update_alias_buffers_for_lora(mock_lora, slot)
 
-    result = Tensor.from_dlpack(lora_manager._alias_buffers[buffer_key])
+    result = Buffer.from_dlpack(lora_manager._alias_buffers[buffer_key])
     result_np = result.to_numpy()
 
     assert np.allclose(result_np[slot, :, :], 0.0)
@@ -458,13 +459,13 @@ def test_update_alias_buffers_full_qkv_combination(
     lora_b_q_key = "layers.0.self_attn.qkv_lora.lora_B_q.weight"
     lora_b_kv_key = "layers.0.self_attn.qkv_lora.lora_B_kv.weight"
 
-    lora_a_buffer = Tensor.zeros(
+    lora_a_buffer = Buffer.zeros(
         (max_num_loras, 3 * max_rank, in_features), dtype=DType.float32
     )
-    lora_b_q_buffer = Tensor.zeros(
+    lora_b_q_buffer = Buffer.zeros(
         (max_num_loras, q_features, max_rank), dtype=DType.float32
     )
-    lora_b_kv_buffer = Tensor.zeros(
+    lora_b_kv_buffer = Buffer.zeros(
         (2 * max_num_loras, kv_features, max_rank), dtype=DType.float32
     )
 
@@ -481,18 +482,18 @@ def test_update_alias_buffers_full_qkv_combination(
 
     mock_lora = MagicMock()
 
-    def get_weight(key: str) -> MagicMock | None:
+    def get_weight(key: str) -> NonCallableMock | None:
         if key == lora_a_key:
-            mock_weight = MagicMock(spec=WeightData)
-            mock_weight.data = Tensor.from_numpy(lora_a_data)
+            mock_weight = NonCallableMock(spec=WeightData)
+            mock_weight.data = Buffer.from_numpy(lora_a_data)
             return mock_weight
         elif key == lora_b_q_key:
-            mock_weight = MagicMock(spec=WeightData)
-            mock_weight.data = Tensor.from_numpy(lora_b_q_data)
+            mock_weight = NonCallableMock(spec=WeightData)
+            mock_weight.data = Buffer.from_numpy(lora_b_q_data)
             return mock_weight
         elif key == lora_b_kv_key:
-            mock_weight = MagicMock(spec=WeightData)
-            mock_weight.data = Tensor.from_numpy(lora_b_kv_data)
+            mock_weight = NonCallableMock(spec=WeightData)
+            mock_weight.data = Buffer.from_numpy(lora_b_kv_data)
             return mock_weight
         return None
 
@@ -501,13 +502,13 @@ def test_update_alias_buffers_full_qkv_combination(
     slot = 0
     lora_manager._update_alias_buffers_for_lora(mock_lora, slot)
 
-    result_a = Tensor.from_dlpack(lora_manager._alias_buffers[lora_a_key])
+    result_a = Buffer.from_dlpack(lora_manager._alias_buffers[lora_a_key])
     assert np.allclose(result_a.to_numpy()[slot, :, :], lora_a_data)
 
-    result_b_q = Tensor.from_dlpack(lora_manager._alias_buffers[lora_b_q_key])
+    result_b_q = Buffer.from_dlpack(lora_manager._alias_buffers[lora_b_q_key])
     assert np.allclose(result_b_q.to_numpy()[slot, :, :], lora_b_q_data)
 
-    result_b_kv = Tensor.from_dlpack(lora_manager._alias_buffers[lora_b_kv_key])
+    result_b_kv = Buffer.from_dlpack(lora_manager._alias_buffers[lora_b_kv_key])
     result_b_kv_np = result_b_kv.to_numpy()
     assert np.allclose(result_b_kv_np[slot, :, :], k_data)
     assert np.allclose(result_b_kv_np[slot + max_num_loras, :, :], v_data)
@@ -521,18 +522,18 @@ def test_update_alias_buffers_full_qkv_combination(
     v_data_2 = np.random.randn(kv_features, max_rank).astype(np.float32)
     lora_b_kv_data_2 = np.stack([k_data_2, v_data_2])
 
-    def get_weight_2(key: str) -> MagicMock | None:
+    def get_weight_2(key: str) -> NonCallableMock | None:
         if key == lora_a_key:
-            mock_weight = MagicMock(spec=WeightData)
-            mock_weight.data = Tensor.from_numpy(lora_a_data_2)
+            mock_weight = NonCallableMock(spec=WeightData)
+            mock_weight.data = Buffer.from_numpy(lora_a_data_2)
             return mock_weight
         elif key == lora_b_q_key:
-            mock_weight = MagicMock(spec=WeightData)
-            mock_weight.data = Tensor.from_numpy(lora_b_q_data_2)
+            mock_weight = NonCallableMock(spec=WeightData)
+            mock_weight.data = Buffer.from_numpy(lora_b_q_data_2)
             return mock_weight
         elif key == lora_b_kv_key:
-            mock_weight = MagicMock(spec=WeightData)
-            mock_weight.data = Tensor.from_numpy(lora_b_kv_data_2)
+            mock_weight = NonCallableMock(spec=WeightData)
+            mock_weight.data = Buffer.from_numpy(lora_b_kv_data_2)
             return mock_weight
         return None
 
@@ -542,12 +543,12 @@ def test_update_alias_buffers_full_qkv_combination(
     slot_2 = 2
     lora_manager._update_alias_buffers_for_lora(mock_lora_2, slot_2)
 
-    result_a = Tensor.from_dlpack(lora_manager._alias_buffers[lora_a_key])
+    result_a = Buffer.from_dlpack(lora_manager._alias_buffers[lora_a_key])
     assert np.allclose(result_a.to_numpy()[slot, :, :], lora_a_data)
     assert np.allclose(result_a.to_numpy()[slot_2, :, :], lora_a_data_2)
     assert np.allclose(result_a.to_numpy()[1, :, :], 0.0)
 
-    result_b_kv = Tensor.from_dlpack(lora_manager._alias_buffers[lora_b_kv_key])
+    result_b_kv = Buffer.from_dlpack(lora_manager._alias_buffers[lora_b_kv_key])
     result_b_kv_np = result_b_kv.to_numpy()
 
     assert np.allclose(result_b_kv_np[slot, :, :], k_data)

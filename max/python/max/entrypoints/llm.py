@@ -198,9 +198,9 @@ async def _async_worker(
     lora_queue: LoRAQueue | None = (
         LoRAQueue(
             pipeline_config.zmq_endpoint_base,
-            pipeline_config.lora_config.lora_paths,
+            pipeline_config.lora.lora_paths,
         )
-        if pipeline_config.lora_config
+        if pipeline_config.lora
         else None
     )
     # Create Queues
@@ -249,10 +249,12 @@ async def _async_worker(
                 )
 
                 # Generate this request until complete
-                tokens = await pipeline.all_tokens(gen_request)
+                chunks = await pipeline.all_tokens(gen_request)
                 return "".join(
-                    t.decoded_token if t.decoded_token is not None else ""
-                    for t in tokens
+                    chunk.decoded_tokens
+                    if chunk.decoded_tokens is not None
+                    else ""
+                    for chunk in chunks
                 )
 
             responses = await _async_map(

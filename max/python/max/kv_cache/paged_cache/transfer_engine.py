@@ -28,7 +28,7 @@ from uuid import uuid4
 
 import msgspec
 from max._core import nixl
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 
 logger = logging.getLogger("max.pipelines")
 
@@ -102,7 +102,7 @@ def _validate_device_type(devices: Sequence[Device]) -> None:
 
 
 def _validate_tensor_shape(
-    tensors: Sequence[Tensor], total_num_pages: int
+    tensors: Sequence[Buffer], total_num_pages: int
 ) -> tuple[int, int]:
     # Validate all tensors have the same shape
     first_tensor = tensors[0]
@@ -171,7 +171,7 @@ class TensorAgent:
     agent_name: str
     """Name of this agent."""
 
-    tensor: Tensor
+    tensor: Buffer
     """Tensor for this agent."""
 
     base_addr: int
@@ -194,7 +194,7 @@ class TensorAgent:
         cls,
         agent_name: str,
         listen_port: int,
-        tensor: Tensor,
+        tensor: Buffer,
         total_num_pages: int,
         elts_per_page: int,
         memory_type: nixl.MemoryType,
@@ -334,7 +334,7 @@ class TransferReqData(
 class KVTransferEngine:
     """KVCache Transfer Engine with support for Data Parallelism (DP) and Tensor Parallelism (TP).
 
-    The engine accepts a 2D list of tensors: list[list[Tensor]] where the outer list
+    The engine accepts a 2D list of tensors: list[list[Buffer]] where the outer list
     represents DP replicas and the inner list represents TP shards within each replica.
 
     The TransferEngine communicates with other TransferEngines in other threads
@@ -378,7 +378,7 @@ class KVTransferEngine:
     def __init__(
         self,
         name: str,
-        tensors: Sequence[Sequence[Tensor]],
+        tensors: Sequence[Sequence[Buffer]],
         *,
         total_num_pages: int,
     ) -> None:

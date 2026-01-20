@@ -1,12 +1,12 @@
 # Struct Extensions Goals + Requirements
 
+**Status**: Draft.
+
 Author: Evan Ovadia
 
-**TL;DR:** Struct extensions let library B add a `fly_to` method to library A’s
+**TL;DR:** Struct extensions let library B add a `fly_to` method to library A's
 `Spaceship`, and we want that. This doc talks about what they are, why we want
 them, and what they should do.
-
-Status: Draft
 
 Scope: This designs the language feature, not the implementation.
 

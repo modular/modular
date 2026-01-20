@@ -987,7 +987,7 @@ class Value(Generic[_T]):
     def replace_all_uses_except(
         self, with_: Value, exceptions: Sequence[Operation]
     ) -> None: ...
-    def maybe_downcast(self) -> Value:
+    def maybe_downcast(self) -> BlockArgument | OpResult | Value:
         """Downcasts the `Value` to a more specific kind if possible."""
 
     @property
@@ -997,6 +997,7 @@ class Value(Generic[_T]):
 class BlockArgument(Value[_T]):
     def __init__(self, value: Value) -> None: ...
     def maybe_downcast(self) -> BlockArgument: ...
+    def __str__(self) -> str: ...
     @property
     def owner(self) -> Block:
         """Returns the block that owns this argument."""
@@ -1014,6 +1015,7 @@ class BlockArgument(Value[_T]):
 class OpResult(Value[_T]):
     def __init__(self, value: Value) -> None: ...
     def maybe_downcast(self) -> OpResult: ...
+    def __str__(self) -> str: ...
     @property
     def owner(self) -> OpView:
         """Returns the operation that produces this result."""
@@ -1217,6 +1219,9 @@ class OpAttributeMap:
 
     def __delitem__(self, name: str) -> None:
         """Deletes an attribute with the given name."""
+
+    def get(self, key: str, default: object | None = None) -> Attribute | None:
+        """Gets an attribute by name or the default value, if it does not exist."""
 
     def __iter__(self) -> Iterator:
         """Iterates over attribute names."""
@@ -2210,6 +2215,10 @@ class FloatAttr(Attribute):
     @property
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
+
+    attr_name: str = ...
+    """(arg: object, /) -> str"""
+
     @staticmethod
     def get(type: Type, value: float, loc: Location | None = None) -> FloatAttr:
         """Gets an uniqued float point attribute associated to a type"""

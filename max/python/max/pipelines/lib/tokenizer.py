@@ -153,7 +153,9 @@ class PreTrainedPipelineTokenizer(
         self, messages: list[TextGenerationRequestMessage]
     ) -> str:
         templated_message = self.delegate.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
+            [msg.model_dump() for msg in messages],
+            tokenize=False,
+            add_generation_prompt=True,
         )
         assert isinstance(templated_message, str)
         return templated_message
@@ -292,47 +294,6 @@ class TextTokenizer(
                 elif isinstance(eos_token_id, list):
                     self._default_eos_token_ids.update(eos_token_id)
 
-    @staticmethod
-    def _flatten_text_generation_request_message(
-        messages: list[TextGenerationRequestMessage],
-    ) -> list[dict[str, str]]:
-        flattened_messages: list[dict[str, str]] = []
-        for message in messages:
-            flattened_message = {
-                "role": message.role,
-                "content": "",
-            }
-            if isinstance(message.content, str):
-                flattened_message["content"] = message.content
-            elif isinstance(message.content, list):
-                for content in message.content:
-                    if not hasattr(content, "type"):
-                        raise ValueError(
-                            "Malformed message content, missing 'type' field"
-                        )
-                    if content.type != "text":
-                        raise ValueError(
-                            f"Unsupported content type: {content.type}"
-                        )
-
-                    if flattened_message["content"] != "":
-                        flattened_message["content"] += "\n"
-
-                    flattened_message["content"] += content.text
-
-                if "content" not in flattened_message:
-                    raise ValueError(
-                        "Malformed message content, missing 'content' field with type 'text'"
-                    )
-            else:
-                raise ValueError(
-                    f"Unsupported content type: {type(message.content)}"
-                )
-
-            flattened_messages.append(flattened_message)
-
-        return flattened_messages
-
     def apply_chat_template(
         self,
         messages: list[TextGenerationRequestMessage],
@@ -343,13 +304,9 @@ class TextTokenizer(
             "add_generation_prompt": True
         }
 
-        flattened_messages = self._flatten_text_generation_request_message(
-            messages
-        )
-
         try:
             templated_message = self.delegate.apply_chat_template(
-                flattened_messages,
+                [message.flatten_content() for message in messages],
                 tokenize=False,
                 tools=tools,
                 **chat_template_options,
@@ -559,6 +516,7 @@ class TextTokenizer(
             # if the array is actually a scalar.  Reshape to a 1-length rank-1
             # array in this case.  See MODELS-467 for symptom.
             encoded = encoded.reshape((1,))
+
         decoded = self.delegate.decode(
             np.insert(encoded, 0, self._llama_whitespace_fix_dummy_token_id),
             **kwargs,
@@ -626,7 +584,7 @@ class TextAndVisionTokenizer(
                 self._default_eos_token_ids.update(eos_token_id)
 
         self.enable_prefix_caching = (
-            pipeline_config.model.kv_cache_config.enable_prefix_caching
+            pipeline_config.model.kv_cache.enable_prefix_caching
         )
 
         self._context_validators = (
@@ -655,8 +613,12 @@ class TextAndVisionTokenizer(
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]
     ) -> str:
+        # This converts between the Pydantic TextGenerationRequestMessage
+        # to a dict for the HF delegate
         templated_message = self.processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
+            [msg.model_dump() for msg in messages],
+            tokenize=False,
+            add_generation_prompt=True,
         )
         assert isinstance(templated_message, str)
         return templated_message

@@ -18,7 +18,7 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type
@@ -140,14 +140,14 @@ def test_linear(
         batch_size, in_dim, out_dim, state_dict, session
     )
 
-    input = Tensor.from_numpy(
+    input = Buffer.from_numpy(
         np.random.uniform(size=(batch_size, in_dim)).astype(np.float32)
     ).to(Accelerator())
 
     outputs = compiled_linear(input)
 
     assert len(outputs) == 1
-    assert isinstance(outputs[0], Tensor)
+    assert isinstance(outputs[0], Buffer)
     expected_output = outputs[0].to(host).to_numpy()
 
     # Compute multi-gpu Linear layer outputs.
@@ -162,6 +162,6 @@ def test_linear(
     distributed_outputs = compiled_distributed_linear(input, *signals.buffers())
 
     for n, output in enumerate(distributed_outputs):
-        assert isinstance(output, Tensor)
+        assert isinstance(output, Buffer)
         assert output.device == devices[n]
         assert np.equal(output.to(host).to_numpy(), expected_output).all()

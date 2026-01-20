@@ -22,7 +22,7 @@ from internvl_impl.configuration_intern_vit import (
     InternVisionConfig as HFInternVLConfig,
 )
 from internvl_impl.modeling_intern_vit import InternVLVisionModelWithProjection
-from max.driver import Accelerator, Device, Tensor
+from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -155,7 +155,7 @@ def generate_max_outputs(
     signal_buffer_tensors = signals.buffers()
 
     result = compiled.execute(
-        Tensor.from_dlpack(pixel_values_patched).to(device),
+        Buffer.from_dlpack(pixel_values_patched).to(device),
         *signal_buffer_tensors,
     )
     # Convert result back to torch tensor

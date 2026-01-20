@@ -15,7 +15,7 @@
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Accelerator, Device, Tensor
+from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -42,9 +42,9 @@ def rand_tensor(
     return torch.randn(shape, dtype=dtype) * 0.02
 
 
-def to_max_tensor(tensor: torch.Tensor, device: Device) -> Tensor:
+def to_max_tensor(tensor: torch.Tensor, device: Device) -> Buffer:
     """Convert CPU torch tensor to MAX tensor on device."""
-    return Tensor.from_dlpack(tensor).to(device)
+    return Buffer.from_dlpack(tensor).to(device)
 
 
 def assert_close(
@@ -157,7 +157,7 @@ def run_kv_cache_2m_iadd(
     # Zero the KV cache before iadd test (since iadd adds to existing values)
     cache_tensor = kv_manager._replica_managers[0].device_tensors[0]
     cache_tensor.inplace_copy_from(
-        Tensor.zeros(cache_tensor.shape, dtype=DTYPE, device=device)
+        Buffer.zeros(cache_tensor.shape, dtype=DTYPE, device=device)
     )
 
     kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
@@ -210,9 +210,9 @@ def run_kv_cache_2m_iadd(
 
     compiled.execute(
         to_max_tensor(kv_lora_output, device),
-        Tensor.from_numpy(input_row_offsets).to(device),
-        Tensor.from_numpy(lora_end_idx_arr),
-        Tensor.from_numpy(batch_seq_len_arr),
+        Buffer.from_numpy(input_row_offsets).to(device),
+        Buffer.from_numpy(lora_end_idx_arr),
+        Buffer.from_numpy(batch_seq_len_arr),
         *kv_runtime_inputs,
     )
 

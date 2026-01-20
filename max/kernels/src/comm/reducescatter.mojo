@@ -22,13 +22,13 @@ from gpu import (
     global_idx,
     grid_dim,
 )
-from gpu.grid_controls import (
+from gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
-from gpu.grid_controls import PDLLevel
+from gpu.primitives.grid_controls import PDLLevel
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
 from utils import StaticTuple

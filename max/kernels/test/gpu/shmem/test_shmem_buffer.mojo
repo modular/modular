@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo-build %s -o %t
-# RUN: %t
+# RUN: %mpirun-gpu-per-thread %t
 
 from math import iota
 

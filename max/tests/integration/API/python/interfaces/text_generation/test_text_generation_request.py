@@ -145,3 +145,87 @@ def test_text_generation_request_init() -> None:
                 )
             ],
         )
+
+
+def test_text_generation_request_message_dict_roundtrip() -> None:
+    # Test that messages_dict == dict(TextGenerationRequestMessage(**messages_dict))
+    messages_dict = {
+        "role": "user",
+        "content": [{"type": "text", "text": "hello world"}],
+    }
+
+    message = TextGenerationRequestMessage(**messages_dict)
+    assert messages_dict == message.model_dump()
+
+    # Test with images
+    messages_dict_with_images = {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "describe this"},
+            {"type": "image"},
+            {"type": "image"},
+        ],
+    }
+
+    message_with_images = TextGenerationRequestMessage(
+        **messages_dict_with_images
+    )
+    assert messages_dict_with_images == message_with_images.model_dump()
+
+
+def test_text_generation_request_message_flatten_content() -> None:
+    # Test with string content
+    message_str = TextGenerationRequestMessage(
+        role="user",
+        content="hello world",
+    )
+    flattened = message_str.flatten_content()
+    assert flattened == {
+        "role": "user",
+        "content": "hello world",
+    }
+
+    # Test with single text content part
+    message_single_text = TextGenerationRequestMessage(
+        role="assistant",
+        content=[{"type": "text", "text": "response text"}],
+    )
+    flattened = message_single_text.flatten_content()
+    assert flattened == {
+        "role": "assistant",
+        "content": "response text",
+    }
+
+    # Test with multiple text content parts (should be joined with newlines)
+    message_multi_text = TextGenerationRequestMessage(
+        role="user",
+        content=[
+            {"type": "text", "text": "first line"},
+            {"type": "text", "text": "second line"},
+            {"type": "text", "text": "third line"},
+        ],
+    )
+    flattened = message_multi_text.flatten_content()
+    assert flattened == {
+        "role": "user",
+        "content": "first line\nsecond line\nthird line",
+    }
+
+    # Test that image content raises ValueError
+    message_with_image = TextGenerationRequestMessage(
+        role="user",
+        content=[
+            {"type": "text", "text": "describe this"},
+            {"type": "image"},
+        ],
+    )
+    with pytest.raises(ValueError, match="only text content can be flattened"):
+        message_with_image.flatten_content()
+
+    # Test with only image content
+    message_only_image = TextGenerationRequestMessage(
+        role="user",
+        content=[{"type": "image"}],
+    )
+    with pytest.raises(ValueError, match="only text content can be flattened"):
+        message_only_image.flatten_content()

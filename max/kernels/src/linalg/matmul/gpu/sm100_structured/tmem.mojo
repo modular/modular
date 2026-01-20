@@ -24,7 +24,7 @@ shared memory. This module provides type-safe abstractions:
 from layout import Layout
 
 from gpu import syncwarp
-from gpu.tcgen05 import (
+from gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_ld,
@@ -855,6 +855,29 @@ struct TmemStage[
         """Create stage from TmemAllocation and stage index."""
         self.base_addr = Int(alloc.addr)
         self.index = index
+
+    @staticmethod
+    @always_inline
+    fn from_offset(offset: Int, index: Int) -> Self:
+        """Create stage from pre-computed offset (for legacy pipeline compatibility).
+
+        Use this when the caller has already computed the TMEM offset
+        (e.g., `base + stage * stride`) and just needs to wrap it.
+
+        The index is preserved for barrier signaling, and we back-calculate
+        the base_addr such that offset() = base + index * stride = offset.
+
+        Args:
+            offset: Pre-computed TMEM column offset for this stage.
+            index: Pipeline stage index (for barrier signaling).
+
+        Returns:
+            TmemStage with offset() returning the given value.
+        """
+        # Back-calculate base_addr so that base_addr + index * stride = offset
+        # base_addr = offset - index * stride
+        var base_addr = offset - index * Self.stage_stride
+        return Self(base_addr, index)
 
     @always_inline
     fn offset(self) -> Int:

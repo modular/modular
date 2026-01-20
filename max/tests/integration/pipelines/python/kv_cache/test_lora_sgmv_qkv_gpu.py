@@ -16,7 +16,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 import torch
-from max.driver import CPU, Accelerator, Device, Tensor
+from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -43,9 +43,9 @@ def rand_tensor(
     return torch.randn(shape, dtype=dtype) * 0.02
 
 
-def to_max_tensor(tensor: torch.Tensor, device: Device) -> Tensor:
+def to_max_tensor(tensor: torch.Tensor, device: Device) -> Buffer:
     """Convert CPU torch tensor to MAX tensor on device."""
-    return Tensor.from_dlpack(tensor).to(device)
+    return Buffer.from_dlpack(tensor).to(device)
 
 
 def assert_close(
@@ -311,7 +311,7 @@ def run_sgmv_qkv_lora_kernel(
     # Zero the KV cache
     cache_tensor = kv_manager._replica_managers[0].device_tensors[0]
     cache_tensor.inplace_copy_from(
-        Tensor.zeros(cache_tensor.shape, dtype=DTYPE, device=device)
+        Buffer.zeros(cache_tensor.shape, dtype=DTYPE, device=device)
     )
 
     kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
@@ -409,14 +409,14 @@ def run_sgmv_qkv_lora_kernel(
         to_max_tensor(lora_a, device),
         to_max_tensor(lora_b_q, device),
         to_max_tensor(lora_b_kv, device),
-        Tensor.from_numpy(lora_ids.astype(np.int32)).to(device),
-        Tensor.from_numpy(np.full(num_lora_groups, rank, dtype=np.uint32)),
-        Tensor.from_numpy(grouped_offsets.astype(np.uint32)).to(device),
-        Tensor.from_numpy(input_row_offsets.astype(np.uint32)).to(device),
-        Tensor.from_numpy(lora_end_idx_arr),
-        Tensor.from_numpy(batch_seq_len_arr),
-        Tensor.from_numpy(np.array(grouped_ids_kv, dtype=np.int32)).to(device),
-        Tensor.from_numpy(np.array(grouped_offsets_kv, dtype=np.uint32)).to(
+        Buffer.from_numpy(lora_ids.astype(np.int32)).to(device),
+        Buffer.from_numpy(np.full(num_lora_groups, rank, dtype=np.uint32)),
+        Buffer.from_numpy(grouped_offsets.astype(np.uint32)).to(device),
+        Buffer.from_numpy(input_row_offsets.astype(np.uint32)).to(device),
+        Buffer.from_numpy(lora_end_idx_arr),
+        Buffer.from_numpy(batch_seq_len_arr),
+        Buffer.from_numpy(np.array(grouped_ids_kv, dtype=np.int32)).to(device),
+        Buffer.from_numpy(np.array(grouped_offsets_kv, dtype=np.uint32)).to(
             device
         ),
         *kv_runtime_inputs,

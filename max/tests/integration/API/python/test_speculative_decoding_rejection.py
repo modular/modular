@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pytest
-from max.driver import DeviceSpec, Tensor
+from max.driver import Buffer, DeviceSpec
 from max.interfaces import (
     PipelineTokenizer,
     RequestID,
@@ -156,8 +156,8 @@ def test_speculative_decoding_no_rejection(
         draft_tokens,
     )
 
-    assert isinstance(merged_tokens, Tensor)
-    assert isinstance(merged_offsets, Tensor)
+    assert isinstance(merged_tokens, Buffer)
+    assert isinstance(merged_offsets, Buffer)
     # Verify draft tokens with target model
     first_rejected_tokens, recovered_tokens, bonus_tokens = (
         pipeline.verify_draft_tokens_with_target_model(
@@ -233,7 +233,7 @@ def test_speculative_decoding_partial_rejection(
 
     draft_logits_host = np.copy(draft_logits.to_numpy())
     draft_logits_host[0, num_steps // 2 :] = 10000.0
-    draft_logits = Tensor.from_numpy(draft_logits_host).to(draft_logits.device)
+    draft_logits = Buffer.from_numpy(draft_logits_host).to(draft_logits.device)
 
     # Permute to [batch, num_steps, vocab] and set large logit values for half the tokens in the first batch.
     # Then permute back to the expected shape
@@ -246,12 +246,12 @@ def test_speculative_decoding_partial_rejection(
     step_indices = np.arange(step_start, steps)[np.newaxis, :]
     token_values = draft_tokens.to_numpy()[:, step_start:]
     all_draft_logits_host[batch_indices, step_indices, token_values] = 10000.0
-    all_draft_logits = Tensor.from_numpy(
+    all_draft_logits = Buffer.from_numpy(
         np.permute_dims(all_draft_logits_host, [1, 0, 2])
     ).to(all_draft_logits.device)
 
-    assert isinstance(merged_tokens, Tensor)
-    assert isinstance(merged_offsets, Tensor)
+    assert isinstance(merged_tokens, Buffer)
+    assert isinstance(merged_offsets, Buffer)
     # Verify draft tokens with target model
     first_rejected_tokens, recovered_tokens, bonus_tokens = (
         pipeline.verify_draft_tokens_with_target_model(

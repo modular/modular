@@ -28,21 +28,23 @@
 
 import json
 from typing import Any
-from unittest.mock import MagicMock, mock_open
+from unittest.mock import MagicMock, NonCallableMock, mock_open
 
 import pytest
 from max.pipelines.architectures.mistral3.tokenizer import Mistral3Tokenizer
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from pytest_mock import MockerFixture
+from transformers import MistralConfig
 
 
 @pytest.fixture
-def mock_pipeline_config() -> MagicMock:
+def mock_pipeline_config() -> NonCallableMock:
     """Create a mock PipelineConfig for testing."""
-    mock_model_config = MagicMock()
+    mock_model_config = NonCallableMock(spec=MAXModelConfig)
     mock_model_config.huggingface_model_revision = None
-    mock_model_config.huggingface_config = MagicMock()
+    mock_model_config.huggingface_config = NonCallableMock(spec=MistralConfig)
 
-    pipeline_config = MagicMock()
+    pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = mock_model_config
     return pipeline_config
 
@@ -181,10 +183,10 @@ def test_load_chat_template_with_pipeline_config_revision(
     sample_chat_template: dict[str, str],
 ) -> None:
     """Test loading with revision from pipeline config."""
-    mock_model_config = MagicMock()
+    mock_model_config = NonCallableMock(spec=MAXModelConfig)
     mock_model_config.huggingface_model_revision = "config-revision"
 
-    pipeline_config = MagicMock()
+    pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = mock_model_config
 
     mock_cache = mocker.patch(
@@ -213,10 +215,10 @@ def test_load_chat_template_revision_precedence(
     sample_chat_template: dict[str, str],
 ) -> None:
     """Test that explicit revision takes precedence over config revision."""
-    mock_model_config = MagicMock()
+    mock_model_config = NonCallableMock(spec=MAXModelConfig)
     mock_model_config.huggingface_model_revision = "config-revision"
 
-    pipeline_config = MagicMock()
+    pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = mock_model_config
 
     mock_cache = mocker.patch(

@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Device, Tensor, load_devices, scan_available_devices
+from max.driver import Buffer, Device, load_devices, scan_available_devices
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import (
@@ -231,10 +231,10 @@ class SpeculativeDecodingPipelineBase(
                 max_workers=8,
             )
         else:
-            # Make sure the weight paths are absolute paths
+            # Use the resolved repo_id (which points to local cache in offline mode)
+            local_path = Path(target_hf_repo.repo_id)
             weight_paths = [
-                self.pipeline_config.model.model_path / x
-                for x in self.pipeline_config.model.weight_path
+                local_path / x for x in self.pipeline_config.model.weight_path
             ]
 
         target_weights = load_weights(weight_paths)
@@ -251,7 +251,7 @@ class SpeculativeDecodingPipelineBase(
             huggingface_config=target_config,
             encoding=self.pipeline_config.model.quantization_encoding,
             devices=self.target_devices,
-            kv_cache_config=self.pipeline_config.model.kv_cache_config,
+            kv_cache_config=self.pipeline_config.model.kv_cache,
             weights=target_weights,
             adapter=weight_adapters.get(_target_weights_format),
             return_logits=ReturnLogits.VARIABLE,
@@ -272,10 +272,8 @@ class SpeculativeDecodingPipelineBase(
         draft_session = InferenceSession(devices=self.draft_devices)
         self.pipeline_config.configure_session(draft_session)
 
-        assert self.pipeline_config.draft_model_config is not None
-        draft_config = (
-            self.pipeline_config.draft_model_config.huggingface_config
-        )
+        assert self.pipeline_config.draft_model is not None
+        draft_config = self.pipeline_config.draft_model.huggingface_config
 
         if hasattr(self.pipeline_config.model.huggingface_config, "vocab_size"):
             self.vocab_size = (
@@ -300,19 +298,17 @@ class SpeculativeDecodingPipelineBase(
             )
 
         # Retrieve Encoding, and Files for Draft Model
-        if self.pipeline_config.draft_model_config is None:
+        if self.pipeline_config.draft_model is None:
             raise ValueError(
                 "draft_model must be provided for speculative decoding"
             )
 
-        draft_hf_repo = (
-            self.pipeline_config.draft_model_config.huggingface_weight_repo
-        )
+        draft_hf_repo = self.pipeline_config.draft_model.huggingface_weight_repo
 
-        # Use the quantization_encoding from draft_model_config if provided
-        if self.pipeline_config.draft_model_config.quantization_encoding:
+        # Use the quantization_encoding from draft_model if provided
+        if self.pipeline_config.draft_model.quantization_encoding:
             draft_encoding = (
-                self.pipeline_config.draft_model_config.quantization_encoding
+                self.pipeline_config.draft_model.quantization_encoding
             )
         else:
             # Fall back to first supported encoding if not specified
@@ -326,27 +322,29 @@ class SpeculativeDecodingPipelineBase(
             )
             draft_encoding = encodings[0]
 
-        # Use already-resolved weight paths from draft_model_config
+        # Use already-resolved weight paths from draft_model
         draft_weight_paths: list[Path] = []
         if (
-            self.pipeline_config.draft_model_config.huggingface_weight_repo.repo_type
+            self.pipeline_config.draft_model.huggingface_weight_repo.repo_type
             == RepoType.online
         ):
             # Download weight files if not existent.
             draft_weight_paths = download_weight_files(
-                huggingface_model_id=self.pipeline_config.draft_model_config.model_path,
+                huggingface_model_id=self.pipeline_config.draft_model.model_path,
                 filenames=[
-                    str(x)
-                    for x in self.pipeline_config.draft_model_config.weight_path
+                    str(x) for x in self.pipeline_config.draft_model.weight_path
                 ],
-                revision=self.pipeline_config.draft_model_config.huggingface_weight_revision,
+                revision=self.pipeline_config.draft_model.huggingface_weight_revision,
                 max_workers=8,
             )
         else:
-            # Make sure the weight paths are absolute paths
+            # Use the resolved repo_id (which points to local cache in offline mode)
+            draft_local_path = Path(
+                self.pipeline_config.draft_model.huggingface_weight_repo.repo_id
+            )
             draft_weight_paths = [
-                self.pipeline_config.draft_model_config.model_path / x
-                for x in self.pipeline_config.draft_model_config.weight_path
+                draft_local_path / x
+                for x in self.pipeline_config.draft_model.weight_path
             ]
 
         draft_weights = load_weights(draft_weight_paths)
@@ -372,7 +370,7 @@ class SpeculativeDecodingPipelineBase(
             huggingface_config=draft_config,
             encoding=draft_encoding,
             devices=self.draft_devices,
-            kv_cache_config=self.pipeline_config.draft_model_config.kv_cache_config,
+            kv_cache_config=self.pipeline_config.draft_model.kv_cache,
             weights=draft_weights,
             adapter=actual_draft_weight_adapters.get(_draft_weights_format),
             return_logits=ReturnLogits.LAST_TOKEN,
@@ -382,7 +380,7 @@ class SpeculativeDecodingPipelineBase(
         )
 
         # Load draft sampler
-        draft_sampling_config = self.pipeline_config.sampling_config
+        draft_sampling_config = self.pipeline_config.sampling
         draft_sampling_config.enable_variable_logits = False
         self._draft_sampler = draft_session.load(
             token_sampler(
@@ -468,7 +466,7 @@ class SpeculativeDecodingPipelineBase(
         self,
         batch: list[TextContext],
         device: Device,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[Buffer, Buffer, Buffer, Buffer, Buffer, Buffer]:
         """Create sampling parameter tensors from context batch.
 
         Args:
@@ -481,26 +479,26 @@ class SpeculativeDecodingPipelineBase(
         top_k_np = np.array(
             [context.sampling_params.top_k for context in batch], dtype=np.int64
         )
-        top_k = Tensor.from_numpy(top_k_np).to(device)
+        top_k = Buffer.from_numpy(top_k_np).to(device)
         max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
-        max_k = Tensor.from_numpy(max_k_np)
+        max_k = Buffer.from_numpy(max_k_np)
         temperature_np = np.array(
             [context.sampling_params.temperature for context in batch],
             dtype=np.float32,
         )
-        temperature = Tensor.from_numpy(temperature_np).to(device)
+        temperature = Buffer.from_numpy(temperature_np).to(device)
         top_p_np = np.array(
             [context.sampling_params.top_p for context in batch],
             dtype=np.float32,
         )
-        top_p = Tensor.from_numpy(top_p_np).to(device)
+        top_p = Buffer.from_numpy(top_p_np).to(device)
         # min_top_p must be provided as a scalar CPU tensor
         min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
-        min_top_p = Tensor.from_numpy(min_top_p_np)
+        min_top_p = Buffer.from_numpy(min_top_p_np)
         seed_np = np.array(
             [context.sampling_params.seed for context in batch], dtype=np.uint64
         )
-        seed = Tensor.from_numpy(seed_np).to(device)
+        seed = Buffer.from_numpy(seed_np).to(device)
 
         return (top_k, max_k, temperature, top_p, min_top_p, seed)
 
@@ -508,15 +506,15 @@ class SpeculativeDecodingPipelineBase(
     def sample_draft_logits(
         self,
         model_outputs: ModelOutputs,
-        prev_tokens: Tensor,
-        prev_logits: Tensor,
-        top_k: Tensor,
-        max_k: Tensor,
-        temperature: Tensor,
-        top_p: Tensor,
-        min_top_p: Tensor,
-        seed: Tensor,
-    ) -> tuple[Tensor, Tensor, Tensor]:
+        prev_tokens: Buffer,
+        prev_logits: Buffer,
+        top_k: Buffer,
+        max_k: Buffer,
+        temperature: Buffer,
+        top_p: Buffer,
+        min_top_p: Buffer,
+        seed: Buffer,
+    ) -> tuple[Buffer, Buffer, Buffer]:
         graph_inputs = [
             model_outputs.logits,
             prev_tokens,
@@ -529,9 +527,9 @@ class SpeculativeDecodingPipelineBase(
             prev_logits,
         ]
         a, b, c = self._draft_sampler(*graph_inputs)[:3]
-        assert isinstance(a, Tensor)
-        assert isinstance(b, Tensor)
-        assert isinstance(c, Tensor)
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        assert isinstance(c, Buffer)
         return (a, b, c)
 
     @property

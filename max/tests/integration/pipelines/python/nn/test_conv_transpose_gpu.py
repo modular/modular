@@ -13,7 +13,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -104,7 +104,7 @@ def test_conv_transpose1d() -> None:
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
 
     max_conv_result = compiled.execute(input_sequence)[0]
-    assert isinstance(max_conv_result, Tensor)
+    assert isinstance(max_conv_result, Buffer)
 
     np.testing.assert_allclose(
         max_conv_result.to_numpy(),
@@ -207,7 +207,7 @@ def test_conv_transpose1d_bias() -> None:
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
 
     max_conv_result = compiled.execute(input_sequence)[0]
-    assert isinstance(max_conv_result, Tensor)
+    assert isinstance(max_conv_result, Buffer)
 
     np.testing.assert_allclose(
         max_conv_result.to_numpy(),
@@ -320,7 +320,7 @@ def test_weight_norm_conv_transpose1d() -> None:
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
 
     max_conv_result = compiled.execute(input_sequence)[0]
-    assert isinstance(max_conv_result, Tensor)
+    assert isinstance(max_conv_result, Buffer)
 
     # Compare outputs
     np.testing.assert_allclose(

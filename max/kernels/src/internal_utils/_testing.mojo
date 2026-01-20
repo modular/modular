@@ -16,10 +16,7 @@ from collections import OptionalReg
 from math import exp2
 
 import testing
-from builtin._location import __call_location, _SourceLocation
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from reflection import call_location, SourceLocation
 from testing.testing import _assert_cmp_error
 
 from utils.numerics import FPUtils
@@ -89,12 +86,12 @@ fn assert_almost_equal[
     //,
 ](
     x: UnsafePointer[Scalar[dtype]],
-    y: type_of(x),
+    y: UnsafePointer[Scalar[dtype]],
     num_elements: Int,
     msg: String = "",
     *,
     shape: List[Int] = List[Int](),
-    location: OptionalReg[_SourceLocation] = None,
+    location: OptionalReg[SourceLocation] = None,
     atol: Float64 = 1e-08,
     rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
@@ -140,7 +137,7 @@ fn assert_almost_equal[
             atol=atol,
             rtol=rtol,
             equal_nan=equal_nan,
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
 
@@ -155,12 +152,12 @@ fn assert_equal[
     //,
 ](
     x: UnsafePointer[Scalar[dtype]],
-    y: type_of(x),
+    y: UnsafePointer[Scalar[dtype]],
     num_elements: Int,
     msg: String = "",
     *,
     shape: List[Int] = List[Int](),
-    location: OptionalReg[_SourceLocation] = None,
+    location: OptionalReg[SourceLocation] = None,
 ) raises:
     """Assert that two buffers are element-wise exactly equal.
 
@@ -194,7 +191,7 @@ fn assert_equal[
             x[i],
             y[i],
             msg=String(msg, " at ", _format_index(i, shape)),
-            location=location.or_else(__call_location()),
+            location=location.or_else(call_location()),
         )
 
 
@@ -208,17 +205,17 @@ fn assert_with_measure[
     dtype: DType,
     //,
     measure: fn[dtype: DType] (
-        LegacyUnsafePointer[mut=False, Scalar[dtype]],
-        LegacyUnsafePointer[mut=False, Scalar[dtype]],
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         Int,
     ) -> Float64,
 ](
-    x: UnsafePointer[Scalar[dtype], ...],
-    y: type_of(x),
+    x: UnsafePointer[Scalar[dtype]],
+    y: UnsafePointer[Scalar[dtype]],
     num_elements: Int,
     msg: String = "",
     *,
-    location: OptionalReg[_SourceLocation] = None,
+    location: OptionalReg[SourceLocation] = None,
     threshold: OptionalReg[Float64] = None,
 ) raises:
     """Assert that a custom measure between two buffers is below a threshold.
@@ -267,7 +264,7 @@ fn assert_with_measure[
             String(m),
             String(t),
             msg=msg,
-            loc=location.or_else(__call_location()),
+            loc=location.or_else(call_location()),
         )
 
 

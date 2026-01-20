@@ -61,9 +61,9 @@ fn _inline_array_construction_checks[size: Int]():
 
 
 struct InlineArray[ElementType: Copyable, size: Int,](
+    Copyable,
     Defaultable,
     DevicePassable,
-    ImplicitlyCopyable,
     Representable,
     Sized,
     Stringable,
@@ -120,7 +120,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Args:
             target: The target address to store the device type.
         """
-        target.bitcast[Self.device_type]()[] = self
+        target.bitcast[Self.device_type]()[] = self.copy()
 
     @staticmethod
     fn get_type_name() -> String:

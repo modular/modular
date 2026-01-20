@@ -16,7 +16,7 @@ This module provides type-safe wrappers around low-level barrier primitives,
 improving code readability and reducing error potential.
 """
 
-from gpu.cluster import block_rank_in_cluster
+from gpu.primitives.cluster import block_rank_in_cluster
 from gpu.sync import named_barrier, named_barrier_arrive
 from layout.tma_async import SharedMemBarrier
 

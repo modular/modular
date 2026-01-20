@@ -225,38 +225,38 @@ class OpenAIChatResponseGenerator(
         prompt_tokens = 0
         status_code = 200
         try:
-            async for token in self.pipeline.next_token(request):
+            async for chunk in self.pipeline.next_token_chunk(request):
                 self.logger.debug(
-                    "Streaming: %s, TOKEN: %d, %s",
+                    "Streaming: %s, TOKENS: %d, %s",
                     request.request_id,
-                    n_tokens,
-                    token.decoded_token,
+                    chunk.token_count,
+                    chunk.decoded_tokens,
                 )
 
-                if token.prompt_token_count:
-                    prompt_tokens = token.prompt_token_count
+                if chunk.prompt_token_count:
+                    prompt_tokens = chunk.prompt_token_count
 
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
                 # https://platform.openai.com/docs/api-reference/chat/object
-                if token.decoded_token is not None:
+                if chunk.decoded_tokens is not None:
                     choices = [
                         Choice3(
                             index=0,
                             delta=ChatCompletionStreamResponseDelta(
-                                content=token.decoded_token,
+                                content=chunk.decoded_tokens,
                                 function_call=None,
                                 role="assistant",
                                 refusal=None,
                             ),
                             logprobs=None,
                             finish_reason=get_finish_reason_from_status(
-                                token.status, allow_none=True
+                                chunk.status, allow_none=True
                             ),
                         )
                     ]
                 else:
-                    # If we do not have a decoded_token, we should guarantee we have a finish_reason.
+                    # If we do not have decoded_tokens, we should guarantee we have a finish_reason.
                     choices = [
                         Choice3(
                             index=0,
@@ -264,7 +264,7 @@ class OpenAIChatResponseGenerator(
                                 content="",
                             ),
                             finish_reason=get_finish_reason_from_status(
-                                token.status, allow_none=False
+                                chunk.status, allow_none=False
                             ),
                         )
                     ]
@@ -283,7 +283,7 @@ class OpenAIChatResponseGenerator(
                     usage=None,
                     service_tier=None,
                 )
-                n_tokens += 1
+                n_tokens += chunk.token_count
                 payload = response.model_dump_json()
                 yield payload
 
@@ -360,19 +360,19 @@ class OpenAIChatResponseGenerator(
         try:
             completed_outputs = await self.pipeline.all_tokens(request)
 
-            n_tokens = len(completed_outputs)
-            if n_tokens > 0:
+            n_tokens = sum(chunk.token_count for chunk in completed_outputs)
+            if len(completed_outputs) > 0:
                 prompt_tokens = completed_outputs[0].prompt_token_count
 
             response_message = "".join(
-                output.decoded_token if output.decoded_token is not None else ""
-                for output in completed_outputs
+                chunk.decoded_tokens if chunk.decoded_tokens is not None else ""
+                for chunk in completed_outputs
             )
 
             stop_sequence = [
-                token.stop_sequence
-                for token in completed_outputs
-                if token.stop_sequence is not None
+                chunk.stop_sequence
+                for chunk in completed_outputs
+                if chunk.stop_sequence is not None
             ]
             finish_reason: str | None
             if len(stop_sequence) > 0:
@@ -1026,30 +1026,30 @@ class OpenAICompletionResponseGenerator(
         prompt_tokens = 0
         status_code = 200
         try:
-            async for token in self.pipeline.next_token(request):
+            async for chunk in self.pipeline.next_token_chunk(request):
                 self.logger.debug(
-                    "Streaming: %s, TOKEN: %d, %s",
+                    "Streaming: %s, TOKENS: %d, %s",
                     request.request_id,
-                    n_tokens,
-                    token.decoded_token,
+                    chunk.token_count,
+                    chunk.decoded_tokens,
                 )
 
-                if token.prompt_token_count:
-                    prompt_tokens = token.prompt_token_count
+                if chunk.prompt_token_count:
+                    prompt_tokens = chunk.prompt_token_count
 
-                log_probs = _process_log_probabilities([token])
+                log_probs = _process_log_probabilities([chunk])
 
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
                 # https://platform.openai.com/docs/api-reference/chat/object
-                if token.decoded_token is not None:
+                if chunk.decoded_tokens is not None:
                     choices = [
                         CompletionResponseStreamChoice(
                             index=0,
-                            text=token.decoded_token,
+                            text=chunk.decoded_tokens,
                             logprobs=log_probs,
                             finish_reason=get_finish_reason_from_status(
-                                token.status, allow_none=True
+                                chunk.status, allow_none=True
                             ),
                         )
                     ]
@@ -1059,7 +1059,7 @@ class OpenAICompletionResponseGenerator(
                             index=0,
                             text="",
                             finish_reason=get_finish_reason_from_status(
-                                token.status, allow_none=False
+                                chunk.status, allow_none=False
                             ),
                         )
                     ]
@@ -1073,7 +1073,7 @@ class OpenAICompletionResponseGenerator(
                     model=request.model_name,
                     object="text_completion",
                 )
-                n_tokens += 1
+                n_tokens += chunk.token_count
 
                 payload = response.model_dump_json()
 
@@ -1131,16 +1131,16 @@ class OpenAICompletionResponseGenerator(
             )
             response_choices = []
             for i, req_outputs in enumerate(req_output_list):
-                n_tokens += len(req_outputs)
+                n_tokens += sum(chunk.token_count for chunk in req_outputs)
                 if req_outputs and req_outputs[0].prompt_token_count:
                     prompt_tokens += req_outputs[0].prompt_token_count
 
                 log_probs = _process_log_probabilities(req_outputs)
                 response_message = "".join(
-                    output.decoded_token
-                    if output.decoded_token is not None
+                    chunk.decoded_tokens
+                    if chunk.decoded_tokens is not None
                     else ""
-                    for output in req_outputs
+                    for chunk in req_outputs
                 )
                 response_choices.append(
                     Choice(

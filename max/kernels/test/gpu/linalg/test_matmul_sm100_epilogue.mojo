@@ -26,11 +26,11 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100.matmul import (
+from linalg.matmul.gpu.sm100_structured import (
     blackwell_matmul_tma_umma_warp_specialized,
+    MatmulConfig,
 )
 from linalg.utils import elementwise_compute_lambda_type
-from linalg.matmul.gpu.sm100.config import MatmulConfig
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -52,7 +52,7 @@ def test_matmul_sm100_epilogue[
     test_lambda_fn: Bool = False,
     register_based_epilogue: Bool = False,
     swapAB: Bool = False,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value
@@ -316,7 +316,7 @@ def main():
                     fn run[
                         cluster_m: Int,
                         cluster_n: Int,
-                        k_group: UInt = 1,
+                        k_group: Int = 1,
                     ](m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
                         test_matmul_sm100_epilogue[
                             dtype,

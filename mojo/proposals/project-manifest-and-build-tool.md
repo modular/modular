@@ -1,4 +1,6 @@
-# Mojo project manifest and build tool
+# Mojo Project Manifest and Build Tool
+
+**Status**: Abandoned.
 
 A *project manifest* is a file that describes the source code files that make up
 a library or executable, and how those files are meant to be built, distributed,

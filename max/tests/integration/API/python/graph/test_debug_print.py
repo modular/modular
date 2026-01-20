@@ -18,8 +18,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor, accelerator_count
-from max.driver.tensor import load_max_tensor
+from max.driver import Buffer, accelerator_count
+from max.driver.buffer import load_max_buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -85,7 +85,7 @@ def test_debug_print_compact(
 ) -> None:
     session.set_debug_print_options("COMPACT")
     _ = compiled_model.execute(
-        Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
+        Buffer.from_numpy(np.full([20], 1.1234567, np.float32)).to(
             compiled_model.input_devices[0]
         )
     )
@@ -103,7 +103,7 @@ def test_debug_print_buffer(
 ) -> None:
     session.set_debug_print_options("COMPACT")
     _ = compiled_buffer_model.execute(
-        Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
+        Buffer.from_numpy(np.full([20], 1.1234567, np.float32)).to(
             compiled_buffer_model.input_devices[0]
         )
     )
@@ -121,7 +121,7 @@ def test_debug_print_full(
 ) -> None:
     session.set_debug_print_options("FULL", 2)
     _ = compiled_model.execute(
-        Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
+        Buffer.from_numpy(np.full([20], 1.1234567, np.float32)).to(
             compiled_model.input_devices[0]
         )
     )
@@ -135,7 +135,7 @@ def test_debug_print_full(
 
     session.set_debug_print_options("FULL", 6)
     _ = compiled_model.execute(
-        Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
+        Buffer.from_numpy(np.full([20], 1.1234567, np.float32)).to(
             compiled_model.input_devices[0]
         )
     )
@@ -156,7 +156,7 @@ def test_debug_print_none(
 ) -> None:
     session.set_debug_print_options("NONE")
     _ = compiled_model.execute(
-        Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
+        Buffer.from_numpy(np.full([20], 1.1234567, np.float32)).to(
             compiled_model.input_devices[0]
         )
     )
@@ -173,7 +173,7 @@ def test_debug_print_binary(
     session.set_debug_print_options("BINARY", output_directory=tmp_path)
     input = np.full([20], 1.1234567, np.float32)
     _ = compiled_model.execute(
-        Tensor.from_numpy(input).to(compiled_model.input_devices[0])
+        Buffer.from_numpy(input).to(compiled_model.input_devices[0])
     )
     captured = capfd.readouterr()
     assert "test_x_value" not in captured.out
@@ -193,14 +193,14 @@ def test_debug_print_binary_max(
     )
     input = np.random.uniform(size=[15]).astype(np.float32)
     _ = compiled_model.execute(
-        Tensor.from_numpy(input).to(compiled_model.input_devices[0])
+        Buffer.from_numpy(input).to(compiled_model.input_devices[0])
     )
     captured = capfd.readouterr()
     assert "test_x_value" not in captured.out
 
     max_path = tmp_path / "test_x_value.max"
     assert max_path.exists()
-    from_file = load_max_tensor(max_path).to_numpy()
+    from_file = load_max_buffer(max_path).to_numpy()
     assert (input == from_file).all()
 
 
@@ -226,7 +226,7 @@ def test_debug_print_binary_max_bf16(
         "BINARY_MAX_CHECKPOINT", output_directory=tmp_path
     )
     dim = 15
-    input = Tensor(DType.bfloat16, [dim])
+    input = Buffer(DType.bfloat16, [dim])
     for i in range(dim):
         input[i] = np.random.uniform()
 
@@ -236,7 +236,7 @@ def test_debug_print_binary_max_bf16(
 
     max_path = tmp_path / "test_x_value.max"
     assert max_path.exists()
-    from_file = load_max_tensor(max_path)
+    from_file = load_max_buffer(max_path)
 
     for i in range(dim):
         assert from_file[i].item() == input[i].item()
@@ -268,7 +268,7 @@ def test_debug_print_binary_max_bf16_shapes(
     compiled_model = session.load(g)
 
     # Generate test data.
-    input = Tensor(DType.bfloat16, shape)
+    input = Buffer(DType.bfloat16, shape)
     rng = np.random.default_rng()
 
     if shape:
@@ -291,11 +291,11 @@ def test_debug_print_binary_max_bf16_shapes(
     assert max_path.exists()
 
     # Load and validate.
-    loaded = load_max_tensor(max_path)
+    loaded = load_max_buffer(max_path)
     if shape:
         assert loaded.shape == shape
     else:
-        # TODO(bduke): `max.driver.Tensor` saves/loads bfloat16 scalars as a tensor due to using a
+        # TODO(bduke): `max.driver.Buffer` saves/loads bfloat16 scalars as a buffer due to using a
         # 2-byte uint8 tensor as an intermediate format.
         assert len(loaded.shape) == 1 and loaded.shape[0] == 1
     assert loaded.dtype == DType.bfloat16
@@ -356,7 +356,7 @@ def test_save_load_all_dtypes(
     else:
         pytest.skip(f"No test data generation implemented for {dtype}")
 
-    input_tensor = Tensor.from_dlpack(torch_data)
+    input_tensor = Buffer.from_dlpack(torch_data)
 
     # Save and load.
     session.set_debug_print_options(
@@ -365,7 +365,7 @@ def test_save_load_all_dtypes(
     _ = compiled_model.execute(input_tensor.to(compiled_model.input_devices[0]))
 
     max_path = tmp_path / "test_x_value.max"
-    loaded_tensor = load_max_tensor(max_path)
+    loaded_tensor = load_max_buffer(max_path)
 
     # Validate using PyTorch
     assert loaded_tensor.dtype == dtype

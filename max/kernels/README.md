@@ -16,8 +16,11 @@ to be used both directly and as primitives in higher-level libraries.
 To evaluate kernel performance on NVIDIA hardware, see [Kernel profiling with
 Nsight Compute](docs/profiling.md).
 
+To benchmark, autotune, and analyze Mojo kernel performance, use the
+[`kbench` tool](benchmarks/autotune#readme).
+
 If you're looking for the high-level Python APIs based on these kernels and
-used to build MAX graphs, see the [`max/nn/`](../nn) directory.
+used to build MAX graphs, see the [`python/max/nn/`](/max/python/max/nn) directory.
 
 ## Contributing
 

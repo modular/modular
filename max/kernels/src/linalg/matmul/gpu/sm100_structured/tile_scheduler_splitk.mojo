@@ -16,11 +16,16 @@ from .tile_scheduler import WorkInfo as B200WorkInfo
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
 from layout.tma_async import SharedMemBarrier, PipelineState
 from utils.static_tuple import StaticTuple
-from gpu.id import grid_dim, thread_idx, lane_id
-from gpu.cluster import elect_one_sync
-from gpu import NamedBarrierSemaphore, WARP_SIZE
+from gpu import (
+    grid_dim,
+    thread_idx,
+    lane_id,
+    NamedBarrierSemaphore,
+    WARP_SIZE,
+)
+from gpu.primitives.cluster import elect_one_sync
 from gpu.globals import WARPGROUP_SIZE
-from gpu.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from gpu.sync import named_barrier
 from memory import LegacyUnsafePointer
 
@@ -598,7 +603,7 @@ struct TileScheduler[
             i += 1
             current_width = second_width
 
-        return (arr, i)
+        return (arr^, i)
 
     @staticmethod
     @always_inline

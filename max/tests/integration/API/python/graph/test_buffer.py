@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor, accelerator_count
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -111,7 +111,7 @@ def test_load_mutate_store(
         graph.output()
         graph._mlir_op.verify()
         compiled = session.load(graph)
-    input = Tensor.from_numpy(zeros(input_buffer.shape, input_buffer.dtype)).to(
+    input = Buffer.from_numpy(zeros(input_buffer.shape, input_buffer.dtype)).to(
         compiled.input_devices[0]
     )
     expected = torch_add_n(torch.from_dlpack(input), n)
@@ -132,7 +132,7 @@ def test_load_mutate_store_ellipsis(
         graph.output()
         graph._mlir_op.verify()
         compiled = session.load(graph)
-    input = Tensor.from_numpy(zeros(input_buffer.shape, input_buffer.dtype)).to(
+    input = Buffer.from_numpy(zeros(input_buffer.shape, input_buffer.dtype)).to(
         compiled.input_devices[0]
     )
     expected = torch_add_n(torch.from_dlpack(input), n)
@@ -159,10 +159,10 @@ def test_store_slice_load_slice(
         graph.output()
 
         compiled_model = session.load(graph)
-    input_tensor = Tensor.from_numpy(ones(tensor.shape, tensor.dtype) + n).to(
+    input_tensor = Buffer.from_numpy(ones(tensor.shape, tensor.dtype) + n).to(
         compiled_model.input_devices[0]
     )
-    input_buffer = Tensor.from_numpy(zeros(buffer.shape, buffer.dtype) + n).to(
+    input_buffer = Buffer.from_numpy(zeros(buffer.shape, buffer.dtype) + n).to(
         compiled_model.input_devices[1]
     )
     compiled_model.execute(input_tensor, input_buffer)
@@ -205,7 +205,7 @@ def test_inplace_user_supplied(
         rawbuffer = rawbuffer.cuda()
 
     model = session.load(graph)
-    model.execute(Tensor.from_dlpack(rawbuffer))
+    model.execute(Buffer.from_dlpack(rawbuffer))
 
     actual = np.array([[3, 1], [1, 1]], dtype=np.float32) * -1
 
@@ -240,14 +240,14 @@ def test_variadic_buffer_handling(
             custom_extensions=[custom_ops_path],
         ),
     )
-    in1 = Tensor.from_numpy(np.arange(2, dtype=np.float32)).to(
+    in1 = Buffer.from_numpy(np.arange(2, dtype=np.float32)).to(
         model.input_devices[0]
     )
-    in2 = Tensor.from_numpy(np.arange(2, dtype=np.float32)).to(
+    in2 = Buffer.from_numpy(np.arange(2, dtype=np.float32)).to(
         model.input_devices[1]
     )
     output = model.execute(in1, in2)[0]
-    assert isinstance(output, Tensor)
+    assert isinstance(output, Buffer)
 
 
 @pytest.mark.skip

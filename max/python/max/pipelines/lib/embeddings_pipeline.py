@@ -100,7 +100,7 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
             huggingface_config=self._pipeline_config.model.huggingface_config,
             encoding=self._pipeline_config.model.quantization_encoding,
             devices=devices,
-            kv_cache_config=self._pipeline_config.model.kv_cache_config,
+            kv_cache_config=self._pipeline_config.model.kv_cache,
             weights=weights,
             adapter=self._weight_adapters.get(
                 weights_format(weight_paths), None

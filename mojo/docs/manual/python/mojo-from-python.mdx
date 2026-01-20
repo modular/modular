@@ -91,10 +91,6 @@ Python path, and then use a normal `import` statement to load our Mojo code:
 
 ```python title="main.py"
 import mojo.importer
-import sys
-
-sys.path.insert(0, "")
-
 import mojo_module
 
 print(mojo_module.factorial(5))

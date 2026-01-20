@@ -17,7 +17,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys.info import align_of, simd_width_of, size_of
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from algorithm import map_reduce, mean, variance, vectorize
 from algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
@@ -35,7 +35,7 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.grid_controls import PDL, pdl_launch_attributes
+from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
 from gpu.memory import external_memory
@@ -1133,13 +1133,14 @@ fn rms_norm_gpu[
     if rank == 0:
         return
 
-    var last_dim = shape[rank - 1]
+    # Derive the number of columns from the `gamma` input as this value may be
+    # statically known.
+    var cols = gamma.dim[0]()
 
-    if last_dim == 0:
+    if cols == 0:
         return
 
-    var rows = shape.flattened_length() // last_dim
-    var cols = last_dim
+    var rows = shape.flattened_length() // cols
 
     @parameter
     @always_inline
@@ -1207,6 +1208,29 @@ fn rms_norm_gpu[
                 origin = gamma.origin,
                 layout = gamma.layout,
                 simd_width,
+                max_warps_per_block,
+                input_fn_2d,
+                output_fn_2d,
+                multiply_before_cast=multiply_before_cast,
+            ]
+            ctx.enqueue_function[kernel, kernel](
+                gamma,
+                epsilon,
+                weight_offset,
+                cols,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                attributes=pdl_launch_attributes(),
+            )
+        elif (
+            cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
+            and cols % (simd_width * 2) == 0
+        ):
+            comptime kernel = rms_norm_gpu_warp_tiling[
+                mut = gamma.mut,
+                origin = gamma.origin,
+                layout = gamma.layout,
+                simd_width * 2,
                 max_warps_per_block,
                 input_fn_2d,
                 output_fn_2d,

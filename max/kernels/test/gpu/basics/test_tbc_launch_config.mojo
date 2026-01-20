@@ -13,7 +13,7 @@
 
 from collections import OptionalReg
 
-from gpu.cluster import block_rank_in_cluster
+from gpu.primitives.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, Dim
 from gpu import block_idx, cluster_idx
 

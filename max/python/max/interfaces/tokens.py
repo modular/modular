@@ -199,13 +199,21 @@ class TokenBuffer:
         0                              current_position ^
         0                                                     len(self) ^
 
+    In the above, `processed` tracks tokens which has already been processed,
+    `active` tracks tokens, which are scheduled to be processed in the next batch,
+    and `pending` tracks tokens, which have not yet been processed, but are not
+    actively scheduled to be processed in the next batch (this commonly
+    occurs during chunked prefill).
+
     This includes one attribute for accessing tokens:
-    - `active`: The slice of the array containing the active tokens.
+    - `active`: The slice of the array containing the tokens scheduled
+      for processing in the next batch.
 
     Along with three additional attributes for tracking their lengths:
 
     - `processed_length`: The number of tokens that have already been processed.
-    - `active_length`: The number of tokens that are currently active.
+    - `active_length`: The number of tokens that is currently scheduled for
+      processing in the next batch.
     - `current_position`: The global index marking the end of the current
       active processing window.
 

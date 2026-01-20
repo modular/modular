@@ -29,7 +29,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from layout.tma_async import create_tma_tile
+from layout.tma_async import create_tensor_tile
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -38,7 +38,7 @@ from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from .config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.profiler import MatmulWarpSpecializationWorkSpaceManager
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
@@ -47,8 +47,11 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
 )
 
+# V3: Ported from working legacy kernel
+from .block_scaled_matmul_kernel import BlackwellBlockScaledMatmulKernel
+
+# Use structured SMEM struct for size calculation (matches V3 kernel's SmemType)
 from .block_scaled_smem import BlockScaledSmem
-from .block_scaled_matmul_kernels import BlackwellBlockScaledMatmulKernel
 
 
 # =============================================================================
@@ -175,8 +178,8 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     __comptime_assert transpose_b, "Only support transposed B"
 
     __comptime_assert (
-        sfa_dtype == sfb_dtype == MXFP8_SF_DTYPE
-    ), "Only support MXFP8_SF_DTYPE (F8-UE8M0) for scales"
+        sfa_dtype == sfb_dtype
+    ), "sfa_dtype and sfb_dtype must match"
 
     __comptime_assert not config.AB_swapped, "swap AB is not supported"
 
@@ -239,7 +242,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     # A matrix TMA
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         a_tma_tile_shape,
         swizzle_mode = config.a_swizzle,
         __tile_layout = Layout.row_major(a_tma_tile_shape),
@@ -251,7 +254,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ) if transpose_b else Index(
         1, BK, BN // (cluster_shape[0] // config.cta_group)
     )
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         b_tma_tile_shape,
         swizzle_mode = config.b_swizzle,
         __tile_layout = Layout.row_major(b_tma_tile_shape),
@@ -268,7 +271,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime c_tma_tile_shape_final = c_tma_tile_shape if not config.AB_swapped else Index(
         1, c_tma_tile_shape[0], config.c_swizzle.bytes() // size_of[c_type]()
     )
-    var c_tma_op = create_tma_tile[
+    var c_tma_op = create_tensor_tile[
         c_tma_tile_shape_final,
         swizzle_mode = config.c_swizzle,
         __tile_layout = Layout.row_major(c_tma_tile_shape_final),
@@ -335,18 +338,26 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
 
     comptime sfa_tma_tile_shape = Index(
-        1, BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
+        1,
+        BM // SF_MN_GROUP_SIZE,
+        config.num_sf_k_tiles,
+        SF_ATOM_M[0],
+        SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var sfa_tma_op = create_tma_tile[
+    var sfa_tma_op = create_tensor_tile[
         sfa_tma_tile_shape,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
         __tile_layout = Layout.row_major(sfa_tma_tile_shape),
     ](ctx, sfa_5d_tensor)
 
     comptime sfb_tma_tile_shape = Index(
-        1, MMA_N // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
+        1,
+        MMA_N // SF_MN_GROUP_SIZE,
+        config.num_sf_k_tiles,
+        SF_ATOM_M[0],
+        SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var sfb_tma_op = create_tma_tile[
+    var sfb_tma_op = create_tensor_tile[
         sfb_tma_tile_shape,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
         __tile_layout = Layout.row_major(sfb_tma_tile_shape),
@@ -355,6 +366,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # ===== Shared Memory Size =====
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
+    # Use structured SMEM struct for size calculation (matches V3 kernel's SmemType)
     comptime SmemType = BlockScaledSmem[
         a_type,
         b_type,
@@ -374,8 +386,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime enable_profiling = max_profiled_tiles > 0
 
     # ===== Instantiate Kernel =====
-    # Note: The kernel struct is parameterized but run() not yet implemented
-    # This serves as documentation for the launch interface
+    # V3: Ported from working legacy kernel
     comptime matmul_kernel = BlackwellBlockScaledMatmulKernel[
         a_type,
         b_type,

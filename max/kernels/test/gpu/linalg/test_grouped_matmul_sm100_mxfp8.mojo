@@ -10,10 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from hashlib import default_comp_time_hasher
 from math import align_up
 from sys import argv, size_of
-import itertools
+
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
@@ -25,7 +24,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.grouped_matmul_sm100_1d1d_fp8 import (
+from linalg.grouped_matmul_sm100_1d1d import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
@@ -51,7 +50,7 @@ from layout import (
     IntTuple,
     UNKNOWN_VALUE,
 )
-from gpu.mma_sm100 import UMMAKind
+from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 fn simple_init() -> Bool:
@@ -79,7 +78,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     block_swizzle_size: Int = 0,
     benchmark: Bool = False,
     swapAB: Bool = False,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
     SF_VECTOR_SIZE: Int = MXFP8_SF_VECTOR_SIZE,
 ](
     num_active_experts: Int,
@@ -89,12 +88,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 ):
     seed(1234)
     total_num_tokens = 0
-    max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
-        max_num_tokens_by_expert = max(
-            max_num_tokens_by_expert, num_tokens_by_expert[i]
-        )
 
     var M = total_num_tokens
     var N = expert_shape[0]
@@ -158,7 +153,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         a_host_ptr, dynamic_a_shape
     )
     var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var b_host = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_host = NDBuffer[b_type, 3, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
     var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
@@ -374,25 +369,33 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ),
     )
 
+    for i in range(a_scales_host.num_elements()):
+        a_scales_host.data[i] = Scalar[scales_dtype](0.0)
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
-    effective_m = a_scale_dim0 * SF_MN_GROUP_SIZE
     effective_n = expert_shape[0]
     effective_k = expert_shape[1]
-    for idx0 in range(effective_m):
-        for idx1 in range(
-            0, align_up(effective_k, SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
-        ):
-            if idx0 < effective_m and idx1 < effective_k:
-                var scale_value = _convert_f32_to_float8_ue8m0[scales_dtype](
-                    (1 << random_ui64(0, 2)).cast[DType.float32]()
-                )
-                set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                    a_scales_tensor_host, idx0, idx1, scale_value
-                )
-            else:
-                set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                    a_scales_tensor_host, idx0, idx1, Scalar[scales_dtype](0.0)
-                )
+
+    for i in range(num_active_experts):
+        start = Int(a_offsets_host_ptr[i])
+        end = Int(a_offsets_host_ptr[i + 1])
+        local_m = end - start
+        actual_start = (
+            start // SF_MN_GROUP_SIZE + Int(a_scale_offsets_ptr[i])
+        ) * SF_MN_GROUP_SIZE
+        actual_end = actual_start + local_m
+        for idx0 in range(actual_start, actual_end):
+            for idx1 in range(
+                0,
+                align_up(effective_k, SF_VECTOR_SIZE * SF_ATOM_K),
+                SF_VECTOR_SIZE,
+            ):
+                if idx1 < effective_k:
+                    var scale_value = _convert_f32_to_float8_ue8m0[
+                        scales_dtype
+                    ]((1 << random_ui64(0, 2)).cast[DType.float32]())
+                    set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                        a_scales_tensor_host, idx0, idx1, scale_value
+                    )
 
     for e in range(num_experts):
         expert_slice_size = (
@@ -465,7 +468,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         cta_group=cta_group,
         AB_swapped=swapAB,
         k_group_size=k_group_size,
-        num_accum_pipeline_stages=UInt(1) if mma_shape[1] == 256 else UInt(2),
+        num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
     )
 
     blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -610,12 +613,18 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_host_ref_ptr.free()
     a_scales_host_ptr.free()
     b_scales_host_ptr.free()
+    a_offsets_host_ptr.free()
+    a_scale_offsets_ptr.free()
+    expert_ids_host_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
     _ = c_device_ref^
     _ = a_scales_device^
     _ = b_scales_device^
+    _ = a_offsets_device^
+    _ = a_scale_offsets_device^
+    _ = expert_ids_device^
 
 
 def main():
@@ -631,6 +640,27 @@ def main():
         comptime bn = 128
         comptime block_tile_shape = Index(bm, bn, BK)
         comptime umma_shape = Index(bm, bn, MMA_K)
+
+        test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape,
+            umma_shape,
+            cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape = Index(2048, 1024),
+        ](
+            3,
+            [128, 512, 1024],
+            [0, 1, 1],
+            ctx,
+        )
 
         test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             dtype,

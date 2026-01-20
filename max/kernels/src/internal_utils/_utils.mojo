@@ -14,12 +14,6 @@
 import time
 from collections import OptionalReg
 from math import ceildiv, floor
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
 from sys import argv, env_get_string
 from builtin.device_passable import DevicePassable
 
@@ -107,7 +101,7 @@ struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
 
 # TODO: refactor the following to run exactly once.
 fn bench_compile_time[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     func: func_type,
     emission_kind: StaticString = "asm",
@@ -223,7 +217,7 @@ fn static[d: Int]() -> ValOrDim[d]:
     return ValOrDim[d]()
 
 
-fn dynamic(d: Int) -> ValOrDim:
+fn dynamic(d: Int) -> ValOrDim[]:
     return ValOrDim(d)
 
 
@@ -373,7 +367,7 @@ struct Timer:
 fn init_vector_gpu[
     dtype: DType
 ](
-    x: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     len: Int,
     mode: InitializationType,
     value: Scalar[dtype],

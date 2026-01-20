@@ -19,7 +19,7 @@ from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
@@ -59,25 +59,25 @@ class Llama4Inputs(ModelInputs):
     execution.
     """
 
-    tokens: npt.NDArray[np.integer[Any]] | Tensor
+    tokens: npt.NDArray[np.integer[Any]] | Buffer
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor
+    input_row_offsets: npt.NDArray[np.integer[Any]] | Buffer
     """Tensor containing the offsets for each row in the ragged input sequence,
     or the attention mask for the padded input sequence."""
 
-    cache_positions: npt.NDArray[np.integer[Any]] | Tensor
+    cache_positions: npt.NDArray[np.integer[Any]] | Buffer
     """Positions in the cache of each input token."""
 
-    signal_buffers: list[Tensor]
+    signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
     def __init__(
         self,
-        tokens: npt.NDArray[np.integer[Any]] | Tensor,
-        input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor,
-        cache_positions: npt.NDArray[np.integer[Any]] | Tensor,
-        signal_buffers: list[Tensor],
+        tokens: npt.NDArray[np.integer[Any]] | Buffer,
+        input_row_offsets: npt.NDArray[np.integer[Any]] | Buffer,
+        cache_positions: npt.NDArray[np.integer[Any]] | Buffer,
+        signal_buffers: list[Buffer],
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         """
@@ -243,7 +243,7 @@ class Llama4Model(
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = Tensor.from_numpy(
+        self._input_row_offsets_prealloc = Buffer.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
@@ -383,16 +383,16 @@ class Llama4Model(
             *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
-            assert isinstance(model_outputs[0], Tensor)
-            assert isinstance(model_outputs[1], Tensor)
-            assert isinstance(model_outputs[2], Tensor)
+            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(model_outputs[1], Buffer)
+            assert isinstance(model_outputs[2], Buffer)
             return ModelOutputs(
                 logits=model_outputs[1],
                 next_token_logits=model_outputs[0],
                 logit_offsets=model_outputs[2],
             )
         else:
-            assert isinstance(model_outputs[0], Tensor)
+            assert isinstance(model_outputs[0], Buffer)
             return ModelOutputs(
                 logits=model_outputs[0],
                 next_token_logits=model_outputs[0],
@@ -454,11 +454,11 @@ class Llama4Model(
             )
 
         return Llama4Inputs(
-            tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=Tensor.from_numpy(input_row_offsets).to(
+            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
+            input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
                 self.devices[0]
             ),
-            cache_positions=Tensor.from_numpy(
+            cache_positions=Buffer.from_numpy(
                 np.concatenate(cache_positions)
             ).to(self.devices[0]),
             signal_buffers=self.signal_buffers,
@@ -466,7 +466,7 @@ class Llama4Model(
         )
 
     def prepare_next_token_inputs(
-        self, next_tokens: Tensor, prev_model_inputs: ModelInputs
+        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
     ) -> ModelInputs:
         """Prepares the inputs for subsequent execution steps in a multi-step generation.
 

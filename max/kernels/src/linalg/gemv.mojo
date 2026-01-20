@@ -18,7 +18,7 @@ from sys import (
     simd_width_of,
 )
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList

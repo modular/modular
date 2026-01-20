@@ -1,8 +1,10 @@
-# @always_inline("builtin")
+# `@always_inline("builtin")`
+
+**Status**: Implemented.
 
 Author: Chris Lattner
-Date: Jan 31, 2025
-Status: Implemented, complete
+
+Date: January 31, 2025
 
 ## Background and Motivation
 

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # Imports from 'mojo_module.so'
-import mojo_module as feature_overview
+import mojo_module as feature_overview  # type: ignore[import-not-found]
 import pytest
 
 

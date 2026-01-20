@@ -13,10 +13,14 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import random
+import uuid
 from collections.abc import Sequence
 
 import numpy as np
+from huggingface_hub import hf_hub_download
 from PIL import Image
 from scipy.optimize import minimize
 from scipy.stats import gamma  # type: ignore[attr-defined]
@@ -32,17 +36,18 @@ logger = logging.getLogger(__name__)
 MAX_CONTEXT_USAGE_RATIO = 0.95
 
 
-def _parse_percentile_spec(spec: str) -> dict[float, int]:
+def _parse_percentile_spec(spec: str) -> dict[int, int]:
     """Parse a percentile specification string into a dictionary.
 
     Args:
         spec: A string like "p5:10,p25:30,p75:91,p95:190"
 
     Returns:
-        A dictionary mapping percentile (float) to value (int),
-        e.g., {0.05: 10, 0.25: 30, 0.75: 91, 0.95: 190}
+        A dictionary mapping percentile (int) to value (int),
+        e.g., {5: 10, 25: 30, 75: 91, 95: 190}
+        Note: Fractional percentiles are truncated to integers.
     """
-    result: dict[float, int] = {}
+    result: dict[int, int] = {}
     for pair in spec.split(","):
         pair = pair.strip()
         if not pair:
@@ -58,7 +63,8 @@ def _parse_percentile_spec(spec: str) -> dict[float, int]:
                 f"Invalid percentile key: '{key}'. Must start with 'p'."
             )
         try:
-            percentile = float(key[1:]) / 100.0
+            # Fractional part is dropped when converting to int.
+            percentile = int(float(key[1:]))
             value = int(raw_value.strip())
         except ValueError as e:
             raise ValueError(
@@ -69,7 +75,7 @@ def _parse_percentile_spec(spec: str) -> dict[float, int]:
 
 
 def _fit_gamma_parameters(
-    percentiles: dict[float, int],
+    percentiles: dict[int, int],
 ) -> tuple[float, float]:
     """Fit gamma distribution parameters (shape k, scale theta) from percentile specs.
 
@@ -77,9 +83,9 @@ def _fit_gamma_parameters(
     gamma distribution parameters that best match the given percentile targets.
 
     Args:
-        percentiles: A dictionary mapping percentile (0-1) to target value.
-            e.g., {0.05: 70, 0.25: 85, 0.50: 100, 0.75: 140, 0.95: 190}
-            Must contain keys 0.05, 0.5, and 0.95.
+        percentiles: A dictionary mapping percentile (int) to target value.
+            e.g., {5: 70, 25: 85, 50: 100, 75: 140, 95: 190}
+            Must contain keys 5, 50, and 95.
 
     Returns:
         A tuple (k, theta) representing the fitted gamma distribution parameters.
@@ -89,18 +95,15 @@ def _fit_gamma_parameters(
         1000  # use log-space when median percentile is above this value
     )
 
-    if not all(k in percentiles for k in (0.05, 0.5, 0.95)):
-        raise ValueError("Percentiles must contain keys 0.05, 0.5, and 0.95.")
+    if not all(k in percentiles for k in (5, 50, 95)):
+        raise ValueError("Percentiles must contain keys 5, 50, and 95.")
     # Gamma distribution is always right-skewed.
     # Validate that the upper tail (50->95) is longer than the lower tail (5->50).
-    if (
-        percentiles[0.95] - percentiles[0.5]
-        <= percentiles[0.5] - percentiles[0.05]
-    ):
+    if percentiles[95] - percentiles[50] <= percentiles[50] - percentiles[5]:
         raise ValueError(
             "Target percentiles are not right-skewed, which is incompatible with"
             " a gamma distribution. "
-            f"(p5: {percentiles[0.05]}, p50: {percentiles[0.5]}, p95: {percentiles[0.95]})"
+            f"(p5: {percentiles[5]}, p50: {percentiles[50]}, p95: {percentiles[95]})"
         )
     # Validate that values are non-decreasing with increasing percentile.
     ordered_pct = sorted(percentiles.items())
@@ -123,7 +126,7 @@ def _fit_gamma_parameters(
         if np.any(q_model == 0):
             return 1e9
 
-        if percentiles[0.5] > OBJECTIVE_SWITCH_THRESHOLD:
+        if percentiles[50] > OBJECTIVE_SWITCH_THRESHOLD:
             errors = np.log(q_model) - np.log(q_target)
         else:
             errors = (q_model - q_target) / q_target
@@ -131,13 +134,13 @@ def _fit_gamma_parameters(
 
     # Initial guess from mean and variance estimates
     # Use p50 for mean guess
-    mean_guess = percentiles[0.5]
+    mean_guess = percentiles[50]
     # Estimate variance from p5-p95 range (covers ~90% of distribution)
     # In a normal distribution, p5 and p95 lie at -/+ 1.645 standard deviations
     # from the mean, so the total width (p95 - p5) is about 3.29 * sigma.
     # We divide by 4.0 (a conservative approximation for skewed distributions)
     # to get an initial sigma estimate, then square it to obtain variance.
-    var_guess = ((percentiles[0.95] - percentiles[0.05]) / 4.0) ** 2
+    var_guess = ((percentiles[95] - percentiles[5]) / 4.0) ** 2
 
     # Gamma distribution: mean = k*theta, var = k*theta^2
     # So: theta = var/mean and k = mean/theta = mean^2/var
@@ -164,7 +167,7 @@ def _fit_gamma_parameters(
 
 
 def _sample_gamma_lengths(
-    percentiles: dict[float, int],
+    percentiles: dict[int, int],
     num_samples: int,
     min_len: int,
     random_state: np.random.Generator,
@@ -172,9 +175,9 @@ def _sample_gamma_lengths(
     """Sample integer lengths from a gamma distribution fitted to percentile specs.
 
     Args:
-        percentiles: A dictionary mapping percentile (0-1) to target value.
-            e.g., {0.05: 10, 0.50: 50, 0.95: 190}
-            Must at least contain keys 0.05, 0.5, and 0.95.
+        percentiles: A dictionary mapping percentile (int) to target value.
+            e.g., {5: 10, 50: 50, 95: 190}
+            Must at least contain keys 5, 50, and 95.
         num_samples: Number of samples to generate.
         min_len: Minimum allowed length.
         random_state: Random state for reproducibility.
@@ -195,15 +198,25 @@ def _sample_gamma_lengths(
     samples_int = np.maximum(np.round(samples).astype(int), min_len)
 
     # Log empirical percentiles from sampled integer lengths
-    empirical_percentiles = np.percentile(
-        samples_int, [p * 100 for p in percentile_keys]
-    )
+    empirical_percentiles = np.percentile(samples_int, percentile_keys)
     logger.info(
         f"Empirical percentiles {percentile_keys}: "
         f"{empirical_percentiles.tolist()}"
     )
 
     return samples_int.tolist()
+
+
+def log_request_actual_length_percentiles(
+    requests: Sequence[SampledRequest],
+) -> None:
+    """Log percentile statistics for prompts' actual lengths."""
+    prompt_lens = [req.prompt_len for req in requests]
+    percentiles = [5.0, 25.0, 50.0, 75.0, 95.0]
+    prompt_percentiles = np.percentile(prompt_lens, percentiles)
+    logger.info(
+        f"Prompt actual length percentiles {percentiles}: {prompt_percentiles.tolist()}"
+    )
 
 
 class RandomBenchmarkDataset(LocalBenchmarkDataset):
@@ -226,6 +239,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         max_num_unique_sys_prompt: int,
         distribution_type: str,
         random_state: np.random.Generator,
+        use_synthetic_tokens: bool,
         min_input_len: int = 4,
         min_output_len: int = 1,
         first_turn_ratio: float = 1.0,
@@ -242,6 +256,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             min_input_len=min_input_len,
             min_output_len=min_output_len,
             random_state=random_state,
+            use_synthetic_tokens=use_synthetic_tokens,
         )
 
         follow_up_turns = self.sample_requests(
@@ -256,6 +271,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             min_input_len=min_input_len,
             min_output_len=min_output_len,
             random_state=random_state,
+            use_synthetic_tokens=use_synthetic_tokens,
         )
 
         sessions: list[ChatSession] = []
@@ -294,6 +310,113 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
         return sessions
 
+    def _load_sharegpt_prompts_limited(
+        self,
+        tokenizer: PreTrainedTokenizerBase,
+        max_num_unique_sys_prompt: int,
+        num_requests: int,
+    ) -> list[list[int]]:
+        """Load and tokenize a limited number of system and user prompts from ShareGPT dataset.
+
+        Args:
+            tokenizer: Tokenizer to encode prompts.
+            max_num_unique_sys_prompt: Number of unique system prompts to load.
+            num_requests: Number of user prompts to load.
+        Returns:
+            List of tokenized prompts (list of token IDs).
+        """
+        dataset_path = hf_hub_download(
+            repo_id="anon8231489123/ShareGPT_Vicuna_unfiltered",
+            filename="ShareGPT_V3_unfiltered_cleaned_split.json",
+            repo_type="dataset",
+        )
+
+        with open(dataset_path) as f:
+            dataset = json.load(f)
+
+        # Filter out any empty conversations
+        dataset = [
+            data
+            for data in dataset
+            if len(data.get("conversations", data.get("conversation", []))) > 0
+        ]
+
+        # Only keep the first turn (user prompt) of each conversation.
+        # Prepend the conversation ID to each prompt to ensure uniqueness.
+        prompts = [
+            data.get("id", str(uuid.uuid4()))
+            + ": "
+            + data.get("conversations", data.get("conversation", []))[0][
+                "value"
+            ]
+            for data in dataset
+        ]
+
+        # Shuffle the prompts.
+        random.shuffle(prompts)
+
+        # Tokenize prompts and filter out too short ones.
+        # Stop early when the number of required prompts is reached.
+        tokenized_prompts: list[list[int]] = []
+        required_prompts = max_num_unique_sys_prompt + num_requests
+        for prompt in prompts:
+            if len(tokenized_prompts) == required_prompts:
+                break
+
+            token_ids = tokenizer(prompt).input_ids
+            if len(token_ids) < 4:
+                # Prune too short sequences.
+                continue
+
+            tokenized_prompts.append(token_ids)
+
+        if len(tokenized_prompts) < required_prompts:
+            raise ValueError(
+                f"ShareGPT dataset has only {len(tokenized_prompts)} valid"
+                f" prompts (after filtering) but {required_prompts} are required"
+                f" (sys={max_num_unique_sys_prompt} + user={num_requests})"
+            )
+
+        logger.info(
+            f"Loaded {len(tokenized_prompts)} ShareGPT prompts for"
+            " synthetic tokens on"
+            f" (sys={max_num_unique_sys_prompt} + user={num_requests})"
+            " prompts."
+        )
+        return tokenized_prompts
+
+    def _sample_sharegpt_tokens(
+        self,
+        sharegpt_prompts: list[list[int]],
+        target_len: int,
+        prompt_index: int,
+    ) -> list[int]:
+        """Sample tokens from ShareGPT and repeat/truncate to target length.
+
+        Args:
+            sharegpt_prompts: List of tokenized ShareGPT prompts.
+            target_len: Target number of tokens.
+            prompt_index: Index to select which prompt to use.
+
+        Returns:
+            List of token IDs with exactly target_len tokens.
+        """
+        if target_len <= 0:
+            return []
+
+        # Select a prompt
+        prompt_token_ids = sharegpt_prompts[prompt_index]
+        prompt_len = len(prompt_token_ids)
+
+        if prompt_len >= target_len:
+            # Truncate to target length.
+            return prompt_token_ids[:target_len]
+        else:
+            # Repeat tokens to reach target length.
+            ratio = (target_len + prompt_len - 1) // prompt_len
+            repeated_ids = (prompt_token_ids * ratio)[:target_len]
+            return repeated_ids
+
     def sample_requests(
         self,
         num_requests: int,
@@ -314,6 +437,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         min_output_len = kwargs.get("min_output_len", 1)
         image_size = kwargs.get("image_size", "")
         image_count = kwargs.get("image_count", 0)
+        use_synthetic_tokens = kwargs.get("use_synthetic_tokens", False)
         model_max_length = min(
             tokenizer.model_max_length, np.iinfo(np.int64).max
         )
@@ -357,8 +481,8 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             input_percentiles = _parse_percentile_spec(input_spec)
             output_percentiles = _parse_percentile_spec(output_spec)
             # Add P50 to the input and output percentiles.
-            input_percentiles[0.5] = input_len
-            output_percentiles[0.5] = output_len
+            input_percentiles[50] = input_len
+            output_percentiles[50] = output_len
 
             # Sample input and output lengths from gamma distributions fit to percentiles.
             assert random_state is not None, (
@@ -436,6 +560,17 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                     f" instead got: {image_size}"
                 )
 
+        # Load ShareGPT prompts if using synthetic tokens. You may only need a
+        # subset of the prompts.
+        sharegpt_prompt_subset: list[list[int]] = []
+        if use_synthetic_tokens:
+            # Use the first max_num_unique_sys_prompt ShareGPT prompts as system
+            # prompts and the remainder as user prompts. Only load as many prompts
+            # as needed to satisfy the synthetic token requests.
+            sharegpt_prompt_subset = self._load_sharegpt_prompts_limited(
+                tokenizer, max_num_unique_sys_prompt, num_requests
+            )
+
         vocab_size = tokenizer.vocab_size
         max_context_length = int(model_max_length * MAX_CONTEXT_USAGE_RATIO)
 
@@ -443,10 +578,21 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             max_context_length,
             np.floor(input_len * sys_prompt_ratio).astype(int),
         )
-        sys_prompts = []
-        for i in range(max_num_unique_sys_prompt):  # noqa: B007
-            sys_prompt = np.random.randint(0, vocab_size, size=sys_prompt_len)
-            sys_prompts.append(sys_prompt.tolist())
+        sys_prompts: list[list[int]] = []
+        if use_synthetic_tokens:
+            # First max_num_unique_sys_prompt ShareGPT prompts are used as system prompts.
+            for i in range(max_num_unique_sys_prompt):
+                sys_prompt_ids = self._sample_sharegpt_tokens(
+                    sharegpt_prompt_subset, sys_prompt_len, i
+                )
+                sys_prompts.append(sys_prompt_ids)
+        else:
+            # Generate random token IDs for system prompts.
+            for i in range(max_num_unique_sys_prompt):  # noqa: B007
+                sys_prompt = np.random.randint(
+                    0, vocab_size, size=sys_prompt_len
+                )
+                sys_prompts.append(sys_prompt.tolist())
 
         input_requests = []
         for i in range(num_requests):
@@ -463,12 +609,25 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                 input_len_cur = max_context_length - output_len_cur
 
             sys_prompt_id = np.random.randint(0, max_num_unique_sys_prompt)
-            user_prompt_offset = np.random.randint(0, vocab_size)
             user_prompt_len = input_len_cur - sys_prompt_len
-            prompt_ids = sys_prompts[sys_prompt_id] + [
-                (user_prompt_offset + i + j) % vocab_size
-                for j in range(user_prompt_len)
-            ]
+
+            if use_synthetic_tokens:
+                # Sample tokens from ShareGPT and repeat/truncate to target length.
+                # Start from max_num_unique_sys_prompt to avoid overlap with system prompts.
+                user_prompt_ids = self._sample_sharegpt_tokens(
+                    sharegpt_prompt_subset,
+                    user_prompt_len,
+                    max_num_unique_sys_prompt + i,
+                )
+            else:
+                # Generate random token IDs.
+                user_prompt_offset = np.random.randint(0, vocab_size)
+                user_prompt_ids = [
+                    (user_prompt_offset + i + j) % vocab_size
+                    for j in range(user_prompt_len)
+                ]
+
+            prompt_ids = sys_prompts[sys_prompt_id] + user_prompt_ids
 
             # Remove special tokens from the prompt.
             special_ids = set(tokenizer.all_special_ids)
@@ -509,6 +668,8 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                     ignore_eos=(output_lens[i] is not None),
                 )
             )
+
+        log_request_actual_length_percentiles(input_requests)
 
         return input_requests
 

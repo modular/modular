@@ -414,7 +414,7 @@ class Llama3Config(MAXModelConfigBase):
             )
             if dtype.is_float8()
             else DistributedGemmConfig.generate(),
-            lora_config=pipeline_config.lora_config,
+            lora_config=pipeline_config.lora,
             logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )

@@ -28,7 +28,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
+from max.interfaces.queue import drain_queue
 from max.kv_cache import (
     InsufficientBlocksError,
     KVTransferEngine,
@@ -70,7 +70,6 @@ class DecodeScheduler(Scheduler):
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
         dispatcher: DecodeDispatcherClientV2,
-        offload_queue_draining: bool = False,
     ) -> None:
         # Initialize Pipeline and Config
         self.scheduler_config = scheduler_config
@@ -104,21 +103,6 @@ class DecodeScheduler(Scheduler):
         # None corresponds to the default destination address.
         # TODO: delete the default destination address.
         self.remote_endpoints: set[str] = set()
-
-        # We are parameterizing the offload of queue draining to allow for
-        # the use case where we want to drain the queue in the main thread.
-        # This is useful for debugging and testing purposes.
-        self._queue_drainer: (
-            BackgroundQueueDrainer[TextContext | TextAndVisionContext] | None
-        ) = None
-        if offload_queue_draining:
-            # Initialize the background queue drainer
-            self._queue_drainer = BackgroundQueueDrainer[
-                TextContext | TextAndVisionContext
-            ](
-                self.request_queue,
-                max_items_per_drain=self.scheduler_config.max_batch_size * 2,
-            )
 
     @traced
     def handle_transfer_engine_response(
@@ -198,14 +182,10 @@ class DecodeScheduler(Scheduler):
 
     def reserve_memory_and_send_to_prefill(self) -> None:
         """Continuously pulls requests from the request queue and forwards them to the prefill node."""
-        if self._queue_drainer is not None:
-            self._queue_drainer.start_draining()
-            items = self._queue_drainer.retrieve_items()
-        else:
-            items = drain_queue(
-                self.request_queue,
-                max_items=self.scheduler_config.max_batch_size * 2,
-            )
+        items = drain_queue(
+            self.request_queue,
+            max_items=self.scheduler_config.max_batch_size * 2,
+        )
 
         for context in items:
             self.pending_reqs[context.request_id] = context
@@ -228,7 +208,9 @@ class DecodeScheduler(Scheduler):
 
             # Claim the slot with the paged manager
             if not self.paged_manager.contains(req_id):
-                replica_idx = self.batch_constructor.get_next_replica_idx()
+                replica_idx = self.batch_constructor.get_next_replica_idx(
+                    use_paged_cache_counts=True
+                )
                 self.paged_manager.claim(req_id, replica_idx=replica_idx)
 
             # Allocate enough memory needed to run the request for one step.
@@ -449,5 +431,4 @@ def load_decode_scheduler(
         response_queue=response_queue,
         cancel_queue=cancel_queue,
         dispatcher=DecodeDispatcherClientV2(bind_addr=settings.di_bind_address),
-        offload_queue_draining=pipeline_config.experimental_background_queue,
     )

@@ -42,7 +42,10 @@ modular_py_library(
         ":torch_hooks",
         ":torch_utils",
         ":verify_utils",
-    ],
+    ] + select({
+        "//:nvidia_gpu": [":vllm_utils"],
+        "//conditions:default": [],
+    }),
 )
 
 modular_py_library(
@@ -209,6 +212,22 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "vllm_utils",
+    testonly = True,
+    srcs = ["vllm_utils.py"],
+    imports = [".."],
+    deps = [
+        ":test_data",
+        requirement("numpy"),
+    ] + select({
+        "//:nvidia_gpu": [
+            requirement("vllm"),
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+modular_py_library(
     name = "numerics",
     testonly = True,
     srcs = ["numerics.py"],
@@ -236,6 +255,7 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/interfaces",
+        "//max/python/max/kv_cache",
         "//max/python/max/nn",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
@@ -280,6 +300,7 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/nn",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
         requirement("safetensors"),
         requirement("torch"),

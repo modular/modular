@@ -15,7 +15,7 @@ from sys import size_of
 
 from buffer import DimList, NDBuffer
 from gpu import barrier, block_dim, block_idx, thread_idx
-from gpu.cluster import (
+from gpu.primitives.cluster import (
     cluster_sync,
     cluster_sync_acquire,
     cluster_sync_release,

@@ -42,4 +42,4 @@ jobs:
 
       - name: Run lint
         run: |
-          ./bazel run //:lint
+          ./bazelw run //:lint

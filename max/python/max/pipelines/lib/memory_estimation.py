@@ -135,7 +135,7 @@ class MemoryEstimator:
         return int(
             (
                 cls.free_memory(devices)
-                * model_config.kv_cache_config.device_memory_utilization
+                * model_config.kv_cache.device_memory_utilization
             )
             - cls.static_memory_size(
                 pipeline_model, pipeline_config, model_config
@@ -181,7 +181,7 @@ class MemoryEstimator:
             huggingface_config=model_config.huggingface_config,
             pipeline_config=pipeline_config,
             devices=[DeviceRef.from_device(d) for d in devices],
-            kv_cache_config=model_config.kv_cache_config,
+            kv_cache_config=model_config.kv_cache,
             cache_dtype=model_config.quantization_encoding.cache_dtype,
         )
 
@@ -204,8 +204,8 @@ class MemoryEstimator:
 
         huggingface_config = model_config.huggingface_config
         is_draft_model = (
-            pipeline_config.draft_model_config is not None
-            and model_config is pipeline_config.draft_model_config
+            pipeline_config.draft_model is not None
+            and model_config is pipeline_config.draft_model
         )
 
         # Skip KV cache estimation for models that don't use KV cache
@@ -323,7 +323,7 @@ class MemoryEstimator:
             # Set a large available cache memory value since we're not actually
             # allocating memory during cross-compilation. Use 1TB as a reasonable
             # large value that should work for any model.
-            model_config.kv_cache_config._available_cache_memory = (
+            model_config.kv_cache._available_cache_memory = (
                 1024 * 1024 * 1024 * 1024  # 1TB
             )
             return
@@ -368,7 +368,7 @@ class MemoryEstimator:
 
         total_size = static_memory_size
         available_kv_cache_memory = int(
-            free_memory * model_config.kv_cache_config.device_memory_utilization
+            free_memory * model_config.kv_cache.device_memory_utilization
             - static_memory_size
         )
 
@@ -396,7 +396,7 @@ class MemoryEstimator:
             kv_cache_size = cls._calculate_kv_cache_size(
                 pipeline_model=pipeline_model,
                 pipeline_config=pipeline_config,
-                kv_cache_config=model_config.kv_cache_config,
+                kv_cache_config=model_config.kv_cache,
                 devices=devices,
                 cache_dtype=model_config.quantization_encoding.cache_dtype,
                 max_batch_size=pipeline_config.max_batch_size,
@@ -404,7 +404,7 @@ class MemoryEstimator:
                 huggingface_config=huggingface_config,
             )
 
-            model_config.kv_cache_config._available_cache_memory = kv_cache_size
+            model_config.kv_cache._available_cache_memory = kv_cache_size
 
             return  # Don't modify pipeline config values
 
@@ -425,7 +425,7 @@ class MemoryEstimator:
                 available_kv_cache_memory,
                 huggingface_config=huggingface_config,
                 devices=devices,
-                kv_cache_config=model_config.kv_cache_config,
+                kv_cache_config=model_config.kv_cache,
                 cache_dtype=model_config.quantization_encoding.cache_dtype,
             )
 
@@ -439,7 +439,7 @@ class MemoryEstimator:
         actual_kv_cache_size = cls._calculate_kv_cache_size(
             pipeline_model=pipeline_model,
             pipeline_config=pipeline_config,
-            kv_cache_config=model_config.kv_cache_config,
+            kv_cache_config=model_config.kv_cache,
             devices=devices,
             cache_dtype=model_config.quantization_encoding.cache_dtype,
             max_batch_size=pipeline_config.max_batch_size,
@@ -447,9 +447,7 @@ class MemoryEstimator:
             huggingface_config=huggingface_config,
         )
 
-        model_config.kv_cache_config._available_cache_memory = (
-            actual_kv_cache_size
-        )
+        model_config.kv_cache._available_cache_memory = actual_kv_cache_size
 
         total_size += actual_kv_cache_size
         # If the model is too large to fit in memory, and the user did not
@@ -480,7 +478,7 @@ class MemoryEstimator:
             actual_kv_cache_size = cls._calculate_kv_cache_size(
                 pipeline_model=pipeline_model,
                 pipeline_config=pipeline_config,
-                kv_cache_config=model_config.kv_cache_config,
+                kv_cache_config=model_config.kv_cache,
                 devices=devices,
                 cache_dtype=model_config.quantization_encoding.cache_dtype,
                 max_batch_size=pipeline_config.max_batch_size,
@@ -554,14 +552,14 @@ class MemoryEstimator:
                     available_kv_cache_memory,
                     huggingface_config,
                     devices=devices,
-                    kv_cache_config=model_config.kv_cache_config,
+                    kv_cache_config=model_config.kv_cache,
                     cache_dtype=model_config.quantization_encoding.cache_dtype,
                 )
 
             kv_cache_size = cls._calculate_kv_cache_size(
                 pipeline_model=pipeline_model,
                 pipeline_config=pipeline_config,
-                kv_cache_config=model_config.kv_cache_config,
+                kv_cache_config=model_config.kv_cache,
                 devices=devices,
                 cache_dtype=model_config.quantization_encoding.cache_dtype,
                 max_batch_size=pipeline_config.max_batch_size,
@@ -627,7 +625,7 @@ class MemoryEstimator:
             kv_cache_size = cls._calculate_kv_cache_size(
                 pipeline_model=pipeline_model,
                 pipeline_config=pipeline_config,
-                kv_cache_config=model_config.kv_cache_config,
+                kv_cache_config=model_config.kv_cache,
                 devices=devices,
                 cache_dtype=model_config.quantization_encoding.cache_dtype,
                 max_batch_size=pipeline_config.max_batch_size,

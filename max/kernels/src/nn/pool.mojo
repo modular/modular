@@ -246,8 +246,8 @@ fn max_pool_cpu[
     fn map_fn[
         rank: Int
     ](point: IndexList[stencil_rank, ...]) -> Tuple[
-        IndexList[stencil_rank, ...],
-        IndexList[stencil_rank, ...],
+        IndexList[stencil_rank],
+        IndexList[stencil_rank],
     ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride_h - padding_h_low,

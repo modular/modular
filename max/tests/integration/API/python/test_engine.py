@@ -22,7 +22,7 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -72,12 +72,12 @@ def test_execute_success(
 ) -> None:
     model = session.load(mo_model_path)
     output = model.execute(
-        Tensor.from_numpy(np.ones(5, dtype=np.float32)).to(
+        Buffer.from_numpy(np.ones(5, dtype=np.float32)).to(
             model.input_devices[0]
         )
     )
     assert len(output) == 1
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
     assert np.allclose(
         output[0].to_numpy(),
         np.array([4.0, 2.0, -5.0, 3.0, 6.0], dtype=np.float32),
@@ -90,8 +90,8 @@ def test_devicetensor_wrong_num_inputs(
     # The engine should throw a ValueError when executing with the
     # wrong number of input tensors.
     model = session.load(mo_model_path)
-    first_tensor = Tensor(DType.float32, (5,))
-    second_tensor = Tensor(DType.float32, (5,))
+    first_tensor = Buffer(DType.float32, (5,))
+    second_tensor = Buffer(DType.float32, (5,))
     # Ensure that tensors are initialized
     for i in range(5):
         first_tensor[i] = i
@@ -115,7 +115,7 @@ def test_devicetensor_wrong_shape(
     # The engine should throw a ValueError when executing a tensor with
     # the wrong shape.
     model = session.load(mo_model_path)
-    tensor = Tensor(DType.float32, (6,))
+    tensor = Buffer(DType.float32, (6,))
     # Ensure that tensors are initialized
     for i in range(6):
         tensor[i] = i
@@ -123,9 +123,8 @@ def test_devicetensor_wrong_shape(
     tensor = tensor.to(model.input_devices[0])
     with pytest.raises(
         ValueError,
-        match=(
-            r"Shape mismatch at position 0: expected tensor dimension "
-            r"to be 5 at axis 0 but found dimension to be 6 instead"
+        match=re.escape(
+            "Input at position 0: Buffer of type [(6), f32] does not match expected type [(5), f32]",
         ),
     ):
         model.execute(tensor)
@@ -137,7 +136,7 @@ def test_devicetensor_wrong_rank(
     # The engine should throw a ValueError when executing a tensor with
     # the wrong shape.
     model = session.load(mo_model_path)
-    tensor = Tensor(DType.float32, (5, 2))
+    tensor = Buffer(DType.float32, (5, 2))
     # Ensure that tensors are initialized
     for i in range(5):
         for j in range(2):
@@ -146,9 +145,8 @@ def test_devicetensor_wrong_rank(
     tensor = tensor.to(model.input_devices[0])
     with pytest.raises(
         ValueError,
-        match=(
-            r"Rank mismatch: expected a tensor of rank 1 at position 0 "
-            r"but got a tensor of rank 2 instead."
+        match=re.escape(
+            "Input at position 0: Buffer of type [(5, 2), f32] does not match expected type [(5), f32]"
         ),
     ):
         model.execute(tensor)
@@ -160,16 +158,16 @@ def test_devicetensor_wrong_dtype(
     # The engine should throw a ValueError when executing a tensor with
     # the wrong dtype.
     model = session.load(mo_model_path)
-    tensor = Tensor(DType.int32, (6,))
+    tensor = Buffer(DType.int32, (5,))
     # Ensure that tensors are initialized
-    for i in range(6):
+    for i in range(5):
         tensor[i] = i
 
     tensor = tensor.to(model.input_devices[0])
     with pytest.raises(
         ValueError,
-        match=(
-            r"DType mismatch: expected f32 at position 0 but got si32 instead."
+        match=re.escape(
+            "Input at position 0: Buffer of type [(5), si32] does not match expected type [(5), f32]"
         ),
     ):
         model.execute(tensor)
@@ -181,7 +179,7 @@ def test_execute_device_tensor(
     # The engine should be able to take in a simple 1-d tensor and execute a
     # model with this input.
     model = session.load(mo_model_path)
-    input_tensor = Tensor(DType.float32, (5,))
+    input_tensor = Buffer(DType.float32, (5,))
     for idx in range(5):
         input_tensor[idx] = 1.0
 
@@ -190,7 +188,7 @@ def test_execute_device_tensor(
     expected = [4.0, 2.0, -5.0, 3.0, 6.0]
     assert len(output) == 1
     output_tensor = output[0]
-    assert isinstance(output_tensor, Tensor)
+    assert isinstance(output_tensor, Buffer)
     output_tensor = output_tensor.to(CPU())
     for idx in range(5):
         assert isclose(output_tensor[idx].item(), expected[idx])
@@ -202,7 +200,7 @@ def test_execute_noncontiguous_tensor(
     # The engine should reject any strided tensor inputs and request that they
     # be reallocated using `.contiguous`.
     model = session.load(mo_model_path)
-    input_tensor = Tensor(DType.float32, (10,))
+    input_tensor = Buffer(DType.float32, (10,))
     for idx in range(10):
         input_tensor[idx] = 1.0
     subtensor = input_tensor[::2]
@@ -220,7 +218,7 @@ def test_execute_noncontiguous_tensor(
     expected = [4.0, 2.0, -5.0, 3.0, 6.0]
     assert len(output) == 1
     output_tensor = output[0]
-    assert isinstance(output_tensor, Tensor)
+    assert isinstance(output_tensor, Buffer)
     output_tensor = output_tensor.to(CPU())
     for idx in range(5):
         assert isclose(output_tensor[idx].item(), expected[idx])
@@ -235,12 +233,12 @@ def test_execute_devicetensor_numpy_stays_alive(
     # after execution.
     model = session.load(mo_model_path)
     arr = np.ones((5,), dtype=np.float32)
-    input_tensor = Tensor.from_numpy(arr).to(model.input_devices[0])
+    input_tensor = Buffer.from_numpy(arr).to(model.input_devices[0])
     output = model.execute(input_tensor)
     expected = [4.0, 2.0, -5.0, 3.0, 6.0]
     assert len(output) == 1
     output_tensor = output[0]
-    assert isinstance(output_tensor, Tensor)
+    assert isinstance(output_tensor, Buffer)
     output_tensor = output_tensor.to(CPU())
     for idx in range(5):
         assert isclose(output_tensor[idx].item(), expected[idx])
@@ -258,11 +256,11 @@ def test_execute_subtensor(
     model = session.load(mo_model_path)
 
     arr = np.arange(0, 20, dtype=np.float32).reshape((2, 10))
-    input_tensor = Tensor.from_numpy(arr).to(CPU())
+    input_tensor = Buffer.from_numpy(arr).to(CPU())
     outputs = model.execute(input_tensor[0, :5])
     assert len(outputs) == 1
     output_tensor = outputs[0]
-    assert isinstance(output_tensor, Tensor)
+    assert isinstance(output_tensor, Buffer)
     host_tensor = output_tensor.to(CPU())
     expected = [3.0, 2.0, -4.0, 5.0, 9.0]
     for idx, elt in enumerate(expected):
@@ -273,11 +271,11 @@ def test_execute_subtensor(
 
     # We need to also handle situations where we're creating tensors from numpy
     # arrays that have already been sliced.
-    presliced_input = Tensor.from_numpy(arr[0, ::2]).to(CPU())
+    presliced_input = Buffer.from_numpy(arr[0, ::2]).to(CPU())
     presliced_output = model.execute(presliced_input)
     presliced_expected = [3.0, 3.0, -2.0, 8.0, 13.0]
     assert len(presliced_output) == 1
-    assert isinstance(presliced_output[0], Tensor)
+    assert isinstance(presliced_output[0], Buffer)
     presliced_output_tensor_host = presliced_output[0].to(CPU())
     for idx in range(5):
         assert isclose(
@@ -294,7 +292,7 @@ def test_no_devicetensor_inputs(
     outputs = model.execute()
     assert len(outputs) == 1
     tensor_output = outputs[0]
-    assert isinstance(tensor_output, Tensor)
+    assert isinstance(tensor_output, Buffer)
     output = tensor_output.to_numpy()
     expected = np.arange(1, 6, dtype=np.int32)
     assert np.array_equal(output, expected)
@@ -305,28 +303,28 @@ def test_scalar_inputs(
 ) -> None:
     # We should be able to execute models with scalar inputs.
     model = session.load(scalar_input_path)
-    scalar = Tensor.scalar(3, dtype=DType.int32).to(CPU())
-    vector = Tensor.from_numpy(np.arange(1, 6, dtype=np.int32)).to(CPU())
+    scalar = Buffer.scalar(3, dtype=DType.int32).to(CPU())
+    vector = Buffer.from_numpy(np.arange(1, 6, dtype=np.int32)).to(CPU())
 
     output = model.execute(scalar, vector)[0]
-    assert isinstance(output, Tensor)
+    assert isinstance(output, Buffer)
     assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))
 
     # We should also be able to execute with raw Python scalars.
     output = model.execute(3, vector)[0]
-    assert isinstance(output, Tensor)
+    assert isinstance(output, Buffer)
     assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))
 
     # We should also be able to execute with numpy scalars.
     output = model.execute(int(np.int32(3)), vector)[0]
-    assert isinstance(output, Tensor)
+    assert isinstance(output, Buffer)
     assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))
 
 
 def test_numpy_aliasing() -> None:
     # dlpack expects that we alias in this situation
     # https://dmlc.github.io/dlpack/latest/python_spec.html#semantics
-    tensor = Tensor.zeros((5,), DType.int32, device=CPU())
+    tensor = Buffer.zeros((5,), DType.int32, device=CPU())
     tensor_numpy = tensor.to_numpy()
 
     tensor[0] = 5
@@ -342,18 +340,18 @@ def test_aliasing_output(
     arr = np.arange(0, 5, dtype=np.int32)
 
     device = CPU()
-    input_tensor = Tensor.from_numpy(arr).to(device)
+    input_tensor = Buffer.from_numpy(arr).to(device)
     outputs = model.execute(input_tensor)
     assert len(outputs) == 2
     x_tensor, y_tensor = outputs
 
     expected = np.arange(0, 10, 2, dtype=np.int32)
 
-    assert isinstance(x_tensor, Tensor)
+    assert isinstance(x_tensor, Buffer)
     x_numpy = x_tensor.to(CPU()).to_numpy()
     assert np.array_equal(x_numpy, expected)
 
-    assert isinstance(y_tensor, Tensor)
+    assert isinstance(y_tensor, Buffer)
     y_numpy = y_tensor.to(CPU()).to_numpy()
     assert np.array_equal(y_numpy, expected)
 
@@ -456,7 +454,7 @@ def test_execute_external_weights_numpy(
     )
     input = np.random.randn(external_weights_size).astype(np.float32)
     output = compiled(input)
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
     assert np.allclose(output[0].to_numpy(), input + weights)
 
 
@@ -476,7 +474,7 @@ def test_execute_external_weights_torch(
 
     input = torch.randn(external_weights_size, dtype=torch.float32)
     output = compiled.execute(
-        Tensor.from_dlpack(input).to(compiled.input_devices[0])
+        Buffer.from_dlpack(input).to(compiled.input_devices[0])
     )
     assert torch.allclose(torch.from_dlpack(output[0]), input + weights)
 
@@ -487,7 +485,7 @@ def test_execute_external_weights_resident(
 ) -> None:
     """Executes a model with external weights already resident on device."""
     weights_np = np.arange(external_weights_size, dtype=np.float32)
-    weights = Tensor.from_numpy(weights_np)
+    weights = Buffer.from_numpy(weights_np)
 
     graph = Graph(
         "external_weights_gpu_resident",
@@ -518,9 +516,9 @@ def test_execute_external_weights_resident(
         .astype(np.float32)
     )
     output = compiled.execute(
-        Tensor.from_numpy(input_np).to(compiled.input_devices[0])
+        Buffer.from_numpy(input_np).to(compiled.input_devices[0])
     )
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
     assert np.allclose(output[0].to_numpy(), input_np + weights_np)
 
 
@@ -546,7 +544,7 @@ def test_weight_device_mismatch(
     device_weight = torch.tensor(np.ones((10, 10), dtype=np.float32)).to("cuda")
 
     # Create test input on GPU
-    input_tensor = Tensor.from_numpy(np.ones((10, 10), dtype=np.float32)).to(
+    input_tensor = Buffer.from_numpy(np.ones((10, 10), dtype=np.float32)).to(
         cuda
     )
 
@@ -560,7 +558,7 @@ def test_weight_device_mismatch(
         )
 
         result = model.execute(input_tensor)[0]
-        assert isinstance(result, Tensor)
+        assert isinstance(result, Buffer)
 
 
 @pytest.mark.skipif(
@@ -573,7 +571,7 @@ def test_execute_external_weights_resident_with_alias(
 
     num_elems = 4096
     weights_np = np.arange(num_elems, dtype=np.float32)
-    weights = Tensor.from_dlpack(weights_np).to(Accelerator())
+    weights = Buffer.from_dlpack(weights_np).to(Accelerator())
 
     graph = Graph(
         "external_weights_resident_with_alias",
@@ -601,9 +599,9 @@ def test_execute_external_weights_resident_with_alias(
     )
 
     output_tensor = compiled.execute(
-        Tensor.from_dlpack(input_np).to(Accelerator())
+        Buffer.from_dlpack(input_np).to(Accelerator())
     )[0]
-    assert isinstance(output_tensor, Tensor)
+    assert isinstance(output_tensor, Buffer)
     output = output_tensor.to(CPU()).to_numpy()
 
     # Check that the result is as expected.
@@ -635,7 +633,7 @@ def test_weight_device_implicit_mismatch(
     device_weight = torch.tensor(np.ones((10, 10), dtype=np.float32)).to("cuda")
 
     # Create test input on GPU
-    input_tensor = Tensor.from_numpy(np.ones((10, 10), dtype=np.float32)).to(
+    input_tensor = Buffer.from_numpy(np.ones((10, 10), dtype=np.float32)).to(
         cuda
     )
 
@@ -649,7 +647,7 @@ def test_weight_device_implicit_mismatch(
         )
 
         result = model.execute(input_tensor)[0]
-        assert isinstance(result, Tensor)
+        assert isinstance(result, Buffer)
 
 
 def test_devices(session: InferenceSession) -> None:
@@ -661,13 +659,13 @@ def test_devices(session: InferenceSession) -> None:
 
 
 @pytest.fixture
-def call_inputs() -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+def call_inputs() -> tuple[Buffer, Buffer, Buffer, Buffer, Buffer]:
     # Fixture for inputs to __call__ tests.
-    a = Tensor.from_numpy(np.arange(0, 5, dtype=np.int32))
-    b = Tensor.from_numpy(np.arange(5, 10, dtype=np.int32))
-    c = Tensor.from_numpy(np.arange(10, 15, dtype=np.int32))
-    d = Tensor.from_numpy(np.arange(15, 20, dtype=np.int32))
-    e = Tensor.from_numpy(np.arange(20, 25, dtype=np.int32))
+    a = Buffer.from_numpy(np.arange(0, 5, dtype=np.int32))
+    b = Buffer.from_numpy(np.arange(5, 10, dtype=np.int32))
+    c = Buffer.from_numpy(np.arange(10, 15, dtype=np.int32))
+    d = Buffer.from_numpy(np.arange(15, 20, dtype=np.int32))
+    e = Buffer.from_numpy(np.arange(20, 25, dtype=np.int32))
     return (a, b, c, d, e)
 
 
@@ -697,7 +695,7 @@ def test_positional_call(
         d.to(call_model.input_devices[3]),
         e.to(call_model.input_devices[4]),
     )[0]
-    assert isinstance(output, Tensor)
+    assert isinstance(output, Buffer)
     assert np.array_equal(call_output, output.to_numpy())
 
 
@@ -715,7 +713,7 @@ def test_named_call(
         d=d.to(call_model.input_devices[3]),
         e=e.to(call_model.input_devices[4]),
     )[0]
-    assert isinstance(output, Tensor)
+    assert isinstance(output, Buffer)
     assert np.array_equal(call_output, output.to_numpy())
 
 
@@ -734,7 +732,7 @@ def test_mixed_positional_named_call(
         d=d.to(call_model.input_devices[3]),
         e=e.to(call_model.input_devices[4]),
     )[0]
-    assert isinstance(output, Tensor)
+    assert isinstance(output, Buffer)
     assert np.array_equal(call_output, output.to_numpy())
 
 
@@ -856,5 +854,5 @@ def test_execute_wrong_device_input(session: InferenceSession) -> None:
             f"expected argument 0 to be on device {CPU()}, but was on device {Accelerator()}"
         ),
     ):
-        x = Tensor(DType.float32, shape=(N,), device=Accelerator())
+        x = Buffer(DType.float32, shape=(N,), device=Accelerator())
         model.execute(x, x)

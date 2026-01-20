@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, BufferValue, DeviceRef, Graph, TensorType, ops
@@ -422,7 +422,7 @@ class TestCustomOperationExecution:
 
         # Compile and execute the graph
         compiled_model = session.load(graph)
-        input_tensor = Tensor.from_numpy(np.array([42], dtype=np.int32))
+        input_tensor = Buffer.from_numpy(np.array([42], dtype=np.int32))
         compiled_model.execute(input_tensor)
 
     def test_inplace_custom__execution_with_session(
@@ -455,7 +455,7 @@ class TestCustomOperationExecution:
         # Compile and execute
         compiled_model = session.load(graph)
         input_data = np.array([1.0, 2.0, 3.0], dtype=np.float32)
-        input_tensor = Tensor.from_numpy(input_data)
+        input_tensor = Buffer.from_numpy(input_data)
         result = compiled_model.execute(input_tensor)
 
         # Verify execution completed successfully

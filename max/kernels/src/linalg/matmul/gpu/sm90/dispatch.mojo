@@ -16,7 +16,7 @@ from math import ceildiv
 from sys import env_get_bool, env_get_int, size_of
 
 from buffer.buffer import NDBuffer
-from gpu.grid_controls import PDLLevel
+from gpu.primitives.grid_controls import PDLLevel
 from gpu.host import DeviceContext
 from gpu.host.info import H100
 from internal_utils import Table

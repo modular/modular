@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from max.driver import Accelerator, Tensor, accelerator_api
+from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession, LogLevel
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -50,14 +50,14 @@ def test_compile_config_split_k_reduction_scheme(
     session.set_split_k_reduction_precision("ACCUM")
     model = session.load(graph)
     output = model.execute()[0]
-    assert isinstance(output, Tensor)
+    assert isinstance(output, Buffer)
     result = output.to_numpy()
     assert result == [1]
 
     session.set_split_k_reduction_precision("OUTPUT")
     model = session.load(graph)
     output = model.execute()[0]
-    assert isinstance(output, Tensor)
+    assert isinstance(output, Buffer)
     result = output.to_numpy()
     assert result == [2]
 
@@ -80,7 +80,7 @@ def test_compile_config_use_logger(
     session.set_mojo_log_level(LogLevel.DEBUG)
     model = session.load(graph)
     output = model.execute()
-    assert isinstance(output[0], Tensor)
+    assert isinstance(output[0], Buffer)
     result = output[0].to_numpy()
 
     # On the Mojo side the logger level is set to DEBUG, so the result should be 10.
@@ -136,10 +136,10 @@ def test_compile_config_dump_asm(
 
     x_values = np.random.uniform(size=(rows, columns)).astype(np.float32)
 
-    x = Tensor.from_numpy(x_values).to(Accelerator())
+    x = Buffer.from_numpy(x_values).to(Accelerator())
 
     result = model.execute(x)[0]
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     assert (result.to_numpy() == x_values + np.ones_like(x_values)).all()
     assert output_path.exists()
     assert "algorithm_functional" in output_path.read_text()

@@ -27,7 +27,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -55,6 +55,31 @@ from .ep_kernels import (
 )
 
 logger = logging.getLogger("max.pipelines")
+
+
+def get_ep_local_sync_counters_size(n_experts: int) -> int:
+    """Returns the total size in Int32 elements needed for EP sync counters.
+
+    This must match the EPLocalSyncCounters.total_size() in ep_comm.mojo.
+
+    Memory Layout (all sizes in Int32 elements):
+    - dispatch: 2 * n_experts + MAX_GPUS_PER_NODE
+    - dispatch_cb/combine: 2 * n_experts + MAX_GPUS_PER_NODE
+    - combine_cb: 2 * n_experts
+
+    Args:
+        n_experts: Number of experts in the model.
+
+    Returns:
+        Total size in Int32 elements needed for all EP sync counters.
+    """
+
+    MAX_GPUS_PER_NODE = 8
+
+    dispatch_size = 2 * n_experts + MAX_GPUS_PER_NODE
+    dispatch_cb_size = 2 * n_experts + MAX_GPUS_PER_NODE
+    combine_cb_size = 2 * n_experts
+    return dispatch_size + dispatch_cb_size + combine_cb_size
 
 
 class EPBatchManager:
@@ -156,7 +181,7 @@ class EPBatchManager:
         return [
             BufferType(
                 DType.int32,
-                [2 * self.config.n_experts],
+                [get_ep_local_sync_counters_size(self.config.n_experts)],
                 device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
             )
             for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
@@ -435,16 +460,16 @@ class EPCommInitializer:
     """Compiled model that sets up the SHMEM library context for local GPUs and
     allocates the SHMEM memory for the send, receive, and receive count buffers."""
 
-    send_buf_ptrs: list[Tensor]
+    send_buf_ptrs: list[Buffer]
     """List of device pointers for the send buffer."""
 
-    recv_buf_ptrs: list[Tensor]
+    recv_buf_ptrs: list[Buffer]
     """List of device pointers for the receive buffer."""
 
-    recv_count_ptrs: list[Tensor]
+    recv_count_ptrs: list[Buffer]
     """List of device pointers for the receive count buffer."""
 
-    atomic_counters: list[Tensor]
+    atomic_counters: list[Buffer]
     """List of atomic counters used for synchronization."""
 
     def _estimate_ep_memory_usage(self) -> int:
@@ -472,12 +497,14 @@ class EPCommInitializer:
             config: EP configuration.
         """
         self.config = config
-        # Each expert needs 2 atomic counters
-        self.atomic_counter_size = 2 * self.config.n_experts
+        # Allocated based on the EPLocalSyncCounters struct in ep_comm.mojo
+        self.atomic_counter_size = get_ep_local_sync_counters_size(
+            self.config.n_experts
+        )
 
         # Create atomic counters for each GPU in each buffer group
         self.atomic_counters = [
-            Tensor(
+            Buffer(
                 DType.int32,
                 [self.atomic_counter_size],
                 device=Accelerator(i % self.config.n_gpus_per_node),
@@ -495,12 +522,14 @@ class EPCommInitializer:
         Returns:
             Graph: Computation graph for EP initialization.
         """
+
+        atomic_counter_shape = self.atomic_counters[0].shape
         with Graph(
             "ep_init",
             input_types=[
                 BufferType(
                     DType.int32,
-                    [2 * self.config.n_experts],
+                    atomic_counter_shape,
                     device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
                 )
                 for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
@@ -564,7 +593,7 @@ class EPCommInitializer:
         all_outputs = self.init_model.execute(*self.atomic_counters)
         all_outputs_np: list[npt.NDArray[Any]] = []
         for dev_ptr in all_outputs:
-            assert isinstance(dev_ptr, Tensor)
+            assert isinstance(dev_ptr, Buffer)
             all_outputs_np.append(dev_ptr.to_numpy())
 
         # Process the output device pointers:
@@ -591,13 +620,13 @@ class EPCommInitializer:
             recv_count_ptrs_np.append(curr_group_ptrs[:, 2])
 
         self.send_buf_ptrs = [
-            Tensor.from_numpy(dev_ptr) for dev_ptr in send_buf_ptrs_np
+            Buffer.from_numpy(dev_ptr) for dev_ptr in send_buf_ptrs_np
         ]
         self.recv_buf_ptrs = [
-            Tensor.from_numpy(dev_ptr) for dev_ptr in recv_buf_ptrs_np
+            Buffer.from_numpy(dev_ptr) for dev_ptr in recv_buf_ptrs_np
         ]
         self.recv_count_ptrs = [
-            Tensor.from_numpy(dev_ptr) for dev_ptr in recv_count_ptrs_np
+            Buffer.from_numpy(dev_ptr) for dev_ptr in recv_count_ptrs_np
         ]
 
         # The last element is the my_ranks tensor
@@ -613,11 +642,11 @@ class EPCommInitializer:
 
         logger.info(f"Initialized EP for node {self.config.node_id}")
 
-    def model_inputs(self) -> list[Tensor]:
+    def model_inputs(self) -> list[Buffer]:
         """Get the model inputs for the MoE model.
 
         Returns:
-            list[Tensor]: List of all tensors needed as model inputs.
+            list[Buffer]: List of all tensors needed as model inputs.
         """
         return (
             self.atomic_counters

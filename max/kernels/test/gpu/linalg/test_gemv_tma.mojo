@@ -22,10 +22,10 @@ from sys import argv, size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier, warp
+from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
 from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
-from gpu import block_idx, lane_id, thread_idx, warp_id
+from gpu.primitives import warp
 from gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,

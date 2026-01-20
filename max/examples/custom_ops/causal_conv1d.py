@@ -14,7 +14,7 @@
 from pathlib import Path
 
 import numpy as np
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -91,9 +91,9 @@ def main() -> None:
     I_n = np.random.randn(nBatches, nChannels, sequenceLength).astype("f")
     W_n = np.random.randn(nChannels, width).astype("f")
     B_n = np.zeros(nChannels).astype("f")
-    I = Tensor.from_numpy(I_n).to(device)
-    W = Tensor.from_numpy(W_n).to(device)
-    B = Tensor.from_numpy(B_n).to(device)
+    I = Buffer.from_numpy(I_n).to(device)
+    W = Buffer.from_numpy(W_n).to(device)
+    B = Buffer.from_numpy(B_n).to(device)
 
     threads = 1
     elements = 4
@@ -123,7 +123,7 @@ def main() -> None:
     # Compile the graph.
     model = session.load(graph_cpu)
     output_cpu = model.execute(I, W, B)[0]
-    assert isinstance(output_cpu, Tensor)
+    assert isinstance(output_cpu, Buffer)
     output_cpu_np = output_cpu.to_numpy()
 
     if accelerator_count() != 0:
@@ -158,7 +158,7 @@ def main() -> None:
         W_gpu = W.to(device_gpu)
         B_gpu = B.to(device_gpu)
         output_gpu = model.execute(I_gpu, W_gpu, B_gpu)[0]
-        assert isinstance(output_gpu, Tensor)
+        assert isinstance(output_gpu, Buffer)
         output_gpu_np = output_gpu.to_numpy().astype(np.float32)
 
         if np.allclose(

@@ -22,7 +22,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Device, Tensor
+from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 
 
@@ -118,7 +118,7 @@ class ParallelArrayOps:
         arrays: Sequence[npt.NDArray[Any]],
         axis: int = 0,
         min_chunk_size_mb: float = 50.0,
-    ) -> Tensor:
+    ) -> Buffer:
         """Concatenate arrays in parallel along the specified axis.
 
         Equivalent to np.concatenate but parallelized using thread pool. Automatically
@@ -167,9 +167,9 @@ class ParallelArrayOps:
         if n == 1:
             # This copy is likely not needed, but it mocks the exact behaviour of numpy.concatenate.
             if self._accelerator is None:
-                return Tensor.from_numpy(first.copy())
+                return Buffer.from_numpy(first.copy())
             else:
-                out_max = Tensor(
+                out_max = Buffer(
                     shape=first.shape,
                     dtype=DType.from_numpy(first.dtype),
                     device=self._accelerator,
@@ -232,7 +232,7 @@ class ParallelArrayOps:
         else:
             device = CPU()
             pinned = False
-        out_max = Tensor(
+        out_max = Buffer(
             shape=out_shape,
             dtype=max_dtype,
             device=device,

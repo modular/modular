@@ -18,7 +18,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, TypeGuard, TypeVar, overload
 
-from max.driver import Tensor
+from max.driver import Buffer
 from max.graph import BufferType, BufferValue, TensorType, TensorValue
 
 logger = logging.getLogger("max.pipelines")
@@ -91,13 +91,13 @@ class KVCacheInputs:
 
         @dataclass
         class RaggedKVCacheInputs(KVCacheInputs):
-            blocks: Tensor
-            cache_lengths: Tensor
-            lookup_table: Tensor
-            max_lengths: Tensor
+            blocks: Buffer
+            cache_lengths: Buffer
+            lookup_table: Buffer
+            max_lengths: Buffer
     """
 
-    def __iter__(self) -> Iterator[Tensor]:
+    def __iter__(self) -> Iterator[Buffer]:
         """Iterates through each Type in order."""
         for field in self.__dataclass_fields__:
             value = getattr(self, field)
@@ -107,14 +107,14 @@ class KVCacheInputs:
                 for item in value:
                     yield from item
             else:
-                assert isinstance(value, Tensor)
+                assert isinstance(value, Buffer)
                 yield value
 
     @overload
-    def __getitem__(self, index: int) -> Tensor: ...
+    def __getitem__(self, index: int) -> Buffer: ...
 
     @overload
-    def __getitem__(self, index: slice) -> Sequence[Tensor]: ...
+    def __getitem__(self, index: slice) -> Sequence[Buffer]: ...
 
     def __getitem__(self, index: Any) -> Any:
         return list(self)[index]
@@ -140,10 +140,10 @@ class RaggedKVCacheInputs(KVCacheInputs):
     KV cache when used together with ragged tensors.
     """
 
-    blocks: Tensor
-    cache_lengths: Tensor
-    lookup_table: Tensor
-    max_lengths: Tensor
+    blocks: Buffer
+    cache_lengths: Buffer
+    lookup_table: Buffer
+    max_lengths: Buffer
 
 
 @dataclass

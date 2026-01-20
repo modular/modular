@@ -37,6 +37,7 @@ from run_models import (
     maybe_log_hf_downloads,
     run_max_model,
     run_torch_model,
+    run_vllm_model,
 )
 
 # Tests
@@ -58,7 +59,7 @@ EX_TEMPFAIL = 75
 @click.option(
     "--framework",
     "framework_name",
-    type=click.Choice(["max", "torch"]),
+    type=click.Choice(["max", "torch", "vllm"]),
     default="max",
     help="Framework to run pipeline with",
 )
@@ -277,6 +278,24 @@ def generate_llm_logits(
                 device=torch_device,
                 inputs=inputs,
                 num_steps=num_steps,
+            )
+        elif framework_name == "vllm":
+            # NOTE: We do NOT call get_torch_device() here to avoid premature CUDA initialization
+            # which can cause vLLM to crash in certain multiprocessing contexts.
+
+            print(f"Running {pipeline_name} model on vLLM")
+
+            vllm_pipeline = pipeline_oracle.create_vllm_pipeline(
+                encoding=encoding_name,
+                device_specs=device_specs,
+            )
+
+            results = run_vllm_model(
+                pipeline_oracle=pipeline_oracle,
+                vllm_pipeline=vllm_pipeline,
+                inputs=inputs,
+                num_steps=num_steps,
+                max_batch_size=max_batch_size,
             )
         else:
             raise NotImplementedError(

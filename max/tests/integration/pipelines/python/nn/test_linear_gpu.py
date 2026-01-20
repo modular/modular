@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 import torch
 import torch.nn as nn
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -112,7 +112,7 @@ def linear_impl(
 
     compiled = session.load(graph, weights_registry=max_linear.state_dict())
     graph_api_linear_result = compiled.execute(input_tensor)[0]
-    assert isinstance(graph_api_linear_result, Tensor)
+    assert isinstance(graph_api_linear_result, Buffer)
 
     np.testing.assert_allclose(
         graph_api_linear_result.to_numpy(),

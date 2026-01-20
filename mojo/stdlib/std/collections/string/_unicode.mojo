@@ -68,14 +68,14 @@ fn _get_uppercase_mapping(
     if index1 != -1:
         var rune = materialize[uppercase_mapping]()[index1]
         array[0] = Codepoint(unsafe_unchecked_codepoint=rune)
-        return Tuple(UInt(1), array)
+        return Tuple(UInt(1), array^)
 
     var index2 = _uppercase_mapping2_index(char)
     if index2 != -1:
         var runes = materialize[uppercase_mapping2]()[index2]
         array[0] = Codepoint(unsafe_unchecked_codepoint=runes[0])
         array[1] = Codepoint(unsafe_unchecked_codepoint=runes[1])
-        return Tuple(UInt(2), array)
+        return Tuple(UInt(2), array^)
 
     var index3 = _uppercase_mapping3_index(char)
     if index3 != -1:
@@ -83,7 +83,7 @@ fn _get_uppercase_mapping(
         array[0] = Codepoint(unsafe_unchecked_codepoint=runes[0])
         array[1] = Codepoint(unsafe_unchecked_codepoint=runes[1])
         array[2] = Codepoint(unsafe_unchecked_codepoint=runes[2])
-        return Tuple(UInt(3), array)
+        return Tuple(UInt(3), array^)
 
     return None
 
@@ -215,7 +215,7 @@ fn to_uppercase(s: StringSlice[mut=False]) -> String:
             # up to 3 characters in length. A fixed size `Codepoint` array is
             # returned, along with a `count` (1, 2, or 3) of how many
             # replacement characters are in the uppercase replacement sequence.
-            count, uppercase_replacement_chars = (
+            count, ref uppercase_replacement_chars = (
                 uppercase_replacement_opt.unsafe_value()
             )
             for char_idx in range(count):

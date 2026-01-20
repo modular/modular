@@ -27,7 +27,7 @@ from testing import assert_equal, assert_true
 
 
 fn test_codegen_memory[
-    func_type: AnyTrivialRegType, //, func: func_type
+    func_type: __TypeOfAllTypes, //, func: func_type
 ]() raises:
     """Generic function to test codegen memory patterns for any kernel function.
 

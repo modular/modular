@@ -57,8 +57,12 @@ def _pydeps_test_impl(ctx):
         for path in py_info.imports.to_list():
             path = path.removeprefix("_main/")
             if reference_source.startswith(path):
-                import_path = path
-                break
+                if import_path:
+                    # We have multiple possible import paths, take the most specific one
+                    if len(path) > len(import_path):
+                        import_path = path
+                else:
+                    import_path = path
         if not import_path:
             # FIXME: Can't find the import path. Many of these cases can likely be fixed internally. There is at least
             # one case where this is intentional, in max/examples/internal/transfer_engine/send_recv.py, which expects
@@ -83,7 +87,7 @@ def _pydeps_test_impl(ctx):
     for dep in ctx.attr.data:
         for file in dep[DefaultInfo].files.to_list():
             if (
-                file.short_path.endswith(".so") and "cpython" in file.short_path
+                file.short_path.endswith(".so") and ("cpython" in file.short_path or "mojo" in file.short_path)
             ) or file.short_path.endswith(".mojo"):
                 data_sources.append(file.short_path)
 

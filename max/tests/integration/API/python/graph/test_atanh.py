@@ -15,7 +15,7 @@ import platform
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -47,8 +47,8 @@ def test_atanh(session: InferenceSession, dtype: DType) -> None:
     input_data = torch.rand(1024, dtype=torch_dtype) * 2.0 - 1.0
     input_data = torch.clamp(input_data, min=-extreme_value, max=extreme_value)
 
-    output = model(Tensor.from_dlpack(input_data).to(model.input_devices[0]))[0]
-    assert isinstance(output, Tensor)
+    output = model(Buffer.from_dlpack(input_data).to(model.input_devices[0]))[0]
+    assert isinstance(output, Buffer)
     max_result = output.to_numpy()
 
     torch_result = torch.atanh(input_data).to(dtype=torch.float32).cpu().numpy()

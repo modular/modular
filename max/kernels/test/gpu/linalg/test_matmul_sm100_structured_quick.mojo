@@ -61,7 +61,7 @@ def test_structured[
     cta_group: Int,
     transpose_b: Bool = True,
     swapAB: Bool = False,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
     num_split_k: Int = 1,
     test_lambda: Bool = False,
     register_based_epilogue: Bool = True,

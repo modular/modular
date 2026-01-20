@@ -16,9 +16,13 @@ from sys import size_of
 
 from buffer.buffer import NDBuffer
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
-from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
+from gpu.primitives.cluster import (
+    cluster_sync,
+    cluster_sync_relaxed,
+    elect_one_sync,
+)
 from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
-from gpu.grid_controls import (
+from gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
@@ -190,6 +194,7 @@ struct HopperMatmulSM90Kernel[
     ] = None,
     hilbert_swizzle: Bool = False,
     k_group_size: Int = 1,
+    swapAB: Bool = False,
 ]:
     """Hopper SM90 Matrix Multiplication kernel optimized for NVIDIA H100 GPUs.
 
@@ -537,6 +542,7 @@ struct HopperMatmulSM90Kernel[
             use_tma_store = Self.use_tma_store,
             elementwise_lambda_fn=custom_elementwise_lambda_fn,
             elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
+            swapAB = Self.swapAB,
         ](
             # Pointer(to=c_tma_op),
             c,

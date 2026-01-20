@@ -25,7 +25,7 @@ from typing import Any, overload
 from max import mlir
 from max._core import Attribute, Operation
 from max._core.dialects import builtin
-from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession, Model
 from max.graph import (
@@ -457,12 +457,12 @@ class MaxOp:
                 device = max_device(t.device)
                 data = t.__dlpack__()
                 try:
-                    return Tensor._from_dlpack(data, device, stream)
+                    return Buffer._from_dlpack(data, device, stream)
                 except Exception:
                     # This approach fails when passing the tensor across threads.
                     # Fall back to letting torch slowly sync streams.
-                    return Tensor.from_dlpack(t)
-            return Tensor.from_dlpack(t)
+                    return Buffer.from_dlpack(t)
+            return Buffer.from_dlpack(t)
 
         # ops always have no return type! they assign their results to mutable buffers
         def callable(*args: torch.Tensor) -> None:

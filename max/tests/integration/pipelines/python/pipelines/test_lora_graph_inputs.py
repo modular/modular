@@ -15,12 +15,12 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import NonCallableMock, patch
 
 import numpy as np
 from max.driver import CPU
 from max.dtype import DType
-from max.pipelines.lib.lora import LoRAManager
+from max.pipelines.lib.lora import LoRAManager, LoRARequestProcessor
 from max.pipelines.lib.lora_config import LoRAConfig
 
 
@@ -69,7 +69,7 @@ def create_test_lora_manager(
     )
 
     with patch("max.pipelines.lib.lora.LoRARequestProcessor") as mock_processor:
-        mock_processor.return_value = MagicMock()
+        mock_processor.return_value = NonCallableMock(spec=LoRARequestProcessor)
         manager = LoRAManager(
             config=config,
             base_model_path="base_model",

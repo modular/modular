@@ -996,7 +996,7 @@ fn align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 @always_inline("nodebug")
 fn bit_width_of[
-    type: AnyTrivialRegType, target: _TargetType = _current_target()
+    type: __TypeOfAllTypes, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the size of (in bits) of the type.
 
@@ -1027,7 +1027,7 @@ fn bit_width_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 @always_inline("nodebug")
 fn simd_width_of[
-    type: AnyTrivialRegType, target: _TargetType = _current_target()
+    type: __TypeOfAllTypes, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the vector size of the type on the host system.
 

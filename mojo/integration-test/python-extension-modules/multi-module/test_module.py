@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # Imports from 'mojo_module.mojo'
-import mojo_module_a  # type: ignore
-import mojo_module_b  # type: ignore
+import mojo_module_a  # type: ignore[import-not-found]
+import mojo_module_b  # type: ignore[import-not-found]
 
 """
 This test suite validates the multi-module Python extension functionality in Mojo.

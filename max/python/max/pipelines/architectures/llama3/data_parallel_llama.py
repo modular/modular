@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
-from max.driver import Device, Tensor
+import numpy.typing as npt
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -87,9 +87,9 @@ class DataParallelLlama(Module):
         expected by `__call__`.
 
         A single device model expects the inputs:
-        - tokens: Tensor of shape [total_seq_len]
-        - input_row_offsets: Tensor of shape [batch_size + 1]
-        - return_n_logits: Tensor of shape [1]
+        - tokens: Buffer of shape [total_seq_len]
+        - input_row_offsets: Buffer of shape [batch_size + 1]
+        - return_n_logits: Buffer of shape [1]
         - kv_cache_inputs: list of KV cache inputs.
 
         This class's `__call__` method expects the inputs above for each device.
@@ -213,19 +213,15 @@ def create_graph(
 
 def compute_data_parallel_splits(
     replica_batches: Sequence[Sequence[Any]],
-    device: Device,
-    pinned: bool,
-) -> Tensor:
+) -> npt.NDArray[np.int64]:
     """Constructs splits for the data parallel execution.
 
     Args:
         replica_batches: A list of batches, each containing a sequence of contexts
         that are on the same replica.
-        device: The device to place the splits on.
-        pinned: Whether to place the splits on pinned memory.
 
     Returns:
-        Tensor: An int64 tensor with shape (self.num_replicas + 1) that
+        Buffer: An int64 tensor with shape (self.num_replicas + 1) that
         contains the number of requests on each device:
         [0, num_requests_on_replica_0, num_requests_on_replica_1, ...]
         or None if there is only one replica.
@@ -234,13 +230,6 @@ def compute_data_parallel_splits(
     splits = np.zeros(dp + 1, dtype=np.int64)
     for replica_idx, replica_batch in enumerate(replica_batches):
         splits[replica_idx + 1] += len(replica_batch)
-
-    splits_summed = Tensor(
-        shape=(dp + 1,),
-        dtype=DType.int64,
-        device=device,
-        pinned=pinned,
-    )
-    np.cumsum(splits, out=splits_summed.to_numpy())
+    splits_summed = np.cumsum(splits)
 
     return splits_summed

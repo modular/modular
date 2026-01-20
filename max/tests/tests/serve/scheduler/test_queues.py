@@ -11,11 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import asyncio
+import contextlib
 import queue
 import sys
 import time
+from collections.abc import Generator
 from dataclasses import fields, is_dataclass
 from typing import Any
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -23,6 +27,8 @@ import zmq
 from max.interfaces import (
     ImageMetadata,
     RequestID,
+    SchedulerError,
+    SchedulerResult,
     SharedMemoryArray,
     TokenBuffer,
     msgpack_numpy_decoder,
@@ -35,6 +41,7 @@ from max.serve.queue.zmq_queue import (
     ZmqPushSocket,
     generate_zmq_ipc_path,
 )
+from max.serve.scheduler.queues import EngineQueue
 
 
 def dataclass_equal(left: Any, right: Any) -> bool:
@@ -397,3 +404,62 @@ def test_shared_memory_default_threshold_usage() -> None:
 
     # Large array should use shared memory (contain __shm__ marker)
     assert b"__shm__" in encoded
+
+
+@pytest.mark.asyncio
+async def test_engine_queue_stream_propagates_scheduler_error() -> None:
+    """Test that stream() raises with error details including remote traceback."""
+    fake_traceback = (
+        "Traceback (most recent call last):\n"
+        '  File "pipeline.py", line 42, in execute\n'
+        "    result = model.forward(inputs)\n"
+        "RuntimeError: CUDA out of memory\n"
+    )
+    error_result: SchedulerResult[Any] = SchedulerResult(
+        is_done=True,
+        result=None,
+        error=SchedulerError(
+            error_type="RuntimeError",
+            error_message="CUDA out of memory",
+            traceback_str=fake_traceback,
+        ),
+    )
+
+    req_id = RequestID("test-error-request")
+    context = TextContext(
+        request_id=req_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([1, 2, 3], dtype=np.int64)),
+    )
+
+    mock_out_queue: asyncio.Queue[SchedulerResult[Any]] = asyncio.Queue()
+    await mock_out_queue.put(error_result)
+
+    with patch.object(EngineQueue, "__init__", lambda self, *args: None):
+        engine_queue: EngineQueue[TextContext, Any] = EngineQueue.__new__(
+            EngineQueue
+        )
+        engine_queue.pending_out_queues = {}
+        engine_queue.request_queue = Mock()
+
+    @contextlib.contextmanager
+    def mock_open_channel(
+        rid: RequestID, data: TextContext
+    ) -> Generator[asyncio.Queue[SchedulerResult[Any]], None, None]:
+        engine_queue.pending_out_queues[rid] = mock_out_queue
+        try:
+            yield mock_out_queue
+        finally:
+            del engine_queue.pending_out_queues[rid]
+
+    with patch.object(engine_queue, "open_channel", mock_open_channel):
+        with pytest.raises(RuntimeError) as exc_info:
+            async for _ in engine_queue.stream(req_id, context):
+                pass
+
+        # Verify error message includes type, message, and remote traceback
+        error_msg = str(exc_info.value)
+        assert "RuntimeError" in error_msg
+        assert "CUDA out of memory" in error_msg
+        assert "Remote traceback:" in error_msg
+        assert "pipeline.py" in error_msg

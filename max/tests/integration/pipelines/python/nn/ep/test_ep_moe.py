@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from max.driver import Accelerator, Tensor, accelerator_count
+from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -173,7 +173,7 @@ def test_ep_moe(
     ]
 
     per_device_inputs = [
-        Tensor.from_dlpack(input).to(devices[i])
+        Buffer.from_dlpack(input).to(devices[i])
         for i, input in enumerate(per_device_inputs_torch)
     ]
 

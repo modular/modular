@@ -31,7 +31,7 @@ from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
 from comm import MAX_GPUS
 from comm.allreduce import elementwise_epilogue_type
-from gpu.grid_controls import PDLLevel
+from gpu.primitives.grid_controls import PDLLevel
 
 comptime ncclComm_t = OpaquePointer
 
@@ -104,7 +104,7 @@ comptime CCL_LIBRARY = _Global["CCL_LIBRARY", _init_ccl_dylib]
 
 @always_inline
 fn _get_ccl_function[
-    func_name: StaticString, result_type: AnyTrivialRegType
+    func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
     return _ffi_get_dylib_function[CCL_LIBRARY(), func_name, result_type]()
 
@@ -125,6 +125,16 @@ comptime CCLAllGatherFn = fn (
     OpaquePointer,
     Int,
     ncclDataType_t,
+    ncclComm_t,
+    OpaquePointer,
+) -> ncclResult_t
+
+comptime CCLBroadcastFn = fn (
+    OpaquePointer,
+    OpaquePointer,
+    Int,
+    ncclDataType_t,
+    Int,
     ncclComm_t,
     OpaquePointer,
 ) -> ncclResult_t
@@ -193,6 +203,23 @@ fn _ccl_allgather(
     )
 
 
+# === Broadcast binding (unified) ===
+@always_inline
+fn _ccl_broadcast(
+    sendbuff: OpaquePointer,
+    recvbuff: OpaquePointer,
+    count: Int,
+    datatype: ncclDataType_t,
+    root: Int,
+    comm: ncclComm_t,
+    ctx: DeviceContext,
+) raises -> ncclResult_t:
+    var stream_ptr = _ccl_stream_ptr(ctx)
+    return _get_ccl_function["ncclBroadcast", CCLBroadcastFn]()(
+        sendbuff, recvbuff, count, datatype, root, comm, stream_ptr
+    )
+
+
 @always_inline
 fn _ccl_stream_ptr(ctx: DeviceContext) raises -> OpaquePointer:
     @parameter
@@ -206,6 +233,10 @@ fn _ccl_stream_ptr(ctx: DeviceContext) raises -> OpaquePointer:
 struct Communicators(ImplicitlyCopyable):
     var ngpus: Int
     var comms: InlineArray[ncclComm_t, MAX_GPUS]
+
+    fn __copyinit__(out self, rhs: Self):
+        self.ngpus = rhs.ngpus
+        self.comms = rhs.comms.copy()
 
 
 fn _dtype_to_ccl[dtype: DType]() raises -> ncclDataType_t:
@@ -243,7 +274,7 @@ fn _get_global_comms(ngpus: Int) raises -> Communicators:
         ncclCommInitAll(comms.unsafe_ptr(), ngpus, devlist.unsafe_ptr())
     )
 
-    var c = Communicators(ngpus=ngpus, comms=comms)
+    var c = Communicators(ngpus=ngpus, comms=comms.copy())
     var ptr = UnsafePointer[Communicators].alloc(1)
     ptr.init_pointee_move(c)
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
@@ -341,6 +372,10 @@ fn is_allgather_available() -> Bool:
     return _is_ccl_symbol_available["ncclAllGather"]()
 
 
+fn is_broadcast_available() -> Bool:
+    return _is_ccl_symbol_available["ncclBroadcast"]()
+
+
 @parameter
 fn allgather[
     dtype: DType,
@@ -399,3 +434,48 @@ fn allgather[
             )
             # API takes (dst, src)
             ctx.enqueue_copy(dest_db, src_db)
+
+
+@parameter
+fn broadcast[
+    dtype: DType,
+    rank: Int,
+    //,
+    ngpus: Int,
+    pdl_level: PDLLevel = PDLLevel(),
+    use_multimem: Bool = False,
+](
+    input_buffer: NDBuffer[dtype, rank, ImmutAnyOrigin],
+    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    rank_sigs: InlineArray[
+        RealUnsafePointer[comm.Signal, MutAnyOrigin], MAX_GPUS
+    ],
+    ctx: DeviceContext,
+    root: Int,
+    _max_num_blocks: Optional[Int] = None,
+) raises:
+    """Per-GPU broadcast for use in multi-threaded contexts.
+
+    Currently requires prior single-threaded call to init_comms, as thread-safe
+    version not yet implemented.
+    """
+    __comptime_assert (
+        not use_multimem
+    ), "vendor_ccl broadcast does not support multimem path"
+    # Determine this device's rank from its context id.
+    var device_rank = Int(ctx.id())
+    var count = output_buffer.num_elements()
+    var dtype_ccl = _dtype_to_ccl[dtype]()
+    var comms = _get_global_comms(ngpus)
+
+    _check_ccl_ok(
+        _ccl_broadcast(
+            input_buffer.data.bitcast[NoneType](),
+            output_buffer.data.bitcast[NoneType](),
+            count,
+            dtype_ccl,
+            root,
+            comms.comms[device_rank],
+            ctx,
+        )
+    )

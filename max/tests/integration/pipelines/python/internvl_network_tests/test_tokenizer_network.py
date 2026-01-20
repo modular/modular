@@ -66,11 +66,19 @@ async def test_internvl_tokenizer_with_image() -> None:
             prompt=test_text,
         )
     )
+
+    # Messages must be provided when images are provided.
+    messages = [
+        TextGenerationRequestMessage(
+            role="user",
+            content=[{"type": "text", "text": test_text}, {"type": "image"}],
+        )
+    ]
     image_context = await max_tokenizer.new_context(
         TextGenerationRequest(
             request_id=RequestID(),
             model_name=model_id,
-            prompt=test_text,
+            messages=messages,
             images=[test_image],
         )
     )
@@ -96,7 +104,7 @@ async def test_internvl_tokenizer_apply_chat_template(
     mock_tokenizer = mocker.MagicMock()
     mock_tokenizer.apply_chat_template.return_value = "User: What is this?"
 
-    # Create a mock config.
+    # Create a mock config with nested vision_config.
     mock_config = mocker.MagicMock()
     mock_config.vision_config.image_size = 448
     mock_config.vision_config.patch_size = 14
@@ -125,7 +133,9 @@ async def test_internvl_tokenizer_apply_chat_template(
     mock_warning = mocker.patch("max.pipelines.lib.tokenizer.logger.warning")
 
     result = processor.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
+        [msg.model_dump() for msg in messages],
+        tokenize=False,
+        add_generation_prompt=True,
     )
 
     # Verify no warnings were logged.
@@ -156,7 +166,9 @@ async def test_internvl_tokenizer_apply_chat_template(
     ]
 
     result2 = processor.apply_chat_template(
-        text_only_messages, tokenize=False, add_generation_prompt=True
+        [msg.model_dump() for msg in text_only_messages],
+        tokenize=False,
+        add_generation_prompt=True,
     )
 
     # Verify it still works with text-only.
@@ -183,7 +195,9 @@ async def test_internvl_tokenizer_apply_chat_template(
     ]
 
     result3 = processor.apply_chat_template(
-        multi_text_messages, tokenize=False, add_generation_prompt=True
+        [msg.model_dump() for msg in multi_text_messages],
+        tokenize=False,
+        add_generation_prompt=True,
     )
 
     called_messages3 = mock_tokenizer.apply_chat_template.call_args[0][0]

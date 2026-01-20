@@ -231,10 +231,16 @@ def modular_py_test(
             name = name + ".pydeps_test",
             data = data,
             srcs = srcs,
-            # We provide pytest as a convenience, okay if not used.
-            ignore_extra_deps = ignore_extra_deps + [requirement("pytest")],
+            # We provide these as a convenience, okay if not used.
+            ignore_extra_deps = ignore_extra_deps + [
+                requirement("pytest"),
+                "@rules_python//python/runfiles",
+            ],
             ignore_unresolved_imports = ignore_unresolved_imports,
             imports = imports,
-            deps = deps + [requirement("pytest")],
+            deps = deps + [
+                requirement("pytest"),
+                "@rules_python//python/runfiles",
+            ],
             tags = ["pydeps"],
         )

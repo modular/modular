@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
@@ -22,7 +23,7 @@ from typing import Any, cast
 import torch
 from create_pipelines import PIPELINE_ORACLES, GenericOracle
 from max import driver
-from max.driver.tensor import load_max_tensor
+from max.driver.buffer import load_max_buffer
 from max.engine import InferenceSession
 from max.engine.api import PrintStyle
 from max.entrypoints.cli import DevicesOptionType
@@ -200,6 +201,22 @@ def run_debug_model(
                     )
                 )
 
+            # Print model source file path
+            try:
+                pipeline_model = (
+                    max_pipeline_and_tokenizer.pipeline._pipeline_model
+                )
+                model_class = type(pipeline_model)
+                model_file = inspect.getfile(model_class)
+                print(f"\n{'=' * 80}")
+                print(
+                    f"Model class: {model_class.__module__}.{model_class.__name__}"
+                )
+                print(f"Model source file: {model_file}")
+                print(f"{'=' * 80}\n")
+            except Exception as e:
+                print(f"Warning: Could not determine model source file: {e}")
+
             print(f"Running {pipeline_name} model on MAX")
             run_max_model(
                 task=pipeline_oracle.task,
@@ -221,6 +238,19 @@ def run_debug_model(
                         device=device,
                     )
                 )
+
+            # Print model source file path
+            try:
+                model_class = type(torch_pipeline_and_tokenizer.model)
+                model_file = inspect.getfile(model_class)
+                print(f"\n{'=' * 80}")
+                print(
+                    f"Model class: {model_class.__module__}.{model_class.__name__}"
+                )
+                print(f"Model source file: {model_file}")
+                print(f"{'=' * 80}\n")
+            except Exception as e:
+                print(f"Warning: Could not determine model source file: {e}")
 
             # Apply HuggingFace config overrides directly to the model config
             if hf_config_overrides:
@@ -288,7 +318,7 @@ def load_intermediate_tensors(
             output_dir.rglob("*.max"), key=lambda p: p.stat().st_mtime
         )
         for file in files:
-            tensor = load_max_tensor(file)
+            tensor = load_max_buffer(file)
             torch_tensor = torch.from_dlpack(tensor).cpu()
             tensors_map[file.name] = torch_tensor
     else:

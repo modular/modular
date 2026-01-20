@@ -21,6 +21,27 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now supports the `@align(N)` decorator to specify minimum alignment for
+  structs, similar to C++'s `alignas` and Rust's `#[repr(align(N))]`. The value
+  `N` must be a positive power of 2 and specifies the minimum alignment in
+  bytes. The actual alignment will be `max(N, natural_alignment)` - you cannot
+  use `@align` to reduce alignment below the struct's natural alignment. For
+  example, `@align(1)` on a struct containing an `Int` (8-byte aligned) will
+  emit a warning and the struct will remain 8-byte aligned.
+
+  ```mojo
+  from sys import align_of
+
+  @align(64)
+  struct CacheAligned:
+      var data: Int
+
+  fn main():
+      print(align_of[CacheAligned]())  # Prints 64
+  ```
+
+  Both stack and heap allocations respect `@align`.
+
 - Mojo now supports raising "typed errors", where a function can specify a
   what type it raises instead of defaulting to the `Error` type. This is done by
   specifying it after the `raises` keyword, e.g.
@@ -257,6 +278,38 @@ what we publish.
 
 ### Library changes
 
+- [Issue #5734](https://github.com/modular/modular/issues/5734): Added
+  `is_struct_type[T]()` function to the `reflection` module. This function
+  returns `True` if `T` is a Mojo struct type, `False` otherwise. It is useful
+  for guarding reflection code that uses struct-specific APIs like
+  `struct_field_count` or `struct_field_names` to avoid compiler errors on
+  non-struct types (such as MLIR primitive types). Use `@parameter if` with this
+  function since the guarded reflection APIs are evaluated at compile time.
+
+- The `reflection` module has been reorganized into `type_info` and
+  `struct_fields` submodules. The public API via `from reflection import ...`
+  remains unchanged. Users who were importing internal symbols directly from
+  `reflection.reflection` should update their imports to use
+  `reflection.type_info` or `reflection.struct_fields` as appropriate.
+
+- The `Hashable` trait now has a default implementation of
+  `__hash__[H: Hasher](self, mut hasher: H)` that uses
+  reflection to automatically hash all struct fields.
+  This means simple structs can conform to `Hashable` without
+  implementing any methods:
+
+  ```mojo
+  @fieldwise_init
+  struct Point(Hashable):
+      var x: Float64
+      var y: Float64
+
+  var p = Point(1.5, 2.7)
+  hash(p)
+  ```
+
+  All fields must conform to `Hashable`. Override `__hash__` for custom hashing.
+
 - The `Writable` trait now has a default implementation of `write_to()` that uses
   reflection to automatically format all struct fields. This means simple structs
   can conform to `Writable` without implementing any methods:
@@ -273,6 +326,30 @@ what we publish.
 
   All fields must conform to `Writable`. Override `write_to()` for custom
   formatting.
+
+- `InlineArray` no longer conforms to `ImplicitlyCopyable`.
+  Users must explicitly copy arrays or take references.
+
+- The `Equatable` trait now has a default implementation of `__eq__()` that uses
+  reflection to compare all fields. This means simple structs can conform to
+  `Equatable` without implementing any methods:
+
+  ```mojo
+  @fieldwise_init
+  struct Point(Equatable):
+      var x: Int
+      var y: Int
+
+  var p1 = Point(1, 2)
+  var p2 = Point(1, 2)
+  print(p1 == p2)  # True
+  ```
+
+  All fields must conform to `Equatable`. If a field doesn't implement
+  `Equatable`, a clear compile-time error is produced. Override `__eq__()` for
+  custom equality semantics. Note: The default performs memberwise equality,
+  which may not be appropriate for types with floating-point fields (due to NaN
+  semantics).
 
 - `PythonObject` now supports implicit conversion from `None`, allowing more
   natural Python-like code:
@@ -423,6 +500,34 @@ what we publish.
           print("Field", i, "is Copyable")
   ```
 
+- The `reflection` module now provides source location introspection APIs:
+
+  - `SourceLocation` - A struct holding file name, line, and column information
+  - `source_location()` - Returns the location where it's called
+  - `call_location()` - Returns the location where the caller was invoked
+    (requires the caller to be `@always_inline`)
+
+  These were previously internal APIs (`_SourceLocation`, `__source_location`,
+  `__call_location`) in `builtin._location`. The old module has been removed.
+
+  Example:
+
+  ```mojo
+  from reflection import source_location, call_location, SourceLocation
+
+  fn main():
+      var loc = source_location()
+      print(loc)  # main.mojo:5:15
+
+  @always_inline
+  fn log_here():
+      var caller_loc = call_location()
+      print("Called from:", caller_loc)
+  ```
+
+  Note: These APIs do not work correctly in parameter expressions (comptime
+  contexts return placeholder values).
+
 - The `Copyable` trait now refines the `Movable` trait.  This means that structs
   and generic algorithms that already require `Copyable` don't need to also
   mention they require `Movable.
@@ -569,7 +674,11 @@ what we publish.
   - `Set` now conforms to `Writable`, `Stringable`, and `Representable`.
   - `Deque` now conforms to `Writable`, `Stringable`, and `Representable`.
   - `InlineArray` now conforms to `Writable`, `Stringable`, and `Representable`.
+  - `LinkedList` now conforms to `Writable`, `Stringable`, and `Representable`.
   - `Iterator` no longer requires its type to be `Copyable`.
+  - `Pointer` now conforms to `Writable`.
+  - `ArcPointer` now conforms to `Writable`.
+  - `OwnedPointer` now conforms to `Writable`.
 
   - The following types no longer require their elements to be `Copyable`.
     - `Iterator`
@@ -626,6 +735,11 @@ what we publish.
   wait on processes. These use `posix_spawn` and do not go through the
   system shell.
 
+- The `Error` type no longer conforms to `Boolable` or `Defaultable`. Errors
+  must now be constructed with meaningful context, and optionality should be
+  expressed through `Optional[Error]` rather than treating errors as boolean
+  values.
+
 - `Writer` and `Writable` have been moved into a new `format` module and out of
   `io`. These traits are not directly related to binary i/o, but are rather
   closely tied to type/value string formatting.
@@ -671,6 +785,9 @@ what we publish.
 
 - `StringableRaising` has been deprecated and its usages in the stdlib have
   been removed.
+
+- `StringSlice.char_length()` has been renamed `count_codepoints()`. The same
+  function was added to `String` and `StringLiteral`.
 
 ### Tooling changes
 
@@ -802,6 +919,20 @@ or removed in future releases.
   new_ptr = ptr + n
   ```
 
+- The following deprecated GPU compatibility modules have been removed:
+  - `gpu.id` - Use `from gpu import block_idx, thread_idx, ...` instead
+  - `gpu.block` - Use `from gpu.primitives.block import ...` instead
+  - `gpu.warp` - Use `from gpu.primitives.warp import ...` instead
+  - `gpu.cluster` - Use `from gpu.primitives.cluster import ...` instead
+  - `gpu.grid_controls` - Use `from gpu.primitives.grid_controls import ...` instead
+  - `gpu.mma` - Use `from gpu.compute.mma import ...` instead
+  - `gpu.mma_operand_descriptor` - Use
+    `from gpu.compute.mma_operand_descriptor import ...` instead
+  - `gpu.mma_util` - Use `from gpu.compute.mma_util import ...` instead
+  - `gpu.mma_sm100` - Use `from gpu.compute.arch.mma_nvidia_sm100 import ...` instead
+  - `gpu.semaphore` - Use `from gpu.sync.semaphore import ...` instead
+  - `gpu.tcgen05` - Use `from gpu.compute.arch.tcgen05 import ...` instead
+
 ### 🛠️ Fixed
 
 - Mojo no longer complains about "cannot infer parameter X" when unrelated type
@@ -836,3 +967,7 @@ or removed in future releases.
   when using `get_type_name` with nested parametric types from `struct_field_types`.
 - [Issue #5731](https://github.com/modular/modular/issues/5731): Compiler crash
   when using reflection functions on builtin types like `Int`, `NoneType`, or
+  `Origin`.
+- [Issue #5754](https://github.com/modular/modular/issues/5754):
+  `struct_field_type_by_name` now works correctly when using `ReflectedType.T`
+  as a type annotation.

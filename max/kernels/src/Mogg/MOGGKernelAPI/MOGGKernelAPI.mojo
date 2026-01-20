@@ -127,6 +127,7 @@ from nn.flash_attention import flash_attention_split_kv
 from nn.fold import fold, fold_shape
 from nn.gather_scatter import (
     Axis,
+    ScatterNegativeIndexStrategy,
     _unsafe_normalize_neg_index,
     gather,
     gather_nd,
@@ -1090,7 +1091,12 @@ struct ScatterND:
         ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
-        scatter_nd[output.dtype, indices.dtype, False, target,](
+        scatter_nd[
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            target=target,
+        ](
             input.to_layout_tensor(),
             indices.to_layout_tensor(),
             updates.to_layout_tensor(),
@@ -1110,6 +1116,43 @@ struct ScatterND:
                 updates.to_layout_tensor(),
                 indices.to_layout_tensor(),
             )
+        )
+
+
+@compiler.register("mo.scatter_nd.skip_neg_indices")
+struct ScatterNDSkipNegIndices:
+    @staticmethod
+    fn execute[
+        target: StaticString,
+    ](
+        output: OutputTensor,
+        input: InputTensor[dtype = output.dtype, rank = output.rank],
+        updates: InputTensor[dtype = output.dtype, ...],
+        indices: InputTensor,
+        ctx: DeviceContextPtr,
+    ) raises:
+        # This is identical to mo.scatter_nd except in how we handle negative indices.
+        # In mo.scatter_nd, it is well defined to pass indices between [-dim_size, dim_size).
+        # Negative indices will be normalized by incrementing them by dim_size.
+        # This allows the kernel to support negative relative indexing.
+        # eg: x[-1] == x[dim_size - 1]
+        #
+        # In mo.scatter_nd.skip_neg_indices, we handle negative indices by skipping
+        # the update for that index instead.
+        scatter_nd_generator[
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            negative_index_strategy = ScatterNegativeIndexStrategy.SKIP,
+            target=target,
+            reduce_fn=None,
+            _trace_description="scatter_nd.skip_neg_indices",
+        ](
+            input.to_layout_tensor(),
+            indices.to_layout_tensor(),
+            updates.to_layout_tensor(),
+            output.to_layout_tensor(),
+            context=ctx,
         )
 
 
@@ -1135,10 +1178,10 @@ struct ScatterNDAdd:
             return lhs + rhs
 
         scatter_nd_generator[
-            output.dtype,
-            indices.dtype,
-            False,
-            target,
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.add",
         ](
@@ -1186,10 +1229,10 @@ struct ScatterNDMul:
             return lhs * rhs
 
         scatter_nd_generator[
-            output.dtype,
-            indices.dtype,
-            False,
-            target,
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.mul",
         ](
@@ -1237,10 +1280,10 @@ struct ScatterNDMin:
             return min(lhs, rhs)
 
         scatter_nd_generator[
-            output.dtype,
-            indices.dtype,
-            False,
-            target,
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.min",
         ](
@@ -1288,10 +1331,11 @@ struct ScatterNDMax:
             return max(lhs, rhs)
 
         scatter_nd_generator[
-            output.dtype,
-            indices.dtype,
-            False,
-            target,
+            output_type = output.dtype,
+            indices_type = indices.dtype,
+            single_thread_blocking_override=False,
+            negative_index_strategy = ScatterNegativeIndexStrategy.NORMALIZE,
+            target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.max",
         ](
@@ -3394,8 +3438,7 @@ struct RMSNormFusedResidualAdd:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            # Use load instead of _lambda_load to avoid compile-time evaluation issues
-            return input.load[width=width](
+            return input._lambda_load[width=width, element_alignment=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -3490,8 +3533,7 @@ struct RMSNorm:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            # Use _fused_load for FusedInputTensor
-            return input._fused_load[width=width](
+            return input._lambda_load[width=width, element_alignment=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -5198,9 +5240,6 @@ struct ConvTranspose:
         @parameter
         if is_cpu[target]():
             conv_transposed_cpu[
-                _,
-                _,
-                _,
                 input.dtype,
                 filter.dtype,  # Filter dtype.
                 output.dtype,  # Output dtype.
@@ -5237,9 +5276,6 @@ struct ConvTranspose:
                 pad_tuple[1] = pad_w[0]
 
             conv_transposed_gpu[
-                _,
-                _,
-                _,
                 input.dtype,
                 filter.dtype,
                 output.dtype,
@@ -7721,6 +7757,7 @@ struct Struct_moe_create_indices:
 struct Struct_moe_router_group_limited:
     @always_inline
     @staticmethod
+    @parameter
     fn execute[
         scores_type: DType,
         bias_type: DType,
@@ -7734,11 +7771,18 @@ struct Struct_moe_router_group_limited:
     ](
         expert_indices: OutputTensor[dtype = DType.int32, rank=2],
         expert_weights: OutputTensor[dtype=scores_type, rank=2],
-        expert_scores: InputTensor[dtype=scores_type, rank=2],
+        expert_scores: FusedInputTensor[dtype=scores_type, rank=2],
         expert_bias: InputTensor[dtype=bias_type, rank=1],
         routed_scaling_factor: Float32,
         context: DeviceContextPtr,
     ) raises:
+        @parameter
+        @always_inline
+        fn scores_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[scores_type, width]:
+            return expert_scores._lambda_load[width=width](coords)
+
         router_group_limited[
             n_routed_experts,
             n_experts_per_tok,
@@ -7746,6 +7790,11 @@ struct Struct_moe_router_group_limited:
             topk_group,
             norm_weights,
             target=target,
+            scores_input_fn = OptionalReg[
+                fn[
+                    width: Int
+                ] (IndexList[2]) capturing -> SIMD[scores_type, width]
+            ](scores_input_fn),
         ](
             expert_indices.to_layout_tensor(),
             expert_weights.to_layout_tensor(),
@@ -9545,11 +9594,11 @@ struct QuantizeDynamicScaledFloat8:
         @parameter
         @always_inline
         fn input_fn[
-            width: Int
+            width: Int, alignment: Int
         ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
-            return input._lambda_load[width=width](IndexList[2](row, col))
-
-        comptime hidden_dim = input.static_spec.shape.get[1]()
+            return input._lambda_load[width=width, element_alignment=alignment](
+                Index(row, col)
+            )
 
         quantize_dynamic_scaled_fp8[
             out_dtype=output_type,
@@ -9557,13 +9606,13 @@ struct QuantizeDynamicScaledFloat8:
             scales_dtype=scales_type,
             input_fn,
             group_size_or_per_token,
-            hidden_dim,
+            num_cols = input.static_spec.shape.get[1](),
         ](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(scales),
             scale_ub,
             ctx.get_device_context(),
-            input.dim_size(0),
+            num_rows=input.dim_size(0),
         )
 
 
@@ -9587,31 +9636,26 @@ struct BatchedQuantizeDynamicScaledFloat8:
     ) raises:
         __comptime_assert is_gpu[target](), "only valid on GPUs"
 
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var batch_size = input.dim_size(0)
-        var num_rows = input.dim_size(1)
-
         @parameter
-        @__copy_capture(input_ndbuffer)
         @always_inline
         fn input_fn[
-            width: Int
+            width: Int, alignment: Int
         ](batch: Int, row: Int, col: Int) capturing -> SIMD[input_type, width]:
-            return input_ndbuffer.load[width=width](
-                IndexList[3](batch, row, col)
+            return input._lambda_load[width=width, element_alignment=alignment](
+                Index(batch, row, col)
             )
 
         batched_quantize_dynamic_scaled_fp8[
             input_fn=input_fn,
             group_size_or_per_token=group_size_or_per_token,
-            num_cols = input_ndbuffer.shape.get[2](),
+            num_cols = input.static_spec.shape.get[2](),
         ](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(scales),
             scale_ub,
             ctx.get_device_context(),
-            num_rows=num_rows,
-            batch_size=batch_size,
+            num_rows=input.dim_size(1),
+            batch_size=input.dim_size(0),
         )
 
 

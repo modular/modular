@@ -14,7 +14,7 @@
 from pathlib import Path
 
 import numpy as np
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -74,9 +74,9 @@ def main() -> None:
     model = session.load(graph)
 
     np.random.seed(123)
-    Q = Tensor.from_numpy(np.random.randn(N, D).astype("f")).to(device)
-    K = Tensor.from_numpy(np.random.randn(N, D).astype("f")).to(device)
-    V = Tensor.from_numpy(np.random.randn(N, D).astype("f")).to(device)
+    Q = Buffer.from_numpy(np.random.randn(N, D).astype("f")).to(device)
+    K = Buffer.from_numpy(np.random.randn(N, D).astype("f")).to(device)
+    V = Buffer.from_numpy(np.random.randn(N, D).astype("f")).to(device)
 
     output = model.execute(Q, K, V)
     print(output)

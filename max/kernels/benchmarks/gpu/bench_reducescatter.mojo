@@ -19,10 +19,8 @@ from utils.numerics import get_accum_type
 from benchmark import (
     Bench,
     Bencher,
-    BenchmarkInfo,
     BenchId,
     BenchMetric,
-    Report,
     ThroughputMeasure,
 )
 from buffer import NDBuffer
@@ -38,8 +36,6 @@ from internal_utils import (
 )
 
 from testing import assert_almost_equal, assert_true
-
-from algorithm import sync_parallelize
 
 
 @always_inline
@@ -78,6 +74,7 @@ fn bench_reducescatter[
     use_multimem: Bool,
     cache_busting: Bool,
 ](
+    mut b: Bench,
     list_of_ctx: List[DeviceContext],
     num_bytes: Int,
     max_num_blocks: Optional[Int],
@@ -169,70 +166,42 @@ fn bench_reducescatter[
         )
         list_of_ctx[i].synchronize()
 
-    # Necessary to fill this InlineArray w/ default BenchmarkInfo
-    # otherwise each thread attempts to free uninitialized BenchmarkInfo
-    # when copying below
-    var default_info = BenchmarkInfo(
-        name="",
-        result=Report(),
-        measures=List[ThroughputMeasure](),
-    )
-    var results_b = InlineArray[BenchmarkInfo, ngpus](fill=default_info)
-
     @parameter
-    fn per_gpu(i: Int) raises:
+    @always_inline
+    fn bench_iter(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher) raises:
+        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+            # Offset the input buffer if cache_busting
+            var offset = 0
+
             @parameter
-            @always_inline
-            fn call_fn(ctx: DeviceContext, cache_iter: Int) raises:
-                # Offset the input buffer if cache_busting
-                var offset = 0
+            if cache_busting:
+                offset = (cache_iter * stride) % cache_elems
 
-                @parameter
-                if cache_busting:
-                    offset = (cache_iter * stride) % cache_elems
-
-                @parameter
-                for i in range(ngpus):
-                    in_bufs[i] = NDBuffer[dtype, rank](
-                        in_bufs_list[i].unsafe_ptr() + offset,
-                        DimList(input_length),
-                    )
-
-                var gpu_id = Int(ctx.id())
-                reducescatter[ngpus=ngpus, use_multimem=use_multimem](
-                    in_bufs,
-                    out_bufs[gpu_id],
-                    rank_sigs,
-                    ctx,
-                    max_num_blocks,
+            @parameter
+            for i in range(ngpus):
+                in_bufs[i] = NDBuffer[dtype, rank](
+                    in_bufs_list[i].unsafe_ptr() + offset,
+                    DimList(input_length),
                 )
 
-            b.iter_custom[call_fn](list_of_ctx[i])
+            reducescatter[ngpus=ngpus, use_multimem=use_multimem](
+                in_bufs,
+                out_bufs[ctx_idx],
+                rank_sigs,
+                ctx_inner,
+                max_num_blocks,
+            )
 
-        var b = Bench()
-        b.bench_function[bench_iter](
-            BenchId(name),
-            [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
-        )
-        results_b[i] = b.info_vec[0].copy()
+        b.iter_custom[call_fn](ctx)
 
-    sync_parallelize[per_gpu](ngpus)
-    # Collect and print the worst-case GPU time
-    var max_time = 0.0
-    var max_loc = 0
-
-    for i in range(ngpus):
-        var val = results_b[i].result.mean(unit="ms")
-        if val > max_time:
-            max_time = val
-            max_loc = i
-
-    var b_final = Bench()
-    b_final.info_vec.append(results_b[max_loc].copy())
-    b_final.dump_report()
+    b.bench_multicontext[bench_iter](
+        list_of_ctx,
+        BenchId(name),
+        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
+    )
+    b.dump_report()
 
     # Copy results back and verify
     @parameter
@@ -292,6 +261,8 @@ def main():
     comptime use_multimem = env_get_bool["multimem", False]()
     comptime cache_busting = True
 
+    var m = Bench()
+
     var num_gpus_found = DeviceContext.number_of_devices()
     assert_true(
         num_gpus_found >= num_gpus,
@@ -314,4 +285,4 @@ def main():
         ngpus=num_gpus,
         use_multimem=use_multimem,
         cache_busting=cache_busting,
-    ](ctx, num_bytes, max_num_blocks)
+    ](m, ctx, num_bytes, max_num_blocks)

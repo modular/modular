@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory import ArcPointer
-from test_utils import ObservableDel
+from test_utils import ObservableDel, check_write_to
 from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
@@ -102,6 +102,22 @@ def test_steal_data_does_not_decrement_refcount():
 
     var p = ArcPointer(unsafe_from_raw_pointer=raw)
     assert_equal(UInt64(1), p.count())
+
+
+def test_write_to():
+    check_write_to(ArcPointer(42), expected="42", is_repr=False)
+    check_write_to(ArcPointer("hello"), expected="hello", is_repr=False)
+
+
+def test_write_repr_to():
+    check_write_to(
+        ArcPointer(42), expected="ArcPointer[Int](Int(42))", is_repr=True
+    )
+    check_write_to(
+        ArcPointer("hello"),
+        expected="ArcPointer[String]('hello')",
+        is_repr=True,
+    )
 
 
 def main():

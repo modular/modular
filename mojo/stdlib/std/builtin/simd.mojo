@@ -1959,15 +1959,7 @@ struct SIMD[dtype: DType, size: Int](
             The representation of the SIMD value.
         """
         var output = String()
-        output.write("SIMD[", repr(Self.dtype), ", ", Self.size, "](")
-        # Write each element.
-        for i in range(Self.size):
-            var element = self[i]
-            # Write separators between each element.
-            if i != 0:
-                output.write(", ")
-            _write_scalar(output, element)
-        output.write(")")
+        self.write_repr_to(output)
         return output^
 
     @always_inline("nodebug")
@@ -2296,6 +2288,25 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if Self.size > 1:
             writer.write("]")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the SIMD value".
+
+        Args:
+            writer: The value to write to.
+        """
+        writer.write_string("SIMD[")
+        Self.dtype.write_repr_to(writer)
+        writer.write(", ", Self.size, "](")
+        # Write each element.
+        for i in range(Self.size):
+            var element = self[i]
+            # Write separators between each element.
+            if i != 0:
+                writer.write_string(", ")
+            _write_scalar(writer, element)
+        writer.write_string(")")
 
     @always_inline
     fn to_bits[

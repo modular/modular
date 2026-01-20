@@ -16,7 +16,7 @@ import platform
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -39,9 +39,9 @@ def test_cumsum(session: InferenceSession, dtype: DType) -> None:
     input_data = torch.full((1024,), 1.1, dtype=torch_dtype)
 
     max_result = model(
-        Tensor.from_dlpack(input_data).to(model.input_devices[0])
+        Buffer.from_dlpack(input_data).to(model.input_devices[0])
     )[0]
-    assert isinstance(max_result, Tensor)
+    assert isinstance(max_result, Buffer)
     max_result_np = max_result.to_numpy()
 
     torch_result = (

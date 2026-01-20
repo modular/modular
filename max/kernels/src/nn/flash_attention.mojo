@@ -390,7 +390,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 @parameter
                 for nn in range(tile_n):
                     accum_reduce[nn] = accum[nn].reduce_add[target_width]()
-                return accum_reduce
+                return accum_reduce^
 
             comptime unroll_factor = 2
             comptime unroll_simd_width = Self.simd_width * unroll_factor

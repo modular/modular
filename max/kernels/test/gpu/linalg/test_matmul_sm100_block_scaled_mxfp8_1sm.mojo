@@ -26,7 +26,7 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100.block_scaled_matmul import (
+from linalg.matmul.gpu.sm100_structured import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
@@ -45,7 +45,7 @@ from linalg.fp4_utils import (
 from random import random_ui64
 from builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import LayoutTensor, Layout, RuntimeLayout
-from gpu.mma_sm100 import UMMAKind
+from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 fn simple_init() -> Bool:
@@ -71,7 +71,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     block_swizzle_size: Int = 0,
     benchmark: Bool = False,
     swapAB: Bool = False,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
     SF_VECTOR_SIZE: Int = MXFP8_SF_VECTOR_SIZE,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
@@ -352,7 +352,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         cta_group=cta_group,
         AB_swapped=swapAB,
         k_group_size=k_group_size,
-        num_accum_pipeline_stages=UInt(1) if mma_shape[1] == 256 else UInt(2),
+        num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
     )
 
     blackwell_block_scaled_matmul_tma_umma_warp_specialized[

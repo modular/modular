@@ -21,10 +21,10 @@ from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     lane_id,
 )
-from gpu.host import DeviceContext, FuncAttribute
+from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import Layout, LayoutTensor
 from logger import Logger
-from gpu.warp import shuffle_xor
+from gpu.primitives.warp import shuffle_xor
 from math import recip
 from .fp4_utils import (
     cast_fp32_to_fp4e2m1,
@@ -55,14 +55,15 @@ from memory import bitcast
 from gpu.sync import named_barrier
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
 from layout.layout_tensor import LayoutTensorIter
 from gpu.memory import external_memory, fence_async_view_proxy
 from gpu import barrier
-from sys import size_of, align_of
+from sys import size_of, align_of, simd_width_of
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from memory import LegacyUnsafePointer
 from layout.swizzle import make_swizzle
+from algorithm import elementwise
 
 ########################################################
 # Dynamic scaled NVFP4 quantization
@@ -637,8 +638,8 @@ fn quantize_dynamic_block_scaled[
         DType.bfloat16,
     ), "input dtype should be bfloat16"
     __comptime_assert out_dtype in (
-        DType.uint32,
-    ), "output dtype should be uint32"
+        DType.uint8,
+    ), "output dtype should be uint8"
     __comptime_assert scales_dtype in (
         NVFP4_SF_DTYPE,
     ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)"
@@ -699,78 +700,6 @@ fn block_scales_interleave[
 
     block_scales_interleave_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE,](
         ctx, input, output
-    )
-
-
-fn block_scaled_matmul[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    scales_dtype: DType,
-    //,
-    *,
-    SF_VECTOR_SIZE: Int,
-    transpose_b: Bool = True,
-    target: StaticString = "cpu",
-    elementwise_compute_lambda_fn: OptionalReg[
-        elementwise_compute_lambda_type
-    ] = None,
-](
-    c_device: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
-    a_device: NDBuffer[a_type, 2, MutAnyOrigin, _],
-    b_device: NDBuffer[b_type, 2, MutAnyOrigin, _],
-    a_scales_device: NDBuffer[scales_dtype, 5, MutAnyOrigin, _],
-    b_scales_device: NDBuffer[scales_dtype, 5, MutAnyOrigin, _],
-    tensor_sf: Float32,
-    ctx: DeviceContext,
-) raises:
-    __comptime_assert (
-        ctx.default_device_info.compute == B200.compute
-    ), "This kernel is only supported on SM100"
-
-    __comptime_assert transpose_b, "Only support transposed B"
-
-    __comptime_assert (
-        scales_dtype == NVFP4_SF_DTYPE
-    ), "Only support NVFP4_SF_DTYPE (float8_e4m3fn) for scales for now."
-
-    __comptime_assert (
-        SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
-    ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
-
-    var c = from_ndbuffer_row_major(c_device)
-    var a = from_ndbuffer_row_major(a_device)
-    var b = from_ndbuffer_row_major(b_device)
-    var a_scales = from_ndbuffer_row_major(a_scales_device)
-    var b_scales = from_ndbuffer_row_major(b_scales_device)
-
-    comptime sfa_layout = a_scales.layout
-    comptime sfb_layout = b_scales.layout
-
-    __comptime_assert (
-        sfa_layout.shape[2].value()
-        == sfb_layout.shape[2].value()
-        == SF_ATOM_M[0]
-    ), ""
-    __comptime_assert (
-        sfa_layout.shape[3].value()
-        == sfb_layout.shape[3].value()
-        == SF_ATOM_M[1]
-    ), ""
-    __comptime_assert (
-        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
-    ), ""
-
-    matmul[scales_type=scales_dtype](
-        ctx,
-        c,
-        a,
-        b,
-        a_scales=a_scales,
-        b_scales=b_scales,
-        alpha=tensor_sf,
-        transpose_b=True,
-        c_row_major=True,
     )
 
 
@@ -1013,16 +942,16 @@ fn quantize_dynamic_scaled_async_kernel[
                 StaticTuple[UInt32, 4](
                     0,
                     0,
-                    UInt(block_idx.y),
-                    UInt(block_idx.x),
+                    UInt32(block_idx.y),
+                    UInt32(block_idx.x),
                 ),
             )
 
             output_tma_op.async_store(
                 output_smem,
                 StaticTuple[UInt32, 2](
-                    UInt(block_idx.y * (SF_K_GROUP_SIZE) // 2),
-                    UInt(block_idx.x * UInt(SF_MN_GROUP_SIZE)),
+                    UInt32(block_idx.y * (SF_K_GROUP_SIZE) // 2),
+                    UInt32(block_idx.x) * UInt32(SF_MN_GROUP_SIZE),
                 ),
             )
             output_tma_op.commit_group()
@@ -1079,14 +1008,14 @@ fn quantize_dynamic_scaled_fp4_async[
     comptime NUM_PIPELINES_STAGES = 1
 
     comptime input_tma_tile_shape = Index(128, SF_K_GROUP_SIZE)
-    var input_tma_op = create_tma_tile[
+    var input_tma_op = create_tensor_tile[
         input_tma_tile_shape,
         swizzle_mode=input_swizzle_mode,
         __tile_layout = Layout.row_major(input_tma_tile_shape),
     ](ctx, input_tensor)
 
     comptime output_tma_tile_shape = Index(128, 32)
-    var output_tma_op = create_tma_tile[
+    var output_tma_op = create_tensor_tile[
         output_tma_tile_shape,
         swizzle_mode=output_swizzle_mode,
         __tile_layout = Layout.row_major(output_tma_tile_shape),
@@ -1122,7 +1051,7 @@ fn quantize_dynamic_scaled_fp4_async[
     comptime scales_tma_tile_shape = Index(
         1, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
     )
-    var scales_tma_op = create_tma_tile[
+    var scales_tma_op = create_tensor_tile[
         scales_tma_tile_shape,
         swizzle_mode=scales_swizzle_mode,
         __tile_layout = Layout.row_major(scales_tma_tile_shape),
@@ -1174,3 +1103,224 @@ fn quantize_dynamic_scaled_fp4_async[
         shared_mem_bytes=Int(smem_use),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
+
+
+########################################################
+# SM100 Block Scaled matmul kernel dispatch
+########################################################
+
+
+fn block_scaled_matmul[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    scales_dtype: DType,
+    //,
+    *,
+    SF_VECTOR_SIZE: Int,
+    transpose_b: Bool = True,
+    target: StaticString = "cpu",
+](
+    c_device: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
+    a_device: NDBuffer[a_type, 2, MutAnyOrigin, _],
+    b_device: NDBuffer[b_type, 2, MutAnyOrigin, _],
+    a_scales_device: NDBuffer[scales_dtype, 5, MutAnyOrigin, _],
+    b_scales_device: NDBuffer[scales_dtype, 5, MutAnyOrigin, _],
+    tensor_sf: Float32,
+    ctx: DeviceContext,
+) raises:
+    __comptime_assert (
+        ctx.default_device_info.compute == B200.compute
+    ), "This kernel is only supported on SM100"
+
+    __comptime_assert transpose_b, "Only support transposed B"
+
+    __comptime_assert (
+        scales_dtype == NVFP4_SF_DTYPE
+    ), "Only support NVFP4_SF_DTYPE (float8_e4m3fn) for scales for now."
+
+    __comptime_assert (
+        SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+    ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
+
+    var c = from_ndbuffer_row_major(c_device)
+    var a = from_ndbuffer_row_major(a_device)
+    var b = from_ndbuffer_row_major(b_device)
+    var a_scales = from_ndbuffer_row_major(a_scales_device)
+    var b_scales = from_ndbuffer_row_major(b_scales_device)
+
+    comptime sfa_layout = a_scales.layout
+    comptime sfb_layout = b_scales.layout
+
+    __comptime_assert (
+        sfa_layout.shape[1].value() == sfb_layout.shape[1].value()
+    ), "Both A and B scales must have the same shape in K dimension"
+    __comptime_assert (
+        sfa_layout.shape[2].value()
+        == sfb_layout.shape[2].value()
+        == SF_ATOM_M[0]
+    ), ""
+    __comptime_assert (
+        sfa_layout.shape[3].value()
+        == sfb_layout.shape[3].value()
+        == SF_ATOM_M[1]
+    ), ""
+    __comptime_assert (
+        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
+    ), ""
+
+    block_scaled_matmul_with_epilogue[
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        transpose_b=transpose_b,
+    ](
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        tensor_sf,
+        ctx,
+    )
+
+
+########################################################
+# SM100 Block Scaled matmul with normal epilogue kernel dispatch
+########################################################
+
+
+fn block_scaled_matmul_with_epilogue[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    scales_dtype: DType,
+    c_layout: Layout,
+    a_layout: Layout,
+    b_layout: Layout,
+    sfa_layout: Layout,
+    sfb_layout: Layout,
+    //,
+    *,
+    SF_VECTOR_SIZE: Int,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    a_scales: LayoutTensor[scales_dtype, sfa_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[scales_dtype, sfb_layout, MutAnyOrigin],
+    tensor_sf: Float32,
+    ctx: DeviceContext,
+) raises:
+    """Our sm100 block scaled matmul kernel still does not support fusion of elementwise
+    operations. This is a temporary implementation that uses our sm100 block scaled matmul
+    kernel and dispatch a separate epilogue kernel to apply the elementwise
+    operations.
+    """
+
+    __comptime_assert (
+        ctx.default_device_info.compute == B200.compute
+    ), "This kernel is only supported on SM100"
+
+    __comptime_assert transpose_b, "Only support transposed B"
+
+    __comptime_assert (
+        scales_dtype == NVFP4_SF_DTYPE
+    ), "Only support NVFP4_SF_DTYPE (float8_e4m3fn) for scales for now."
+
+    __comptime_assert SF_VECTOR_SIZE in (
+        NVFP4_SF_VECTOR_SIZE,
+    ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
+
+    __comptime_assert (
+        sfa_layout.shape[1].value() == sfb_layout.shape[1].value()
+    ), "Both A and B scales must have the same shape in K dimension"
+    __comptime_assert (
+        sfa_layout.shape[2].value()
+        == sfb_layout.shape[2].value()
+        == SF_ATOM_M[0]
+    ), ""
+    __comptime_assert (
+        sfa_layout.shape[3].value()
+        == sfb_layout.shape[3].value()
+        == SF_ATOM_M[1]
+    ), ""
+    __comptime_assert (
+        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
+    ), ""
+
+    @parameter
+    if not elementwise_lambda_fn:
+        if not c.ptr:
+            raise "c must be allocated!"
+
+        matmul(
+            ctx,
+            c,
+            a,
+            b,
+            a_scales=a_scales,
+            b_scales=b_scales,
+            transpose_b=True,
+            c_row_major=True,
+            alpha=tensor_sf,
+        )
+    else:
+        comptime epilogue = elementwise_lambda_fn.value()
+        # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
+        comptime use_32b_simd = True
+        comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
+            simd_width_of[c_type, target = get_gpu_target()]()
+        )
+
+        @parameter
+        @__copy_capture(c)
+        fn epilogue_wrapper[
+            simd_width: Int, rank: Int, alignment: Int = 1
+        ](idx: IndexList[rank]):
+            var c_coord = Index(idx[0], idx[1])
+            var c_val = c.load[width=simd_width,](c_coord)
+            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
+
+        # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
+        # apply the epilogue.
+        if c.ptr:
+            var m = c.dim[0]()
+            var n = c.dim[1]()
+
+            matmul(
+                ctx,
+                c,
+                a,
+                b,
+                a_scales=a_scales,
+                b_scales=b_scales,
+                alpha=tensor_sf,
+                transpose_b=True,
+                c_row_major=True,
+            )
+            elementwise[epilogue_wrapper, simd_size, target="gpu"](
+                Index(m, n), ctx
+            )
+            return
+
+        # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
+        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c.size())
+        var c_tmp = c
+        c_tmp.ptr = tmp_device_buffer.unsafe_ptr()
+
+        block_scaled_matmul_with_epilogue[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](
+            c_tmp,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            tensor_sf,
+            ctx,
+        )
+
+        _ = tmp_device_buffer^

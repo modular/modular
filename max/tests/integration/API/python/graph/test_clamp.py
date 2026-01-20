@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 import torch
 from max import nn
-from max.driver import Tensor, accelerator_count
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -44,7 +44,7 @@ def test_clamp(session: InferenceSession, dtype: DType) -> None:
     torch_dtype = torch.float32 if dtype == DType.float32 else torch.int16
     input_data = torch.arange(end=100, dtype=torch_dtype).reshape((10, 10))
 
-    results = model(Tensor.from_dlpack(input_data).to(model.input_devices[0]))
+    results = model(Buffer.from_dlpack(input_data).to(model.input_devices[0]))
 
     # Expected results from PyTorch
     both_bounds_expected = (
@@ -64,7 +64,7 @@ def test_clamp(session: InferenceSession, dtype: DType) -> None:
     assert len(results) == 4
     tensor_results = []
     for i, result in enumerate(results):
-        assert isinstance(result, Tensor), f"Result {i} is not a Tensor"
+        assert isinstance(result, Buffer), f"Result {i} is not a Tensor"
         tensor_results.append(result)
 
     np.testing.assert_allclose(

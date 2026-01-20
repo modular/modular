@@ -19,7 +19,7 @@ from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
@@ -58,23 +58,23 @@ class GptOssInputs(ModelInputs):
     execution.
     """
 
-    tokens: npt.NDArray[np.integer[Any]] | Tensor
+    tokens: npt.NDArray[np.integer[Any]] | Buffer
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor | list[Tensor]
+    input_row_offsets: npt.NDArray[np.integer[Any]] | Buffer | list[Buffer]
     """Tensor containing the offsets for each row in the ragged input sequence,
     or the attention mask for the padded input sequence. For distributed execution,
     this can be a list of tensors, one per device."""
 
-    signal_buffers: list[Tensor]
+    signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
     def __init__(
         self,
-        tokens: npt.NDArray[np.integer[Any]] | Tensor,
-        input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor | list[Tensor],
-        return_n_logits: Tensor,
-        signal_buffers: list[Tensor],
+        tokens: npt.NDArray[np.integer[Any]] | Buffer,
+        input_row_offsets: npt.NDArray[np.integer[Any]] | Buffer | list[Buffer],
+        return_n_logits: Buffer,
+        signal_buffers: list[Buffer],
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         """
@@ -233,7 +233,7 @@ class GptOssModel(
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = Tensor.from_numpy(
+        self._input_row_offsets_prealloc = Buffer.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
@@ -387,7 +387,7 @@ class GptOssModel(
             # For backward compatibility, distribute the single tensor to all devices
             if isinstance(model_inputs.input_row_offsets, np.ndarray):
                 # Convert numpy array to tensor first
-                tensor = Tensor.from_numpy(model_inputs.input_row_offsets)
+                tensor = Buffer.from_numpy(model_inputs.input_row_offsets)
                 input_row_offsets_list = [
                     tensor.to(device) for device in self.devices
                 ]
@@ -407,14 +407,14 @@ class GptOssModel(
         )
         if len(model_outputs) == 3:
             return ModelOutputs(
-                logits=cast(Tensor, model_outputs[1]),
-                next_token_logits=cast(Tensor, model_outputs[0]),
-                logit_offsets=cast(Tensor, model_outputs[2]),
+                logits=cast(Buffer, model_outputs[1]),
+                next_token_logits=cast(Buffer, model_outputs[0]),
+                logit_offsets=cast(Buffer, model_outputs[2]),
             )
         else:
             return ModelOutputs(
-                logits=cast(Tensor, model_outputs[0]),
-                next_token_logits=cast(Tensor, model_outputs[0]),
+                logits=cast(Buffer, model_outputs[0]),
+                next_token_logits=cast(Buffer, model_outputs[0]),
             )
 
     def prepare_initial_token_inputs(
@@ -453,14 +453,14 @@ class GptOssModel(
 
         # Create input_row_offsets for each device
         input_row_offsets_tensors = [
-            Tensor.from_numpy(input_row_offsets).to(device)
+            Buffer.from_numpy(input_row_offsets).to(device)
             for device in self.devices
         ]
 
         return GptOssInputs(
-            tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
+            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
             input_row_offsets=input_row_offsets_tensors,
-            return_n_logits=Tensor.from_numpy(
+            return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             signal_buffers=self.signal_buffers,
@@ -468,7 +468,7 @@ class GptOssModel(
         )
 
     def prepare_next_token_inputs(
-        self, next_tokens: Tensor, prev_model_inputs: ModelInputs
+        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
     ) -> ModelInputs:
         """Prepares the inputs for subsequent execution steps in a multi-step generation.
 

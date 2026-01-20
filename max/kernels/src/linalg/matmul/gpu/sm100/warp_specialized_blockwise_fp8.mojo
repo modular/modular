@@ -19,7 +19,7 @@ from bit import next_power_of_two, prev_power_of_two
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
-from gpu.cluster import (
+from gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
@@ -36,8 +36,8 @@ from gpu.memory import (
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from gpu.mma import st_matrix
-from gpu.mma_sm100 import *
+from gpu.compute.mma import st_matrix
+from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.sync import (
     named_barrier,
     named_barrier_arrive,
@@ -45,7 +45,7 @@ from gpu.sync import (
     umma_arrive_leader_cta,
     mbarrier_arrive,
 )
-from gpu.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -67,6 +67,7 @@ from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
+    create_tensor_tile,
     create_tma_tile,
 )
 
@@ -131,7 +132,7 @@ fn load_AB[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
     a_scales_smem_layout: Layout,
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     /,
     *,
     block_tile_shape: IndexList[3],
@@ -164,7 +165,7 @@ fn load_AB[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
-    load_mma_pipeline: ProducerConsumerPipeline[Int(num_pipeline_stages)],
+    load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
     work_tile_coord: Tuple[UInt, UInt],
     a_multicast_mask: UInt16,
@@ -411,8 +412,8 @@ fn multi_stage_reg_epilogue[
 
 @always_inline
 fn promote_accumulators[
-    pipeline_stages: UInt,
-    num_accum_pipeline_stages: UInt,
+    pipeline_stages: Int,
+    num_accum_pipeline_stages: Int,
     accum_type: DType,
     accum_layout: Layout,
     a_scales_type: DType,
@@ -450,11 +451,9 @@ fn promote_accumulators[
         address_space = AddressSpace.LOCAL,
         ...,
     ],
-    mma_output_pipeline: ProducerConsumerPipeline[
-        Int(num_accum_pipeline_stages)
-    ],
+    mma_output_pipeline: ProducerConsumerPipeline[num_accum_pipeline_stages],
     tmem_addr: UInt32,
-    load_mma_pipeline: ProducerConsumerPipeline[Int(pipeline_stages)],
+    load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     work_tile_coord: Tuple[UInt, UInt],
     elect_one_warp: Bool,
     stage_stride_cols: UInt,
@@ -761,7 +760,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_scales_desc_layout: Layout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     cluster_shape: StaticTuple[Int32, 3],
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
@@ -797,9 +796,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     # For ld from TMEM, use same per-stage stride in column field.
     comptime NUM_TMEM_COLS = 512
-    comptime stage_stride_cols = NUM_TMEM_COLS // Int(
-        config.num_accum_pipeline_stages
-    )
+    comptime stage_stride_cols = NUM_TMEM_COLS // config.num_accum_pipeline_stages
 
     comptime clc_throttle_producer_arv_count = TMA_LOAD_THREADS
     comptime clc_throttle_consumer_arv_count = SCHEDULER_THREADS
@@ -854,15 +851,13 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         alignment=128,
     ]()
 
-    comptime a_smem_size = a_smem_layout.size() * Int(num_pipeline_stages)
-    comptime b_smem_size = b_smem_layout.size() * Int(num_pipeline_stages)
+    comptime a_smem_size = a_smem_layout.size() * num_pipeline_stages
+    comptime b_smem_size = b_smem_layout.size() * num_pipeline_stages
     comptime c_smem_size = config.output_tile_shape[
         0
     ] * config.output_tile_shape[1] * Int(config.num_output_stages)
 
-    comptime a_scales_smem_size = a_scales_smem_layout.size() * Int(
-        num_pipeline_stages
-    )
+    comptime a_scales_smem_size = a_scales_smem_layout.size() * num_pipeline_stages
 
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
@@ -918,17 +913,17 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     ]()
 
     # Load warp as producer and mma warp as consumer
-    var load_mma_pipeline = ProducerConsumerPipeline[Int(num_pipeline_stages)](
+    var load_mma_pipeline = ProducerConsumerPipeline[num_pipeline_stages](
         load_mma_mbar_ptr
     )
 
-    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * Int(num_pipeline_stages)
+    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * num_pipeline_stages
     var mma_output_pipeline = ProducerConsumerPipeline[
-        Int(config.num_accum_pipeline_stages)
+        config.num_accum_pipeline_stages
     ](mma_output_mbar_ptr)
 
-    var clc_full_mbar_ptr = mma_output_mbar_ptr + 2 * Int(
-        config.num_accum_pipeline_stages
+    var clc_full_mbar_ptr = (
+        mma_output_mbar_ptr + 2 * config.num_accum_pipeline_stages
     )
     var clc_empty_mbar_ptr = clc_full_mbar_ptr + config.num_clc_pipeline_stages
 
@@ -937,11 +932,11 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     # In the extreme case, all ctas keep querying next work simultaneously,
     # there will be no guarantee they get balanced number of tiles.
     var load_clc_pipeline = ProducerConsumerPipeline[
-        Int(config.num_clc_pipeline_stages)
+        config.num_clc_pipeline_stages
     ](clc_empty_mbar_ptr + config.num_clc_pipeline_stages)
 
     var clc_response_ptr = (
-        clc_empty_mbar_ptr + 3 * Int(config.num_clc_pipeline_stages)
+        clc_empty_mbar_ptr + 3 * config.num_clc_pipeline_stages
     ).bitcast[Int128]()
 
     var tmem_dealloc_mbar_ptr = (
@@ -997,11 +992,11 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     fence_mbarrier_init()
     cluster_sync()
 
-    var clc_pipe_producer_state = PipelineState[
-        Int(config.num_clc_pipeline_stages)
-    ](0, 1, 0)
+    var clc_pipe_producer_state = PipelineState[config.num_clc_pipeline_stages](
+        0, 1, 0
+    )
     var clc_pipe_consumer_state = PipelineState[
-        Int(config.num_clc_pipeline_stages)
+        config.num_clc_pipeline_stages
     ]()
 
     var mma_op = MmaOpSM100_SS[
@@ -1019,7 +1014,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     ]()
 
     var scheduler = TileScheduler[
-        num_stages = Int(config.num_clc_pipeline_stages),
+        num_stages = config.num_clc_pipeline_stages,
         cluster_shape = Index[dtype = DType.uint32](
             config.cluster_shape[0],
             config.cluster_shape[1],
@@ -1369,12 +1364,12 @@ fn sm100_warp_specialized_blockwise_fp8[
     var N = c.dim(1)
     var K = a.dim(1)
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // config.cluster_shape[1], BK),
         swizzle_mode = config.a_swizzle,
     ](ctx, a)
 
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (config.cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
@@ -1392,7 +1387,7 @@ fn sm100_warp_specialized_blockwise_fp8[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    var c_tma_op = create_tma_tile[
+    var c_tma_op = create_tensor_tile[
         c_tma_tile_shape,
         swizzle_mode = config.c_swizzle,
     ](ctx, c)
@@ -1415,28 +1410,14 @@ fn sm100_warp_specialized_blockwise_fp8[
         Int32
     ]()  # 4 bytes or 32 bits for tensor memory address
 
-    comptime accum_full_mbar_bytes = MBAR_BYTES * Int(
-        config.num_accum_pipeline_stages
-    )
-    comptime accum_empty_mbar_bytes = MBAR_BYTES * Int(
-        config.num_accum_pipeline_stages
-    )
+    comptime accum_full_mbar_bytes = MBAR_BYTES * config.num_accum_pipeline_stages
+    comptime accum_empty_mbar_bytes = MBAR_BYTES * config.num_accum_pipeline_stages
 
-    comptime clc_response_bytes = CLC_RESPONSE_BYTES * Int(
-        config.num_clc_pipeline_stages
-    )
-    comptime clc_full_mbar_bytes = MBAR_BYTES * Int(
-        config.num_clc_pipeline_stages
-    )
-    comptime clc_empty_mbar_bytes = MBAR_BYTES * Int(
-        config.num_clc_pipeline_stages
-    )
-    comptime clc_throttle_full_mbar_bytes = MBAR_BYTES * Int(
-        config.num_clc_pipeline_stages
-    )
-    comptime clc_throttle_empty_mbar_bytes = MBAR_BYTES * Int(
-        config.num_clc_pipeline_stages
-    )
+    comptime clc_response_bytes = CLC_RESPONSE_BYTES * config.num_clc_pipeline_stages
+    comptime clc_full_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
+    comptime clc_empty_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
+    comptime clc_throttle_full_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
+    comptime clc_throttle_empty_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
 
     comptime tmem_addr_bytes = TMEM_ADDR_BYTES
     comptime tmem_dealloc_mbar_bytes = MBAR_BYTES
@@ -1498,7 +1479,7 @@ fn sm100_warp_specialized_blockwise_fp8[
         a_scales_tma_op.desc_layout,
         transpose_b=transpose_b,
         config=config,
-        num_pipeline_stages=max_pipeline_stages,
+        num_pipeline_stages = Int(max_pipeline_stages),
         cluster_shape = StaticTuple[Int32, 3](
             config.cluster_shape[0],
             config.cluster_shape[1],

@@ -16,7 +16,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 import torch
-from max.driver import Accelerator, Device, Tensor
+from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -65,12 +65,12 @@ def create_groups(
     return offsets, lora_ids
 
 
-def to_max_tensor(tensor: torch.Tensor, device: Device) -> Tensor:
+def to_max_tensor(tensor: torch.Tensor, device: Device) -> Buffer:
     """Convert CPU torch tensor to MAX tensor."""
-    return Tensor.from_dlpack(tensor).to(device)
+    return Buffer.from_dlpack(tensor).to(device)
 
 
-def to_torch(tensor: Tensor) -> torch.Tensor:
+def to_torch(tensor: Buffer) -> torch.Tensor:
     """Convert MAX tensor to torch tensor."""
     return from_dlpack(tensor)
 
@@ -164,9 +164,9 @@ def run_sgmv_kernel(
     result = compiled.execute(
         to_max_tensor(input, device),
         to_max_tensor(lora, device),
-        Tensor.from_numpy(lora_ids.astype(np.int32)).to(device),
-        Tensor.from_numpy(np.ones(num_groups, dtype=np.uint32)),
-        Tensor.from_numpy(offsets.astype(np.uint32)).to(device),
+        Buffer.from_numpy(lora_ids.astype(np.int32)).to(device),
+        Buffer.from_numpy(np.ones(num_groups, dtype=np.uint32)),
+        Buffer.from_numpy(offsets.astype(np.uint32)).to(device),
     )
     return to_torch(result[0])
 

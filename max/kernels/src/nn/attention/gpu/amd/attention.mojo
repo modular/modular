@@ -384,11 +384,11 @@ struct Attention[
 
     comptime GlobalMemoryManagerType = GlobalMemoryManager[
         Self.q_type,
-        Self.BM,
-        Self.BN,
-        Self.BK,
-        Self.depth,
-        Self.num_heads,
+        UInt32(Self.BM),
+        UInt32(Self.BN),
+        UInt32(Self.BK),
+        UInt32(Self.depth),
+        UInt32(Self.num_heads),
         Self.group,
         Self.token_gen,
         Self.q_depth,
@@ -594,7 +594,7 @@ struct Attention[
     fn mask_advance(mut self):
         @parameter
         if not Self.token_gen:
-            self.mask_warp_col += Self.BN
+            self.mask_warp_col += UInt32(Self.BN)
 
     @always_inline
     fn mask_skip_tile(self, status: TileMaskStatus) -> Bool:
@@ -694,8 +694,8 @@ struct Attention[
         self.out_reg_buffer.zero()
 
         self.gmem_manager = Self.GlobalMemoryManagerType(
-            Self.q_tile_idx(),
-            Self.kv_head_idx(),
+            UInt32(Self.q_tile_idx()),
+            UInt32(Self.kv_head_idx()),
             seq_len,
             Self.attention_config_t.get_q_offset[UInt(Self.q_depth)](),
             Self.attention_config_t.get_output_offset[
@@ -721,7 +721,7 @@ struct Attention[
         self.v = v
         self.mask = mask
 
-        self.mask_block_row = self.q_tile_idx() * Self.BM
+        self.mask_block_row = UInt32(self.q_tile_idx() * Self.BM)
         var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
         var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
         self.mask_warp_row = warp_row * Int(Self.WM)

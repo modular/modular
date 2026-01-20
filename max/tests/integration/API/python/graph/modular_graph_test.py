@@ -22,7 +22,7 @@ import torch
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as nps
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, Dim, Graph, StaticDim, SymbolicDim, TensorType
@@ -105,13 +105,13 @@ def arrays(
     tensor_type: TensorType | BufferType,
     static_dims: Mapping[str, int] = {},
     **kwargs,
-) -> st.SearchStrategy[Tensor]:
+) -> st.SearchStrategy[Buffer]:
     if tensor_type.dtype == DType.bfloat16:
         tensor_type = TensorType(
             DType.float32, tensor_type.shape, device=tensor_type.device
         )
         return arrays(tensor_type, static_dims=static_dims, **kwargs).map(
-            lambda t: Tensor.from_dlpack(
+            lambda t: Buffer.from_dlpack(
                 torch.from_dlpack(t).to(torch.bfloat16)
             )
         )
@@ -121,20 +121,20 @@ def arrays(
         dtype,
         shapes(tensor_type, static_dims),
         elements=elements(dtype, **kwargs),
-    ).map(Tensor.from_dlpack)
+    ).map(Buffer.from_dlpack)
 
 
 def given_input_types(
     input_types: Iterable[TensorType | BufferType],
     static_dims: Mapping[str, int] = {},
-    provided_inputs: Mapping[int, np.ndarray | Tensor] = {},
+    provided_inputs: Mapping[int, np.ndarray | Buffer] = {},
     max_magnitude: float | None = None,
     **kwargs,
-) -> Callable[[Callable[[tuple[Tensor, ...]], None]], Callable[[], None]]:
+) -> Callable[[Callable[[tuple[Buffer, ...]], None]], Callable[[], None]]:
     input_arrays = []
     for i, input_type in enumerate(input_types):
         if i in provided_inputs:
-            input_arrays.append(st.just(Tensor.from_dlpack(provided_inputs[i])))
+            input_arrays.append(st.just(Buffer.from_dlpack(provided_inputs[i])))
         elif max_magnitude is not None:
             input_arrays.append(
                 arrays(
@@ -157,13 +157,13 @@ def given_input_types(
     return given(st.tuples(*input_arrays))
 
 
-def execute(model: Model, inputs: Sequence[np.ndarray | Tensor]) -> Tensor:
+def execute(model: Model, inputs: Sequence[np.ndarray | Buffer]) -> Buffer:
     tensor_inputs = [
-        t if isinstance(t, Tensor) else Tensor.from_dlpack(t) for t in inputs
+        t if isinstance(t, Buffer) else Buffer.from_dlpack(t) for t in inputs
     ]
     results = model.execute(*tensor_inputs)
     assert results
-    assert isinstance(results[0], Tensor)
+    assert isinstance(results[0], Buffer)
     return results[0]
 
 
@@ -172,7 +172,7 @@ def modular_graph_test(
     graph: Graph,
     *,
     static_dims: Mapping[str, int] = {},
-    provided_inputs: Mapping[int, np.ndarray | Tensor] = {},
+    provided_inputs: Mapping[int, np.ndarray | Buffer] = {},
     hypothesis_settings: settings | None = None,
     max_magnitude: float | None = None,
     **kwargs,
@@ -180,8 +180,8 @@ def modular_graph_test(
     [
         Callable[
             [
-                Callable[[Sequence[Tensor]], Tensor],
-                Sequence[Tensor],
+                Callable[[Sequence[Buffer]], Buffer],
+                Sequence[Buffer],
                 Sequence[torch.Tensor],
             ],
             None,
@@ -192,8 +192,8 @@ def modular_graph_test(
     def decorator(
         test_fn: Callable[
             [
-                Callable[[Sequence[Tensor]], Tensor],
-                Sequence[Tensor],
+                Callable[[Sequence[Buffer]], Buffer],
+                Sequence[Buffer],
                 Sequence[torch.Tensor],
             ],
             None,
@@ -215,7 +215,7 @@ def modular_graph_test(
             max_magnitude=max_magnitude,
             **kwargs,
         )
-        def test_correctness(inputs: Sequence[Tensor]) -> None:
+        def test_correctness(inputs: Sequence[Buffer]) -> None:
             model_execute = functools.partial(execute, model)
 
             torch_inputs = [torch.from_dlpack(t) for t in inputs]

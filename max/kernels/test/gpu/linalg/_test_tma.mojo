@@ -14,9 +14,8 @@
 from math import ceildiv
 from sys import size_of
 
-from gpu import barrier
+from gpu import barrier, block_idx, thread_idx
 from gpu.host import DeviceContext
-from gpu.id import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor

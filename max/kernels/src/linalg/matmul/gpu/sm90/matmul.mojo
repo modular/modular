@@ -17,13 +17,13 @@ from sys import size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.globals import WARPGROUP_SIZE
-from gpu.grid_controls import pdl_launch_attributes
+from gpu.primitives.grid_controls import pdl_launch_attributes
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import H100
 from layout import Layout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.tma_async import create_tma_tile, create_tma_tile_template
+from layout.tma_async import create_tensor_tile, create_tma_tile_template
 from logger import Logger
 from std.bit import log2_floor
 
@@ -115,6 +115,7 @@ fn warp_specialize_gemm_with_multicasting[
     hilbert_swizzle: Bool = False,
     splits: Int = 0,
     raster_order: RasterOrder = RasterOrder.AlongM,
+    swapAB: Bool = False,
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
@@ -125,6 +126,10 @@ fn warp_specialize_gemm_with_multicasting[
 
     @parameter
     if splits > 0:
+        # TODO: Remove if unnecessary otherwise add support
+        __comptime_assert (
+            swapAB == False
+        ), "swapAB is not supported for split-k kernel"
         # Dispatch to split-k kernel
         warp_specialize_gemm_with_multicasting_splitk[
             c_type,
@@ -158,6 +163,7 @@ fn warp_specialize_gemm_with_multicasting[
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             schedule=schedule,
             hilbert_swizzle=hilbert_swizzle,
+            swapAB=swapAB,
         ](c_device, a_device, b_device, ctx)
 
 
@@ -179,6 +185,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     ] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     hilbert_swizzle: Bool = False,
+    swapAB: Bool = False,
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
@@ -191,8 +198,24 @@ fn _warp_specialize_gemm_with_multicasting_impl[
 
     comptime N_static = c_shape.get[1]()
     comptime K_static = a_shape.get[1]()
-    var M = c_device.dim[0]()
-    var N = c_device.dim[1]()
+
+    __comptime_assert not swapAB or (
+        schedule == MatmulSchedule.NONE
+    ), "swapAB does not support persistent kernels yet"
+    __comptime_assert not swapAB or (
+        hilbert_swizzle == False
+    ), "swapAB does not support hilbert swizzle yet"
+    __comptime_assert not swapAB or (
+        use_tma_store == False
+    ), "swapAB does not support TMA store yet"
+    __comptime_assert (
+        transpose_b == True
+    ), "H100 matmul only supports transposed B"
+
+    # C is in reference to A and B not being swapped
+    # so we derive M and N from A and B instead
+    var M = b_device.dim[0]() if swapAB else a_device.dim[0]()
+    var N = a_device.dim[0]() if swapAB else b_device.dim[0]()
     var K = a_device.dim[1]()
 
     comptime BM = config.block_tile_shape[0]
@@ -284,12 +307,27 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         c_type,
         Int(config.num_pipeline_stages),
         k_group_size,
+        swapAB,
     ]()
-    comptime c_smem_tile = Index(
-        c_smem_layout.shape[0].value(),
-        c_smem_layout.shape[1].value() // Int(config.num_consumer),
+
+    # Compute C shared memory tile dimensions
+    # For normal: rows stay full, cols are divided by num_consumer
+    # For swapAB: rows are divided by num_consumer, cols stay full
+    comptime c_smem_rows_reg = c_smem_layout.shape[0].value()
+    comptime c_smem_cols_reg = c_smem_layout.shape[1].value() // Int(
+        config.num_consumer
     )
 
+    comptime c_smem_rows_swapAB = c_smem_layout.shape[0].value() // Int(
+        config.num_consumer
+    )
+    comptime c_smem_cols_swapAB = c_smem_layout.shape[1].value()
+
+    comptime c_smem_rows = c_smem_rows_reg if not swapAB else c_smem_rows_swapAB
+    comptime c_smem_cols = c_smem_cols_reg if not swapAB else c_smem_cols_swapAB
+    comptime c_smem_tile = Index(c_smem_rows, c_smem_cols)
+
+    # BK is always 64
     comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     # make sure TMA_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
@@ -307,7 +345,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
 
     @parameter
     if use_tma_store:
-        c_tma_op = create_tma_tile[
+        c_tma_op = create_tensor_tile[
             c_smem_tile,
             swizzle_mode=c_swizzle,
             __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
@@ -321,19 +359,30 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         var grid_y = ceildiv(M, BM)
         lut_ptr = get_hilbert_lut_with_cache(ctx, grid_x, grid_y)
 
+    # one producer and num_consumer consumers each one warpgroup in size
     comptime num_threads = WARPGROUP_SIZE * Int(
         config.num_consumer
     ) + WARPGROUP_SIZE
 
     comptime matmul_kernel[
-        hilbert_swizzle: Bool = False
+        a_type: DType,
+        b_type: DType,
+        c_type: DType,
+        a_layout: Layout,
+        b_layout: Layout,
+        c_layout: Layout,
+        a_swizzle: TensorMapSwizzle,
+        b_swizzle: TensorMapSwizzle,
+        c_swizzle: TensorMapSwizzle,
+        swapAB: Bool = False,
+        hilbert_swizzle: Bool = False,
     ] = HopperMatmulSM90Kernel[
         a_type,
         b_type,
         c_type,
-        a.layout,
-        b.layout,
-        c.layout,
+        a_layout,
+        b_layout,
+        c_layout,
         c_smem_layout,
         config.block_tile_shape,
         config.mma_shape,
@@ -352,9 +401,40 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         hilbert_swizzle=hilbert_swizzle,
         k_group_size=k_group_size,
+        swapAB=swapAB,
     ]
 
-    comptime smem_size = matmul_kernel[].SMem.storage_size()
+    comptime matmul_kernel_regular[
+        hilbert_swizzle: Bool = False
+    ] = matmul_kernel[
+        a_type,
+        b_type,
+        c_type,
+        a.layout,
+        b.layout,
+        c.layout,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        c_swizzle=c_swizzle,
+        swapAB=False,
+        hilbert_swizzle=hilbert_swizzle,
+    ]
+
+    comptime matmul_kernel_swapAB = matmul_kernel[
+        b_type,
+        a_type,
+        c_type,
+        b.layout,
+        a.layout,
+        c.layout,
+        a_swizzle=b_swizzle,
+        b_swizzle=a_swizzle,
+        c_swizzle=c_swizzle,
+        swapAB=True,
+        hilbert_swizzle=False,
+    ]
+
+    comptime smem_size = matmul_kernel_regular[].SMem.storage_size() if not swapAB else matmul_kernel_swapAB.SMem.storage_size()
 
     constrained[
         smem_size <= H100.shared_memory_per_multiprocessor - 1024,
@@ -369,79 +449,128 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     # Dispatch kernel using TMA load when the stride is multiple of 16B.
     @parameter
     if k_align == 16:
-        var a_tma_op = create_tma_tile[
-            Index(
-                BM // Int(CLUSTER_N), BK
-            ) if config.partitioned_multicast else Index(BM, BK),
-            swizzle_mode=a_swizzle,
-        ](ctx, a)
-
-        var b_tma_op = create_tma_tile[
-            Index(
-                BN // Int(CLUSTER_M), BK
-            ) if config.partitioned_multicast else Index(BN, BK),
-            swizzle_mode=b_swizzle,
-        ](ctx, b)
 
         @parameter
-        if schedule != MatmulSchedule.NONE:
-            comptime kernel = matmul_kernel[].run_persistent[
-                a_tma_op.layout,
-                b_tma_op.layout,
-                c_tma_op.layout,
-                a_tma_op.desc_layout,
-                b_tma_op.desc_layout,
-                c_tma_op.desc_layout,
-                grid_shape=grid_shape_adjusted,
-                schedule=schedule,
-            ]
+        if not swapAB:
+            var a_tma_op = create_tensor_tile[
+                Index(
+                    BM // Int(CLUSTER_N), BK
+                ) if config.partitioned_multicast else Index(BM, BK),
+                swizzle_mode=a_swizzle,
+            ](ctx, a)
 
-            ctx.enqueue_function[kernel, kernel](
-                a_tma_op,
-                b_tma_op,
-                c_tma_op,
-                c,
-                Index(M, N, K),
-                grid_dim=(grid_shape_adjusted[0], grid_shape_adjusted[1]),
-                block_dim=(num_threads),
-                shared_mem_bytes=smem_size,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    smem_size
-                ),
-                attributes=pdl_launch_attributes(config.pdl_level()),
-            )
+            var b_tma_op = create_tensor_tile[
+                Index(
+                    BN // Int(CLUSTER_M), BK
+                ) if config.partitioned_multicast else Index(BN, BK),
+                swizzle_mode=b_swizzle,
+            ](ctx, b)
+
+            @parameter
+            if schedule != MatmulSchedule.NONE:
+                comptime kernel = matmul_kernel_regular[].run_persistent[
+                    a_tma_op.layout,
+                    b_tma_op.layout,
+                    c_tma_op.layout,
+                    a_tma_op.desc_layout,
+                    b_tma_op.desc_layout,
+                    c_tma_op.desc_layout,
+                    grid_shape=grid_shape_adjusted,
+                    schedule=schedule,
+                ]
+
+                ctx.enqueue_function[kernel, kernel](
+                    a_tma_op,
+                    b_tma_op,
+                    c_tma_op,
+                    c,
+                    Index(M, N, K),
+                    grid_dim=(grid_shape_adjusted[0], grid_shape_adjusted[1]),
+                    block_dim=(num_threads),
+                    shared_mem_bytes=smem_size,
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_size
+                    ),
+                    attributes=pdl_launch_attributes(config.pdl_level()),
+                )
+            else:
+                comptime kernel = matmul_kernel_regular[
+                    hilbert_swizzle=hilbert_swizzle
+                ].run[
+                    a_tma_op.layout,
+                    b_tma_op.layout,
+                    c_tma_op.layout,
+                    a_tma_op.desc_layout,
+                    b_tma_op.desc_layout,
+                    c_tma_op.desc_layout,
+                ]
+
+                ctx.enqueue_function[kernel, kernel](
+                    a_tma_op,
+                    b_tma_op,
+                    c_tma_op,
+                    a,
+                    b,
+                    c,
+                    lut_ptr,
+                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                    block_dim=(num_threads),
+                    shared_mem_bytes=smem_size,
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_size
+                    ),
+                    attributes=pdl_launch_attributes(config.pdl_level()),
+                )
         else:
-            comptime kernel = matmul_kernel[
-                hilbert_swizzle=hilbert_swizzle
-            ].run[
-                a_tma_op.layout,
-                b_tma_op.layout,
-                c_tma_op.layout,
-                a_tma_op.desc_layout,
-                b_tma_op.desc_layout,
-                c_tma_op.desc_layout,
-            ]
+            var a_tma_op = create_tensor_tile[
+                Index(
+                    BM // Int(CLUSTER_N), BK
+                ) if config.partitioned_multicast else Index(BM, BK),
+                swizzle_mode=a_swizzle,
+            ](ctx, b)
 
-            ctx.enqueue_function[kernel, kernel](
-                a_tma_op,
-                b_tma_op,
-                c_tma_op,
-                a,
-                b,
-                c,
-                lut_ptr,
-                grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-                block_dim=(num_threads),
-                shared_mem_bytes=smem_size,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    smem_size
-                ),
-                attributes=pdl_launch_attributes(config.pdl_level()),
-            )
+            var b_tma_op = create_tensor_tile[
+                Index(
+                    BN // Int(CLUSTER_M), BK
+                ) if config.partitioned_multicast else Index(BN, BK),
+                swizzle_mode=b_swizzle,
+            ](ctx, a)
+
+            @parameter
+            if schedule == MatmulSchedule.NONE:
+                comptime kernel = matmul_kernel_swapAB.run[
+                    a_tma_op.layout,
+                    b_tma_op.layout,
+                    c_tma_op.layout,
+                    a_tma_op.desc_layout,
+                    b_tma_op.desc_layout,
+                    c_tma_op.desc_layout,
+                ]
+
+                ctx.enqueue_function[kernel, kernel](
+                    a_tma_op,
+                    b_tma_op,
+                    c_tma_op,
+                    b,
+                    a,
+                    c,
+                    lut_ptr,
+                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                    block_dim=(num_threads),
+                    shared_mem_bytes=smem_size,
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_size
+                    ),
+                    attributes=pdl_launch_attributes(config.pdl_level()),
+                )
 
     # Dispatch kernel using cp.async.ca when the stride is not multiple of 4B or 8B..
     else:
-        comptime kernel = matmul_kernel[].run_unaligned[
+        # TODO add support for swapAB
+        __comptime_assert (
+            swapAB == False
+        ), "swapAB is not supported for unaligned kernel"
+        comptime kernel = matmul_kernel_regular[].run_unaligned[
             c_tma_op.desc_layout,
             c_tma_op.layout,
         ]
@@ -468,17 +597,22 @@ fn _get_c_smem_layout[
     c_type: DType,
     num_pipeline_stages: Int,
     k_group_size: Int,
+    swapAB: Bool = False,
 ]() -> Layout:
     comptime BM = Int(block_tile_shape[0])
     comptime BN = Int(block_tile_shape[1])
     comptime BK = Int(block_tile_shape[2])
 
     comptime WG_BM = BM
-    comptime MAX_WG_BN = 128
+    comptime MAX_WG_BN = 128  # a cap on the shared memory size
 
     comptime available_smem_size = Int(
         H100.shared_memory_per_multiprocessor - 1024
     )
+
+    __comptime_assert not swapAB or (
+        a_type == b_type == c_type == DType.bfloat16
+    ), "swapAB is only supported for bfloat16 dtypes"
 
     comptime groups = num_pipeline_stages // k_group_size
     comptime barrier_size = size_of[Int64]() * 2 * groups
@@ -491,10 +625,21 @@ fn _get_c_smem_layout[
     comptime available_c_smem_size = Int(
         available_smem_size - pipeline_smem_size
     )
-    # We want the shared memory N to be at least 16 when using `stmatrix`
-    # (c_type = bf16) because it would make TMA and masked copy from shared
-    # memory to global memory easier.
-    comptime MIN_WG_BN = 16 if size_of[c_type]() == 2 else BN // 4
+
+    # In the normal case Shared Memory M will be the same as BM which can be either 64 or 128
+    # This value is derived from the MMA_M shape which is fixed to 64. Similary BN is the same as
+    # MMA_N (8 -> 256), however this poses a problem. At worst our shared memory size would be 128x256
+    # this leaves little shared memory for other resources. To solve this we set the max shared memory N to 128, and
+    # try to minimize it as much as possible.
+
+    # We cant make Shared Memory N 1, since we would like to use stmatrix. stmatrix transports
+    # matrices of sizes of 16bytes by 16bytes, and we need to also be able to use TMA. The lowest
+    # TMA swizzle is 16 bytes. So we set the minimum shared memory N to 16.
+
+    # In the SwapAB case Shared Memory N will be fixed to 64 or 128 based on the value of BN.
+    # This meets the TMA requirements but we need m to be at least 16 to be able to use stmatrix.
+    comptime min_wg_bn = 16
+    comptime MIN_WG_BN = min_wg_bn if size_of[c_type]() == 2 else BN // 4
 
     @parameter
     if available_smem_size > (
@@ -511,7 +656,9 @@ fn _get_c_smem_layout[
             return WG_BN
 
         comptime max_wg_bn = _get_max_wg_bn()
-        return Layout.row_major(WG_BM, max_wg_bn)
+        return Layout.row_major(
+            max_wg_bn, WG_BM
+        ) if swapAB else Layout.row_major(WG_BM, max_wg_bn)
     else:
         constrained[
             False,
@@ -617,20 +764,20 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         min(log2_floor(c_smem_tile[1] // 8), 3)
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(
             BM // Int(CLUSTER_N), BK
         ) if config.partitioned_multicast else Index(BM, BK),
         swizzle_mode=a_swizzle,
     ](ctx, a)
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // Int(CLUSTER_M), BK
         ) if config.partitioned_multicast else Index(BN, BK),
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    c_tma_op = create_tma_tile[
+    c_tma_op = create_tensor_tile[
         c_smem_tile,
         swizzle_mode=c_swizzle,
         __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),

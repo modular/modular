@@ -14,7 +14,7 @@
 from gpu.primitives.grid_controls import (
     _SUPPORT_PDL_LAUNCH as SUPPORT_PDL_LAUNCH,
 )
-from gpu.grid_controls import (
+from gpu.primitives.grid_controls import (
     PDL,
     launch_dependent_grids,
     wait_on_dependent_grids,

@@ -15,7 +15,12 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 from collections.string.string_slice import _get_kgen_string
-from reflection import get_type_name
+from reflection import (
+    get_type_name,
+    struct_field_names,
+    struct_field_types,
+)
+from reflection.type_info import _unqualified_type_name
 
 
 @always_inline("nodebug")
@@ -107,5 +112,54 @@ fn _constrained_conforms_to[
             "(",
             elem_conforms_to_trait_name,
             ") conformance, which is not satisfied.",
+        ]()
+    )
+
+
+@always_inline("nodebug")
+fn _constrained_field_conforms_to[
+    cond: Bool,
+    *,
+    Parent: AnyType,
+    FieldIndex: Int,
+    ParentConformsTo: StaticString,
+    FieldConformsTo: StaticString = ParentConformsTo,
+]():
+    """Asserts that a struct field conforms to a trait at compile time.
+
+    This helper is used in default trait implementations that use reflection
+    to operate on all fields of a struct. It produces a clear error message
+    when a field doesn't conform to the required trait.
+
+    Parameters:
+        cond: The conformance condition (e.g., `conforms_to(FieldType, Trait)`).
+        Parent: The struct type being checked.
+        FieldIndex: The index of the field in the struct.
+        ParentConformsTo: The trait the parent is trying to conform to.
+        FieldConformsTo: The trait the field must conform to
+            (defaults to ParentConformsTo).
+    """
+    comptime names = struct_field_names[Parent]()
+    comptime types = struct_field_types[Parent]()
+    comptime field_name = names[FieldIndex]
+    comptime FieldType = types[FieldIndex]
+    comptime parent_type_name = _unqualified_type_name[Parent]()
+    comptime field_type_name = _unqualified_type_name[FieldType]()
+
+    # Construct a message like:
+    #     Could not derive Equatable for Point - member field `x: Int` does not
+    #     implement Equatable
+    __comptime_assert cond, StaticString(
+        _get_kgen_string[
+            "Could not derive ",
+            ParentConformsTo,
+            " for ",
+            parent_type_name,
+            " - member field `",
+            field_name,
+            ": ",
+            field_type_name,
+            "` does not implement ",
+            FieldConformsTo,
         ]()
     )

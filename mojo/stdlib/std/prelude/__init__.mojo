@@ -123,7 +123,7 @@ from builtin.string_literal import StringLiteral
 from builtin.swap import swap
 from builtin.tuple import Tuple
 from builtin.type_aliases import (
-    AnyTrivialRegType,
+    __TypeOfAllTypes,
     ImmutAnyOrigin,
     ImmutOrigin,
     MutAnyOrigin,

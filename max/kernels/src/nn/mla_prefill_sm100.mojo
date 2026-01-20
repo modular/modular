@@ -78,7 +78,7 @@ from layout.swizzle import make_swizzle
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.layout import Layout, blocked_product
 from layout.layout_tensor import LayoutTensor
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,
@@ -107,7 +107,7 @@ from nn.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
 )
-from gpu.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from linalg.arch.sm100.mma import smem_descriptor
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
@@ -462,7 +462,7 @@ struct SM100MLA[
             " implementation."
         )
 
-        var warp_idx: UInt32 = warp.broadcast(warp_id())
+        var warp_idx = UInt32(warp.broadcast(warp_id()))
         if warp_idx == 0:
             if elect() != 0:
                 kv_pipeline.init()
@@ -805,8 +805,8 @@ struct SM100MLA[
         var order_phase: UInt32 = 0
 
         var q_head_idx: UInt32 = seq_info.head_idx
-        var tid: UInt32 = thread_idx.x
-        var row: UInt32 = tid % 128
+        var tid = UInt32(thread_idx.x)
+        var row = UInt32(tid % 128)
         var scale_log2e: Scalar[Self.accum_type] = scale
 
         @parameter

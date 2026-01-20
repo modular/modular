@@ -15,7 +15,7 @@ import sys
 from collections.abc import Callable
 
 # Imports from 'mojo_module.so'
-import mojo_module as def_function
+import mojo_module as def_function  # type: ignore[import-not-found]
 import pytest
 
 

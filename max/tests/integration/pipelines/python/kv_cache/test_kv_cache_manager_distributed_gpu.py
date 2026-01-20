@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
@@ -139,8 +139,8 @@ def test_step() -> None:
 
 @dataclass
 class PrevModelInputs:
-    input_row_offsets: Tensor
-    data_parallel_splits: Tensor
+    input_row_offsets: Buffer
+    data_parallel_splits: Buffer
 
 
 def test_increment_cache_lengths() -> None:
@@ -166,20 +166,20 @@ def test_increment_cache_lengths() -> None:
 
     # For testing, assign the cache lengths to some arbitrary values.
     device_0 = kv_manager.devices[0]
-    kv_cache_inputs[0].cache_lengths = Tensor.from_numpy(
+    kv_cache_inputs[0].cache_lengths = Buffer.from_numpy(
         np.array([10, 25], dtype=np.uint32)
     ).to(device_0)
-    kv_cache_inputs[1].cache_lengths = Tensor.from_numpy(
+    kv_cache_inputs[1].cache_lengths = Buffer.from_numpy(
         np.array([32], dtype=np.uint32)
     ).to(kv_manager.devices[1])
 
     # Create correct prev_model_inputs based on the prompt lengths and assigned
     # replicas.
     prev_model_inputs = PrevModelInputs(
-        input_row_offsets=Tensor.from_numpy(
+        input_row_offsets=Buffer.from_numpy(
             np.array([0, 3, 7, 14], dtype=np.uint32)
         ).to(device_0),
-        data_parallel_splits=Tensor.from_numpy(
+        data_parallel_splits=Buffer.from_numpy(
             np.array([0, 2, 3], dtype=np.int64)
         ),
     )

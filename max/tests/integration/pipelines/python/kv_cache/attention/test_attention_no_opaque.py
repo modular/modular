@@ -18,7 +18,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 import torch
-from max.driver import CPU, Device, Tensor
+from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -115,7 +115,7 @@ def build_and_execute_graph(
     compiled_model = session.load(g, weights_registry=model.state_dict())
 
     return cast(
-        Tensor, compiled_model(input, input_row_offsets, *kv_inputs)[0]
+        Buffer, compiled_model(input, input_row_offsets, *kv_inputs)[0]
     ).to_numpy()
 
 

@@ -13,9 +13,7 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, is_nvidia_gpu, simd_width_of, size_of
 
 from bit import log2_floor
@@ -143,7 +141,7 @@ fn multistage_mma_q[
     ) + 1
     comptime repack_tile = Index(64, 16)
 
-    var tid: UInt32 = thread_idx.x % UInt(num_threads)
+    var tid = UInt32(thread_idx.x % UInt(num_threads))
     var warp_id = tid // WARP_SIZE
     var lane_id = tid % WARP_SIZE
 
@@ -565,15 +563,16 @@ fn multistage_qgemm_kernel[
     ]()
     comptime a_smem_size = num_pipeline_stages * UInt(BM) * UInt(BK)
 
-    var a_smem_iter = LayoutTensorIter[
+    comptime IteratorTypeA = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
         alignment=alignment,
         circular=True,
-    ](
+    ]
+    var a_smem_iter = IteratorTypeA(
         a_smem + warp_k_part_id * a_smem_size,
-        a_smem_size,
+        IteratorTypeA.linear_uint_type(a_smem_size),
     )
 
     # There is one pre-allocated shared buffer. Explicitly offset B after at A's end.
@@ -587,12 +586,16 @@ fn multistage_qgemm_kernel[
     comptime BD_1 = (BK * repack_tile[0]) // pack_factor
     comptime b_smem_layout = Layout.row_major(BD_0, BD_1)
 
-    var b_smem_iter = LayoutTensorIter[
+    comptime IteratorTypeB = LayoutTensorIter[
         b_type,
         b_smem_layout,
         address_space = AddressSpace.SHARED,
         circular=True,
-    ](b_smem + warp_k_part_id * b_smem_size, b_smem_size)
+    ]
+    var b_smem_iter = IteratorTypeB(
+        b_smem + warp_k_part_id * b_smem_size,
+        IteratorTypeB.linear_uint_type(b_smem_size),
+    )
 
     # multiple stages may share the same scales
     comptime num_scales_stages = ceildiv(
@@ -606,12 +609,16 @@ fn multistage_qgemm_kernel[
     )
     comptime scales_smem_layout = Layout.row_major(ceildiv(BK, group_size), BN)
 
-    var scales_smem_iter = LayoutTensorIter[
+    comptime IteratorTypeScales = LayoutTensorIter[
         scales_type,
         scales_smem_layout,
         address_space = AddressSpace.SHARED,
         circular=True,
-    ](scales_smem + warp_k_part_id * scales_smem_size, scales_smem_size)
+    ]
+    var scales_smem_iter = IteratorTypeScales(
+        scales_smem + warp_k_part_id * scales_smem_size,
+        IteratorTypeScales.linear_uint_type(scales_smem_size),
+    )
 
     # global memory iterator
     var bk_start: Int = Int(
@@ -2165,8 +2172,9 @@ fn gpu_qint4_repack_GPTQ[
             False,
         ]
 
+        # Create null tensor using MutExternalOrigin (null pointer with no real origin)
         var null_tensor = LayoutTensor[DType.int32, Layout()](
-            UnsafePointer[Int32]()
+            UnsafePointer[Int32, MutExternalOrigin]()
         )
 
         cuda_ctx.enqueue_function[repack, repack](

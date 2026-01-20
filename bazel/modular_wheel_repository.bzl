@@ -79,7 +79,6 @@ INDIRECT_DEPENDENCIES = [
     "AsyncRTRuntimeGlobals",
     "KGENCompilerRTShared",
     "MGPRT",
-    "MOGGLoader",
     "MSupportGlobals",
 ]
 
@@ -122,7 +121,7 @@ rebuild_wheel = repository_rule(
             mandatory = True,
         ),
         "base_url": attr.string(
-            default = "https://dl.modular.com/public/nightly/python",
+            mandatory = True,
         ),
     },
 )

@@ -26,6 +26,7 @@ def register_all_models() -> None:
     from .bert import bert_arch
     from .deepseekV2 import deepseekV2_arch
     from .deepseekV3 import deepseekV3_arch
+    from .deepseekV32 import deepseekV32_arch
     from .eagle_llama3 import eagle_llama_arch
     from .exaone import exaone_arch
     from .gemma3 import gemma3_arch
@@ -48,12 +49,13 @@ def register_all_models() -> None:
     from .qwen2 import qwen2_arch
     from .qwen2_5vl import qwen2_5_vl_arch
     from .qwen3 import qwen3_arch
-    from .qwen3vl_moe import qwen3vl_moe_arch
+    from .qwen3vl_moe import qwen3vl_arch, qwen3vl_moe_arch
 
     architectures = [
         exaone_arch,
         deepseekV2_arch,
         deepseekV3_arch,
+        deepseekV32_arch,
         eagle_llama_arch,
         gemma3_arch,
         gemma3_multimodal_arch,
@@ -76,6 +78,7 @@ def register_all_models() -> None:
         qwen2_arch,
         qwen2_5_vl_arch,
         qwen3_arch,
+        qwen3vl_arch,
         qwen3vl_moe_arch,
     ]
 

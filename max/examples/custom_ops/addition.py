@@ -16,7 +16,7 @@
 from pathlib import Path
 
 import numpy as np
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -68,13 +68,13 @@ if __name__ == "__main__":
     x_values = np.random.uniform(size=(rows, columns)).astype(np.float32)
 
     # Create a tensor and move it to the device (CPU or GPU).
-    x = Tensor.from_numpy(x_values).to(device)
+    x = Buffer.from_numpy(x_values).to(device)
 
     # Run inference with the input tensor.
     result = model.execute(x)[0]
 
     # Copy values back to the CPU to be read.
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     result = result.to(CPU())
 
     print("Graph result:")

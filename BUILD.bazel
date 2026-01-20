@@ -323,3 +323,9 @@ config_setting(
     name = "emit_mojo_enabled",
     flag_values = {":emit_mojo": "true"},
 )
+
+filegroup(
+    name = "clang_tidy_config",
+    srcs = [".clang-tidy"],
+    tags = [TOP_LEVEL_TAG],
+)

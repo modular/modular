@@ -26,7 +26,7 @@ import max._mlir.ir
 
 def load_modular_dialects(arg: max._mlir.ir.DialectRegistry, /) -> None: ...
 def array_attr(
-    arg0: max._core.driver.Tensor, arg1: max._core.dialects.mo.TensorType, /
+    arg0: max._core.driver.Buffer, arg1: max._core.dialects.mo.TensorType, /
 ) -> max._core.dialects.m.ArrayElementsAttr: ...
 def next_operation(
     arg: max._mlir.ir.Operation, /

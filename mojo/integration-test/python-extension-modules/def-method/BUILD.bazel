@@ -22,11 +22,7 @@ mojo_shared_library(
 modular_py_test(
     name = "main",
     srcs = ["test_module.py"],
-    tags = [
-        "no-mypy",  # Fails to find mojo_module.so
-        "no-pydeps",  # TODO: Fix and re-enable
-    ],
-    deps = [
+    data = [
         ":mojo_module",
     ],
 )

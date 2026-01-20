@@ -114,7 +114,7 @@ def _reduce(
         out_dtype: The dtype of the result. Defaults to the dtype of `x`.
 
     Returns:
-        A symbolic tensor representing the result of the argmin or argmax operation.
+        A symbolic tensor representing the result of the reduction operation.
         The tensor will have the same rank as the input tensor, and the same
         shape except along the ``axis`` dimension which will have size 1.
     """

@@ -109,19 +109,25 @@ fn _write_float[
     @parameter
     if dtype == DType.float8_e5m2:
         return writer.write(
-            float8_e5m2_to_str[Int(bitcast[DType.uint8](value))]
+            materialize[float8_e5m2_to_str]()[Int(bitcast[DType.uint8](value))]
         )
     elif dtype == DType.float8_e4m3fn:
         return writer.write(
-            float8_e4m3fn_to_str[Int(bitcast[DType.uint8](value))]
+            materialize[float8_e4m3fn_to_str]()[
+                Int(bitcast[DType.uint8](value))
+            ]
         )
     elif dtype == DType.float8_e5m2fnuz:
         return writer.write(
-            float8_e5m2fnuz_to_str[Int(bitcast[DType.uint8](value))]
+            materialize[float8_e5m2fnuz_to_str]()[
+                Int(bitcast[DType.uint8](value))
+            ]
         )
     elif dtype == DType.float8_e4m3fnuz:
         return writer.write(
-            float8_e4m3fnuz_to_str[Int(bitcast[DType.uint8](value))]
+            materialize[float8_e4m3fnuz_to_str]()[
+                Int(bitcast[DType.uint8](value))
+            ]
         )
     elif dtype == DType.float8_e8m0fnu:
         if isnan(value):
@@ -635,7 +641,7 @@ fn _check_divisibility_and_divide_by_pow10[
     # Make sure the computation for max_n does not overflow.
     debug_assert(N + 1 <= _floor_log10_pow2(carrier_bits))
 
-    var magic_number = divide_magic_number[N - 1]
+    var magic_number = materialize[divide_magic_number]()[N - 1]
     var prod = (n * magic_number.cast[CarrierDType]()).cast[DType.uint32]()
 
     var mask = UInt32((UInt32(1) << 16) - 1)

@@ -17,7 +17,11 @@ from sys import simd_width_of, size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
-from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
+from gpu.primitives.cluster import (
+    cluster_sync,
+    cluster_sync_relaxed,
+    elect_one_sync,
+)
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
@@ -38,7 +42,7 @@ from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
-    create_tma_tile,
+    create_tensor_tile,
 )
 
 from utils.index import Index, IndexList
@@ -136,7 +140,7 @@ fn grouped_matmul_sm90[
 
     # Create TMA op for the entire A tensor including all tokens.
     a_tensor = from_ndbuffer_row_major(a)
-    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
         ctx, a_tensor
     )
 
@@ -147,13 +151,13 @@ fn grouped_matmul_sm90[
         MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ](b.data)
-    b_tma_op = create_tma_tile[Index(BN, BK), swizzle_mode=b_swizzle](
+    b_tma_op = create_tensor_tile[Index(BN, BK), swizzle_mode=b_swizzle](
         ctx, b_tensor
     )
 
     # Create a dummy TMA op for C, we don't support TMA store for output.
     c_tensor = from_ndbuffer_row_major(c)
-    c_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=c_swizzle](
+    c_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=c_swizzle](
         ctx, c_tensor
     )
 

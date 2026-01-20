@@ -682,7 +682,7 @@ struct Optional[T: Movable](
 
 
 @register_passable("trivial")
-struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
+struct OptionalReg[T: __TypeOfAllTypes](Boolable, Defaultable, DevicePassable):
     """A register-passable optional type.
 
     This struct optionally contains a value. It only works with trivial register

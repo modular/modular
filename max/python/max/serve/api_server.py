@@ -126,9 +126,9 @@ async def lifespan(
         lora_queue: LoRAQueue | None = (
             LoRAQueue(
                 serving_settings.pipeline_config.zmq_endpoint_base,
-                serving_settings.pipeline_config.lora_config.lora_paths,
+                serving_settings.pipeline_config.lora.lora_paths,
             )
-            if serving_settings.pipeline_config.lora_config
+            if serving_settings.pipeline_config.lora
             else None
         )
 
@@ -248,7 +248,7 @@ def fastapi_app(
 
     async def reset_prefix_cache() -> Response:
         """Reset the prefix cache."""
-        if not serving_settings.pipeline_config.model.kv_cache_config.enable_prefix_caching:
+        if not serving_settings.pipeline_config.model.kv_cache.enable_prefix_caching:
             return Response(
                 status_code=400,
                 content="Prefix caching is not enabled. Ignoring request",

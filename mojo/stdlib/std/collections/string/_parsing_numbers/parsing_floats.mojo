@@ -117,7 +117,7 @@ fn _get_w_and_q_from_float_string(
             dot_or_e_found = True
             if prt_to_array == array_ptr(to=exponent):
                 # We thought we were writing the exponent, but we were writing the significand.
-                significand = exponent
+                significand = exponent.copy()
                 exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
                 prt_to_array = array_ptr(to=significand)
 
@@ -144,7 +144,7 @@ fn _get_w_and_q_from_float_string(
 
     if not dot_or_e_found:
         # We were reading the significand
-        significand = exponent
+        significand = exponent.copy()
         exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
 
     exponent_as_integer = (

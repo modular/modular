@@ -20,7 +20,7 @@ from memory import Span
 ```
 """
 from builtin.builtin_slice import ContiguousSlice
-from builtin._location import __call_location
+from reflection import call_location
 from bit._mask import splat
 from bit import pop_count
 from memory import pack_bits

@@ -930,13 +930,18 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
         var col: UInt32 = UInt32(
             max(Int32(row) - Int32(Self.window_size) + 1, 0)
         )
-        comptime align_to = min(page_size, BN)
 
         @parameter
-        if align_to == 1:
+        if page_size <= 1:
             return col
         else:
-            return (col // align_to) * align_to
+            comptime align_to = min(page_size, BN)
+
+            @parameter
+            if align_to == 1:
+                return col
+            else:
+                return (col // align_to) * align_to
 
     @always_inline
     fn total_iters[
@@ -1026,13 +1031,21 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
         @parameter
         if (((Self.window_size) // BN) - ((BM + BN - 2) // BN)) > 0:
             return {
-                MaskStrategy.UPPER_TRIANGULAR,
+                MaskStrategy(
+                    MaskStrategy.UPPER_TRIANGULAR._value, Self.window_size
+                ),
                 MaskStrategy.NO_MASK,
                 MaskStrategy.LOWER_TRIANGULAR,
             }
         else:
             return {
-                MaskStrategy.UPPER_TRIANGULAR | MaskStrategy.LOWER_TRIANGULAR
+                MaskStrategy(
+                    (
+                        MaskStrategy.UPPER_TRIANGULAR
+                        | MaskStrategy.LOWER_TRIANGULAR
+                    )._value,
+                    Self.window_size,
+                )
             }
 
 

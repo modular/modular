@@ -22,30 +22,24 @@ from max.interfaces import (
     TextGenerationRequestMessage,
 )
 from max.pipelines.architectures.idefics3.tokenizer import Idefics3Tokenizer
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import SupportedEncoding
 from PIL import Image
-
-
-class MockKVCacheConfig(KVCacheConfig):
-    def __init__(self):
-        self.enable_prefix_caching = True
-
-
-class MockModelConfig(MAXModelConfig):
-    def __init__(self):
-        self._kv_cache = MockKVCacheConfig()
-
-
-class MockPipelineConfig(PipelineConfig):
-    def __init__(self):
-        self._model_config = MockModelConfig()
+from test_common.mocks import DummyPipelineConfig
 
 
 @pytest.mark.asyncio
 async def test_idefics3_tokenizer_image_token_indices() -> None:
     """Test that the tokenizer correctly computes image token indices."""
 
-    pipeline_config = MockPipelineConfig()
+    pipeline_config = DummyPipelineConfig(
+        model_path="HuggingFaceM4/Idefics3-8B-Llama3",
+        max_batch_size=None,
+        max_length=None,
+        quantization_encoding=SupportedEncoding.float32,
+    )
+    # DummyPipelineConfig seeds a MagicMock HuggingFace config; set the
+    # `image_token_id` that Idefics3Tokenizer reads.
+    pipeline_config.model.huggingface_config.image_token_id = 128257
     tokenizer = Idefics3Tokenizer(
         "HuggingFaceM4/Idefics3-8B-Llama3", pipeline_config=pipeline_config
     )

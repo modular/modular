@@ -141,7 +141,6 @@ modular_py_test(
         "test.resources:gpu-memory": "2",
     },
     tags = [
-        "b200",
         "gpu",
         "no-pydeps",  # TODO: Fix and re-enable
     ],
@@ -160,7 +159,6 @@ modular_py_test(
         "test.resources:gpu-memory": "2",
     },
     tags = [
-        "b200",
         "gpu",
         "no-pydeps",  # TODO: Fix and re-enable
     ],

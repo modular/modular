@@ -309,30 +309,30 @@ fn test_slice_len() raises:
     assert_equal(len(s1.codepoints()), 3)
 
 
-fn test_slice_char_length() raises:
+fn test_slice_count_codepoints() raises:
     var s0 = StringSlice("")
     assert_equal(s0.byte_length(), 0)
-    assert_equal(s0.char_length(), 0)
+    assert_equal(s0.count_codepoints(), 0)
 
     var s1 = StringSlice("foo")
     assert_equal(s1.byte_length(), 3)
-    assert_equal(s1.char_length(), 3)
+    assert_equal(s1.count_codepoints(), 3)
 
     # This string contains 1-, 2-, 3-, and 4-byte codepoint sequences.
     var s2 = EVERY_CODEPOINT_LENGTH_STR
     assert_equal(s2.byte_length(), 13)
-    assert_equal(s2.char_length(), 5)
+    assert_equal(s2.count_codepoints(), 5)
 
     # Just a bit of Zalgo text.
     var s3 = StringSlice("H̵͙̖̼̬̬̲̱͊̇̅͂̍͐͌͘͜͝")
     assert_equal(s3.byte_length(), 37)
-    assert_equal(s3.char_length(), 19)
+    assert_equal(s3.count_codepoints(), 19)
 
     # Character length is codepoints, not graphemes
     # This is thumbs up + a skin tone modifier codepoint.
     var s4 = StringSlice("👍🏻")
     assert_equal(s4.byte_length(), 8)
-    assert_equal(s4.char_length(), 2)
+    assert_equal(s4.count_codepoints(), 2)
     # TODO: assert_equal(s4.grapheme_count(), 1)
 
 
@@ -368,32 +368,65 @@ fn test_slice_bool() raises:
     assert_true(not str2.as_string_slice().__bool__())
 
 
+comptime REPR_MAPPINGS = [
+    # Empty string
+    ("", "''"),
+    # Standard single-byte printable characters
+    ("hello", "'hello'"),
+    ("ABC123", "'ABC123'"),
+    # Boundary cases for printable ASCII range
+    (" ", "' '"),  # 0x20 - first printable ASCII
+    ("!", "'!'"),  # 0x21 - first printable non-whitespace
+    ("~", "'~'"),  # 0x7E - last printable ASCII
+    # Special escape sequences
+    ("\\", r"'\\'"),  # backslash - must be escaped
+    ("\t", r"'\t'"),  # tab (0x09) - special escape
+    ("\n", r"'\n'"),  # newline (0x0A) - special escape
+    ("\r", r"'\r'"),  # carriage return (0x0D) - special escape
+    ('"', "'\"'"),  # double quote - not escaped, but good to verify
+    ("'", r"'\''"),  # single quote - escaped
+    # Control characters - testing edge cases of different formatting rules
+    ("\x00", r"'\x00'"),  # null - first control char (0x00-0x0F: \x0X format)
+    ("\x06", r"'\x06'"),  # ACK - sample from 0x00-0x0F range
+    ("\x0f", r"'\x0f'"),  # SI - last of 0x00-0x0F range (tests \x0X format)
+    ("\x10", r"'\x10'"),  # DLE - first of 0x10-0x1F range (tests \xXX format)
+    ("\x1b", r"'\x1b'"),  # ESC - sample from 0x10-0x1F range
+    ("\x1f", r"'\x1f'"),  # US - last control char before space (boundary test)
+    ("\x7f", r"'\x7f'"),  # DEL - non-printable after tilde (boundary test)
+    # Multi-byte UTF-8 characters (test each byte length)
+    ("Ö", "'Ö'"),  # 2-byte single char
+    ("café", "'café'"),  # 2-byte mixed with ASCII
+    ("你好", "'你好'"),  # 3-byte
+    ("🔥", "'🔥'"),  # 4-byte emoji
+    ("hello 🔥!", "'hello 🔥!'"),  # 4-byte mixed with ASCII
+    # Mixed content - escapes with normal text
+    ("hello\nworld", r"'hello\nworld'"),
+    ('quote"here', "'quote\"here'"),
+    ("back\\slash", r"'back\\slash'"),
+    ("path\\to\\file", r"'path\\to\\file'"),
+    # Mixed content - control chars embedded in text
+    ("start\x00end", r"'start\x00end'"),
+    ("data\x1fmore", r"'data\x1fmore'"),
+    # Multiple escapes in one string
+    ("\n\t\r", r"'\n\t\r'"),
+    ('\\"', "'\\\\\"'"),
+    # Boundary testing - transitions between character types
+    ("\x1f ", r"'\x1f '"),  # control → printable
+    (" \x7f", r"' \x7f'"),  # printable → DEL
+    ("~\x7f", r"'~\x7f'"),  # last printable → DEL
+]
+
+
 def test_slice_repr():
-    # Standard single-byte characters
-    assert_equal(StringSlice.__repr__("hello"), "'hello'")
-    assert_equal(StringSlice.__repr__(String(0)), "'0'")
-    assert_equal(StringSlice.__repr__("A"), "'A'")
-    assert_equal(StringSlice.__repr__(" "), "' '")
-    assert_equal(StringSlice.__repr__("~"), "'~'")
+    for item in materialize[REPR_MAPPINGS]():
+        assert_equal(StringSlice.__repr__(item[0]), item[1])
 
-    # Special single-byte characters
-    assert_equal(StringSlice.__repr__("\0"), r"'\x00'")
-    assert_equal(StringSlice.__repr__("\x06"), r"'\x06'")
-    assert_equal(StringSlice.__repr__("\x09"), r"'\t'")
-    assert_equal(StringSlice.__repr__("\n"), r"'\n'")
-    assert_equal(StringSlice.__repr__("\x0d"), r"'\r'")
-    assert_equal(StringSlice.__repr__("\x0e"), r"'\x0e'")
-    assert_equal(StringSlice.__repr__("\x1f"), r"'\x1f'")
-    assert_equal(StringSlice.__repr__("'"), '"\'"')
-    assert_equal(StringSlice.__repr__("\\"), r"'\\'")
-    assert_equal(StringSlice.__repr__("\x7f"), r"'\x7f'")
 
-    # Multi-byte characters
-    assert_equal(
-        StringSlice.__repr__("Örnsköldsvik"), "'Örnsköldsvik'"
-    )  # 2-byte
-    assert_equal(StringSlice.__repr__("你好!"), "'你好!'")  # 3-byte
-    assert_equal(StringSlice.__repr__("hello 🔥!"), "'hello 🔥!'")  # 4-byte
+def test_slice_write_repr_to():
+    for item in materialize[REPR_MAPPINGS]():
+        var string = String()
+        StringSlice.write_repr_to(item[0], string)
+        assert_equal(string, item[1])
 
 
 def test_find():
@@ -923,7 +956,7 @@ def test_chars_iter():
     # sequence of 2 codepoints.
     var s2 = StringSlice("á")
     assert_equal(s2.byte_length(), 3)
-    assert_equal(s2.char_length(), 2)
+    assert_equal(s2.count_codepoints(), 2)
 
     var iter = s2.codepoints()
     assert_equal(iter.__next__(), Codepoint.ord("a"))
@@ -936,7 +969,7 @@ def test_chars_iter():
     # sequences.
     var s3 = EVERY_CODEPOINT_LENGTH_STR
     assert_equal(s3.byte_length(), 13)
-    assert_equal(s3.char_length(), 5)
+    assert_equal(s3.count_codepoints(), 5)
     var s3_iter = s3.codepoints()
 
     # Iterator __len__ returns length in codepoints, not bytes.

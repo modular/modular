@@ -1,5 +1,7 @@
 # Parametric Alias
 
+**Status**: Implemented.
+
 ## Background Terminology
 
 ### Alias

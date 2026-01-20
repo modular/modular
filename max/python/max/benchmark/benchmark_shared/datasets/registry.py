@@ -92,6 +92,10 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
         class_name="RandomBenchmarkDataset",
         has_multiturn_chat_support=True,
     ),
+    "synthetic": DatasetRegistryEntry(
+        class_name="RandomBenchmarkDataset",
+        has_multiturn_chat_support=True,
+    ),
     "sharegpt": DatasetRegistryEntry(
         class_name="ShareGPTBenchmarkDataset",
         has_multiturn_chat_support=False,

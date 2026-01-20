@@ -21,6 +21,8 @@ from hashlib import default_comp_time_hasher
 from testing import assert_equal, assert_not_equal, assert_true
 from testing import TestSuite
 
+from test_utils.reflection import SimplePoint, NestedStruct, EmptyStruct
+
 
 def same_low_bits(i1: UInt64, i2: UInt64, bits: Int = 5) -> UInt8:
     var mask = (1 << bits) - 1
@@ -148,6 +150,94 @@ def test_hash_comptime():
 
     comptime hash_22 = hash[HasherType=default_comp_time_hasher](22)
     assert_equal(hash_22, hash[HasherType=default_comp_time_hasher](22))
+
+
+@fieldwise_init
+struct TestStruct(Hashable):
+    var x: StaticString
+    var y: Int
+    var z: Float32
+
+
+def test_default_conformance():
+    # Test that two instances with the same values hash to the same value
+    var a = TestStruct("hello", 42, 3.14)
+    var b = TestStruct("hello", 42, 3.14)
+    assert_equal(hash(a), hash(b))
+
+    # Test that instances with different values hash to different values
+    var c = TestStruct("world", 42, 3.14)
+    var d = TestStruct("hello", 43, 3.14)
+    var e = TestStruct("hello", 42, 2.71)
+
+    assert_not_equal(hash(a), hash(c))  # different x
+    assert_not_equal(hash(a), hash(d))  # different y
+    assert_not_equal(hash(a), hash(e))  # different z
+
+
+def test_default_conformance_deterministic():
+    var a = TestStruct("hello", 42, 3.14)
+    var b = TestStruct("world", 42, 3.14)
+    # Test that hash is deterministic across multiple calls
+    assert_equal(hash(a), hash(a))
+    assert_equal(hash(b), hash(b))
+
+
+def test_default_hash_simple():
+    """Test the reflection-based default __hash__ with a simple struct."""
+    var p1 = SimplePoint(1, 2)
+    var p2 = SimplePoint(1, 2)
+    var p3 = SimplePoint(1, 3)
+    var p4 = SimplePoint(2, 2)
+
+    # Equal values must have equal hashes
+    assert_equal(hash(p1), hash(p2))
+
+    # Different values should (usually) have different hashes
+    assert_not_equal(hash(p1), hash(p3))
+    assert_not_equal(hash(p1), hash(p4))
+
+    # Verify deterministic hashing
+    assert_equal(hash(p1), hash(p1))
+
+
+def test_default_hash_nested():
+    """Test the reflection-based default __hash__ with nested structs."""
+    var s1 = NestedStruct(SimplePoint(1, 2), "hello")
+    var s2 = NestedStruct(SimplePoint(1, 2), "hello")
+    var s3 = NestedStruct(SimplePoint(1, 2), "world")
+    var s4 = NestedStruct(SimplePoint(3, 4), "hello")
+
+    # Equal values must have equal hashes
+    assert_equal(hash(s1), hash(s2))
+
+    # Different values should have different hashes
+    assert_not_equal(hash(s1), hash(s3))
+    assert_not_equal(hash(s1), hash(s4))
+
+
+def test_default_hash_empty():
+    """Test the reflection-based default __hash__ with an empty struct."""
+    var e1 = EmptyStruct()
+    var e2 = EmptyStruct()
+
+    # Empty structs should hash to the same value
+    assert_equal(hash(e1), hash(e2))
+
+
+def test_default_hash_equatable_consistency():
+    """Test that default __hash__ is consistent with default __eq__."""
+    var p1 = SimplePoint(42, 99)
+    var p2 = SimplePoint(42, 99)
+    var p3 = SimplePoint(42, 100)
+
+    # If p1 == p2, then hash(p1) == hash(p2)
+    assert_true(p1 == p2)
+    assert_equal(hash(p1), hash(p2))
+
+    # If p1 != p3, hashes should differ (not guaranteed but expected)
+    assert_true(p1 != p3)
+    assert_not_equal(hash(p1), hash(p3))
 
 
 def main():

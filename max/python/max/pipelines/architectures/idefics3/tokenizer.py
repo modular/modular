@@ -23,7 +23,9 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
+    ImageContentPart,
     ImageMetadata,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TokenBuffer,
@@ -74,7 +76,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         config = pipeline_config.model.huggingface_config
 
         self.enable_prefix_caching = (
-            pipeline_config.model.kv_cache_config.enable_prefix_caching
+            pipeline_config.model.kv_cache.enable_prefix_caching
         )
 
         if vision_token_id := getattr(config, "image_token_id", None):
@@ -125,14 +127,12 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             elif isinstance(content, list):
                 text_parts: list[str] = []
                 for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
+                    if isinstance(item, TextContentPart):
                         # Handle both "content" and "text" keys
-                        text_content = item.get("content") or item.get(
-                            "text", ""
-                        )
+                        text_content = item.text
                         if text_content:
                             text_parts.append(text_content)
-                    elif isinstance(item, dict) and item.get("type") == "image":
+                    elif isinstance(item, ImageContentPart):
                         # Add image placeholder
                         text_parts.append("<image>")
                 text_message["content"] = " ".join(text_parts)

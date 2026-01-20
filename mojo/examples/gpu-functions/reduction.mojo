@@ -25,7 +25,8 @@ from benchmark import (
     ThroughputMeasure,
 )
 from bit import log2_floor
-from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx, warp
+from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
+from gpu.primitives import warp
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.memory import AddressSpace
 from memory import stack_allocation
@@ -117,7 +118,7 @@ fn sum_kernel_benchmark(
         var a_ptr = input_data.a_ptr
         var out_buffer = DeviceBuffer[dtype](ctx, out_ptr, 1, owning=False)
         var a_buffer = DeviceBuffer[dtype](ctx, a_ptr, SIZE, owning=False)
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel, kernel](
             out_buffer,
             a_buffer,
             grid_dim=NUM_BLOCKS,
@@ -147,7 +148,7 @@ def main():
             randint[dtype](a_host.unsafe_ptr(), SIZE, 0, 10)
 
         # Call the kernel
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel, kernel](
             out,
             a,
             grid_dim=NUM_BLOCKS,

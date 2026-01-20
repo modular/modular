@@ -13,25 +13,26 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, NonCallableMock
 
+from max.driver import DeviceSpec
 from max.pipelines.architectures.deepseekV3 import deepseekV3_arch
-from max.pipelines.lib import PipelineRole, SupportedEncoding
+from max.pipelines.lib import PipelineConfig, PipelineRole, SupportedEncoding
 
 MAX_SEND_TOKENS_PER_RANK = 128
 NUM_RANKS = 8
 
 
-def mock_pipeline_config(pipeline_role: PipelineRole) -> MagicMock:
-    pipeline_config = MagicMock()
-
-    # Model config attributes
+def mock_pipeline_config(pipeline_role: PipelineRole) -> NonCallableMock:
+    pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = MagicMock()
     pipeline_config.model.quantization_encoding = (
         SupportedEncoding.float8_e4m3fn
     )
     pipeline_config.model.data_parallel_degree = NUM_RANKS
-    pipeline_config.model.device_specs = [MagicMock() for _ in range(NUM_RANKS)]
+    pipeline_config.model.device_specs = [
+        NonCallableMock(spec=DeviceSpec) for _ in range(NUM_RANKS)
+    ]
 
     # Pipeline config attributes
     pipeline_config.pipeline_role = pipeline_role
@@ -107,17 +108,19 @@ def test_deepseekv3_memory_estimation_exact() -> None:
 
 def mock_weights_pipeline_config(
     n_gpus: int, ep_size: int, dp_degree: int
-) -> MagicMock:
+) -> NonCallableMock:
     """Create a mock pipeline config for estimate_weights_size tests."""
     huggingface_config = mock_huggingface_config()
 
-    pipeline_config = MagicMock()
+    pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = MagicMock()
     pipeline_config.model.quantization_encoding = (
         SupportedEncoding.float8_e4m3fn
     )
     pipeline_config.model.data_parallel_degree = dp_degree
-    pipeline_config.model.device_specs = [MagicMock() for _ in range(n_gpus)]
+    pipeline_config.model.device_specs = [
+        NonCallableMock(spec=DeviceSpec) for _ in range(n_gpus)
+    ]
     pipeline_config.model.huggingface_config = huggingface_config
     # Use a large enough weights size to account for the algorithm's subtractions.
     # DeepSeek-V3 has ~671B parameters, ~700GB at FP8.

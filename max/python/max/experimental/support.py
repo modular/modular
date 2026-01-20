@@ -54,7 +54,7 @@ def contextvar_context(var: ContextVar[T], value: T) -> Generator[T]:
         var.reset(token)
 
 
-def driver_tensor_type(t: driver.Tensor) -> TensorType:
+def driver_tensor_type(t: driver.Buffer) -> TensorType:
     """Converts a driver tensor to a :obj:TensorType.
 
     Creates a TensorType instance from a driver-level tensor by extracting
@@ -69,7 +69,7 @@ def driver_tensor_type(t: driver.Tensor) -> TensorType:
     return TensorType(t.dtype, t.shape, DeviceRef.from_device(t.device))
 
 
-def driver_tensor_of_type(t: TensorType) -> driver.Tensor:
-    return driver.Tensor(
+def driver_tensor_of_type(t: TensorType) -> driver.Buffer:
+    return driver.Buffer(
         t.dtype, [int(d) for d in t.shape], t.device.to_device()
     )

@@ -16,7 +16,7 @@ from math import ceildiv, exp
 from os import abort
 from sys import align_of, is_defined, simd_width_of
 
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import (

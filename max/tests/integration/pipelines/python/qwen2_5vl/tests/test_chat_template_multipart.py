@@ -16,13 +16,14 @@
 import base64
 from io import BytesIO
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
 from max.interfaces.pipeline_variants.text_generation import (
     TextGenerationRequestMessage,
 )
 from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
+from max.pipelines.lib import KVCacheConfig
 from PIL import Image
 from transformers import AutoConfig
 
@@ -31,12 +32,12 @@ def _create_mock_pipeline_config(model_path: str) -> Any:
     """Create a mock PipelineConfig with real HuggingFace config."""
     hf_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
 
-    mock_kv_cache_config = MagicMock()
+    mock_kv_cache_config = NonCallableMock(spec=KVCacheConfig)
     mock_kv_cache_config.enable_prefix_caching = False
 
     mock_model_config = MagicMock()
     mock_model_config.huggingface_config = hf_config
-    mock_model_config.kv_cache_config = mock_kv_cache_config
+    mock_model_config.kv_cache = mock_kv_cache_config
 
     pipeline_config = MagicMock()
     pipeline_config.model = mock_model_config

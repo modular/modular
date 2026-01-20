@@ -83,7 +83,7 @@ def irfft(  # noqa: ANN201
     Args:
         input_tensor: The input tensor to compute the inverse real FFT of.
         n: The size of the output tensor. Must be an int, and cannot be a
-            symbolic Tensor. The input tensor will be padded or truncated to
+            symbolic Buffer. The input tensor will be padded or truncated to
             `n // 2 + 1` along the specified axis.
         axis: The axis to compute the inverse real FFT of.
         normalization: The normalization to apply to the output tensor.

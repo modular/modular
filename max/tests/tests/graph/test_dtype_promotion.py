@@ -24,7 +24,7 @@ from conftest import (
 )
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from max.driver import CPU, Tensor
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, dtype_promotion
 
@@ -132,7 +132,7 @@ def test_promote_weak_dtypes__numpy_int__out_of_range(
 @given(dtype=float_dtypes(), scalar=...)
 def test_promote_weak_dtypes__tensor_float(dtype: DType, scalar: float) -> None:
     with Graph("promote_weak_dtypes"):
-        const = Tensor(DType.float64, [], CPU())
+        const = Buffer(DType.float64, [], CPU())
         const[()] = scalar
         result = dtype_promotion._promote_to_strong(
             const, dtype, DeviceRef.CPU()
@@ -146,7 +146,7 @@ def test_promote_weak_dtypes__tensor_float_to_int(
     dtype: DType, scalar: float
 ) -> None:
     with Graph("promote_weak_dtypes"):
-        const = Tensor(DType.float64, [], CPU())
+        const = Buffer(DType.float64, [], CPU())
         const[()] = scalar
         with pytest.raises(ValueError, match="Unsafe cast"):
             _ = dtype_promotion._promote_to_strong(
@@ -161,7 +161,7 @@ def test_promote_weak_dtypes__tensor_int__in_range(
     # Need to fit the value in a tensor array
     assume(-(2**63) <= scalar < 2**63)
     with Graph("promote_weak_dtypes"):
-        const = Tensor(DType.int64, [], CPU())
+        const = Buffer(DType.int64, [], CPU())
         const[()] = scalar
         result = dtype_promotion._promote_to_strong(
             const, dtype, DeviceRef.CPU()
@@ -177,7 +177,7 @@ def test_promote_weak_dtypes__tensor_int__out_of_range(
     # Need to fit the value in a tensor array
     assume(-(2**63) <= scalar < 2**63)
     with Graph("promote_weak_dtypes"):
-        const = Tensor(DType.int64, [], CPU())
+        const = Buffer(DType.int64, [], CPU())
         const[()] = scalar
         with pytest.raises(ValueError, match="Unsafe cast"):
             _ = dtype_promotion._promote_to_strong(

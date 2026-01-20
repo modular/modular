@@ -104,7 +104,7 @@ def test_pop():
 
 
 def test_pop_copies():
-    var l1 = LinkedList[CopyCounter](
+    var l1 = LinkedList[CopyCounter[]](
         CopyCounter(),
         CopyCounter(),
         CopyCounter(),
@@ -259,7 +259,7 @@ def test_list_variadic_constructor():
     # Test variadic construct copying behavior
     #
 
-    var l2 = LinkedList[CopyCounter](
+    var l2 = LinkedList[CopyCounter[]](
         CopyCounter(), CopyCounter(), CopyCounter()
     )
 
@@ -456,7 +456,7 @@ def test_2d_dynamic_list():
 
 
 def test_list_explicit_copy():
-    var list = LinkedList[CopyCounter]()
+    var list = LinkedList[CopyCounter[]]()
     list.append(CopyCounter())
     var list_copy = list.copy()
     assert_equal(0, list[0].copy_count)
@@ -612,6 +612,29 @@ def test_iter():
 def test_repr_wrap():
     var l1 = LinkedList[Int](1, 2, 3)
     assert_equal(repr(l1), "LinkedList(1, 2, 3)")
+
+
+def test_write_to():
+    """Test Writable trait implementation."""
+    var linked_list = LinkedList[Int](10, 20, 30)
+    var output = String()
+    linked_list.write_to(output)
+
+    assert_equal(output, "[10, 20, 30]")
+
+    # Test with different types
+    var string_list = LinkedList[String]("hello", "world")
+    var string_output = String()
+    string_list.write_to(string_output)
+
+    assert_equal(string_output, "['hello', 'world']")
+
+    # Test empty list
+    var empty_list = LinkedList[Int]()
+    var empty_output = String()
+    empty_list.write_to(empty_output)
+
+    assert_equal(empty_output, "[]")
 
 
 def main():

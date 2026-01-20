@@ -13,7 +13,7 @@
 
 import numpy as np
 import pytest
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
@@ -46,7 +46,7 @@ def test_split(
         graph.output(*output)
 
     model = session.load(graph)
-    result = model.execute(Tensor.from_numpy(input).to(model.input_devices[0]))
+    result = model.execute(Buffer.from_numpy(input).to(model.input_devices[0]))
     np_split_indices = []
     end_index = 0
     for n in split_sizes[:-1]:
@@ -56,5 +56,5 @@ def test_split(
     expected_results = np.split(input, np_split_indices, axis)
     assert len(result) == len(expected_results)
     for actual, expected in zip(result, expected_results, strict=True):
-        assert isinstance(actual, Tensor)
+        assert isinstance(actual, Buffer)
         np.testing.assert_equal(actual.to_numpy(), expected)

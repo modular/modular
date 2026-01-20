@@ -41,6 +41,7 @@ from layout.runtime_layout import RuntimeLayout
 from shmem.ep_comm import (
     BF16TokenFormat,
     EP_DATA_READY_FLAG,
+    EPLocalSyncCounters,
     combine_cb_kernel,
     combine_kernel,
     dispatch_cb_kernel,
@@ -152,7 +153,9 @@ fn test_combine[
         ctx.enqueue_memset(combine_recv_count_bufs_list[i], UInt64.MAX_FINITE)
 
         # Shared atomic counter
-        atomic_counters_list.append(ctx.enqueue_create_buffer[DType.int32](n_slots * 2 * n_experts))
+        atomic_counters_list.append(ctx.enqueue_create_buffer[DType.int32](
+            n_slots * EPLocalSyncCounters[n_experts].total_size()
+        ))
         ctx.enqueue_memset(atomic_counters_list[i], Int32(0))
 
         host_topk_ids_list[i] = alloc[Int32](n_slots * n_tokens_per_rank * top_k)
@@ -254,8 +257,8 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn get_atomic_counters_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[Int32, MutExternalOrigin]) raises:
-        return type_of(result)(atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * 2 * n_experts)
+    fn get_atomic_counters(dev_idx: Int, slot_idx: Int, out result: EPLocalSyncCounters[n_experts]) raises:
+        return EPLocalSyncCounters[n_experts](atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * EPLocalSyncCounters[n_experts].total_size())
 
     @always_inline
     @parameter
@@ -404,7 +407,7 @@ fn test_combine[
             get_dispatch_send_buf_ptr(dev_idx, slot_idx),
             dispatch_recv_bufs_inputs[slot_idx],
             dispatch_recv_count_bufs_inputs[slot_idx],
-            get_atomic_counters_ptr(dev_idx, slot_idx),
+            get_atomic_counters(dev_idx, slot_idx),
             Int32(dev_idx),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -421,7 +424,7 @@ fn test_combine[
             get_src_token_info_tensor(dev_idx, slot_idx),
             dispatch_recv_bufs_inputs[slot_idx][dev_idx],
             dispatch_recv_count_bufs_inputs[slot_idx][dev_idx],
-            get_atomic_counters_ptr(dev_idx, slot_idx),
+            get_atomic_counters(dev_idx, slot_idx),
             Int32(dev_idx),
             OptionalReg[
                 LayoutTensor[input_type, Layout.row_major[2](), ImmutAnyOrigin]
@@ -446,7 +449,7 @@ fn test_combine[
             get_combine_send_buf_ptr(dev_idx, slot_idx),
             combine_recv_bufs_inputs[slot_idx],
             combine_recv_count_bufs_inputs[slot_idx],
-            get_atomic_counters_ptr(dev_idx, slot_idx),
+            get_atomic_counters(dev_idx, slot_idx),
             Int32(dev_idx),
             OptionalReg[
                 LayoutTensor[input_type, Layout.row_major[2](), MutAnyOrigin]
@@ -463,7 +466,7 @@ fn test_combine[
             get_output_2_tensor(dev_idx, slot_idx),
             get_combine_recv_buf_ptr(dev_idx, slot_idx),
             get_combine_recv_count_ptr(dev_idx, slot_idx),
-            get_atomic_counters_ptr(dev_idx, slot_idx),
+            get_atomic_counters(dev_idx, slot_idx),
             Int32(dev_idx),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,

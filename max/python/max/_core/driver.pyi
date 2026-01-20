@@ -385,13 +385,13 @@ def get_virtual_device_target_arch() -> str:
         str: The target GPU architecture string, or empty string if not set.
     """
 
-class Tensor:
+class Buffer:
     """
-    Device-resident tensor representation.
+    Device-resident buffer representation.
 
     Allocates memory onto a given device with the provided shape and dtype.
-    Tensors can be sliced to provide strided views of the underlying memory,
-    but any tensors input into model execution must be contiguous.
+    Buffers can be sliced to provide strided views of the underlying memory,
+    but any buffers input into model execution must be contiguous.
 
     Supports numpy-style slicing but does not currently support setting
     items across multiple indices.
@@ -401,19 +401,19 @@ class Tensor:
         from max import driver
         from max.dtype import DType
 
-        # Create a tensor on CPU
-        cpu_tensor = driver.Tensor(shape=[2, 3], dtype=DType.float32)
+        # Create a buffer on CPU
+        cpu_buffer = driver.Buffer(shape=[2, 3], dtype=DType.float32)
 
-        # Create a tensor on GPU
+        # Create a buffer on GPU
         gpu = driver.Accelerator()
-        gpu_tensor = driver.Tensor(shape=[2, 3], dtype=DType.float32, device=gpu)
+        gpu_buffer = driver.Buffer(shape=[2, 3], dtype=DType.float32, device=gpu)
 
     Args:
-        dtype (DType): Data type of tensor elements.
-        shape (Sequence[int]): Tuple of positive, non-zero integers denoting the tensor shape.
-        device (Device, optional): Device to allocate tensor onto. Defaults to the CPU.
+        dtype (DType): Data type of buffer elements.
+        shape (Sequence[int]): Tuple of positive, non-zero integers denoting the buffer shape.
+        device (Device, optional): Device to allocate buffer onto. Defaults to the CPU.
         pinned (bool, optional): If True, memory is page-locked (pinned). Defaults to False.
-        stream (DeviceStream, optional): Stream to associate the tensor with.
+        stream (DeviceStream, optional): Stream to associate the buffer with.
     """
 
     @overload
@@ -455,63 +455,63 @@ class Tensor:
     @property
     def is_contiguous(self) -> bool:
         """
-        Whether or not tensor is contiguously allocated in memory. Returns
-        false if the tensor is a non-contiguous slice.
+        Whether or not buffer is contiguously allocated in memory. Returns
+        false if the buffer is a non-contiguous slice.
 
         Currently, we consider certain situations that are contiguous as
-        non-contiguous for the purposes of our engine, such as when a tensor
+        non-contiguous for the purposes of our engine, such as when a buffer
         has negative steps.
         """
 
     @property
     def is_host(self) -> bool:
         """
-        Whether or not tensor is host-resident. Returns false for GPU tensors,
-        true for CPU tensors.
+        Whether or not buffer is host-resident. Returns false for GPU buffers,
+        true for CPU buffers.
 
         .. code-block:: python
 
             from max import driver
             from max.dtype import DType
 
-            cpu_tensor = driver.Tensor(shape=[2, 3], dtype=DType.bfloat16, device=driver.CPU())
+            cpu_buffer = driver.Buffer(shape=[2, 3], dtype=DType.bfloat16, device=driver.CPU())
 
-            print(cpu_tensor.is_host)
+            print(cpu_buffer.is_host)
         """
 
     @property
     def num_elements(self) -> int:
         """
-        Returns the number of elements in this tensor.
+        Returns the number of elements in this buffer.
 
-        Rank-0 tensors have 1 element by convention.
+        Rank-0 buffers have 1 element by convention.
         """
 
     @property
     def rank(self) -> int:
-        """Tensor rank."""
+        """Buffer rank."""
 
     @property
     def shape(self) -> tuple:
-        """Shape of tensor."""
+        """Shape of buffer."""
 
-    def contiguous(self) -> Tensor:
-        """Creates a contiguous copy of the tensor."""
+    def contiguous(self) -> Buffer:
+        """Creates a contiguous copy of the buffer."""
 
     @overload
-    def copy(self, stream: DeviceStream) -> Tensor:
+    def copy(self, stream: DeviceStream) -> Buffer:
         """
         Creates a deep copy on the device associated with the stream.
 
         Args:
-            stream (DeviceStream): The stream to associate the new tensor with.
+            stream (DeviceStream): The stream to associate the new buffer with.
 
         Returns:
-            Tensor: A new tensor that is a copy of this tensor.
+            Buffer: A new buffer that is a copy of this buffer.
         """
 
     @overload
-    def copy(self, device: Device | None = None) -> Tensor:
+    def copy(self, device: Device | None = None) -> Buffer:
         """
         Creates a deep copy on an optionally given device.
 
@@ -522,19 +522,19 @@ class Tensor:
             from max import driver
             from max.dtype import DType
 
-            cpu_tensor = driver.Tensor(shape=[2, 3], dtype=DType.bfloat16, device=driver.CPU())
-            cpu_copy = cpu_tensor.copy()
+            cpu_buffer = driver.Buffer(shape=[2, 3], dtype=DType.bfloat16, device=driver.CPU())
+            cpu_copy = cpu_buffer.copy()
 
             # Copy to GPU
             gpu = driver.Accelerator()
-            gpu_copy = cpu_tensor.copy(device=gpu)
+            gpu_copy = cpu_buffer.copy(device=gpu)
 
         Args:
             device (Device, optional): The device to create the copy on.
                 Defaults to None (same device).
 
         Returns:
-            Tensor: A new tensor that is a copy of this tensor.
+            Buffer: A new buffer that is a copy of this buffer.
         """
 
     @staticmethod
@@ -546,21 +546,21 @@ class Tensor:
         offset: int = 0,
     ):
         """
-        Create a memory-mapped tensor from a binary file on disk.
+        Create a memory-mapped buffer from a binary file on disk.
         The constructor argument semantics follow that of np.memmap.
         """
 
-    def inplace_copy_from(self, src: Tensor) -> None:
+    def inplace_copy_from(self, src: Buffer) -> None:
         """
-        Copy the contents of another tensor into this one. These tensors may
+        Copy the contents of another buffer into this one. These buffers may
         be on different devices.
-        Requires that both tensors are contiguous and have same size.
+        Requires that both buffers are contiguous and have same size.
         """
 
     @staticmethod
-    def from_dlpack(array: Any, *, copy: bool | None = None) -> Tensor:
+    def from_dlpack(array: Any, *, copy: bool | None = None) -> Buffer:
         """
-        Creates a tensor from an object implementing the dlpack protocol.
+        Creates a buffer from an object implementing the dlpack protocol.
 
         This usually does not result in a copy, and the producer of the object
         retains ownership of the underlying memory.
@@ -571,13 +571,13 @@ class Tensor:
                 Defaults to None.
 
         Returns:
-            Tensor: A new tensor that views or copies the dlpack data.
+            Buffer: A new buffer that views or copies the dlpack data.
         """
 
     @staticmethod
-    def from_numpy(arr: numpy.ndarray) -> Tensor:
+    def from_numpy(arr: numpy.ndarray) -> Buffer:
         """
-        Creates a tensor from a provided numpy array on the host device.
+        Creates a buffer from a provided numpy array on the host device.
 
         The underlying data is not copied unless the array is noncontiguous. If
         it is, a contiguous copy will be returned.
@@ -586,74 +586,74 @@ class Tensor:
             arr (numpy.ndarray): The numpy array to convert.
 
         Returns:
-            Tensor: A new tensor that views or copies the numpy array data.
+            Buffer: A new buffer that views or copies the numpy array data.
         """
 
     def item(self) -> Any:
         """
         Returns the scalar value at a given location. Currently
-        implemented only for zero-rank tensors. The return type is
+        implemented only for zero-rank buffers. The return type is
         converted to a Python built-in type.
         """
 
     @staticmethod
     def scalar(
         value: Any, dtype: max._core.dtype.DType, device: Device | None = None
-    ) -> Tensor:
+    ) -> Buffer:
         """
         Create a scalar value of a given dtype and value.
 
-        If device is None (default), the tensor will be allocated on the CPU.
+        If device is None (default), the buffer will be allocated on the CPU.
         """
 
     @overload
-    def to(self, device: Device) -> Tensor:
+    def to(self, device: Device) -> Buffer:
         """
-        Return a tensor that's guaranteed to be on the given device.
+        Return a buffer that's guaranteed to be on the given device.
 
-        The tensor is only copied if the requested device is different from the
-        device upon which the tensor is already resident.
+        The buffer is only copied if the requested device is different from the
+        device upon which the buffer is already resident.
         """
 
     @overload
-    def to(self, stream: DeviceStream) -> Tensor:
+    def to(self, stream: DeviceStream) -> Buffer:
         """
-        Return a tensor that's guaranteed to be on the given device and associated
+        Return a buffer that's guaranteed to be on the given device and associated
         with the given stream.
 
-        The tensor is only copied if the requested device is different from the
-        device upon which the tensor is already resident. If the destination
-        stream is on the same device, then a new reference to the same tensor is
+        The buffer is only copied if the requested device is different from the
+        device upon which the buffer is already resident. If the destination
+        stream is on the same device, then a new reference to the same buffer is
         returned.
         """
 
     @overload
-    def to(self, devices: Sequence[Device]) -> list[Tensor]:
+    def to(self, devices: Sequence[Device]) -> list[Buffer]:
         """
-        Return a list of tensors that are guaranteed to be on the given devices.
+        Return a list of buffers that are guaranteed to be on the given devices.
 
-        The tensors are only copied if the requested devices are different from the
-        device upon which the tensor is already resident.
+        The buffers are only copied if the requested devices are different from the
+        device upon which the buffer is already resident.
         """
 
     @overload
-    def to(self, streams: Sequence[DeviceStream]) -> list[Tensor]:
+    def to(self, streams: Sequence[DeviceStream]) -> list[Buffer]:
         """
-        Return a list of tensors that are guaranteed to be on the given streams.
+        Return a list of buffers that are guaranteed to be on the given streams.
 
-        The tensors are only copied if the requested streams are different from the
-        stream upon which the tensor is already resident.
+        The buffers are only copied if the requested streams are different from the
+        stream upon which the buffer is already resident.
         """
 
     def to_numpy(self) -> numpy.ndarray:
         """
-        Converts the tensor to a numpy array.
+        Converts the buffer to a numpy array.
 
-        If the tensor is on the host (CPU), the numpy array aliases the existing memory.
+        If the buffer is on the host (CPU), the numpy array aliases the existing memory.
         Otherwise, it is copied to the host device.
 
         Returns:
-            numpy.ndarray: A numpy array containing the tensor data.
+            numpy.ndarray: A numpy array containing the buffer data.
         """
 
     @property
@@ -662,9 +662,9 @@ class Tensor:
 
     def view(
         self, dtype: max._core.dtype.DType, shape: Sequence[int] | None = None
-    ) -> Tensor:
+    ) -> Buffer:
         """
-        Return a new tensor with the given type and shape that shares the
+        Return a new buffer with the given type and shape that shares the
         underlying memory.
         If the shape is not given, it will be deduced if possible, or a
         ValueError is raised.
@@ -675,18 +675,18 @@ class Tensor:
         shape: Sequence[int],
         dtype: max._core.dtype.DType,
         device: Device | None = None,
-    ) -> Tensor:
+    ) -> Buffer:
         """
-        Allocates a tensor with all elements initialized to zero.
+        Allocates a buffer with all elements initialized to zero.
 
         Args:
-            shape (Sequence[int]): The shape of the tensor.
-            dtype (DType): The data type of the tensor.
-            device (Device, optional): The device to allocate the tensor on.
+            shape (Sequence[int]): The shape of the buffer.
+            dtype (DType): The data type of the buffer.
+            device (Device, optional): The device to allocate the buffer on.
                 Defaults to None (CPU).
 
         Returns:
-            Tensor: A new tensor filled with zeros.
+            Buffer: A new buffer filled with zeros.
         """
 
     def __dlpack__(
@@ -697,32 +697,32 @@ class Tensor:
     def __dlpack_device__(self) -> tuple:
         """Implements part of the dlpack contract."""
 
-    def __getitem__(self, idx: int | slice | Sequence[int | slice]) -> Tensor:
+    def __getitem__(self, idx: int | slice | Sequence[int | slice]) -> Buffer:
         """
-        Gets a tensor slice. Supports full numpy-style slicing. Invocations
-        using only integer-based indexes will return zero-rank tensors.
+        Gets a buffer slice. Supports full numpy-style slicing. Invocations
+        using only integer-based indexes will return zero-rank buffers.
         """
 
     def __setitem__(
         self, idx: int | slice | Sequence[int | slice], value: Any
     ) -> None:
-        """Sets an item in the tensor."""
+        """Sets an item in the buffer."""
 
     def _aligned(self, alignment: int | None = None) -> bool:
-        """Returns whether the tensor is aligned to the desired alignment."""
+        """Returns whether the buffer is aligned to the desired alignment."""
 
     @overload
     @staticmethod
-    def _from_dlpack(arg: object, /) -> Tensor: ...
+    def _from_dlpack(arg: object, /) -> Buffer: ...
     @overload
     @staticmethod
     def _from_dlpack(
         arg0: typing_extensions.CapsuleType, arg1: Device, arg2: int, /
-    ) -> Tensor: ...
+    ) -> Buffer: ...
     def _iterate_indices(self) -> Generator[Sequence[int]]: ...
     def _view(
         self, dtype: max._core.dtype.DType, shape: Sequence[int]
-    ) -> Tensor: ...
-    def _inplace_copy_from(self, src: Tensor) -> None: ...
+    ) -> Buffer: ...
+    def _inplace_copy_from(self, src: Buffer) -> None: ...
     def _data_ptr(self) -> int:
-        """Gets the memory address of the tensor data. Internal use only."""
+        """Gets the memory address of the buffer data. Internal use only."""

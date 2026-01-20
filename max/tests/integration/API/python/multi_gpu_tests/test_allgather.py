@@ -19,7 +19,7 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type, ops
@@ -81,7 +81,7 @@ def test_allgather_execution_even(num_gpus: int, axis: int) -> None:
         for i in range(num_gpus)
     ]
     tensor_inputs = [
-        Tensor.from_numpy(a.astype(np.float32)).to(device)
+        Buffer.from_numpy(a.astype(np.float32)).to(device)
         for a, device in zip(numpy_inputs, devices, strict=True)
     ]
 
@@ -90,7 +90,7 @@ def test_allgather_execution_even(num_gpus: int, axis: int) -> None:
     expected_output = np.concatenate(numpy_inputs, axis=axis)
 
     for n, output in enumerate(outputs):
-        assert isinstance(output, Tensor)
+        assert isinstance(output, Buffer)
         assert output.device == devices[n]
         assert np.array_equal(output.to(host).to_numpy(), expected_output)
 
@@ -157,7 +157,7 @@ def test_allgather_execution_uneven(
         arr = np.arange(size).reshape(shape) + offset
         numpy_inputs.append(arr.astype(np.float32))
         tensor_inputs.append(
-            Tensor.from_numpy(arr.astype(np.float32)).to(accel_devices[i])
+            Buffer.from_numpy(arr.astype(np.float32)).to(accel_devices[i])
         )
         offset += size
 
@@ -166,6 +166,6 @@ def test_allgather_execution_uneven(
     expected_output = np.concatenate(numpy_inputs, axis=axis)
 
     for n, output in enumerate(outputs):
-        assert isinstance(output, Tensor)
+        assert isinstance(output, Buffer)
         assert output.device == accel_devices[n]
         assert np.equal(output.to(host).to_numpy(), expected_output).all()

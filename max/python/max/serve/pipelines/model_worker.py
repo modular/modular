@@ -22,7 +22,7 @@ from multiprocessing.synchronize import Event
 from typing import Any
 
 import uvloop
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.driver.driver import load_device
 from max.dtype import DType
 from max.interfaces import (
@@ -69,7 +69,7 @@ def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
     """
     if device.is_host:
         return
-    pinned = Tensor(
+    pinned = Buffer(
         shape=(bytes,), dtype=DType.int8, device=device, pinned=True
     )
     del pinned
@@ -182,7 +182,7 @@ class ModelWorker:
             # Maybe retrieve LoRA manager.
             lora_manager = None
             pipeline_model = get_pipeline_model(pipeline)
-            if pipeline_config.lora_config:
+            if pipeline_config.lora:
                 assert pipeline_model is not None
                 lora_manager = pipeline_model.lora_manager
                 assert lora_manager is not None

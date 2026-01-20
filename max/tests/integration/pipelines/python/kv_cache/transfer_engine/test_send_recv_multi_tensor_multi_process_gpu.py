@@ -17,7 +17,7 @@ import time
 import numpy as np
 import pytest
 from max.driver import Accelerator
-from max.driver.tensor import Tensor
+from max.driver.buffer import Buffer
 from max.kv_cache import KVTransferEngine
 
 
@@ -41,8 +41,8 @@ def transfer_routine_sender(
     tensor_0_data = np.full(total_bytes, 42, dtype=np.int8)
     tensor_1_data = np.full(total_bytes, 84, dtype=np.int8)
     tensors_1 = [
-        Tensor.from_numpy(tensor_0_data).to(device_0),
-        Tensor.from_numpy(tensor_1_data).to(device_1),
+        Buffer.from_numpy(tensor_0_data).to(device_0),
+        Buffer.from_numpy(tensor_1_data).to(device_1),
     ]
 
     # DP=1, TP=2
@@ -104,8 +104,8 @@ def transfer_routine_receiver(
     tensor_0_data = np.full(total_bytes, 99, dtype=np.int8)
     tensor_1_data = np.full(total_bytes, 77, dtype=np.int8)
     tensors_2 = [
-        Tensor.from_numpy(tensor_0_data).to(device_2),
-        Tensor.from_numpy(tensor_1_data).to(device_3),
+        Buffer.from_numpy(tensor_0_data).to(device_2),
+        Buffer.from_numpy(tensor_1_data).to(device_3),
     ]
 
     # DP=1, TP=2
@@ -149,7 +149,7 @@ def test_multi_tensor_transfer_multiprocessing(
     receiver_done_queue: mp.Queue = ctx.Queue()
 
     GB = 1024 * 1024 * 1024
-    total_bytes = int(12 * GB)
+    total_bytes = int(1 * GB)
     total_num_pages = 2
     src_idxs = [0, 1]
     dst_idxs = [1, 0]

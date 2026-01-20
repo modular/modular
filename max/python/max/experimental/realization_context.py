@@ -86,7 +86,7 @@ def seed() -> Tensor:
     if _SEED is None:
         SeedType = ops.random.SeedType
         shape = [int(d) for d in SeedType.shape]
-        seed_data = driver.Tensor(
+        seed_data = driver.Buffer(
             SeedType.dtype, shape, SeedType.device.to_device()
         )
         _SEED = Tensor(storage=seed_data)
@@ -230,7 +230,7 @@ class EagerRealizationContext(RealizationContext):
         # Update tensors to realized
         for tensor, storage in zip(outputs, results, strict=True):
             # This will eventually support Mojo values also.
-            assert isinstance(storage, driver.Tensor)
+            assert isinstance(storage, driver.Buffer)
             tensor.storage = storage
             tensor.state = None
 

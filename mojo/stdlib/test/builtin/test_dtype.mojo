@@ -68,12 +68,19 @@ fn test_stringable() raises:
     assert_equal(String(DType.float32), "float32")
 
 
+fn _test_repr(value: DType, expected: String) raises:
+    assert_equal(value.__repr__(), expected)
+    var string = String()
+    value.write_repr_to(string)
+    assert_equal(string, expected)
+
+
 fn test_representable() raises:
-    assert_equal(repr(DType.bool), "DType.bool")
-    assert_equal(repr(DType.int), "DType.int")
-    assert_equal(repr(DType.uint), "DType.uint")
-    assert_equal(repr(DType.int64), "DType.int64")
-    assert_equal(repr(DType.float32), "DType.float32")
+    _test_repr(DType.bool, "DType.bool")
+    _test_repr(DType.int, "DType.int")
+    _test_repr(DType.uint, "DType.uint")
+    _test_repr(DType.int64, "DType.int64")
+    _test_repr(DType.float32, "DType.float32")
 
 
 fn test_is_xxx() raises:

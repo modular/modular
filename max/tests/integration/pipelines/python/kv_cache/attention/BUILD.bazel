@@ -16,7 +16,10 @@ modular_py_test(
             "test_attention_no_opaque.py",
         ],
     ),
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    tags = [
+        "external-exclusive",  # Times out if run with too many other tests
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],

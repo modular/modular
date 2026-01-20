@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
-from max.driver import CPU, Accelerator, Tensor
+from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 
 
@@ -35,8 +35,8 @@ def test_to_multiple_devices() -> None:
     acc0 = Accelerator(id=0)
     acc1 = Accelerator(id=1)
 
-    tensor = Tensor(dtype=DType.int32, shape=(3, 3), device=cpu)
-    # GEX-2624: CPU to CPU copies not supported via Tensor.to()
+    tensor = Buffer(dtype=DType.int32, shape=(3, 3), device=cpu)
+    # GEX-2624: CPU to CPU copies not supported via Buffer.to()
     tensors = tensor.to([acc0, acc1])
     assert len(tensors) == 2
     assert tensors[0].device == acc0
@@ -48,7 +48,7 @@ def test_from_device() -> None:
     acc0 = Accelerator(id=0)
     acc1 = Accelerator(id=1)
 
-    tensor = Tensor(dtype=DType.int32, shape=(3, 3), device=acc0)
+    tensor = Buffer(dtype=DType.int32, shape=(3, 3), device=acc0)
     tensors = tensor.to([cpu, acc0, acc1])
     assert len(tensors) == 3
     assert tensors[0].device == cpu
@@ -74,7 +74,7 @@ def _test_pinned_device_copy(
     cpu_device = CPU()
 
     # Create pinned memory on specified GPU
-    pinned_cpu_tensor = Tensor(
+    pinned_cpu_tensor = Buffer(
         dtype=DType.int8,
         shape=(tensor_size,),
         device=gpus[pinned_gpu_id],
@@ -83,7 +83,7 @@ def _test_pinned_device_copy(
 
     # Fill with pattern_before
     pattern_before_data = np.full(tensor_size, pattern_before, dtype=np.int8)
-    pattern_before_tensor = Tensor.from_numpy(pattern_before_data)
+    pattern_before_tensor = Buffer.from_numpy(pattern_before_data)
     pinned_cpu_tensor.inplace_copy_from(pattern_before_tensor)
 
     # Copy to target GPU
@@ -96,7 +96,7 @@ def _test_pinned_device_copy(
 
     # Modify pinned memory to pattern_after
     pattern_after_data = np.full(tensor_size, pattern_after, dtype=np.int8)
-    pattern_after_tensor = Tensor.from_numpy(pattern_after_data)
+    pattern_after_tensor = Buffer.from_numpy(pattern_after_data)
     pinned_cpu_tensor.inplace_copy_from(pattern_after_tensor)
 
     # Copy GPU tensor back to CPU and check contents
@@ -152,7 +152,7 @@ def test_non_pinned_cross_device_copy() -> None:
 
     # Create tensor on GPU 0
     data = np.full(tensor_size, 42, dtype=np.int8)
-    gpu0_tensor = Tensor.from_numpy(data).to(gpu0)
+    gpu0_tensor = Buffer.from_numpy(data).to(gpu0)
 
     # Copy to GPU 1
     gpu1_tensor = gpu0_tensor.to(gpu1)

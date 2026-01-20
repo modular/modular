@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-from max.driver import CPU, Tensor
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType
@@ -22,7 +22,7 @@ from max.graph import DeviceRef, Dim, Graph, TensorType
 def test_rebind__new_parameter_expression__not_divisible_by_4(
     session: InferenceSession,
 ) -> None:
-    input = Tensor(DType.float32, [7, 4], device=CPU())
+    input = Buffer(DType.float32, [7, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 
     with Graph("reshape", input_types=[input_type]) as graph:
@@ -40,7 +40,7 @@ def test_rebind__new_parameter_expression__not_divisible_by_4(
 def test_rebind__new_parameter_expression__divisible_by_4(
     session: InferenceSession,
 ) -> None:
-    input = Tensor(DType.float32, [8, 4], device=CPU())
+    input = Buffer(DType.float32, [8, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 
     with Graph("reshape", input_types=[input_type]) as graph:
@@ -51,14 +51,14 @@ def test_rebind__new_parameter_expression__divisible_by_4(
 
     model = session.load(graph)
     result = model.execute(input)[0]
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     assert result.shape == (2, 4, 4)
 
 
 def test_rebind__no_new_parameter__not_divisible_by_4(
     session: InferenceSession,
 ) -> None:
-    input = Tensor(DType.float32, [7, 4], device=CPU())
+    input = Buffer(DType.float32, [7, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 
     with Graph("reshape", input_types=[input_type]) as graph:
@@ -75,7 +75,7 @@ def test_rebind__no_new_parameter__not_divisible_by_4(
 def test_rebind__no_new_parameter__divisible_by_4(
     session: InferenceSession,
 ) -> None:
-    input = Tensor(DType.float32, [8, 4], device=CPU())
+    input = Buffer(DType.float32, [8, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 
     with Graph("reshape", input_types=[input_type]) as graph:
@@ -86,7 +86,7 @@ def test_rebind__no_new_parameter__divisible_by_4(
 
     model = session.load(graph)
     result = model.execute(input)[0]
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     assert result.shape == (2, 4, 4)
 
 
@@ -95,7 +95,7 @@ def test_reshape__minus_one__not_divisible_raises(
 ) -> None:
     """Test that -1 preserves runtime divisibility checks with symbolic dims."""
     # batch=7, 7*4 elements cannot reshape to [-1, 4, 4]
-    input = Tensor(DType.float32, [7, 4], device=CPU())
+    input = Buffer(DType.float32, [7, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
     with Graph("reshape_minus_one_bad", input_types=[input_type]) as graph:
         (x,) = graph.inputs
@@ -116,7 +116,7 @@ def test_reshape__minus_one__static_divisible(
 ) -> None:
     """Test that -1 works with static divisible shapes."""
     # 8*4 elements reshape to [-1, 4, 4] => 2,4,4
-    input = Tensor(DType.float32, [8, 4], device=CPU())
+    input = Buffer(DType.float32, [8, 4], device=CPU())
     input_type = TensorType(DType.float32, [8, 4], device=DeviceRef.CPU())
     with Graph("reshape_minus_one_ok", input_types=[input_type]) as graph:
         (x,) = graph.inputs
@@ -124,5 +124,5 @@ def test_reshape__minus_one__static_divisible(
         graph.output(y)
     model = session.load(graph)
     result = model.execute(input)[0]
-    assert isinstance(result, Tensor)
+    assert isinstance(result, Buffer)
     assert result.shape == (2, 4, 4)

@@ -106,7 +106,7 @@ struct String(
 
     However, `print()` doesn't actually specify `String` as its argument type.
     Instead, it accepts any type that conforms to the
-    [`Writable`](/mojo/std/io/write/Writable) trait (`String` conforms to
+    [`Writable`](/mojo/std/format/Writable) trait (`String` conforms to
     this trait, which is why you can pass it to `print()`). That means it's
     actually more efficient to pass any type that implements `Writable`
     directly to `print()` (instead of first converting it to `String`).
@@ -1216,6 +1216,14 @@ struct String(
         """
         writer.write_string(self)
 
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the string".
+
+        Args:
+            writer: The value to write to.
+        """
+        self.as_string_slice().write_repr_to(writer)
+
     fn join[T: Copyable & Writable](self, elems: Span[T, ...]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
@@ -1453,6 +1461,57 @@ struct String(
             )
         else:
             return self._len_or_data
+
+    @always_inline
+    fn count_codepoints(self) -> Int:
+        """Calculates the length in Unicode codepoints encoded in the
+        UTF-8 representation of this string.
+
+        This is an O(n) operation, where n is the length of the string, as it
+        requires scanning the full string contents.
+
+        Returns:
+            The length in Unicode codepoints.
+
+        Examples:
+
+            Query the length of a string, in bytes and Unicode codepoints:
+
+            ```mojo
+            %# from testing import assert_equal
+
+            var s = StringSlice("ನಮಸ್ಕಾರ")
+            assert_equal(s.count_codepoints(), 7)
+            assert_equal(s.byte_length(), 21)
+            ```
+
+            Strings containing only ASCII characters have the same byte and
+            Unicode codepoint length:
+
+            ```mojo
+            %# from testing import assert_equal
+
+            var s = StringSlice("abc")
+            assert_equal(s.count_codepoints(), 3)
+            assert_equal(s.byte_length(), 3)
+            ```
+
+            The character length of a string with visual combining characters is
+            the length in Unicode codepoints, not grapheme clusters:
+
+            ```mojo
+            %# from testing import assert_equal
+
+            var s = StringSlice("á")
+            assert_equal(s.count_codepoints(), 2)
+            assert_equal(s.byte_length(), 3)
+            ```
+
+        Notes:
+            This method needs to traverse the whole string to count, so it has
+            a performance hit compared to using the byte length.
+        """
+        return self.as_string_slice().count_codepoints()
 
     fn set_byte_length(mut self, new_len: Int):
         """Set the byte length of the `String`.

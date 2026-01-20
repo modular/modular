@@ -31,6 +31,7 @@ from max.interfaces import (
     SamplingParams,
     TextGenerationContext,
     TextGenerationRequest,
+    TextGenerationRequestMessage,
 )
 from max.pipelines import (
     PIPELINE_REGISTRY,
@@ -80,9 +81,16 @@ async def stream_text_to_console(
         sampling_params, logits_processors=logits_processors
     )
 
+    messages = [
+        TextGenerationRequestMessage(
+            role="user",
+            content=[{"type": "text", "text": prompt}]
+            + [{"type": "image"} for _ in images],
+        )
+    ]
     request = TextGenerationRequest(
         request_id=RequestID(),
-        prompt=prompt,
+        messages=messages,
         images=images,
         model_name=MODEL_NAME,
         sampling_params=sampling_params,
@@ -94,7 +102,9 @@ async def stream_text_to_console(
         assert isinstance(pipeline, GenerateMixin)
         async for outputs in pipeline.generate_async(request):
             if print_tokens:
-                decoded = tokenizer.delegate.decode(outputs[0].tokens)
+                decoded = tokenizer.delegate.decode(
+                    outputs[0].tokens, skip_special_tokens=True
+                )
                 print(decoded, end="", flush=True)
     finally:
         if metrics:

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo-build %s -o %t
-# RUN: %t
+# RUN: %mpirun-gpu-per-thread %t
 
 from algorithm import parallelize
 from gpu import block_dim, grid_dim, block_idx, thread_idx, barrier

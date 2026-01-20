@@ -18,7 +18,7 @@ from collections.abc import Callable, Sequence
 
 import numpy as np
 import torch
-from max.driver import Tensor
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -57,8 +57,8 @@ def test_identity_execution(session: InferenceSession) -> None:
 
         @modular_graph_test(session, graph)
         def test_correctness(
-            execute: Callable[[Sequence[Tensor]], Tensor],
-            inputs: Sequence[Tensor],
+            execute: Callable[[Sequence[Buffer]], Buffer],
+            inputs: Sequence[Buffer],
             torch_inputs: Sequence[torch.Tensor],
         ) -> None:
             result = execute(inputs).to_numpy()

@@ -1,5 +1,7 @@
 # Provenance Tracking and Lifetimes in Mojo
 
+**Status**: Partially Implemented.
+
 As of mid-May 2023, Mojo has full support for ownership (including move
 semantics, borrows and transfers, mutability, ASAP destruction of values, and
 member synthesis). This provides more expressiveness than many languages, but does

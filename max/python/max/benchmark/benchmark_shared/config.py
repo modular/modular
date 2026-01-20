@@ -23,12 +23,13 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import Field
 
 from .datasets import DATASET_REGISTRY, DatasetMode
 
 logger = logging.getLogger(__name__)
 
-from max.config import MAXConfig, deep_merge_max_configs
+from max.config import ConfigFileModel, MAXConfig, deep_merge_max_configs
 
 
 class Backend(str, enum.Enum):
@@ -92,6 +93,80 @@ def _resolve_user_provided_config_file_cli_arg(
     return preliminary_args.config_file, remaining_args
 
 
+# TODO: This needs to be temporarily named this way to avoid name conflicts
+# with the PipelineConfig class. Ideally this should just be that same class,
+# but we're still in the process of migrating PipelineConfig to pydantic and all.
+class BenchmarkPipelineConfig(ConfigFileModel):
+    """Configuration class for model options."""
+
+    model: str | None = Field(default=None)
+    """Name of the model. Required when running benchmark (must be provided via CLI or config)."""
+    weight_path: str | None = Field(default=None)
+    """Override the default weights file. Must be in GGUF format."""
+    lora_paths: str | None = Field(default=None)
+    """Comma-separated list of paths to LoRA adapters."""
+    quantization_encoding: str | None = Field(default="q4_k")
+    """Quantization encoding to benchmark."""
+    max_length: int | None = Field(default=None)
+    """Maximum length of the sequence."""
+    max_batch_size: int | None = Field(default=None)
+    """Maximum batch size to execute with the model."""
+
+
+class HardwareConfig(ConfigFileModel):
+    """Configuration class for hardware options."""
+
+    devices: str | None = Field(default=None)
+    """Hardware device on which model will be executed. Valid values: 'cpu', 'gpu', 'gpu:0,1,2'."""
+
+
+class SamplingConfig(ConfigFileModel):
+    """Configuration class for sampling options."""
+
+    top_k: int | None = Field(default=None)
+    """Limits the sampling to the K most probable tokens. Default: None (no sampling)."""
+
+
+class BenchmarkCommonConfig(ConfigFileModel):
+    tokenizer: str | None = None
+    """Name or path of the tokenizer, if not using the default tokenizer."""
+
+    model_max_length: int | None = None
+    """Override for tokenizer max length. Needed if server has a lower max length than the tokenizer."""
+
+    trust_remote_code: bool = False
+    """Trust remote code from huggingface."""
+
+    # Dataset configuration (common across all benchmark types)
+    dataset_name: str | None = None
+    """Name of the dataset to benchmark on."""
+
+    dataset_path: str | None = None
+    """Path to the dataset."""
+
+    dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE
+    """Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub)."""
+
+    # Basic workload parameters
+    num_prompts: int | None = None
+    """Number of prompts to process."""
+
+    seed: int = 0
+    """Random seed for reproducibility."""
+
+    # Control flags
+    disable_tqdm: bool = False
+    """Specify to disable tqdm progress bar."""
+
+    print_inputs_and_outputs: bool = False
+    """Print all input and outputs to console."""
+
+
+# TODO: This whole class should be converted to a pydantic model.
+# As of this writing, the current plan is to migrate these fields over to
+# individual pydantic BaseModel classes such as the ones above, then delete this
+# BaseBenchmarkConfig class as soon as we're done migrating the last script that
+# uses it.
 @dataclass
 class BaseBenchmarkConfig(MAXConfig):
     """Base configuration class containing parameters common to all benchmark types.

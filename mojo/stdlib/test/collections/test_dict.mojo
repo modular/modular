@@ -380,7 +380,7 @@ def test_dict_copy_add_new_item():
 
 
 def test_dict_copy_calls_copy_constructor():
-    var orig: Dict[String, CopyCounter] = {}
+    var orig: Dict[String, CopyCounter[]] = {}
     orig["a"] = CopyCounter()
 
     # test values copied to new Dict
@@ -652,7 +652,7 @@ fn test_dict_setdefault() raises:
     assert_equal(some_dict["not_key"], 0)
 
     # Check that there is no copy of the default value, so it's performant
-    var other_dict: Dict[String, CopyCounter] = {}
+    var other_dict: Dict[String, CopyCounter[]] = {}
     var a = CopyCounter()
     var a_def = CopyCounter()
     var b_def = CopyCounter()
@@ -719,7 +719,7 @@ def test_dict_repr_wrap():
 
 
 def test_popitem_no_copies():
-    var dict: Dict[String, CopyCounter] = {}
+    var dict: Dict[String, CopyCounter[]] = {}
     dict["a"] = CopyCounter()
     dict["b"] = CopyCounter()
 

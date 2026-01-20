@@ -19,3 +19,4 @@ mojo = "<1.0.0"
 [tool.pixi.tasks]
 hello = "python hello.py"
 mandelbrot = "python mandelbrot.py"
+test = { depends-on = ["hello", "mandelbrot"] }

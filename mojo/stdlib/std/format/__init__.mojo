@@ -35,6 +35,7 @@ struct Point(Writable):
 
 var p = Point(1.5, 2.7)
 print(p)  # Point(x=1.5, y=2.7)
+print(repr(p)) # Point(x=Float64(1.5), y=Float64(2.7))
 ```
 
 ## Custom Formatting
@@ -64,20 +65,23 @@ struct Point(Writable):
     var x: Float64
     var y: Float64
 
-    fn write_to(self, mut writer: Some[Writer]):
-        writer.write("(", self.x, ", ", self.y, ")")
-
     fn write_repr_to(self, mut writer: Some[Writer]):
-        writer.write("Point(x=", self.x, ", y=", self.y, ")")
+        writer.write("Point: x=", self.x, ", y=", self.y)
 
 var p = Point(1.5, 2.7)
-print(p)       # (1.5, 2.7)
-print(repr(p)) # Point(x=1.5, y=2.7)
+print(repr(p)) # Point: x=1.5, y=2.7
 ```
 """
 
+from builtin.constrained import _constrained_field_conforms_to
 from memory import Span
-from reflection import struct_field_names, struct_field_count, get_type_name
+from reflection import (
+    struct_field_names,
+    struct_field_types,
+    struct_field_count,
+    get_type_name,
+)
+from reflection.type_info import _unqualified_type_name
 
 
 # ===-----------------------------------------------------------------------===#
@@ -159,31 +163,15 @@ trait Writable:
     ```mojo
     @fieldwise_init
     struct Point(Writable):
-        var x: Float64
-        var y: Float64
+        var x: Int
+        var y: Int
 
-    var p = Point(1.5, 2.7)
-    print(p)       # Point(x=1.5, y=2.7)
-    print(repr(p)) # Point(x=1.5, y=2.7)
+    var p = Point(1, 3)
+    print(p)       # Point(x=1, y=3)
+    print(repr(p)) # Point(x=Int(1), y=Int(3))
     ```
 
-    Override `write_to()` for custom formatting:
-
-    ```mojo
-    @fieldwise_init
-    struct Point(Writable):
-        var x: Float64
-        var y: Float64
-
-        fn write_to(self, mut writer: Some[Writer]):
-            writer.write("(", self.x, ", ", self.y, ")")
-
-    var p = Point(1.5, 2.7)
-    print(p)       # (1.5, 2.7)
-    print(repr(p)) # (1.5, 2.7) - uses write_to by default
-    ```
-
-    Override both for different normal and debug output:
+    Override either for different normal and debug output:
 
     ```mojo
     @fieldwise_init
@@ -195,11 +183,11 @@ trait Writable:
             writer.write("(", self.x, ", ", self.y, ")")
 
         fn write_repr_to(self, mut writer: Some[Writer]):
-            writer.write("Point(x=", self.x, ", y=", self.y, ")")
+            writer.write("Point: x=", self.x, ", y=", self.y)
 
     var p = Point(1.5, 2.7)
     print(p)       # (1.5, 2.7)
-    print(repr(p)) # Point(x=1.5, y=2.7)
+    print(repr(p)) # Point: x=1.5, y=2.7
     ```
     """
 
@@ -211,8 +199,8 @@ trait Writable:
         appears when printed or converted to a string.
 
         The default implementation uses reflection to format all fields as
-        `TypeName(field1=value1, field2=value2, ...)`. All fields must conform
-        to `Writable`.
+        `TypeName(field1=value1, field2=value2, ...)`, calling `write_to()`
+        on each field. All fields must conform to `Writable`.
 
         Args:
             writer: The destination for formatted output.
@@ -224,23 +212,14 @@ trait Writable:
             writer.write("(", self.x, ", ", self.y, ")")
         ```
         """
-        # Default implementation using reflection: TypeName(field1=value1, ...)
-        comptime names = struct_field_names[Self]()
-        writer.write_string(get_type_name[Self]())
-        writer.write_string("(")
 
-        @parameter
-        for i in range(names.size):
+        @always_inline
+        fn call_write_to[
+            FieldType: Writable
+        ](field: FieldType, mut writer: type_of(writer)):
+            field.write_to(writer)
 
-            @parameter
-            if i > 0:
-                writer.write_string(", ")
-            writer.write_string(names[i])
-            writer.write_string("=")
-            trait_downcast[Writable](__struct_field_ref(i, self)).write_repr_to(
-                writer
-            )
-        writer.write_string(")")
+        _reflection_write_to[f=call_write_to](self, writer)
 
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Write this value's debug representation to a writer.
@@ -249,9 +228,9 @@ trait Writable:
         and should produce unambiguous, developer-facing output that shows the
         internal state of the value.
 
-        The default implementation calls `write_to()`, providing the same output
-        for both normal and debug formatting. Implement this method to provide
-        custom debug output.
+        The default implementation uses reflection to format all fields as
+        `TypeName(field1=value1, field2=value2, ...)`, calling `write_repr_to()`
+        on each field. All fields must conform to `Writable`.
 
         Args:
             writer: The destination for formatted output.
@@ -260,8 +239,49 @@ trait Writable:
 
         ```mojo
         fn write_repr_to(self, mut writer: Some[Writer]):
-            writer.write("Point(x=", self.x, ", y=", self.y, ")")
+            writer.write("Point: x=", self.x, ", y=", self.y)
         ```
         """
-        # Default: use normal formatting
-        self.write_to(writer)
+
+        @always_inline
+        fn call_write_repr_to[
+            FieldType: Writable
+        ](field: FieldType, mut writer: type_of(writer)):
+            field.write_repr_to(writer)
+
+        _reflection_write_to[f=call_write_repr_to](self, writer)
+
+
+@always_inline
+fn _reflection_write_to[
+    T: Writable,
+    W: Writer,
+    //,
+    f: fn[FieldType: Writable] (field: FieldType, mut writer: W),
+](this: T, mut writer: W,):
+    comptime names = struct_field_names[T]()
+    comptime types = struct_field_types[T]()
+    comptime type_name = _unqualified_type_name[T]()
+    writer.write_string(type_name)
+    writer.write_string("(")
+
+    @parameter
+    for i in range(names.size):
+        comptime FieldType = types[i]
+        _constrained_field_conforms_to[
+            conforms_to(FieldType, Writable),
+            Parent=T,
+            FieldIndex=i,
+            ParentConformsTo="Writable",
+        ]()
+
+        @parameter
+        if i > 0:
+            writer.write_string(", ")
+        writer.write_string(materialize[names[i]]())
+        writer.write_string("=")
+
+        ref field = trait_downcast[Writable](__struct_field_ref(i, this))
+        f(field, writer)
+
+    writer.write_string(")")

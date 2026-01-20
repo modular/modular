@@ -20,7 +20,7 @@ mpirun.
 """
 
 # RUN: %mojo-build %s -o %t
-# RUN: %mpirun-all-gpus %t
+# RUN: %mpirun-gpu-per-process %t
 
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import LegacyUnsafePointer, alloc

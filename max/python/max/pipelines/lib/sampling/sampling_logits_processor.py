@@ -18,14 +18,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Device, Tensor
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import Model
 from max.interfaces import BatchProcessorInputs, TextGenerationContextType
@@ -41,13 +38,13 @@ logger = logging.getLogger("max.pipelines")
 class FrequencyData:
     """Container for token frequency data in CSR format."""
 
-    data: Tensor
+    data: Buffer
     """data[:, 0]: 1D array of the column indices of the
         non-zero elements in the matrix.
     data[:, 1]: 1D array of the non-zero elements in the
         matrix."""
 
-    offsets: Tensor
+    offsets: Buffer
     """Row offsets: shape [batch_size + 1] indicating start of each
     sequence's data."""
 
@@ -55,10 +52,10 @@ class FrequencyData:
 class FusedSamplingProcessor:
     """Applies sampling parameters to logits and stores the chosen tokens."""
 
-    new_tokens: Tensor | None = None
+    new_tokens: Buffer | None = None
     """The new tokens that were sampled."""
 
-    generated_tokens: Tensor
+    generated_tokens: Buffer
     """The generated tokens that have been sampled so far."""
 
     def __init__(
@@ -78,71 +75,109 @@ class FusedSamplingProcessor:
         self.vocab_size = vocab_size
 
         # If a structured decoding bitmask was provided, unpack packed-int masks once.
-        self.tensor_bitmask: Tensor | None
+        self.tensor_bitmask: Buffer | None
         if (
             self.bitmask is not None
             and self.vocab_size is not None
             and self.bitmask.shape[1] != self.vocab_size
         ):
+            # TODO: migrate bitmask to pinned memory
             bits = 2 ** np.arange(32, dtype=np.int32)
             self.bitmask = (self.bitmask[..., np.newaxis] & bits) != 0
             self.bitmask = self.bitmask.reshape(self.batch_size, -1).astype(
                 np.bool_
             )
-            self.tensor_bitmask = Tensor.from_numpy(self.bitmask).to(
+            self.tensor_bitmask = Buffer.from_numpy(self.bitmask).to(
                 self.device
             )
         else:
             self.tensor_bitmask = None
 
-        self.generated_tokens = Tensor(
-            shape=(len(context_batch), 0),
+        batch_size = len(context_batch)
+
+        # Allocate input and output tensors on pinned memory for faster async
+        # h2d and d2h transfer speeds. If model is on host, then fall back to
+        # normal pageable memory.
+        pinned = not device.is_host
+
+        # generated_tokens is a tensor of shape (batch_size, 0)
+        self.generated_tokens = Buffer(
+            shape=(batch_size, 0),
             dtype=DType.int64,
             device=device,
+            pinned=pinned,
         )
 
-        self.temperature = Tensor.from_numpy(
-            np.array(
-                [
-                    context.sampling_params.temperature
-                    for context in context_batch
-                ],
-                dtype=np.float32,
-            )
-        ).to(device)
-
-        top_k_np = np.array(
-            [context.sampling_params.top_k for context in context_batch],
-            dtype=np.int64,
+        # temperature is a tensor of shape (batch_size,)
+        temperature_host = Buffer(
+            shape=(batch_size,),
+            dtype=DType.float32,
+            device=device,
+            pinned=pinned,
         )
-        self.top_k = Tensor.from_numpy(top_k_np).to(device)
+        temperature_np = temperature_host.to_numpy()
+        temperature_np[:] = [
+            context.sampling_params.temperature for context in context_batch
+        ]
+        self.temperature = temperature_host.to(device)
+
+        # top_k is a tensor of shape (batch_size,)
+        top_k_host = Buffer(
+            shape=(batch_size,),
+            dtype=DType.int64,
+            device=device,
+            pinned=pinned,
+        )
+        top_k_np = top_k_host.to_numpy()
+        top_k_np[:] = [
+            context.sampling_params.top_k for context in context_batch
+        ]
+        self.top_k = top_k_host.to(device)
+
+        # max_k is a scalar 0-d tensor. It does not need to be pinned since it
+        # is not copied to the device.
         max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
-        self.max_k = Tensor.from_numpy(max_k_np)
+        self.max_k = Buffer.from_numpy(max_k_np)
 
-        top_p_np = np.array(
-            [context.sampling_params.top_p for context in context_batch],
-            dtype=np.float32,
+        # top_p is a tensor of shape (batch_size,)
+        top_p_host = Buffer(
+            shape=(batch_size,),
+            dtype=DType.float32,
+            device=device,
+            pinned=pinned,
         )
-        self.top_p = Tensor.from_numpy(top_p_np).to(device)
-        min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
-        self.min_top_p = Tensor.from_numpy(min_top_p_np)
+        top_p_np = top_p_host.to_numpy()
+        top_p_np[:] = [
+            context.sampling_params.top_p for context in context_batch
+        ]
+        self.top_p = top_p_host.to(device)
 
-        self.seed = Tensor.from_numpy(
-            np.array(
-                [
-                    context.sampling_params.seed + len(context.tokens)
-                    for context in context_batch
-                ],
-                dtype=np.uint64,
-            )
-        ).to(device)
+        # min_top_p is a scalar 0-d tensor. It does not need to be pinned since it
+        # is not copied to the device.
+        min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
+        self.min_top_p = Buffer.from_numpy(min_top_p_np)
+
+        # seed is a tensor of shape (batch_size,)
+        seed_host = Buffer(
+            shape=(batch_size,),
+            dtype=DType.uint64,
+            device=device,
+            pinned=pinned,
+        )
+        seed_np = seed_host.to_numpy()
+        seed_np[:] = [
+            context.sampling_params.seed + len(context.tokens)
+            for context in context_batch
+        ]
+        self.seed = seed_host.to(device)
 
         self.frequency_data: list[FrequencyData] | None = None
-        self.frequency_penalty: Tensor | None = None
-        self.presence_penalty: Tensor | None = None
-        self.repetition_penalty: Tensor | None = None
+        self.frequency_penalty: Buffer | None = None
+        self.presence_penalty: Buffer | None = None
+        self.repetition_penalty: Buffer | None = None
 
-        if pipeline_config.sampling_config.enable_penalties:
+        if pipeline_config.sampling.enable_penalties:
+            # TODO: migrate penalties to pinned memory
             self.frequency_data = [
                 _build_token_frequency_csr(context_batch, num_steps, device),
                 _build_token_frequency_csr(
@@ -150,7 +185,7 @@ class FusedSamplingProcessor:
                 ),
             ]
 
-            self.frequency_penalty = Tensor.from_numpy(
+            self.frequency_penalty = Buffer.from_numpy(
                 np.array(
                     [
                         context.sampling_params.frequency_penalty
@@ -159,7 +194,7 @@ class FusedSamplingProcessor:
                     dtype=np.float32,
                 )
             ).to(device)
-            self.presence_penalty = Tensor.from_numpy(
+            self.presence_penalty = Buffer.from_numpy(
                 np.array(
                     [
                         context.sampling_params.presence_penalty
@@ -168,7 +203,7 @@ class FusedSamplingProcessor:
                     dtype=np.float32,
                 )
             ).to(device)
-            self.repetition_penalty = Tensor.from_numpy(
+            self.repetition_penalty = Buffer.from_numpy(
                 np.array(
                     [
                         context.sampling_params.repetition_penalty
@@ -185,7 +220,7 @@ class FusedSamplingProcessor:
             context_batch,
             num_steps,
             device,
-            pipeline_config.sampling_config.enable_min_tokens,
+            pipeline_config.sampling.enable_min_tokens,
         )
 
         self.step_counter = 0
@@ -215,9 +250,9 @@ class FusedSamplingProcessor:
             repetition_penalty=self.repetition_penalty,
         )
 
-        assert isinstance(new_tokens, Tensor)
-        assert isinstance(new_generated_tokens, Tensor)
-        assert isinstance(new_seed, Tensor)
+        assert isinstance(new_tokens, Buffer)
+        assert isinstance(new_generated_tokens, Buffer)
+        assert isinstance(new_seed, Buffer)
 
         self.generated_tokens = new_generated_tokens
         self.seed = new_seed
@@ -309,8 +344,8 @@ def _build_token_frequency_csr(
     token_frequency_pairs = token_frequency_pairs[:current_offset]
 
     return FrequencyData(
-        data=Tensor.from_dlpack(token_frequency_pairs).to(device),
-        offsets=Tensor.from_dlpack(frequency_row_offsets).to(device),
+        data=Buffer.from_dlpack(token_frequency_pairs).to(device),
+        offsets=Buffer.from_dlpack(frequency_row_offsets).to(device),
     )
 
 
@@ -320,7 +355,7 @@ def _build_min_tokens_masks(
     num_steps: int,
     device: Device,
     enable_min_tokens: bool,
-) -> list[Tensor] | None:
+) -> list[Buffer] | None:
     """Build a mask of the min tokens for the batch."""
     if not enable_min_tokens:
         for context in batch:
@@ -342,7 +377,7 @@ def _build_min_tokens_masks(
             )
 
     min_tokens_masks_max = [
-        Tensor.from_dlpack(mask).to(device) for mask in min_tokens_masks
+        Buffer.from_dlpack(mask).to(device) for mask in min_tokens_masks
     ]
     return min_tokens_masks_max
 
@@ -350,23 +385,23 @@ def _build_min_tokens_masks(
 @traced
 def _sample_logits(
     sampler: Model,
-    logits: Tensor,
-    prev_tokens: Tensor,
-    top_k: Tensor,
-    max_k: Tensor,
-    temperature: Tensor,
-    top_p: Tensor,
-    min_top_p: Tensor,
-    seed: Tensor,
+    logits: Buffer,
+    prev_tokens: Buffer,
+    top_k: Buffer,
+    max_k: Buffer,
+    temperature: Buffer,
+    top_p: Buffer,
+    min_top_p: Buffer,
+    seed: Buffer,
     *,
-    logit_offsets: Tensor | None = None,
-    bitmask: Tensor | None = None,
+    logit_offsets: Buffer | None = None,
+    bitmask: Buffer | None = None,
     frequency_data: Sequence[FrequencyData] | None = None,
-    min_tokens_mask: Tensor | None = None,
-    frequency_penalty: Tensor | None = None,
-    presence_penalty: Tensor | None = None,
-    repetition_penalty: Tensor | None = None,
-) -> tuple[Tensor, Tensor, Tensor]:
+    min_tokens_mask: Buffer | None = None,
+    frequency_penalty: Buffer | None = None,
+    presence_penalty: Buffer | None = None,
+    repetition_penalty: Buffer | None = None,
+) -> tuple[Buffer, Buffer, Buffer]:
     opt_inputs = [logit_offsets, bitmask]
 
     base_inputs = [
@@ -401,7 +436,7 @@ def _sample_logits(
     sampler_output = sampler(*graph_inputs)
     tokens, generated_tokens = sampler_output[:2]
     new_seed = sampler_output[-1]
-    assert isinstance(tokens, Tensor)
-    assert isinstance(generated_tokens, Tensor)
-    assert isinstance(new_seed, Tensor)
+    assert isinstance(tokens, Buffer)
+    assert isinstance(generated_tokens, Buffer)
+    assert isinstance(new_seed, Buffer)
     return (tokens, generated_tokens, new_seed)

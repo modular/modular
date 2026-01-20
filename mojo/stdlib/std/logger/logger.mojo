@@ -43,7 +43,7 @@ from os import abort
 from sys.param_env import env_get_string
 from utils._ansi import Text, Color
 
-from builtin._location import __call_location, _SourceLocation
+from reflection import call_location, SourceLocation
 
 # ===-----------------------------------------------------------------------===#
 # DEFAULT_LEVEL
@@ -270,7 +270,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         *values: *Ts,
         sep: StaticString = " ",
         end: StaticString = "\n",
-        location: Optional[_SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ):
         """Logs a trace message.
 
@@ -282,7 +282,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             sep: The separator to use between values (defaults to a space).
             end: The string to append to the end of the message
                 (defaults to a newline).
-            location: The location of the error (defaults to `__call_location`).
+            location: The location of the error (defaults to `call_location`).
         """
         comptime target_level = Level.TRACE
 
@@ -292,7 +292,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 values,
                 sep=sep,
                 end=end,
-                location=location.or_else(__call_location()),
+                location=location.or_else(call_location()),
             )
 
     @always_inline
@@ -303,7 +303,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         *values: *Ts,
         sep: StaticString = " ",
         end: StaticString = "\n",
-        location: Optional[_SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ):
         """Logs a debug message.
 
@@ -315,7 +315,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             sep: The separator to use between values (defaults to a space).
             end: The string to append to the end of the message
                 (defaults to a newline).
-            location: The location of the error (defaults to `__call_location`).
+            location: The location of the error (defaults to `call_location`).
         """
         comptime target_level = Level.DEBUG
 
@@ -325,7 +325,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 values,
                 sep=sep,
                 end=end,
-                location=location.or_else(__call_location()),
+                location=location.or_else(call_location()),
             )
 
     @always_inline
@@ -336,7 +336,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         *values: *Ts,
         sep: StaticString = " ",
         end: StaticString = "\n",
-        location: Optional[_SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ):
         """Logs an info message.
 
@@ -348,7 +348,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             sep: The separator to use between values (defaults to a space).
             end: The string to append to the end of the message
                 (defaults to a newline).
-            location: The location of the error (defaults to `__call_location`).
+            location: The location of the error (defaults to `call_location`).
         """
         comptime target_level = Level.INFO
 
@@ -358,7 +358,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 values,
                 sep=sep,
                 end=end,
-                location=location.or_else(__call_location()),
+                location=location.or_else(call_location()),
             )
 
     @always_inline
@@ -369,7 +369,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         *values: *Ts,
         sep: StaticString = " ",
         end: StaticString = "\n",
-        location: Optional[_SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ):
         """Logs a warning message.
 
@@ -381,7 +381,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             sep: The separator to use between values (defaults to a space).
             end: The string to append to the end of the message
                 (defaults to a newline).
-            location: The location of the error (defaults to `__call_location`).
+            location: The location of the error (defaults to `call_location`).
         """
         comptime target_level = Level.WARNING
 
@@ -391,7 +391,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 values,
                 sep=sep,
                 end=end,
-                location=location.or_else(__call_location()),
+                location=location.or_else(call_location()),
             )
 
     @always_inline
@@ -402,7 +402,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         *values: *Ts,
         sep: StaticString = " ",
         end: StaticString = "\n",
-        location: Optional[_SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ):
         """Logs an error message.
 
@@ -414,7 +414,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             sep: The separator to use between values (defaults to a space).
             end: The string to append to the end of the message
                 (defaults to a newline).
-            location: The location of the error (defaults to `__call_location`).
+            location: The location of the error (defaults to `call_location`).
         """
         comptime target_level = Level.ERROR
 
@@ -424,7 +424,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 values,
                 sep=sep,
                 end=end,
-                location=location.or_else(__call_location()),
+                location=location.or_else(call_location()),
             )
 
     @always_inline
@@ -435,7 +435,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         *values: *Ts,
         sep: StaticString = " ",
         end: StaticString = "\n",
-        location: Optional[_SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ):
         """Logs a critical message and aborts execution.
 
@@ -447,7 +447,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             sep: The separator to use between values (defaults to a space).
             end: The string to append to the end of the message
                 (defaults to a newline).
-            location: The location of the error (defaults to `__call_location`).
+            location: The location of the error (defaults to `call_location`).
 
         """
         comptime target_level = Level.CRITICAL
@@ -458,7 +458,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
                 values,
                 sep=sep,
                 end=end,
-                location=location.or_else(__call_location()),
+                location=location.or_else(call_location()),
             )
 
         abort()
@@ -469,7 +469,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         self,
         values: VariadicPack[element_trait=Writable],
         *,
-        location: _SourceLocation,
+        location: SourceLocation,
         sep: StaticString = " ",
         end: StaticString = "\n",
     ):

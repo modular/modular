@@ -48,7 +48,7 @@ class CompilationTimer:
         self._build_end_time = time.perf_counter()
         logger.info(
             f"Building {self.name} graph took "
-            f"{self._build_end_time - self._start_time:.6f} seconds"
+            f"{self._build_end_time - self._start_time:.1f} seconds"
         )
 
     def done(self) -> None:
@@ -57,11 +57,11 @@ class CompilationTimer:
         if self._build_end_time > 0:
             logger.info(
                 f"Compiling {self.name} took "
-                f"{end_time - self._build_end_time:.6f} seconds"
+                f"{end_time - self._build_end_time:.1f} seconds"
             )
         logger.info(
             f"Building and compiling {self.name} took "
-            f"{end_time - self._start_time:.6f} seconds"
+            f"{end_time - self._start_time:.1f} seconds"
         )
 
 

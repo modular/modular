@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -105,7 +105,7 @@ class Signals:
 
         self.devices = devices
 
-    def buffers(self) -> list[Tensor]:
+    def buffers(self) -> list[Buffer]:
         """Allocates and returns buffers used for communication in allreduce.
 
         Synchronizes so that buffers are ready for use when this method
@@ -114,7 +114,7 @@ class Signals:
         # Contents of signal buffer should be filled with zeros.
         accelerators = [Accelerator(id=dev.id) for dev in self.devices]
         signal_buffers = [
-            Tensor.zeros(
+            Buffer.zeros(
                 shape=(Signals.NUM_BYTES,),
                 dtype=DType.uint8,
                 device=accel,

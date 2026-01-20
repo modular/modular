@@ -31,7 +31,7 @@ from max._core.engine import Model as Model
 from max._core.engine import PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
-from max.driver import Device, DLPackArray, Tensor
+from max.driver import Buffer, Device, DLPackArray
 from max.graph import Graph
 from max.profiler import traced
 from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
@@ -47,7 +47,7 @@ CustomExtensionsType = Sequence[CustomExtensionType] | CustomExtensionType
 # Need to use tuple instead of Union to ensure that Python 3.9 support works
 
 ScalarType = (int, float, bool, np.generic)
-InputType = DLPackArray | Tensor | int | float | bool | np.generic
+InputType = DLPackArray | Buffer | int | float | bool | np.generic
 
 
 class GPUProfilingMode(str, Enum):
@@ -68,7 +68,7 @@ def _raise_if_not_contiguous(x: InputType) -> None:
             should_raise = True
     elif isinstance(x, np.ndarray) and not x.flags.c_contiguous:
         should_raise = True
-    elif isinstance(x, Tensor) and not x.is_contiguous:
+    elif isinstance(x, Buffer) and not x.is_contiguous:
         should_raise = True
     if should_raise:
         raise ValueError(
@@ -81,37 +81,37 @@ def _raise_if_not_contiguous(x: InputType) -> None:
 
 
 @traced
-def _Model_execute(self: Model, *args: InputType) -> list[Tensor]:
+def _Model_execute(self: Model, *args: InputType) -> list[Buffer]:
     # Original tensor-only execution path
-    input_impls: list[Tensor] = []
+    input_impls: list[Buffer] = []
 
     for idx, arg in enumerate(args):
         _raise_if_not_contiguous(arg)
 
         # Validate that input is one of supported types and convert if
         # necessary.
-        if isinstance(arg, Tensor):
-            tensor = arg
+        if isinstance(arg, Buffer):
+            buffer = arg
         elif isinstance(arg, DLPackArray):
-            tensor = Tensor.from_dlpack(arg)
+            buffer = Buffer.from_dlpack(arg)
         elif isinstance(arg, ScalarType):
             spec = self.input_metadata[idx]
-            tensor = Tensor.scalar(arg, spec.dtype, self.input_devices[idx])
+            buffer = Buffer.scalar(arg, spec.dtype, self.input_devices[idx])
         else:
             raise ValueError(
                 "All positional arguments must be of the type"
-                " `max.driver.Tensor` or a tensor type"
+                " `max.driver.Buffer` or a tensor type"
                 " implementing the dlpack protocol. We do not"
                 f" currently support inputs of the type {type(arg)}."
             )
 
-        input_impls.append(tensor)
+        input_impls.append(buffer)
     return self._execute_device_tensors(input_impls)
 
 
 def _Model_call(
     self: Model, *args: InputType, **kwargs: InputType
-) -> list[Tensor]:
+) -> list[Buffer]:
     bound = self.signature.bind(*args, **kwargs)
     return self.execute(*bound.arguments.values())
 
@@ -436,12 +436,12 @@ class InferenceSession:
         InferenceSession.
 
         Tensors saved with `BINARY` can be loaded using
-        `max.driver.Tensor.mmap()`, but you will have to provide the expected
+        `max.driver.Buffer.mmap()`, but you will have to provide the expected
         dtype and shape.
 
         Tensors saved with `BINARY_MAX_CHECKPOINT` are saved with the shape and
         dtype information, and can be loaded with
-        `max.driver.tensor.load_max_tensor()`.
+        `max.driver.buffer.load_max_buffer()`.
 
         Warning: Even with style set to `NONE`, debug print ops in the graph can
         stop optimizations. If you see performance issues, try fully removing

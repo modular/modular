@@ -22,12 +22,6 @@ eager execution of tensor operations, complementing the graph-based execution
 model provided by :obj:`~max.graph`. The tensor operations automatically compile
 and execute using the MAX runtime.
 
-:class:`~max.experimental.Tensor` is designed to be a high-performance NumPy
-replacement for programming accelerators. It implements numerics through
-high-performance Mojo kernels JIT-compiled for the hardware available, including
-state-of-the-art optimizations like automatic kernel fusion. It is intended as
-a building block for programming large, heterogeneous clusters of accelerators.
-
 **Key Features:**
 
 - **Eager semantics**: Operations give immediate results for quick iteration and feedback.
@@ -37,8 +31,14 @@ a building block for programming large, heterogeneous clusters of accelerators.
     Operations may be easily fused into larger graphs to take advantage of
     the graph compiler's automatic fusions.
 - **Lazy evaluation**: Tensors may be computed lazily until their values are needed.
-- **NumPy compatibility**: Supports common NumPy-like operations and indexing.
-- **Device management**: Supports common NumPy-like operations and indexing.
+- **Familiar API**: Supports common array operations and indexing.
+
+.. note::
+
+  Tensors use lazy evaluation and JIT compilation, which incurs compilation
+  overhead on first execution. This can result in higher latency for initial
+  operations compared to eager frameworks like NumPy or PyTorch. Subsequent
+  executions reuse compiled kernels for better performance.
 
 Create and manipulate tensors with automatic compilation and optimization:
 
@@ -411,7 +411,7 @@ class Tensor(DLPackArray, HasTensorValue):
     - **Eager execution**: Operations execute immediately with automatic compilation.
     - **Lazy evaluation**: Computation may be deferred until results are needed.
     - **High performance**: Uses the Mojo compiler and optimized kernels.
-    - **NumPy-like API**: Supports familiar array operations and indexing.
+    - **Familiar API**: Supports common array operations and indexing.
     - **Device flexibility**: Works seamlessly across CPU and accelerators.
 
     **Creating Tensors:**
@@ -448,6 +448,15 @@ class Tensor(DLPackArray, HasTensorValue):
     compiled and executed when needed. All illegal operations fail immediately
     with clear error messages, ensuring a smooth development experience.
 
+    .. note::
+
+      The lazy evaluation model and JIT compilation introduce compilation overhead
+      on first execution of operations. This results in higher latency for
+      interactive operations compared to eager frameworks like NumPy or PyTorch,
+      particularly when materializing tensor values (e.g., printing or converting
+      to other formats). Subsequent operations on similar shapes and dtypes reuse
+      compiled kernels for improved performance.
+
     **Interoperability:**
 
     Tensors support the DLPack protocol for zero-copy data exchange with NumPy,
@@ -458,14 +467,14 @@ class Tensor(DLPackArray, HasTensorValue):
     #: Underlying memory for a realized tensor.
     #: If the tensor is used in any mutating operations that have
     #: not been realized, this holds the state before any updates.
-    storage: driver.Tensor | None
+    storage: driver.Buffer | None
     #: State for realizing an unrealized tensor.
     state: RealizationState | None
 
     def __init__(
         self,
         *,
-        storage: driver.Tensor | None = None,
+        storage: driver.Buffer | None = None,
         state: RealizationState | None = None,
     ):
         if (storage is None) == (state is None):
@@ -522,7 +531,7 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         if isinstance(array, Tensor):
             return array
-        return Tensor(storage=driver.Tensor.from_dlpack(array))
+        return Tensor(storage=driver.Buffer.from_dlpack(array))
 
     @classmethod
     def constant(
@@ -919,7 +928,7 @@ class Tensor(DLPackArray, HasTensorValue):
         return self.state is None
 
     @property
-    def _backing_value(self) -> driver.Tensor | GraphValue:
+    def _backing_value(self) -> driver.Buffer | GraphValue:
         return self.driver_tensor if self.real else self._graph_value
 
     @property
@@ -930,7 +939,7 @@ class Tensor(DLPackArray, HasTensorValue):
         return self.state.value
 
     @property
-    def driver_tensor(self) -> driver.Tensor:
+    def driver_tensor(self) -> driver.Buffer:
         """A pointer to the underlying memory.
 
         Raises if the tensor is unrealized.
@@ -1193,7 +1202,7 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         return F.transfer_to(self, device)
 
-    def argmax(self, axis: int = -1) -> Tensor:
+    def argmax(self, axis: int | None = -1) -> Tensor:
         """Finds the indices of the maximum values along an axis.
 
         Returns a tensor containing the indices of the maximum values along
@@ -1214,16 +1223,21 @@ class Tensor(DLPackArray, HasTensorValue):
             indices = x.argmax(axis=-1)
             # Result: [1, 2] (index 1 in first row, index 2 in second row)
 
+            # Find argmax over all elements
+            index = x.argmax(axis=None)
+            # Result: 6 (flattened index of maximum value 4.2)
+
         Args:
             axis: The axis along which to find the maximum indices. Defaults
-                to -1 (the last axis).
+                to -1 (the last axis). If None, finds the index of the maximum
+                value across all elements.
 
         Returns:
             Tensor: A tensor containing the indices of the maximum values.
         """
         return F.argmax(self, axis=axis)
 
-    def max(self, axis: int = -1) -> Tensor:
+    def max(self, axis: int | None = -1) -> Tensor:
         """Computes the maximum values along an axis.
 
         Returns a tensor containing the maximum values along the specified axis.
@@ -1247,16 +1261,20 @@ class Tensor(DLPackArray, HasTensorValue):
             col_max = x.max(axis=0)
             # Result: [2.3, 3.5, 4.2, 3.1]
 
+            # Find max over all elements
+            overall_max = x.max(axis=None)
+            # Result: 4.2 (maximum value across all elements)
+
         Args:
             axis: The axis along which to compute the maximum. Defaults to -1
-                (the last axis).
+                (the last axis). If None, computes the maximum across all elements.
 
         Returns:
             Tensor: A tensor containing the maximum values along the specified axis.
         """
         return F.max(self, axis=axis)
 
-    def mean(self, axis: int = -1) -> Tensor:
+    def mean(self, axis: int | None = -1) -> Tensor:
         """Computes the mean values along an axis.
 
         Returns a tensor containing the arithmetic mean of values along the
@@ -1281,16 +1299,20 @@ class Tensor(DLPackArray, HasTensorValue):
             col_mean = x.mean(axis=0)
             # Result: [1.5, 3.5, 5.5, 7.5] (mean of each column)
 
+            # Compute mean over all elements
+            overall_mean = x.mean(axis=None)
+            # Result: 4.5 (mean of all elements)
+
         Args:
             axis: The axis along which to compute the mean. Defaults to -1
-                (the last axis).
+                (the last axis). If None, computes the mean across all elements.
 
         Returns:
             Tensor: A tensor containing the mean values along the specified axis.
         """
         return F.mean(self, axis=axis)
 
-    def sum(self, axis: int = -1) -> Tensor:
+    def sum(self, axis: int | None = -1) -> Tensor:
         """Computes the sum of values along an axis.
 
         Returns a tensor containing the sum of values along the specified axis.
@@ -1315,9 +1337,13 @@ class Tensor(DLPackArray, HasTensorValue):
             col_sum = x.sum(axis=0)
             # Result: [5.0, 7.0, 9.0] (sum of each column)
 
+            # Sum over all elements
+            total = x.sum(axis=None)
+            # Result: 21.0 (sum of all elements)
+
         Args:
             axis: The axis along which to compute the sum. Defaults to -1
-                (the last axis).
+                (the last axis). If None, computes the sum across all elements.
 
         Returns:
             Tensor: A tensor containing the sum along the specified axis.
@@ -1357,7 +1383,7 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             Tensor: A tensor containing the values clipped to the specified range.
         """
-        x = self
+        x: Tensor = self
         if min is not None:
             x = F.max(x, min)
         if max is not None:

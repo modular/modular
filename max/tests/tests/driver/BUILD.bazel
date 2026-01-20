@@ -22,8 +22,8 @@ modular_py_test(
 modular_py_test(
     name = "gpu_tests",
     srcs = [
+        "accelerator_tests/test_buffer.py",
         "accelerator_tests/test_device.py",
-        "accelerator_tests/test_tensor.py",
     ],
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

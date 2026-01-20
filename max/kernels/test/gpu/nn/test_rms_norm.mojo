@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import sqrt
 from random import rand
 
@@ -41,16 +38,16 @@ fn compute_rms[
 
 
 fn run_rms_norm_gpu[
-    dtype: DType, rank: Int
+    rank: Int, //, dtype: DType, *, static_cols: Int = UNKNOWN_VALUE
 ](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     print("== run_rms_norm_gpu")
 
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var data_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var res = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(cols)
+    var data_h = alloc[Scalar[dtype]](rows * cols)
+    var res = alloc[Scalar[dtype]](rows * cols)
+    var gamma_h = alloc[Scalar[dtype]](cols)
 
     rand[dtype](data_h, rows * cols)
 
@@ -62,8 +59,13 @@ fn run_rms_norm_gpu[
 
     var param_shape = Index(cols)
 
-    comptime layout = Layout.row_major[rank]()
-    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    fn build_data_layout() -> Layout:
+        var layout_shape = IndexList[rank](UNKNOWN_VALUE)
+        layout_shape[rank - 1] = static_cols
+        return Layout.row_major(layout_shape)
+
+    comptime layout = build_data_layout()
+    comptime layout_1d = Layout.row_major(static_cols)
     var data_buf = LayoutTensor[dtype, layout](
         data_d, RuntimeLayout[layout].row_major(shape)
     )
@@ -76,8 +78,8 @@ fn run_rms_norm_gpu[
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
 
-    @__copy_capture(data_buf)
     @always_inline
+    @__copy_capture(data_buf)
     @parameter
     fn input_fn[
         width: Int, _rank: Int
@@ -141,3 +143,11 @@ def main():
         run_rms_norm_gpu[DType.float32](ctx, Index(2, 16385))
         run_rms_norm_gpu[DType.bfloat16](ctx, Index(3000, 32, 128), rtol=2e-2)
         run_rms_norm_gpu[DType.bfloat16](ctx, Index(2999, 31, 128), rtol=2e-2)
+
+        # Test static shape dispatch.
+        run_rms_norm_gpu[DType.bfloat16, static_cols=4096](
+            ctx, Index(2, 4096), rtol=2e-2
+        )
+        run_rms_norm_gpu[DType.bfloat16, static_cols=16384](
+            ctx, Index(2, 16384), rtol=2e-2
+        )

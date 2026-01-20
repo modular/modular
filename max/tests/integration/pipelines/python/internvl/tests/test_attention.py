@@ -23,7 +23,7 @@ from internvl_impl.configuration_intern_vit import (
 from internvl_impl.modeling_intern_vit import (
     InternAttention as InternVisionAttention,
 )
-from max.driver import Accelerator, Device, Tensor
+from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -111,7 +111,7 @@ def generate_max_outputs(
     compiled = session.load(graph, weights_registry=attention.state_dict())
 
     # Execute the model and get the first result
-    result = compiled.execute(Tensor.from_dlpack(input_tensor).to(device))
+    result = compiled.execute(Buffer.from_dlpack(input_tensor).to(device))
     # Convert result back to torch tensor
     max_tensor = result[0]
     return from_dlpack(max_tensor)

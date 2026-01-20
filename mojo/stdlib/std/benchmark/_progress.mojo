@@ -115,6 +115,5 @@ struct Progress(ImplicitlyCopyable):
         _hide_cursor()
         _show_cursor()
 
-    fn __exit__(self, err: Error) -> Bool:
+    fn __exit__(self, err: Error):
         self.__exit__()
-        return Bool(err)

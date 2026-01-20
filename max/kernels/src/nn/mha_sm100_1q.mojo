@@ -20,7 +20,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 
 from gpu import warp_id
-import gpu.warp as warp
+import gpu.primitives.warp as warp
 from algorithm.functional import unswitch
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -31,14 +31,14 @@ from gpu import (
     thread_idx,
     block_idx,
 )
-from gpu.cluster import elect_one_sync
+from gpu.primitives.cluster import elect_one_sync
 from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import external_memory
-from gpu.mma import MMAOperandDescriptor
-from gpu.mma_sm100 import (
+from gpu.compute.mma import MMAOperandDescriptor
+from gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptor,
     UMMAInsDescriptor,
     UMMAKind,
@@ -46,7 +46,7 @@ from gpu.mma_sm100 import (
     mma_arrive,
 )
 from gpu.sync import named_barrier
-from gpu.tcgen05 import (
+from gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -109,7 +109,6 @@ from nn.mha_utils import (
     MHAPartitionScheme,
     OptionallyStaticInt,
     _is_decoding,
-    get_start_and_end_for_partitions,
 )
 from nn.softmax import (
     _online_softmax_correction,
@@ -1350,7 +1349,7 @@ fn mha_sm100_dispatch[
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
     var max_prompt_len: UInt32 = max_prompt_len_arg.as_uint32()
-    var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, BM)
+    var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, UInt32(BM))
     var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
     comptime num_scheduler_heads = config.num_heads // UInt(
@@ -1392,7 +1391,7 @@ fn mha_sm100_dispatch[
     ](ctx)
 
     comptime SchedulerType = TransientScheduler[
-        scheduler_tile_shape, num_scheduler_heads
+        UInt32(scheduler_tile_shape), UInt32(num_scheduler_heads)
     ]
     var scheduler: SchedulerType = SchedulerType()
 
@@ -1838,7 +1837,7 @@ fn _mha_sm100_enqueue[
     }
 
     var max_num_prompt_tiles: UInt32 = ceildiv(
-        max_seq_len.as_uint32(), config.block_m()
+        max_seq_len.as_uint32(), UInt32(config.block_m())
     )
     var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
@@ -1883,7 +1882,9 @@ fn _mha_sm100_enqueue[
         grid_dim=SchedulerType.grid_dim(batch_size, block_x),
         block_dim=(Int(num_threads), 1, 1),
         shared_mem_bytes=Int(smem_use),
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 
@@ -1892,7 +1893,7 @@ fn _mha_sm100_enqueue[
 @__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-        config.num_threads[True]()
+        Int32(config.num_threads[True]())
     )
 )
 fn _mha_sm100[
@@ -2029,7 +2030,7 @@ fn _mha_sm100[
     # num_softmax_threads ignores the producers
     # actual number of threads is num_softmax_threads + 128
     comptime pipeline_stages = Int(config.num_pipeline_stages)
-    var tid: UInt32 = thread_idx.x
+    var tid = UInt32(thread_idx.x)
     # warp group idx concept is still useful for sm100
     # because sets of 4 warps access tmem;
     # warp group idx gives index into sets of 16 lanes
@@ -2291,7 +2292,9 @@ fn _mha_sm100[
         )
 
     var position: PositionType = get_position(initial_seq_info)
-    startend = position.get_start_and_end_for_partitions(partition)
+    startend = position.get_start_and_end_for_partitions[
+        page_size = KVLUTType.page_size
+    ](partition, mask)
     var kv_tile_start_row: UInt32 = startend[0]
     var end: UInt32 = startend[1]
 
@@ -2334,7 +2337,9 @@ fn _mha_sm100[
                 kv_input_row_offsets,
             )
         elif warp_id() == 0:  # warp id == 0: Q @ K'
-            startend = position.get_start_and_end_for_partitions(partition)
+            startend = position.get_start_and_end_for_partitions[
+                page_size = KVLUTType.page_size
+            ](partition, mask)
             var kv_tile_start_row: UInt32 = startend[0]
             var end: UInt32 = startend[1]
 
@@ -2418,7 +2423,9 @@ fn _mha_sm100[
                 kv_pipeline_states.step()
 
         elif warp_id() == 1:  # warp id 1: P @ V
-            startend = position.get_start_and_end_for_partitions(partition)
+            startend = position.get_start_and_end_for_partitions[
+                page_size = KVLUTType.page_size
+            ](partition, mask)
             var kv_tile_start_row: UInt32 = startend[0]
             var end: UInt32 = startend[1]
 
@@ -2518,7 +2525,7 @@ fn _mha_sm100[
         # Coordinates of the current warp.
         var elect_one_warp = warp_id == 0
 
-        var lane: UInt32 = lane_id()
+        var lane = UInt32(lane_id())
         var elect_one_thread = thread_idx.x == 128
 
         var warp_y: UInt32 = warp_id  # // num_warps_n

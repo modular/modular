@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 import torch
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -45,7 +45,7 @@ IDEFICS3_VISION_CONFIG = {
 }
 
 
-def create_config_object(config_dict: dict) -> SimpleNamespace:
+def create_config_object(config_dict: dict) -> SimpleNamespace:  # type: ignore
     """Create a config object from dictionary that HuggingFace expects."""
     config = SimpleNamespace()
     for key, value in config_dict.items():
@@ -99,7 +99,7 @@ def create_idefics3_attention_weights(
 
 @torch.no_grad()
 def generate_pytorch_outputs(
-    config: dict,
+    config: dict,  # type: ignore
     attention_weights: dict[str, torch.Tensor],
     input_tensor: torch.Tensor,
     output_attentions: bool = False,
@@ -125,7 +125,7 @@ def generate_pytorch_outputs(
 
 
 def generate_max_outputs(
-    config: dict,
+    config: dict,  # type: ignore
     attention_weights: dict[str, torch.Tensor],
     input_tensor: torch.Tensor,
     dtype: DType = DType.bfloat16,
@@ -176,7 +176,7 @@ def generate_max_outputs(
     graph = build_attention_model()
     model = session.load(graph, weights_registry=attention.state_dict())
 
-    x_tensor = Tensor.from_dlpack(input_tensor).to(cuda)
+    x_tensor = Buffer.from_dlpack(input_tensor).to(cuda)
     max_output = model.execute(x_tensor)[0]
 
     return max_output

@@ -23,10 +23,10 @@ import max._core.driver
 import max._core.dtype
 import typing_extensions
 from max import mlir
-from max._core.driver import Tensor
+from max._core.driver import Buffer
 from max._core_types.driver import DLPackArray
 
-InputType = DLPackArray | Tensor | int | float | bool
+InputType = DLPackArray | Buffer | int | float | bool
 
 class TensorSpec:
     """
@@ -112,7 +112,7 @@ class Model:
     def signature(self) -> inspect.Signature:
         """Get input signature for model."""
 
-    def execute(self, *args: InputType) -> list[Tensor]:
+    def execute(self, *args: InputType) -> list[Buffer]:
         """
         Executes the model with the provided input and returns the outputs.
 
@@ -126,7 +126,7 @@ class Model:
         Args:
             args:
               A list of input tensors. We currently support :obj:`np.ndarray`,
-              :obj:`torch.Tensor`, and :obj:`max.driver.Tensor` inputs. All
+              :obj:`torch.Tensor`, and :obj:`max.driver.Buffer` inputs. All
               inputs will be copied to the device that the model is resident on
               prior to executing.
 
@@ -149,10 +149,10 @@ class Model:
 
             ValueError: If positional inputs are not one of the supported
               types, i.e. :obj:`np.ndarray`, :obj:`torch.Tensor`, and
-              :obj:`max.driver.Tensor`.
+              :obj:`max.driver.Buffer`.
         """
 
-    def __call__(self, *args: InputType, **kwargs: InputType) -> list[Tensor]:
+    def __call__(self, *args: InputType, **kwargs: InputType) -> list[Buffer]:
         """
         Executes the model with the provided input and returns the outputs.
 
@@ -180,7 +180,7 @@ class Model:
 
               * Any tensors implementing the DLPack protocol, such as
                 :obj:`np.ndarray`, :obj:`torch.Tensor`
-              * Max Driver tensors, i.e. :obj:`max.driver.Tensor`
+              * Max Driver buffers, i.e. :obj:`max.driver.Buffer`
               * Scalar inputs, i.e. :obj:`bool`, :obj:`float`, :obj:`int`,
                 :obj:`np.generic`
 
@@ -200,7 +200,7 @@ class Model:
 
             ValueError: If positional inputs are not one of the supported
               types, i.e. :obj:`np.ndarray`, :obj:`torch.Tensor`, and
-              :obj:`max.driver.Tensor`.
+              :obj:`max.driver.Buffer`.
 
             ValueError: If an input name does not correspond to what the model
               expects.
@@ -213,8 +213,8 @@ class Model:
 
     def __repr__(self) -> str: ...
     def _execute_device_tensors(
-        self, tensors: Sequence[max._core.driver.Tensor]
-    ) -> list[max._core.driver.Tensor]: ...
+        self, tensors: Sequence[max._core.driver.Buffer]
+    ) -> list[max._core.driver.Buffer]: ...
     def _export_mef(self, path: str) -> None:
         """
         Exports the compiled model as a mef to a file.

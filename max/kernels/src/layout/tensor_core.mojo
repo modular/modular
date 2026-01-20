@@ -66,7 +66,7 @@ from sys.info import (
 
 from gpu import WARP_SIZE, lane_id, thread_idx
 from gpu.intrinsics import lop, ds_read_tr16_b64
-from gpu.mma import get_amd_bf8_dtype, get_amd_fp8_dtype, ld_matrix, mma
+from gpu.compute.mma import get_amd_bf8_dtype, get_amd_fp8_dtype, ld_matrix, mma
 from layout._utils import load_to_simd, idx2crd
 from layout.int_tuple import product
 from layout.layout import Layout

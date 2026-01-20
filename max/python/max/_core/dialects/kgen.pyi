@@ -681,6 +681,29 @@ class GetWitnessAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
+class IsStructTypeAttr(max._core.Attribute):
+    """
+    The `#kgen.is_struct_type` attribute returns true if the given type value
+    refers to a Mojo struct type, false otherwise. This is useful for guarding
+    reflection code that needs to avoid compiler errors on non-struct types.
+
+    Example:
+
+    ```mlir
+    #kgen.is_struct_type<#MyStruct> : i1
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        type: max._core.dialects.builtin.IntegerType,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.dialects.builtin.IntegerType: ...
+
 class LLVMBitcodeLibArrayAttr(max._core.Attribute):
     """
     The `#kgen.llvm.bitcode.libs` attribute represents an array of LLVM
@@ -4547,12 +4570,21 @@ class StructType(max._core.Type):
     def __init__(self, types: Sequence[max._core.Type]) -> None: ...
     @overload
     def __init__(
-        self, element_types: Sequence[max._core.Type], is_memory_only: bool
+        self, types: Sequence[max._core.Type], is_memory_only: bool
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        element_types: Sequence[max._core.Type],
+        is_memory_only: bool,
+        min_alignment: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def element_types(self) -> Sequence[max._core.Type]: ...
     @property
     def is_memory_only(self) -> bool: ...
+    @property
+    def min_alignment(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class TargetType(max._core.Type):
     """

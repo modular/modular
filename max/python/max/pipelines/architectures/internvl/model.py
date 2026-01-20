@@ -21,7 +21,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Device, DLPackArray, Tensor
+from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Type, Value
@@ -131,36 +131,36 @@ class _VisionStacker:
 class InternVLInputs(ModelInputs):
     """A class representing inputs for the InternVL model."""
 
-    input_ids: Tensor
+    input_ids: Buffer
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: list[Tensor]
+    input_row_offsets: list[Buffer]
     """Per-device tensors containing the offsets for each row in the ragged
     input sequence.
     """
 
-    signal_buffers: list[Tensor]
+    signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
     # Vision inputs.
-    pixel_values: list[Tensor] | None = None
+    pixel_values: list[Buffer] | None = None
     """Pixel values for vision inputs."""
 
-    image_token_indices: list[Tensor] | None = None
+    image_token_indices: list[Buffer] | None = None
     """Per-device pre-computed indices of image tokens in the input sequence."""
 
-    return_n_logits: Tensor
+    return_n_logits: Buffer
     """Number of logits to return, used by speculative decoding for example."""
 
     def __init__(
         self,
-        input_ids: Tensor,
-        input_row_offsets: list[Tensor],
-        signal_buffers: list[Tensor],
-        return_n_logits: Tensor,
-        pixel_values: list[Tensor] | None = None,
+        input_ids: Buffer,
+        input_row_offsets: list[Buffer],
+        signal_buffers: list[Buffer],
+        return_n_logits: Buffer,
+        pixel_values: list[Buffer] | None = None,
         kv_cache_inputs: KVCacheInputs | None = None,
-        image_token_indices: list[Tensor] | None = None,
+        image_token_indices: list[Buffer] | None = None,
     ) -> None:
         self.input_ids = input_ids
         self.input_row_offsets = input_row_offsets
@@ -177,7 +177,7 @@ class InternVLInputs(ModelInputs):
 
 
 def assert_image_embeddings_invariant(
-    image_embeddings: Sequence[Tensor], image_token_indices: Sequence[Tensor]
+    image_embeddings: Sequence[Buffer], image_token_indices: Sequence[Buffer]
 ) -> None:
     # Check for shape mismatch that causes scatter_nd OOB access.
     for i, (embed, indices) in enumerate(
@@ -207,7 +207,7 @@ class InternVLModel(
     language_model: Model
     """The compiled language model for text generation."""
 
-    _input_row_offsets_prealloc: list[Tensor]
+    _input_row_offsets_prealloc: list[Buffer]
     """Pre-allocated per-device tensors for input row offsets in multi-step
     execution.
     """
@@ -362,7 +362,7 @@ class InternVLModel(
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        input_row_offsets_prealloc_host = Tensor.from_numpy(
+        input_row_offsets_prealloc_host = Buffer.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         )
         self._input_row_offsets_prealloc = [
@@ -649,7 +649,7 @@ class InternVLModel(
 
     def _prepare_vision_inputs(
         self, context_batch: Sequence[TextAndVisionContext]
-    ) -> list[Tensor] | None:
+    ) -> list[Buffer] | None:
         """Batches up pixel_values for vision processing."""
         images = []
         for context in context_batch:
@@ -677,7 +677,7 @@ class InternVLModel(
 
         final_images = self._stacker.stack(images)
 
-        tensor = Tensor.from_numpy(final_images)
+        tensor = Buffer.from_numpy(final_images)
 
         # If uint16, interpret as bfloat16 to work around lack of NumPy
         # bfloat16 support.
@@ -688,7 +688,7 @@ class InternVLModel(
 
     def _batch_image_token_indices(
         self, context_batch: Sequence[TextAndVisionContext]
-    ) -> list[Tensor] | None:
+    ) -> list[Buffer] | None:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
 
@@ -700,7 +700,7 @@ class InternVLModel(
                 indices
 
         Returns:
-            Tensor containing all batched indices, or None if no indices found
+            Buffer containing all batched indices, or None if no indices found
         """
         # Collect indices and offsets.
         indices_and_offsets = []
@@ -720,22 +720,22 @@ class InternVLModel(
         )
 
         # Create tensor and distribute to devices.
-        return [Tensor.from_numpy(np_indices).to(dev) for dev in self.devices]
+        return [Buffer.from_numpy(np_indices).to(dev) for dev in self.devices]
 
-    def _create_empty_image_embeddings(self) -> list[Tensor]:
+    def _create_empty_image_embeddings(self) -> list[Buffer]:
         """Create empty image embeddings for text-only inputs."""
         return [
-            Tensor.zeros(
+            Buffer.zeros(
                 shape=[0, self.huggingface_config.llm_config.hidden_size],
                 dtype=self.dtype,
             ).to(dev)
             for dev in self.devices
         ]
 
-    def _create_empty_indices(self) -> list[Tensor]:
+    def _create_empty_indices(self) -> list[Buffer]:
         """Create empty image token indices tensor."""
         return [
-            Tensor.zeros(shape=[0], dtype=DType.int32).to(dev)
+            Buffer.zeros(shape=[0], dtype=DType.int32).to(dev)
             for dev in self.devices
         ]
 
@@ -747,8 +747,8 @@ class InternVLModel(
         assert isinstance(model_inputs, InternVLInputs)
 
         # Process vision inputs if present.
-        image_embeddings: list[Tensor]
-        image_token_indices: list[Tensor]
+        image_embeddings: list[Buffer]
+        image_token_indices: list[Buffer]
         if model_inputs.has_vision_inputs:
             assert model_inputs.pixel_values is not None
             assert model_inputs.image_token_indices is not None
@@ -762,7 +762,7 @@ class InternVLModel(
             image_embeddings = [
                 output
                 for output in vision_outputs
-                if isinstance(output, Tensor)
+                if isinstance(output, Buffer)
             ]
             image_token_indices = model_inputs.image_token_indices
 
@@ -791,16 +791,16 @@ class InternVLModel(
 
         # Return model outputs based on what the language model returns
         if len(language_outputs) == 3:
-            assert isinstance(language_outputs[0], Tensor)
-            assert isinstance(language_outputs[1], Tensor)
-            assert isinstance(language_outputs[2], Tensor)
+            assert isinstance(language_outputs[0], Buffer)
+            assert isinstance(language_outputs[1], Buffer)
+            assert isinstance(language_outputs[2], Buffer)
             return ModelOutputs(
                 next_token_logits=language_outputs[0],
                 logits=language_outputs[1],
                 logit_offsets=language_outputs[2],
             )
         else:
-            assert isinstance(language_outputs[0], Tensor)
+            assert isinstance(language_outputs[0], Buffer)
             return ModelOutputs(
                 next_token_logits=language_outputs[0],
                 logits=language_outputs[0],
@@ -823,7 +823,7 @@ class InternVLModel(
         pixel_values = self._prepare_vision_inputs(context_batch)
 
         # Input row offset type: ["input_row_offsets_len"], UInt32
-        input_row_offsets_host = Tensor.from_numpy(
+        input_row_offsets_host = Buffer.from_numpy(
             np.cumsum(
                 [0] + [ctx.tokens.active_length for ctx in context_batch],
                 dtype=np.uint32,
@@ -836,7 +836,7 @@ class InternVLModel(
         # Input Ids: ["total_seq_len"], Int64
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
-        input_ids = Tensor.from_numpy(tokens).to(self.devices[0])
+        input_ids = Buffer.from_numpy(tokens).to(self.devices[0])
 
         # Batch image token indices, offsetting for position in the batch.
         image_token_indices = self._batch_image_token_indices(context_batch)
@@ -845,7 +845,7 @@ class InternVLModel(
             input_ids=input_ids,
             input_row_offsets=input_row_offsets,
             signal_buffers=self.signal_buffers,
-            return_n_logits=Tensor.from_numpy(
+            return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             pixel_values=pixel_values,
@@ -854,7 +854,7 @@ class InternVLModel(
         )
 
     def prepare_next_token_inputs(
-        self, next_tokens: Tensor, prev_model_inputs: ModelInputs
+        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
     ) -> ModelInputs:
         """Prepares the inputs for subsequent execution steps in a multi-step generation."""
         assert isinstance(prev_model_inputs, InternVLInputs)

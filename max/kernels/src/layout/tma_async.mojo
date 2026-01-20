@@ -2373,7 +2373,7 @@ def _create_tma_descriptor_helper[
 
 
 @always_inline
-def create_tma_tile[
+def create_tensor_tile[
     dtype: DType,
     rank: Int,
     //,
@@ -2805,7 +2805,7 @@ fn create_split_tma[
     var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode](
         ptr, runtime_dim0
     )
-    res = create_tma_tile[
+    res = create_tensor_tile[
         _tile_shape[res.layout](),
         # k_major_tma=is_k_major,
         swizzle_mode=swizzle_mode,
@@ -2860,7 +2860,7 @@ fn create_split_tma[
     var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode](
         ptr, runtime_dim0, runtime_dim1
     )
-    res = create_tma_tile[
+    res = create_tensor_tile[
         _tile_shape[res.layout](),
         swizzle_mode=swizzle_mode,
         __tile_layout = res.layout,

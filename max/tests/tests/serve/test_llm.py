@@ -219,17 +219,16 @@ async def test_llm_new_context_value_error_stream(
 
 
 @pytest.mark.asyncio
-async def test_ttft_recorded_once_per_request() -> None:
-    """Test that TTFT is recorded exactly once per request, not per chunk."""
+async def test_ttft_recorded_once_per_chunk() -> None:
+    """Test that TTFT is recorded exactly once per request, with ITL per chunk."""
     from max.serve.pipelines.llm import TokenGeneratorPipeline
 
-    # Mock METRICS - use MagicMock for context managers (input_time, output_time)
     mock_metrics = MagicMock()
 
     # Create 3 chunks with 2, 3, 2 tokens = 7 total
-    # Expect: 1 TTFT (first token), 6 ITLs (rest)
+    # Expect: 1 TTFT (first chunk), 2 ITLs (remaining 2 chunks)
     test_request_id = RequestID(value="test-request")
-    chunks = [
+    scheduler_responses = [
         TextGenerationOutput(
             request_id=test_request_id,
             tokens=[101, 102],
@@ -250,8 +249,8 @@ async def test_ttft_recorded_once_per_request() -> None:
     async def mock_stream(
         request_id: str, context: Any
     ) -> AsyncGenerator[TextGenerationOutput, None]:
-        for chunk in chunks:
-            yield chunk
+        for response in scheduler_responses:
+            yield response
 
     # Mock context returned by tokenizer
     # Create mock tokens with proper __len__ and active_length
@@ -268,19 +267,33 @@ async def test_ttft_recorded_once_per_request() -> None:
     # Create pipeline mock - Mock() auto-generates nested attributes
     pipeline = Mock()
     pipeline.tokenizer.new_context = AsyncMock(return_value=mock_context)
-    pipeline.tokenizer.decode = AsyncMock(return_value="token")
+    # Mock decode to return combined tokens text
+    pipeline.tokenizer.decode = AsyncMock(return_value="chunk_text")
     pipeline.engine_queue.stream = mock_stream
     pipeline.debug_logging = False
 
-    # Patch METRICS and call the real next_token method.
+    # Patch METRICS and call the real next_token_chunk method.
     # Binding lets us test real method logic with our mock pipeline.
     with patch("max.serve.pipelines.llm.METRICS", mock_metrics):
-        bound_method = TokenGeneratorPipeline.next_token.__get__(
+        bound_method = TokenGeneratorPipeline.next_token_chunk.__get__(
             pipeline, type(pipeline)
         )
-        tokens_yielded = sum([1 async for _ in bound_method(mock_request)])
+        chunks = [chunk async for chunk in bound_method(mock_request)]
 
-    # Verify TTFT called exactly once, ITL called for remaining 6 tokens
+    # Verify TTFT called exactly once, ITL called for remaining 2 chunks
     assert mock_metrics.ttft.call_count == 1
-    assert mock_metrics.itl.call_count == 6
-    assert tokens_yielded == 7
+    assert mock_metrics.itl.call_count == 2
+    assert len(chunks) == 3
+
+    # Verify token counts are preserved
+    total_tokens = sum(chunk.token_count for chunk in chunks)
+    assert total_tokens == 7
+
+    # Verify each chunk has the expected token count
+    assert chunks[0].token_count == 2
+    assert chunks[1].token_count == 3
+    assert chunks[2].token_count == 2
+
+    # Verify decoded_tokens is set for each chunk
+    for chunk in chunks:
+        assert chunk.decoded_tokens == "chunk_text"

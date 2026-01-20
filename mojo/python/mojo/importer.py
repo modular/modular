@@ -124,16 +124,13 @@ class MojoImporter:
         import_path: Sequence[str] | None,
         target: object | None,
     ):
-        # This importer only handles top-level imports. `import foo.bar` is not
-        # supported.
-        if "." in name or import_path is not None:
-            return None
+        name_path = name.replace(".", "/")
 
         mojo_module: MojoModulePath | None = None
         # Search sys.path for the Mojo source file or package
         for path_entry in sys.path:
             # Use the helper function to check this directory
-            mojo_module = find_mojo_module_in_dir(Path(path_entry), name)
+            mojo_module = find_mojo_module_in_dir(Path(path_entry), name_path)
 
             if mojo_module:
                 break  # Found the source, stop searching sys.path

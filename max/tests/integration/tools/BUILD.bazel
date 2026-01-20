@@ -99,8 +99,9 @@ modular_py_library(
         ":create_pipelines",
         "//max/python/max/pipelines/architectures",
         "//max/tests/integration/pipelines/python/test_common",
-        requirement("torch"),
+        "//max/tests/integration/pipelines/python/test_common:vllm_utils",
         requirement("requests"),
+        requirement("torch"),
     ],
 )
 
@@ -181,6 +182,20 @@ modular_py_binary(
         ":hf_config_overrides",
         ":run_models",
         "//max/python/max/entrypoints",
+        requirement("click"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_binary(
+    name = "compare_buffers",
+    testonly = True,
+    srcs = ["compare_buffers.py"],
+    imports = ["."],
+    main = "compare_buffers.py",
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = [
+        "//max/python/max/driver",
         requirement("click"),
         requirement("torch"),
     ],

@@ -22,8 +22,9 @@ from gpu.host import DeviceContext
 from testing import assert_equal
 
 from utils.index import Index
+from sys import has_apple_gpu_accelerator
 
-comptime float_type = DType.float64
+comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
 comptime int_type = DType.int
 
 
@@ -74,7 +75,9 @@ fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
         if col >= width:
             return
         var cx = min_x + (col + iota[float_type, simd_width]()) * scale_x
-        var cy = min_y + Float64(row) * SIMD[float_type, simd_width](scale_y)
+        var cy = min_y + SIMD[float_type, 1](row) * SIMD[
+            float_type, simd_width
+        ](scale_y)
         var c = ComplexSIMD[float_type, simd_width](cx, cy)
         out.store[width=simd_width](
             Index(row, col), mandelbrot_kernel[simd_width](c)
@@ -113,7 +116,9 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
     for i in range(width):
         for j in range(height):
             accum += out_host[i * width + j]
-    assert_equal(Scalar[int_type](4687767697), accum)
+
+    comptime ref_result = 4687767697 if float_type == DType.float64 else 4687810683
+    assert_equal(Scalar[int_type](ref_result), accum)
 
     _ = out_device
 

@@ -11,7 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.cluster import block_rank_in_cluster, cluster_sync, elect_one_sync
+from gpu.primitives.cluster import (
+    block_rank_in_cluster,
+    cluster_sync,
+    elect_one_sync,
+)
 from gpu.host import DeviceContext
 from gpu import block_id_in_cluster, block_idx
 from gpu import warp_id as get_warp_id

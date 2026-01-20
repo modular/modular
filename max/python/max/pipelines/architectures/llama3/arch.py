@@ -45,6 +45,7 @@ llama_arch = SupportedArchitecture(
         SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
         SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float4_e2m1fnx2: [KVCacheStrategy.PAGED],
     },
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,

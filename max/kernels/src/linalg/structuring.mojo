@@ -322,7 +322,7 @@ struct SMemTileArrayType[
 
 
 @register_passable("trivial")
-struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
+struct SMemArrayType[type: __TypeOfAllTypes, size: Int]:
     """Shared memory array of fixed size.
 
     Parameters:
@@ -391,7 +391,7 @@ struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
 comptime eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
 
-comptime SMemPtr[type: AnyTrivialRegType] = UnsafePointer[
+comptime SMemPtr[type: __TypeOfAllTypes] = UnsafePointer[
     type, address_space = AddressSpace.SHARED
 ]
 
@@ -431,7 +431,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
         dtype: DType, layout: Layout, num_tiles: Int
     ] = SMemTileArrayType[dtype, layout, num_tiles, Self.SMBP.alignment]
 
-    comptime Array[type: AnyTrivialRegType, size: Int] = SMemArrayType[
+    comptime Array[type: __TypeOfAllTypes, size: Int] = SMemArrayType[
         type, size
     ]
 
@@ -483,7 +483,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
 
     @always_inline
     fn build[
-        type: AnyTrivialRegType,
+        type: __TypeOfAllTypes,
         size: Int,
         //,
         T: type_of(Self.Array[type, size]),
@@ -499,5 +499,5 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
 
 
 comptime NVIDIASharedMemoryManager = SharedMemoryManager[
-    NVIDIASharedMemoryBasePtr
+    NVIDIASharedMemoryBasePtr[]
 ]

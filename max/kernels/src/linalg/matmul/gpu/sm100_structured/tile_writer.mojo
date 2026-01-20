@@ -40,6 +40,7 @@ from layout.tma_async import TMATensorTile
 from linalg.structuring import SMemTileArrayType, SMemTileType
 from linalg.utils import elementwise_compute_lambda_type
 from utils.fast_div import FastDiv
+from utils.static_tuple import StaticTuple
 
 
 # =============================================================================
@@ -140,7 +141,7 @@ fn store_fragment_to_smem[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](vec: SIMD, dst: SMemTileType, warp_offset: UInt32 = 0):
     """Store fragment to SMEM via st.matrix instruction."""
-    from gpu.mma import st_matrix
+    from gpu.compute.mma import st_matrix
     from memory import bitcast
     from gpu import lane_id as get_lane_id
 
@@ -250,8 +251,12 @@ struct TMAStoreCoords[
     cta_group: Int,
     c_smem_shape0: Int,
     stage: Int,
+    batched: Bool = False,
 ]:
-    """TMA store coordinates and warp election for SM100 epilogue."""
+    """TMA store coordinates and warp election for SM100 epilogue.
+
+    When batched=True, includes a batch coordinate for 3D TMA stores.
+    """
 
     comptime CG2_TMA_BM = Self.c_smem_shape0 if Self.MMA_M == 256 else Self.BM
     comptime CG1_TMA_BM = Self.c_smem_shape0
@@ -260,12 +265,47 @@ struct TMAStoreCoords[
 
     var coord_m: UInt
     var coord_n: UInt
+    var coord_b: UInt  # Batch coordinate (only used when batched=True)
     var elect_one_warp: Bool
     var c_smem_coord_m: UInt
 
     @always_inline
     fn __init__(out self, c_coord: Tuple[UInt32, UInt32], warp_id: UInt32):
-        """Compute TMA store coordinates from tile coords and warp ID."""
+        """Compute TMA store coordinates from 2D tile coords and warp ID."""
+        # Warp election
+        var cg2_elect = warp_id == 0 if Self.MMA_M == 256 else warp_id % 2 == 0
+        var cg1_elect = warp_id == 0
+        self.elect_one_warp = cg2_elect if Self.cta_group == 2 else cg1_elect
+
+        # N coordinate
+        var n_base = c_coord[1] * UInt32(Self.MMA_N) + UInt32(
+            Self.stage_n_offset
+        )
+        var n_mma128 = n_base + UInt32(Self.BN * Int(warp_id // 2))
+        var cg2_n = n_base if Self.MMA_M == 256 else n_mma128
+        self.coord_n = UInt(cg2_n if Self.cta_group == 2 else n_base)
+
+        # M coordinate
+        self.coord_m = UInt(c_coord[0]) * UInt(Self.BM)
+
+        # Batch coordinate (default 0 for 2D)
+        self.coord_b = UInt(0)
+
+        # SMEM tile offset
+        var cg2_smem_m: UInt
+
+        @parameter
+        if Self.MMA_M == 256:
+            cg2_smem_m = 0
+        else:
+            cg2_smem_m = UInt(warp_id // 2)
+        self.c_smem_coord_m = cg2_smem_m if Self.cta_group == 2 else UInt(0)
+
+    @always_inline
+    fn __init__(
+        out self, c_coord: Tuple[UInt32, UInt32, UInt32], warp_id: UInt32
+    ):
+        """Compute TMA store coordinates from 3D tile coords and warp ID."""
         # Warp election
         var cg2_elect = warp_id == 0 if Self.MMA_M == 256 else warp_id % 2 == 0
         var cg1_elect = warp_id == 0
@@ -280,8 +320,17 @@ struct TMAStoreCoords[
         # M coordinate
         self.coord_m = UInt(c_coord[0]) * UInt(Self.BM)
 
+        # Batch coordinate
+        self.coord_b = UInt(c_coord[2])
+
         # SMEM tile offset
-        var cg2_smem_m = UInt(0 if Self.MMA_M == 256 else Int(warp_id // 2))
+        var cg2_smem_m: UInt
+
+        @parameter
+        if Self.MMA_M == 256:
+            cg2_smem_m = 0
+        else:
+            cg2_smem_m = UInt(warp_id // 2)
         self.c_smem_coord_m = cg2_smem_m if Self.cta_group == 2 else UInt(0)
 
 
@@ -304,10 +353,12 @@ struct TMAStoreExecutor[
     c_swizzle: TensorMapSwizzle,
     transpose_c: Bool,
     is_lower_frag_required: Bool,
+    batched: Bool = False,
 ]:
     """Execute TMA store from SMEM to GMEM with proper tiling.
 
     Handles 3 paths: transpose+cta_group2+MMA128, transpose+other, non-transpose.
+    When batched=True, uses 3D coordinates (M, N, Batch) for TMA stores.
     """
 
     comptime swizzle_width = Self.c_swizzle.bytes() // size_of[Self.c_type]()
@@ -337,6 +388,7 @@ struct TMAStoreExecutor[
             Self.cta_group,
             Self.c_smem_shape0,
             _,
+            Self.batched,
         ],
         c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
         warp_id: UInt32,
@@ -376,6 +428,7 @@ struct TMAStoreExecutor[
             Self.cta_group,
             Self.c_smem_shape0,
             _,
+            Self.batched,
         ],
         c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
         warp_id: UInt32,
@@ -395,10 +448,21 @@ struct TMAStoreExecutor[
                 Self.stageN, Self.stage_contiguous_size // 2
             ](Int(warp_id // 2), 0)
 
-            c_tma_op.async_store(
-                c_smem_split,
-                (store_coords.coord_m, store_coords.coord_n),
-            )
+            @parameter
+            if Self.batched:
+                c_tma_op.async_store(
+                    c_smem_split,
+                    StaticTuple[UInt32, 3](
+                        UInt32(store_coords.coord_m),
+                        UInt32(store_coords.coord_n),
+                        UInt32(store_coords.coord_b),
+                    ),
+                )
+            else:
+                c_tma_op.async_store(
+                    c_smem_split,
+                    (store_coords.coord_m, store_coords.coord_n),
+                )
         else:
             # Path B: Other transpose cases - loop over swizzle tiles
             @parameter
@@ -412,13 +476,27 @@ struct TMAStoreExecutor[
                     Layout.row_major(Self.stageN, Self.swizzle_width)
                 ]()
 
-                c_tma_op.async_store(
-                    c_smem_warp_tile,
-                    (
-                        store_coords.coord_m + UInt(i * Self.swizzle_width),
-                        store_coords.coord_n,
-                    ),
-                )
+                @parameter
+                if Self.batched:
+                    c_tma_op.async_store(
+                        c_smem_warp_tile,
+                        StaticTuple[UInt32, 3](
+                            UInt32(
+                                store_coords.coord_m
+                                + UInt(i * Self.swizzle_width)
+                            ),
+                            UInt32(store_coords.coord_n),
+                            UInt32(store_coords.coord_b),
+                        ),
+                    )
+                else:
+                    c_tma_op.async_store(
+                        c_smem_warp_tile,
+                        (
+                            store_coords.coord_m + UInt(i * Self.swizzle_width),
+                            store_coords.coord_n,
+                        ),
+                    )
 
     @staticmethod
     @always_inline
@@ -438,6 +516,7 @@ struct TMAStoreExecutor[
             Self.cta_group,
             Self.c_smem_shape0,
             _,
+            Self.batched,
         ],
         c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
     ):
@@ -447,10 +526,22 @@ struct TMAStoreExecutor[
         var c_smem_split = c_smem_tile.tile[Self.TMA_BM, Self.stageN](
             Int(store_coords.c_smem_coord_m), 0
         )
-        c_tma_op.async_store(
-            c_smem_split,
-            (store_coords.coord_n, store_coords.coord_m),
-        )
+
+        @parameter
+        if Self.batched:
+            c_tma_op.async_store(
+                c_smem_split,
+                StaticTuple[UInt32, 3](
+                    UInt32(store_coords.coord_n),
+                    UInt32(store_coords.coord_m),
+                    UInt32(store_coords.coord_b),
+                ),
+            )
+        else:
+            c_tma_op.async_store(
+                c_smem_split,
+                (store_coords.coord_n, store_coords.coord_m),
+            )
 
 
 # =============================================================================
@@ -1208,8 +1299,8 @@ fn shared_memory_epilogue_transpose[
                     + swizzle(cj * swizzle_dim + ck)
                     + ci * swizzle_dim * Int(stageN)
                 )
-                var row = local_i + gmem_col
-                var col = local_j + gmem_row
+                var row = local_i + UInt32(gmem_col)
+                var col = local_j + UInt32(gmem_row)
                 if row < Int(M) and col < Int(N):
                     var val = ptr.load[width=simd_size, alignment=alignment]()
                     ptr.store[width=simd_size, alignment=alignment](
@@ -1273,8 +1364,8 @@ fn shared_memory_epilogue_transpose[
 
                     # Undo swizzle to get logical value
                     var ptr = c_smem.ptr + swizzle(offset)
-                    var row = local_i + gmem_col
-                    var col = local_j + gmem_row
+                    var row = local_i + UInt32(gmem_col)
+                    var col = local_j + UInt32(gmem_row)
                     if row < Int(M) and col < Int(N):
                         var val = ptr.load[
                             width=simd_size, alignment=alignment
@@ -1405,10 +1496,12 @@ fn shared_memory_epilogue[
             var col_offset_lower = lower_coord[1][0].get_int()
 
             local_upper_col = (
-                section_offset_upper * (num_stages * stageN) + col_offset_upper
+                section_offset_upper * Int64(num_stages * stageN)
+                + col_offset_upper
             )
             local_lower_col = (
-                section_offset_lower * (num_stages * stageN) + col_offset_lower
+                section_offset_lower * Int64(num_stages * stageN)
+                + col_offset_lower
             )
 
         else:
@@ -1428,10 +1521,10 @@ fn shared_memory_epilogue[
             local_lower_col = offset_lower % Int(shared_n)
 
         # Convert local SMEM coords to global memory coords
-        var gmem_upper_row = local_upper_row + c_row
-        var gmem_upper_col = local_upper_col + gmem_col
-        var gmem_lower_row = local_lower_row + c_row
-        var gmem_lower_col = local_lower_col + gmem_col
+        var gmem_upper_row = local_upper_row + Int64(c_row)
+        var gmem_upper_col = local_upper_col + Int64(gmem_col)
+        var gmem_lower_row = local_lower_row + Int64(c_row)
+        var gmem_lower_col = local_lower_col + Int64(gmem_col)
 
         # Apply epilogue if within bounds
         if gmem_upper_row < Int(M) and gmem_upper_col < Int(N):

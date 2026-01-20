@@ -47,18 +47,25 @@ def run_text_generation(  # noqa: ANN201
     def idefics_request_processor(
         request: MockTextGenerationRequest,
     ) -> dict[str, torch.Tensor]:
+        # Check if prompt already contains chat template tokens
+        has_chat_template = "<|begin_of_text|>" in request.prompt
+
         if request.is_multimodal:
             processed_images = [load_image(image) for image in request.images]
-            return data_processor(
+            inputs = data_processor(
                 images=processed_images,
                 text=request.prompt,
                 return_tensors="pt",
+                add_special_tokens=not has_chat_template,
             ).to(device)
         else:
-            return data_processor(
+            inputs = data_processor(
                 text=request.prompt,
                 return_tensors="pt",
+                add_special_tokens=not has_chat_template,
             ).to(device)
+
+        return inputs
 
     return run_text_generation_with_custom_image_processing(
         model=model,

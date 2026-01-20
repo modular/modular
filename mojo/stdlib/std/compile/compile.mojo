@@ -84,7 +84,7 @@ struct _PopulateInfo:
 @fieldwise_init
 @register_passable("trivial")
 struct CompiledFunctionInfo[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     func: func_type,
     target: _TargetType,
 ](Stringable, Writable):
@@ -220,7 +220,7 @@ fn _get_emission_kind_id[emission_kind: StaticString]() -> Int:
 
 @always_inline
 fn compile_info[
-    func_type: AnyTrivialRegType,
+    func_type: __TypeOfAllTypes,
     //,
     func: func_type,
     /,

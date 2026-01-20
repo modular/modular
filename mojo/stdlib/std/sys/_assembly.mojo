@@ -27,7 +27,7 @@ from .intrinsics import _mlirtype_is_eq
 @always_inline("nodebug")
 fn inlined_assembly[
     asm: StaticString,
-    result_type: AnyTrivialRegType,
+    result_type: __TypeOfAllTypes,
     *types: AnyType,
     constraints: StaticString,
     has_side_effect: Bool = True,

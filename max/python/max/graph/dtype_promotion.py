@@ -37,7 +37,7 @@ If only non-max objects attempt promotion, it will always fail.
 import numpy as np
 from max.dtype import DType
 
-from ..driver import DLPackArray, Tensor
+from ..driver import Buffer, DLPackArray
 from . import ops
 from .graph import DeviceRef
 from .value import TensorValue, TensorValueLike, _is_strong_tensor_value_like
@@ -140,7 +140,7 @@ def _promote_to_strong(
         )
 
     elif isinstance(value, DLPackArray):
-        tensor = Tensor.from_dlpack(value)
+        tensor = Buffer.from_dlpack(value)
 
         if tensor.dtype.is_float() and strong_dtype.is_integral():
             raise ValueError(

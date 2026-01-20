@@ -35,18 +35,10 @@ from max.nn.float8_config import (
     Float8Config,
     Float8ScaleGranularity,
 )
-from max.nn.kernels import (
-    convert_weights_to_fp8_fnuz_if_needed,
-)
+from max.nn.float8_ops import matmul_float4, matmul_float8
 from max.support.math import ceildiv
 
 from .clamp import clamp
-from .kernels import (
-    dynamic_scaled_matmul,
-    matmul_static_scaled_float8,
-    quantize_dynamic_scaled_float8,
-    quantize_static_scaled_float8,
-)
 from .layer import Module, Shardable
 
 
@@ -135,7 +127,14 @@ class Linear(Module, Shardable):
             self.weight = Weight(
                 name=f"{name}.weight" if name else "weight",
                 dtype=dtype,
-                shape=(out_dim, in_dim),
+                shape=(
+                    out_dim,
+                    in_dim // 2
+                    if float8_config
+                    and float8_config.quant_method == "modelopt"
+                    and float8_config.quant_algo == "NVFP4"
+                    else in_dim,
+                ),
                 device=device,
                 quantization_encoding=quantization_encoding,
             )
@@ -179,29 +178,8 @@ class Linear(Module, Shardable):
                     "Only TENSOR, COLWISE and BLOCK granularities are supported, currently"
                 )
 
-            weight_scale_shape: tuple[int, ...]
             weight_scale = float8_config.weight_scale
-            if weight_scale.is_rowwise:
-                weight_scale_shape = (int(self.weight.shape[0]), 1)
-            elif weight_scale.is_tensor:
-                weight_scale_shape = ()
-            elif weight_scale.is_block:
-                assert float8_config.weight_scale.block_size is not None
-                weight_scale_shape = (
-                    ceildiv(
-                        int(self.weight.shape[0]),
-                        float8_config.weight_scale.block_size[0],
-                    ),
-                    ceildiv(
-                        int(self.weight.shape[1]),
-                        float8_config.weight_scale.block_size[1],
-                    ),
-                )
-            else:
-                raise ValueError(
-                    "only row-wise and tensor scaling are "
-                    f"supported currently, but got {weight_scale.granularity}"
-                )
+            weight_scale_shape = self._infer_weight_scale_shape(float8_config)
 
             self.weight_scale = Weight(
                 name=f"{name}.weight_scale" if name else "weight_scale",
@@ -212,6 +190,46 @@ class Linear(Module, Shardable):
                 device=DeviceRef.CPU(),
                 quantization_encoding=quantization_encoding,
             )
+            if (
+                float8_config
+                and float8_config.quant_method == "modelopt"
+                and float8_config.quant_algo == "NVFP4"
+            ):
+                self.weight_scale_2 = Weight(
+                    name=f"{name}.weight_scale_2" if name else "weight_scale_2",
+                    dtype=float8_config.input_scale.dtype,
+                    shape=(),
+                    device=DeviceRef.CPU(),
+                    quantization_encoding=quantization_encoding,
+                )
+
+    def _infer_weight_scale_shape(
+        self, float8_config: Float8Config
+    ) -> tuple[int, ...]:
+        weight_scale_shape: tuple[int, ...]
+        weight_scale = float8_config.weight_scale
+        if weight_scale.is_rowwise:
+            weight_scale_shape = (int(self.weight.shape[0]), 1)
+        elif weight_scale.is_tensor:
+            weight_scale_shape = ()
+        elif weight_scale.is_block:
+            assert float8_config.weight_scale.block_size is not None
+            weight_scale_shape = (
+                ceildiv(
+                    int(self.weight.shape[0]),
+                    float8_config.weight_scale.block_size[0],
+                ),
+                ceildiv(
+                    int(self.weight.shape[1]),
+                    float8_config.weight_scale.block_size[1],
+                ),
+            )
+        else:
+            raise ValueError(
+                "only row-wise and tensor scaling are "
+                f"supported currently, but got {weight_scale.granularity}"
+            )
+        return weight_scale_shape
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -392,37 +410,24 @@ class Linear(Module, Shardable):
             assert self.weight_scale is not None
             weight_scale: TensorValue = self.weight_scale
 
-            weight, weight_scale = convert_weights_to_fp8_fnuz_if_needed(
-                weight, weight_scale
-            )
-
-            if self.input_scale is not None:
-                x = quantize_static_scaled_float8(
-                    x, self.input_scale, out_type=weight.dtype
-                )
-
-                res = matmul_static_scaled_float8(
-                    x, weight, self.input_scale, weight_scale
+            if self.float8_config.quant_method == "modelopt":
+                assert self.input_scale is not None
+                assert self.weight_scale_2 is not None
+                res = matmul_float4(
+                    x,
+                    self.weight,
+                    weight_scale,
+                    self.input_scale,
+                    self.weight_scale_2,
+                    self.float8_config,
                 )
             else:
-                x, x_scales = quantize_dynamic_scaled_float8(
+                res = matmul_float8(
                     x,
-                    self.float8_config.input_scale,
-                    self.float8_config.weight_scale,
-                    scales_type=weight_scale.dtype,
-                    out_type=weight.dtype,
-                )
-                if self.device:
-                    weight_scale = weight_scale.to(self.device)
-
-                res = dynamic_scaled_matmul(
-                    x,
-                    weight,
-                    x_scales,
+                    self.weight,
                     weight_scale,
-                    self.float8_config.input_scale,
-                    self.float8_config.weight_scale,
-                    out_type=DType.bfloat16,
+                    self.input_scale,
+                    self.float8_config,
                 )
         else:
             res = x @ weight.T

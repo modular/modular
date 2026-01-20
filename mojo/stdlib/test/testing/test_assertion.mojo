@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin._location import _SourceLocation
+from reflection import SourceLocation
 from python import PythonObject
 from testing import (
     assert_almost_equal,
@@ -51,13 +51,11 @@ def test_assert_messages():
 
 @fieldwise_init
 struct DummyStruct(Equatable, Stringable):
+    """Test struct using default reflection-based __eq__."""
+
     var value: Int
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self.value == other.value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return self.value != other.value
+    # Uses default reflection-based __eq__ from Equatable trait
 
     @no_inline
     fn __str__(self) -> String:
@@ -212,7 +210,7 @@ def test_assert_is_not():
 
 
 def test_assert_custom_location():
-    var location = _SourceLocation(2, 0, "my_file_location.mojo")
+    var location = SourceLocation(2, 0, "my_file_location.mojo")
     try:
         assert_true(
             False,

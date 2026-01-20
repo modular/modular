@@ -22,7 +22,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from bit import next_power_of_two, prev_power_of_two
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
-from gpu.cluster import (
+from gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
@@ -34,10 +34,10 @@ from gpu.host.info import B200
 from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.memory import fence_async_view_proxy, external_memory
-from gpu.mma import st_matrix
-from gpu.mma_sm100 import *
+from gpu.compute.mma import st_matrix
+from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.sync import named_barrier
-from gpu.tcgen05 import *
+from gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
@@ -58,6 +58,7 @@ from layout.tensor_core_async import (
     tile_to_descriptor,
 )
 from layout.tma_async import (
+    create_tensor_tile,
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
@@ -352,8 +353,8 @@ fn multi_stage_store_C[
     mma_shape: IndexList[3],
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
-    num_output_warps: UInt = 4,
-    max_tmem_cols: UInt = 512,
+    num_output_warps: Int = 4,
+    max_tmem_cols: Int = 512,
 ](
     c_iter: LayoutTensorIter[
         c_type,
@@ -439,7 +440,7 @@ fn multi_stage_store_C[
         )
 
         # Guard the write to shared memory is done.
-        named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+        named_barrier[num_output_warps * WARP_SIZE]()
 
         var lane = lane_id()
 
@@ -466,7 +467,7 @@ fn multi_stage_store_C[
         if stage > 0 and stage < num_stages - 1:
             # Guard the tma read from shared memory is done.
             # E.g. stage = 1, this guards the TMA store using buffer 0 is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+            named_barrier[num_output_warps * WARP_SIZE]()
 
     if elect_one_warp:
         tcgen05_release_allocation_lock[cta_group]()
@@ -794,11 +795,11 @@ fn blackwell_kernel_7[
     comptime MMA_N = umma_shape[1]
     comptime MMA_K = umma_shape[2]
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
@@ -807,9 +808,9 @@ fn blackwell_kernel_7[
 
     comptime output_tile_shape = Index(BM, 32)
     comptime c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-    var c_tma_op = create_tma_tile[output_tile_shape, swizzle_mode=c_swizzle](
-        ctx, c
-    )
+    var c_tma_op = create_tensor_tile[
+        output_tile_shape, swizzle_mode=c_swizzle
+    ](ctx, c)
 
     # Configure shared memory usage
     # Total size = capacity - 1KB_reserved_by_L1

@@ -455,7 +455,7 @@ fn radix_sort_pairs_kernel[
 
             @parameter
             if current_bit == 0:
-                output_key_ids[global_offset] = index
+                output_key_ids[global_offset] = Scalar[out_idx_type](index)
             else:
                 output_key_ids[global_offset] = input_key_ids[index]
 
@@ -481,6 +481,11 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
         self._d_buffers = [current, alternate]
         self._selection = 0
         self._size = size
+
+    fn __copyinit__(out self, rhs: Self):
+        self._d_buffers = rhs._d_buffers.copy()
+        self._selection = rhs._selection
+        self._size = rhs._size
 
     @always_inline
     fn current(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:

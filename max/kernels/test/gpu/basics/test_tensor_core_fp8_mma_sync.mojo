@@ -15,7 +15,7 @@ from io.io import _printf
 
 from gpu.host import DeviceContext
 from gpu import thread_idx
-from gpu.mma import mma
+from gpu.compute.mma import mma
 
 
 fn mma_sync_16x8x32_E4M3():

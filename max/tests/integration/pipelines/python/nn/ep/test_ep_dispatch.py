@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
@@ -25,12 +25,14 @@ from test_common.graph_utils import is_b100_b200, is_h100_h200
 # EP_DATA_READY_FLAG constant from ep_comm.mojo
 EP_DATA_READY_FLAG = 1 << 10  # 1024
 
+MAX_GPUS_PER_NODE = 8
+
 
 def verify_ep_dispatch_results(
     results: list,
     per_device_inputs_torch: list[torch.Tensor],
     all_topk_ids_torch: list[torch.Tensor],
-    atomic_counters: list[Tensor],
+    atomic_counters: list[Buffer],
     config: EPConfig,
     n_devices: int,
 ) -> None:
@@ -38,6 +40,11 @@ def verify_ep_dispatch_results(
 
     atomic_counters_torch = [
         torch.from_dlpack(counter) for counter in atomic_counters
+    ]
+    # dispatch_cb counters start at offset dispatch_size = 2 * n_experts + MAX_GPUS_PER_NODE
+    dispatch_size = 2 * config.n_experts + MAX_GPUS_PER_NODE
+    dispatch_cb_counters_torch = [
+        counter[dispatch_size:] for counter in atomic_counters_torch
     ]
 
     # Parse results according to layout:
@@ -57,7 +64,7 @@ def verify_ep_dispatch_results(
         row_offsets_torch = torch.from_dlpack(row_offsets)
         expert_ids_torch = torch.from_dlpack(expert_ids)
         src_token_info_torch = torch.from_dlpack(src_token_info)
-        atomic_counter_torch = atomic_counters_torch[device_idx]
+        dispatch_cb_counter_torch = dispatch_cb_counters_torch[device_idx]
 
         # Verify outputs for each expert on this device
         for expert_idx in range(n_local_experts):
@@ -73,7 +80,7 @@ def verify_ep_dispatch_results(
                 # Find which remote rank this token came from using atomic counters
                 while (
                     remote_rank < n_devices
-                    and atomic_counter_torch[
+                    and dispatch_cb_counter_torch[
                         2 * (curr_local_expert * n_devices + remote_rank)
                     ]
                     <= token_idx + EP_DATA_READY_FLAG
@@ -164,7 +171,7 @@ def test_ep_dispatch(n_devices: int) -> None:
     ]
 
     per_device_inputs = [
-        Tensor.from_dlpack(input).to(devices[i])
+        Buffer.from_dlpack(input).to(devices[i])
         for i, input in enumerate(per_device_inputs_torch)
     ]
 
@@ -179,7 +186,7 @@ def test_ep_dispatch(n_devices: int) -> None:
             torch.int32
         )
         all_topk_ids_torch.append(topk_ids)
-        all_topk_ids.append(Tensor.from_dlpack(topk_ids).to(devices[i]))
+        all_topk_ids.append(Buffer.from_dlpack(topk_ids).to(devices[i]))
 
     ep_manager = EPBatchManager(config)
 

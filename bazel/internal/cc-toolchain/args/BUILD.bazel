@@ -81,6 +81,7 @@ cc_args(
         "-Wsuggest-override",
         "-Wthread-safety",
         "-Wwrite-strings",
+        "-Wundef",
     ],
 )
 

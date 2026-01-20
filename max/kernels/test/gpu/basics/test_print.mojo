@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin._location import __source_location
+from reflection import source_location
 from gpu.host import DeviceContext
 
 
@@ -45,8 +45,8 @@ fn test_gpu_print_formattable() raises:
         # CHECK: SIMD values are: [0.0, -1.0, -inf, 1.7976931348623157e+308]
         print("SIMD values are:", simd)
 
-        # CHECK: test_print.mojo:49:32
-        print(__source_location())
+        # CHECK: test_print.mojo:49:30
+        print(source_location())
 
         # ------------------------------
         # Test printing bfloat16

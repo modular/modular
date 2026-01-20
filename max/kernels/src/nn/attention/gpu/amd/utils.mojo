@@ -317,7 +317,7 @@ struct GlobalMemoryManager[
         output_offset: UInt32,
     ):
         var q_tile_num_rows = min(
-            Self.BM, UInt(seq_len) - q_tile_idx * Self.BM
+            Self.BM, UInt32(seq_len) - q_tile_idx * Self.BM
         ) if not Self.token_gen else Self.group
 
         self.q_offset = q_offset

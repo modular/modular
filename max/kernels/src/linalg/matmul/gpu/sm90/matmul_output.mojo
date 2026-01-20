@@ -19,7 +19,7 @@ from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import lane_id
 from gpu.memory import fence_async_view_proxy
-from gpu.mma import st_matrix
+from gpu.compute.mma import st_matrix
 from gpu.sync import named_barrier
 from layout import IntTuple, Layout, LayoutTensor
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
@@ -71,6 +71,7 @@ struct MatmulTileWriter[
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
+    swapAB: Bool = False,
 ]:
     comptime N = Self.layout.shape[1].value()
     comptime frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[
@@ -136,8 +137,19 @@ struct MatmulTileWriter[
     fn _calculate_output_bounds(self) -> Tuple[UInt32, UInt32]:
         """Calculate valid output bounds for the current block's tile."""
         var rows = self.tensor.dim[0]()
-        var max_row = min(UInt32((self.block_y + 1) * Self.BM), UInt32(rows))
-        var max_col = min(UInt32((self.block_x + 1) * Self.BN), UInt32(Self.N))
+        var max_row: UInt32
+        var max_col: UInt32
+
+        @parameter
+        if Self.swapAB:
+            # swapAB: tile covers rows [block_x * BN, ...] and cols [block_y * BM, ...]
+            max_row = min(UInt32((self.block_x + 1) * Self.BN), UInt32(rows))
+            max_col = min(UInt32((self.block_y + 1) * Self.BM), UInt32(Self.N))
+        else:
+            # Normal: tile covers rows [block_y * BM, ...] and cols [block_x * BN, ...]
+            max_row = min(UInt32((self.block_y + 1) * Self.BM), UInt32(rows))
+            max_col = min(UInt32((self.block_x + 1) * Self.BN), UInt32(Self.N))
+
         return max_row, max_col
 
     @always_inline
@@ -197,12 +209,33 @@ struct MatmulTileWriter[
         check_runtime_bounds: Bool = False,
     ](self, reg_tile: RegTileType[accum_type, reg_tile_layout]):
         """Write from registers to global memory."""
+
+        comptime out_tile_size_m = Self.BM if not Self.swapAB else Self.BN
+        comptime out_tile_size_n = Self.BN if not Self.swapAB else Self.BM
+
+        var m_block = self.block_y if not Self.swapAB else self.block_x
+        var n_block = self.block_x if not Self.swapAB else self.block_y
+
         var output_tile, tile_origin, _ = self.tensor.tile_with_offset[
-            Self.BM, Self.BN
-        ](self.block_y, self.block_x)
+            out_tile_size_m, out_tile_size_n
+        ](m_block, n_block)
+
+        # For normal: M is divided by num_consumer, N stays full
+        # For swapAB: M stays full (BN), N is divided by num_consumer
+        comptime tile_slice_m_regular = Self.BM // Self.num_consumer
+        comptime tile_slice_n_regular = Self.BN
+        comptime tile_slice_m_swapAB = Self.BN
+        comptime tile_slice_n_swapAB = Self.BM // Self.num_consumer
+
+        comptime tile_slice_m = tile_slice_m_regular if not Self.swapAB else tile_slice_m_swapAB
+        comptime tile_slice_n = tile_slice_n_regular if not Self.swapAB else tile_slice_n_swapAB
+
+        var coord_m = Int(self.local_warp_group_idx) if not Self.swapAB else 0
+        var coord_n = 0 if not Self.swapAB else Int(self.local_warp_group_idx)
+
         var consumer_tile, consumer_coords, _ = output_tile.tile_with_offset[
-            Self.BM // Self.num_consumer, Self.BN
-        ](Int(self.local_warp_group_idx), 0)
+            tile_slice_m, tile_slice_n
+        ](coord_m, coord_n)
 
         var tile_coords: OptionalReg[TileCoordinates] = None
         var max_row: OptionalReg[UInt32] = None
@@ -225,6 +258,7 @@ struct MatmulTileWriter[
             epilogue_fn = Self.elementwise_lambda_fn,
             compute_lambda_fn = Self.elementwise_compute_lambda_fn,
             check_runtime_bounds=check_runtime_bounds,
+            swapAB = Self.swapAB,
         ](
             consumer_tile,
             self.warp_group_thread_idx,
@@ -259,10 +293,20 @@ struct MatmulTileWriter[
         """Use st.matrix instructions for optimized bf16 output."""
         var max_row, max_col = self._calculate_output_bounds()
 
-        comptime TMA_BN = tma_layout.shape[
+        comptime TMA_BN_regular = tma_layout.shape[
             1
         ].value() if Self.use_tma_store else Self.WG_BN
-        comptime needs_x2 = Self.BN % Self.WG_BN != 0
+
+        comptime TMA_BN_swapAB = tma_layout.shape[
+            0
+        ].value() if Self.use_tma_store else Self.WG_BM
+
+        comptime TMA_BN = TMA_BN_swapAB if Self.swapAB else TMA_BN_regular
+
+        comptime needs_x2_regular = Self.BN % Self.WG_BN != 0
+        comptime needs_x2_swapAB = Self.BN % Self.WG_BM != 0
+
+        comptime needs_x2 = needs_x2_swapAB if Self.swapAB else needs_x2_regular
 
         constrained[
             needs_x2 == (Self.frag_size % 4 == 0 and Self.frag_size % 8 != 0),
@@ -282,13 +326,17 @@ struct MatmulTileWriter[
             WG_BM = Self.WG_BM,
             WG_BN = Self.WG_BN,
             sub_wg_id=sub_wg_id,
+            swapAB = Self.swapAB,
         ]
 
         comptime num_column_tiles = ceildiv(Self.BN, Self.WG_BN)
-        comptime last_tile = Self.BN // Self.WG_BN
+        comptime num_row_tile = ceildiv(Self.BN, Self.WG_BM)
+
+        comptime num_tile = num_column_tiles if not Self.swapAB else num_row_tile
+        comptime last_tile = Self.BN // Self.WG_BN if not Self.swapAB else Self.BN // Self.WG_BM
 
         @parameter
-        for tile_idx in range(num_column_tiles):
+        for tile_idx in range(num_tile):
             comptime is_partial_tile = needs_x2 and tile_idx == last_tile
 
             # Write fragments to shared memory
@@ -301,14 +349,23 @@ struct MatmulTileWriter[
             )
 
             @parameter
-            for tma_chunk in range(Self.WG_BN // TMA_BN):
+            for tma_chunk in range(
+                (Self.WG_BN if not Self.swapAB else Self.WG_BM) // TMA_BN
+            ):
                 fragment_writer.write_tile(reg_tile, (UInt(0), UInt(tma_chunk)))
 
             named_barrier[Self.num_consumer_threads](10)
 
+            # swapAB: swap tile shape and position
+            comptime tile_rows = Self.WG_BM if Self.swapAB else Self.BM
+            comptime tile_cols = Self.WG_BN
+            var pos_row = tile_idx if Self.swapAB else 0
+            var pos_col = 0 if Self.swapAB else tile_idx
+
             var workgroup_tile, tile_coords, _ = output_tile.tile_with_offset[
-                Self.BM, Self.WG_BN
-            ](0, tile_idx)
+                tile_rows, tile_cols
+            ](pos_row, pos_col)
+
             var global_coords = (
                 rebind[Self.CTensorType.CornerCoordsType](tile_coords)
                 + tile_origin
@@ -387,6 +444,7 @@ struct MatmulTileWriter[
                         thread_layout=thread_layout,
                         simd_size = Self.simd_size,
                         half_tile=is_partial_tile,
+                        swapAB = Self.swapAB,
                     ](workgroup_tile, self.local_thread_idx)
 
                     threadwise_writer.write_tile(
@@ -412,9 +470,19 @@ struct MatmulTileWriter[
         Selects optimized st.matrix path for bf16 when constraints are met,
         otherwise uses general register-to-global path.
         """
+        # Output tile dimensions and block coordinates
+        # For normal: tile is BM x BN, positioned at (block_y, block_x)
+        # For swapAB: tile is BN x BM, positioned at (block_x, block_y)
+        comptime tile_m = Self.BM if not Self.swapAB else Self.BN
+        comptime tile_n = Self.BN if not Self.swapAB else Self.BM
+        var block_row = self.block_y if not Self.swapAB else self.block_x
+        var block_col = self.block_x if not Self.swapAB else self.block_y
+
         var output_tile, tile_origin, _ = self.tensor.tile_with_offset[
-            Self.BM, Self.BN
-        ](self.block_y, self.block_x)
+            tile_m, tile_n
+        ](block_row, block_col)
+
+        comptime output_tile_shape = String(output_tile.layout.shape)
 
         comptime TMA_BN = tma_layout.shape[
             1
@@ -423,7 +491,7 @@ struct MatmulTileWriter[
 
         # Check if st.matrix optimization can be used
         # fmt: off
-        comptime can_use_stmatrix = (
+        comptime can_use_stmatrix_normal = (
             accum_type == DType.float32 and Self.dtype == DType.bfloat16  # F32→BF16
             and Self.frag_size % 4 == 0                               # Register count
             and Self.BM % Self.wgmma_shape[0] == 0                              # M alignment
@@ -433,7 +501,20 @@ struct MatmulTileWriter[
             and Self.BM == Self.WG_BM                                      # Block size
             and row_size_aligned                                      # Row alignment
         )
+
+        comptime can_use_stmatrix_swapAB = (
+            accum_type == DType.float32 and Self.dtype == DType.bfloat16             # F32→BF16
+            and Self.frag_size % 4 == 0                                              # Register count (at least stmatrix x2 can be used)
+            and Self.BM % Self.wgmma_shape[0] == 0                                   # each consumer should get one wgmma tile
+            and Self.WG_BM % 8 == 0                                                  # Shared memory, must have at least 8 rows for swapAB
+            and Self.num_consumer <= 2                                               # Thread limit
+            and Self.BN == Self.wgmma_shape[1]                                       # Tile size
+            and self.BM == Self.WG_BN                                                # Block size (we load by chunks of BM (this checks that this aligns with it))
+            and row_size_aligned                                                     # Row alignment
+        )
+
         # fmt: on
+        comptime can_use_stmatrix = can_use_stmatrix_swapAB if Self.swapAB else can_use_stmatrix_normal
 
         @parameter
         if can_use_stmatrix:
@@ -444,6 +525,9 @@ struct MatmulTileWriter[
                 tile_origin,
             )
         else:
-            self._write_tile_to_gmem[
-                check_runtime_bounds = (Self.N % Self.BN != 0)
-            ](reg_tile)
+            comptime check_bounds = (
+                Self.N % Self.BN != 0
+            ) if not Self.swapAB else (Self.N % Self.BM != 0)
+            self._write_tile_to_gmem[check_runtime_bounds=check_bounds](
+                reg_tile
+            )

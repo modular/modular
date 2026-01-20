@@ -18,6 +18,7 @@ from sys import (
     env_get_int,
     has_accelerator,
     has_amd_gpu_accelerator,
+    has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     simd_width_of,
     size_of,
@@ -28,7 +29,7 @@ from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import barrier, block_dim, global_idx, thread_idx
-from gpu.grid_controls import PDLLevel
+from gpu.primitives.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import A100, B200, H100, MI355X, GPUInfo
 from layout import LayoutTensor, RuntimeLayout
@@ -58,8 +59,8 @@ from ._multistage_gemm_gpu import (
 from .amd import gemm_kernel_amd
 from .sm80.dispatch import create_matmul_configs_ampere
 from .sm90.dispatch import matmul_dispatch_sm90
-from .sm100.dispatch import matmul_dispatch_sm100
-from .sm100.matmul import matmul_sm100_fallback
+from .sm100_structured.dispatch import matmul_dispatch_sm100
+from .sm100_structured.matmul import matmul_sm100_fallback
 
 comptime logger = Logger()
 
@@ -527,6 +528,7 @@ fn _matmul_gpu[
     if (
         matmul_supported_format
         and has_accelerator()
+        and not has_apple_gpu_accelerator()
         and use_tensor_core
         and has_static_NK
     ):
@@ -744,6 +746,7 @@ fn _matmul_gpu[
         a_type in vendor_blas_fallback_dtypes
         and b_type in vendor_blas_fallback_dtypes
         and c_type in vendor_blas_fallback_dtypes
+        and not has_apple_gpu_accelerator()
         # to disable vendor fallback, run export MODULAR_DISABLE_VENDOR_FALLBACK=1 in the environment
         and not env_get_bool["MODULAR_DISABLE_VENDOR_FALLBACK", False]()
     ):

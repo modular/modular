@@ -71,7 +71,7 @@ struct DictKeyError[K: KeyElement](ImplicitlyCopyable, Writable):
 
 
 @fieldwise_init
-struct EmptyDictError(Writable):
+struct EmptyDictError(ImplicitlyCopyable, Writable):
     """A custom error type for when a `Dict` is empty."""
 
     fn write_to(self, mut writer: Some[Writer]):

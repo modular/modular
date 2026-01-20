@@ -1,4 +1,6 @@
-# Mojo deinit argument convention [v2]
+# Mojo `deinit` Argument Convention [v2]
+
+**Status**: Implemented.
 
 This document explores what is hopefully the last argument naming convention
 repainting that we need to figure out, finally bringing the whole system into a

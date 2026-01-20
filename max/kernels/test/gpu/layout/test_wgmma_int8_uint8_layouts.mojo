@@ -15,7 +15,7 @@ from gpu import barrier, warp_id, lane_id
 from gpu.host import DeviceContext
 from gpu import thread_idx
 from gpu.intrinsics import threadfence
-from gpu.mma import (
+from gpu.compute.mma import (
     WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,

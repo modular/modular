@@ -16,18 +16,25 @@ from sys import size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
 import linalg.matmul.vendor.blas as vendor_blas
-from gpu import WARP_SIZE, barrier, warp_id as get_warp_id
-from gpu.cluster import (
+from gpu import (
+    WARP_SIZE,
+    barrier,
+    warp_id as get_warp_id,
+    block_id_in_cluster,
+    block_idx,
+    lane_id,
+    thread_idx,
+)
+from gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync_with_mask,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.id import block_id_in_cluster, block_idx, lane_id, thread_idx
 from gpu.memory import AddressSpace, external_memory
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
+from gpu.compute.arch.mma_nvidia_sm100 import *
+from gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
@@ -36,7 +43,12 @@ from layout.tensor_core_async import (
     tile_to_descriptor,
     tile_sf_layout_k_major,
 )
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tensor_tile,
+    create_tma_tile,
+)
 from internal_utils._utils import ValOrDim, dynamic, static
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, max_finite, min_finite
@@ -593,10 +605,10 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         256,
     ), "MMA_M and MMA_N must be divisible by 128"
 
-    a_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
-    b_tma_op = create_tma_tile[
+    b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
@@ -661,7 +673,7 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         ),
     )
 
-    var a_scales_tma_op = create_tma_tile[
+    var a_scales_tma_op = create_tensor_tile[
         Index(
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
@@ -671,7 +683,7 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         ),
     ](ctx, a_scales_4d)
 
-    var b_scales_tma_op = create_tma_tile[
+    var b_scales_tma_op = create_tensor_tile[
         Index(
             MMA_N // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),

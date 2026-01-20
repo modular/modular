@@ -246,6 +246,10 @@ module_versions(
     python_versions = PYTHON_VERSIONS,
 )
 
+# TODO: Drop once we can directly use cc_binary in parent rules
+compat = use_extension("@rules_cc//cc:extensions.bzl", "compatibility_proxy")
+use_repo(compat, "cc_compatibility_proxy")
+
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
@@ -426,9 +430,9 @@ use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")
 
 http_archive(
     name = "bazel_clang_tidy",
-    sha256 = "354e13c7a5d0ad69c32c509cc244954e40af98b66ad17136c84a6277afe178d4",
-    strip_prefix = "bazel_clang_tidy-496018e020cf0a7d813a2b5a9d246ec55340a7ed",
-    url = "https://github.com/erenon/bazel_clang_tidy/archive/496018e020cf0a7d813a2b5a9d246ec55340a7ed.tar.gz",
+    sha256 = "a1d55ba339bf6952c77e5e48c13a4c86b5c63349bf6bd321e0c01e342d31fc3b",
+    strip_prefix = "bazel_clang_tidy-3897fd6fb52c7dd6b99058f13eabba7a4127baa2",
+    url = "https://github.com/erenon/bazel_clang_tidy/archive/3897fd6fb52c7dd6b99058f13eabba7a4127baa2.tar.gz",
 )
 
 http_archive(

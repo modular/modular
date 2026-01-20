@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
-from max.driver import Tensor
+from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
@@ -53,25 +53,25 @@ logger = logging.getLogger("max.pipelines")
 class DeepseekV3Inputs(DeepseekV2Inputs):
     """A class representing inputs for the DeepseekV3 model."""
 
-    data_parallel_splits: Tensor
+    data_parallel_splits: Buffer
     """Tensor containing the data parallel splits for the MLA layer."""
 
-    batch_context_lengths: list[Tensor]
+    batch_context_lengths: list[Buffer]
     """List of tensors containing the context length of each batch."""
 
-    host_input_row_offsets: Tensor
+    host_input_row_offsets: Buffer
     """Tensor containing the host input row offsets."""
 
     def __init__(
         self,
-        tokens: Tensor,
-        input_row_offsets: Tensor,
-        host_input_row_offsets: Tensor,
-        batch_context_lengths: list[Tensor],
-        signal_buffers: list[Tensor],
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        host_input_row_offsets: Buffer,
+        batch_context_lengths: list[Buffer],
+        signal_buffers: list[Buffer],
         kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: Tensor | None = None,
-        data_parallel_splits: Tensor | None = None,
+        return_n_logits: Buffer | None = None,
+        data_parallel_splits: Buffer | None = None,
     ) -> None:
         self.host_input_row_offsets = host_input_row_offsets
         self.batch_context_lengths = batch_context_lengths
@@ -162,7 +162,14 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         else:
             float8_config = None
 
-        if self.pipeline_config.ep_size == 1:
+        # Disable EP in virtual device mode (compilation-only) since NVSHMEM
+        # functions cannot be linked without real GPU devices
+        if is_virtual_device_mode():
+            ep_config = None
+            logger.info(
+                "Disabling expert parallelism in virtual device mode (compilation-only)"
+            )
+        elif self.pipeline_config.ep_size == 1:
             ep_config = None
         else:
             if self.pipeline_config.ep_size % len(self.devices) != 0:
@@ -192,6 +199,16 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 ep_kwargs["dispatch_fp8_config"] = float8_config.input_scale
 
             ep_config = EPConfig(**ep_kwargs)
+
+        # Determine data_parallel_degree: EP requires data-parallel attention
+        if ep_config is not None:
+            # When EP is used, data parallelism is required for attention
+            data_parallel_degree = len(self.devices)
+        else:
+            # Use the configured value from pipeline_config
+            data_parallel_degree = (
+                self.pipeline_config.model.data_parallel_degree
+            )
 
         norm_dtype = state_dict[
             "layers.0.self_attn.kv_a_layernorm.weight"
@@ -250,9 +267,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             float8_config=float8_config,
             ep_config=ep_config,
             graph_mode=graph_mode,
-            data_parallel_degree=self.pipeline_config.model.data_parallel_degree,
+            data_parallel_degree=data_parallel_degree,
             use_subgraphs=self.pipeline_config.model.use_subgraphs,
             return_logits=self.return_logits,
+            return_hidden_states=self.return_hidden_states,
         )
 
     @classmethod
@@ -429,7 +447,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         dp_size = self.pipeline_config.model.data_parallel_degree
         max_batch_size *= dp_size
 
-        self._host_input_row_offsets_prealloc = Tensor.from_numpy(
+        self._host_input_row_offsets_prealloc = Buffer.from_numpy(
             np.arange(max_batch_size + 1, dtype=np.uint32)
         )
         self._device_input_row_offsets_prealloc = (
@@ -438,7 +456,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         # create batch context lengths tensor for each device
         self._batch_context_lengths_prealloc_cpu = [
-            Tensor.zeros(shape=[1], dtype=DType.int32)
+            Buffer.zeros(shape=[1], dtype=DType.int32)
             for _ in range(len(self.devices))
         ]
 
@@ -455,6 +473,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             }
         # Create the model
         config = self._create_model_config(state_dict)
+
+        n_devices = len(self.devices)
+        if n_devices > 1 and self.pipeline_config.ep_size != n_devices:
+            raise ValueError("Only the EP strategy is supported.")
 
         self.ep_comm_initializer: EPCommInitializer | None = None
         if config.ep_config is not None:
@@ -548,17 +570,28 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             *model_inputs.batch_context_lengths,
             *ep_inputs,
         )
-        if len(model_outputs) == 3:
-            assert isinstance(model_outputs[0], Tensor)
-            assert isinstance(model_outputs[1], Tensor)
-            assert isinstance(model_outputs[2], Tensor)
+        if len(model_outputs) == 4:
+            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(model_outputs[1], Buffer)
+            assert isinstance(model_outputs[2], Buffer)
+            assert isinstance(model_outputs[3], Buffer)
+            return ModelOutputs(
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[1],
+                logit_offsets=model_outputs[2],
+                hidden_states=model_outputs[3],
+            )
+        elif len(model_outputs) == 3:
+            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(model_outputs[1], Buffer)
+            assert isinstance(model_outputs[2], Buffer)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
             )
         else:
-            assert isinstance(model_outputs[0], Tensor)
+            assert isinstance(model_outputs[0], Buffer)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[0],
@@ -605,18 +638,18 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         context_batch = flatten2d(replica_batches)
         # Create tokens
         if len(context_batch) == 0:
-            tokens = Tensor(shape=[0], dtype=DType.int64).to(device0)
-            host_input_row_offsets = Tensor.zeros(shape=[1], dtype=DType.uint32)
+            tokens = Buffer(shape=[0], dtype=DType.int64).to(device0)
+            host_input_row_offsets = Buffer.zeros(shape=[1], dtype=DType.uint32)
         else:
             # Create a ragged token vector of length: sum(len(t) for t in tokens).
-            tokens = Tensor.from_numpy(
+            tokens = Buffer.from_numpy(
                 np.concatenate([ctx.tokens.active for ctx in context_batch])
             ).to(device0)
 
             # Create a ragged token vector of length: sum(len(t) for t in tokens).
             # Get input_row_offsets: start and end position of each batch in the
             # combined total_seq_len dimension.
-            host_input_row_offsets = Tensor.from_numpy(
+            host_input_row_offsets = Buffer.from_numpy(
                 np.cumsum(
                     [0] + [ctx.tokens.active_length for ctx in context_batch],
                     dtype=np.uint32,
@@ -625,8 +658,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         device_input_row_offsets = host_input_row_offsets.to(device0)
 
-        data_parallel_splits = compute_data_parallel_splits(
-            replica_batches, device0, pinned
+        data_parallel_splits = Buffer.from_numpy(
+            compute_data_parallel_splits(replica_batches)
         )
 
         return DeepseekV3Inputs(
@@ -636,15 +669,15 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             batch_context_lengths=self._batch_context_lengths_prealloc_cpu,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Tensor.from_numpy(
+            return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
-            ).to(device0),
+            ),
             data_parallel_splits=data_parallel_splits,
         )
 
     def prepare_next_token_inputs(
         self,
-        next_tokens: Tensor,
+        next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> DeepseekV3Inputs:
         assert isinstance(prev_model_inputs, DeepseekV3Inputs)
