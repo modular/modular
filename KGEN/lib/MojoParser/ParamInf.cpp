@@ -190,10 +190,7 @@ LogicalResult ParamInf::inferSelfFromInitResult(FnTypeGeneratorType signature) {
                          allowImplicitConversions);
     if (selfParam) {
       // TODO: Macro'ize this when error handling logic is fixed.
-      switch (matcher.matchParams(selfParam, retParam)) {
-      case ParamMatcher::Match:
-        break;
-      case ParamMatcher::Error:
+      if (failed(matcher.matchParams(selfParam, retParam))) {
         return reportConflict(idx, retParam, selfParam);
       }
     } else if (!paramFinder.hasReferences(retParam)) {
@@ -204,10 +201,7 @@ LogicalResult ParamInf::inferSelfFromInitResult(FnTypeGeneratorType signature) {
       auto selfType =
           evaluator.getReboundType(signature.getInputParamTypes()[idx]);
       auto selfParam = ParamIndexRefAttr::get(/*depth*/ 0, idx, selfType);
-      switch (matcher.matchParams(retParam, selfParam)) {
-      case ParamMatcher::Match:
-        break;
-      case ParamMatcher::Error:
+      if (failed(matcher.matchParams(retParam, selfParam))) {
         return reportConflict(idx, selfParam, retParam);
       }
     }
@@ -310,11 +304,8 @@ LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
       return success();
 
     // Ok we have an LValue.  The reference element types must match.
-    switch (matcher.matchTypes(argVal.getRValueType(),
-                               expectedType.getReferenceElementType())) {
-    case ParamMatcher::Match:
-      break;
-    case ParamMatcher::Error:
+    if (failed(matcher.matchTypes(argVal.getRValueType(),
+                                  expectedType.getReferenceElementType()))) {
       // ByRef argument types must exactly match, no conversions are allowed.
       auto &diag = getDiag(operand.expr->getLoc());
       diag << "l-value of type " << operand.ir.getIfLValue().getRValueType()
@@ -342,9 +333,8 @@ LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
         valueRefType = valueRefType.getWithMutability(false);
 
       // Refine the element type first.
-      if (matcher.matchTypes(valueRefType.getElementType(),
-                             expectedRef.getElementType()) !=
-          ParamMatcher::Match) {
+      if (failed(matcher.matchTypes(valueRefType.getElementType(),
+                                    expectedRef.getElementType()))) {
         emitWrongTypeDiag(expectedType);
         return failure();
       }
@@ -365,13 +355,11 @@ LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
       }
 
       // Otherwise, match the origins up to infer from the value.
-      switch (matcher.matchTypes(valueRefType, expectedType)) {
-      case ParamMatcher::Match:
+      if (succeeded(matcher.matchTypes(valueRefType, expectedType))) {
         return success();
-      case ParamMatcher::Error:
-        emitWrongTypeDiag(expectedType);
-        return failure();
       }
+      emitWrongTypeDiag(expectedType);
+      return failure();
     }
     // Otherwise, we are binding something like a PValue or SRValue to a
     // reference argument, which doesn't have a origin.  This is a problem
@@ -396,26 +384,19 @@ LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
     // it like any other argument because we can support implicit conversions.
     auto anyOrigin =
         AnyOriginAttr::get(expectedRef.getContext(), /*isMut=*/false);
-    switch (matcher.matchSingleEltStruct(anyOrigin, expectedRef.getOrigin())) {
-    case ParamMatcher::Match:
-      break;
-    case ParamMatcher::Error:
+    if (failed(
+            matcher.matchSingleEltStruct(anyOrigin, expectedRef.getOrigin()))) {
       // Ignore failures because we only want to set a value if none is already
       // known so things aren't ambiguous.
       matcher.resetError();
-      break;
     }
 
     // The address space of the temp will be the default.
     auto addrSpace =
         IntegerAttr::get(IndexType::get(expectedRef.getContext()), 0);
-    switch (matcher.matchSingleEltStruct(addrSpace,
-                                         expectedRef.getAddressSpace())) {
-    case ParamMatcher::Match:
-      break;
-    case ParamMatcher::Error:
+    if (failed(matcher.matchSingleEltStruct(addrSpace,
+                                            expectedRef.getAddressSpace()))) {
       matcher.resetError();
-      break;
     }
 
     // Handle the element type compatibility check below to allow implicit
@@ -497,15 +478,13 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
         return failure();
       }
       // If we found one, we resolve our value to the inferred type.
-      switch (matcher.matchTypes(initType, expectedType)) {
-      case ParamMatcher::Match:
+      if (succeeded(matcher.matchTypes(initType, expectedType))) {
         return success();
-      case ParamMatcher::Error:
-        // TODO: Could improve this to talk about initializers.
-        auto &diag = emitWrongTypeDiag(expectedType);
-        matcher.failureReason->addExplanation(diag);
-        return failure();
       }
+      // TODO: Could improve this to talk about initializers.
+      auto &diag = emitWrongTypeDiag(expectedType);
+      matcher.failureReason->addExplanation(diag);
+      return failure();
     }
 
     auto orValue = operand.ir.getIfOverloadSet();
@@ -543,14 +522,11 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // If the expected type has unresolved bindings, try to infer them from the
   // argument first, before trying implicit conversions etc.
   if (paramFinder.hasReferences(expectedType)) {
-    switch (matcher.matchTypes(argType, expectedType)) {
-    case ParamMatcher::Match:
+    if (succeeded(matcher.matchTypes(argType, expectedType))) {
       return success(); // Types were equal after matching.
-    case ParamMatcher::Error:
-      savedFailureReason = matcher.failureReason;
-      matcher.resetError();
-      break;
     }
+    savedFailureReason = matcher.failureReason;
+    matcher.resetError();
   } else {
     // Zero cost conversions don't count as implicit conversions. We attempt
     // this after trying to match the types to try to infer values first.
@@ -568,13 +544,11 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
 
       // Infer the parameters of this overload candidate against the computed
       // result type of the initializer.
-      switch (matcher.matchTypes(nonmaterializableTarget, expectedType)) {
-      case ParamMatcher::Match:
+      if (succeeded(
+              matcher.matchTypes(nonmaterializableTarget, expectedType))) {
         return success();
-      case ParamMatcher::Error:
-        matcher.resetError();
-        break;
       }
+      matcher.resetError();
     }
   }
 
@@ -588,9 +562,9 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     return failure();
   }
 
-  // FIXME: I do NOT think that we should do a rebind here. In fact, we should
-  // probably revert the any inferred value when doing `matcher.resetError();`.
-  // However, not doing rebind here results in a significant amount of
+  // FIXME: I do NOT think that we should do a reevaluation here. In fact, we
+  // should probably the any inferred value when doing `matcher.resetError()`.
+  // However, not doing reevaluation here results in a significant amount of
   // compilation errors, which we should fix. A common case (that I consider
   // wrong but currently compiles) is:
   //
@@ -685,13 +659,11 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // the computed result type of the initializer.
     if (auto callee = pValue.value()) {
       auto initSig = sugarCast<FnTypeGeneratorType>(callee.getType());
-      switch (matcher.matchTypes(initSig.getUserResultType(), expectedType)) {
-      case ParamMatcher::Match:
+      if (succeeded(
+              matcher.matchTypes(initSig.getUserResultType(), expectedType))) {
         return success();
-      case ParamMatcher::Error:
-        matcher.resetError();
-        break;
       }
+      matcher.resetError();
     }
   }
 
@@ -1262,35 +1234,30 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
         packArgExpr = getGivenBindings().getExpr();
       ParamMatcher matcher(packArgExpr, *this, allowImplicitConversions);
       auto actualVA = VariadicAttr::get(types, variadicType);
-      switch (matcher.matchParams(actualVA, packType.getVariadic())) {
-      case ParamMatcher::Match:
+      if (succeeded(matcher.matchParams(actualVA, packType.getVariadic()))) {
         continue;
-      case ParamMatcher::Error: {
-        // Figure out why:
-        std::optional<std::pair<size_t, size_t>> posNumBoundOr =
-            calculateRequiredPosOperandsForPacks(signature, variadicPackType);
-        // This means that we can not determine a concrete number of packed
-        // arguments, this is always an error.
-        MojoInflightDiag &diag = getDiag({packArgExpr->getLoc()});
-        if (!posNumBoundOr) {
-          diag << "assigning " << numOperands << " operand"
-               << plural(numOperands)
-               << " to an unresolvable variadic pack argument";
-          return failure();
-        }
+      }
+      // Figure out why:
+      std::optional<std::pair<size_t, size_t>> posNumBoundOr =
+          calculateRequiredPosOperandsForPacks(signature, variadicPackType);
+      // This means that we can not determine a concrete number of packed
+      // arguments, this is always an error.
+      MojoInflightDiag &diag = getDiag({packArgExpr->getLoc()});
+      if (!posNumBoundOr) {
+        diag << "assigning " << numOperands << " operand" << plural(numOperands)
+             << " to an unresolvable variadic pack argument";
+        return failure();
+      }
 
-        auto [minPosOperands, maxPosOperands] = *posNumBoundOr;
-        size_t numPosOperands = operands.getNumPositional();
-        if (numPosOperands < minPosOperands ||
-            maxPosOperands < numPosOperands) {
-          diag << "callee with non-empty variadic pack argument";
-          emitWrongArgOrParamCount(diag, minPosOperands, maxPosOperands,
-                                   numOperands, "positional operand");
-          return failure();
-        }
-        llvm_unreachable("unhandled variadic pack failure?");
+      auto [minPosOperands, maxPosOperands] = *posNumBoundOr;
+      size_t numPosOperands = operands.getNumPositional();
+      if (numPosOperands < minPosOperands || maxPosOperands < numPosOperands) {
+        diag << "callee with non-empty variadic pack argument";
+        emitWrongArgOrParamCount(diag, minPosOperands, maxPosOperands,
+                                 numOperands, "positional operand");
+        return failure();
       }
-      }
+      llvm_unreachable("unhandled variadic pack failure?");
     }
 
     // Check for any more positional operands.
