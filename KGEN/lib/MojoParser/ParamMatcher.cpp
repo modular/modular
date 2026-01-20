@@ -100,8 +100,18 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
       return _result;                                                          \
   } while (0)
 
-ParamMatcher::ParamMatcher(const ExprNode *expr, ParamInf &state)
-    : expr(expr), state(state), shared(state.getShared()) {}
+ParamMatcher::ParamMatcher(const ExprNode *expr, ParamInf &state,
+                           bool allowImplicitConversions)
+    : expr(expr), state(state), shared(state.getShared()),
+      allowImplicitConversions(allowImplicitConversions), scopedBinder(shared) {
+}
+
+void ParamMatcher::appendLocallyDefinedParam(Type paramType) {
+  auto paramIdx = scopedBinder.getIndexBindings().size();
+  auto name = StringAttr::get(paramType.getContext(),
+                              "#.ParamMatcher.#" + Twine(paramIdx));
+  scopedBinder.appendIndexBinding(ParamDeclRefAttr::get(name, paramType));
+}
 
 ParamMatcher::ResultCode
 ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
@@ -121,29 +131,49 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   if (actual.getInputParamTypes() != expected.getInputParamTypes())
     return error(MatchFailure::Unclassified{});
 
+  // Shadow the parameter defined by the FnTypeGenerator
+  for (auto pType : actual.getInputParamTypes())
+    appendLocallyDefinedParam(scopedBinder.getReboundType(pType));
+
+  auto actualFnTp = cast<FnType>(scopedBinder.getReboundType(actual.getBody()));
+  auto expectedFnTp =
+      cast<FnType>(scopedBinder.getReboundType(expected.getBody()));
+
+  // NOTE: stop using actual/expected after this point!
   // If the functions differ in return type conventions, check if the nominal
   // types are equal.
-  bool actualMemResult = actual.hasMemoryOnlyResult();
-  bool expectedMemResult = expected.hasMemoryOnlyResult();
+  bool actualMemResult = actualFnTp.hasMemoryOnlyResult();
+  bool expectedMemResult = expectedFnTp.hasMemoryOnlyResult();
   // TODO: We allow implicit conversions here.
-  PROP(matchTypes(actual.getUserResultType(), expected.getUserResultType()));
+  PROP(matchTypes(actualFnTp.getUserResultType(),
+                  expectedFnTp.getUserResultType()));
 
+  if (!allowImplicitConversions) {
+    // Allow signature types to be converted for free if they differ only in
+    // argument names, parameter names, passing kinds, or implicit origins.
+    // The must matches `IREmitter::canZeroCostConvert`
+    if (actualFnTp.getNumArguments() != expectedFnTp.getNumArguments() ||
+        actualFnTp.getArgConventions() != expectedFnTp.getArgConventions() ||
+        actualFnTp.getFnEffects() != expectedFnTp.getFnEffects())
+      return error(MatchFailure::Unclassified{});
+  }
+
+  // Otherwise, either we allow implicit conversion, or we already ensured
+  // zeroCostConversion above.
   ArrayRef<Type> actualArgTypes =
-      actual.getArguments().drop_back(actualMemResult);
+      actualFnTp.getArguments().drop_back(actualMemResult);
   ArrayRef<Type> expectedArgTypes =
-      expected.getArguments().drop_back(expectedMemResult);
+      expectedFnTp.getArguments().drop_back(expectedMemResult);
 
-  auto actualEffects = actual.getFnEffects();
-  auto expectedEffects = expected.getFnEffects();
+  auto actualEffects = actualFnTp.getFnEffects();
+  auto expectedEffects = expectedFnTp.getFnEffects();
   // If the actual function is not throwing, and the expected function is,
   // then we can infer the Error type to be Never.
   if (!actualEffects.isThrows() && expectedEffects.isThrows()) {
     // Match the expected error type to Never, but allow this to fail: it may
     // already be some concrete type like Error and that is ok.
-    switch (matchTypes(NeverType::get(expected.getContext()),
-                       expected.getUserThrownType())) {
-    case Retry:
-      return Retry;
+    switch (matchTypes(NeverType::get(expectedFnTp.getContext()),
+                       expectedFnTp.getUserThrownType())) {
     case Error:
       resetError();
       break;
@@ -157,14 +187,15 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   if (actualEffects != expectedEffects)
     return error(MatchFailure::Unclassified{});
 
-  PROP(matchParams(actual.getCaptureOrigins(), expected.getCaptureOrigins()));
+  PROP(matchParams(actualFnTp.getCaptureOrigins(),
+                   expectedFnTp.getCaptureOrigins()));
 
   // Functions with an incompatible number of arguments cannot be converted
   // between each other. The number of arguments should be equal, unless the
   // expected function is variadic.
   // TODO: Consider default argument values.
   std::optional<size_t> expectedVariadicArgIndexOpt =
-      expected.findPackVarArgIndex();
+      expectedFnTp.findPackVarArgIndex();
   if (expectedVariadicArgIndexOpt.has_value()) {
     size_t expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
     if (actualArgTypes.size() < expectedVariadicArgIndex) {
@@ -179,7 +210,7 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   }
 
   bool expectedHasVariadic = expectedVariadicArgIndexOpt.has_value();
-  bool actualHasVariadic = actual.findPackVarArgIndex().has_value();
+  bool actualHasVariadic = actualFnTp.findPackVarArgIndex().has_value();
   // If this is true, then we need to collect a bunch of `actual`'s args into a
   // variadic for `expected`.
   bool collectIntoVariadic = expectedHasVariadic && !actualHasVariadic;
@@ -194,8 +225,8 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   // Check all the normal args (which aren't going into a variadic arg).
   for (size_t actualArgIndex = 0; actualArgIndex < numNormalArgs;
        ++actualArgIndex) {
-    auto actualConv = actual.getArgConvention(actualArgIndex);
-    ArgConvention expectedConv = expected.getArgConvention(actualArgIndex);
+    auto actualConv = actualFnTp.getArgConvention(actualArgIndex);
+    ArgConvention expectedConv = expectedFnTp.getArgConvention(actualArgIndex);
     ASTType actualAstType = actualArgTypes[actualArgIndex];
     ASTType expectedAstType = expectedArgTypes[actualArgIndex];
 
@@ -216,11 +247,11 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     auto expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
 
     ArgConvention expectedConv =
-        expected.getArgConvention(expectedVariadicArgIndex);
+        expectedFnTp.getArgConvention(expectedVariadicArgIndex);
 
     // Get the variadic pack's element trait.
     ASTType expectedArgVariadicPackType =
-        expected.getIfVariadicPack(expectedVariadicArgIndex);
+        expectedFnTp.getIfVariadicPack(expectedVariadicArgIndex);
     RefPackType refPackType =
         expectedArgVariadicPackType.getVariadicPackInfo(shared);
     ASTType variadicElType = refPackType.getVariadicElementType();
@@ -234,7 +265,7 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     SmallVector<TypedAttr> elements;
     for (size_t actualArgIndex = numNormalArgs, e = actualArgTypes.size();
          actualArgIndex < e; ++actualArgIndex) {
-      auto actualConv = actual.getArgConvention(actualArgIndex);
+      auto actualConv = actualFnTp.getArgConvention(actualArgIndex);
       ASTType actualAstType = actualArgTypes[actualArgIndex];
 
       if (!checkConventionsConvertible(expectedConv, actualConv))
@@ -250,8 +281,6 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       case Error:
         resetError();
         break;
-      case Retry:
-        return Retry;
       }
 
       // We can convert a more general `actual` function (that takes in a trait
@@ -285,7 +314,14 @@ ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
 
 ParamMatcher::ResultCode ParamMatcher::matchTypes(Type actualType,
                                                   Type expectedType) {
-  assert(isUnset() && "matching with a result set already");
+  // Rebind expected type such that a dependent parameter is updated properly in
+  // cases like:
+  // ParamType[x, x + 1] and x is inferred.
+  //
+  // TODO: This does not support out-of-order dependencies: ParamType[x + 1, x],
+  // we need a more sophisticated worklist to handle it properly.
+  expectedType = state.evaluator.getReboundType(expectedType);
+
   // If the types trivially match then there is no inference to do.
   if (isEqualCanon(actualType, expectedType))
     return Match;
@@ -435,8 +471,11 @@ ParamMatcher::ResultCode ParamMatcher::matchTypes(Type actualType,
       if (actInputs.size() == expInputs.size()) {
         for (auto [ai, ei] : llvm::zip_equal(actInputs, expInputs)) {
           PROP(matchTypes(ai, ei));
+          // Shadow the parameter defined by the generator
+          appendLocallyDefinedParam(scopedBinder.getReboundType(ai));
         }
-        return matchTypes(actual.getBody(), expected.getBody());
+        return matchTypes(scopedBinder.getReboundType(actual.getBody()),
+                          scopedBinder.getReboundType(expected.getBody()));
       }
     }
   }
@@ -483,7 +522,14 @@ ParamMatcher::ResultCode ParamMatcher::matchTypes(Type actualType,
 
 ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
                                                    TypedAttr expectedAttr) {
-  assert(isUnset() && "matching with a result set already");
+  // Rebind expected attr such that a dependent parameter is updated properly in
+  // cases like:
+  // ParamType[x, x + 1] and x is inferred.
+  //
+  // TODO: This does not support out-of-order dependencies: ParamType[x + 1, x],
+  // we need a more sophisticated worklist to handle it properly.
+  expectedAttr = state.evaluator.getReboundAttribute(expectedAttr);
+
   // If the attrs trivial match then we're done and there is no inference to do.
   if (isEqualCanon(actualAttr, expectedAttr))
     return Match;
@@ -521,8 +567,6 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
     // If the types of both attributes are the same, no adjustment is needed.
   } else {
     auto result = matchTypes(actualAttr.getType(), expectedAttr.getType());
-    if (result == Retry)
-      return Retry;
     if (result == Match) {
       // If they are different types but compatible then upcast actualAttr to
       // the expected type.
@@ -533,6 +577,7 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
       // values that want index-based ones.  matchFunctionTypes should convert
       // the former to the later and we should remove this redundant check for
       // implicit convertibility.
+      expectedAttr = state.evaluator.getReboundAttribute(expectedAttr);
       auto expectedType = expectedAttr.getType();
       if (IREmitter::canImplicitlyConvertToType(
               {actualAttr, expr}, expectedType, emitter.getDeclScope())) {
@@ -589,8 +634,6 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
           auto matchFixed =
               matchTypes(actualAttr.getType(), expectedAttr.getType());
           assert(matchFixed != Error);
-          if (matchFixed == Retry)
-            return Retry;
         }
       }
 
@@ -696,8 +739,7 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
       if (!inferredValue) {
         if (failed(state.setInferredValue(parameterIndex, actualAttr)))
           return error(MatchFailure::UnprovableConstraints{parameterIndex});
-        retryParamIdx = parameterIndex;
-        return Retry;
+        return Match;
       }
 
       // If we saw this parameter before, make sure it is compatible with
@@ -850,6 +892,7 @@ ParamMatcher::ResultCode ParamMatcher::matchParams(TypedAttr actualAttr,
 ParamMatcher::ResultCode
 ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
                                    TypedAttr expectedOrig) {
+  expectedOrig = state.evaluator.getReboundAttribute(expectedOrig);
   auto actual = ParamOperatorAttr::stripRebind(actualOrig);
   auto expected = ParamOperatorAttr::stripRebind(expectedOrig);
 
@@ -869,6 +912,8 @@ ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
     // See if we can infer anything from the types, this allows us to infer
     // 'is_mut' parameter from "origin<1>" and "origin<is_mut>".
     PROP(matchTypes(actual.getType(), expected.getType()));
+    expExtract = cast<LIT::StructExtractAttr>(
+        state.evaluator.getReboundAttribute(expExtract));
 
     // Ok, we have a struct that seems like it could line up.  See if we can
     // implicitly construct this from a value of this type.  If so, then we

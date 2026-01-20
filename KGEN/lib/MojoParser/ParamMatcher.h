@@ -106,15 +106,14 @@ private:
 /// allows the Int addition to fold.
 class ParamMatcher {
 public:
-  ParamMatcher(const ExprNode *expr, ParamInf &state);
+  ParamMatcher(const ExprNode *expr, ParamInf &state,
+               bool allowImplicitConversion);
   ~ParamMatcher() {}
 
-  // This is set to the parameter index we successfully inferred.
-  ssize_t retryParamIdx = -1;
   /// This is set when an error is encountered.
   std::optional<MatchFailure> failureReason;
 
-  enum ResultCode { Match, Error, Retry };
+  enum ResultCode { Match, Error };
   ResultCode matchTypes(Type actualType, Type expectedType);
   ResultCode matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
   ResultCode matchFunctionTypes(FnTypeGeneratorType actual,
@@ -124,9 +123,6 @@ public:
   void resetError() { failureReason.reset(); }
 
 private:
-  // These are methods used by the recursive walker.
-  bool isUnset() const { return retryParamIdx == -1; }
-
   ResultCode error(MatchFailure &&reason) {
     failureReason = std::move(reason);
     return Error;
@@ -152,6 +148,30 @@ private:
   const ExprNode *const expr;
   ParamInf &state;
   SharedState &shared;
+
+  // Whether we allow implicit conversion when matching, e.g., function type
+  // conversion.
+  bool allowImplicitConversions;
+
+  /// NOTE: this serves a COMPLETELY different purpose from the evaluator in
+  /// ParamInf. It is used to bind the parameter defined in a
+  /// `ParameterScopedAttr/TypeInterface`. Considering that we are inferring:
+  ///
+  /// fn foo[
+  ///     t : fn [p: Int](...) -> ParamType[p]
+  //  ]():
+  //     pass
+  ///
+  /// and we are matching:
+  /// actual:   fn [p: Int] () -> ParamType[*(0, 1)]
+  /// expected: fn [x: Int] () -> ParamType[*(0, 1)]
+  ///
+  /// Before pulling out and matching `ParamType[*(0, 1)]`, we need to bind
+  /// `*(0, 1)` to the a concrete dummy value before matching. It is important
+  /// since both `*(0, 1)`s are bound in the current scope (FnTypeGenerator),
+  /// which is NOT the same scope (foo) as we are inferring parameters!
+  ParserParameterEvaluator scopedBinder;
+  void appendLocallyDefinedParam(Type paramType);
 };
 
 } // namespace M::KGEN::LIT

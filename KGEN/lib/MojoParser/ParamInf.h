@@ -140,6 +140,13 @@ private:
                                 ArgConvention expectedConvention,
                                 PogListAttr argPogs, CallSyntax syntax);
 
+  /// Core type matching logic for parameter inference, this matches expected
+  /// type against the RValue type of the operand (which means this does not
+  /// handle calling convention).
+  LogicalResult inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
+                                ASTType expectedType, PogListAttr argPogs,
+                                CallSyntax syntax);
+
   /// Infer and emit a single value for a parameter binding. This returns
   /// failure if it emits a diagnostic, otherwise is returns a parameter value
   /// if resolved, or null if deferred.
