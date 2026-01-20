@@ -4,6 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# This test intentionally uses the real stdlib to test SIMD operations
+# in where clauses. It should remain as an integration test.
+
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo %s \
 # RUN:   | kgen-opt --kgen-print-inline-type-values | FileCheck %s
 
