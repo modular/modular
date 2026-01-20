@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from .arch import qwen3_embedding_arch
-from .model import Qwen3EmbeddingInputs, Qwen3EmbeddingPipelineModel
+from .model import Qwen3EmbeddingInputs, Qwen3EmbeddingModel
 
 # Expose ARCHITECTURES list for custom architecture loading
 ARCHITECTURES = [qwen3_embedding_arch]
 
 __all__ = [
     "Qwen3EmbeddingInputs",
-    "Qwen3EmbeddingPipelineModel",
+    "Qwen3EmbeddingModel",
     "qwen3_embedding_arch",
 ]

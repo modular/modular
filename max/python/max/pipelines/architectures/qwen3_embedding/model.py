@@ -82,7 +82,7 @@ class Qwen3EmbeddingInputs(ModelInputs):
         self.return_n_logits = return_n_logits
 
 
-class Qwen3EmbeddingPipelineModel(PipelineModel[TextContext]):
+class Qwen3EmbeddingModel(PipelineModel[TextContext]):
     """Qwen3 embedding pipeline model without KV caching.
 
     This model is optimized for embedding generation with:

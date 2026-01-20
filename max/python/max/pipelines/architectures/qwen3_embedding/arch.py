@@ -22,7 +22,7 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
-from .model import Qwen3EmbeddingPipelineModel
+from .model import Qwen3EmbeddingModel
 
 qwen3_embedding_arch = SupportedArchitecture(
     name="Qwen3ForCausalLM",
@@ -37,7 +37,7 @@ qwen3_embedding_arch = SupportedArchitecture(
         SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
-    pipeline_model=Qwen3EmbeddingPipelineModel,
+    pipeline_model=Qwen3EmbeddingModel,
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
