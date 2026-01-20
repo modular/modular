@@ -113,19 +113,18 @@ public:
   /// This is set when an error is encountered.
   std::optional<MatchFailure> failureReason;
 
-  enum ResultCode { Match, Error };
-  ResultCode matchTypes(Type actualType, Type expectedType);
-  ResultCode matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
-  ResultCode matchFunctionTypes(FnTypeGeneratorType actual,
-                                FnTypeGeneratorType expected);
-  ResultCode matchSingleEltStruct(TypedAttr actual, TypedAttr expected);
+  LogicalResult matchTypes(Type actualType, Type expectedType);
+  LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
+  LogicalResult matchFunctionTypes(FnTypeGeneratorType actual,
+                                   FnTypeGeneratorType expected);
+  LogicalResult matchSingleEltStruct(TypedAttr actual, TypedAttr expected);
 
   void resetError() { failureReason.reset(); }
 
 private:
-  ResultCode error(MatchFailure &&reason) {
+  LogicalResult error(MatchFailure &&reason) {
     failureReason = std::move(reason);
-    return Error;
+    return failure();
   }
 
 private:
