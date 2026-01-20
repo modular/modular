@@ -125,7 +125,7 @@ def LIT_FnOp : LITOp<"fn", [
     SpecialFunctionKind getSpecialFunctionKind();
     const SpecialFunctionInfo &getSpecialFunctionInfo();
 
-    /// Return the decl name of the function.
+    /// Return the function name as it appears in the source code (not mangled).
     StringAttr getDeclName() { return getSourceNameAttr(); }
 
     /// Return the full signature of this declaration, including parameters from
@@ -283,7 +283,7 @@ def LIT_FileModuleOp : LITOp<"file_module", [
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
-    /// Return the decl name of the file.
+    /// Return the file name as it appears in the source code (not mangled).
     StringAttr getDeclName() { return getSymNameAttr(); }
   }];
 
@@ -334,7 +334,7 @@ def LIT_PackageOp : LITOp<"package", [
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
-    /// Return the decl name of the package.
+    /// Return the package name as it appears in the source code (not mangled).
     StringAttr getDeclName() { return getSymNameAttr(); }
   }];
 
@@ -438,7 +438,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
       return std::nullopt;
     }
 
-    /// Return the decl name of the struct.
+    /// Return the struct name as it appears in the source code (not mangled).
     StringAttr getDeclName() { return getSymNameAttr(); }
 
     /// Get a bound reference to the struct type.
@@ -891,8 +891,12 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
   }];
 
   let extraClassDeclaration = [{
+    /// Returns the (mangled) internal name for this alias.
     StringAttr getName() { return getParamDecl().getName(); }
-    StringAttr getDeclName() { return getName(); }
+
+    /// Return the alias name as it appears in the source code (not mangled).
+    StringAttr getDeclName();
+
     Type getType() { return getParamDecl().getType(); }
 
     /// Return true if this is a defaulted trait method.

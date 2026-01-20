@@ -3198,13 +3198,12 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 
             // There are multiple default associated aliases with
             // the same name. Raise an error.
-            auto diag =
-                shared.emitError(structDecl.getLoc())
-                << "trait member '"
-                << demangleParameterName(existingAlias.getDeclName().getValue())
-                << "' has conflicting default implementations in "
-                << otherTraitName << " and " << currentTraitName
-                << ", you must implement it manually";
+            auto diag = shared.emitError(structDecl.getLoc())
+                        << "trait member '"
+                        << existingAlias.getDeclName().getValue()
+                        << "' has conflicting default implementations in "
+                        << otherTraitName << " and " << currentTraitName
+                        << ", you must implement it manually";
 
             diag.attachNote(existingDecl->getLoc())
                 << "original default implementation from trait "
@@ -3874,8 +3873,18 @@ DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
     return SpecialFunctionKind::kNormal;
   };
 
+  // Special handling for __*__is_trivial aliases.
+  // These are synthesized when a struct
+  // inherits from a trait that declares them.
+  //
+  // We must check that the parent
+  // is a struct (not a trait) because this function is also called for
+  // trait-to-trait inheritance, where we should fall through to the general
+  // alias inheritance handling below.
   SpecialFunctionKind spFn = getFnIsTrivialKind(inheritedAliasOp.getDeclName());
-  if (spFn != SpecialFunctionKind::kNormal) {
+  if (spFn != SpecialFunctionKind::kNormal &&
+      isa_and_nonnull<StructDeclOp>(
+          childTraitAliasDecl.getParentDecl()->getIfOperation())) {
     StructEmitter gen(*childTraitAliasDecl.getParentDecl());
     TypedAttr isTrivial = gen.populateSpecialFnIsTrivial(
         getFnIsTrivialKind(inheritedAliasOp.getDeclName().strref()));
@@ -3915,8 +3924,7 @@ DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
 
   // Since alias decls don't implement SymbolOpInterface we need to do a
   // lookup by source name.
-  auto aliasName =
-      demangleParameterName(inheritedAliasOp.getDeclName().getValue());
+  StringRef aliasName = inheritedAliasOp.getDeclName().getValue();
 
   auto parentAliasDecls = parentTraitDecl.lookupInCurrentScope(aliasName);
   auto &inheritedAliasDecl = *parentAliasDecls.front();
