@@ -4,6 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# This test depends on real stdlib types and functions (utils._select, DType
+# methods, UInt.__ceildiv__, StaticString) to test builtin function folding
+# integration. It should remain as an integration test.
+
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo %s | kgen-opt --kgen-print-inline-type-values | FileCheck %s
 
 

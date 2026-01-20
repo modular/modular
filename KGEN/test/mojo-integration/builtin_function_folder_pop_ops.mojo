@@ -4,6 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# This test depends on real stdlib types (DType, SIMD, IntLiteral methods) to
+# test pop.* MLIR op folding integration. It should remain as an integration
+# test.
+
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo %s \
 # RUN:   | kgen-opt --kgen-print-inline-type-values | FileCheck %s
 
