@@ -126,6 +126,10 @@ struct DeprecatedStruct:
 fn foobar():
     pass
 
+@deprecated("deprecated alias")
+# expected-note @below {{'deprecated_alias' declared here}}
+comptime deprecated_alias = 42
+
 # expected-warning @below {{use of deprecated struct 'DeprecatedStruct'}}
 fn foobar(value: DeprecatedStruct):
     pass
@@ -133,6 +137,8 @@ fn foobar(value: DeprecatedStruct):
 fn deprecated_function():
    # expected-warning @below {{deprecated overload}}
    foobar()
+   # expected-warning @below {{deprecated alias}}
+   _ = deprecated_alias
 
 from imported_module import DeprecatedInAnotherModule
 

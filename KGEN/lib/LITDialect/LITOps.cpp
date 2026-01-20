@@ -1832,6 +1832,11 @@ LogicalResult AliasDeclOp::verify() {
   return success();
 }
 
+StringAttr AliasDeclOp::getDeclName() {
+  StringRef demangled = demangleParameterName(getName().getValue());
+  return StringAttr::get(getContext(), demangled);
+}
+
 //===----------------------------------------------------------------------===//
 // VarDeclOp
 //===----------------------------------------------------------------------===//

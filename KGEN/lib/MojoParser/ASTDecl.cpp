@@ -271,7 +271,7 @@ ASTType ASTDecl::getIfTypeValue() const {
 std::optional<StringRef> ASTDecl::getUserNameIfOperation() const {
   if (Operation *op = getIfOperation())
     if (auto decl = dyn_cast<ASTDeclInterface>(op))
-      return LIT::demangleParameterName(decl.getDeclName().getValue());
+      return decl.getDeclName().getValue();
   return {};
 }
 
