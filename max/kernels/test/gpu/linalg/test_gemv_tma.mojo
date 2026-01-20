@@ -169,8 +169,10 @@ fn gemv_tma_kernel[
         if thread_idx.x == 0:
             var stage = producer_phase.index()
             tma_mbar[stage].expect_bytes(
-                BLOCK_SIZE_M * current_block_size * UInt(size_of[dtype]())
-                + current_block_size * UInt(size_of[dtype]())
+                Int32(
+                    BLOCK_SIZE_M * current_block_size * UInt(size_of[dtype]())
+                    + current_block_size * UInt(size_of[dtype]())
+                )
             )
 
             cp_async_bulk_tensor_shared_cluster_global[

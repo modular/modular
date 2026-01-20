@@ -253,12 +253,12 @@ fn kernel_5[
     for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= 1 << (i * cta_group)
 
-    a_multicast_mask <<= rank_m
-    b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
+    a_multicast_mask <<= UInt16(rank_m)
+    b_multicast_mask <<= UInt16(peer_cta_coord[0])
+    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
 
-    var a_mma_mask = a_multicast_mask >> peer_cta_coord[0]
-    var b_mma_mask = b_multicast_mask >> peer_cta_coord[0]
+    var a_mma_mask = a_multicast_mask >> UInt16(peer_cta_coord[0])
+    var b_mma_mask = b_multicast_mask >> UInt16(peer_cta_coord[0])
     var c_mma_mask: UInt16 = (a_mma_mask | a_mma_mask << 1) | (
         b_mma_mask | b_mma_mask << 1
     )
@@ -355,7 +355,7 @@ fn kernel_5[
         dtype=accum_type,
         pack=False,
         width = c_frag.size // 2,
-    ](tmem_addr | ((warp_id() * 32) << 16))
+    ](tmem_addr | UInt32((warp_id() * 32) << 16))
 
     var c_frag_lower = tcgen05_ld[
         datapaths=16,
@@ -364,7 +364,7 @@ fn kernel_5[
         dtype=accum_type,
         pack=False,
         width = c_frag.size // 2,
-    ](tmem_addr | ((warp_id() * 32 + 16) << 16))
+    ](tmem_addr | UInt32((warp_id() * 32 + 16) << 16))
     tcgen05_load_wait()
 
     comptime C_WBM = BM // 2 if MMA_M == 128 else BM // 4
