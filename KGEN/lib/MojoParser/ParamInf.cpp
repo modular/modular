@@ -156,9 +156,6 @@ void ParamInf::dump() const {
 LogicalResult ParamInf::inferSelfFromInitResult(FnTypeGeneratorType signature) {
   DeclResolver::DeclScopeChanger x(declIfKnown);
 
-  // When a parameter gets bound, we re-evaluate the result type to see the
-  // fully concretized parameters that the parameter may be computing.
-RetryLabel:
   ASTType returnedType =
       evaluator.getReboundType(signature.getUserResultType());
 
@@ -189,12 +186,11 @@ RetryLabel:
     //   struct X[A: AnyType]:
     //     fn __init__[T: Movable](arg: Int, out self: X[T]):
     // which gets used as X[String](42) inferring T and A.
-    ParamMatcher matcher(getGivenBindings().callExpr, *this);
+    ParamMatcher matcher(getGivenBindings().callExpr, *this,
+                         allowImplicitConversions);
     if (selfParam) {
       // TODO: Macro'ize this when error handling logic is fixed.
       switch (matcher.matchParams(selfParam, retParam)) {
-      case ParamMatcher::Retry:
-        goto RetryLabel;
       case ParamMatcher::Match:
         break;
       case ParamMatcher::Error:
@@ -209,8 +205,6 @@ RetryLabel:
           evaluator.getReboundType(signature.getInputParamTypes()[idx]);
       auto selfParam = ParamIndexRefAttr::get(/*depth*/ 0, idx, selfType);
       switch (matcher.matchParams(retParam, selfParam)) {
-      case ParamMatcher::Retry:
-        goto RetryLabel;
       case ParamMatcher::Match:
         break;
       case ParamMatcher::Error:
@@ -279,13 +273,10 @@ LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
     return diag;
   };
 
-  // Whenever a parameter is bound, we need to re-evaluate the expected type and
-  // try again.
-RetryLabel:
   ASTType expectedType = evaluator.getReboundType(origExpectedType);
 
   // TODO: Calculate OverloadFitness's fitness (# implicit conversions etc).
-  ParamMatcher matcher(operand.expr, *this);
+  ParamMatcher matcher(operand.expr, *this, allowImplicitConversions);
 
   // We'll bind the next provided value.
   switch (expectedConvention) {
@@ -321,8 +312,6 @@ RetryLabel:
     // Ok we have an LValue.  The reference element types must match.
     switch (matcher.matchTypes(argVal.getRValueType(),
                                expectedType.getReferenceElementType())) {
-    case ParamMatcher::Retry:
-      goto RetryLabel;
     case ParamMatcher::Match:
       break;
     case ParamMatcher::Error:
@@ -352,11 +341,21 @@ RetryLabel:
           !valueRefType.isMutableKnown(false))
         valueRefType = valueRefType.getWithMutability(false);
 
-      // If the origin is already specified, allow implicit conversions,
-      // allowing you to pass a concrete origin to something expecting a union
-      // or AnyOrigin.  This check happens here (instead of in matchTypes)
-      // because function arguments can be rebound when origins disagree, but
-      // this isn't correct/possible in arbitrary nested positions.
+      // Refine the element type first.
+      if (matcher.matchTypes(valueRefType.getElementType(),
+                             expectedRef.getElementType()) !=
+          ParamMatcher::Match) {
+        emitWrongTypeDiag(expectedType);
+        return failure();
+      }
+      expectedType = evaluator.getReboundType(expectedType);
+
+      // Now that element type has been matched, see if the origin is already
+      // specified, allow implicit conversions, allowing you to pass a concrete
+      // origin to something expecting a union or AnyOrigin.  This check happens
+      // here (instead of in matchTypes) because function arguments can be
+      // rebound when origins disagree, but this isn't correct/possible in
+      // arbitrary nested positions.
       if (!paramFinder.hasReferences(expectedType)) {
         if (IREmitter::canZeroCostConvert(valueRefType, expectedType,
                                           getShared()))
@@ -367,8 +366,6 @@ RetryLabel:
 
       // Otherwise, match the origins up to infer from the value.
       switch (matcher.matchTypes(valueRefType, expectedType)) {
-      case ParamMatcher::Retry:
-        goto RetryLabel;
       case ParamMatcher::Match:
         return success();
       case ParamMatcher::Error:
@@ -400,8 +397,6 @@ RetryLabel:
     auto anyOrigin =
         AnyOriginAttr::get(expectedRef.getContext(), /*isMut=*/false);
     switch (matcher.matchSingleEltStruct(anyOrigin, expectedRef.getOrigin())) {
-    case ParamMatcher::Retry:
-      goto RetryLabel;
     case ParamMatcher::Match:
       break;
     case ParamMatcher::Error:
@@ -416,8 +411,6 @@ RetryLabel:
         IntegerAttr::get(IndexType::get(expectedRef.getContext()), 0);
     switch (matcher.matchSingleEltStruct(addrSpace,
                                          expectedRef.getAddressSpace())) {
-    case ParamMatcher::Retry:
-      goto RetryLabel;
     case ParamMatcher::Match:
       break;
     case ParamMatcher::Error:
@@ -439,6 +432,40 @@ RetryLabel:
   case ArgConvention::ReadReg:
     break;
   }
+
+  // Call the core matching logic after handling the convention.
+  return inferFromRVType(operand, argIdx, expectedType, argPogs, syntax);
+}
+
+/// Core type matching logic for parameter inference, handling the expected
+/// type without convention-specific processing. This function is called after
+/// the expected type has been adjusted for calling conventions.
+///
+/// NOTE: This function performs parameter inference and error reporting,
+/// while 'OverloadFitness::scoreOperandFitness' computes fitness metrics
+/// after inference is complete. They serve different phases of overload
+/// resolution and should remain separate.
+LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
+                                        size_t argIdx, ASTType expectedType,
+                                        PogListAttr argPogs,
+                                        CallSyntax syntax) {
+  // Make sure the diagnostic machinery knows about our getDeclScope() so
+  // parameter names get emitted correctly.
+  DeclResolver::DeclScopeChanger x(declIfKnown);
+
+  auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
+    auto &diag = getDiag(operand.expr->getLoc());
+    ::emitWrongTypeDiag(diag, operand, evaluator.getReboundType(expectedType),
+                        argIdx, argPogs, syntax, getShared());
+    return diag;
+  };
+
+  expectedType = evaluator.getReboundType(expectedType);
+
+  // TODO: Optionally compute fitness metrics (# implicit conversions,
+  // convention mismatches) during inference, so they don't need to be
+  // recomputed by scoreOperandFitness() afterward.
+  ParamMatcher matcher(operand.expr, *this, allowImplicitConversions);
 
   // Okay, we got a normal value argument convention and stripped off any
   // ArgConvention-related !lit.ref from the expected type.  See if we can
@@ -471,8 +498,6 @@ RetryLabel:
       }
       // If we found one, we resolve our value to the inferred type.
       switch (matcher.matchTypes(initType, expectedType)) {
-      case ParamMatcher::Retry:
-        goto RetryLabel;
       case ParamMatcher::Match:
         return success();
       case ParamMatcher::Error:
@@ -519,8 +544,6 @@ RetryLabel:
   // argument first, before trying implicit conversions etc.
   if (paramFinder.hasReferences(expectedType)) {
     switch (matcher.matchTypes(argType, expectedType)) {
-    case ParamMatcher::Retry:
-      goto RetryLabel;
     case ParamMatcher::Match:
       return success(); // Types were equal after matching.
     case ParamMatcher::Error:
@@ -546,8 +569,6 @@ RetryLabel:
       // Infer the parameters of this overload candidate against the computed
       // result type of the initializer.
       switch (matcher.matchTypes(nonmaterializableTarget, expectedType)) {
-      case ParamMatcher::Retry:
-        goto RetryLabel;
       case ParamMatcher::Match:
         return success();
       case ParamMatcher::Error:
@@ -566,6 +587,38 @@ RetryLabel:
       savedFailureReason->addExplanation(diag);
     return failure();
   }
+
+  // FIXME: I do NOT think that we should do a rebind here. In fact, we should
+  // probably revert the any inferred value when doing `matcher.resetError();`.
+  // However, not doing rebind here results in a significant amount of
+  // compilation errors, which we should fix. A common case (that I consider
+  // wrong but currently compiles) is:
+  //
+  // @fieldwise_init
+  // @register_passable("trivial")
+  // struct NDBuffer[
+  //     mut: Bool,
+  //     //,
+  //     dtype: DType,
+  //     rank: Int,
+  //     origin: Origin[mut=mut],
+  //     ...
+  // ](
+  //   @implicit
+  //   fn __init__(
+  //       out self,
+  //       # note that `other` here does NOT uses `Self.origin`
+  //       other: NDBuffer[Self.dtype, Self.rank, ...],
+  //   ):
+  //        pass
+  //
+  // In this case, we can successfully infer `Self.origin` to `other.origin`.
+  // This happens because we can successfully match `other` against `Self` all
+  // the way till we pass `origin`. At that point, although matcher returns
+  // failure, `origin` has been inferred, and the implicit convertibility is
+  // then tested against parameter inferred from a failed match...
+  //
+  expectedType = evaluator.getReboundType(expectedType);
 
   // If the expected type has been fully resolved, check it for implicit
   // conversions using the normal type machinery.  This will handle things like
@@ -633,8 +686,6 @@ RetryLabel:
     if (auto callee = pValue.value()) {
       auto initSig = sugarCast<FnTypeGeneratorType>(callee.getType());
       switch (matcher.matchTypes(initSig.getUserResultType(), expectedType)) {
-      case ParamMatcher::Retry:
-        goto RetryLabel;
       case ParamMatcher::Match:
         return success();
       case ParamMatcher::Error:
@@ -680,7 +731,7 @@ RetryLabel:
       value = evaluator.getReboundAttribute(value);
       if (failed(setInferredValue(paramIdx, value)))
         return failure();
-      goto RetryLabel;
+      return inferFromRVType(operand, argIdx, expectedType, argPogs, syntax);
     }
   }
 
@@ -727,9 +778,8 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   // from the value directly, but also inferring as a result of implicit
   // conversions.
   if (paramFinder.hasReferences(expectedType)) {
-    if (failed(inferOneOperand(binding, paramIdx, expectedType,
-                               ArgConvention::ReadReg, declaredParamPogs,
-                               CallSyntax::kParamBindings)))
+    if (failed(inferFromRVType(binding, paramIdx, expectedType,
+                               declaredParamPogs, CallSyntax::kParamBindings)))
       return failure();
   }
 
@@ -1120,10 +1170,6 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
     // their RValue types as bindings.
     if (ASTType variadicPackType =
             signature.getIfVariadicPack(expectedArgIdx)) {
-      size_t origPosOperandIdx = posOperandIdx;
-    RetryLabel:
-      // Reset the index before retry.
-      posOperandIdx = origPosOperandIdx;
       variadicPackType = evaluator.getReboundType(variadicPackType);
       RefPackType packType = variadicPackType.getVariadicPackInfo(getShared());
 
@@ -1214,11 +1260,9 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
       // If there are no arguments for the pack, use the location of the call.
       if (!packArgExpr)
         packArgExpr = getGivenBindings().getExpr();
-      ParamMatcher matcher(packArgExpr, *this);
+      ParamMatcher matcher(packArgExpr, *this, allowImplicitConversions);
       auto actualVA = VariadicAttr::get(types, variadicType);
       switch (matcher.matchParams(actualVA, packType.getVariadic())) {
-      case ParamMatcher::Retry:
-        goto RetryLabel;
       case ParamMatcher::Match:
         continue;
       case ParamMatcher::Error: {
