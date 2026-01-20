@@ -14,6 +14,7 @@
 from sys import align_of, simd_width_of
 from os import abort
 
+from buffer import Dim, DimList, NDBuffer
 from builtin.builtin_slice import ContiguousSlice
 from builtin.device_passable import DevicePassable
 from builtin.variadics import (
@@ -26,6 +27,7 @@ from gpu import thread_idx, block_dim, lane_id
 from gpu.host import DeviceBuffer, HostBuffer
 from utils.numerics import max_finite
 from layout._fillers import BATCH_SIZE
+from utils import IndexList
 
 from .swizzle import Swizzle, make_ldmatrix_swizzle
 
@@ -41,6 +43,7 @@ from ._coord import (
     coord,
     coord_to_int_tuple,
     coord_to_index_list,
+    _CoordToDimList,
 )
 
 
@@ -749,6 +752,38 @@ struct TileTensor[
             layout.RuntimeLayout[result.layout](
                 coord_to_index_list(self.layout.shape),
                 coord_to_index_list(self.layout.stride),
+            ),
+        }
+
+    @always_inline("nodebug")
+    fn _to_ndbuffer(
+        self,
+        out result: NDBuffer[
+            Self.dtype,
+            Self.rank,
+            Self.origin,
+            _CoordToDimList[*Self.shape_types],
+            _CoordToDimList[*Self.stride_types],
+            address_space = Self.address_space,
+        ],
+    ):
+        """Return an NDBuffer with the same shape, stride, and address space
+        of this tensor. Currently it expects flat layouts.
+
+        This is a utility to help with porting NDBuffer methods to this type.
+
+        Returns:
+            An NDBuffer with the same shape, stride, and address space of
+            this tensor.
+        """
+
+        return {
+            self.ptr,
+            rebind[IndexList[Self.rank]](
+                coord_to_index_list(self.layout.shape)
+            ),
+            rebind[IndexList[Self.rank]](
+                coord_to_index_list(self.layout.stride)
             ),
         }
 

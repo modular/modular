@@ -59,7 +59,7 @@ def test_variadic_reverse_even():
 
 def test_variadic_concat_empty():
     var _tup = ()
-    comptime ConcattedVariadic = Variadic.concat[
+    comptime ConcattedVariadic = Variadic.concat_types[
         type_of(_tup).element_types, type_of(_tup).element_types
     ]
     assert_equal(Variadic.size(_tup.element_types), 0)
@@ -69,7 +69,7 @@ def test_variadic_concat_empty():
 def test_variadic_concat_singleton():
     var _tup = (String("hi"), Int(42), Float32(3.14))
     var _tup2 = (Bool(True),)
-    comptime ConcattedVariadic = Variadic.concat[
+    comptime ConcattedVariadic = Variadic.concat_types[
         type_of(_tup).element_types, type_of(_tup2).element_types
     ]
     assert_equal(Variadic.size(_tup.element_types), 3)
@@ -83,7 +83,7 @@ def test_variadic_concat_singleton():
 def test_variadic_concat_identity():
     var _tup = (Int(1), String("a"))
     var _tup2 = ()
-    comptime ConcattedVariadic = Variadic.concat[
+    comptime ConcattedVariadic = Variadic.concat_types[
         type_of(_tup).element_types, type_of(_tup2).element_types
     ]
     assert_equal(Variadic.size(_tup.element_types), 2)
@@ -105,7 +105,7 @@ comptime _IntToWithValueMapper[
     Prev: Variadic.TypesOfTrait[HasStaticValue],
     From: Variadic.ValuesOfType[Int],
     idx: Int,
-] = Variadic.concat[Prev, Variadic.types[WithValue[From[idx]]]]
+] = Variadic.concat_types[Prev, Variadic.types[WithValue[From[idx]]]]
 
 comptime IntToWithValue[*values: Int] = _ReduceValueAndIdxToVariadic[
     BaseVal = Variadic.empty_of_trait[HasStaticValue],

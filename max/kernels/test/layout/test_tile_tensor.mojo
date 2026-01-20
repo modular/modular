@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from buffer import NDBuffer, Dim, DimList
 from layout._layout import Layout, row_major
 from layout._tile_tensor import TileTensor
 from layout._coord import ComptimeInt, Idx, Coord, RuntimeInt
@@ -37,7 +38,7 @@ fn test_distribute() raises:
 
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
-    var layout_tensor = TileTensor[dtype = DType.uint32](
+    var layout_tensor = TileTensor(
         ptr=ptr,
         layout=Layout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
@@ -64,9 +65,7 @@ fn test_tile() raises:
     # Create a 4x4 tensor with row-major layout
     var data = InlineArray[UInt32, 16](fill=0)
 
-    var layout_tensor = TileTensor[dtype = DType.uint32](
-        data, row_major((Idx[4](), Idx[4]()))
-    )
+    var layout_tensor = TileTensor(data, row_major((Idx[4](), Idx[4]())))
 
     var counter = 0
 
@@ -133,7 +132,7 @@ fn test_slice() raises:
     # [4  5  6  7]
     # [8  9  10 11]
     # [12 13 14 15]
-    var tensor_2d = TileTensor[dtype = DType.int32](data_2d, row_major[4, 4]())
+    var tensor_2d = TileTensor(data_2d, row_major[4, 4]())
 
     # Slice to extract middle 2x2 region [1:3, 1:3]:
     # [5  6]
@@ -177,9 +176,7 @@ fn test_slice_3d() raises:
     for i in range(64):
         data_3d[i] = i
 
-    var tensor_3d = TileTensor[dtype = DType.int32](
-        data_3d, row_major[4, 4, 4]()
-    )
+    var tensor_3d = TileTensor(data_3d, row_major[4, 4, 4]())
 
     # Slice [1:3, 1:3, 1:3] to get a 2x2x2 cube from the middle
     var sliced_3d = tensor_3d.slice[1:3, 1:3, 1:3]()
@@ -220,7 +217,7 @@ fn test_slice_3d() raises:
 #     )
 #     var layout = MixedLayout(shape^, stride^)
 #
-#     var tensor_runtime = TileTensor[dtype = DType.float32](
+#     var tensor_runtime = TileTensor(
 #         data.unsafe_ptr(), layout^
 #     )
 #
@@ -248,7 +245,7 @@ fn test_vectorize() raises:
     for i in range(256):
         data[i] = i
 
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[16, 16]())
+    var tensor = TileTensor(data, row_major[16, 16]())
 
     # Vectorize with 4x4 blocks
     var vectorized = tensor.vectorize[4, 4]()
@@ -288,7 +285,7 @@ fn test_vectorize_non_square() raises:
         data[i] = i
 
     # Create 8x8 tensor
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[8, 8]())
+    var tensor = TileTensor(data, row_major[8, 8]())
 
     # Vectorize with 2x4 blocks (different dimensions)
     var vectorized = tensor.vectorize[2, 4]()
@@ -316,7 +313,7 @@ fn test_vectorize_1d() raises:
         data[i] = i
 
     # Create 16-element 1D tensor
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[16]())
+    var tensor = TileTensor(data, row_major[16]())
 
     # Vectorize with width 4
     var vectorized = tensor.vectorize[4]()
@@ -393,7 +390,7 @@ fn test_coalesce_2d() raises:
         data[i] = i
 
     # Create 4x4 tensor
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[4, 4]())
+    var tensor = TileTensor(data, row_major[4, 4]())
 
     # Coalesce to rank-1
     var coalesced = tensor.coalesce()
@@ -417,7 +414,7 @@ fn test_coalesce_3d() raises:
         data[i] = i
 
     # Create 2x3x4 tensor
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[2, 3, 4]())
+    var tensor = TileTensor(data, row_major[2, 3, 4]())
 
     # Coalesce to rank-1
     var coalesced = tensor.coalesce()
@@ -441,7 +438,7 @@ fn test_coalesce_1d() raises:
         data[i] = i
 
     # Create 8-element 1D tensor
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[8]())
+    var tensor = TileTensor(data, row_major[8]())
 
     # Coalesce (should maintain rank-1)
     var coalesced = tensor.coalesce()
@@ -463,7 +460,7 @@ fn test_coalesce_element_size() raises:
         data[i] = i
 
     # Create 4x4 tensor
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[4, 4]())
+    var tensor = TileTensor(data, row_major[4, 4]())
 
     # Verify element_size is 1 for non-vectorized tensor
     assert_equal(tensor.element_size, 1)
@@ -483,19 +480,31 @@ fn test_coalesce_element_size() raises:
         assert_equal(coalesced[(Idx(i),)], i)
 
 
-fn test_coalesce_rejected_for_non_contiguous() raises:
-    """Test that coalesce is rejected at compile-time for non-contiguous tensors.
+fn test_to_nd_buffer_partially_dynamic() raises:
+    var stack = InlineArray[Int32, 16](fill=0)
+    var tensor = TileTensor(stack, row_major((Idx(4), Idx[4]())))
+    var buffer = tensor._to_ndbuffer()
+    assert_equal(buffer.shape.at[0](), Dim())
+    assert_equal(buffer.shape.at[1](), Dim(4))
+    assert_equal(buffer.dynamic_shape[0], 4)
+    assert_equal(buffer.dynamic_shape[1], 4)
 
-    This test documents the expected behavior: vectorized and tiled tensors
-    cannot be coalesced because they have non-row-major strides.
 
-    To verify this works, try uncommenting the code below - it should fail to compile:
+fn test_to_nd_buffer_fully_dynamic() raises:
+    var stack = InlineArray[Int32, 16](fill=0)
+    var tensor = TileTensor(stack, row_major((Idx(8), Idx(2))))
+    var buffer = tensor._to_ndbuffer()
+    assert_equal(buffer.shape.at[0](), Dim())
+    assert_equal(buffer.shape.at[1](), Dim())
+    assert_equal(buffer.dynamic_shape[0], 8)
+    assert_equal(buffer.dynamic_shape[1], 2)
 
-    ```
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[8, 8]())
-    var vectorized = tensor.vectorize[2, 2]()
-    # This would fail: vectorized.coalesce()  # Error: violated constraint
-    ```
-    """
-    # This test just documents the behavior - actual verification is at compile time
-    pass
+
+fn test_to_nd_buffer_fully_static() raises:
+    var stack = InlineArray[Int32, 16](fill=0)
+    var tensor = TileTensor(stack, row_major((Idx[16](), Idx[1]())))
+    var buffer = tensor._to_ndbuffer()
+    assert_equal(buffer.shape.at[0](), Dim(16))
+    assert_equal(buffer.shape.at[1](), Dim(1))
+    assert_equal(buffer.dynamic_shape[0], 16)
+    assert_equal(buffer.dynamic_shape[1], 1)

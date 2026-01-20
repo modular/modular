@@ -529,11 +529,17 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized):
     fn concat[
         *other_element_types: CoordLike
     ](var self, var other: Coord[*other_element_types]) -> Coord[
-        *Variadic.concat[Self.element_types, other_element_types]
+        *Variadic.concat_types[Self.element_types, other_element_types]
     ]:
-        return Coord[*Variadic.concat[Self.element_types, other_element_types]](
+        return Coord[
+            *Variadic.concat_types[Self.element_types, other_element_types]
+        ](
             rebind[
-                Tuple[*Variadic.concat[Self.element_types, other_element_types]]
+                Tuple[
+                    *Variadic.concat_types[
+                        Self.element_types, other_element_types
+                    ]
+                ]
             ](self._storage.concat(other._storage))
         )
 
@@ -867,7 +873,7 @@ comptime _FlattenReducer[
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = Variadic.concat[
+] = Variadic.concat_types[
     Prev,
     From[idx]
     .VariadicType if From[idx]
@@ -897,7 +903,7 @@ comptime _FlattenOffsetReducer[
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = Variadic.concat[
+] = Variadic.concat_types[
     Prev,
     Variadic.types[
         T=CoordLike,
@@ -1039,7 +1045,7 @@ comptime _IntToComptimeIntMapper[
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.ValuesOfType[Int],
     idx: Int,
-] = Variadic.concat[Prev, Variadic.types[ComptimeInt[From[idx]]]]
+] = Variadic.concat_types[Prev, Variadic.types[ComptimeInt[From[idx]]]]
 
 
 comptime _IntToComptimeInt[*values: Int] = _ReduceValueAndIdxToVariadic[
@@ -1068,7 +1074,7 @@ comptime _DimToCoordLikeMapper[
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.ValuesOfType[Dim],
     idx: Int,
-] = Variadic.concat[
+] = Variadic.concat_types[
     Prev,
     Variadic.types[
         T=CoordLike, ComptimeInt[From[idx]._value_or_missing]
@@ -1104,14 +1110,62 @@ For each Dim in the input:
 Example:
     ```mojo
     from buffer import Dim, DimList
-    from layout._coord import _DimToCoordLike, Coord
+    from layout._coord import _DimsToCoordLike, Coord
 
     # Static dims become ComptimeInt, dynamic dims become RuntimeInt
     comptime dims = DimList(Dim(3), Dim(), Dim(5))
-    comptime coord_types = _DimToCoordLike[DType.int32, dims]
+    comptime coord_types = _DimsToCoordLike[DType.int32, dims]
     # dims is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
 
     # Can be used to create a Coord type
     comptime my_coords = Coord[*coord_types]
+    ```
+"""
+
+
+comptime _CoordToDimMapper[
+    Prev: Variadic.ValuesOfType[Dim],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_values[
+    Prev,
+    Variadic.values[
+        Dim(From[idx].STATIC_VALUE) if From[idx].IS_STATIC_VALUE else Dim(),
+    ],
+]
+"""Maps a Coord to a DimList.
+
+Uses direct field access rather than methods for compile-time evaluation.
+"""
+
+
+comptime _CoordToDimList[*dims: CoordLike] = DimList(
+    VariadicList(
+        _ReduceVariadicAndIdxToValue[
+            BaseVal = Variadic.empty_of_type[Dim],
+            VariadicType=dims,
+            Reducer=_CoordToDimMapper,
+        ]
+    )
+)
+"""Converts a variadic of Dim values to a variadic of CoordLike types.
+
+Note:
+    This transformation is a value-to-type mapper that is meant to be
+    used in the parameter domain,.
+
+For each Dim in the input:
+- If the dim has a static value, produces `ComptimeInt[value]`
+- If the dim is dynamic, produces `RuntimeInt`
+
+Example:
+    ```mojo
+    from buffer import Dim, DimList
+    from layout._coord import _CoordToDimList, Coord, Idx
+
+    # Static dims become ComptimeInt, dynamic dims become RuntimeInt
+    var coords = Coord(Idx(3), Idx[5]())
+    comptime dimlist = _CoordToDimList[*coords.element_types]
+    # dims is equivalent to DimList(Dim(), 5)
     ```
 """
