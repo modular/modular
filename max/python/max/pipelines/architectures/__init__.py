@@ -26,6 +26,7 @@ def register_all_models() -> None:
     from .bert import bert_arch
     from .deepseekV2 import deepseekV2_arch
     from .deepseekV3 import deepseekV3_arch
+    from .deepseekV3_nextn import deepseekV3_nextn_arch
     from .deepseekV32 import deepseekV32_arch
     from .eagle_llama3 import eagle_llama_arch
     from .exaone import exaone_arch
@@ -55,6 +56,7 @@ def register_all_models() -> None:
         deepseekV2_arch,
         deepseekV3_arch,
         deepseekV32_arch,
+        deepseekV3_nextn_arch,
         eagle_llama_arch,
         gemma3_arch,
         gemma3_multimodal_arch,

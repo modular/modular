@@ -25,7 +25,7 @@ from max.engine.api import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn import Module, ReturnLogits, Signals
+from max.nn import Module, ReturnHiddenStates, ReturnLogits, Signals
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -101,6 +101,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         if pipeline_config.model.device_specs[0] == DeviceSpec.cpu():
             raise ValueError("DeepseekV2 currently only supported on gpu.")
@@ -115,6 +116,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
             weights,
             adapter,
             return_logits,
+            return_hidden_states,
         )
 
         self.model = self.load_model(session)
