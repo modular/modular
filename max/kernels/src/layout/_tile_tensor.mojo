@@ -249,7 +249,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     fn load[
-        width: Int, alignment: Int = 1
+        width: Int = Self.element_size, alignment: Int = 1
     ](self, tuple: Coord) -> SIMD[Self.dtype, width] where Variadic.size(
         tuple.element_types
     ) == Variadic.size(Self.shape_types):
@@ -259,7 +259,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     fn store[
-        width: Int, alignment: Int = 1
+        width: Int = Self.element_size, alignment: Int = 1
     ](self, tuple: Coord, value: SIMD[Self.dtype, width]) where (
         tuple.rank == Self.rank
     ) & Self.mut:
