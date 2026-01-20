@@ -37,6 +37,9 @@ def last_token_pool(
     # Get ending offsets for each sequence
     end_offsets = input_row_offsets[1:]  # Remove first element
 
+    # Move end_offsets to the same device as hidden_states
+    end_offsets = end_offsets.to(hidden_states.device)
+
     # Compute last token index for each sequence (end_offset - 1)
     # Since end_offset is exclusive, the last token is at end_offset - 1
     one = ops.constant(1, DType.uint32, device=hidden_states.device)

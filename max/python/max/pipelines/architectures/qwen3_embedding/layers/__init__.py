@@ -10,15 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Qwen3 embedding model layers."""
 
-from .arch import qwen3_embedding_arch
-from .model import Qwen3EmbeddingInputs, Qwen3EmbeddingPipelineModel
-
-# Expose ARCHITECTURES list for custom architecture loading
-ARCHITECTURES = [qwen3_embedding_arch]
+from .attention import Qwen3AttentionNoCache
+from .pooling import last_token_pool, normalize_embeddings
+from .transformer import (
+    Qwen3EmbeddingTransformer,
+    Qwen3EmbeddingTransformerBlock,
+)
 
 __all__ = [
-    "Qwen3EmbeddingInputs",
-    "Qwen3EmbeddingPipelineModel",
-    "qwen3_embedding_arch",
+    "Qwen3AttentionNoCache",
+    "Qwen3EmbeddingTransformer",
+    "Qwen3EmbeddingTransformerBlock",
+    "last_token_pool",
+    "normalize_embeddings",
 ]
