@@ -572,12 +572,12 @@ fn test_paged_kv_cache[
     print("    PagedKVCache test passed!")
 
 
-fn test_ndbuffer[
+fn test_layout_tensor[
     dtype: DType,
     tile_m: Int,
     kv_params: KVCacheStaticParams,
 ](ctx: DeviceContext, batch_size: Int, max_seq_len: Int) raises:
-    comptime msg = "  Testing NDBuffer with tile_m=" + String(
+    comptime msg = "  Testing LayoutTensor with tile_m=" + String(
         tile_m
     ) + ", head_size=" + String(kv_params.head_size)
     print(msg)
@@ -660,7 +660,7 @@ fn test_ndbuffer[
                     src_host_operand, dst_host_operand, batch_size
                 )
 
-    print("    NDBuffer test passed!")
+    print("    LayoutTensor test passed!")
 
 
 fn test_ragged[
@@ -830,7 +830,7 @@ def main():
                     max_seq_len,
                     num_layers,
                 )
-                test_ndbuffer[dtype, block_m, kv_params](
+                test_layout_tensor[dtype, block_m, kv_params](
                     ctx, batch_size, max_seq_len
                 )
                 test_ragged[dtype, block_m, kv_params](ctx, batch_size)

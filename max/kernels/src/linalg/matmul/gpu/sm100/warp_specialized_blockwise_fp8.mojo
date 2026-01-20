@@ -16,7 +16,6 @@ from math import align_up, ceildiv, gcd
 from sys import size_of
 
 from bit import next_power_of_two, prev_power_of_two
-from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
 from gpu.primitives.cluster import (

@@ -343,8 +343,8 @@ fn irfft[
     Currently, only applies it to the last dimension.
 
     Args:
-        input: Complex input tensor (NDBuffer).
-        output: Real output tensor (NDBuffer).
+        input: Complex input tensor (LayoutTensor).
+        output: Real output tensor (LayoutTensor).
         n: Output signal size (if <= 0, computed as 2*(input.size(axis) - 1)).
         buffer_size_mb: Estimated buffer size in MB.
         ctx: Device context.

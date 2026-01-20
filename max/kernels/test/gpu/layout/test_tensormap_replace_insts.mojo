@@ -13,7 +13,6 @@
 
 from sys import size_of
 
-from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor

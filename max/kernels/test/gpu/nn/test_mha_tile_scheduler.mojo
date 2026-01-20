@@ -16,7 +16,6 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import ceildiv
 
-from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu import block_idx
 from nn.mha_fa3_utils import NullPointer

@@ -17,7 +17,6 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import unswitch
-from buffer import DimList, NDBuffer
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
@@ -1599,7 +1598,7 @@ fn _continuous_batch_kv_cache_collection[
     max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2]()],
     out result: ContinuousBatchingKVCacheCollection[dtype, kv_params],
 ):
-    # Marshal NDBuffers into arguments expected by the
+    # Marshal LayoutTensor into arguments expected by the
     # ContinuousKVCacheCollection constructor.
     return {
         blocks = blocks.as_any_origin(),

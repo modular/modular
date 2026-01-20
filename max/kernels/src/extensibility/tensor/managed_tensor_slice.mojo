@@ -21,8 +21,7 @@ from sys.info import CompilationTarget, is_gpu
 from sys.intrinsics import strided_load, strided_store
 
 import algorithm
-from buffer import DimList, NDBuffer
-from buffer.dimlist import _make_partially_static_index_list
+from buffer.dimlist import DimList, Dim, _make_partially_static_index_list
 from builtin.device_passable import DevicePassable
 from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
 from gpu.host import get_gpu_target
@@ -1389,7 +1388,7 @@ fn trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
 
     Args:
         name: The name of the argument.
-        buf: The NDBuffer to trace.
+        buf: The tensor to trace.
 
     Returns:
         A string representation of the buffer with its shape and data type.

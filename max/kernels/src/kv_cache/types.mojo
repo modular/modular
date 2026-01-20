@@ -131,7 +131,7 @@ trait KVCacheT(DevicePassable, ImplicitlyCopyable):
     fn cache_lengths_nd(
         self,
     ) -> LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin]:
-        """Returns the cache lengths as a NDBuffer."""
+        """Returns the cache lengths as a LayoutTensor."""
         ...
 
     fn cache_length(self, batch_idx: Int) -> Int:
@@ -859,7 +859,7 @@ struct ContinuousBatchingKVCacheCollection[
 
     This object does not own the underlying buffers in k_cache and v_cache,
     it's borrowing them from the BlockWrappers in our KVCacheManager.
-    It does own the Pointer[NDBuffer[dtype, 3]] and valid_lengths buffer
+    It does own the Pointer[LayoutTensor[dtype, Layout.row_major[3]()]] and valid_lengths buffer
     """
 
     comptime name_str = "continuous_batching"

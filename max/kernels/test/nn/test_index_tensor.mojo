@@ -92,7 +92,7 @@ fn test_index_tensor_DLRM() raises:
             ref_output[i, j] = input[i, Int(index_a[j]), Int(index_b[j])]
 
     # Convert index_a, index_b (each of 1D size index_len) to a
-    # 2D index_len x 2 indices NDBuffer.
+    # 2D index_len x 2 indices LayoutTensor.
     # TODO: This needs to be part of the OP itself.
     var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
     var indices = LayoutTensor[DType.uint64, Layout.row_major(index_len, 2)](
@@ -216,7 +216,7 @@ fn test_index_tensor_DLRM_batch() raises:
                 ]
 
     # Convert index_a, index_b (each of 1D size index_len) to a 2D index_len x 2
-    # indices NDBuffer.
+    # indices LayoutTensor.
     var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
     var indices = LayoutTensor[DType.uint64, Layout.row_major(index_len, 2)](
         indices_stack
@@ -332,12 +332,14 @@ fn test_index_tensor_CLIPVIT() raises:
         ref_output[1, j] = input[Int(index_b[0]), Int(index_b[1]), j]
 
     # TODO:
-    # See how I need to convert separate indices to combined indices ndbuffer
+    # See how I need to convert separate indices to
+    # combined indices LayoutTensor
     # to be as input to gather_nd.
     # See if it works with 2D indices case.
     # See if it works with non-contiguous case.
 
-    # Convert index_a, index_b (each of 1D size 2) to a 2D indices_len x 2 indices NDBuffer
+    # Convert index_a, index_b (each of 1D size 2) to a
+    # 2D indices_len x 2 indices LayoutTensor
     var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
     var indices = LayoutTensor[DType.uint64, Layout.row_major(index_len, 2)](
         indices_stack
