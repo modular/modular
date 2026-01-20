@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 
 namespace M::KGEN {
+class ConstraintAttr;
 class ParameterExprArrayAttr;
 namespace LIT {
 class PogListAttr;

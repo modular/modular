@@ -35,7 +35,8 @@ def StructType : DialectType<(type
 )>;
 
 def TraitType : DialectType<(type
-  ConcreteAttrArray<"SymbolRefAttr">:$symbols
+  ConcreteAttrArray<"SymbolRefAttr">:$symbols,
+  ConcreteAttrArray<"ConstraintAttr">:$constraints
 )>;
 
 def AnyTraitType : DialectType<(type

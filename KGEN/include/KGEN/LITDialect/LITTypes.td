@@ -263,24 +263,75 @@ def LIT_TraitType: LITType<"Trait", "trait",
     The `!lit.trait` type represents the type of some lit.trait.decl values.
     The list of decls must be non-empty and uniqued.
 
-    Example:
+    Optionally, each trait symbol can have an associated constraint that
+    specifies the condition under which the conformance to that trait applies.
+    This is used for conditional trait conformance on struct declarations.
+    When constraints are present, they form a parallel array with symbols.
+
+    Constraints are printed inline with the `where` keyword:
 
     ```mlir
     !lit.trait<@SomeTrait>
     !lit.trait<@SomeTrait, @SomeOtherTrait>
+    !lit.trait<@TraitA, @TraitB where #kgen.constraint<...>>
     ```
+
+    Note: Constraints are canonicalized during construction:
+    - Constraints that are trivially true (proposition = constant 1) are
+      canonicalized to the unique unconditional constraint and not printed.
+    - Constraints that are trivially false (proposition = constant 0) cause
+      the corresponding trait slot to be removed entirely.
+    - When all constraints are trivially true, the constraints array is empty.
+    This means:
+    - `@Trait where #kgen.constraint<1, loc>` canonicalizes to `@Trait`
+    - `@TraitA, @TraitB where #kgen.constraint<0, loc>` canonicalizes to `@TraitA`
+    - The textual representation is normalized to the simpler form
   }];
 
-  let parameters = (ins OptionalArrayRefParameter<"SymbolRefAttr">:$symbols);
-  let assemblyFormat = "`<` $symbols `>`";
+  let parameters = (ins
+    OptionalArrayRefParameter<"SymbolRefAttr">:$symbols,
+    // Optional parallel array of constraints. When present, constraints[i]
+    // specifies the condition under which conformance to symbols[i] applies.
+    // Used for conditional trait conformance on struct declarations.
+    OptionalArrayRefParameter<"ConstraintAttr">:$constraints
+  );
+
+  // Use custom assembly format for backward compatibility - only print
+  // constraints when they are present.
+  let hasCustomAssemblyFormat = 1;
+
+  // Skip default builders to avoid conflict with our canonicalizing builder.
+  let skipDefaultBuilders = 1;
 
   let builders = [
+    // Builder for unconditional single trait.
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
-      return get(symbol.getContext(), {symbol});
+      return get(symbol.getContext(), ArrayRef<SymbolRefAttr>{symbol},
+                 ArrayRef<ConstraintAttr>{});
+    }]>,
+    // Builder for unconditional trait list (no constraints).
+    TypeBuilder<(ins "ArrayRef<SymbolRefAttr>":$symbols), [{
+      return canonicalizeAndGet($_ctxt, symbols, ArrayRef<ConstraintAttr>{});
+    }]>,
+    // Main builder with canonicalization logic for constraints.
+    // This builder calls the canonicalization helper.
+    TypeBuilder<(ins "ArrayRef<SymbolRefAttr>":$symbols,
+                     "ArrayRef<ConstraintAttr>":$constraints), [{
+      return canonicalizeAndGet($_ctxt, symbols, constraints);
     }]>
   ];
 
+  let genVerifyDecl = 1;
+
   let extraClassDeclaration = [{
+    // Canonicalizing builder helper - declared here, implemented in LITTypes.cpp.
+    // Performs canonicalization:
+    // - False constraints (proposition = 0) remove the trait slot entirely
+    // - When all constraints are trivially true, the constraints array is cleared
+    static TraitType canonicalizeAndGet(MLIRContext *context,
+                                        ArrayRef<SymbolRefAttr> symbols,
+                                        ArrayRef<ConstraintAttr> constraints);
+
     // Sugar support: non-parameterized types get aliases.
     mlir::OpAsmAliasResult getAlias(raw_ostream &os) const;
 
@@ -292,7 +343,14 @@ def LIT_TraitType: LITType<"Trait", "trait",
 
     /// Return a TypeParamAttr for a reference to this trait as a value, e.g.
     /// uttering 'Stringable' in code.
+    /// NOTE: This is only valid for unconditional trait types (no constraints).
+    /// Conditional trait conformance is a property of struct declarations,
+    /// not of trait values themselves - you cannot have a "conditional trait
+    /// value" as a PValue.
     TypedAttr getPValue();
+
+    /// Returns true if this trait type has any constraints (is conditional).
+    bool hasConstraints() const { return !getConstraints().empty(); }
   }];
 }
 
