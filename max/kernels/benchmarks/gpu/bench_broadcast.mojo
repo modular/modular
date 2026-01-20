@@ -27,6 +27,7 @@ from buffer.dimlist import DimList
 from comm.sync import can_enable_p2p
 from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
+import comm.vendor.ccl as vendor_ccl
 from gpu.host import (
     DeviceBuffer,
     DeviceContext,
@@ -51,9 +52,10 @@ fn _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
 
 
 fn _get_test_str[
-    dtype: DType, use_multimem: Bool, cache_busting: Bool
+    dtype: DType, use_multimem: Bool, use_vendor_ccl: Bool, cache_busting: Bool
 ](ngpus: Int, num_bytes: Int, root: Int) -> String:
     var multimem_tag = "-multimem" if use_multimem else ""
+    var vendorccl_tag = "-vendorccl" if use_vendor_ccl else ""
     var cache_tag = "-cachebust" if cache_busting else ""
     return String(
         "broadcast-",
@@ -63,6 +65,7 @@ fn _get_test_str[
         "gpus-root",
         root,
         multimem_tag,
+        vendorccl_tag,
         cache_tag,
         "-",
         human_readable_size(num_bytes),
@@ -76,6 +79,7 @@ fn bench_broadcast[
     *,
     use_multimem: Bool,
     cache_busting: Bool,
+    use_vendor_ccl: Bool = False,
 ](
     mut b: Bench,
     list_of_ctx: List[DeviceContext],
@@ -87,7 +91,7 @@ fn bench_broadcast[
     __comptime_assert rank == 1, "this test code currently assumes rank 1"
 
     var name = String(
-        _get_test_str[dtype, use_multimem, cache_busting](
+        _get_test_str[dtype, use_multimem, use_vendor_ccl, cache_busting](
             ngpus, num_bytes, root
         )
     )
@@ -201,6 +205,15 @@ fn bench_broadcast[
     for i in range(ngpus):
         list_of_ctx[i].enqueue_memset(out_bufs_list[i], 0)
 
+    # Pre-initialize vendor CCL communicators from the main thread.
+    # ncclCommInitAll is not thread-safe, so we must initialize before
+    # spawning worker threads.
+    @parameter
+    if use_vendor_ccl:
+        if not vendor_ccl.is_broadcast_available():
+            raise "Vendor CCL not available; skipping vendor path."
+        vendor_ccl.init_comms(ngpus)
+
     @parameter
     @always_inline
     fn bench_iter(
@@ -222,7 +235,8 @@ fn bench_broadcast[
             )
 
             # Run broadcast - root's input goes to all outputs
-            broadcast[ngpus, use_multimem=use_multimem](
+            comptime broadcast_kernel = vendor_ccl.broadcast if use_vendor_ccl else broadcast
+            broadcast_kernel[ngpus, use_multimem=use_multimem](
                 in_buf_offset,
                 out_bufs[ctx_idx],
                 rank_sigs,
@@ -277,7 +291,8 @@ fn bench_broadcast[
     # Run one broadcast for verification
     @parameter
     for i in range(ngpus):
-        broadcast[ngpus, use_multimem=use_multimem](
+        comptime broadcast_kernel = vendor_ccl.broadcast if use_vendor_ccl else broadcast
+        broadcast_kernel[ngpus, use_multimem=use_multimem](
             in_buf_verify,
             out_bufs[i],
             rank_sigs,
@@ -315,6 +330,7 @@ def main():
     comptime num_gpus = env_get_int["num_gpus", 2]()
     comptime rank = env_get_int["rank", 1]()
     comptime use_multimem = env_get_bool["use_multimem", False]()
+    comptime use_vendor_ccl = env_get_bool["use_vendor_ccl", False]()
     comptime cache_busting = True
 
     # Allow overriding max_num_blocks from command line for tuning.
@@ -348,4 +364,5 @@ def main():
         ngpus=num_gpus,
         use_multimem=use_multimem,
         cache_busting=cache_busting,
+        use_vendor_ccl=use_vendor_ccl,
     ](m, ctx, num_bytes, root, max_num_blocks)
