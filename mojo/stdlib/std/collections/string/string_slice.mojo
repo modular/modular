@@ -2858,7 +2858,11 @@ fn _memmem_count[
     # SIMD-optimized implementation
     comptime bool_mask_width = simd_width_of[DType.bool]()
     var search_end = haystack_len - needle_len + 1
-    var vectorized_end = align_down(search_end, bool_mask_width)
+    # Account for SIMD load width: when loading last_block at position
+    # i + needle_len - 1, we read bool_mask_width bytes, so we need
+    # i + needle_len - 1 + bool_mask_width <= haystack_len
+    var safe_end = search_end - bool_mask_width + 1 if search_end >= bool_mask_width else 0
+    var vectorized_end = align_down(safe_end, bool_mask_width)
 
     var first_needle = SIMD[dtype, bool_mask_width](needle[0])
     var last_needle = SIMD[dtype, bool_mask_width](needle[needle_len - 1])
@@ -2889,14 +2893,9 @@ fn _memmem_count[
                 # For non-overlapping: skip ahead by needle_len
                 # We need to adjust i to skip past this match
                 i = offset + needle_len
-                # Recalculate from new position if still in vectorized range
-                if i < vectorized_end:
-                    # Break inner loop and restart outer loop from new i
-                    break
-                else:
-                    # Finish with scalar loop
-                    mask = 0
-                    continue
+                # Break inner loop; outer loop will check if i < vectorized_end
+                # or fall through to scalar loop
+                break
             mask = mask & (mask - 1)
         else:
             # No match found in this block, move to next block

@@ -121,7 +121,7 @@ fn bench_string_count_long_needle[
     length: Int = 0,
     filename: StaticString = "UN_charter_EN",
 ](mut b: Bencher) raises:
-    """Benchmark counting longer substrings (8+ chars).
+    """Benchmark counting longer substrings (7+ chars).
 
     Tests performance with longer needles where the first/last character
     optimization provides more benefit by filtering out more candidates.
