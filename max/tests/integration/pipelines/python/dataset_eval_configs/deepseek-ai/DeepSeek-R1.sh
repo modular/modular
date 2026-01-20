@@ -23,7 +23,6 @@ extra_pipelines_args=(
   --data-parallel-degree=8
 )
 extra_lm_eval_args=(
-  --log_samples
   --apply_chat_template
   --fewshot_as_multiturn
   "--gen_kwargs=max_gen_toks=4096,seed=42,temperature=0"
