@@ -823,6 +823,10 @@ trait ImplicitlyCopyable(Copyable):
     pass
 
 
+trait AnyTrivialRegType(ImplicitlyCopyable, ImplicitlyDestructible, Movable):
+    pass
+
+
 fn materialize[T: AnyType, //, value: T](out result: T):
     """Explicitly materialize a compile time parameter into a runtime value."""
     __mlir_op.`lit.materialize_into`[value=value](
