@@ -3076,6 +3076,7 @@ fn _gcd_or_lcm[is_gcd: Bool](values: VariadicList[Int]) -> Int:
 
     var result = values[0]
     for i in range(1, len(values)):
+
         @parameter
         if is_gcd:
             result = gcd(values[i], result)
