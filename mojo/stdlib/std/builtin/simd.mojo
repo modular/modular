@@ -635,7 +635,7 @@ struct SIMD[dtype: DType, size: Int](
         self = value.cast[Self.dtype]()
 
     @always_inline("nodebug")
-    @implicit
+    @implicit(deprecated=True)
     fn __init__(out self, value: UInt, /):
         """Initializes the SIMD vector with an unsigned integer.
 
