@@ -59,8 +59,8 @@ from ._multistage_gemm_gpu import (
 from .amd import gemm_kernel_amd
 from .sm80.dispatch import create_matmul_configs_ampere
 from .sm90.dispatch import matmul_dispatch_sm90
-from .sm100.dispatch import matmul_dispatch_sm100
-from .sm100.matmul import matmul_sm100_fallback
+from .sm100_structured.dispatch import matmul_dispatch_sm100
+from .sm100_structured.matmul import matmul_sm100_fallback
 
 comptime logger = Logger()
 

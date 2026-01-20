@@ -11,9 +11,3 @@ mojo_library(
         "@mojo//:std",
     ],
 )
-
-# Export PTX files as filegroup
-filegroup(
-    name = "ptx_files",
-    srcs = glob(["*.ptx"]),
-)

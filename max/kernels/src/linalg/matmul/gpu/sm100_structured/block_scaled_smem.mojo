@@ -31,7 +31,7 @@ from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
 )
-from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from .config import BlockScaledMatmulConfig
 from linalg.structuring import SMemTileArrayType, SMemArrayType
 
 
