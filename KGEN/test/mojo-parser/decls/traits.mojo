@@ -506,6 +506,13 @@ struct RegTrivialSpecial(AnyType, ImplicitlyCopyable):
     # CHECK: lit.fn @"__moveinit__
     # CHECK: lit.fn @"__copyinit__
 
+# COM: AnyTrivialRegType should behave the same as
+# COM: @register_passable("trivial")
+struct RegTrivialSpecialWithTrait(AnyTrivialRegType):
+    pass
+    # CHECK: lit.fn @"__del__
+    # CHECK: lit.fn @"__moveinit__
+    # CHECK: lit.fn @"__copyinit__
 
 # CHECK-LABEL: lit.struct.decl @RegSpecial
 @register_passable
