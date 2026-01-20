@@ -6,6 +6,7 @@
 
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/Interpreter/InterpreterAttrs.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -542,6 +543,164 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value) {
 //===----------------------------------------------------------------------===//
 // TraitType
 //===----------------------------------------------------------------------===//
+//
+// TraitType supports conditional trait conformance by storing an optional
+// parallel array of ConstraintAttrs alongside the trait symbols. Each
+// constraint specifies the condition under which conformance to the
+// corresponding trait applies.
+//
+// Design Decision: Trivially True Constraint Canonicalization
+// ------------------------------------------------------------
+// Rather than allowing null entries in the constraints array (which would
+// complicate bytecode serialization), traits without explicit constraints use
+// a "trivially true" constraint as a sentinel value. This constraint has a
+// proposition of constant 1 (true).
+//
+// IMPORTANT: Trivially true constraints will NOT be printed in the textual IR.
+// `@Trait where true` is semantically equivalent to `@Trait`, so we normalize
+// to the simpler form. This means:
+//
+//   Input:  !lit.trait<@Foo where #kgen.constraint<1 : i1, loc("file":1:1)>>
+//   Output: !lit.trait<@Foo>
+//
+// The location information from user-written `where true` constraints will
+// not be preserved in the textual representation, but the semantic meaning
+// is unchanged.
+//
+//===----------------------------------------------------------------------===//
+
+/// Helper to check if a constraint is trivially false (proposition = 0).
+/// Null is treated as trivially true (not false) for backward compatibility.
+static bool isTriviallyFalseConstraint(ConstraintAttr constraint) {
+  if (!constraint)
+    return false;
+  if (auto intAttr = dyn_cast<IntegerAttr>(constraint.getProposition()))
+    return intAttr.getValue().isZero();
+  return false;
+}
+
+TraitType TraitType::canonicalizeAndGet(MLIRContext *context,
+                                        ArrayRef<SymbolRefAttr> symbols,
+                                        ArrayRef<ConstraintAttr> constraints) {
+  // Fast path: no constraints provided means unconditional conformance.
+  if (constraints.empty())
+    return Base::get(context, symbols, constraints);
+
+  // Canonicalize constraints:
+  // 1. False constraints (proposition = 0) remove the trait slot entirely
+  // 2. When all remaining constraints are trivially true, clear the array
+  SmallVector<SymbolRefAttr> canonSymbols;
+  SmallVector<ConstraintAttr> canonConstraints;
+  canonSymbols.reserve(symbols.size());
+  canonConstraints.reserve(constraints.size());
+
+  ConstraintAttr unconditional = getUnconditionalConstraint(context);
+  bool hasAnyNonTrivialConstraint = false;
+
+  for (auto [symbol, constraint] : llvm::zip(symbols, constraints)) {
+    // Skip slots with false constraints - they are never satisfiable.
+    if (isTriviallyFalseConstraint(constraint))
+      continue;
+
+    canonSymbols.push_back(symbol);
+
+    if (isTriviallyTrueConstraint(constraint)) {
+      canonConstraints.push_back(unconditional);
+    } else {
+      canonConstraints.push_back(constraint);
+      hasAnyNonTrivialConstraint = true;
+    }
+  }
+
+  // If all constraints are trivially true, clear the constraints array.
+  if (!hasAnyNonTrivialConstraint)
+    canonConstraints.clear();
+
+  return Base::get(context, canonSymbols, canonConstraints);
+}
+
+Type TraitType::parse(AsmParser &p) {
+  if (p.parseLess())
+    return {};
+
+  SmallVector<SymbolRefAttr> symbols;
+  SmallVector<ConstraintAttr> constraints;
+  bool hasAnyConstraints = false;
+
+  // Parse optional comma-separated list of trait symbols, each optionally
+  // followed by "where <constraint>".
+  // Format: @TraitA, @TraitB where <constraint>, @TraitC
+  if (failed(p.parseOptionalGreater())) {
+    auto parseTrait = [&]() -> ParseResult {
+      SymbolRefAttr symbol;
+      if (p.parseAttribute(symbol))
+        return failure();
+      symbols.push_back(symbol);
+
+      // Check for optional "where <constraint>" after this symbol.
+      if (succeeded(p.parseOptionalKeyword("where"))) {
+        ConstraintAttr constraint;
+        if (p.parseAttribute(constraint))
+          return failure();
+        constraints.push_back(constraint);
+        hasAnyConstraints = true;
+      } else {
+        // No constraint for this trait - use placeholder for unconditional.
+        constraints.push_back(getUnconditionalConstraint(p.getContext()));
+      }
+      return success();
+    };
+
+    if (parseTrait())
+      return {};
+    while (succeeded(p.parseOptionalComma())) {
+      if (parseTrait())
+        return {};
+    }
+
+    if (p.parseGreater())
+      return {};
+  }
+
+  // If no constraints were specified at all, pass empty array.
+  // The builder will handle canonicalization.
+  if (!hasAnyConstraints)
+    constraints.clear();
+
+  // The builder handles all canonicalization (false constraint removal,
+  // true constraint normalization, etc.)
+  return TraitType::get(p.getContext(), symbols, constraints);
+}
+
+void TraitType::print(AsmPrinter &p) const {
+  ArrayRef<SymbolRefAttr> symbols = getSymbols();
+  ArrayRef<ConstraintAttr> constraints = getConstraints();
+
+  p << '<';
+  for (size_t i = 0; i < symbols.size(); ++i) {
+    if (i > 0)
+      p << ", ";
+    p.printAttribute(symbols[i]);
+    // Print "where <constraint>" for conditional conformance constraints.
+    if (i < constraints.size() && !isTriviallyTrueConstraint(constraints[i])) {
+      p << " where ";
+      p.printAttribute(constraints[i]);
+    }
+  }
+  p << '>';
+}
+
+LogicalResult TraitType::verify(function_ref<InFlightDiagnostic()> emitError,
+                                ArrayRef<SymbolRefAttr> symbols,
+                                ArrayRef<ConstraintAttr> constraints) {
+  // If constraints are present, they must form a parallel array with symbols.
+  if (!constraints.empty() && constraints.size() != symbols.size()) {
+    return emitError() << "constraints array size (" << constraints.size()
+                       << ") must match symbols array size (" << symbols.size()
+                       << ")";
+  }
+  return success();
+}
 
 OptionalParseResult TraitType::parseValue(AsmParser &p,
                                           TypedAttr &value) const {
@@ -558,6 +717,14 @@ AnyTraitType TraitType::getMetaType() { return AnyTraitType::get(*this); }
 /// Return a TypeParamAttr for a reference to this trait as a value, e.g.
 /// uttering 'Stringable' in code.
 TypedAttr TraitType::getPValue() {
+  // Conditional trait conformance is a property of struct declarations, not of
+  // trait values themselves. When a trait is referenced as a value (e.g.,
+  // uttering 'Stringable' in code), it represents the unconditional trait type.
+  // The constraints are only meaningful in the context of a struct's canonical
+  // trait list where they specify conditions for conformance.
+  assert(!hasConstraints() &&
+         "cannot convert a conditional trait type to a pvalue - conditional "
+         "conformance is a struct declaration property, not a trait value");
   return TypeParamAttr::get(*this, getMetaType());
 }
 
@@ -573,6 +740,9 @@ mlir::OpAsmAliasResult LIT::TraitType::getAlias(raw_ostream &os) const {
     else
       return mlir::OpAsmAliasResult::NoAlias;
   }
+  // Conditional trait types get a "constrained_" prefix.
+  if (hasConstraints())
+    os << "constrained_";
   llvm::interleave(names, os, "_");
   return mlir::OpAsmAliasResult::OverridableAlias;
 }

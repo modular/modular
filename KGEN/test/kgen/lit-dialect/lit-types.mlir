@@ -192,3 +192,35 @@ kgen.generator @meta_type() {
   kgen.param.declare my_trait: meta<!lit.trait<@MyTrait>> = <@MyTrait>
   kgen.return
 }
+
+// Test TraitType with constraints (conditional trait conformance).
+// Tests: unconditional, constrained, true-elision, false-removal.
+// CHECK-LABEL: kgen.generator @trait_constraints
+kgen.generator @trait_constraints<x: index>() {
+  // Unconditional traits roundtrip without constraints.
+  // CHECK: kgen.param.declare unconditional: type = <trait<@MyTrait, @Trait>>
+  kgen.param.declare unconditional: type = <!lit.trait<@MyTrait, @Trait>>
+
+  // Trait with non-trivial constraint is printed with `where`.
+  // CHECK: kgen.param.declare conditional: type = <trait<@Trait where #kgen.constraint<{{.*}}>
+  kgen.param.declare conditional: type = <!lit.trait<@Trait where #kgen.constraint<gt(x, 0), loc("test.mlir":1:1)>>>
+
+  // Literal true constraint is elided.
+  // CHECK: kgen.param.declare literal_true: type = <trait<@MyTrait>>
+  kgen.param.declare literal_true: type = <!lit.trait<@MyTrait where #kgen.constraint<1, loc("t":1:1)>>>
+
+  // Foldable true constraint (gt(1, 0) = true) is also elided.
+  // CHECK: kgen.param.declare foldable_true: type = <trait<@MyTrait>>
+  kgen.param.declare foldable_true: type = <!lit.trait<@MyTrait where #kgen.constraint<gt(1, 0), loc("t":1:2)>>>
+
+  // False constraints remove the trait slot entirely.
+  // CHECK: kgen.param.declare false_removed: type = <trait<@Trait>>
+  kgen.param.declare false_removed: type = <!lit.trait<@MyTrait where #kgen.constraint<0, loc("t":2:1)>, @Trait>>
+
+  // Combined: foldable true (elided) + non-trivial (kept) + false (removed).
+  // Result: @MyTrait (no constraint), @Trait with constraint. @TParam is removed.
+  // CHECK: kgen.param.declare combined: type = <trait<@MyTrait, @Trait where #kgen.constraint<{{.*}}>
+  kgen.param.declare combined: type = <!lit.trait<@MyTrait where #kgen.constraint<gt(1, 0), loc("t":3:1)>, @Trait where #kgen.constraint<gt(x, 0), loc("t":3:2)>, @TParam where #kgen.constraint<0, loc("t":3:3)>>>
+
+  kgen.return
+}
