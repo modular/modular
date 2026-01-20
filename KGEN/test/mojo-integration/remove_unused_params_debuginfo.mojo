@@ -5,10 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen -emit=llvm --debug-level line-tables %s | FileCheck %s
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 
 # CHECK: define {{.*}}agnostic_user{{.*}} !dbg ![[SP:[0-9]+]]
 @no_inline
@@ -28,12 +24,12 @@ fn main():
     var y: Float64 = 42.5
     var d: UInt8 = 9
     agnostic_user[Int, DType.uint8](
-        UnsafePointer[Int](to=x),
-        UnsafePointer[UInt8](to=d),
+        UnsafePointer(to=x),
+        UnsafePointer(to=d),
     )
     agnostic_user[Float64, DType.uint8](
-        UnsafePointer[Float64](to=y),
-        UnsafePointer[UInt8](to=d),
+        UnsafePointer(to=y),
+        UnsafePointer(to=d),
     )
 
 

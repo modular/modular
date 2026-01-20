@@ -12,18 +12,14 @@
 # RUN: llvm-as %t.ll -o %t.bc
 # RUN: %mojo --bitcode-libs=%t.bc %s | FileCheck %s
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 
 @extern("my_add_one")
-fn my_add_one(x: UnsafePointer[Int32]):
+fn my_add_one(x: UnsafePointer[Int32, MutAnyOrigin]):
     ...
 
 
 fn main():
     # CHECK: 3
     var two: Int32 = 2
-    my_add_one(UnsafePointer[Int32](to=two))
+    my_add_one(UnsafePointer(to=two))
     print(two)

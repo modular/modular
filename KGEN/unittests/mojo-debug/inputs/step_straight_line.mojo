@@ -4,10 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 
 fn main():
     comptime length = 3
@@ -18,4 +14,4 @@ fn main():
     vector.append(1)
     vector.append(2)
 
-    var ptr = rebind[UnsafePointer[Int]](vector.unsafe_ptr())
+    var ptr = vector.unsafe_ptr()

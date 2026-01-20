@@ -5,33 +5,30 @@
 # ===----------------------------------------------------------------------=== #
 
 from debug_test_utils import keep_alive
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 @fieldwise_init
 struct Foo:
     var x: Int
-    var ptr: UnsafePointer[Foo]
+    var ptr: UnsafePointer[Foo, MutAnyOrigin]
 
 
 struct Bar:
     var x: Int
-    var ptr: UnsafePointer[Bar]
+    var ptr: UnsafePointer[Bar, MutAnyOrigin]
 
-    fn __init__(out self, x: Int, ptr: UnsafePointer[Bar]):
+    fn __init__(out self, x: Int, ptr: UnsafePointer[Bar, MutAnyOrigin]):
         self.x = x
         self.ptr = ptr
 
 
 fn main():
-    var f1: Foo = Foo(7, UnsafePointer[Foo]())
-    var f2: Foo = Foo(8, UnsafePointer[Foo](to=f1))
+    var f1: Foo = Foo(7, {})
+    var f2: Foo = Foo(8, UnsafePointer(to=f1))
     print(f2.ptr[].x)
 
-    var b1: Bar = Bar(22, UnsafePointer[Bar]())
-    var b2: Bar = Bar(23, UnsafePointer[Bar](to=b1))
+    var b1: Bar = Bar(22, {})
+    var b2: Bar = Bar(23, UnsafePointer(to=b1))
     print(b2.ptr[].x)  # breakpoint
 
     keep_alive(f1, f2, b1, b2)

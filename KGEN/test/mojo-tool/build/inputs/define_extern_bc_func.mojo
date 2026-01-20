@@ -4,11 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 
 @export("my_add_one")
-fn my_add_one(x: UnsafePointer[Int32]):
+fn my_add_one(x: UnsafePointer[Int32, MutAnyOrigin]):
     x[] += 1

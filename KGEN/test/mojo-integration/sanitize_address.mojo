@@ -10,9 +10,6 @@
 # RUN: not not %t 2>&1 | FileCheck %s
 
 from compile import compile_info
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 def main():
@@ -20,5 +17,5 @@ def main():
     # CHECK: WRITE of size 8
     # CHECK: #0 {{.*}} in sanitize_address::main() {{.*}}sanitize_address.mojo:[[@LINE+3]]
     # CHECK: is located 0 bytes after 8-byte region
-    var p: UnsafePointer[Int] = UnsafePointer[Int].alloc(1)
+    var p = alloc[Int](1)
     p[1] = 4
