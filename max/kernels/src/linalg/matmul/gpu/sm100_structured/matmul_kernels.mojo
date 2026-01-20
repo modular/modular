@@ -79,7 +79,7 @@ from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from linalg.matmul.gpu.sm100.config import MatmulConfig
+from .config import MatmulConfig
 from .pipeline import ProducerConsumerPipeline
 from .tile_pipeline import (
     TilePipeline,

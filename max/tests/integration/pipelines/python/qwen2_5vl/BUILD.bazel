@@ -114,8 +114,8 @@ modular_py_library(
 )
 
 modular_py_test(
-    name = "test_compute_scatter_gather_indices",
-    srcs = ["test_compute_scatter_gather_indices.py"],
+    name = "test_compute_multimodal_merge_indices",
+    srcs = ["test_compute_multimodal_merge_indices.py"],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/pipelines/architectures",

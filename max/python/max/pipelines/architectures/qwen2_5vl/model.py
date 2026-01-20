@@ -55,7 +55,7 @@ from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
 from .model_config import Qwen2_5VLConfig
 from .nn.data_processing import get_rope_index
 from .qwen2_5vl import Qwen2_5VL
-from .util import compute_scatter_gather_indices
+from .util import compute_multimodal_merge_indices
 
 logger = logging.getLogger("max.pipelines")
 
@@ -86,16 +86,12 @@ class Qwen2_5VLInputs(ModelInputs):
     kv_cache_inputs: KVCacheInputs
     """KV cache inputs for the model."""
 
-    scatter_indices: list[Buffer] | None = None
-    """Per-device pre-computed scatter indices for the image embeddings.
+    image_token_indices: list[Buffer] | None = None
+    """Per-device pre-computed multimodal merge indices for the image embeddings.
 
-    These are the locations of the image_token_id in the inputs fed to the model."""
+    These are the locations of the image_token_id in the inputs fed to the model.
 
-    gather_indices: list[Buffer] | None = None
-    """Per-device pre-computed gather indices for the image embeddings.
-
-    These are the indices within the image embeddings that will participate in
-    the subsequent scatter operation."""
+    Some indices may be negative, which means that they are ignored by the multimodal merge."""
 
     # Vision inputs.
     pixel_values: list[Buffer] | None = None
@@ -511,19 +507,9 @@ class Qwen2_5VLModel(
         ]
 
         # Add image token indices type - one per device
-        scatter_indices_types = [
+        image_token_indices_types = [
             TensorType(
                 DType.int32,
-                shape=["total_image_tokens"],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-
-        # Add gather indices type - one per device
-        gather_indices_types = [
-            TensorType(
-                DType.int64,  # gather requires int64 indices
                 shape=["total_image_tokens"],
                 device=DeviceRef.from_device(device),
             )
@@ -548,8 +534,7 @@ class Qwen2_5VLModel(
                 return_n_logits_type,
                 *input_row_offsets_types,
                 *image_embeddings_types,
-                *scatter_indices_types,
-                *gather_indices_types,
+                *image_token_indices_types,
                 position_ids_type,
                 *signals.input_types(),
                 *flattened_kv_types,
@@ -574,13 +559,7 @@ class Qwen2_5VLModel(
             variadic_args = variadic_args[len(self.devices) :]
 
             # Extract image token indices (one per device)
-            scatter_indices = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract gather indices (one per device)
-            gather_indices = [
+            image_token_indices = [
                 v.tensor for v in variadic_args[: len(self.devices)]
             ]
             variadic_args = variadic_args[len(self.devices) :]
@@ -603,8 +582,7 @@ class Qwen2_5VLModel(
                 tokens=input_ids.tensor,
                 return_n_logits=return_n_logits.tensor,
                 image_embeddings=image_embeddings,
-                scatter_indices=scatter_indices,
-                gather_indices=gather_indices,
+                image_token_indices=image_token_indices,
                 position_ids=position_ids,
                 signal_buffers=signal_buffers,
                 kv_collections=kv_collections,
@@ -625,24 +603,16 @@ class Qwen2_5VLModel(
         ).to(self.devices)
 
     @cached_property
-    def _empty_image_scatter_indices(self) -> list[Buffer]:
+    def _empty_image_image_token_indices(self) -> list[Buffer]:
         """Create empty image scatter indices for text-only inputs on multi-device."""
         return Buffer.zeros(
             shape=[0],
             dtype=DType.int32,
         ).to(self.devices)
 
-    @cached_property
-    def _empty_image_gather_indices(self) -> list[Buffer]:
-        """Create empty image gather indices for text-only inputs on multi-device."""
-        return Buffer.zeros(
-            shape=[0],
-            dtype=DType.int64,
-        ).to(self.devices)
-
     def _batch_image_token_indices(
         self, context_batch: Sequence[Qwen2_5VLTextAndVisionContext]
-    ) -> tuple[list[Buffer], list[Buffer]]:
+    ) -> list[Buffer]:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
 
@@ -650,24 +620,18 @@ class Qwen2_5VLModel(
         contexts using vectorized operations.
 
         Args:
-            context_batch: Sequence of contexts that may contain image token
-                indices
+            context_batch: Sequence of contexts that may contain image token indices
 
         Returns:
-            List of tensors containing all scatter indices distributed across devices
-            List of tensors containing all gather indices distributed across devices
+            List of tensors containing all multimodal merge indices distributed
+            across devices
         """
         assert self.model_config is not None, "Model config must be initialized"
 
-        np_scatter_indices, np_gather_indices = compute_scatter_gather_indices(
-            context_batch
-        )
+        np_image_token_indices = compute_multimodal_merge_indices(context_batch)
 
         # Create tensor and distribute to devices
-        return (
-            Buffer.from_numpy(np_scatter_indices).to(self.devices),
-            Buffer.from_numpy(np_gather_indices).to(self.devices),
-        )
+        return Buffer.from_numpy(np_image_token_indices).to(self.devices)
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Qwen2.5VL model with the prepared inputs."""
@@ -680,8 +644,7 @@ class Qwen2_5VLModel(
         image_embeddings: list[Buffer]
 
         if model_inputs.has_vision_inputs:
-            assert model_inputs.scatter_indices is not None
-            assert model_inputs.gather_indices is not None
+            assert model_inputs.image_token_indices is not None
             assert model_inputs.pixel_values is not None
             assert model_inputs.vision_position_ids is not None
             assert model_inputs.window_index is not None
@@ -716,37 +679,21 @@ class Qwen2_5VLModel(
                 image_embeddings, self.dtype, self._session
             )
 
-            scatter_indices = model_inputs.scatter_indices
-            gather_indices = model_inputs.gather_indices
+            image_token_indices = model_inputs.image_token_indices
 
-            # The size of scatter and gather indices must match, equalling the
-            # number of image placeholder tokens in the input ids.
-            assert scatter_indices[0].shape[0] == gather_indices[0].shape[0]
-
-            # Since we gather a subset of the image embeddings, the number of
-            # gathered indices cannot exceed the number of image embeddings.
-            assert gather_indices[0].shape[0] <= image_embeddings[0].shape[0]
-
-            # Since we scatter these image embeddings to some rows of the text
-            # embeddings, the number of scattered indices cannot exceed the
-            # number of input ids.
+            # The size of scatter indices must match the number of image embeddings.
             assert (
-                scatter_indices[0].shape[0] <= model_inputs.input_ids.shape[0]
+                image_token_indices[0].shape[0] == image_embeddings[0].shape[0]
             )
 
             # Normalize index dtypes to match the language graph contract.
-            scatter_indices = cast_tensors_to(
-                scatter_indices, DType.int32, self._session
+            image_token_indices = cast_tensors_to(
+                image_token_indices, DType.int32, self._session
             )
-            gather_indices = cast_tensors_to(
-                gather_indices, DType.int64, self._session
-            )
-
         else:
             # Initialize empty tensors for text-only mode
             image_embeddings = self._empty_image_embeddings
-            gather_indices = self._empty_image_gather_indices
-            scatter_indices = self._empty_image_scatter_indices
+            image_token_indices = self._empty_image_image_token_indices
 
         # Execute language model with text and image embeddings
         language_outputs = self.language_model.execute(
@@ -754,8 +701,7 @@ class Qwen2_5VLModel(
             model_inputs.return_n_logits,
             *model_inputs.input_row_offsets,
             *image_embeddings,
-            *scatter_indices,
-            *gather_indices,
+            *image_token_indices,
             model_inputs.position_ids,
             *model_inputs.signal_buffers,
             *model_inputs.kv_cache_inputs,
@@ -1046,9 +992,7 @@ class Qwen2_5VLModel(
             )
 
         with Tracer("prepare_image_token_indices"):
-            scatter_indices, gather_indices = self._batch_image_token_indices(
-                context_batch
-            )
+            image_token_indices = self._batch_image_token_indices(context_batch)
 
         if not any_needs_vision_encoding:
             return Qwen2_5VLInputs(
@@ -1060,8 +1004,7 @@ class Qwen2_5VLModel(
                     np.array([return_n_logits], dtype=np.int64)
                 ),
                 kv_cache_inputs=kv_cache_inputs,
-                scatter_indices=scatter_indices,
-                gather_indices=gather_indices,
+                image_token_indices=image_token_indices,
                 pixel_values=None,
                 window_index=None,
                 vision_position_ids=None,
@@ -1198,8 +1141,7 @@ class Qwen2_5VLModel(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
-            scatter_indices=scatter_indices,
-            gather_indices=gather_indices,
+            image_token_indices=image_token_indices,
             pixel_values=pixel_values,
             window_index=window_index,
             vision_position_ids=vision_position_ids,
@@ -1246,8 +1188,7 @@ class Qwen2_5VLModel(
             position_ids=position_ids,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             return_n_logits=prev_model_inputs.return_n_logits,
-            scatter_indices=None,
-            gather_indices=None,
+            image_token_indices=None,
             # Leave vision inputs empty since they are only processed on the
             # first step.
             pixel_values=None,

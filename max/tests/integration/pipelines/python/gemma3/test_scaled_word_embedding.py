@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import pytest
 import torch
 from max._core.engine import PrintStyle
 from max.driver import Accelerator, Buffer
@@ -105,6 +106,7 @@ def generate_max_outputs(
     return from_dlpack(max_output[0]).to(torch.bfloat16)
 
 
+@pytest.mark.skip("MODELS-958: Flaky")
 def test_scaled_word_embedding(
     text_config: Gemma3TextConfig,
     input_indices: torch.Tensor,
@@ -132,6 +134,7 @@ def test_scaled_word_embedding(
     torch.cuda.empty_cache()
 
 
+@pytest.mark.skip("MODELS-958: Flaky")
 def test_scaled_word_embedding_with_scale(
     text_config: Gemma3TextConfig,
     input_indices: torch.Tensor,

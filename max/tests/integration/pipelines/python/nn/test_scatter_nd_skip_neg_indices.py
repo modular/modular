@@ -61,7 +61,7 @@ from max.nn.kernels import scatter_nd_skip_neg_indices
         ),
     ],
 )
-def test_scatter_nonneg(
+def test_scatter_nd_skip_neg_indices(
     input_data: list[float] | list[list[float]],
     updates_data: list[float] | list[list[float]],
     indices_data: list[int] | np.ndarray,

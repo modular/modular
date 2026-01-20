@@ -84,8 +84,6 @@ from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
 from .grouped_matmul_tile_scheduler import TileScheduler, WorkInfo
 
-from .matmul.gpu.sm100.matmul import _blackwell_matmul_tma_umma_warp_specialized
-
 
 @fieldwise_init
 @register_passable("trivial")

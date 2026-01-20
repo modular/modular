@@ -195,10 +195,12 @@ class TextGenerationPipeline(
                 force_download=self._pipeline_config.model.force_download,
             )
         else:
-            # Make sure the weight paths are absolute paths
+            # Use the resolved repo_id (which points to local cache in offline mode)
+            local_path = Path(
+                self._pipeline_config.model.huggingface_weight_repo.repo_id
+            )
             weight_paths = [
-                self._pipeline_config.model.model_path / x
-                for x in self._pipeline_config.model.weight_path
+                local_path / x for x in self._pipeline_config.model.weight_path
             ]
 
         # late imports to minimize header deps

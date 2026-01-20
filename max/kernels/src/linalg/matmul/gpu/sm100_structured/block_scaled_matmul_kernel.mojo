@@ -94,14 +94,9 @@ from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
 )
-from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from .config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
-
-# Import from legacy sm100 module
-from linalg.matmul.gpu.sm100.block_scaled_matmul import (
-    B200BlockScaledMatmulSmem,
-)
-from linalg.matmul.gpu.sm100.matmul import ProducerConsumerPipeline
+from .pipeline import ProducerConsumerPipeline
 
 # Structured kernel imports
 from .matmul_kernels import WarpRole, KernelContext

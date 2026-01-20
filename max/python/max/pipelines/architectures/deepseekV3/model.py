@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
-from max.driver import Buffer
+from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
@@ -162,7 +162,14 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         else:
             float8_config = None
 
-        if self.pipeline_config.ep_size == 1:
+        # Disable EP in virtual device mode (compilation-only) since NVSHMEM
+        # functions cannot be linked without real GPU devices
+        if is_virtual_device_mode():
+            ep_config = None
+            logger.info(
+                "Disabling expert parallelism in virtual device mode (compilation-only)"
+            )
+        elif self.pipeline_config.ep_size == 1:
             ep_config = None
         else:
             if self.pipeline_config.ep_size % len(self.devices) != 0:
@@ -192,6 +199,16 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 ep_kwargs["dispatch_fp8_config"] = float8_config.input_scale
 
             ep_config = EPConfig(**ep_kwargs)
+
+        # Determine data_parallel_degree: EP requires data-parallel attention
+        if ep_config is not None:
+            # When EP is used, data parallelism is required for attention
+            data_parallel_degree = len(self.devices)
+        else:
+            # Use the configured value from pipeline_config
+            data_parallel_degree = (
+                self.pipeline_config.model.data_parallel_degree
+            )
 
         norm_dtype = state_dict[
             "layers.0.self_attn.kv_a_layernorm.weight"
@@ -250,9 +267,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             float8_config=float8_config,
             ep_config=ep_config,
             graph_mode=graph_mode,
-            data_parallel_degree=self.pipeline_config.model.data_parallel_degree,
+            data_parallel_degree=data_parallel_degree,
             use_subgraphs=self.pipeline_config.model.use_subgraphs,
             return_logits=self.return_logits,
+            return_hidden_states=self.return_hidden_states,
         )
 
     @classmethod
@@ -552,7 +570,18 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             *model_inputs.batch_context_lengths,
             *ep_inputs,
         )
-        if len(model_outputs) == 3:
+        if len(model_outputs) == 4:
+            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(model_outputs[1], Buffer)
+            assert isinstance(model_outputs[2], Buffer)
+            assert isinstance(model_outputs[3], Buffer)
+            return ModelOutputs(
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[1],
+                logit_offsets=model_outputs[2],
+                hidden_states=model_outputs[3],
+            )
+        elif len(model_outputs) == 3:
             assert isinstance(model_outputs[0], Buffer)
             assert isinstance(model_outputs[1], Buffer)
             assert isinstance(model_outputs[2], Buffer)
@@ -642,7 +671,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
-            ).to(device0),
+            ),
             data_parallel_splits=data_parallel_splits,
         )
 

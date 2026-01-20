@@ -19,49 +19,40 @@ import torch
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, SymbolicDim, TensorType
 from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings_with_gather,
+    merge_multimodal_embeddings,
 )
 
 
 def merge_multimodal_embeddings_torch_reference(
     inputs_embeds: torch.Tensor,
     multimodal_embeddings: torch.Tensor,
-    scatter_indices: torch.Tensor,
-    gather_indices: torch.Tensor,
+    image_token_indices: torch.Tensor,
 ) -> torch.Tensor:
     """Reference PyTorch implementation using pre-computed indices."""
     # Expect already flattened tensors.
     # inputs_embeds shape: [num_tokens, hidden_size]
-    # multimodal_embeddings shape: [num_multimodal_tokens_before_gather, hidden_size]
-    # scatter_indices shape: [num_multimodal_tokens]
-    # gather_indices shape: [num_multimodal_tokens]
+    # multimodal_embeddings shape: [num_multimodal_tokens, hidden_size]
+    # image_token_indices shape: [num_multimodal_tokens]
 
     # Verify count.
-    if scatter_indices.shape[0] != gather_indices.shape[0]:
+    if image_token_indices.shape[0] != multimodal_embeddings.shape[0]:
         raise ValueError(
-            f"Index count mismatch: {scatter_indices.shape[0]} scatter indices "
-            f"but {gather_indices.shape[0]} gather indices provided"
+            f"Index count mismatch: {image_token_indices.shape[0]} image token indices "
+            f"but {multimodal_embeddings.shape[0]} multimodal embeddings provided"
         )
 
     # Replace tokens at specified indices with multimodal embeddings.
     result = inputs_embeds.clone()
-    if scatter_indices.shape[0] > 0:
-        gather_indices_broadcasted = gather_indices.view(-1, 1).expand(
-            -1, multimodal_embeddings.size(1)
-        )
-        multimodal_embeddings_gathered = torch.gather(
-            multimodal_embeddings,
-            index=gather_indices_broadcasted,
-            dim=0,
-        )
-        result[scatter_indices] = multimodal_embeddings_gathered
+    if image_token_indices.shape[0] > 0:
+        mask = image_token_indices >= 0
+        result[image_token_indices[mask]] = multimodal_embeddings[mask]
 
     return result
 
 
-def test_embeddings_merge_with_gather() -> None:
+def test_embeddings_merge_with_negative_indices() -> None:
     """Test execution of embedding merge for a single image with flattened tensors."""
     torch.manual_seed(42)
     IMG = 100
@@ -81,49 +72,44 @@ def test_embeddings_merge_with_gather() -> None:
     img1_size = 3
     active_length = input_ids.shape[0] - start_idx
     # This is indices of both img0 and img1.
-    num_image_tokens_before_gather = torch.where(input_ids == IMG)[0].shape[0]
+    num_image_tokens = torch.where(input_ids == IMG)[0].shape[0]
 
     # We want the image embeddings for the last 3 image tokens, skipping the first 4.
-    scatter_indices = torch.tensor([1, 2, 3], dtype=torch.int32)
-    gather_indices = torch.arange(
-        img0_size, img0_size + img1_size, dtype=torch.int64
+    image_token_indices = torch.tensor(
+        [-1, -1, -1, -1, 1, 2, 3], dtype=torch.int32
     )
-    assert scatter_indices.shape[0] == gather_indices.shape[0]
-    num_image_tokens_after_gather = gather_indices.shape[0]
 
     text_embeds = torch.randn(active_length, hidden_size, dtype=torch.float32)
     vision_embeds = torch.randn(
-        num_image_tokens_before_gather, hidden_size, dtype=torch.float32
+        num_image_tokens, hidden_size, dtype=torch.float32
     )
 
     # Get reference output
     expected_output = merge_multimodal_embeddings_torch_reference(
-        text_embeds, vision_embeds, scatter_indices, gather_indices
+        text_embeds, vision_embeds, image_token_indices
     )
 
     # Build the graph
+    active_length_dim = SymbolicDim("active_length")
+    hidden_size_dim = SymbolicDim("hidden_size")
+    num_image_tokens_dim = SymbolicDim("num_image_tokens")
     graph = Graph(
         "test_merge_execution",
-        forward=merge_multimodal_embeddings_with_gather,
+        forward=merge_multimodal_embeddings,
         input_types=[
             TensorType(
                 dtype=DType.float32,
-                shape=(active_length, hidden_size),
+                shape=(active_length_dim, hidden_size_dim),
                 device=device_ref,
             ),
             TensorType(
                 dtype=DType.float32,
-                shape=(num_image_tokens_before_gather, hidden_size),
+                shape=(num_image_tokens_dim, hidden_size_dim),
                 device=device_ref,
             ),
             TensorType(
                 dtype=DType.int32,
-                shape=(num_image_tokens_after_gather,),
-                device=device_ref,
-            ),
-            TensorType(
-                dtype=DType.int64,
-                shape=(num_image_tokens_after_gather,),
+                shape=(num_image_tokens_dim,),
                 device=device_ref,
             ),
         ],
@@ -136,17 +122,15 @@ def test_embeddings_merge_with_gather() -> None:
     # Convert inputs to MAX tensors
     text_embeds_tensor = Buffer.from_numpy(text_embeds.numpy()).to(device)
     vision_embeds_tensor = Buffer.from_numpy(vision_embeds.numpy()).to(device)
-    scatter_indices_tensor = Buffer.from_numpy(scatter_indices.numpy()).to(
-        device
-    )
-    gather_indices_tensor = Buffer.from_numpy(gather_indices.numpy()).to(device)
+    image_token_indices_tensor = Buffer.from_numpy(
+        image_token_indices.numpy()
+    ).to(device)
 
     # Execute
     results = compiled.execute(
         text_embeds_tensor,
         vision_embeds_tensor,
-        scatter_indices_tensor,
-        gather_indices_tensor,
+        image_token_indices_tensor,
     )
 
     # Convert result back to torch
@@ -172,6 +156,5 @@ def test_embeddings_merge_with_gather() -> None:
         Buffer.zeros(shape=(0, 0), dtype=DType.float32),
         Buffer.zeros(shape=(0, 0), dtype=DType.float32),
         Buffer.zeros(shape=(0,), dtype=DType.int32),
-        Buffer.zeros(shape=(0,), dtype=DType.int64),
     )
     assert empty_results[0].shape == (0, 0)

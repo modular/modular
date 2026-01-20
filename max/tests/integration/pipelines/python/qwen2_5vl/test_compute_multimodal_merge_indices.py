@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-"""Test compute_scatter_gather_indices function."""
+"""Test compute_multimodal_merge_indices function."""
 
 import copy
 from unittest.mock import Mock
@@ -23,11 +23,11 @@ from max.pipelines.architectures.qwen2_5vl.context import (
     Qwen2_5VLTextAndVisionContext,
 )
 from max.pipelines.architectures.qwen2_5vl.util import (
-    compute_scatter_gather_indices,
+    compute_multimodal_merge_indices,
 )
 
 
-def test_compute_scatter_gather_indices() -> None:
+def test_compute_multimodal_merge_indices() -> None:
     IMG = 99
     # These pixel values are arbitrary
     img0 = np.array([[-1, -2], [-3, -4]])
@@ -72,35 +72,30 @@ def test_compute_scatter_gather_indices() -> None:
     assert (precomputed == np.where(ctx.tokens.all == IMG)[0]).all()
 
     # Test normal case: start_idx = 0
-    scatter_indices, gather_indices = compute_scatter_gather_indices([ctx])
+    image_token_indices = compute_multimodal_merge_indices([ctx])
     # 9 img tokens (img0 + img1)
-    assert gather_indices.tolist() == [0, 1, 2, 3, 4, 5, 6, 7, 8]
-    assert scatter_indices.tolist() == [4, 5, 6, 7, 10, 11, 12, 13, 14]
+    assert image_token_indices.tolist() == [4, 5, 6, 7, 10, 11, 12, 13, 14]
 
     # Test prefix cache hit case: start_idx = 8
     ctx.tokens.skip_processing(8)
-    scatter_indices, gather_indices = compute_scatter_gather_indices([ctx])
+    image_token_indices = compute_multimodal_merge_indices([ctx])
     # 5 img tokens (img1)
     # 0-3 are skipped as img0 is not included
-    assert gather_indices.tolist() == [4, 5, 6, 7, 8]
-    assert scatter_indices.tolist() == [2, 3, 4, 5, 6]
+    assert image_token_indices.tolist() == [-1, -1, -1, -1, 2, 3, 4, 5, 6]
 
     # Test multiple contexts case
     # ctx0 (start_idx=0), ctx1 (start_idx=8)
     ctx0 = copy.deepcopy(ctx)
     ctx1 = copy.deepcopy(ctx)
     ctx0.tokens.rewind_processing(ctx0.tokens.processed_length)
-    scatter_indices, gather_indices = compute_scatter_gather_indices(
+    image_token_indices = compute_multimodal_merge_indices(
         [ctx0, ctx1]
     )
     # 9 (img0 + img1) + 5 (img1) = 14 img tokens
     # 9-12 are skipped as img0 of ctx1 is not included
-    assert gather_indices.tolist() == [0, 1, 2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17]
-    assert scatter_indices.tolist() == [4, 5, 6, 7, 10, 11, 12, 13, 14, 18, 19, 20, 21, 22]
+    assert image_token_indices.tolist() == [4, 5, 6, 7, 10, 11, 12, 13, 14, -1, -1, -1, -1, 18, 19, 20, 21, 22]
 
     # Test empty case
-    scatter_indices, gather_indices = compute_scatter_gather_indices([])
-    assert scatter_indices.dtype == np.int32
-    assert gather_indices.dtype == np.int64
-    assert gather_indices.tolist() == []
-    assert scatter_indices.tolist() == []
+    image_token_indices = compute_multimodal_merge_indices([])
+    assert image_token_indices.dtype == np.int32
+    assert image_token_indices.tolist() == []

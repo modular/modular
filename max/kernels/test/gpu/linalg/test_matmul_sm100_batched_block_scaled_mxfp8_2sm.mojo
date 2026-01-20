@@ -26,7 +26,7 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100.block_scaled_matmul import (
+from linalg.matmul.gpu.sm100_structured import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig

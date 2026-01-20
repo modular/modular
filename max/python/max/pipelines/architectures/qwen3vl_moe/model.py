@@ -34,6 +34,9 @@ from max.graph.weights import (
 from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.nn.parallel import ParallelArrayOps
+from max.pipelines.architectures.qwen2_5vl.util import (
+    compute_multimodal_merge_indices,
+)
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -51,7 +54,6 @@ from transformers import AutoConfig
 from .context import Qwen3VLTextAndVisionContext, VisionEncodingData
 from .model_config import Qwen3VLConfig
 from .qwen3vl import Qwen3VL
-from .util import compute_scatter_gather_indices
 from .weight_adapters import convert_qwen3vl_model_state_dict
 
 logger = logging.getLogger("max.pipelines")
@@ -84,16 +86,12 @@ class Qwen3VLInputs(ModelInputs):
     kv_cache_inputs: KVCacheInputs
     """KV cache inputs for the model."""
 
-    scatter_indices: list[Buffer] | None = None
-    """Per-device pre-computed scatter indices for the image embeddings.
+    image_token_indices: list[Buffer] | None = None
+    """Per-device pre-computed multimodal merge indices for the image embeddings.
 
-    These are the locations of the image_token_id in the input_ids fed to the model."""
+    These are the locations of the image_token_id in the inputs fed to the model.
 
-    gather_indices: list[Buffer] | None = None
-    """Per-device pre-computed gather indices for the image embeddings.
-
-    These are the indices within the image embeddings that will participate in
-    the subsequent scatter operation."""
+    Some indices may be negative, which means that they are ignored by the multimodal merge."""
 
     # Vision inputs.
     pixel_values: list[Buffer] | None = None
@@ -546,19 +544,9 @@ class Qwen3VLModel(
                 )
 
         # Add image token indices type - one per device
-        scatter_indices_types = [
+        image_token_indices_types = [
             TensorType(
                 DType.int32,
-                shape=["total_image_tokens"],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-
-        # Add gather indices type - one per device
-        gather_indices_types = [
-            TensorType(
-                DType.int64,  # gather requires int64 indices
                 shape=["total_image_tokens"],
                 device=DeviceRef.from_device(device),
             )
@@ -587,8 +575,7 @@ class Qwen3VLModel(
             *input_row_offsets_types,
             *image_embeddings_types,
             *deepstack_embeddings_types,
-            *scatter_indices_types,
-            *gather_indices_types,
+            *image_token_indices_types,
             position_ids_type,
             *signals.input_types(),
             *flattened_kv_types,
@@ -645,13 +632,7 @@ class Qwen3VLModel(
             variadic_args = variadic_args[num_deepstack_inputs:]
 
             # Extract image token indices (one per device)
-            scatter_indices = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
-
-            # Extract gather indices (one per device)
-            gather_indices = [
+            image_token_indices = [
                 v.tensor for v in variadic_args[: len(self.devices)]
             ]
             variadic_args = variadic_args[len(self.devices) :]
@@ -683,8 +664,7 @@ class Qwen3VLModel(
                 tokens=input_ids.tensor,
                 return_n_logits=return_n_logits.tensor,
                 image_embeddings=image_embeddings,
-                scatter_indices=scatter_indices,
-                gather_indices=gather_indices,
+                image_token_indices=image_token_indices,
                 position_ids=position_ids,
                 mrope_section=config.mrope_section,
                 kv_collections=kv_collections,
@@ -730,24 +710,16 @@ class Qwen3VLModel(
         return image_embeddings, deepstack_image_embeddings
 
     @cached_property
-    def _empty_image_scatter_indices(self) -> list[Buffer]:
+    def _empty_image_image_token_indices(self) -> list[Buffer]:
         """Create empty image scatter indices for text-only inputs on multi-device."""
         return Buffer.zeros(
             shape=[0],
             dtype=DType.int32,
         ).to(self.devices)
 
-    @cached_property
-    def _empty_image_gather_indices(self) -> list[Buffer]:
-        """Create empty image gather indices for text-only inputs on multi-device."""
-        return Buffer.zeros(
-            shape=[0],
-            dtype=DType.int64,
-        ).to(self.devices)
-
     def _batch_image_token_indices(
         self, context_batch: Sequence[Qwen3VLTextAndVisionContext]
-    ) -> tuple[list[Buffer], list[Buffer]]:
+    ) -> list[Buffer]:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
 
@@ -759,20 +731,14 @@ class Qwen3VLModel(
                 indices
 
         Returns:
-            List of tensors containing all scatter indices distributed across devices
-            List of tensors containing all gather indices distributed across devices
+            List of buffers containing all multimodal merge indices distributed across devices
         """
         assert self.model_config is not None, "Model config must be initialized"
 
-        np_scatter_indices, np_gather_indices = compute_scatter_gather_indices(
-            context_batch
-        )
+        np_image_token_indices = compute_multimodal_merge_indices(context_batch)
 
-        # Create tensor and distribute to devices
-        return (
-            Buffer.from_numpy(np_scatter_indices).to(self.devices),
-            Buffer.from_numpy(np_gather_indices).to(self.devices),
-        )
+        # Create buffer and distribute to devices
+        return Buffer.from_numpy(np_image_token_indices).to(self.devices)
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Qwen3VL model with the prepared inputs."""
@@ -785,8 +751,7 @@ class Qwen3VLModel(
         image_embeddings: list[Buffer]
         deepstack_image_embeddings: list[Buffer]
         if model_inputs.has_vision_inputs:
-            assert model_inputs.scatter_indices is not None
-            assert model_inputs.gather_indices is not None
+            assert model_inputs.image_token_indices is not None
             assert model_inputs.pixel_values is not None
             assert model_inputs.vision_position_ids is not None
             assert model_inputs.weights is not None
@@ -846,38 +811,23 @@ class Qwen3VLModel(
                 deepstack_image_embeddings, self.dtype, self._session
             )
 
-            scatter_indices = model_inputs.scatter_indices
-            gather_indices = model_inputs.gather_indices
+            image_token_indices = model_inputs.image_token_indices
 
-            # The size of scatter and gather indices must match, equalling the
-            # number of image placeholder tokens in the input ids.
-            assert scatter_indices[0].shape[0] == gather_indices[0].shape[0]
-
-            # Since we gather a subset of the image embeddings, the number of
-            # gathered indices cannot exceed the number of image embeddings.
-            assert gather_indices[0].shape[0] <= image_embeddings[0].shape[0]
-
-            # Since we scatter these image embeddings to some rows of the text
-            # embeddings, the number of scattered indices cannot exceed the
-            # number of input ids.
+            # The size of scatter indices must match the number of image embeddings.
             assert (
-                scatter_indices[0].shape[0] <= model_inputs.input_ids.shape[0]
+                image_token_indices[0].shape[0] == image_embeddings[0].shape[0]
             )
 
             # Normalize index dtypes to match the language graph contract.
-            scatter_indices = cast_tensors_to(
-                scatter_indices, DType.int32, self._session
-            )
-            gather_indices = cast_tensors_to(
-                gather_indices, DType.int64, self._session
+            image_token_indices = cast_tensors_to(
+                image_token_indices, DType.int32, self._session
             )
         else:
             # Initialize empty tensors for text-only mode
             image_embeddings, deepstack_image_embeddings = (
                 self._empty_image_embeddings
             )
-            gather_indices = self._empty_image_gather_indices
-            scatter_indices = self._empty_image_scatter_indices
+            image_token_indices = self._empty_image_image_token_indices
 
         # Prepare KV cache inputs as list of tensors
         assert model_inputs.kv_cache_inputs
@@ -892,8 +842,7 @@ class Qwen3VLModel(
             *model_inputs.input_row_offsets,
             *image_embeddings,
             *deepstack_image_embeddings,
-            *scatter_indices,
-            *gather_indices,
+            *image_token_indices,
             model_inputs.decoder_position_ids,
             *model_inputs.signal_buffers,
             *kv_cache_inputs_list,
@@ -1002,9 +951,7 @@ class Qwen3VLModel(
 
         # Batch image token indices
         with Tracer("prepare_image_token_indices"):
-            scatter_indices, gather_indices = self._batch_image_token_indices(
-                context_batch
-            )
+            image_token_indices = self._batch_image_token_indices(context_batch)
 
         if not any_needs_vision_encoding:
             return Qwen3VLInputs(
@@ -1016,8 +963,7 @@ class Qwen3VLModel(
                     np.array([return_n_logits], dtype=np.int64)
                 ),
                 kv_cache_inputs=kv_cache_inputs,
-                scatter_indices=scatter_indices,
-                gather_indices=gather_indices,
+                image_token_indices=image_token_indices,
                 pixel_values=None,
                 vision_position_ids=None,
                 weights=None,
@@ -1114,8 +1060,7 @@ class Qwen3VLModel(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
-            scatter_indices=scatter_indices,
-            gather_indices=gather_indices,
+            image_token_indices=image_token_indices,
             pixel_values=pixel_values,
             vision_position_ids=vision_position_ids,
             weights=weights,
@@ -1156,8 +1101,7 @@ class Qwen3VLModel(
             kv_cache_inputs=prev_inputs.kv_cache_inputs,
             return_n_logits=prev_inputs.return_n_logits,
             # Set vision model inputs to None after the first step
-            scatter_indices=None,
-            gather_indices=None,
+            image_token_indices=None,
             pixel_values=None,
             vision_position_ids=None,
             weights=None,
