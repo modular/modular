@@ -167,9 +167,9 @@ defm debug_info_language : CommandOption<["--", "-"], "debug-info-language",
   ExperimentalCompilationOptionGroup, Index<5>, MetaVarName<"LANGUAGE">,
   HelpText<
     "Sets the language to emit as part of the debug info. The supported "
-    "languages are: `Mojo`, and `C`. `C` is the default, and is useful to "
+    "languages are: `Mojo`, and `C`. `Mojo` is the default. `C` is useful to "
     "enable rudimentary debugging and binary introspection in tools "
-    "that don't understand Mojo."
+    "that don't understand Mojo, but is not required for `mojo debug`."
   >>;
 
 #endif // KGEN_TOOLS_MOJO_COMMON_COMPILATIONOPTIONS_TD
