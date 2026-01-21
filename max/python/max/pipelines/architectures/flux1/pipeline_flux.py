@@ -14,7 +14,7 @@
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import PIL.Image
@@ -24,6 +24,7 @@ from max.experimental import Tensor as Tensor_v3
 from max.experimental import functional as F
 from max.experimental import random
 from max.graph import DeviceRef
+from max.interfaces import PixelGenerationContext
 from max.pipelines.lib.diffusion_schedulers import (
     FlowMatchEulerDiscreteScheduler,
 )
@@ -44,6 +45,21 @@ from ..autoencoder_kl import AutoencoderKLModel
 from ..clip import ClipModel
 from ..t5 import T5Model
 from .model import Flux1Model
+
+
+@dataclass
+class FluxPipelineOutput:
+    """Output class for Flux image generation pipelines.
+
+    Args:
+        images (`list[PIL.Image.Image]` or `np.ndarray` or `Tensor`)
+            List of denoised PIL images of length `batch_size` or numpy array or Max tensor of shape `(batch_size,
+            height, width, num_channels)`. PIL images or numpy array present the denoised images of the diffusion
+            pipeline. Max tensors can represent either the denoised images or the intermediate latents ready to be
+            passed to the decoder.
+    """
+
+    images: list[PIL.Image.Image] | np.ndarray | Tensor
 
 
 def retrieve_timesteps(
@@ -124,21 +140,6 @@ def calculate_shift(
     b = base_shift - m * base_seq_len
     mu = image_seq_len * m + b
     return mu
-
-
-@dataclass
-class FluxPipelineOutput:
-    """Output class for Flux image generation pipelines.
-
-    Args:
-        images (`list[PIL.Image.Image]` or `np.ndarray` or `Tensor`)
-            List of denoised PIL images of length `batch_size` or numpy array or Max tensor of shape `(batch_size,
-            height, width, num_channels)`. PIL images or numpy array present the denoised images of the diffusion
-            pipeline. Max tensors can represent either the denoised images or the intermediate latents ready to be
-            passed to the decoder.
-    """
-
-    images: list[PIL.Image.Image] | np.ndarray | Tensor
 
 
 class FluxPipeline(DiffusionPipeline):
@@ -772,3 +773,15 @@ class FluxPipeline(DiffusionPipeline):
             return (image,)
 
         return FluxPipelineOutput(images=image)
+    
+    def execute(self, inputs: PixelGenerationContext) -> FluxPipelineOutput:
+        return self(
+            prompt=inputs.prompt,
+            negative_prompt=inputs.negative_prompt,
+            true_cfg_scale=inputs.true_cfg_scale,
+            height=inputs.height,
+            width=inputs.width,
+            num_inference_steps=inputs.num_inference_steps,
+            guidance_scale=inputs.guidance_scale,
+            num_images_per_prompt=inputs.num_images_per_prompt,
+        )

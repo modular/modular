@@ -24,6 +24,7 @@ from max.config import load_config
 from max.driver import load_devices
 from max.graph import DeviceRef
 from max.graph.weights import load_weights
+from max.interfaces import PixelGenerationContextType
 from max.pipelines.lib.interfaces.max_model import MaxModel
 from tqdm import tqdm
 
@@ -76,7 +77,11 @@ class DiffusionPipeline(ABC):
     @abstractmethod
     def init_remaining_components(self) -> None:
         pass
-
+    
+    @abstractmethod
+    def execute(self, model_input: PixelGenerationContextType) -> dict:
+        pass
+    
     def load_sub_models(
         self,
         pretrained_model_name_or_path: str | os.PathLike,
