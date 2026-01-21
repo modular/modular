@@ -8,8 +8,7 @@
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct RP:
+struct RP(AnyTrivialRegType):
     pass
 
 
