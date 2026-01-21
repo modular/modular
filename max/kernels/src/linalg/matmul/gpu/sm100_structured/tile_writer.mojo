@@ -1204,7 +1204,7 @@ fn shared_memory_epilogue_transpose[
     swizzle: Swizzle,
     compute_lambda_fn: elementwise_compute_lambda_type,
     num_output_warps: Int,
-    warp_dim: UInt,
+    warp_dim: Int,
     MMA_M: Int,
     BN: Int,
     cta_group: Int,

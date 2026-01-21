@@ -74,7 +74,6 @@ struct TileWriter[
     num_output_stages: Int,
     stage_stride_cols: Int,  # Must match OutputTilePipeline's stage_stride_cols
     num_output_warps: Int,
-    max_tmem_cols: UInt = 512,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,

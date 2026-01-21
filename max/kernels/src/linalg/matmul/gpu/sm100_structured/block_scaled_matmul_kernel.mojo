@@ -317,9 +317,6 @@ struct BlackwellBlockScaledMatmulKernel[
         Self.CLUSTER_N,
     ]
 
-    # TMEM allocation size
-    comptime max_tmem_cols: UInt = 512
-
     # ========== Tile Scheduler Type ==========
     comptime Scheduler = StructuredTileScheduler[
         num_stages = Self.num_clc_pipeline_stages,
@@ -747,7 +744,6 @@ struct BlackwellBlockScaledMatmulKernel[
         # ===== Kernel Context =====
         # Encapsulates election variables, CTA coordinates, and multicast masks
         var ctx = Self.Context(tmem_addr_storage)
-        comptime max_tmem_cols = 512
 
         # ===== Barrier Initialization =====
         if ctx.elect_one_warp and ctx.elect_one_thread:
