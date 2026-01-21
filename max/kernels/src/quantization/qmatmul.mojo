@@ -26,12 +26,11 @@ from linalg.arch.cpu.vnni_intrinsics import (
 from linalg.matmul import elementwise_epilogue_type
 from linalg.utils import partition_work
 from memory import (
-    LegacyUnsafePointer,
+    alloc,
     bitcast,
     stack_allocation,
 )
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index
@@ -201,10 +200,10 @@ fn _unpack_weights[
     needs_correction: Bool,
     is_i8mm: Bool,
 ](
-    _b_s8_ptr: UnsafePointer[Int8],
+    _b_s8_ptr: UnsafePointer[mut=True, Int8],
     _b_packed_ptr: UnsafePointer[UInt8],
-    _b_scale_ptr: UnsafePointer[Float32],
-    _b_correction_ptr: UnsafePointer[Int32],
+    _b_scale_ptr: UnsafePointer[mut=True, Float32],
+    _b_correction_ptr: UnsafePointer[mut=True, Int32],
     batch_k: Int,
 ):
     var b_s8_ptr = _b_s8_ptr
@@ -1103,7 +1102,7 @@ fn _matmul_qint4_m_any[
                     DType.int32,
                     alignment=alignment,
                 ]() if needs_correction else UnsafePointer[
-                    Int32,
+                    Int32, MutExternalOrigin
                 ]()
 
                 _unpack_weights[
@@ -1144,7 +1143,7 @@ fn _matmul_qint4_m_any[
 
                     for ki in range(0, ko_count, group_size):
                         kernel.process_group_unpacked[group_size](
-                            rebind[UnsafePointer[Int8]](ak_ptr),
+                            ak_ptr.bitcast[Int8](),
                             ak_scale_ptr,
                             bk_s8_ptr,
                             bk_scale_ptr,
@@ -1218,10 +1217,10 @@ fn _matmul_qint4[
 
     comptime aq_type = kernel.aq_type()
 
-    var a_quant_base_ptr = UnsafePointer[Scalar[aq_type]].alloc(
+    var a_quant_base_ptr = alloc[Scalar[aq_type]](
         M * K, alignment=alignment
     )
-    var a_scale_base_ptr = UnsafePointer[Float32].alloc(M * k_groups)
+    var a_scale_base_ptr = alloc[Float32](M * k_groups)
 
     var a_quant = LayoutTensor[aq_type, Layout.row_major[2]()](
         a_quant_base_ptr,
