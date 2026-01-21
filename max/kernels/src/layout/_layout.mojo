@@ -177,7 +177,7 @@ comptime _RowMajorMapper[
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = Variadic.concat[
+] = Variadic.concat_types[
     Variadic.types[T=CoordLike, ComptimeInt[1]] if idx
     == 0 else (
         Variadic.types[

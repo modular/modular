@@ -286,6 +286,13 @@ what we publish.
   non-struct types (such as MLIR primitive types). Use `@parameter if` with this
   function since the guarded reflection APIs are evaluated at compile time.
 
+- [Issue #5735](https://github.com/modular/modular/issues/5735): Added
+  `get_base_type_name[T]()` function to the `reflection` module that returns
+  the unqualified name of a parameterized type's base type. For example,
+  `get_base_type_name[List[Int]]()` returns `"List"`. This is useful for
+  metaprogramming and other reflection-based code that needs to identify
+  collection types regardless of their element types.
+
 - The `reflection` module has been reorganized into `type_info` and
   `struct_fields` submodules. The public API via `from reflection import ...`
   remains unchanged. Users who were importing internal symbols directly from

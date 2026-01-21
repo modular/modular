@@ -16,6 +16,9 @@ These tests exercise each expected op at least once with real data and kernels.
 They don't otherwise make any attempt at coverage, edge cases, or correctness.
 """
 
+import os
+from pathlib import Path
+
 import pytest
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
@@ -27,6 +30,11 @@ DEVICE = Accelerator() if accelerator_count() else CPU()
 
 moe_create_indices = F.functional(kernels.moe_create_indices)
 scatter_set_constant = F.functional(kernels.scatter_set_constant)
+
+
+@pytest.fixture
+def kernel_verification_ops_path() -> Path:
+    return Path(os.environ["MODULAR_KERNEL_VERIFICATION_OPS_PATH"])
 
 
 @pytest.mark.skipif(
@@ -51,3 +59,114 @@ def test_inplace_custom() -> None:
     assert not values.real
     assert values[1, 0].item() == 4.0
     assert values.real
+
+
+def test_custom_with_custom_extensions(
+    kernel_verification_ops_path: Path,
+) -> None:
+    """Test F.custom with inline custom_extensions loading."""
+    x = Tensor.ones([64], dtype=DType.float32, device=CPU())
+    y = Tensor.ones([64], dtype=DType.float32, device=CPU())
+
+    # Call custom op with custom_extensions - kernels loaded automatically
+    result = F.custom(
+        "my_add",
+        device=CPU(),
+        values=[x, y],
+        out_types=[x.type],
+        custom_extensions=kernel_verification_ops_path,
+    )
+
+    assert len(result) == 1
+    output = result[0]
+    assert output.shape == x.shape
+    assert output.dtype == x.dtype
+    assert output.real
+
+
+def test_custom_with_custom_extensions_list(
+    kernel_verification_ops_path: Path,
+) -> None:
+    """Test F.custom with custom_extensions as a list."""
+    x = Tensor.ones([64], dtype=DType.float32, device=CPU())
+    y = Tensor.ones([64], dtype=DType.float32, device=CPU())
+
+    result = F.custom(
+        "my_add",
+        device=CPU(),
+        values=[x, y],
+        out_types=[x.type],
+        custom_extensions=[kernel_verification_ops_path],
+    )
+
+    assert len(result) == 1
+    assert result[0].real
+
+
+def test_custom_with_string_path(kernel_verification_ops_path: Path) -> None:
+    """Test F.custom with custom_extensions as a string path."""
+    x = Tensor.ones([64], dtype=DType.float32, device=CPU())
+    y = Tensor.ones([64], dtype=DType.float32, device=CPU())
+
+    result = F.custom(
+        "my_add",
+        device=CPU(),
+        values=[x, y],
+        out_types=[x.type],
+        custom_extensions=str(kernel_verification_ops_path),
+    )
+
+    assert len(result) == 1
+    assert result[0].real
+
+
+def test_custom_extensions_cached_across_calls(
+    kernel_verification_ops_path: Path,
+) -> None:
+    """Test that custom_extensions are cached and not reloaded on every call."""
+    x = Tensor.ones([64], dtype=DType.float32, device=CPU())
+    y = Tensor.ones([64], dtype=DType.float32, device=CPU())
+
+    # First call
+    result1 = F.custom(
+        "my_add",
+        device=CPU(),
+        values=[x, y],
+        out_types=[x.type],
+        custom_extensions=kernel_verification_ops_path,
+    )
+    assert result1[0].real
+
+    # Second call - should use cached extension
+    result2 = F.custom(
+        "my_add",
+        device=CPU(),
+        values=[x, y],
+        out_types=[x.type],
+        custom_extensions=kernel_verification_ops_path,
+    )
+    assert result2[0].real
+
+
+def test_custom_helper_function_pattern(
+    kernel_verification_ops_path: Path,
+) -> None:
+    """Test the recommended pattern for creating reusable custom op wrappers."""
+
+    def my_add(a: Tensor, b: Tensor) -> Tensor:
+        """Element-wise addition using custom Mojo kernel."""
+        return F.custom(
+            "my_add",
+            device=a.device,
+            values=[a, b],
+            out_types=[a.type],
+            custom_extensions=kernel_verification_ops_path,
+        )[0]
+
+    x = Tensor.ones([64], dtype=DType.float32, device=CPU())
+    y = Tensor.full([64], 2.0, dtype=DType.float32, device=CPU())
+
+    result = my_add(x, y)
+
+    assert result.real
+    assert result.shape == x.shape

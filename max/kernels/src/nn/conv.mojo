@@ -63,7 +63,7 @@ from algorithm import (
     vectorize,
 )
 from buffer.buffer import (
-    # NDBuffer,
+    # LayoutTensor,
     partial_simd_load,
     partial_simd_store,
     prod_dims,

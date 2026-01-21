@@ -20,13 +20,13 @@ from max.graph import BufferType, BufferValue, TensorType, TensorValue, Value
 from max.nn import Module
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 
-from .model_config import DeepseekV32Config
+from .model_config import DeepseekV3_2Config
 
 
-class DeepseekV32(Module):
+class DeepseekV3_2(Module):
     """Defines the DeepseekV3.2 transformer model."""
 
-    def __init__(self, config: DeepseekV32Config) -> None:
+    def __init__(self, config: DeepseekV3_2Config) -> None:
         raise NotImplementedError
 
     def __call__(

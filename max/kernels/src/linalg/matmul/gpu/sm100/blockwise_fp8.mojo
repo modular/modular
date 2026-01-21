@@ -14,7 +14,6 @@ from collections import OptionalReg
 from math import ceildiv, gcd
 from sys import align_of, size_of
 
-from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
 from gpu.primitives.cluster import block_rank_in_cluster
@@ -26,7 +25,6 @@ from gpu.memory import external_memory
 from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major

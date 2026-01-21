@@ -202,11 +202,6 @@ class Qwen2_5VLModel(
             cache_dtype,
         )
 
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Gets the number of hidden layers from the HuggingFace configuration."""
-        return Qwen2_5VLConfig.get_num_layers(huggingface_config)
-
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:

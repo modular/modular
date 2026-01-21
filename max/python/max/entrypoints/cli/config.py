@@ -241,14 +241,29 @@ def config_to_flag(
     else:
         help_text = {}
     field_types = get_type_hints(cls)
+    skip_fields = {
+        "device_specs",
+        "in_dtype",
+        "out_dtype",
+        "pdl_level",
+    }
+    if cls is PipelineConfig:
+        skip_fields.update(
+            {
+                "model",
+                "draft_model",
+                "sampling",
+                "profiling",
+                "lora",
+                "speculative",
+            }
+        )
+    elif cls is MAXModelConfig:
+        skip_fields.add("kv_cache")
+
     for _field in _get_fields_from_pydantic_model(cls):
         # Skip private config fields.
-        if _field.name.startswith("_") or _field.name in (
-            "device_specs",
-            "in_dtype",
-            "out_dtype",
-            "pdl_level",
-        ):
+        if _field.name.startswith("_") or _field.name in skip_fields:
             continue
 
         original_name = _field.name

@@ -17,7 +17,6 @@ from gpu import block_idx, grid_dim, thread_idx
 
 from utils.fast_div import FastDiv
 from utils.index import Index, IndexList
-from buffer.buffer import NDBuffer
 from layout import Layout, LayoutTensor
 
 

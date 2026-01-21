@@ -3790,7 +3790,7 @@ def scatter_set_constant(
     )
 
 
-def scatter_nd_skip_neg_indices(
+def scatter_nd_skip_oob_indices(
     input: TensorValueLike,
     updates: TensorValueLike,
     indices: TensorValueLike,
@@ -3798,8 +3798,9 @@ def scatter_nd_skip_neg_indices(
     """
     Creates a new symbolic tensor where the updates are scattered into input at specified indices.
 
-    This differs from scatter_nd in that it handles negative indices by skipping
-    the update for that index.
+    This differs from scatter_nd in that it handles oob indices by skipping
+    the update for that index. Oob indices are those which fall outside of
+    the range [-dim, dim).
 
     Args:
         input: The input symbolic tensor to write elements to.

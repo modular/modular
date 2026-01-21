@@ -22,7 +22,7 @@ from max.kv_cache.paged_cache.block_utils import hash_request_tokens
 @pytest.mark.parametrize("block_size", [1, 2, 4, 64, 128, 256, 1024])
 @pytest.mark.parametrize("prompt_len", [16, 65536])
 async def test_basic(block_size: int, prompt_len: int) -> None:
-    prompt = np.arange(prompt_len, dtype=np.int64)
+    prompt = np.arange(prompt_len, dtype=np.int32)
     hash_vals = hash_request_tokens(prompt, block_size)
     assert len(hash_vals) == prompt_len // block_size
 

@@ -105,13 +105,6 @@ class KVCacheMixin(Protocol):
         """Returns the KV cache params for the pipeline model."""
         ...
 
-    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
-    @classmethod
-    @abstractmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Returns the number of layers for the pipeline model."""
-        ...
-
 
 def get_paged_manager(
     pipeline: Pipeline[Any, Any],

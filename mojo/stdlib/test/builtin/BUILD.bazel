@@ -31,6 +31,8 @@ _FILECHECK_TESTS = [
 ]
 
 _LIT_TESTS = [
+    "test_default_equatable_compile_fail.mojo",
+    "test_default_hashable_compile_fail.mojo",
     "test_format_compile_fail.mojo",
     "test_format_float_lut_optimization.mojo",
     "test_issue_3908.mojo",

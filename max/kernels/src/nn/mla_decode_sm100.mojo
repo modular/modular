@@ -18,7 +18,6 @@ from sys import align_of, simd_width_of, size_of, env_get_int
 import gpu.primitives.warp as warp
 from algorithm.functional import unswitch
 from bit import prev_power_of_two, pop_count
-from buffer import NDBuffer
 from collections import OptionalReg
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,

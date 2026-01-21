@@ -80,7 +80,7 @@ fn _init_mxfp8_scales_gpu[
     # step_uniform returns SIMD[float32, 4] with values in [0, 1).
     # Multiply by 4 and cast to get values 0, 1, 2, or 3.
     # Then add 127 to get exponents -> scale values of 1, 2, 4, 8.
-    var rng = Random(offset=tid)
+    var rng = Random(offset=UInt64(tid))
     var rand_floats = rng.step_uniform() * 4
     var rand_u8 = rand_floats.cast[DType.uint8]() & 3
     var values = bitcast[dtype, 4](rand_u8 + 127)

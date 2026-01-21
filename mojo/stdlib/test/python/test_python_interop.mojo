@@ -28,7 +28,7 @@ fn _test_local_import(mut python: Python) -> String:
         var my_module: PythonObject = Python.import_module("my_module")
         if my_module:
             var foo = my_module.Foo("apple")
-            foo.bar = PythonObject("orange")
+            foo.bar = "orange"
             return String(foo.bar)
         return "no module, no fruit"
     except e:
@@ -62,10 +62,9 @@ fn _test_call(mut python: Python) -> String:
                 "carrot",
                 "bread",
                 "rice",
-                # TODO(MOCO-2945): Support variadic heterogenous kwargs
-                fruit=PythonObject("pear"),
-                protein=PythonObject("fish"),
-                cake=PythonObject("yes"),
+                fruit="pear",
+                protein="fish",
+                cake="yes",
             )
         )
     except e:

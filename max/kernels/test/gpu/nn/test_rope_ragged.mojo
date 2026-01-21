@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from layout import *

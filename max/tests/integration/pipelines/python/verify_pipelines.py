@@ -1045,6 +1045,39 @@ PIPELINES = {
             kl_div_threshold=7.1e-3,
         ),
     ),
+    "Qwen/Qwen3-Embedding-0.6B-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
+        run=_make_pipeline_runner(
+            pipeline="Qwen/Qwen3-Embedding-0.6B",
+            encoding="bfloat16",
+            relative_tolerance=1.0e-04,
+            absolute_tolerance=4.2e-01,
+            cos_dist_threshold=2.4e-1,
+            kl_div_threshold=2.6e-04,
+        ),
+    ),
+    "Qwen/Qwen3-Embedding-4B-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        run=_make_pipeline_runner(
+            pipeline="Qwen/Qwen3-Embedding-4B",
+            encoding="bfloat16",
+            relative_tolerance=1.0e-04,
+            absolute_tolerance=1.5e-01,
+            cos_dist_threshold=3.2e-02,
+            kl_div_threshold=9.4e-06,
+        ),
+    ),
+    "Qwen/Qwen3-Embedding-8B-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        run=_make_pipeline_runner(
+            pipeline="Qwen/Qwen3-Embedding-8B",
+            encoding="bfloat16",
+            relative_tolerance=1.0e-04,
+            absolute_tolerance=2.3e-01,
+            cos_dist_threshold=6.7e-02,
+            kl_div_threshold=1.2e-05,
+        ),
+    ),
     # Qwen2.VL-FP8
     "allenai/olmOCR-2-7B-1025-FP8": PipelineDef(
         compatible_with=[DeviceKind.GPU],
