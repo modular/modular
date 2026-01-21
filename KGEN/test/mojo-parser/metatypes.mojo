@@ -11,8 +11,7 @@
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Thing:
+struct Thing(AnyTrivialRegType):
     @implicit
     fn __init__(out self, x: NMType):
         return

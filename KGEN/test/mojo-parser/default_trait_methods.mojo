@@ -58,8 +58,7 @@ struct Bar(Foo):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Zork(ImplicitlyCopyable):
+struct Zork(AnyTrivialRegType):
     pass
 
 
@@ -84,8 +83,7 @@ struct TAA(AA1):
 
 # Test parameterized types in default trait methods
 @fieldwise_init
-@register_passable("trivial")
-struct ParamRPType[x: Int, y: Int]:
+struct ParamRPType[x: Int, y: Int](AnyTrivialRegType):
     var value: Int
 
 
