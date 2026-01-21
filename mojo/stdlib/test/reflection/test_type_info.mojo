@@ -14,13 +14,16 @@
 
 from sys.info import CompilationTarget, _current_target, is_64bit
 
+from collections import List, Optional
+
 from reflection import (
     get_linkage_name,
     get_type_name,
     get_function_name,
+    get_base_type_name,
 )
 from reflection.type_info import _unqualified_type_name
-from testing import assert_equal
+from testing import assert_equal, assert_true, assert_false
 from testing import TestSuite
 
 
@@ -222,6 +225,11 @@ struct GenericWrapper[T: AnyType]:
     pass
 
 
+# Generic struct with multiple type parameters
+struct Pair[T: AnyType, U: AnyType]:
+    pass
+
+
 def test_get_type_name_nested_parametric_direct():
     """Test that directly using nested parametric types works."""
     # Direct usage works fine
@@ -297,6 +305,37 @@ def test_get_type_name_uindex_index_simd_value():
         name,
         "test_type_info.IndexParam[-1 : SIMD[DType.index, 1]]",
     )
+
+
+# ===----------------------------------------------------------------------=== #
+# Base Type Reflection Tests (Issue #5735)
+# ===----------------------------------------------------------------------=== #
+
+
+def test_get_base_type_name_basic():
+    """Test get_base_type_name with simple and parameterized types."""
+    # For non-parameterized types, get_base_type_name returns the type's name
+    assert_equal(get_base_type_name[Int](), "Int")
+
+    # For parameterized types, get_base_type_name returns the base type name
+    assert_equal(get_base_type_name[List[Int]](), "List")
+
+    # Different parameterizations of the same type have the same base name
+    assert_equal(
+        get_base_type_name[List[Int]](), get_base_type_name[List[String]]()
+    )
+
+
+def test_get_base_type_name_user_defined():
+    """Test get_base_type_name with user-defined generic types."""
+    # User-defined generics should have the same base name
+    assert_equal(
+        get_base_type_name[GenericWrapper[Int]](),
+        get_base_type_name[GenericWrapper[String]](),
+    )
+
+    # Types with multiple parameters
+    assert_equal(get_base_type_name[Pair[Int, String]](), "Pair")
 
 
 def main():

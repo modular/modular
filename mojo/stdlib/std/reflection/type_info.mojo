@@ -17,6 +17,7 @@ This module provides compile-time introspection of type and function names:
 - `get_type_name[T]()` - returns the name of a type
 - `get_function_name[func]()` - returns the source name of a function
 - `get_linkage_name[func]()` - returns the symbol/linkage name of a function
+- `get_base_type_name[T]()` - returns the unqualified name of a type's base type
 
 Example:
 
@@ -125,3 +126,46 @@ fn _unqualified_type_name[type: AnyType]() -> StaticString:
         comptime base_name = name[:parameter_list_start].split(".")[-1]
         comptime parameters = name[parameter_list_start:]
         return get_static_string[base_name, parameters]()
+
+
+# ===----------------------------------------------------------------------=== #
+# Base Type Reflection APIs
+# ===----------------------------------------------------------------------=== #
+#
+# These APIs enable comparing parameterized types by their base (unparameterized)
+# type. This is useful for serialization frameworks and other reflection-based
+# code that needs to special-case collection types like List and Dict.
+# ===----------------------------------------------------------------------=== #
+
+
+fn get_base_type_name[T: AnyType]() -> StaticString:
+    """Returns the name of the base type of a parameterized type.
+
+    For parameterized types like `List[Int]`, this returns `"List"`.
+    For non-parameterized types, it returns the type's simple name.
+
+    Unlike `get_type_name`, this function strips type parameters and returns
+    only the unqualified base type name.
+
+    Parameters:
+        T: The type to get the base name of.
+
+    Returns:
+        The unqualified name of the base type as a `StaticString`.
+
+    Example:
+        ```mojo
+        from collections import List, Dict
+
+        fn main():
+            print(get_base_type_name[List[Int]]())  # "List"
+            print(get_base_type_name[Dict[String, Int]]())  # "Dict"
+            print(get_base_type_name[Int]())  # "Int"
+        ```
+    """
+    var res = __mlir_attr[
+        `#kgen.get_base_type_name<`,
+        T,
+        `> : !kgen.string`,
+    ]
+    return StaticString(res)
