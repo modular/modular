@@ -167,7 +167,7 @@ def test_ep_moe_fp8(
 
     # Create MoE module with EP support
     moe = MoEFp8(
-        devices=devices_ref,
+        devices=[DeviceRef.CPU()] + devices_ref,
         hidden_dim=HIDDEN_DIM,
         num_experts=NUM_EXPERTS,
         num_experts_per_token=top_k,

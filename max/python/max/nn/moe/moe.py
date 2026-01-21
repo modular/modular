@@ -148,6 +148,12 @@ class MoE(Module, Shardable):
     experts: LayerList
     """The list of experts."""
 
+    shard_devices: list[DeviceRef] = []
+    """The list of devices the MoE layer was sharded to."""
+
+    shard_index: int = 0
+    """The index of the current shard (if the MoE layer was sharded)."""
+
     def __init__(
         self,
         devices: list[DeviceRef],
@@ -302,14 +308,6 @@ class MoE(Module, Shardable):
         if self.has_shared_experts:
             shared_experts_shards = self.shared_experts.shard(devices)
 
-        # Shard each expert's MLP
-        expert_mlps_shards: list[list[MLP]] = []
-        if self._sharding_strategy.is_tensor_parallel:
-            # If use tensor parallel, each expert is sharded to all devices
-            expert_mlps_shards = [
-                expert.shard(devices) for expert in self.experts
-            ]
-
         shards = []
         num_devices = self._sharding_strategy.num_devices
         sharded_moe_dim = self.moe_dim // num_devices
@@ -317,6 +315,9 @@ class MoE(Module, Shardable):
         if self._sharding_strategy.is_expert_parallel:
             sharded_moe_dim = self.moe_dim
             sharded_shared_experts_dim = self.shared_experts_dim
+
+        devices = list(devices)
+
         for shard_idx, device in enumerate(devices):
             sharded = self.__class__(
                 devices=[device],
@@ -340,13 +341,9 @@ class MoE(Module, Shardable):
                 sharded.shared_experts = shared_experts_shards[shard_idx]
 
             if self._sharding_strategy.is_tensor_parallel:
-                experts_for_shard = LayerList(
-                    [
-                        sharded_mlps[shard_idx]
-                        for sharded_mlps in expert_mlps_shards
-                    ]
-                )
-                sharded.experts = experts_for_shard
+                sharded.shard_index = shard_idx
+                sharded.shard_devices = devices
+                sharded.experts = LayerList(list(self.experts))
 
             elif self._sharding_strategy.is_expert_parallel:
                 curr_node_idx = self.ep_batch_manager.config.node_id
@@ -395,9 +392,17 @@ class MoE(Module, Shardable):
         for tensors in zip(gate_list, up_list, strict=True):
             gate_up_list.extend(tensors)
 
-        return ops.stack(gate_up_list, axis=0).reshape(
-            [len(gate_list), -1, self.hidden_dim]
-        )
+        if not self.shard_devices:
+            shard = ops.stack(gate_up_list, axis=0)
+        else:
+            # Create target devices for each shard - each shard goes to a
+            # different GPU. For tensor parallelism, total_shards == len(devices).
+            shard = ops.shard_and_stack(
+                gate_up_list,
+                devices=self.shard_devices,
+            )[self.shard_index]
+
+        return shard.reshape([len(gate_list), -1, self.hidden_dim])
 
     @property
     def down_proj(self) -> TensorValue:
@@ -414,7 +419,17 @@ class MoE(Module, Shardable):
                 self.shared_experts.down_proj.weight,
             ] + down_list
 
-        return ops.stack(down_list, axis=0)
+        if not self.shard_devices:
+            shard = ops.stack(down_list, axis=0)
+        else:
+            devices = [DeviceRef.CPU()] * len(self.shard_devices)
+            shard = ops.shard_and_stack(
+                down_list,
+                devices=devices,
+                axis=-1,
+            )[self.shard_index].to(self.devices[0])
+
+        return shard
 
     def _ep_call(
         self,

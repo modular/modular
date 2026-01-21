@@ -67,7 +67,15 @@ class MoEFp8(MoE):
         ):
             gate_up_proj_scales_list.extend(tensors)
 
-        return ops.stack(gate_up_proj_scales_list, axis=0).reshape(
+        if not self.shard_devices:
+            shard = ops.stack(gate_up_proj_scales_list, axis=0)
+        else:
+            shard = ops.shard_and_stack(
+                gate_up_proj_scales_list,
+                devices=self.shard_devices,
+            )[self.shard_index]
+
+        return shard.reshape(
             [
                 len(gate_proj_scales_list),
                 -1,
@@ -93,7 +101,17 @@ class MoEFp8(MoE):
                 self.shared_experts.down_proj.weight_scale,
             ] + down_proj_scales_list
 
-        return ops.stack(down_proj_scales_list, axis=0)
+        if not self.shard_devices:
+            shard = ops.stack(down_proj_scales_list, axis=0)
+        else:
+            devices = [DeviceRef.CPU()] * len(self.shard_devices)
+            shard = ops.shard_and_stack(
+                down_proj_scales_list,
+                devices=devices,
+                axis=-1,
+            )[self.shard_index].to(self.devices[0])
+
+        return shard
 
     def _ep_call(
         self,
