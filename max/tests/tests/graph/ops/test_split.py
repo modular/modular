@@ -215,7 +215,7 @@ def test_invalid_axis_full_error_message(graph_builder: GraphBuilder) -> None:
     axis = 2
     input_type = TensorType(DType.float32, input_shape, device=DeviceRef.CPU())
     with graph_builder(input_types=[input_type]) as graph:
-        expected_message = "Axis out of range axis=2, x.rank=1"
+        expected_message = "Axis must be in range [-1, 1), got 2"
         with pytest.raises(IndexError, match=re.escape(expected_message)):
             ops.split(graph.inputs[0].tensor, split_sizes, axis)
 
