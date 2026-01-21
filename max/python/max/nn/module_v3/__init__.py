@@ -12,15 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 """Module implementation using eager tensors."""
 
+from .conv import Conv2d
 from .embedding import Embedding
 from .linear import Linear
 from .module import Module, module_dataclass
+from .norm import GemmaRMSNorm, GroupNorm, RMSNorm
 from .sequential import Sequential
 
 __all__ = [
+    "Conv2d",
     "Embedding",
+    "GemmaRMSNorm",
+    "GroupNorm",
     "Linear",
     "Module",
+    "RMSNorm",
     "Sequential",
     "module_dataclass",
 ]

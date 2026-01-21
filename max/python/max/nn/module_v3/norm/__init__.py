@@ -11,9 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from .group_norm import GroupNorm
 from .rms_norm import GemmaRMSNorm, RMSNorm
 
 __all__ = [
     "GemmaRMSNorm",
+    "GroupNorm",
     "RMSNorm",
 ]
