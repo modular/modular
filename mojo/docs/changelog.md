@@ -790,6 +790,10 @@ what we publish.
   `{Mut,Immut,}ExternalOrigin` aliases instead of being spelled like
   `Origin[True].external`, improving consistency with other origin types.
 
+- `black_box` has been added to the `benchmark` utilities as a way to prevent
+  the compiler from aggressively optimizing out values. Similar to `keep`,
+  however, it returns its argument.
+
 - `StringableRaising` has been deprecated and its usages in the stdlib have
   been removed.
 
