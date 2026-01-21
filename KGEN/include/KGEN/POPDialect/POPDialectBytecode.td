@@ -134,6 +134,9 @@ def SIMDAddAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
 def SIMDSubAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
 def SIMDMulAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
 
+def SIMDShlAttr : DialectAttribute<(attr TypedAttr:$val, TypedAttr:$shft)>;
+def SIMDShrAttr : DialectAttribute<(attr TypedAttr:$val, TypedAttr:$shft)>;
+
 def SIMDCmpAttr : DialectAttribute<(attr
   EnumAttr<"NormalizedCmpPredicate">:$cc, TypedAttr:$lhs, TypedAttr:$rhs, Type:$type)>;
 
@@ -154,6 +157,10 @@ def CastToBuiltinAttr : DialectAttribute<(attr
 def SIMDSplatAttr : DialectAttribute<(attr
   TypedAttr:$arg, ConcreteType<"SIMDType">:$type
 )>;
+
+def SIMDNegAttr : DialectAttribute<(attr TypedAttr:$operand)>;
+def SIMDCeilAttr : DialectAttribute<(attr TypedAttr:$operand)>;
+def SIMDFloorAttr : DialectAttribute<(attr TypedAttr:$operand)>;
 
 def SIMDReduceOrAttr : DialectAttribute<(attr
   TypedAttr:$vector, ConcreteType<"SIMDType">:$type
@@ -188,12 +195,19 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     SIMDSubAttr,
     SIMDMulAttr,
 
+    SIMDShlAttr,
+    SIMDShrAttr,
+
     CastAttr,
     DTypeToUI8Attr,
     DTypeFromUI8Attr,
     CastFromBuiltinAttr,
     CastToBuiltinAttr,
     SIMDSplatAttr,
+
+    SIMDNegAttr,
+    SIMDCeilAttr,
+    SIMDFloorAttr,
 
     SIMDCmpAttr,
     SIMDReduceOrAttr,
