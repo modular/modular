@@ -16,8 +16,12 @@ import math
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn import Conv1D, Embedding, LayerNorm, Linear, Sequential
-from max.nn.layer import Module
+from max.nn.legacy.conv import Conv1D
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import LayerNorm
+from max.nn.legacy.sequential import Sequential
 from transformers import AutoConfig
 
 

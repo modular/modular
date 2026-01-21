@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.conv_transpose
+.. automodule:: max.nn.legacy.conv_transpose
    :members:
    :undoc-members:

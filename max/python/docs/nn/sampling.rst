@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.sampling
+.. automodule:: max.nn.legacy.sampling
    :members:
    :undoc-members:

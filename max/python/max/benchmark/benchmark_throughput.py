@@ -50,7 +50,7 @@ from max.interfaces import (
     SamplingParamsInput,
     TextGenerationRequest,
 )
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextTokenizer
 from max.serve.config import Settings
 from max.serve.pipelines.llm import (

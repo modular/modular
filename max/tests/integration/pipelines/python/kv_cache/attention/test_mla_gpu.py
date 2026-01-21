@@ -20,8 +20,15 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kernels import flare_mla_decompress_k_cache, flare_mla_prefill_plan
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
+from max.nn.legacy.kernels import (
+    flare_mla_decompress_k_cache,
+    flare_mla_prefill_plan,
+)
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedCacheValues,
+)
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 

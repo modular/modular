@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.linear
+.. automodule:: max.nn.legacy.linear
    :members:
    :undoc-members:

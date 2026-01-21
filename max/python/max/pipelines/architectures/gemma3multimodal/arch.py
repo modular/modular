@@ -15,7 +15,7 @@ import os
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -54,7 +54,7 @@ example_repo_ids = [
 
 if ENABLE_NEW_IMPL:
     gemma3_multimodal_arch = SupportedArchitecture(
-        name="Gemma3ForConditionalGeneration",
+        name="Gemma3ForConditionalGeneration_Legacy",
         example_repo_ids=example_repo_ids,
         default_encoding=SupportedEncoding.bfloat16,
         supported_encodings={
@@ -75,7 +75,7 @@ if ENABLE_NEW_IMPL:
     )
 else:
     gemma3_multimodal_arch = SupportedArchitecture(
-        name="Gemma3ForConditionalGeneration",
+        name="Gemma3ForConditionalGeneration_Legacy",
         example_repo_ids=example_repo_ids,
         default_encoding=SupportedEncoding.bfloat16,
         supported_encodings={

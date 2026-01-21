@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -26,7 +26,7 @@ from . import weight_adapters
 from .model import Llama3Model
 
 llama_arch = SupportedArchitecture(
-    name="LlamaForCausalLM",
+    name="LlamaForCausalLM_Legacy",
     example_repo_ids=[
         "meta-llama/Llama-3.1-8B-Instruct",
         "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",

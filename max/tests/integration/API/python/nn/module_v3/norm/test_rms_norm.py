@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.nn.module_v3.norm.rms_norm."""
+"""Tests for max.nn.norm.rms_norm."""
 
 from __future__ import annotations
 
 import pytest
-from max.experimental.tensor import Tensor
-from max.nn.module_v3.norm import GemmaRMSNorm, RMSNorm
+from max.nn.norm import GemmaRMSNorm, RMSNorm
+from max.tensor import Tensor
 
 
 def test_repr() -> None:

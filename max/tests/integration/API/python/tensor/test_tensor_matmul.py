@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 
 def test_matmul() -> None:

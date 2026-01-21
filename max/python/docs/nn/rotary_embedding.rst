@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.rotary_embedding
+.. automodule:: max.nn.legacy.rotary_embedding
    :members:
    :undoc-members:

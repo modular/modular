@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
@@ -21,7 +21,7 @@ from .model import Idefics3Model
 from .tokenizer import Idefics3Tokenizer
 
 idefics3_arch = SupportedArchitecture(
-    name="Idefics3ForConditionalGeneration",
+    name="Idefics3ForConditionalGeneration_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["HuggingFaceM4/Idefics3-8B-Llama3"],
     default_encoding=SupportedEncoding.bfloat16,

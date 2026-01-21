@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.layer
+.. automodule:: max.nn.legacy.layer
    :members:
    :undoc-members:

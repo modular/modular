@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -26,7 +26,7 @@ from ..llama3 import weight_adapters
 from .model import Qwen2Model
 
 qwen2_arch = SupportedArchitecture(
-    name="Qwen2ForCausalLM",
+    name="Qwen2ForCausalLM_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["Qwen/Qwen2.5-7B-Instruct", "Qwen/QwQ-32B"],
     default_weights_format=WeightsFormat.safetensors,

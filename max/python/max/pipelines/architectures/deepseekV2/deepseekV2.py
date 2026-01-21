@@ -16,21 +16,19 @@ from __future__ import annotations
 
 import functools
 
-from max.nn import (
-    MLP,
-    Embedding,
-    Linear,
-    Module,
-    RMSNorm,
-    Transformer,
-    TransformerBlock,
+from max.nn.legacy.attention.multi_latent_attention import (
+    LatentAttentionWithRope,
 )
-from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
-from max.nn.moe import MoE
-from max.nn.rotary_embedding import (
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.moe import MoE
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
+from max.nn.legacy.transformer import Transformer, TransformerBlock
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
     DeepSeekV2MoEGate,
 )

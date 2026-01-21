@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.core.context_validators import (
     validate_only_one_image,
@@ -29,7 +29,7 @@ from . import weight_adapters
 from .model import PixtralModel
 
 pixtral_arch = SupportedArchitecture(
-    name="LlavaForConditionalGeneration",
+    name="LlavaForConditionalGeneration_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["mistral-community/pixtral-12b"],
     default_encoding=SupportedEncoding.bfloat16,

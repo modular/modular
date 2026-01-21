@@ -19,7 +19,7 @@ from max.driver import Buffer
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import PagedCacheValues
 
 from ..llama3.model import LlamaModelBase
 from .model_config import Olmo2Config

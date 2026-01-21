@@ -18,11 +18,10 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn import ReturnLogits
-from max.nn.comm.ep import EPConfig
-from max.nn.float8_config import Float8Config
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
-from max.nn.transformer import ReturnHiddenStates
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.float8_config import Float8Config
+from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
 from pydantic import model_validator
 from transformers import AutoConfig

@@ -22,7 +22,7 @@ import yaml
 from max.config import ConfigFileModel, MAXBaseModel
 from max.dtype import DType
 from max.engine import GPUProfilingMode
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,

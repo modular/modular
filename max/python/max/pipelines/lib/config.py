@@ -267,9 +267,13 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    use_module_v3: bool = Field(
-        default=False,
-        description="Whether to use the ModuleV3 architecture if it exists.",
+    use_legacy_module: bool = Field(
+        default=True,
+        description=(
+            "Whether to use the legacy Module architecture (default=True for backward "
+            "compatibility). Set to False to use the new Module-based architecture when "
+            "available."
+        ),
     )
 
     # TODO(SERVSYS-1096): Remove this field once we've reworked how required
@@ -856,7 +860,7 @@ class PipelineConfig(ConfigFileModel):
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.draft_model.huggingface_model_repo,
-            use_module_v3=self.use_module_v3,
+            use_legacy_module=self.use_legacy_module,
         )
 
         if not draft_arch:
@@ -866,7 +870,7 @@ class PipelineConfig(ConfigFileModel):
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            use_module_v3=self.use_module_v3,
+            use_legacy_module=self.use_legacy_module,
         )
         if not target_arch:
             raise ValueError(
@@ -938,7 +942,7 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=model_config.huggingface_model_repo,
-            use_module_v3=self.use_module_v3,
+            use_legacy_module=self.use_legacy_module,
         )
 
         # If nothing is provided, we should not update any more params.
@@ -1073,7 +1077,7 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            use_module_v3=self.use_module_v3,
+            use_legacy_module=self.use_legacy_module,
         )
 
         if arch is None:
@@ -1221,7 +1225,7 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            use_module_v3=self.use_module_v3,
+            use_legacy_module=self.use_legacy_module,
         )
 
         if arch is None:
@@ -1233,7 +1237,7 @@ class PipelineConfig(ConfigFileModel):
         # Get pipeline task
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            use_module_v3=self.use_module_v3,
+            use_legacy_module=self.use_legacy_module,
         )
         if arch is None:
             raise ValueError(

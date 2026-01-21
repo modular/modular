@@ -21,9 +21,16 @@ from unittest import mock
 import pytest
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Graph, ops
-from max.nn.attention import AttentionWithRope, TensorParallelAttentionWithRope
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.attention import (
+    AttentionWithRope,
+    TensorParallelAttentionWithRope,
+)
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedCacheValues,
+)
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 
 
 def create_kv_params(n_kv_heads: int = 8) -> KVCacheParams:
@@ -123,7 +130,7 @@ def test_distributed_attention_with_rope_device_validation() -> None:
         )
 
 
-@mock.patch("max.nn.attention.attention_with_rope.Allreduce")
+@mock.patch("max.nn.legacy.attention.attention_with_rope.Allreduce")
 def test_distributed_attention_with_rope_call_validation(
     allreduce_mock: mock.Mock,
 ) -> None:
@@ -188,7 +195,7 @@ def test_distributed_attention_with_rope_call_validation(
             )
 
 
-@mock.patch("max.nn.attention.attention_with_rope.Allreduce")
+@mock.patch("max.nn.legacy.attention.attention_with_rope.Allreduce")
 def test_distributed_attention_with_rope_non_divisible_heads(
     allreduce_mock: mock.Mock,
 ) -> None:
@@ -223,7 +230,7 @@ def test_distributed_attention_with_rope_non_divisible_heads(
     assert dist_attn.list_of_attentions[3].n_heads == 7
 
 
-@mock.patch("max.nn.attention.attention_with_rope.Allreduce")
+@mock.patch("max.nn.legacy.attention.attention_with_rope.Allreduce")
 def test_distributed_attention_with_rope_stacked_qkv(
     allreduce_mock: mock.Mock,
 ) -> None:
@@ -257,7 +264,7 @@ def test_distributed_attention_with_rope_stacked_qkv(
     assert dist_attn.o_proj.sharding_strategy.is_head_aware_colwise
 
 
-@mock.patch("max.nn.attention.attention_with_rope.Allreduce")
+@mock.patch("max.nn.legacy.attention.attention_with_rope.Allreduce")
 def test_distributed_attention_with_rope_stacked_qkv_non_divisible(
     allreduce_mock: mock.Mock,
 ) -> None:
@@ -295,7 +302,7 @@ def test_distributed_attention_with_rope_stacked_qkv_non_divisible(
     assert total_heads == 30
 
 
-@mock.patch("max.nn.attention.attention_with_rope.Allreduce")
+@mock.patch("max.nn.legacy.attention.attention_with_rope.Allreduce")
 def test_distributed_attention_with_rope_separate_projections(
     allreduce_mock: mock.Mock,
 ) -> None:

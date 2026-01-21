@@ -18,7 +18,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Weight, ops
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     needs_fp8_fnuz_conversion,
     normalize_e4m3fn_to_e4m3fnuz,
 )

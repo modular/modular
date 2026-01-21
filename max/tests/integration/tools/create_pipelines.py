@@ -36,7 +36,7 @@ from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.interfaces import PipelineTask, PipelineTokenizer
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from peft.peft_model import PeftModel
 
@@ -1213,11 +1213,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "unsloth/gpt-oss-20b-BF16": GenericOracle(
         model_path="unsloth/gpt-oss-20b-BF16",
         config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "unsloth/gpt-oss-20b-BF16_ModuleV3": GenericOracle(
-        model_path="unsloth/gpt-oss-20b-BF16",
-        config_params={"max_length": 512, "use_module_v3": True},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
     "Qwen/Qwen2.5-VL-3B-Instruct": Qwen2_5VLPipelineOracle(

@@ -18,15 +18,18 @@ from __future__ import annotations
 from collections.abc import Iterable
 from copy import copy
 
+from max import functional as F
+from max.driver import CPU
 from max.dtype import DType
-from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.clamp import clamp
-from max.nn.kernels import grouped_matmul_ragged, moe_create_indices
-from max.nn.layer import LayerList, Shardable
-from max.nn.linear import Linear
-from max.nn.moe import MoE, MoEGate
+from max.graph.type import DeviceRef
+from max.graph.weight import ShardingStrategy
+from max.nn import Linear
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from ..model_config import GptOssConfig
+from .functional_kernels import grouped_matmul_ragged, moe_create_indices
+from .moe_base import MoE, MoEGate
 
 
 class GptOssMoEGate(MoEGate):
@@ -34,41 +37,31 @@ class GptOssMoEGate(MoEGate):
 
     def __init__(
         self,
-        devices: list[DeviceRef],
         hidden_dim: int,
         num_experts: int,
         num_experts_per_token: int,
-        dtype: DType,
     ) -> None:
         """
         Args:
-            devices: List of devices to use for the MoEGate.
             hidden_dim: The dimension of the hidden state.
             num_experts: The number of experts.
             num_experts_per_token: The number of experts per token.
-            dtype: The data type of the MoEGate.
         """
         # Initialize parent class
         super().__init__(
-            devices=devices,
             hidden_dim=hidden_dim,
             num_experts=num_experts,
             num_experts_per_token=num_experts_per_token,
-            dtype=dtype,
         )
 
         # Override gate_score with bias-enabled Linear layer
         self.gate_score = Linear(
             in_dim=hidden_dim,
             out_dim=num_experts,
-            dtype=dtype,
-            device=devices[0],
-            has_bias=True,  # Enable bias
+            bias=True,
         )
 
-    def __call__(
-        self, hidden_state: TensorValue
-    ) -> tuple[TensorValue, TensorValue]:
+    def forward(self, hidden_state: Tensor) -> tuple[Tensor, Tensor]:
         """
         Args:
             hidden_state: The hidden state of the model.
@@ -77,17 +70,17 @@ class GptOssMoEGate(MoEGate):
             A tuple of the topk indices and scores with softmax applied.
         """
         scores = self.gate_score(hidden_state)
-        topk_scores, topk_indices = ops.top_k(
+        topk_scores, topk_indices = F.top_k(
             scores, k=self.num_experts_per_token, axis=-1
         )
 
         # Apply softmax to top-k scores (matching GptOss behavior)
-        topk_scores = ops.softmax(topk_scores)
+        topk_scores = F.softmax(topk_scores)
 
         return topk_indices, topk_scores
 
 
-class GptOssMoE(MoE, Shardable):
+class GptOssMoE(MoE):
     """GptOss-style MoE implementation with custom activation and biases."""
 
     def __init__(
@@ -105,12 +98,11 @@ class GptOssMoE(MoE, Shardable):
         self.limit = 7.0
 
         self.config = config
-        self._sharding_strategy = None
+        self._sharding_strategy: ShardingStrategy | None = None
         self.tp_size = tp_size
 
         # Initialize parent class
         super().__init__(
-            devices=config.devices,
             hidden_dim=config.hidden_size,
             num_experts=config.num_local_experts,
             num_experts_per_token=config.num_experts_per_tok,
@@ -118,71 +110,58 @@ class GptOssMoE(MoE, Shardable):
             gate_cls=GptOssMoEGate,
             has_shared_experts=False,
             ep_size=1,
-            dtype=config.dtype,
             apply_router_weight_first=False,
         )
 
     def _init_experts(self) -> None:
         # Instead of creating individual MLP experts, we'll use combined weight tensors
         # This matches how the weights are stored in the checkpoint
-        self.experts = LayerList([])  # Empty list to maintain compatibility
+        self.experts = ModuleList([])  # Empty list to maintain compatibility
 
         # Create combined weight tensors for all experts
         # Gate and up projections are combined into one tensor
-        self._experts_gate_up_proj_weight = Weight(
-            "experts.gate_up_proj",
+        self._experts_gate_up_proj_weight = Tensor.zeros(
             shape=[self.num_experts, self.hidden_dim, 2 * self.moe_dim],
-            dtype=self.dtype,
-            device=self.devices[0],
         )
 
         # Down projection weights
-        self._experts_down_proj_weight = Weight(
-            "experts.down_proj",
+        self._experts_down_proj_weight = Tensor.zeros(
             shape=[self.num_experts, self.moe_dim, self.hidden_dim],
-            dtype=self.dtype,
-            device=self.devices[0],
         )
 
         # Bias terms for gate_up projection (combined)
-        self._experts_gate_up_proj_bias = Weight(
-            "experts.gate_up_proj_bias",
+        self._experts_gate_up_proj_bias = Tensor.zeros(
             shape=[self.num_experts, 2 * self.moe_dim],
-            dtype=self.dtype,
-            device=self.devices[0],
         )
 
         # Bias terms for down projection
-        self._experts_down_proj_bias = Weight(
-            "experts.down_proj_bias",
+        self._experts_down_proj_bias = Tensor.zeros(
             shape=[self.num_experts, self.hidden_dim],
-            dtype=self.dtype,
-            device=self.devices[0],
         )
 
     @property
-    def gate_up_proj(self) -> TensorValue:
+    def gate_up_proj(self) -> Tensor:
         # Return the combined gate_up projection weights, transposed for grouped_matmul_ragged
         # grouped_matmul_ragged expects shape [num_experts, out_features, in_features]
         return self._experts_gate_up_proj_weight.transpose(1, 2)
 
     @property
-    def down_proj(self) -> TensorValue:
+    def down_proj(self) -> Tensor:
         # Return the combined down projection weights, transposed for grouped_matmul_ragged
         # grouped_matmul_ragged expects shape [num_experts, out_features, in_features]
         return self._experts_down_proj_weight.transpose(1, 2)
 
     @property
-    def gate_up_proj_bias_stacked(self) -> TensorValue:
+    def gate_up_proj_bias_stacked(self) -> Tensor:
         # Return the combined gate_up projection biases
         return self._experts_gate_up_proj_bias
 
     @property
-    def down_proj_bias_stacked(self) -> TensorValue:
+    def down_proj_bias_stacked(self) -> Tensor:
         # Return the combined down projection biases
         return self._experts_down_proj_bias
 
-    def __call__(self, x: TensorValue) -> TensorValue:
+    def forward(self, x: Tensor) -> Tensor:
         """
         Args:
             x: (seq_len, hidden_dim)
@@ -194,7 +173,7 @@ class GptOssMoE(MoE, Shardable):
 
         # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)
-        router_idx = ops.reshape(
+        router_idx = F.reshape(
             router_idx, [-1]
         )  # (seq_len * n_expert_per_token,)
 
@@ -205,19 +184,19 @@ class GptOssMoE(MoE, Shardable):
             expert_ids,
             expert_usage_stats,
         ) = moe_create_indices(
-            ops.cast(router_idx, DType.int32), self.num_experts
+            F.cast(router_idx, DType.int32), self.num_experts
         )
 
-        permutated_states = ops.gather(
+        permutated_states = F.gather(
             x,
-            ops.cast(
+            F.cast(
                 token_expert_order // self.num_experts_per_token, DType.int32
             ),
             axis=0,
         )
 
         if self.apply_router_weight_first:
-            permutated_states = permutated_states * ops.gather(
+            permutated_states = permutated_states * F.gather(
                 router_weight.reshape([-1, 1]), token_expert_order, axis=0
             ).cast(x.dtype)
 
@@ -227,28 +206,28 @@ class GptOssMoE(MoE, Shardable):
             self.gate_up_proj,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats.to(DeviceRef.CPU()),
+            expert_usage_stats.to(CPU()),
         )
 
         # Apply bias based on expert assignment
         # We need to gather the bias for each token based on which expert it was routed to
         # router_idx contains the expert assignment for each token
-        expert_assignments = ops.gather(router_idx, token_expert_order, axis=0)
-        bias_per_token = ops.gather(
+        expert_assignments = F.gather(router_idx, token_expert_order, axis=0)
+        bias_per_token = F.gather(
             self.gate_up_proj_bias_stacked, expert_assignments, axis=0
         )
-        gate_up_output = gate_up_output + bias_per_token
+        gate_up_output += bias_per_token
 
         # Split gate and up projections
         gate = gate_up_output[:, 0::2]
         up = gate_up_output[:, 1::2]
 
         # Apply clamping (NOTE: This is specific to GptOss)
-        gate = ops.min(gate, self.limit)
-        up = clamp(up, min=-self.limit, max=self.limit)
+        gate = F.min(gate, self.limit)
+        up = up.clip(min=-self.limit, max=self.limit)
 
         # GptOss-style activation: gate * sigmoid(gate * alpha) * (up + 1)
-        glu = gate * ops.sigmoid(gate * self.alpha)
+        glu = gate * F.sigmoid(gate * self.alpha)
         gated_output = (up + 1.0) * glu
 
         # Apply down projection
@@ -257,12 +236,12 @@ class GptOssMoE(MoE, Shardable):
             self.down_proj,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats.to(DeviceRef.CPU()),
+            expert_usage_stats.to(CPU()),
         )
 
         # Apply bias based on expert assignment
         # Use the same expert assignments we calculated earlier
-        down_bias_per_token = ops.gather(
+        down_bias_per_token = F.gather(
             self.down_proj_bias_stacked, expert_assignments, axis=0
         )
         if self.tp_size > 1:
@@ -271,22 +250,20 @@ class GptOssMoE(MoE, Shardable):
         down_output = down_output + down_bias_per_token
 
         # Reshape and apply routing weights
-        down_output = ops.gather(
+        down_output = F.gather(
             down_output, restore_token_order, axis=0
         ).reshape([seq_len, self.num_experts_per_token, -1])
 
         if not self.apply_router_weight_first:
             # (seq_len, 1, n_expert) @ (seq_len, n_expert, hidden_dim) -> (seq_len, 1, hidden_dim)
-            routed_expert_out = (
-                ops.unsqueeze(router_weight, axis=1) @ down_output
-            )
-            routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(
+            routed_expert_out = F.unsqueeze(router_weight, axis=1) @ down_output
+            routed_expert_out = F.squeeze(routed_expert_out, axis=1).cast(
                 x.dtype
             )
         else:
             routed_expert_out = down_output.transpose(1, 2)
-            routed_expert_out = ops.squeeze(
-                ops.sum(routed_expert_out, axis=2), axis=2
+            routed_expert_out = F.squeeze(
+                F.sum(routed_expert_out, axis=2), axis=2
             ).cast(x.dtype)
 
         if self.has_shared_experts:
@@ -304,28 +281,29 @@ class GptOssMoE(MoE, Shardable):
         """Set the sharding strategy for the module."""
         if strategy.is_tensor_parallel:
             self._sharding_strategy = strategy
-            self.gate.gate_score.sharding_strategy = ShardingStrategy.replicate(
+            # TODO: Sharding support not yet implemented for eager tensor API
+            self.gate.gate_score.sharding_strategy = ShardingStrategy.replicate(  # type: ignore[attr-defined]
                 strategy.num_devices
             )
             if self.has_shared_experts:
-                self.shared_experts.sharding_strategy = strategy
+                self.shared_experts.sharding_strategy = strategy  # type: ignore[attr-defined]
 
             # Set sharding strategy for the combined expert weights
-            self._experts_gate_up_proj_weight.sharding_strategy = (
+            self._experts_gate_up_proj_weight.sharding_strategy = (  # type: ignore[attr-defined]
                 ShardingStrategy.axiswise(
                     axis=2, num_devices=strategy.num_devices
                 )
             )
-            self._experts_down_proj_weight.sharding_strategy = (
+            self._experts_down_proj_weight.sharding_strategy = (  # type: ignore[attr-defined]
                 ShardingStrategy.columnwise(strategy.num_devices)
             )
             # Bias has shape [experts, 2 * moe_dim], so we shard axis 1
-            self._experts_gate_up_proj_bias.sharding_strategy = (
+            self._experts_gate_up_proj_bias.sharding_strategy = (  # type: ignore[attr-defined]
                 ShardingStrategy.axiswise(
                     axis=1, num_devices=strategy.num_devices
                 )
             )
-            self._experts_down_proj_bias.sharding_strategy = (
+            self._experts_down_proj_bias.sharding_strategy = (  # type: ignore[attr-defined]
                 ShardingStrategy.replicate(strategy.num_devices)
             )
         else:
@@ -347,20 +325,21 @@ class GptOssMoE(MoE, Shardable):
             )
 
         # Get sharded weights
-        gate_score_shards = self.gate.gate_score.shard(devices)
+        # TODO: Sharding support not yet implemented for eager tensor API
+        gate_score_shards = self.gate.gate_score.shard(devices)  # type: ignore[attr-defined]
 
         if self.has_shared_experts:
-            shared_experts_shards = self.shared_experts.shard(devices)
+            shared_experts_shards = self.shared_experts.shard(devices)  # type: ignore[attr-defined]
 
         # Shard the combined expert weight tensors
-        experts_gate_up_proj_shards = self._experts_gate_up_proj_weight.shard(
+        experts_gate_up_proj_shards = self._experts_gate_up_proj_weight.shard(  # type: ignore[attr-defined]
             devices
         )
-        experts_down_proj_shards = self._experts_down_proj_weight.shard(devices)
+        experts_down_proj_shards = self._experts_down_proj_weight.shard(devices)  # type: ignore[attr-defined]
         experts_gate_up_proj_bias_shards = (
-            self._experts_gate_up_proj_bias.shard(devices)
+            self._experts_gate_up_proj_bias.shard(devices)  # type: ignore[attr-defined]
         )
-        experts_down_proj_bias_shards = self._experts_down_proj_bias.shard(
+        experts_down_proj_bias_shards = self._experts_down_proj_bias.shard(  # type: ignore[attr-defined]
             devices
         )
 
@@ -374,7 +353,7 @@ class GptOssMoE(MoE, Shardable):
             )
             new_config.num_local_experts = self.num_experts
             new_config.num_experts_per_tok = self.num_experts_per_token
-            new_config.dtype = self.dtype
+            new_config.dtype = self.dtype  # type: ignore[attr-defined]
 
             sharded = GptOssMoE(
                 config=new_config,

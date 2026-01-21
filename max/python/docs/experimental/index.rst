@@ -1,37 +1,30 @@
-:description: Experimental MAX Python APIs for advanced users and early adopters.
+:description: Graduated MAX Python APIs (formerly experimental).
 :title: experimental
-:card_title: Experimental APIs
+:card_title: Graduated APIs
 :type: package
 :lang: python
 :wrapper_class: rst-index
-:source: max/experimental/
 
-max.experimental
-----------------
+max.experimental (Graduated)
+----------------------------
 
-.. caution::
+.. note::
 
-   The APIs in this module are experimental and subject to change or removal
-   in future releases without prior notice. Use with caution in production
-   environments.
+   The APIs formerly in :obj:`max.experimental` have graduated to top-level
+   modules. Please update your imports:
 
-The :obj:`max.experimental` package provides experimental APIs for the MAX
-platform. These APIs are designed for early adopters who want to explore new
-features before they become stable.
+   - ``max.experimental.functional`` → ``max.functional``
+   - ``max.experimental.tensor`` → ``max.tensor``
+   - ``max.experimental.random`` → ``max.random``
 
-Experimental APIs may have:
-
-- Incomplete or changing interfaces.
-- Limited documentation or examples.
-- Performance characteristics that may change.
-- Breaking changes between releases.
+These modules are now stable and ready for production use.
 
 Modules
 =======
 
-* :code_link:`/max/api/python/experimental/functional|functional`: Functional APIs for tensor operations.
-* :code_link:`/max/api/python/experimental/random|random`: Random tensor generation utilities.
-* :code_link:`/max/api/python/experimental/tensor|tensor`: Tensor operations with eager execution capabilities.
+* :code_link:`/max/api/python/experimental/functional|functional`: Functional APIs for tensor operations (now at ``max.functional``).
+* :code_link:`/max/api/python/experimental/random|random`: Random tensor generation utilities (now at ``max.random``).
+* :code_link:`/max/api/python/experimental/tensor|tensor`: Tensor operations with eager execution (now at ``max.tensor``).
 
 .. toctree::
    :maxdepth: 2

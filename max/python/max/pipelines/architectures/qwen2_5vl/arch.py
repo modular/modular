@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.core.exceptions import InputError
 from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
@@ -67,7 +67,7 @@ def validate_qwen2_5vl_required_args(
 
 
 qwen2_5_vl_arch = SupportedArchitecture(
-    name="Qwen2_5_VLForConditionalGeneration",
+    name="Qwen2_5_VLForConditionalGeneration_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "Qwen/Qwen2.5-VL-3B-Instruct",

@@ -14,16 +14,12 @@
 
 from __future__ import annotations
 
-from max.nn import (
-    MLP,
-    AttentionWithRope,
-    Embedding,
-    Linear,
-    RMSNorm,
-    RotaryEmbedding,
-    Transformer,
-    TransformerBlock,
-)
+from max.nn.legacy.attention import AttentionWithRope
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.transformer import Transformer, TransformerBlock
 
 from .model_config import MistralConfig
 

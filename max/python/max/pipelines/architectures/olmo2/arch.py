@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -27,7 +27,7 @@ from . import weight_adapters
 from .model import Olmo2Model
 
 olmo2_arch = SupportedArchitecture(
-    name="Olmo2ForCausalLM",
+    name="Olmo2ForCausalLM_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "allenai/OLMo-2-0425-1B-Instruct",

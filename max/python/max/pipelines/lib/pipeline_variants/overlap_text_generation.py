@@ -38,8 +38,8 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputsSequence
+from max.nn.legacy.kv_cache import KVCacheInputsSequence
+from max.nn.legacy.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 
 from .utils import (

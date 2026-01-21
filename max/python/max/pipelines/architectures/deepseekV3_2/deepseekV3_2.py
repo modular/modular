@@ -17,8 +17,8 @@ from __future__ import annotations
 from typing import Any
 
 from max.graph import BufferType, BufferValue, TensorType, TensorValue, Value
-from max.nn import Module
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import Module
 
 from .model_config import DeepseekV3_2Config
 

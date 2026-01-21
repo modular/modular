@@ -26,16 +26,12 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, ops
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn import (
-    MLP,
-    Embedding,
-    Linear,
-    Llama3RotaryEmbedding,
-    ReturnHiddenStates,
-    ReturnLogits,
-    RMSNorm,
-)
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,

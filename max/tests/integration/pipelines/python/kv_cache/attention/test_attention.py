@@ -25,8 +25,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
+from max.nn.legacy.kernels import MHAMaskVariant, flash_attention_ragged
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedCacheValues,
+)
 from modular_graph_test import modular_graph_test
 from test_common.context_utils import create_text_context
 

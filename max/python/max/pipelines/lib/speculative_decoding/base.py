@@ -40,7 +40,7 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
-from max.nn import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import traced
 from transformers import AutoConfig

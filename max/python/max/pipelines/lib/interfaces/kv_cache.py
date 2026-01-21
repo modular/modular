@@ -27,7 +27,7 @@ from max.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
 from transformers import AutoConfig
 
 if TYPE_CHECKING:

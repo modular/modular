@@ -28,8 +28,8 @@ from max.engine import InferenceSession
 from max.engine.api import PrintStyle
 from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
-from max.nn.hooks import PrintHook
-from max.nn.layer import Module
+from max.nn.legacy.hooks import PrintHook
+from max.nn.legacy.layer import Module
 from max.tests.integration.tools.hf_config_overrides import (
     apply_hf_config_override,
     apply_non_strict_load,

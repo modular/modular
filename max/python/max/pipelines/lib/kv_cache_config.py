@@ -16,7 +16,7 @@ import enum
 from collections.abc import Mapping
 
 from max.config import ConfigFileModel
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from pydantic import Field, PrivateAttr
 
 

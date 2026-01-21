@@ -32,7 +32,7 @@ from max.entrypoints.cli import (
     pipeline_config_options,
     validate_field_type,
 )
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from test_common.mocks import mock_pipeline_config_hf_dependencies
 from test_common.pipeline_cli_utils import (

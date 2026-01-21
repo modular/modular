@@ -19,7 +19,7 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
 from test_common.graph_utils import is_b100_b200, is_h100_h200
 
 # EP_DATA_READY_FLAG constant from ep_comm.mojo

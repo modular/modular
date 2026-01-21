@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.lora
+.. automodule:: max.nn.legacy.lora
    :members:
    :undoc-members:

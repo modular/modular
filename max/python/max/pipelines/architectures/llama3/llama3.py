@@ -20,22 +20,18 @@ from collections.abc import Callable, Sequence
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
-from max.nn import (
-    MLP,
+from max.nn.legacy.attention import (
     AttentionWithRope,
-    AttentionWithRopeAndLoRA,
-    ConstantLayerNorm,
-    Embedding,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
-    GPTQLinear,
-    Linear,
-    Module,
-    RMSNorm,
-    Transformer,
-    TransformerBlock,
 )
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import MLP, GPTQLinear, Linear
+from max.nn.legacy.lora import AttentionWithRopeAndLoRA
+from max.nn.legacy.norm import ConstantLayerNorm, RMSNorm
+from max.nn.legacy.transformer import Transformer, TransformerBlock
 from max.pipelines.lib.lora import LoRAManager
 
 from .model_config import Llama3Config, create_rope_embedding
