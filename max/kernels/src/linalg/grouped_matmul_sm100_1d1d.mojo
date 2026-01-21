@@ -316,7 +316,7 @@ fn copy_accum_to_gmem[
                             new_smem.layout,
                             swizzle,
                             elementwise_compute_lambda_fn.value(),
-                            UInt(num_output_warps),
+                            num_output_warps,
                             2,
                             MMA_M,
                             BN,
@@ -372,7 +372,7 @@ fn copy_accum_to_gmem[
                             new_smem.layout,
                             swizzle,
                             elementwise_compute_lambda_fn.value(),
-                            UInt(num_output_warps),
+                            num_output_warps,
                             1,
                             MMA_M,
                             BN,
@@ -387,9 +387,7 @@ fn copy_accum_to_gmem[
                             UInt(0),
                         )
         else:
-            comptime c_smem_tile_m = 32 if cta_group == 2 else BM // Int(
-                num_output_warps
-            )
+            comptime c_smem_tile_m = 32 if cta_group == 2 else BM // num_output_warps
             var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, stageN](
                 Int(warp_id), 0
             )
@@ -432,7 +430,7 @@ fn copy_accum_to_gmem[
                         c_smem_warp_tile_lower.layout,
                         swizzle,
                         elementwise_compute_lambda_fn.value(),
-                        UInt(num_output_warps),
+                        num_output_warps,
                     ](
                         M,
                         N,
@@ -521,7 +519,7 @@ fn copy_accum_to_gmem[
                     c_tma_op.wait_group[0]()
         else:
             if size_of[c_type]() != 2 or UInt32(coord_m) + UInt32(TMA_BM) >= M:
-                comptime output_threads = Int(num_output_warps) * Int(WARP_SIZE)
+                comptime output_threads = num_output_warps * WARP_SIZE
                 comptime c_smem_M = c_smem_tile.layout.shape[0].value()
                 comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
                     layout,

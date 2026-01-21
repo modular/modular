@@ -307,7 +307,7 @@ fn shared_memory_epilogue_transpose[
     c_smem_layout: Layout,
     swizzle: Swizzle,
     compute_lambda_fn: elementwise_compute_lambda_type,
-    num_output_warps: UInt,
+    num_output_warps: Int,
     warp_dim: UInt,
     MMA_M: Int,
     BN: Int,
@@ -482,7 +482,7 @@ fn shared_memory_epilogue_transpose[
                         )
                         ptr.store[width=simd_size, alignment=alignment](reg_val)
 
-    named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+    named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
 @always_inline
@@ -499,7 +499,7 @@ fn shared_memory_epilogue[
     c_smem_lower_layout: Layout,
     swizzle: Swizzle,
     compute_lambda_fn: elementwise_compute_lambda_type,
-    num_output_warps: UInt,
+    num_output_warps: Int,
 ](
     M: UInt32,
     N: UInt32,
@@ -668,7 +668,7 @@ fn shared_memory_epilogue[
         shared_memory_row_upper_half += UInt(distribute_rows)
         shared_memory_row_lower_half += UInt(distribute_rows)
 
-    named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+    named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
 @always_inline

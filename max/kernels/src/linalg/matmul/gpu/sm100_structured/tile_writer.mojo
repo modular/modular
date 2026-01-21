@@ -1069,7 +1069,7 @@ struct SMemEpilogueWriter[
                 new_smem.layout,
                 Self.swizzle,
                 Self.compute_lambda_fn,
-                UInt(Self.num_output_warps),
+                Self.num_output_warps,
                 2,  # warp_dim
                 Self.MMA_M,
                 Self.BN,
@@ -1115,7 +1115,7 @@ struct SMemEpilogueWriter[
                 new_smem.layout,
                 Self.swizzle,
                 Self.compute_lambda_fn,
-                UInt(Self.num_output_warps),
+                Self.num_output_warps,
                 1,  # warp_dim
                 Self.MMA_M,
                 Self.BN,
@@ -1177,7 +1177,7 @@ struct SMemEpilogueWriter[
             c_smem_warp_tile_lower.layout,
             Self.swizzle,
             Self.compute_lambda_fn,
-            UInt(Self.num_output_warps),
+            Self.num_output_warps,
         ](
             self.M,
             self.N,
@@ -1203,7 +1203,7 @@ fn shared_memory_epilogue_transpose[
     c_smem_layout: Layout,
     swizzle: Swizzle,
     compute_lambda_fn: elementwise_compute_lambda_type,
-    num_output_warps: UInt,
+    num_output_warps: Int,
     warp_dim: UInt,
     MMA_M: Int,
     BN: Int,
@@ -1378,7 +1378,7 @@ fn shared_memory_epilogue_transpose[
                             )
                         )
 
-    WarpGroupBarrier[Int(num_output_warps) * WARP_SIZE].sync()
+    WarpGroupBarrier[num_output_warps * WARP_SIZE].sync()
 
 
 @always_inline
@@ -1395,7 +1395,7 @@ fn shared_memory_epilogue[
     c_smem_lower_layout: Layout,
     swizzle: Swizzle,
     compute_lambda_fn: elementwise_compute_lambda_type,
-    num_output_warps: UInt,
+    num_output_warps: Int,
 ](
     M: UInt32,
     N: UInt32,
@@ -1545,4 +1545,4 @@ fn shared_memory_epilogue[
         upper_row += UInt(distribute_rows)
         lower_row += UInt(distribute_rows)
 
-    WarpGroupBarrier[Int(num_output_warps) * WARP_SIZE].sync()
+    WarpGroupBarrier[num_output_warps * WARP_SIZE].sync()

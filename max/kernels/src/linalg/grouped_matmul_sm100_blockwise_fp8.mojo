@@ -853,7 +853,7 @@ fn multi_stage_reg_epilogue[
     mma_shape: IndexList[3],
     is_lower_frag_required: Bool,
     cta_group: Int,
-    num_output_warps: UInt,
+    num_output_warps: Int,
     c_swizzle: TensorMapSwizzle,
 ](
     c_upper_main_tile: LayoutTensor[
@@ -917,9 +917,7 @@ fn multi_stage_reg_epilogue[
 
         # Assume double-buffer for shared memory packing
         var c_smem_tile = c_iter.next(stage % 2)[]
-        comptime c_smem_tile_m = 32 if cta_group == 2 else BM // Int(
-            num_output_warps
-        )
+        comptime c_smem_tile_m = 32 if cta_group == 2 else BM // num_output_warps
         var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, stageN](
             Int(warp_id), 0
         )
@@ -942,7 +940,7 @@ fn multi_stage_reg_epilogue[
             )
 
         # Guard the write to shared memory is done.
-        named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+        named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
         var lane = lane_id()
 
@@ -979,7 +977,7 @@ fn multi_stage_reg_epilogue[
             size_of[c_type]() != 2
             or UInt32(coord_m) + UInt32(TMA_BM) >= group_end_idx
         ):
-            comptime output_threads = Int(num_output_warps) * Int(WARP_SIZE)
+            comptime output_threads = num_output_warps * WARP_SIZE
             comptime c_smem_M = c_smem_tile.layout.shape[0].value()
             comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
                 layout,
@@ -1067,7 +1065,7 @@ fn multi_stage_reg_epilogue[
         @parameter
         if stage > 0 and stage < num_stages - 1:
             # Guard the tma read from shared memory is done.
-            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
 @always_inline
@@ -1088,7 +1086,7 @@ fn promote_accumulators[
     cta_group: Int,
     CLUSTER_SIZE: Int32,
     is_lower_frag_required: Bool,
-    num_output_warps: UInt,
+    num_output_warps: Int,
 ](
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     b_scales_n: Int,
