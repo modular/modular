@@ -339,7 +339,7 @@ struct ValueMemHasMove(Movable, ImplicitlyCopyable):
 
 
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
-# CHECK-SAME: (!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDestructible_Movable) register_passable_trivial
+# CHECK-SAME: (!AnyTrivialRegType_AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDestructible_Movable) register_passable_trivial
 
 # CHECK: lit.fn @"__moveinit__{{.*}}"[{{.*}}](%other: !lit.ref<!ValueRegTrivial, {{.*}}> deinit_mem,
 # CHECK-SAME: %self: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result)
@@ -357,8 +357,7 @@ struct ValueMemHasMove(Movable, ImplicitlyCopyable):
 # CHECK-NEXT: lit.return %none : !kgen.none
 
 @fieldwise_init
-@register_passable("trivial")
-struct ValueRegTrivial(Copyable):
+struct ValueRegTrivial(AnyTrivialRegType, Copyable):
     var a: __mlir_type.index
 
 
@@ -411,8 +410,7 @@ struct Foo(ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.struct.decl @ParamVarArg<I: variadic<!Int> pos_vararg>
 @fieldwise_init
-@register_passable("trivial")
-struct ParamVarArg[*I: Int]:
+struct ParamVarArg[*I: Int](AnyTrivialRegType):
     pass
 
 
@@ -440,8 +438,7 @@ struct NotSynthetic(ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.struct.decl @VarArgInit
 @fieldwise_init
-@register_passable("trivial")
-struct VarArgInit:
+struct VarArgInit(AnyTrivialRegType):
     var a: Int
 
     # CHECK: lit.fn @"__init__(decorators::ValueMem*)"{{.*}}(%values: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>> read_mem|pos_vararg
@@ -491,8 +488,7 @@ fn register_internal(x: StaticString):
 @register_internal("custom.op")
 @deprecated("DecoratorOrder1")
 @fieldwise_init
-@register_passable("trivial")
-struct DecoratorOrder1:
+struct DecoratorOrder1(AnyTrivialRegType):
     var a: Int
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder2
@@ -502,9 +498,8 @@ struct DecoratorOrder1:
 # CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder2
 @deprecated("DecoratorOrder2")
 @register_internal("custom.op")
-@register_passable("trivial")
 @fieldwise_init
-struct DecoratorOrder2:
+struct DecoratorOrder2(AnyTrivialRegType):
     var a: Int
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder3
@@ -512,11 +507,10 @@ struct DecoratorOrder2:
 # CHECK-SAME: deprecationWarning = "DecoratorOrder3"
 # CHECK: decorators <{{.*}}:string "custom.op"
 # CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder3
-@register_passable("trivial")
 @fieldwise_init
 @deprecated("DecoratorOrder3")
 @register_internal("custom.op")
-struct DecoratorOrder3:
+struct DecoratorOrder3(AnyTrivialRegType):
     var a: Int
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder4
@@ -525,14 +519,12 @@ struct DecoratorOrder3:
 # CHECK: decorators <{{.*}}:string "custom.op"
 # CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder4
 @fieldwise_init
-@register_passable("trivial")
 @register_internal("custom.op")
 @deprecated("DecoratorOrder4")
-struct DecoratorOrder4:
+struct DecoratorOrder4(AnyTrivialRegType):
     var a: Int
 
-@register_passable("trivial")
-struct AIBuiltinPair:
+struct AIBuiltinPair(AnyTrivialRegType):
     var a: Int
     var b: Int
 

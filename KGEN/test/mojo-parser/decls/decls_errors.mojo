@@ -754,8 +754,7 @@ struct OtherInMemStruct:
   var y: InMemStruct # ok
 
 
-@register_passable("trivial")
-struct InvalidMember:
+struct InvalidMember(AnyTrivialRegType):
   var x: __mlir_type.index
   # expected-error @+1 {{'@register_passable' types may not have a '__moveinit__' method, they are always movable by copying a register}}
   fn __moveinit__(out self, deinit existing: Self): pass
@@ -955,13 +954,11 @@ trait CFMTrait: # expected-note {{trait 'CFMTrait' declared here}}
         ...
 
 # struct implements CFMTrait but does not have f2().
-@register_passable("trivial")
-struct CFMStructFail(CFMTrait): # expected-error {{'CFMStructFail' does not implement all requirements for 'CFMTrait'}}
+struct CFMStructFail(AnyTrivialRegType, CFMTrait): # expected-error {{'CFMStructFail' does not implement all requirements for 'CFMTrait'}}
   fn f1(self, x: Int): # expected-note {{candidate declared here with type 'fn(self: CFMStructFail, x: Int) -> None'}}
     pass
 
-@register_passable("trivial")
-struct NoTraits:
+struct NoTraits(AnyTrivialRegType):
     pass
 
 fn trait_fn[T: CFMTrait]():

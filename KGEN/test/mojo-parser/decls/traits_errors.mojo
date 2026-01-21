@@ -89,12 +89,14 @@ fn call_many_things_of_specified_trait(a: TraitStruct):
     ]()
 
 
-@register_passable("trivial")
-trait TrivialTrait:
+# expected-note@+1 {{trait 'TrivialTrait' declared here}}
+trait TrivialTrait(AnyTrivialRegType):
+    # expected-note@+1 {{required function 'doSomething' is not implemented}}
     fn doSomething(self):
         ...
 
 
+# expected-note@+1 {{inherited through 'MemTraitViolation' here}}
 trait MemTraitViolation(TrivialTrait):
     fn bar(self):
         ...
@@ -111,12 +113,12 @@ struct StructViolation1(NonTrivialRGTrait):
     pass
 
 
-# expected-error @+1 {{a struct must be register passable in order to inherit from a register passable trait}}
+# expected-error @+1 {{does not implement all requirements for}}
 struct StructViolation2(TrivialTrait):
     pass
 
 
-# expected-error @+1 {{a struct must be register passable in order to inherit from a register passable trait}}
+# expected-error @+1 {{does not implement all requirements for}}
 struct StructViolation3(MemTraitViolation):
     fn bar(self):
         pass
