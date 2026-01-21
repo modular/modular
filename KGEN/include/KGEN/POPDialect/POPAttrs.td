@@ -768,6 +768,34 @@ def POP_SIMDNegAttr : POP_ExprAttr<"SIMDNeg", "simd_neg"> {
   }];
 }
 
+def POP_SIMDFloorAttr : POP_ExprAttr<"SIMDFloor", "simd_floor"> {
+  let summary = "SIMD floor.";
+  let description = [{
+    The `#pop.simd_floor` attribute takes a scalar value and returns the floor
+    of it.
+  }];
+
+  let parameters = (ins "TypedAttr":$operand);
+
+  let assemblyFormat = " `<` $operand `>` ";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return the same attribute type due to folding on construction.
+    AttrBuilder<(ins "TypedAttr":$operand), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$operand), [{
+      return get(operand.getContext(), operand);
+    }], "TypedAttr">
+  ];
+
+  let extraClassDeclaration = [{
+    Type getType() const;
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // SIMD Binary Operation Attributes
 //===----------------------------------------------------------------------===//

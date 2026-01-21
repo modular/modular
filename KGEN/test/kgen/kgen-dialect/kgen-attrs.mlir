@@ -464,6 +464,19 @@ kgen.generator @simd_cmp_folding<dt: dtype>() {
 } : () -> ()
 
 "some.op"() {
+  // CHECK: a = #pop<simd 7> : !pop.scalar<si32>
+  a = #pop.simd_floor< #pop<simd 7> : !pop.scalar<si32>> : !pop.scalar<si32>,
+  // CHECK: b = #pop.simd<3, -4>
+  b = #pop.simd_floor< #pop.simd<3, -4> : !pop.simd<2, si32>> : !pop.simd<2, si32>,
+  // CHECK: c = #pop.simd<true, false>
+  c = #pop.simd_floor< #pop.simd<true, false> : !pop.simd<2, bool>> : !pop.simd<2, bool>,
+  // CHECK: d = #pop.simd_floor<#kgen.unknown : !pop.simd<4, si32>> : !pop.simd<4, si32>
+  d = #pop.simd_floor< #kgen.unknown : !pop.simd<4, si32>>,
+  // CHECK: e = #pop.simd<"1", "-2", "0">
+  e = #pop.simd_floor< #pop.simd<"1.9", "-1.2", "0.0"> : !pop.simd<3, f32>> : !pop.simd<3, f32>
+} : () -> ()
+
+"some.op"() {
   // CHECK: a = #pop<simd 4> : !pop.scalar<si32>
   a = #pop.simd_shl< #pop<simd 1> : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<si32>,
   // CHECK: b = #pop.simd<4, 4, -48, 99> : !pop.simd<4, si16>
