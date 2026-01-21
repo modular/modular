@@ -17,7 +17,7 @@ from __future__ import annotations
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
 
 
-class DeepseekV32Config(DeepseekV3Config):
+class DeepseekV3_2Config(DeepseekV3Config):
     """Configuration for DeepseekV3.2 models."""
 
     # Added parameters for the Indexer used in DeepSeek Sparse Attention.

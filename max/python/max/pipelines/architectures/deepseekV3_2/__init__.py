@@ -11,6 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .arch import deepseekV32_arch
+from .arch import deepseekV3_2_arch
 
-__all__ = ["deepseekV32_arch"]
+__all__ = ["deepseekV3_2_arch"]
