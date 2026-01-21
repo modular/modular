@@ -29,16 +29,33 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
-from collections.abc import Callable, Coroutine, Generator, Iterable
+from collections.abc import (
+    Callable,
+    Coroutine,
+    Generator,
+    Iterable,
+    Mapping,
+    Sequence,
+)
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any, TypeAlias, TypeVar, overload
 
 from typing_extensions import ParamSpec
 
 from .. import driver
-from ..graph import BufferValue, Graph, TensorValue, TensorValueLike, ops
+from ..dtype import DType
+from ..graph import BufferValue, Graph, TensorValue, TensorValueLike, Type, ops
+from ..graph.type import DeviceRef
+from ..graph.value import Value
 from . import realization_context as rc
 from . import tensor
+
+#: Type alias for custom extensions paths, matching :obj:`engine.CustomExtensionsType`.
+CustomExtensionType: TypeAlias = str | Path
+CustomExtensionsType: TypeAlias = (
+    Iterable[CustomExtensionType] | CustomExtensionType
+)
 
 Args = ParamSpec("Args")
 Result = TypeVar("Result")
@@ -343,9 +360,167 @@ cos = functional(ops.cos)
 #: Computes the cumulative sum along an axis.
 #: See :func:`max.graph.ops.cumsum` for details.
 cumsum = functional(ops.cumsum)
-#: Applies a custom operation.
-#: See :func:`max.graph.ops.custom` for details.
-custom = functional(ops.custom)
+
+
+def _load_custom_extensions(
+    graph: Graph, custom_extensions: CustomExtensionsType | None
+) -> None:
+    """Loads custom extensions into the graph if not already loaded.
+
+    Checks the graph's kernel library to determine which extensions are already
+    loaded, avoiding redundant loading.
+
+    Args:
+        graph: The graph to load extensions into.
+        custom_extensions: Paths to custom extension libraries (.mojopkg files
+            or Mojo source directories).
+    """
+    if custom_extensions is None:
+        return
+
+    if isinstance(custom_extensions, (str, Path)):
+        custom_extensions = [custom_extensions]
+    paths = [Path(p) for p in custom_extensions]
+
+    graph._import_kernels(Path(p) for p in custom_extensions)
+
+
+@functional
+def custom(
+    name: str,
+    device: driver.Device | DeviceRef,
+    values: Sequence[Value[Any]],
+    out_types: Sequence[Type[Any]],
+    parameters: Mapping[str, bool | int | str | DType] | None = None,
+    custom_extensions: CustomExtensionsType | None = None,
+) -> list[Value[Any]]:
+    """Applies a custom operation with optional custom extension loading.
+
+    Creates a node to execute a custom graph operation. The custom op should be
+    registered by annotating a Mojo function with the ``@compiler.register``
+    decorator.
+
+    This function extends :func:`max.graph.ops.custom` with automatic loading
+    of custom extension libraries, eliminating the need to manually import
+    kernels before use.
+
+    Example:
+        .. code-block:: python
+
+            from max.experimental import functional as F, Tensor
+            from max.dtype import DType
+            from max.driver import CPU
+
+            x = Tensor.full([10], 10, dtype=DType.float32, device=CPU())
+            y = Tensor.ones([10], dtype=DType.float32, device=CPU())
+
+            # Use custom op with inline extension loading
+            result = F.custom(
+                "vector_sum",
+                device=x.device,
+                values=[x, y],
+                out_types=[x.type],
+                custom_extensions="ops.mojopkg"
+            )[0]
+
+    Args:
+        name: The op name provided to ``@compiler.register``.
+        device: Device that the op is assigned to. This becomes a ``target``
+            parameter to the kernel.
+        values: The op function's arguments.
+        out_types: The list of op function's return types.
+        parameters: Dictionary of extra parameters expected by the kernel.
+        custom_extensions: Paths to custom extension libraries (``.mojopkg``
+            files or Mojo source directories). Extensions are automatically
+            loaded into the current graph if not already present.
+
+    Returns:
+        Symbolic values representing the outputs of the op in the graph.
+        These correspond 1:1 with the types passed as ``out_types``.
+
+    See Also:
+        :func:`max.graph.ops.custom`: The underlying graph operation.
+        :func:`inplace_custom`: For in-place custom operations.
+    """
+    graph = Graph.current
+    _load_custom_extensions(graph, custom_extensions)
+    return ops.custom(
+        name=name,
+        device=device,
+        values=values,
+        out_types=out_types,
+        parameters=parameters,
+    )
+
+
+@functional
+def inplace_custom(
+    name: str,
+    device: driver.Device | DeviceRef,
+    values: Sequence[Value[Any]],
+    out_types: Sequence[Type[Any]] | None = None,
+    parameters: dict[str, bool | int | str | DType] | None = None,
+    custom_extensions: CustomExtensionsType | None = None,
+) -> list[Value[Any]]:
+    """Applies an in-place custom operation with optional custom extension loading.
+
+    Creates a node to execute an in-place custom graph operation. The custom op
+    should be registered by annotating a Mojo function with the
+    ``@compiler.register`` decorator.
+
+    This function extends :func:`max.graph.ops.inplace_custom` with automatic
+    loading of custom extension libraries, eliminating the need to manually
+    import kernels before use.
+
+    Example:
+        .. code-block:: python
+
+            from max.experimental import functional as F, Tensor
+            from max.dtype import DType
+            from max.driver import CPU
+
+            # Create a buffer for in-place modification
+            data = Tensor.zeros([10], dtype=DType.float32, device=CPU())
+
+            # Use in-place custom op with inline extension loading
+            F.inplace_custom(
+                "my_inplace_op",
+                device=data.device,
+                values=[data],
+                custom_extensions="ops.mojopkg"
+            )
+
+    Args:
+        name: The op name provided to ``@compiler.register``.
+        device: Device that the op is assigned to. This becomes a ``target``
+            parameter to the kernel.
+        values: The op function's arguments. At least one must be a
+            :obj:`BufferValue` or :obj:`_OpaqueValue`.
+        out_types: The list of op function's return types. Can be None if the
+            operation has no outputs.
+        parameters: Dictionary of extra parameters expected by the kernel.
+        custom_extensions: Paths to custom extension libraries (``.mojopkg``
+            files or Mojo source directories). Extensions are automatically
+            loaded into the current graph if not already present.
+
+    Returns:
+        Symbolic values representing the outputs of the op in the graph.
+
+    See Also:
+        :func:`max.graph.ops.inplace_custom`: The underlying graph operation.
+        :func:`custom`: For non-in-place custom operations.
+    """
+    graph = Graph.current
+    _load_custom_extensions(graph, custom_extensions)
+    return ops.inplace_custom(
+        name=name,
+        device=device,
+        values=values,
+        out_types=out_types,
+        parameters=parameters,
+    )
+
+
 #: Divides two tensors element-wise.
 #: See :func:`max.graph.ops.div` for details.
 div = functional(ops.div)
@@ -385,9 +560,6 @@ greater_equal = functional(ops.greater_equal)
 #: Creates a Hann window.
 #: See :func:`max.graph.ops.hann_window` for details.
 hann_window = functional(ops.hann_window)
-#: Applies inplace custom operation.
-#: See :func:`max.graph.ops.inplace_custom` for details.
-inplace_custom = functional(ops.inplace_custom)
 #: Computes the inverse real FFT.
 #: See :func:`max.graph.ops.irfft` for details.
 irfft = functional(ops.irfft)

@@ -15,6 +15,12 @@ modular_py_test(
         "-n",
         "auto",
     ],
+    data = [
+        "//max/tests/integration:kernel_verification_ops",
+    ],
+    env = {
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration:kernel_verification_ops)",
+    },
     ignore_extra_deps = [
         # Used for parallel testing
         requirement("pytest-xdist"),
