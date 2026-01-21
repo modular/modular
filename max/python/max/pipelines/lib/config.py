@@ -67,171 +67,241 @@ class PipelineConfig(ConfigFileModel):
     default.
     """
 
-    max_length: int | None = Field(default=None)
-    """Maximum sequence length of the model."""
+    max_length: int | None = Field(
+        default=None, description="Maximum sequence length of the model."
+    )
 
-    pipeline_role: PipelineRole = Field(default=PipelineRole.PrefillAndDecode)
-    """Whether the pipeline should serve both a prefill or decode role or both."""
+    pipeline_role: PipelineRole = Field(
+        default=PipelineRole.PrefillAndDecode,
+        description=(
+            "Whether the pipeline should serve both a prefill or decode role or "
+            "both."
+        ),
+    )
 
-    max_batch_size: int | None = Field(default=None)
-    """Maximum batch size to execute with the model.
-    When not specified (None), we determine this value dynamically. For users
-    launching in a server scenario, the expectation is that this value should be
-    set higher based on server capacity.
-    """
+    max_batch_size: int | None = Field(
+        default=None,
+        description=(
+            "Maximum batch size to execute with the model. When not specified "
+            "(None), this value is determined dynamically. For server launches, "
+            "set this higher based on server capacity."
+        ),
+    )
 
-    max_queue_size_tg: int | None = Field(default=None)
-    """Maximum number of requests in decode queue. By default, this is max-batch-size."""
+    max_queue_size_tg: int | None = Field(
+        default=None,
+        description=(
+            "Maximum number of requests in decode queue. By default, this is "
+            "max_batch_size."
+        ),
+    )
 
-    min_batch_size_tg: int | None = Field(default=None)
-    """Specifies a soft floor on the decode batch size.
+    min_batch_size_tg: int | None = Field(
+        default=None,
+        description=(
+            "Soft floor on the decode batch size. If the TG batch size is "
+            "larger, the scheduler continues TG batches; if it falls below, the "
+            "scheduler prioritizes CE. This is not a strict minimum. By "
+            "default, this is max_queue_size_tg. Experimental for the TTS "
+            "scheduler."
+        ),
+    )
 
-    If the TG batch size is larger than this value, the scheduler will continue to
-    run TG batches. If it falls below, the scheduler will prioritize CE. Note that
-    this is NOT a strict minimum! By default, this is max-queue-size-tg.
+    ep_size: int = Field(
+        default=1,
+        description=(
+            "The expert parallelism size. Needs to be 1 (no expert parallelism) "
+            "or the total number of GPUs across nodes."
+        ),
+    )
 
-    This is an experimental flag solely for the TTS scheduler. Do not use unless
-    you know what you are doing.
-    """
+    ce_delay_ms: float = Field(
+        default=0.0,
+        description=(
+            "Duration of scheduler sleep prior to starting a prefill batch. "
+            "Experimental for the TTS scheduler."
+        ),
+    )
 
-    ep_size: int = Field(default=1)
-    """The expert parallelism size. Needs to be 1 (no expert parallelism) or the
-    total number of GPUs across nodes."""
+    enable_prioritize_first_decode: bool = Field(
+        default=False,
+        description=(
+            "When enabled, the scheduler always runs a TG batch immediately "
+            "after a CE batch with the same requests. This may reduce "
+            "time-to-first-chunk latency. Experimental for the TTS scheduler."
+        ),
+    )
 
-    ce_delay_ms: float = Field(default=0.0)
-    """Duration of scheduler sleep prior to starting a prefill batch.
+    enable_chunked_prefill: bool = Field(
+        default=True,
+        description=(
+            "Enable chunked prefill to split context encoding requests into "
+            "multiple chunks based on prefill_chunk_size."
+        ),
+    )
 
-    This is an experimental flag solely for the TTS scheduler. Do not use unless
-    you know what you are doing.
-    """
+    enable_in_flight_batching: bool = Field(
+        default=False,
+        description=(
+            "When enabled, prioritizes token generation by batching it with "
+            "context encoding requests."
+        ),
+    )
 
-    enable_prioritize_first_decode: bool = Field(default=False)
-    """When enabled, the scheduler will always run a TG batch immediately after a CE batch,
-    with the same requests. This may be useful for decreasing time-to-first-chunk latency.
+    max_num_steps: int = Field(
+        default=-1,
+        description=(
+            "The number of steps to run for multi-step scheduling. -1 specifies "
+            "a default value based on configuration and platform. Ignored for "
+            "models which are not auto-regressive (e.g. embedding models)."
+        ),
+    )
 
-    This is an experimental flag solely for the TTS scheduler. Do not use unless
-    you know what you are doing.
-    """
+    prefill_chunk_size: int = Field(
+        default=DEFAULT_PREFILL_CHUNK_SIZE,
+        description=(
+            "The target number of un-encoded tokens to include in each batch. "
+            "This value is used for chunked prefill and memory estimation."
+        ),
+    )
 
-    enable_chunked_prefill: bool = Field(default=True)
-    """Enable chunked prefill to split context encoding requests into multiple chunks
-    based on 'prefill_chunk_size'."""
+    enable_echo: bool = Field(
+        default=False,
+        description="Whether the model should be built with echo capabilities.",
+    )
 
-    enable_in_flight_batching: bool = Field(default=False)
-    """When enabled, prioritizes token generation by batching it with context
-    encoding requests."""
+    pool_embeddings: bool = Field(
+        default=True, description="Whether to pool embedding outputs."
+    )
 
-    max_num_steps: int = Field(default=-1)
-    """The number of steps to run for multi-step scheduling. -1 specifies a default value based on
-    configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding
-    models)."""
-
-    prefill_chunk_size: int = Field(default=DEFAULT_PREFILL_CHUNK_SIZE)
-    """The target number of un-encoded tokens to include in each batch.
-    This value is used for chunked prefill and memory estimation."""
-
-    enable_echo: bool = Field(default=False)
-    """Whether the model should be built with echo capabilities."""
-
-    pool_embeddings: bool = Field(default=True)
-    """Whether to pool embedding outputs."""
-
-    chat_template: Path | None = Field(default=None)
-    """Optional custom chat template to override the one shipped with the
-    HuggingFace model config. Can be either:
-    - A Path pointing to a file containing the template
-
-    If a Path is provided, the file will be read during config resolution and
-    the content will be stored as a string. This allows customizing the prompt
-    formatting for different use cases. If None, the model's default chat
-    template will be used."""
+    chat_template: Path | None = Field(
+        default=None,
+        description=(
+            "Optional custom chat template to override the one shipped with the "
+            "HuggingFace model config. If a path is provided, the file is read "
+            "during config resolution and the content stored as a string. If "
+            "None, the model's default chat template is used."
+        ),
+    )
 
     use_experimental_kernels: str = Field(
-        default=os.environ.get("USE_EXPERIMENTAL_KERNELS", "false")
+        default=os.environ.get("USE_EXPERIMENTAL_KERNELS", "false"),
+        description=(
+            "Enables using experimental mojo kernels with max serve. The "
+            "kernels could be unstable or incorrect."
+        ),
     )
-    """Enables using experimental mojo kernels with max serve.
-    The kernels could be unstable, incorrect, or otherwise have issues.
-    """
 
     use_vendor_blas: str = Field(
-        default=os.environ.get("MAX_SERVE_USE_VENDOR_BLAS", "false")
+        default=os.environ.get("MAX_SERVE_USE_VENDOR_BLAS", "false"),
+        description=(
+            "Enables using vendor BLAS libraries (cublas/hipblas/etc) with max "
+            "serve. Currently, this just replaces matmul calls."
+        ),
     )
-    """Enables using the vendor blas libraries (cublas/hipblas/etc) with max serve.
-    Currently, this just replaces matmul calls, but it could replace other numeric functions in the future.
-    """
 
-    pdl_level: str = Field(default=os.environ.get("PDL_LEVEL", "0"))
-    """Level of overlap of kernel launch via programmatic dependent grid control."""
+    pdl_level: str = Field(
+        default=os.environ.get("PDL_LEVEL", "0"),
+        description=(
+            "Level of overlap of kernel launch via programmatic dependent grid "
+            "control."
+        ),
+    )
 
-    custom_architectures: list[str] = Field(default_factory=list)
-    """A list of custom architecture implementations to register.
-    Each input can either be a raw module name or an import path followed by a colon and the module name.
-    Ex:
-    - `my_module`
-    - `folder/path/to/import:my_module`
+    custom_architectures: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Custom architecture implementations to register. Each input can "
+            "either be a raw module name or an import path followed by a colon "
+            "and the module name. Each module must expose an ARCHITECTURES list "
+            "of architectures to register."
+        ),
+    )
 
-    Each module must expose an `ARCHITECTURES` list of architectures to register.
-    """
+    zmq_endpoint_base: str = Field(
+        default_factory=generate_zmq_ipc_path,
+        description=(
+            "Prefix for ZMQ endpoints used for IPC. This ensures unique "
+            "endpoints across MAX Serve instances on the same host. Example: "
+            'lora_request_zmq_endpoint = f"{zmq_endpoint_base}-lora_request".'
+        ),
+    )
 
-    zmq_endpoint_base: str = Field(default_factory=generate_zmq_ipc_path)
-    """The prefix for the ZMQ endpoints used for IPC. This prefix ensures that the
-    ZMQ endpoints are unique across multiple MAX Serve instances running on the
-    same host. This should be randomly generated when the PipelineConfig is created.
-    Ex:
-    - lora_request_zmq_endpoint: f"{zmq_endpoint_base}-lora_request"
-    - lora_response_zmq_endpoint: f"{zmq_endpoint_base}-lora_response"
-    """
+    execute_empty_batches: bool = Field(
+        default=False,
+        description="Whether the scheduler should execute empty batches.",
+    )
 
-    execute_empty_batches: bool = Field(default=False)
-    """Whether the scheduler should execute empty batches."""
+    max_batch_context_length: int | None = Field(
+        default=None,
+        description=(
+            "Ensures that the sum of the context length in a batch does not "
+            "exceed max_batch_context_length. If None, the sum is not limited."
+        ),
+    )
 
-    max_batch_context_length: int | None = Field(default=None)
-    """Ensures that the sum of the context length in a batch does not exceed max_batch_context_length.
+    force: bool = Field(
+        default=False,
+        description=(
+            "Skip validation of user provided flags against the architecture's "
+            "required arguments."
+        ),
+    )
 
-    If None, the sum of the context length in batch is not limited.
-    """
+    kvcache_ce_watermark: float = Field(
+        default=0.95,
+        description=(
+            "Projected cache usage threshold for scheduling CE requests, "
+            "considering current and incoming requests. CE is scheduled if "
+            "either projected usage stays below this threshold or no active "
+            "requests exist. Higher values can cause more preemptions."
+        ),
+    )
 
-    enable_overlap_scheduler: bool = Field(default=False)
-    """Whether to enable the overlap scheduler. This feature allows the scheduler
-    to run alongside GPU execution. This helps improve GPU utilization.
+    enable_overlap_scheduler: bool = Field(
+        default=False,
+        description=(
+            "Whether to enable the overlap scheduler. This feature allows the scheduler "
+            "to run alongside GPU execution. This helps improve GPU utilization. "
+            "This is an experimental feature which may crash and burn."
+        ),
+    )
 
-    This is an experimental feature which may crash and burn."""
-
-    force: bool = Field(default=False)
-    """Skip validation of user provided flags against the architecture's required arguments."""
-
-    kvcache_ce_watermark: float = Field(default=0.95)
-    """Projected cache usage threshold for scheduling CE requests, considers current + incoming
-    request. CE is scheduled if either projected usage stays below this threshold OR no active
-    requests exist. Greater KVCache utilization (as controlled by this parameter) was
-    found to cause more preemptions.
-    """
-
-    use_module_v3: bool = Field(default=False)
-    """Whether to use the ModuleV3 architecture if it exists."""
+    use_module_v3: bool = Field(
+        default=False,
+        description="Whether to use the ModuleV3 architecture if it exists.",
+    )
 
     # TODO(SERVSYS-1096): Remove this field once we've reworked how required
     # config fields are validated.
-    defer_resolve: bool = Field(default=False)
-    """Whether to defer resolving the pipeline config."""
+    defer_resolve: bool = Field(
+        default=False,
+        description="Whether to defer resolving the pipeline config.",
+    )
 
-    model: MAXModelConfig = Field(default_factory=MAXModelConfig)
-    """The model config."""
+    model: MAXModelConfig = Field(
+        default_factory=MAXModelConfig, description="The model config."
+    )
 
-    draft_model: MAXModelConfig | None = Field(default=None)
-    """The draft model config."""
+    draft_model: MAXModelConfig | None = Field(
+        default=None, description="The draft model config."
+    )
 
-    sampling: SamplingConfig = Field(default_factory=SamplingConfig)
-    """The sampling config."""
+    sampling: SamplingConfig = Field(
+        default_factory=SamplingConfig, description="The sampling config."
+    )
 
-    profiling: ProfilingConfig = Field(default_factory=ProfilingConfig)
-    """The profiling config."""
+    profiling: ProfilingConfig = Field(
+        default_factory=ProfilingConfig, description="The profiling config."
+    )
 
-    lora: LoRAConfig | None = Field(default=None)
-    """The LoRA config."""
+    lora: LoRAConfig | None = Field(
+        default=None, description="The LoRA config."
+    )
 
-    speculative: SpeculativeConfig | None = Field(default=None)
-    """The SpeculativeConfig."""
+    speculative: SpeculativeConfig | None = Field(
+        default=None, description="The SpeculativeConfig."
+    )
 
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
     """The section name to use when loading this config from a MAXConfig file.
@@ -1200,30 +1270,6 @@ class PipelineConfig(ConfigFileModel):
         logger.info(f"    cache_memory       : {memory_str}")
         logger.info("")
 
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {
-            "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
-            "pipeline_role": "Whether the pipeline should serve both a prefill or decode role or both.",
-            "max_batch_size": "Define the maximum batch size to execute with the model. When not specified (None), we determine this value dynamically. For users launching in a server scenario, the expectation is that this value should be set higher based on server capacity.",
-            "max_queue_size_tg": "Maximum number of requests in decode queue. By default, this is max-batch-size.",
-            "min_batch_size_tg": "Specifies a soft floor on the decode batch size. If the TG batch size is larger than this value, the scheduler will continue to run TG batches. If it falls below, the scheduler will prioritize CE. This is an experimental flag solely for the TTS scheduler.",
-            "ce_delay_ms": "Duration of scheduler sleep prior to starting a prefill batch. This is an experimental flag solely for the TTS scheduler. Default is 0.0.",
-            "enable_prioritize_first_decode": "When enabled, the scheduler will always run a TG batch immediately after a CE batch, with the same requests. This may be useful for decreasing time-to-first-chunk latency. This is an experimental flag solely for the TTS scheduler. Default is false.",
-            "experimental_background_queue": "When enabled, offloads queue draining to a background thread for improved performance. This is an experimental flag. Default is false.",
-            "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `prefill-chunk-size`. Default is true.",
-            "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests. Default is false.",
-            "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is -1 which specifies a default value based on configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding models).",
-            "prefill_chunk_size": "The target number of un-encoded tokens to include in each batch. This value is used for chunked prefill and memory estimation. Default is 8192.",
-            "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
-            "pool_embeddings": "Whether to pool embedding outputs. Default is true.",
-            "use_experimental_kernels": "Whether to use experimental kernels. Default is false.",
-            "max_batch_context_length": "Ensures that the sum of the context length in a batch does not exceed max_batch_context_length. If None, the sum of the context length in batch is not limited.",
-            "pdl_level": "Level of overlap of kernel launch via programmatic dependent grid control. Default is 0.",
-            "custom_architectures": "A list of custom architecture implementations to register. Each input can either be a raw module name or an import path followed by a colon and the module name.",
-            "kvcache_ce_watermark": "Projected cache usage threshold for scheduling CE requests, considers current + incoming request. CE is scheduled if either projected usage stays below this threshold OR no active requests exist. Greater KVCache utilization (as controlled by this parameter) was found to cause more preemptions. Default watermark value is 0.95.",
-        }
-
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:
     if value.lower() == "true":
@@ -1270,49 +1316,66 @@ class PrometheusMetricsMode(str, Enum):
 
 class AudioGenerationConfig(PipelineConfig):
     # TODO: Make these flags more discoverable.
-    audio_decoder: str = Field(default="")
-    """The name of the audio decoder model architecture."""
+    audio_decoder: str = Field(
+        default="",
+        description="The name of the audio decoder model architecture.",
+    )
 
-    audio_decoder_weights: str = Field(default="")
-    """The path to the audio decoder weights file."""
+    audio_decoder_weights: str = Field(
+        default="", description="The path to the audio decoder weights file."
+    )
 
-    chunk_size: list[int] | None = Field(default=None)
-    """The chunk sizes to use for streaming.
-    If this is an int, then fixed-size chunks of the given size are used
-    If this is a list, then variable chunk sizes are used."""
+    chunk_size: list[int] | None = Field(
+        default=None,
+        description=(
+            "The chunk sizes to use for streaming. If this is an int, fixed-size "
+            "chunks of the given size are used. If this is a list, variable "
+            "chunk sizes are used."
+        ),
+    )
 
-    buffer: int = Field(default=0)
-    """The number of previous speech tokens to pass to the audio decoder on
-    each generation step."""
+    buffer: int = Field(
+        default=0,
+        description=(
+            "The number of previous speech tokens to pass to the audio decoder "
+            "on each generation step."
+        ),
+    )
 
-    block_causal: bool = Field(default=False)
-    """Whether prior buffered tokens should attend to tokens in the current block.
-    Has no effect if buffer is not set."""
+    block_causal: bool = Field(
+        default=False,
+        description=(
+            "Whether prior buffered tokens should attend to tokens in the "
+            "current block. Has no effect if buffer is not set."
+        ),
+    )
 
     prepend_prompt_speech_tokens: PrependPromptSpeechTokens = Field(
-        default=PrependPromptSpeechTokens.ONCE
+        default=PrependPromptSpeechTokens.ONCE,
+        description=(
+            "Whether the prompt speech tokens should be forwarded to the audio "
+            "decoder. Options: never, once, rolling."
+        ),
     )
-    """Whether the prompt speech tokens should be forwarded to the audio decoder.
-    If "never", the prompt tokens are not forwarded.
-    If "once", the prompt tokens are only forwarded on the first block.
-    If "always", the prompt tokens are forwarded on all blocks.
-    """
 
-    prepend_prompt_speech_tokens_causal: bool = Field(default=False)
-    """Whether the prompt speech tokens should attend to tokens in the currently
-    generated audio block.
-    Has no effect if prepend_prompt_speech_tokens is "never".
-    If False (default), the prompt tokens do not attend to the current block.
-    If True, the prompt tokens attend to the current block.
-    """
+    prepend_prompt_speech_tokens_causal: bool = Field(
+        default=False,
+        description=(
+            "Whether the prompt speech tokens should attend to tokens in the "
+            "currently generated audio block. Has no effect if "
+            "prepend_prompt_speech_tokens is never."
+        ),
+    )
 
-    audio_decoder_config: dict[str, Any] = Field(default_factory=dict)
-    """Parameters to pass to the audio decoder model."""
+    audio_decoder_config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Parameters to pass to the audio decoder model.",
+    )
 
     prometheus_metrics_mode: PrometheusMetricsMode = Field(
-        default=PrometheusMetricsMode.INSTRUMENT_ONLY
+        default=PrometheusMetricsMode.INSTRUMENT_ONLY,
+        description="The mode to use for Prometheus metrics.",
     )
-    """The mode to use for Prometheus metrics."""
 
     _run_model_test_mode: bool = PrivateAttr(default=False)
     """Test-only flag that indicates that test parameters have been passed to
@@ -1353,35 +1416,6 @@ class AudioGenerationConfig(PipelineConfig):
         )
         self._run_model_test_mode = run_model_test_mode
         self.prometheus_metrics_mode = prometheus_metrics_mode
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        # Get the parent class help first
-        audio_help = PipelineConfig.help()
-
-        # Add AudioGenerationConfig-specific fields
-        audio_specific_help = {
-            "audio_decoder": "The name of the audio decoder model architecture.",
-            "audio_decoder_weights": "The path to the audio decoder weights file.",
-            "chunk_size": "The chunk sizes to use for streaming. If this is an int, then fixed-size chunks of the given size are used. If this is a list, then variable chunk sizes are used.",
-            "buffer": "The number of previous speech tokens to pass to the audio decoder on each generation step. Default is 0.",
-            "block_causal": "Whether prior buffered tokens should attend to tokens in the current block. Has no effect if buffer is not set. Default is false.",
-            "prepend_prompt_speech_tokens": "Whether the prompt speech tokens should be forwarded to the audio decoder. Options: 'never', 'once', 'rolling'. Default is 'once'.",
-            "prepend_prompt_speech_tokens_causal": "Whether the prompt speech tokens should attend to tokens in the currently generated audio block. Has no effect if prepend_prompt_speech_tokens is 'never'. Default is false.",
-            "audio_decoder_config": "Parameters to pass to the audio decoder model.",
-            "prometheus_metrics_mode": "The mode to use for Prometheus metrics. Default is 'instrument_only'.",
-        }
-
-        # Check for conflicts
-        for key in audio_specific_help:
-            if key in audio_help:
-                raise ValueError(
-                    f"Duplicate help key '{key}' found in AudioGenerationConfig"
-                )
-
-        # Merge the help dictionaries
-        audio_help.update(audio_specific_help)
-        return audio_help
 
     @classmethod
     def from_flags(

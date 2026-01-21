@@ -68,71 +68,120 @@ class MAXModelConfigBase(ConfigFileModel):
     # Allow arbitrary types (like DeviceRef, AutoConfig) to avoid schema generation errors.
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {}
-
 
 class MAXModelConfig(MAXModelConfigBase):
-    use_subgraphs: bool = Field(default=True)
-    """Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true."""
+    use_subgraphs: bool = Field(
+        default=True,
+        description=(
+            "Whether to use subgraphs for the model. This can significantly "
+            "reduce compile time, especially for large models with identical "
+            "blocks. Default is true."
+        ),
+    )
 
-    data_parallel_degree: int = Field(default=1)
-    """Data-parallelism parameter. The degree to which the model is replicated
-    is dependent on the model type."""
+    data_parallel_degree: int = Field(
+        default=1,
+        description=(
+            "Data-parallelism parameter. The degree to which the model is "
+            "replicated is dependent on the model type."
+        ),
+    )
 
     # NOTE: model_path is made a str of "" by default, to avoid having
     # it be Optional to check for None and then littering the codebase with
     # asserts just to keep mypy happy.
-    model_path: str = Field(default="")
-    """:obj:`repo_id` of a Hugging Face model repository to use."""
+    model_path: str = Field(
+        default="",
+        description="repo_id of a Hugging Face model repository to use.",
+    )
 
-    served_model_name: str | None = Field(default=None)
-    """Optional override for client-facing model name. Defaults to model_path."""
+    served_model_name: str | None = Field(
+        default=None,
+        description=(
+            "Optional override for client-facing model name. Defaults to "
+            "model_path."
+        ),
+    )
 
-    weight_path: list[Path] = Field(default_factory=list)
-    """Optional path or url of the model weights to use."""
+    weight_path: list[Path] = Field(
+        default_factory=list,
+        description="Optional path or url of the model weights to use.",
+    )
 
     # TODO(zheng): Move this under QuantizationConfig.
-    quantization_encoding: SupportedEncoding | None = Field(default=None)
-    """Weight encoding type."""
+    quantization_encoding: SupportedEncoding | None = Field(
+        default=None,
+        description="Weight encoding type.",
+    )
 
     allow_safetensors_weights_fp32_bf6_bidirectional_cast: bool = Field(
-        default=False
+        default=False,
+        description=(
+            "Whether to allow automatic float32 to/from bfloat16 safetensors "
+            "weight type casting, if needed. Currently only supported in "
+            "Llama3 models."
+        ),
     )
-    """Whether to allow automatic float32 to/from bfloat16 safetensors weight type casting, if needed. Currently only supported in Llama3 models."""
 
     # Tuck "huggingface_revision" and "trust_remote_code" under a separate
     # HuggingFaceConfig class.
     huggingface_model_revision: str = Field(
-        default=hf_hub_constants.DEFAULT_REVISION
+        default=hf_hub_constants.DEFAULT_REVISION,
+        description=(
+            "Branch or Git revision of Hugging Face model repository to use."
+        ),
     )
-    """Branch or Git revision of Hugging Face model repository to use."""
 
     huggingface_weight_revision: str = Field(
-        default=hf_hub_constants.DEFAULT_REVISION
+        default=hf_hub_constants.DEFAULT_REVISION,
+        description=(
+            "Branch or Git revision of Hugging Face model repository to use."
+        ),
     )
-    """Branch or Git revision of Hugging Face model repository to use."""
 
-    trust_remote_code: bool = Field(default=False)
-    """Whether or not to allow for custom modelling files on Hugging Face."""
+    trust_remote_code: bool = Field(
+        default=False,
+        description=(
+            "Whether or not to allow for custom modelling files on Hugging Face."
+        ),
+    )
 
     device_specs: list[DeviceSpec] = Field(
-        default_factory=scan_available_devices
+        default_factory=scan_available_devices,
+        description=(
+            "Devices to run inference upon. This option should not be used "
+            "directly via the CLI entrypoint."
+        ),
     )
-    """Devices to run inference upon. This option is not documented in :obj:`help()` as it shouldn't be used directly via the CLI entrypoint."""
 
-    force_download: bool = False
-    """Whether to force download a given file if it's already present in the local cache."""
+    force_download: bool = Field(
+        default=False,
+        description=(
+            "Whether to force download a given file if it's already present in "
+            "the local cache."
+        ),
+    )
 
-    vision_config_overrides: dict[str, Any] = Field(default_factory=dict)
-    """Model-specific vision configuration overrides. For example, for InternVL: {"max_dynamic_patch": 24}"""
+    vision_config_overrides: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Model-specific vision configuration overrides. For example, for "
+            'InternVL: {"max_dynamic_patch": 24}.'
+        ),
+    )
 
-    rope_type: RopeType | None = Field(default=None)
-    """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
+    rope_type: RopeType | None = Field(
+        default=None,
+        description=(
+            "Force using a specific rope type: none, normal, or neox. Only "
+            "matters for GGUF weights."
+        ),
+    )
 
-    kv_cache: KVCacheConfig = Field(default_factory=KVCacheConfig)
-    """The KVCache config."""
+    kv_cache: KVCacheConfig = Field(
+        default_factory=KVCacheConfig,
+        description="The KVCache config.",
+    )
 
     _applied_dtype_cast_from: SupportedEncoding | None = PrivateAttr(
         default=None
@@ -954,32 +1003,3 @@ class MAXModelConfig(MAXModelConfigBase):
             The default device spec for the model.
         """
         return self.device_specs[0]
-
-    # TODO: This documentation dictionary is incomplete. Fortunately, we won't
-    # need this anymore once we've migrated to cyclopts for MAX CLI bindings.
-    @staticmethod
-    def help() -> dict[str, str]:
-        max_model_help = {
-            "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
-            "served_model_name": "Optional override for client-facing model name. Defaults to model_path.",
-            "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
-            "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
-            "allow_safetensors_weights_fp32_bf6_bidirectional_cast": "Specify whether to allow automatic float32 to bfloat16 safetensors weight type casting, if needed. Currently only supported in Llama3 models.",
-            "huggingface_model_revision": "Branch or Git revision of Hugging Face model repository to use.",
-            "huggingface_weight_revision": "Branch or Git revision of Hugging Face weight repository to use.",
-            "trust_remote_code": "Indicate whether to allow custom modelling files from Hugging Face repositories. Set this to true with caution, as it may introduce security risks.",
-            "force_download": "Specify whether to forcefully download a file even if it already exists in local cache. Set this to true if you want to ensure you have the latest version.",
-            "vision_config_overrides": "Model-specific vision configuration overrides. For example, for InternVL: {'max_dynamic_patch': 24}.",
-            "rope_type": "Force using a specific rope type: 'none' | 'normal' | 'neox'. Only matters for GGUF weights.",
-            "data_parallel_degree": "Data-parallelism parameter. The degree to which the model is replicated is dependent on the model type.",
-            "use_subgraphs": "Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true.",
-        }
-
-        config_help = KVCacheConfig.help()
-        for key in config_help:
-            if key in max_model_help:
-                raise ValueError(
-                    f"Duplicate help key '{key}' found in {KVCacheConfig.__name__}"
-                )
-        max_model_help.update(config_help)
-        return max_model_help
