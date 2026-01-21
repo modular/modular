@@ -229,6 +229,43 @@ struct StaticTuple[element_type: __TypeOfAllTypes, size: Int](
         )
         return UnsafePointer[origin = origin_of(self)](ptr)[]
 
+    @always_inline
+    fn unsafe_ptr[
+        origin: Origin, address_space: AddressSpace, //
+    ](ref [origin, address_space]self) -> UnsafePointer[
+        Self.element_type,
+        origin,
+        address_space=address_space,
+    ]:
+        """Returns an unsafe pointer to the tuple's underlying memory.
+
+        The returned pointer is valid only while the tuple exists and has not
+        been moved. Accessing elements beyond `len(self) - 1` is undefined
+        behavior.
+
+        This is useful for FFI interop where C functions expect array pointers.
+
+        Parameters:
+            origin: The origin of the StaticTuple.
+            address_space: The address space of the StaticTuple.
+
+        Returns:
+            An `UnsafePointer` to the underlying memory, with origin tied to `self`.
+
+        Example:
+            ```mojo
+            var t = StaticTuple[Int, 3](1, 2, 3)
+            var ptr = t.unsafe_ptr()
+            # Pass ptr to a C function expecting int*
+            ```
+        """
+        return (
+            UnsafePointer(to=self._mlir_value)
+            .bitcast[Self.element_type]()
+            .unsafe_origin_cast[origin]()
+            .address_space_cast[address_space]()
+        )
+
     @always_inline("nodebug")
     fn _replace[idx: Int](self, val: Self.element_type) -> Self:
         """Replaces the value at the specified index.

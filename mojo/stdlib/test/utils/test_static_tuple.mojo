@@ -51,5 +51,36 @@ def test_setitem():
     assert_equal(t[0], 400)
 
 
+def test_get_unsafe_ptr():
+    var t = StaticTuple[Int, 3](1, 2, 3)
+    var ptr: UnsafePointer[Int, ImmutAnyOrigin] = t.unsafe_ptr()
+    assert_equal(ptr[0], 1)
+    assert_equal(ptr[1], 2)
+    assert_equal(ptr[2], 3)
+
+
+def test_unsafe_ptr_mutable():
+    """Test writing through the pointer."""
+    var t = StaticTuple[Int, 3](1, 2, 3)
+    var ptr = t.unsafe_ptr()
+    ptr[1] = 42
+    assert_equal(t[1], 42)
+
+
+def test_unsafe_ptr_single_element():
+    """Edge case: single element tuple."""
+    var t = StaticTuple[Int, 1](99)
+    var ptr = t.unsafe_ptr()
+    assert_equal(ptr[0], 99)
+
+
+def test_unsafe_ptr_different_types():
+    """Test with non-Int types."""
+    var t = StaticTuple[Float64, 2](1.5, 2.5)
+    var ptr = t.unsafe_ptr()
+    assert_equal(ptr[0], 1.5)
+    assert_equal(ptr[1], 2.5)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
