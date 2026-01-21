@@ -315,8 +315,8 @@ fn mandelbrot(
     alias SCALE_X = (MAX_X - MIN_X) / GRID_WIDTH
     alias SCALE_Y = (MAX_Y - MIN_Y) / GRID_HEIGHT
 
-    cx = MIN_X + col * SCALE_X
-    cy = MIN_Y + row * SCALE_Y
+    cx = MIN_X + Float32(col) * SCALE_X
+    cy = MIN_Y + Float32(row) * SCALE_Y
     c = ComplexSIMD[float_dtype, 1](cx, cy)
     z = ComplexSIMD[float_dtype, 1](0, 0)
     iters = Scalar[int_dtype](0)
