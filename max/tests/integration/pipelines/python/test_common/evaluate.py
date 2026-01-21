@@ -42,18 +42,23 @@ from max.interfaces import (
 from transformers import PreTrainedTokenizerBase
 from typing_extensions import NotRequired
 
+from .numerics import log_softmax
 from .test_data import MockTextGenerationRequest
 
 
-class TokenInfo(TypedDict):
+class TokenInfo(TypedDict, total=False):
     """Information about a token in the output."""
 
     next_token: int
     """The next token in the output."""
     next_token_logits: float
-    """The logits for the next token."""
+    """The logits for the next token (always present)."""
     logits: np.ndarray
-    """The logits for the token."""
+    """The logits for the token (always present)."""
+    next_token_logprobs: float
+    """The logprobs for the next token (when generate_logprobs=True)."""
+    logprobs: np.ndarray
+    """The logprobs for the token (when generate_logprobs=True)."""
 
 
 class ModelOutput(TypedDict):
@@ -132,6 +137,7 @@ def run_model(
     print_outputs: bool = False,
     batch_size: int | list[int] = 1,
     reference: list[ModelOutput] | None = None,
+    generate_logprobs: bool = False,
 ) -> list[dict[str, Any]]:
     """Runs the pipeline for N steps on each request provided."""
     assert hasattr(tokenizer, "delegate")
@@ -142,7 +148,9 @@ def run_model(
     prompts_by_id = {
         id: request.prompt for id, request in zip(ids, requests, strict=True)
     }
-    stored_logits = StoreLogits(ids, tokenizer)
+    stored_logits = StoreLogits(
+        ids, tokenizer, generate_logprobs=generate_logprobs
+    )
 
     logits_processors: list[LogitsProcessor]
     if reference:
@@ -196,25 +204,37 @@ def run_model(
 
 class StoreLogits:
     def __init__(
-        self, ids: Sequence[RequestID], tokenizer: PipelineTokenizer
+        self,
+        ids: Sequence[RequestID],
+        tokenizer: PipelineTokenizer,
+        generate_logprobs: bool = False,
     ) -> None:
         self.values: dict[RequestID, list[TokenInfo]] = {id: [] for id in ids}
         self.tokenizer = tokenizer
+        self.generate_logprobs = generate_logprobs
 
     def __call__(self, inputs: ProcessorInputs) -> None:
         logits = inputs.logits
         context = inputs.context
         next_token_logits = logits[-1, :].to_numpy().copy()
         next_token = next_token_logits.argmax(axis=-1)
-        self.values[context.request_id].append(
-            {
-                # We record the base next_token here.
-                # If it deviates from the reference, we want to see that.
-                "next_token": next_token,
-                "next_token_logits": next_token_logits[next_token],
-                "logits": next_token_logits,
-            }
-        )
+
+        entry: TokenInfo = {
+            # We record the base next_token here.
+            # If it deviates from the reference, we want to see that.
+            "next_token": next_token,
+            "next_token_logits": next_token_logits[next_token],
+            "logits": next_token_logits,
+        }
+
+        if self.generate_logprobs:
+            next_token_logprobs_array = log_softmax(next_token_logits)
+            entry["next_token_logprobs"] = float(
+                next_token_logprobs_array[next_token]
+            )
+            entry["logprobs"] = next_token_logprobs_array
+
+        self.values[context.request_id].append(entry)
 
 
 class ReplaceLogitsWithReference:
@@ -340,17 +360,18 @@ def compare_text_generation(
             inference_next_token = inference_results["next_token"]
             expected_next_token = expected_results["next_token"]
             if inference_next_token != expected_next_token:
-                inference_logits = inference_results["logits"]
-                expected_logits = expected_results["logits"]
+                # Always use logits for comparison (logits are always present)
+                inference_values = inference_results["logits"]
+                expected_values = expected_results["logits"]
                 print(
                     f"⚠️ Got mismatching next_token: {inference_next_token} !="
                     f" {expected_next_token} on step={step} for the prompt='{short}'"
                 )
                 print(
-                    f"Logits for generated token {inference_next_token}: {inference_logits[inference_next_token]} (inference) vs {expected_logits[inference_next_token]} (reference)"
+                    f"Logits for generated token {inference_next_token}: {inference_values[inference_next_token]} (inference) vs {expected_values[inference_next_token]} (reference)"
                 )
                 print(
-                    f"Logits for expected token {expected_next_token}: {inference_logits[expected_next_token]} (inference) vs {expected_logits[expected_next_token]} (reference)"
+                    f"Logits for expected token {expected_next_token}: {inference_values[expected_next_token]} (inference) vs {expected_values[expected_next_token]} (reference)"
                 )
 
             for key, value in inference_results.items():

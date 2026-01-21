@@ -196,6 +196,7 @@ class PipelineOracle(ABC):
         device: torch.device,
         num_steps: int,
         inputs: list[Any],
+        generate_logprobs: bool = False,
     ) -> list[dict[str, Any]]:
         """Run text generation using the standard torch_utils implementation.
 
@@ -209,6 +210,7 @@ class PipelineOracle(ABC):
             num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,
+            generate_logprobs=generate_logprobs,
         )
 
 
@@ -290,6 +292,7 @@ class InternVLPipelineOracle(PipelineOracle):
         device: torch.device,
         num_steps: int,
         inputs: list[Any],
+        generate_logprobs: bool = False,
     ) -> list[dict[str, Any]]:
         """Run text generation using InternVL-specific preprocessing logic."""
         return internvl_torch_utils.run_text_generation(
@@ -299,6 +302,7 @@ class InternVLPipelineOracle(PipelineOracle):
             textgen_requests=inputs,
             num_steps=num_steps,
             print_outputs=True,
+            generate_logprobs=generate_logprobs,
             # Omit `use_cache` since the InternVL code hardcodes it.
         )
 
@@ -387,6 +391,7 @@ class Idefics3PipelineOracle(PipelineOracle):
         device: torch.device,
         num_steps: int,
         inputs: list[Any],
+        generate_logprobs: bool = False,
     ) -> list[dict[str, Any]]:
         """Run text generation using Idefics3-specific preprocessing logic."""
 
@@ -398,6 +403,7 @@ class Idefics3PipelineOracle(PipelineOracle):
             num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,
+            generate_logprobs=generate_logprobs,
         )
 
 
@@ -497,6 +503,7 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
         device: torch.device,
         num_steps: int,
         inputs: list[Any],
+        generate_logprobs: bool = False,
     ) -> list[dict[str, Any]]:
         """Run text generation using Qwen2.5VL-specific preprocessing logic."""
 
@@ -508,6 +515,7 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
             num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,
+            generate_logprobs=generate_logprobs,
         )
 
 
@@ -607,6 +615,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
         device: torch.device,
         num_steps: int,
         inputs: list[Any],
+        generate_logprobs: bool = False,
     ) -> list[dict[str, Any]]:
         """Run text generation using Qwen3VL-specific preprocessing logic."""
 
@@ -618,6 +627,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,
+            generate_logprobs=generate_logprobs,
         )
 
 

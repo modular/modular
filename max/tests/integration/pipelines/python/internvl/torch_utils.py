@@ -76,6 +76,7 @@ def run_text_generation(
     textgen_requests: Iterable[MockTextGenerationRequest],
     num_steps: int = 10,
     print_outputs: bool = False,
+    generate_logprobs: bool = False,
 ) -> list[dict]:
     """Run text generation for InternVL using InternVLProcessor for text formatting."""
 
@@ -130,4 +131,5 @@ def run_text_generation(
         num_steps=num_steps,
         print_outputs=print_outputs,
         request_processor_fn=internvl_request_processor,
+        generate_logprobs=generate_logprobs,
     )

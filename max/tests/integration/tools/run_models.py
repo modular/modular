@@ -203,6 +203,7 @@ def run_max_model(
     num_steps: int,
     evaluation_batch_size: int | list[int],
     reference: list[ModelOutput] | None,
+    generate_logprobs: bool = False,
 ) -> Any:
     if task == PipelineTask.TEXT_GENERATION:
         assert isinstance(
@@ -217,6 +218,7 @@ def run_max_model(
             print_outputs=True,
             batch_size=evaluation_batch_size,
             reference=reference,
+            generate_logprobs=generate_logprobs,
         )
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
         assert isinstance(
@@ -260,6 +262,7 @@ def run_torch_model(
     device: torch.device,
     inputs: list[Any],
     num_steps: int,
+    generate_logprobs: bool = False,
 ) -> Any:
     if pipeline_oracle.task == PipelineTask.TEXT_GENERATION:
         results = pipeline_oracle.run_torch_text_generation(
@@ -267,6 +270,7 @@ def run_torch_model(
             device=device,
             num_steps=num_steps,
             inputs=inputs,
+            generate_logprobs=generate_logprobs,
         )
     elif pipeline_oracle.task == PipelineTask.EMBEDDINGS_GENERATION:
         # Get pool_embeddings from oracle config if it has config_params (GenericOracle)

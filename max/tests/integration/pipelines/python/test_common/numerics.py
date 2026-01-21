@@ -10,13 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Utilities for controlling numerical precision"""
+"""Utilities for controlling numerical precision and numerical operations"""
 
 import functools
 import threading
 from collections.abc import Callable
 from typing import TypeVar
 
+import numpy as np
+import numpy.typing as npt
 import torch
 from typing_extensions import ParamSpec
 
@@ -57,3 +59,37 @@ def pytorch_disable_tf32_dtype(func: Callable[_P, _R]) -> Callable[_P, _R]:
                 torch.backends.cudnn.allow_tf32 = original_cudnn_tf32
 
     return wrapper
+
+
+def log_softmax(
+    x: npt.NDArray[np.floating], axis: int = -1
+) -> npt.NDArray[np.floating]:
+    """Compute the logarithm of the softmax function.
+
+    This implementation uses the identity log(softmax(x)) = x - log(sum(exp(x)))
+    with numerical stability improvements to prevent overflow/underflow.
+
+    Args:
+        x: Input array
+        axis: Axis to compute values along
+
+    Returns:
+        Array with same shape as x, representing log(softmax(x))
+    """
+    # Subtract max value for numerical stability (prevents exp overflow)
+    x_max = np.amax(x, axis=axis, keepdims=True)
+
+    # Compute exp(x - x_max) which is now safe from overflow
+    shifted_x = x - x_max
+    exp_shifted = np.exp(shifted_x)
+
+    # Suppress -inf warnings from log(0)
+    # This can happen when input contains extreme negative values (-inf),
+    # which become 0 after exp() operation
+    with np.errstate(divide="ignore"):
+        sum_exp = np.sum(exp_shifted, axis=axis, keepdims=True)
+        log_sum_exp = np.log(sum_exp)
+
+    # Final result: x - x_max - log(sum(exp(x - x_max)))
+    # This is mathematically equivalent to log(softmax(x))
+    return shifted_x - log_sum_exp

@@ -97,6 +97,7 @@ modular_py_library(
     srcs = ["evaluate.py"],
     imports = [".."],
     deps = [
+        ":numerics",
         ":test_data",
         requirement("numpy"),
         requirement("transformers"),
@@ -202,6 +203,7 @@ modular_py_library(
     ],
     imports = [".."],
     deps = [
+        ":numerics",
         ":test_data",
         requirement("accelerate"),  # Required to run torch models on GPU.
         requirement("pillow"),
@@ -233,6 +235,7 @@ modular_py_library(
     srcs = ["numerics.py"],
     imports = [".."],
     deps = [
+        requirement("numpy"),
         requirement("torch"),
         requirement("typing-extensions"),
     ],
