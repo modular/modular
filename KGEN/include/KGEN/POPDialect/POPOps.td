@@ -65,6 +65,33 @@ def POP_NegOp : POP_ArithmeticUnaryOp<"neg"> {
 }
 
 //===----------------------------------------------------------------------===//
+// FloorOp
+//===----------------------------------------------------------------------===//
+
+def POP_FloorOp : POPOp<"floor", [Pure, SameOperandsAndResultType]> {
+  let summary = "floor";
+  let description = [{
+    The `pop.floor` operation takes a `!pop.simd` value and returns the element
+    wise floor of its values. The operand and result types are the same and
+    must be index-like, arithmetic, or boolean dtypes. Integer, index, and
+    boolean values are returned unchanged.
+
+    Example:
+
+    ```mlir
+    %b = pop.floor %a : !pop.simd<size, f32>
+    ```
+  }];
+
+  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$operand);
+  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
+
+  let assemblyFormat = "$operand attr-dict `:` qualified(type($result))";
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // BinaryOp
 //===----------------------------------------------------------------------===//
 
