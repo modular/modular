@@ -88,14 +88,14 @@ fn device_func(a: Int, b: Bool) -> Int:
 
 
 @fieldwise_init
-struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
+struct DeviceFunction[*ArgTypes: AnyTrivialRegType]:
     # expected-note @below {{function declared here}}
     fn call(self, *args: * Self.ArgTypes) -> Int:
         return 91
 
 
 fn compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`],
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyTrivialRegType, `>`],
     //,
     func: fn (* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
@@ -124,13 +124,13 @@ fn device_func_usedT[T: AnyType](a: T, b: Bool) -> Int:
 
 
 @fieldwise_init
-struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
+struct DeviceFunction[*ArgTypes: AnyTrivialRegType]:
     pass
 
 
 # expected-note @below {{function declared here}}
 fn compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`],
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyTrivialRegType, `>`],
     //,
     func: fn (* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
@@ -158,14 +158,14 @@ fn device_func(a: Int, b: Bool) -> Int:
 
 
 @fieldwise_init
-struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
+struct DeviceFunction[*ArgTypes: AnyTrivialRegType]:
     # expected-note @below {{function declared here}}
     fn call(self, *args: * Self.ArgTypes) -> Int:
         return 91
 
 
 fn compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`],
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyTrivialRegType, `>`],
     //,
     func: fn (* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
@@ -190,7 +190,7 @@ fn device_func(a: Int, b: Bool) raises -> Int:
 
 # expected-note @below {{function declared here}}
 fn compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`],
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyTrivialRegType, `>`],
     //,
     func: fn (* args: * ArgTypes) -> Int,
 ]():
@@ -236,8 +236,7 @@ trait ConvertibleToZPointer:
         ...
 
 
-@register_passable("trivial")
-struct ZPointer[T: AnyType](AnyRPTrivialType):
+struct ZPointer[T: AnyType](AnyTrivialRegType):
     fn __init__(out self):
         pass
 
@@ -256,8 +255,7 @@ trait ConvertibleToZLayoutTensor:
         ...
 
 
-@register_passable("trivial")
-struct ZLayoutTensor(AnyRPTrivialType):
+struct ZLayoutTensor(AnyTrivialRegType):
     fn __init__(out self):
         pass
 
@@ -267,7 +265,7 @@ struct ZLayoutTensor(AnyRPTrivialType):
 
 
 @fieldwise_init
-struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
+struct DeviceFunction[*ArgTypes: AnyTrivialRegType]:
     # expected-note @below {{function declared here}}
     fn call(self, *args: * Self.ArgTypes) -> Int:
         return 91
@@ -281,8 +279,7 @@ struct ManagedLayoutTensor(ConvertibleToZLayoutTensor):
 
 # Never converted, the GPU just uses this one directly
 @fieldwise_init
-@register_passable("trivial")
-struct NDBuffer(AnyRPTrivialType):
+struct NDBuffer(AnyTrivialRegType):
     pass
 
 
@@ -291,7 +288,7 @@ fn kernel(t: ZLayoutTensor, p: ZPointer[Int], n: NDBuffer) -> Int:
 
 
 fn compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`],
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyTrivialRegType, `>`],
     //,
     func: fn (* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
