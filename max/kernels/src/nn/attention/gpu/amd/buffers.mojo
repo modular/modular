@@ -302,7 +302,6 @@ struct KVBufferImpl[
             Scalar[Self.dtype],
             MutAnyOrigin,
             address_space = AddressSpace.SHARED,
-            ...,
         ],
     ):
         # __comptime_assert
@@ -566,7 +565,6 @@ struct VBufferTransposeLoads[
             Scalar[Self.dtype],
             MutAnyOrigin,
             address_space = AddressSpace.SHARED,
-            ...,
         ],
     ):
         __comptime_assert Self.depth in (
@@ -975,7 +973,6 @@ struct PRegisterBuffer[
             Scalar[Self.dtype],
             MutAnyOrigin,
             address_space = AddressSpace.SHARED,
-            ...,
         ],
     ):
         self.reg_tile = Self.RegisterTileType_.stack_allocation()

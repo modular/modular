@@ -1003,7 +1003,7 @@ fn _flash_attention[
         coords: IndexList[rank],
     ) -> UnsafePointer[Scalar[dtype], ImmutAnyOrigin]:
         var idx = q._offset(coords)
-        return rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](q.ptr + idx)
+        return (q.ptr + idx).as_unsafe_pointer()
 
     @always_inline
     @parameter
@@ -1011,9 +1011,7 @@ fn _flash_attention[
         coords: IndexList[rank],
     ) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
         var idx = output._offset(coords)
-        return rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-            output.ptr + idx
-        )
+        return (output.ptr + idx).as_unsafe_pointer()
 
     @always_inline
     @parameter
@@ -1290,7 +1288,7 @@ fn _flash_attention_kv_cache[
         coords: IndexList[4],
     ) -> UnsafePointer[Scalar[dtype], ImmutAnyOrigin]:
         var idx = q._offset(coords)
-        return rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](q.ptr + idx)
+        return (q.ptr + idx).as_unsafe_pointer()
 
     @always_inline
     @parameter
@@ -1298,9 +1296,7 @@ fn _flash_attention_kv_cache[
         coords: IndexList[4],
     ) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
         var idx = output._offset(coords)
-        return rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-            output.ptr + idx
-        )
+        return (output.ptr + idx).as_unsafe_pointer()
 
     @always_inline
     @__copy_capture(max_seq_len)
@@ -1538,9 +1534,7 @@ fn flash_attention_kv_cache[
         var q_start = Int(q_input_row_offsets[bs]) + tok_idx
         var flat_idx = IndexList[3](q_start, idx[2], idx[3])
         var out_idx = q._offset(flat_idx)
-        return rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-            q.ptr + out_idx
-        )
+        return (q.ptr + out_idx).as_unsafe_pointer()
 
     @always_inline
     @parameter
@@ -1552,9 +1546,7 @@ fn flash_attention_kv_cache[
         var q_start = Int(q_input_row_offsets[bs]) + tok_idx
         var flat_idx = IndexList[3](q_start, idx[2], idx[3])
         var out_idx = output._offset(flat_idx)
-        return rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-            output.ptr + out_idx
-        )
+        return (output.ptr + out_idx).as_unsafe_pointer()
 
     comptime mask_rank = 4
     var num_batches = q_input_row_offsets.dim[0]() - 1
