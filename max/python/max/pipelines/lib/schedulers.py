@@ -14,7 +14,7 @@
 """Scheduler implementations for diffusion pipelines."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Type
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -57,7 +57,7 @@ class Scheduler(ABC):
 
     @property
     @abstractmethod
-    def config(self) -> Dict[str, Any]:
+    def config(self) -> dict[str, Any]:
         """The scheduler configuration dictionary."""
         pass
 
@@ -69,13 +69,13 @@ class FlowMatchEulerDiscreteScheduler(Scheduler):
 class SchedulerFactory:
     """Factory for creating schedulers from diffusers configuration."""
 
-    _REGISTRY: Dict[str, Type[Scheduler]] = {
+    _REGISTRY: dict[str, type[Scheduler]] = {
         "FlowMatchEulerDiscreteScheduler": FlowMatchEulerDiscreteScheduler,
     }
 
     @classmethod
     def create(
-        cls, class_name: str, config_dict: Dict[str, Any] | None = None
+        cls, class_name: str, config_dict: dict[str, Any] | None = None
     ) -> Scheduler:
         """Create a scheduler instance.
 

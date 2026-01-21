@@ -31,7 +31,12 @@ from max.interfaces import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext, PixelContext
+from max.pipelines.core import (
+    PixelContext,
+    TextAndVisionContext,
+    TextContext,
+    TTSContext,
+)
 
 
 def dataclass_equal(left: Any, right: Any) -> bool:
@@ -1131,6 +1136,7 @@ def test_pixel_context_serializable() -> None:
 
     assert dataclass_equal(msgpack_decoded, original_context)
 
+
 def test_pixel_context_tuple_serializable() -> None:
     # Test that we can encode a tuple of (str, PixelContext) with Pickle
     original_context = PixelContext(
@@ -1156,5 +1162,4 @@ def test_pixel_context_tuple_serializable() -> None:
 
     assert msgpack_decoded[0] == original_tuple[0]
     assert dataclass_equal(msgpack_decoded[1], original_tuple[1])
-
     _ = isinstance(ctx, PixelGenerationContext)

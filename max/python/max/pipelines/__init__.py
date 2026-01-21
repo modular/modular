@@ -14,7 +14,7 @@
 """Types to interface with ML pipelines such as text/token/pixel generation."""
 
 from .architectures import register_all_models
-from .core import TextAndVisionContext, TextContext, TTSContext, PixelContext
+from .core import PixelContext, TextAndVisionContext, TextContext, TTSContext
 from .lib.config import (
     AudioGenerationConfig,
     PipelineConfig,
@@ -71,6 +71,7 @@ __all__ = [
     "PipelineConfig",
     "PipelineModel",
     "PipelineRole",
+    "PixelContext",
     "PreTrainedPipelineTokenizer",
     "PrependPromptSpeechTokens",
     "ProfilingConfig",
@@ -87,7 +88,6 @@ __all__ = [
     "TextContext",
     "TextGenerationPipeline",
     "TextTokenizer",
-    "PixelContext",
     "download_weight_files",
     "upper_bounded_default",
 ]
