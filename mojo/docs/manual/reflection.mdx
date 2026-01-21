@@ -1,0 +1,325 @@
+---
+title: Reflection
+description: Compile-time reflection utilities for introspecting Mojo types and functions
+---
+
+Reflection helps you write code that inspects its own structure at
+compile time and reports information about types. This makes it
+possible to build features like structural validation, automatic
+comparisons, serialization, safer assertions, and richer error
+messages without hardcoding details for specific type
+implementations.
+
+:::caution
+Mojo reflection is newly introduced and currently incomplete. Some reflection
+capabilities are limited, unstable, or not yet fully exposed through the
+language interface. This page describes the direction of the feature as well
+as the parts that are available today.
+
+All examples reflect the state of the language at the time this page was
+published. They may change as reflection support matures.
+:::
+
+## Why reflection matters
+
+Reflection is often used for serialization, such as converting values to JSON or
+MessagePack regardless of type. It also supports common structural tasks.
+Instead of writing equality, hashing, or copy logic by hand, reflection can
+apply those operations to all fields automatically.
+
+In Mojo, reflection happens entirely at compile time. The compiler uses type
+information to generate specialized code, which avoids runtime cost while
+keeping the code flexible.
+
+With this in mind, this page will introduce reflection through examples, so you
+can see working code to study and use. Reflection code is intentionally
+parameterized and compile-time heavy. The examples below show the patterns you
+can use in real reflection-based code.
+
+## Example: Present a type
+
+This example demonstrates how to use reflection to inspect a type at compile time.
+It shows how to retrieve a type’s name and iterate over a struct’s fields, including
+their names and types. This pattern is the foundation for most reflection-based
+utilities, such as validation, copying, and equality checks.
+
+### Compile-time inputs
+
+Mojo reflection APIs run at compile time and accept compile-time inputs.
+
+Although reflection happens during compile time, it can drive behavior for
+runtime values. Knowing a value's type opens the door to retrieving type-specific
+metadata such as field counts, names, and types. That metadata can then be
+used to safely access and manipulate fields on concrete instances at runtime,
+as long as the access itself is guided by compile-time information.
+
+### Reflection calls
+
+The reflection calls used in the following example include:
+
+- `get_type_name[]()`: Returns the name of a type.
+- `struct_field_count[]()`, `struct_field_names[]()`, and `struct_field_types[]()`:
+  Return the count, names, and types of a struct's fields.
+
+```mojo
+from reflection import (
+    struct_field_count, struct_field_names,
+    get_type_name, struct_field_types
+)
+
+fn show_type[T: AnyType]():
+    comptime type_name = get_type_name[T]()
+    comptime field_count = struct_field_count[T]() # count of fields
+    comptime field_names = struct_field_names[T]() # indexed list of field names
+    comptime field_types = struct_field_types[T]() # indexed list of field types
+
+    print("struct", type_name)
+
+    @parameter
+    for idx in range(field_count):
+        comptime field_name = field_names[idx]
+        comptime field_type = get_type_name[field_types[idx]]()
+        var intro = "├──" if idx < (field_count - 1) else "└──"
+        print(intro, " var ", field_name, ": ", field_type, sep="")
+
+@fieldwise_init
+struct MyStruct:
+    var x: String
+    var y: Optional[Int]
+
+comptime DefaultItemCount = 10
+
+struct ParameterizedStruct[T: Copyable, item_count: Int = DefaultItemCount](Copyable):
+    var list: List[Self.T]
+    fn __init__(out self):
+       self.list = List[Self.T](capacity=Self.item_count)
+
+fn main():
+    show_type[MyStruct]()
+    show_type[Optional[Float64]]()
+    show_type[Dict[Int, String]]()
+    show_type[ParameterizedStruct[String, item_count=5]]()
+```
+
+### Insights
+
+- When working with reflection, you must use parameterized types in the square
+  parameter brackets for calls that use reflection features, such as `show_type[]()`.
+  These elements can be concrete types like `MyStruct` or generic type
+  parameters like `T`.
+- This example uses a `T: AnyType` parameter for the `show_type[]()` function.
+  This is the least restrictive constraint and allows the function to work
+  with any type passed at the call site.
+- Reflection functions are themselves parameterized.
+  That means you do not call `foo()`. You call `foo[T]()` to reflect on a type.
+- All processing of reflected information happens at compile time.
+  For that reason, these reflection examples use `@parameter for` and `@parameter if`.
+  - In this example, `@parameter for` allows the loop index to be used across iterations.
+  - Later examples show `@parameter if`.
+
+:::note
+Using `sep=""` in `show_type` allows the colon to be flush left with the
+field name.
+:::
+
+### Program output
+
+The following output shows the result of calling `show_type[]()` on three
+different types in `main()`. Each call prints the compiler’s view of the type,
+including its fully resolved name and the structure of its fields:
+
+```output
+struct reflect.MyStruct
+├── var x: String
+└── var y: std.collections.optional.Optional[Int]
+
+struct std.collections.optional.Optional[SIMD[DType.float64, 1]]
+└── var _value: std.utils.variant.Variant[<unprintable>]
+
+struct std.collections.dict.Dict[Int, String, std.hashlib._ahash.
+    AHasher[[0, 0, 0, 0] : SIMD[DType.uint64, 4]]]
+├── var _len: Int
+├── var _n_entries: Int
+├── var _index: std.collections.dict._DictIndex
+└── var _entries: List[std.collections.optional.Optional[std.collections.
+    dict.DictEntry[Int, String, std.hashlib._ahash.
+    AHasher[[0, 0, 0, 0] : SIMD[DType.uint64, 4]]]]]
+
+struct show_type.ParameterizedStruct[String, 5]
+└── var list: List[String]
+```
+
+When comparing the type names at the call sites with the names shown here,
+keep in mind that this output reflects how the compiler represents the type.
+This includes defaulted parameters, such as the dictionary’s `Hasher`.
+Comptime type aliases are expanded, so `Float64` displays
+as `SIMD[DType.float64, 1]`.
+
+This example showed how to read type information. The next examples
+show how to use that information to manipulate struct instances.
+
+## Example: Copying data
+
+This example shows how reflected field information can drive real behavior.
+It uses reflection to copy data from one instance to another by iterating over
+fields and checking which ones are safe to copy. This pattern demonstrates how
+reflection enables generic, type-safe operations without hardcoding field access.
+
+When a struct conforms to `MakeCopyable`, it gains the `copy_to()` method that
+uses reflection to perform the copy. Like all methods, you call it from an
+instance. For this method, you provide it with target instance.
+
+Its behavior is similar in spirit to `ImplicitlyCopyable`, but `copy_to()`
+limits copying to fields whose types conform to `Copyable`. It requires an
+already initialized target, avoiding matching values to `__init__` arguments.
+
+```mojo
+from reflection import struct_field_count, struct_field_types
+
+trait MakeCopyable:
+    fn copy_to(self, mut other: Self):
+        comptime field_count = struct_field_count[Self]()
+        comptime field_types = struct_field_types[Self]()
+
+        @parameter
+        for idx in range(field_count):
+            comptime field_type = field_types[idx]
+
+            # Guard: field type must be copyable
+            @parameter
+            if not conforms_to(field_type, Copyable): continue
+
+            # Perform the copy
+            ref p_value = __struct_field_ref(idx, self)
+            __struct_field_ref(idx, other) = p_value
+```
+
+### Insights
+
+- The function iterates over reflected fields and checks each one for
+  `Copyable` conformance, skipping any field that cannot be copied.
+- As a method, `copy_to()` does not require a type parameter such as `copy_to[T]()`.
+  It has direct access to `Self`, which is enabled by `MakeCopyable` trait adoption.
+- The `copy_to()` _implementation_ is heavily parameterized and evaluated at
+  compile time. It uses `@parameter for` and `@parameter if` together with reflection
+  calls.
+- The `__struct_field_ref(idx, self)` and `__struct_field_ref(idx, other)` calls
+  return references to fields by index, which allows both reading from the source
+  instance and writing to the destination instance.
+
+### Create a struct
+
+The following `MultiType` struct conforms to `MakeCopyable` meaning you can
+call `copy_to` on its instances:
+
+```mojo
+@fieldwise_init
+struct MultiType(Writable, MakeCopyable):
+    var w: String
+    var x: Int
+    var y: Bool
+    var z: Float64
+
+    fn write_to[W: Writer](self, mut writer: W):
+        writer.write("[{}, {}, {}, {}]".format(self.w, self.x, self.y, self.z))
+```
+
+### Use the copying functionality
+
+Demonstrating the behavior, this `main()` function creates two instances,
+one populated by normal values, and one essentially zeroed-out.
+After copying, `target_instance` has received its values from
+`original_instance`'s fields:
+
+```mojo
+fn main():
+    var original_instance = MultiType("Hello", 1, True, 2.5)
+    var target_instance = MultiType("", 0, False, 0.0)
+
+    print("Original instance:", original_instance)     # "Hello", 1, True, 2.5
+    print("Target instance before: ", target_instance) # "", 0, False, 0.0
+
+    original_instance.copy_to(target_instance)
+    print("Target instance after: ", target_instance)  #  "Hello", 1, True, 2.5
+```
+
+## Example: Testing equality
+
+This example demonstrates how reflection can be used to implement structural equality.
+Compile-time loop unrolling, conformance checks, and reflection drive runtime comparisons.
+This is the same pattern used for generic equality, hashing, and validation logic.
+
+In each iteration, `test_equality` checks for `Equatable` conformance and
+retrieves field value references from the `lhs` and `rhs` arguments. It uses
+early return for the first inequality (`False`), otherwise returning `True`:
+
+```mojo
+from reflection import struct_field_count, struct_field_types
+
+fn test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
+    comptime field_count = struct_field_count[T]()
+    comptime field_types = struct_field_types[T]()
+
+    @parameter
+    for idx in range(field_count):
+        # Guard: field type must be equatable
+        comptime field_type = field_types[idx]
+        @parameter
+        if not conforms_to(field_type, Equatable): continue
+
+        # Fetch values
+        ref lhs_value = __struct_field_ref(idx, lhs)
+        ref rhs_value = __struct_field_ref(idx, rhs)
+
+        # Early exit with `False` when inequality found
+        if trait_downcast[Equatable](lhs_value) != trait_downcast[Equatable](rhs_value): return False
+
+    return True
+```
+
+# Insights
+
+- This example uses two key elements to ensure smooth operation:
+  `conforms_to()` and `trait_downcast[]()`.
+- `conforms_to()` ensures each field's type is `Equatable` and therefore
+  works with the inequality operator (`!=`).
+- `trait_downcast` is used with parameter input types. It rebinds a
+  typed value, returning a value that conforms to the specified `Trait`.
+  If its type, after resolution, does _not_ conform to that trait, it
+  will produce a compilation error. Checking for conformance first
+  ensures that error won't occur.
+- As its name suggests, `__struct_field_ref()` is limited to use with
+  struct types.
+
+# Calling the tests
+
+To demonstrate this function, the following `main()` first
+copies values (equal), and then mutates `original_instance`
+and tests again (inequal):
+
+```mojo
+fn main():
+    var original_instance = MultiType("Hello", 1, True, 2.5)
+    var target_instance = MultiType("", 0, False, 0.0)
+    original_instance.copy_to(target_instance)
+    print("Values equal" if \
+        test_equality(original_instance, target_instance) \
+        else "Values not equal") # Values equal
+
+
+    original_instance.z = 42.0
+    print("Values equal" if \
+        test_equality(original_instance, target_instance) \
+        else "Values not equal") # Values not equal
+```
+
+<!-- TBD: Location and File -->
+
+## Learn more
+
+- Visit the reflection
+  [package documentation](/mojo/std/reflection/)
+  to explore additional Mojo reflection capabilities.
+- Learn more about [traits](/mojo/manual/traits/).
+- (Coming soon): Dive into generics, trait conformance tests with `conforms_to()`,
+  and downcasts with `trait_downcast[]()`.
