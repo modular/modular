@@ -105,6 +105,7 @@ class Qwen3EmbeddingTransformer(Module):
         rope: RotaryEmbedding,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.ALL,
         embedding_multiplier: float = 1.0,
+        device: DeviceRef = DeviceRef.CPU(),
     ) -> None:
         """Initialize the embedding transformer.
 
@@ -129,6 +130,7 @@ class Qwen3EmbeddingTransformer(Module):
         self.embedding_multiplier = embedding_multiplier
         self.rope = rope
         self.return_hidden_states = return_hidden_states
+        self.device = device
 
     def input_types(self) -> tuple[TensorType, ...]:
         """Get the input types for the graph.
@@ -138,7 +140,7 @@ class Qwen3EmbeddingTransformer(Module):
         """
         return (
             TensorType(
-                DType.uint32, shape=("total_seq_len",), device=DeviceRef.CPU()
+                DType.uint32, shape=("total_seq_len",), device=self.device
             ),
             TensorType(
                 DType.uint32,
@@ -166,16 +168,15 @@ class Qwen3EmbeddingTransformer(Module):
         """
         # Embed tokens
         h = self.embed_tokens(tokens)
-
         if self.embedding_multiplier != 1.0:
             h = h * ops.constant(
                 self.embedding_multiplier, h.dtype, device=h.device
             )
 
         # Process through transformer layers
+        input_row_offsets_device = input_row_offsets.to(self.device)
         for layer in self.layers:
-            h = layer(h, input_row_offsets)
-
+            h = layer(h, input_row_offsets_device)
         # For embedding models, we typically return all hidden states
         # The pooling will be done outside the transformer
         if self.return_hidden_states == ReturnHiddenStates.ALL:

@@ -193,7 +193,7 @@ class Qwen3AttentionNoCache(Module):
             k=xk,
             v=xv,
             input_row_offsets=input_row_offsets,
-            max_seq_len=max_seq_len,
+            max_seq_len=max_seq_len.to(DeviceRef.CPU()),
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
         )
