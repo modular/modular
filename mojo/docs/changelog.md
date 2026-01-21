@@ -987,3 +987,6 @@ or removed in future releases.
 - [Issue #5754](https://github.com/modular/modular/issues/5754):
   `struct_field_type_by_name` now works correctly when using `ReflectedType.T`
   as a type annotation.
+- [Issue #5808](https://github.com/modular/modular/issues/5808):
+  `rebind` and `rebind_var` now accept downcasted types from `struct_field_types`,
+  allowing patterns like `rebind_var[types[i]](downcast[types[i], Trait]()^)`.

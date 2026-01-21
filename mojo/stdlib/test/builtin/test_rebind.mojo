@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.builtin.rebind import downcast
+from reflection import struct_field_types
 from testing import TestSuite, assert_equal
 from test_utils import MoveCopyCounter, DelCounter
 
@@ -94,6 +95,39 @@ def test_downcast():
     var a = String()
     var b = DefaultWitnessTable.__init__()
     assert_equal(a, b)
+
+
+# ===----------------------------------------------------------------------=== #
+# test_rebind_downcasted_struct_field_type
+# Regression test for https://github.com/modular/modular/issues/5808
+# ===----------------------------------------------------------------------=== #
+
+
+struct TestStructForRebindDowncast:
+    var x: Int
+
+
+def test_rebind_downcasted_struct_field_type():
+    """Test that rebind accepts downcasted struct field types.
+
+    When using struct_field_types with downcast and then rebinding back to the
+    original type, the compiler should recognize that the downcasted type is
+    semantically equivalent to the original for rebind purposes.
+    """
+    comptime T = TestStructForRebindDowncast
+    comptime TField = downcast[
+        struct_field_types[T]()[0], Defaultable & Movable
+    ]
+
+    # Test rebind_var with downcasted type
+    var value1 = TField()
+    var original1: Int = rebind_var[Int](value1)
+    assert_equal(original1, 0)
+
+    # Test rebind (not rebind_var) with downcasted type
+    var value2 = TField()
+    var original2: Int = rebind[Int](value2)
+    assert_equal(original2, 0)
 
 
 def main():
