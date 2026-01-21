@@ -34,7 +34,6 @@ from cyclopts.config import Env
 from huggingface_hub import hf_hub_download
 from max.benchmark.benchmark_shared.config import (
     BenchmarkCommonConfig,
-    BenchmarkPipelineConfig,
     SamplingConfig,
 )
 from max.benchmark.benchmark_shared.datasets import (
@@ -73,15 +72,6 @@ DESCRIPTION = """
 """
 
 
-class ThroughputBenchmarkPipelineConfig(BenchmarkPipelineConfig):
-    """Configuration class for throughput benchmark pipeline options."""
-
-    quantization_encoding: str | None = Field(default=None)
-    """Quantization encoding to benchmark. Default is None in throughput benchmarks."""
-    max_length: int | None = Field(default=2048)
-    """Maximum length of the sequence."""
-
-
 class ThroughputBenchmarkCommonConfig(BenchmarkCommonConfig):
     """Configuration class for throughput benchmark common options."""
 
@@ -93,9 +83,7 @@ class ThroughputBenchmarkCommonConfig(BenchmarkCommonConfig):
 class ThroughputBenchmarkConfig(ConfigFileModel):
     """Configuration class for benchmark options."""
 
-    pipeline: ThroughputBenchmarkPipelineConfig = (
-        ThroughputBenchmarkPipelineConfig()
-    )
+    pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
     """Configuration class for pipeline options."""
 
     other: ThroughputBenchmarkCommonConfig = ThroughputBenchmarkCommonConfig()
@@ -456,28 +444,15 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
 
     random.seed(benchmark_config.other.seed)
 
-    # TODO: This is mostly a translation layer to convert the benchmark_config.pipeline
-    # to a PipelineConfig. We should just use the PipelineConfig class directly
-    # instead of this translation layer.
-    pipeline_config_dict = benchmark_config.pipeline.model_dump()
-    model_path = pipeline_config_dict.pop("model", None)
-    if model_path:
-        pipeline_config_dict["model_path"] = model_path
-    if pipeline_config_dict.get("devices") is not None:
-        pipeline_config_dict["device_specs"] = DevicesOptionType.device_specs(
-            pipeline_config_dict["devices"]
+    pipeline_config = benchmark_config.pipeline
+    if benchmark_config.devices is not None:
+        pipeline_config.model.device_specs = DevicesOptionType.device_specs(
+            benchmark_config.devices
         )
-    pipeline_config_dict.pop("devices", None)
-    pipeline_config_dict.pop("config_file", None)
-    pipeline_config_dict.pop("section_name", None)
-    if pipeline_config_dict.get("weight_path") is None:
-        pipeline_config_dict.pop("weight_path", None)
-    elif isinstance(pipeline_config_dict["weight_path"], str):
-        pipeline_config_dict["weight_path"] = [
-            pipeline_config_dict["weight_path"]
-        ]
 
-    pipeline_config = PipelineConfig(**pipeline_config_dict)
+    defer_resolve = os.getenv("MODULAR_PIPELINE_DEFER_RESOLVE", "").lower()
+    if defer_resolve in {"1", "true", "yes"}:
+        pipeline_config.resolve()
 
     tokenizer = AutoTokenizer.from_pretrained(
         benchmark_config.other.tokenizer or pipeline_config.model.model_path,
@@ -662,6 +637,8 @@ def main() -> None:
     if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(directory)
 
+    os.environ.setdefault("MODULAR_PIPELINE_DEFER_RESOLVE", "1")
+
     # Create cyclopts app with environment variable config source
     # This must be set early so that --help can display MODULAR_ env vars
     app = App(
@@ -682,14 +659,16 @@ def main() -> None:
     ) -> None:
         """Run the pipeline latency benchmark."""
         # Validate that model is provided (required for benchmark).
-        if not benchmark_config.pipeline.model:
+        if not benchmark_config.pipeline.model.model_path:
             raise ValueError(
-                "model is required. Please provide --pipeline.model argument, set it in the config file, "
-                "or set MODULAR_PIPELINE_MODEL environment variable."
+                "model is required. Please provide --pipeline.model.model_path argument, set it in the config file, "
+                "or set MODULAR_PIPELINE_MODEL_MODEL_PATH environment variable."
             )
 
         if benchmark_config.other.tokenizer is None:
-            benchmark_config.other.tokenizer = benchmark_config.pipeline.model
+            benchmark_config.other.tokenizer = (
+                benchmark_config.pipeline.model.model_path
+            )
 
         # Validate cache strategy
         if (
