@@ -4318,7 +4318,7 @@ AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
     return {};
   }
 
-  auto traitType = cast<TraitType>(traitToCheck.getIfTypeValue());
+  auto traitType = sugarCast<TraitType>(traitToCheck.getIfTypeValue());
   SmallVector<mlir::SymbolRefAttr> symbols(traitType.getSymbols());
 
   // Fold trait symbol into a list of string, as trait type will be discarded
