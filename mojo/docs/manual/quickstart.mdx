@@ -1,43 +1,66 @@
 ---
 title: Mojo quickstart
 description: Get up and running fast with the Mojo programming language
-sidebar_label: Mojo quickstart
+sidebar_label: Quickstart
 ---
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-Verify your installation and learn basic Mojo syntax.
+This page quickly teaches you Mojo's syntax by focusing on code.
 
-**Prerequisites:** [Install Mojo](/mojo/manual/install)
+For more explanation of the language features, see the [Mojo get
+started tutorial](/mojo/manual/get-started) or [Mojo language
+basics](/mojo/manual/basics).
 
-## Setup
+## Project setup
 
-Get your command line ready for a new Mojo project.
+You can install Mojo using any Python or Conda package manager,
+but we recommend either `pixi` or `uv`.
 
 <Tabs groupId="install">
 
-<TabItem value="uv" label="uv" default>
-```bash
-uv init temperature-analyzer && cd temperature-analyzer
-uv venv && source .venv/bin/activate
-uv pip install mojo \
-  --extra-index-url https://modular.gateway.scarf.sh/simple/
-```
+<TabItem value="pixi" label="pixi" default>
+1. If you don't have `pixi`, install it:
+
+    ```sh
+    curl -fsSL https://pixi.sh/install.sh | sh
+    ```
+
+2. Create a project and install Mojo:
+
+    ```bash
+    pixi init temperature-analyzer \
+    -c https://conda.modular.com/max-nightly/ -c conda-forge
+    cd temperature-analyzer
+    pixi add mojo
+    pixi shell
+    ```
 </TabItem>
 
-<TabItem value="pixi" label="pixi">
-```bash
-pixi init temperature-analyzer \
-  -c https://conda.modular.com/max-nightly/ -c conda-forge
-cd temperature-analyzer
-pixi add mojo
-pixi shell
-```
+<TabItem value="uv" label="uv">
+
+1. If you don't have it, install `uv`:
+
+    ```sh
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+
+    Then restart your terminal to make `uv` accessible.
+
+2. Create a project and install Mojo:
+
+    ```bash
+    uv init temperature-analyzer && cd temperature-analyzer
+    uv venv && source .venv/bin/activate
+    uv pip install mojo \
+    --extra-index-url https://modular.gateway.scarf.sh/simple/
+    ```
+
 </TabItem>
 
 </Tabs>
 
-Create `analyzer.mojo`. Use your favorite IDE or editor for edits.
+3. Create `analyzer.mojo` in your favorite IDE or editor.
 
 ## Hello Mojo
 
