@@ -31,9 +31,9 @@ from max.nn import (
     ColumnParallelLinear,
     LayerList,
     LayerNorm,
-    Module,
     ReturnLogits,
 )
+from max.nn.module_v3 import Module
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
