@@ -341,8 +341,7 @@ struct FloatDyn:
         self = FloatLiteral(value)
 
 
-@register_passable("trivial")
-struct Int(AnyRPTrivialType, ImplicitlyCopyable, Intable, Stringable):
+struct Int(AnyTrivialRegType, Intable, Stringable):
     var _mlir_value: __mlir_type.index
 
     @always_inline("builtin")
@@ -681,8 +680,7 @@ struct String(ImplicitlyCopyable, KeyElement):
         return {}
 
 
-@register_passable("trivial")
-struct Bool(AnyRPTrivialType):
+struct Bool(AnyTrivialRegType):
     var _mlir_value: __mlir_type.i1
 
     @always_inline("builtin")
@@ -853,11 +851,6 @@ trait ImplicitlyDestructible:
         ...
 
     comptime __del__is_trivial: Bool
-
-
-@register_passable("trivial")
-trait AnyRPTrivialType:
-    pass
 
 
 # ===----------------------------------------------------------------------=== #
