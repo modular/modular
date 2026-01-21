@@ -811,6 +811,7 @@ trait ImplicitlyCopyable(Copyable):
     pass
 
 
+@register_passable
 trait AnyTrivialRegType(ImplicitlyCopyable, ImplicitlyDestructible, Movable):
     pass
 
