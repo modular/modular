@@ -989,6 +989,16 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
     if (decl.resolvedness == DeclResolvedness::signature)
       decl.resolvedness = DeclResolvedness::body;
+
+    if (auto declOp = decl.getIfOperation()) {
+      TypeSwitch<Operation &>(*declOp).Case<StructDeclOp, TraitDeclOp>(
+          [&](auto op) {
+            if (decl.getTypeDeclSelf().isAnyTrivialRegType(decl.getLoc(),
+                                                           shared))
+              op.setConvention(
+                  M::KGEN::LIT::TypeConvention::RegisterPassableTrivial);
+          });
+    }
   }
 
   declsCurrentlyProcessing.pop();
