@@ -797,6 +797,11 @@ what we publish.
 - `StringableRaising` has been deprecated and its usages in the stdlib have
   been removed.
 
+- The `strip`, `lstrip`, and `rstrip` methods of `String` and `StringSlice` now
+  support stripping multi-byte unicode codepoints. Additionally `lstrip`
+  and `strip` will no longer produce invalid UTF-8 if the "chars" string contains
+  characters sharing their first byte with a character in the string to be stripped.
+
 - `StringSlice.char_length()` has been renamed `count_codepoints()`. The same
   function was added to `String` and `StringLiteral`.
 

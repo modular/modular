@@ -1345,10 +1345,25 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             res += codepoint
         return res^
 
+    fn _strip[forward: Bool](self, chars: StringSlice) -> Self:
+        var iter = CodepointSliceIter[forward=forward](self)
+        while True:
+            try:
+                var next_it = iter.copy()
+                var c = next_it.__next__()
+                if c not in chars:
+                    break
+                iter = next_it^
+            except:
+                break
+        return iter._slice
+
     @always_inline
     fn strip(self, chars: StringSlice) -> Self:
         """Return a copy of the string with leading and trailing characters
-        removed.
+        removed. Note character is defined as a single unicode code-point,
+        not any kind of displayed character, and strip can break apart
+        graphemes.
 
         Args:
             chars: A set of characters to be removed. Defaults to whitespace.
@@ -1399,11 +1414,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
 
-        var r_idx = self.byte_length()
-        while r_idx > 0 and self[byte = r_idx - 1] in chars:
-            r_idx -= 1
-
-        return Self(unsafe_from_utf8=self.as_bytes()[:r_idx])
+        return self._strip[forward=False](chars)
 
     @always_inline
     fn rstrip(self) -> Self:
@@ -1449,11 +1460,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
 
-        var l_idx = 0
-        while l_idx < self.byte_length() and self[byte=l_idx] in chars:
-            l_idx += 1
-
-        return Self(unsafe_from_utf8=self.as_bytes()[l_idx:])
+        return self._strip[forward=True](chars)
 
     @always_inline
     fn lstrip(self) -> Self:
