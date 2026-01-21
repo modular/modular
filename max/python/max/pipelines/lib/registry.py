@@ -52,6 +52,9 @@ from .config_enums import RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo
 from .interfaces import PipelineModel
+from .pipeline_variants.overlap_text_generation import (
+    OverlapTextGenerationPipeline,
+)
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import (
     EAGLESpeculativeDecodingPipeline,
@@ -101,26 +104,32 @@ def get_pipeline_for_task(
     | type[StandaloneSpeculativeDecodingPipeline]
     | type[SpeechTokenGenerationPipeline]
     | type[EAGLESpeculativeDecodingPipeline]
+    | type[OverlapTextGenerationPipeline[TextContext]]
 ):
-    if task == PipelineTask.TEXT_GENERATION:
-        if pipeline_config.speculative is not None:
-            assert pipeline_config.speculative.speculative_method is not None
-            if (
-                pipeline_config.speculative.speculative_method
-                == SpeculativeMethod.STANDALONE
-            ):
-                return StandaloneSpeculativeDecodingPipeline
-            elif (
-                pipeline_config.speculative.speculative_method
-                == SpeculativeMethod.EAGLE
-            ):
-                return EAGLESpeculativeDecodingPipeline
-            else:
-                raise ValueError(
-                    f"Unsupported speculative method: {pipeline_config.speculative.speculative_method}"
-                )
+    if (
+        task == PipelineTask.TEXT_GENERATION
+        and pipeline_config.speculative is not None
+    ):
+        spec_method = pipeline_config.speculative.speculative_method
+        assert spec_method is not None
+        if pipeline_config.enable_overlap_scheduler:
+            raise ValueError(
+                "Overlap scheduler is not supported with speculative decoding yet."
+            )
+
+        if spec_method == SpeculativeMethod.STANDALONE:
+            return StandaloneSpeculativeDecodingPipeline
+        elif spec_method == SpeculativeMethod.EAGLE:
+            return EAGLESpeculativeDecodingPipeline
         else:
-            return TextGenerationPipeline[TextContext]
+            raise ValueError(f"Unsupported speculative method: {spec_method}")
+    elif (
+        task == PipelineTask.TEXT_GENERATION
+        and pipeline_config.enable_overlap_scheduler
+    ):
+        return OverlapTextGenerationPipeline[TextContext]
+    elif task == PipelineTask.TEXT_GENERATION:
+        return TextGenerationPipeline[TextContext]
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
         return EmbeddingsPipeline
     elif task == PipelineTask.AUDIO_GENERATION:

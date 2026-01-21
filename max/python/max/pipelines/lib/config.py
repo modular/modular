@@ -195,6 +195,12 @@ class PipelineConfig(ConfigFileModel):
     If None, the sum of the context length in batch is not limited.
     """
 
+    enable_overlap_scheduler: bool = Field(default=False)
+    """Whether to enable the overlap scheduler. This feature allows the scheduler
+    to run alongside GPU execution. This helps improve GPU utilization.
+
+    This is an experimental feature which may crash and burn."""
+
     force: bool = Field(default=False)
     """Skip validation of user provided flags against the architecture's required arguments."""
 
