@@ -1,5 +1,6 @@
 """Private bazel configuration used internally by rules and macros."""
 
+load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@module_versions//:config.bzl", "DEFAULT_PYTHON_VERSION", "DEFAULT_PYTHON_VERSION_UNDERBAR")
 load("@with_cfg.bzl//with_cfg/private:select.bzl", "decompose_select_elements")  # buildifier: disable=bzl-visibility
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "DEFAULT_GPU_MEMORY")
@@ -141,8 +142,63 @@ def get_default_test_env(exec_properties):
         "//conditions:default": {},
     })
 
+_TOOLS = {}
+
 def env_for_available_tools(
         *,
-        location_specifier = "rootpath",  # buildifier: disable=unused-variable
-        os = "unknown"):  # buildifier: disable=unused-variable
-    return {}
+        location_specifier = "rootpath",
+        os = "unknown"):
+    """Get a dictionary of env vars for looking up known tools.
+
+    NOTE: This returns values regardless of if the current dependency tree
+    contains the given tools. If a tool is missing that means it should be
+    added to data.
+
+    Args:
+        location_specifier: The variant of $(location) that we try to emulate with the produced path
+        os: Either 'unknown' for macros, or 'linux', or 'macos'
+
+    Returns:
+        A dictionary of env vars to be added to a rule that expects to lookup tools
+    """
+
+    if location_specifier not in (("execpath", "rootpath")):
+        fail("Unsupported location_specifier: {}".format(location_specifier))
+    if os not in (("unknown", "linux_aarch64", "linux_x86_64", "macos")):
+        fail("Unsupported os: {}".format(os))
+
+    def build_path(label, format_name):
+        if location_specifier == "execpath":
+            return paths.join("$(BINDIR)", label.workspace_root, label.package, format_name(label.name))
+        else:
+            return paths.join(label.workspace_root, label.package, format_name(label.name)).replace("external/", "../")
+
+    env = {}
+    for label, key in _TOOLS.items():
+        env[key] = build_path(label, lambda x: x)
+
+    os_specifics = select({
+        "@platforms//os:linux": {"LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:lldb-server"), lambda x: x)},
+        "@platforms//os:macos": {"LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:debugserver"), lambda x: x)},
+    }) | select({
+        "@//:linux_aarch64": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_aarch64//:modular"), lambda x: x)},
+        "@//:linux_x86_64": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_x86_64//:modular"), lambda x: x)},
+        "@platforms//os:macos": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_macos_arm64//:modular"), lambda x: x)},
+    })
+    if os == "linux_x86_64":
+        os_specifics = {
+            "LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:lldb-server"), lambda x: x),
+            "MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_x86_64//:modular"), lambda x: x),
+        }
+    elif os == "linux_aarch64":
+        os_specifics = {
+            "LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:lldb-server"), lambda x: x),
+            "MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_aarch64//:modular"), lambda x: x),
+        }
+    elif os == "macos":
+        os_specifics = {
+            "LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:debugserver"), lambda x: x),
+            "MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_macos_arm64//:modular"), lambda x: x),
+        }
+
+    return env | os_specifics

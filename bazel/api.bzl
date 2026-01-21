@@ -5,6 +5,7 @@ load("//bazel/internal:copy_files.bzl", _copy_files = "copy_files")  # buildifie
 load("//bazel/internal:lit.bzl", _lit_tests = "lit_tests")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_cc_binary.bzl", _modular_cc_binary = "modular_cc_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_cc_library.bzl", _modular_cc_library = "modular_cc_library")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_cc_test.bzl", _modular_cc_test = "modular_cc_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_multi_py_version_test.bzl", _modular_multi_py_version_test = "modular_multi_py_version_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_binary.bzl", _modular_py_binary = "modular_py_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_library.bzl", _modular_py_library = "modular_py_library")  # buildifier: disable=bzl-visibility
@@ -22,7 +23,6 @@ load("//bazel/internal:py_repl.bzl", _py_repl = "py_repl")  # buildifier: disabl
 load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
 lit_tests = _lit_tests
-modular_cc_library = _modular_cc_library
 modular_multi_py_version_test = _modular_multi_py_version_test
 modular_py_binary = _modular_py_binary
 modular_py_library = _modular_py_library
@@ -46,12 +46,44 @@ def modular_py_test(tags = [], **kwargs):
         tags.append("exclusive")
     _modular_py_test(tags = tags, use_resource_tags = True, **kwargs)
 
-def modular_cc_binary(deps = [], **kwargs):
+def _process_cc_deps(data, deps):
     # TODO: This will break in the presence of select()s
-    deps = [dep if dep != "//max/internal:max" else "@modular_wheel//:max_lib" for dep in deps]
+    extra_data = []
+    new_deps = []
+    for dep in deps:
+        if dep == "//max/internal:max":
+            new_deps.append("@modular_wheel//:max_lib")
+            extra_data.append("@modular_wheel//:wheel")
+        else:
+            new_deps.append(dep)
+
+    return {
+        "deps": new_deps,
+        "data": data + extra_data,
+    }
+
+def modular_cc_binary(data = [], deps = [], **kwargs):
     _modular_cc_binary(
-        deps = deps,
-        **kwargs
+        **(kwargs | _process_cc_deps(
+            data = data,
+            deps = deps,
+        ))
+    )
+
+def modular_cc_library(data = [], deps = [], **kwargs):
+    _modular_cc_library(
+        **(kwargs | _process_cc_deps(
+            data = data,
+            deps = deps,
+        ))
+    )
+
+def modular_cc_test(data = [], deps = [], **kwargs):
+    _modular_cc_test(
+        **(kwargs | _process_cc_deps(
+            data = data,
+            deps = deps,
+        ))
     )
 
 def modular_generate_stubfiles(name, pyi_srcs, deps = [], tags = [], **_kwargs):
