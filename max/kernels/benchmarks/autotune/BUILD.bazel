@@ -20,6 +20,11 @@ modular_py_binary(
         "BITCODE_LIBS_PATH": "$(rootpath @nvshmem_prebuilt//:device)",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
+    ignore_extra_deps = [
+        # Optional deps of pandas
+        requirement("tabulate"),
+        requirement("scipy"),
+    ],
     imports = ["."],
     main = "kbench.py",
     mojo_deps = [
@@ -39,21 +44,14 @@ modular_py_binary(
         "//max:shmem",
         "@mojo//:std",
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         requirement("click"),
         requirement("numpy"),
         requirement("pandas"),
-        requirement("pygments"),
         requirement("pyyaml"),
         requirement("rich"),
         requirement("scipy"),
-        requirement("plotly"),
         requirement("tabulate"),
-        requirement("torch"),
-        requirement("packaging"),
-        "//max/kernels/benchmarks/autotune:bencher_utils",
-        "//max/kernels/benchmarks/misc/comparison:bench_baseline_lib",
     ],
 )
 
@@ -74,9 +72,13 @@ modular_py_binary(
         "//max:register",
         "@mojo//:std",
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":kbench",
+        requirement("click"),
+        requirement("numpy"),
+        requirement("pandas"),
+        requirement("plotly"),
+        requirement("pyyaml"),
         requirement("rich"),
     ],
 )
@@ -85,6 +87,10 @@ modular_py_binary(
     name = "kplot",
     srcs = [
         "kplot.py",
+    ],
+    ignore_extra_deps = [
+        # Optional dep of plotly
+        requirement("kaleido"),
     ],
     imports = ["."],
     main = "kplot.py",
@@ -98,10 +104,11 @@ modular_py_binary(
         "//max:register",
         "@mojo//:std",
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
-        ":kbench",
         ":kprofile",
+        requirement("click"),
+        requirement("numpy"),
+        requirement("pandas"),
         requirement("plotly"),
         requirement("kaleido"),
     ],
@@ -148,9 +155,6 @@ modular_py_test(
         "//max:register",
         "@mojo//:std",
     ],
-    tags = [
-        "no-pydeps",  # TODO: Fix and re-enable
-    ],
     target_compatible_with = select({
         # FIXME
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -160,6 +164,11 @@ modular_py_test(
         ":kbench",
         ":kplot",
         ":kprofile",
+        "//max/kernels/benchmarks/autotune:bencher_utils",
+        requirement("click"),
+        requirement("numpy"),
+        requirement("pandas"),
+        requirement("rich"),
     ],
 )
 
