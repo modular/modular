@@ -45,12 +45,12 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .ep_config import NUM_GROUPS, EPConfig
 from .ep_kernels import (
-    call_ep_combine,
-    call_ep_combine_cb,
-    call_ep_combine_fused_shared_expert,
-    call_ep_dispatch,
-    call_ep_dispatch_cb,
-    call_ep_dispatch_cb_fp8,
+    call_ep_combine_async,
+    call_ep_combine_async_fused_shared_expert,
+    call_ep_combine_wait,
+    call_ep_dispatch_async,
+    call_ep_dispatch_wait,
+    call_ep_dispatch_wait_fp8,
     call_ep_init,
 )
 
@@ -63,9 +63,9 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
     This must match the EPLocalSyncCounters.total_size() in ep_comm.mojo.
 
     Memory Layout (all sizes in Int32 elements):
-    - dispatch: 2 * n_experts + MAX_GPUS_PER_NODE
-    - dispatch_cb/combine: 2 * n_experts + MAX_GPUS_PER_NODE
-    - combine_cb: 2 * n_experts
+    - dispatch_async: 2 * n_experts + MAX_GPUS_PER_NODE
+    - dispatch_wait/combine_async: 2 * n_experts + MAX_GPUS_PER_NODE
+    - combine_wait: 2 * n_experts
 
     Args:
         n_experts: Number of experts in the model.
@@ -76,10 +76,10 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
 
     MAX_GPUS_PER_NODE = 8
 
-    dispatch_size = 2 * n_experts + MAX_GPUS_PER_NODE
-    dispatch_cb_size = 2 * n_experts + MAX_GPUS_PER_NODE
-    combine_cb_size = 2 * n_experts
-    return dispatch_size + dispatch_cb_size + combine_cb_size
+    dispatch_async_size = 2 * n_experts + MAX_GPUS_PER_NODE
+    dispatch_wait_size = 2 * n_experts + MAX_GPUS_PER_NODE
+    combine_wait_size = 2 * n_experts
+    return dispatch_async_size + dispatch_wait_size + combine_wait_size
 
 
 class EPBatchManager:
@@ -124,7 +124,7 @@ class EPBatchManager:
     _input_x: dict[int, TensorValue | None] = {}
     """Input tokens for the current device. If shared experts fusion is
     enabled, this will be used to temporarily store the inputs of the MoE
-    module, and passed to the ep_dispatch_cb kernel.
+    module, and passed to the ep_dispatch_wait kernel.
     """
 
     _shared_expert_outputs: dict[int, TensorValue | None] = {}
@@ -257,13 +257,13 @@ class EPBatchManager:
         ]
         start_idx = end_idx
 
-    def ep_dispatch(
+    def ep_dispatch_async(
         self, input_tokens: TensorValue, topk_ids: TensorValue, device_id: int
     ) -> None:
-        """Initiate Expert Parallelism token dispatch phase.
+        """Initiate Expert Parallelism token dispatch phase (async).
 
-        This function launches the EP dispatch kernel that distributes input
-        tokens to expert devices based on top-k routing decisions.
+        This function launches the EP async dispatch kernel that distributes
+        input tokens to expert devices based on top-k routing decisions.
 
         Args:
             input_tokens: Input tokens for the current device. A TensorValue with
@@ -275,7 +275,7 @@ class EPBatchManager:
         DISPATCH_GROUP = 0
         # Store the symbolic token numbers of each device for the combine phase
         self._dispatch_dim[device_id] = input_tokens.shape[0]
-        call_ep_dispatch(
+        call_ep_dispatch_async(
             input_tokens,
             topk_ids,
             self.atomic_counters[DISPATCH_GROUP][device_id],
@@ -290,12 +290,12 @@ class EPBatchManager:
         else:
             self._input_x[device_id] = None
 
-    def ep_dispatch_cb(self, device_id: int) -> tuple[TensorValue, ...]:
-        """Complete Expert Parallelism token dispatch phase.
+    def ep_dispatch_wait(self, device_id: int) -> tuple[TensorValue, ...]:
+        """Wait for Expert Parallelism token dispatch phase completion.
 
-        This function launches the EP dispatch callback kernel that waits for
-        all transfers to complete for the current GPU, then organizes the received tokens
-        into a format suitable for grouped matmul computation.
+        This function launches the EP dispatch wait kernel that waits for all
+        transfers to complete for the current GPU, then organizes the received
+        tokens into a format suitable for grouped matmul computation.
 
         Args:
             device_id: Device ID for the current device.
@@ -317,7 +317,7 @@ class EPBatchManager:
         DISPATCH_GROUP = 0
 
         if self.config.dispatch_fp8_config is not None:
-            results = call_ep_dispatch_cb_fp8(
+            results = call_ep_dispatch_wait_fp8(
                 self.atomic_counters[DISPATCH_GROUP][device_id],
                 self.recv_buf_ptrs[DISPATCH_GROUP],
                 self.recv_count_ptrs[DISPATCH_GROUP],
@@ -334,7 +334,7 @@ class EPBatchManager:
 
         else:
             # Collect results from all devices
-            results = call_ep_dispatch_cb(
+            results = call_ep_dispatch_wait(
                 self.atomic_counters[DISPATCH_GROUP][device_id],
                 self.recv_buf_ptrs[DISPATCH_GROUP],
                 self.recv_count_ptrs[DISPATCH_GROUP],
@@ -349,12 +349,14 @@ class EPBatchManager:
 
             return results[:4]
 
-    def ep_combine(self, input_tokens: TensorValue, device_id: int) -> None:
-        """Initiate Expert Parallelism combine phase.
+    def ep_combine_async(
+        self, input_tokens: TensorValue, device_id: int
+    ) -> None:
+        """Initiate Expert Parallelism combine phase (async).
 
-        This method launches the combine phase of Expert Parallelism, sending
-        expert outputs back to their original devices based on source routing
-        information stored during the dispatch phase.
+        This method launches the async combine phase of Expert Parallelism,
+        sending expert outputs back to their original devices based on source
+        routing information stored during the dispatch phase.
 
         Args:
             input_tokens: Expert output tensors from the current device.
@@ -367,16 +369,16 @@ class EPBatchManager:
 
         src_info = self._src_info[device_id]
         assert src_info is not None, (
-            "Source info is not set, you should call ep_dispatch_cb() first."
+            "Source info is not set, you should call ep_dispatch_wait() first."
         )
 
         if self.config.fused_shared_expert:
             dispatch_dim = self._dispatch_dim[device_id]
             assert dispatch_dim is not None, (
-                "Dispatch dimension is not set, you should call ep_dispatch() first."
+                "Dispatch dimension is not set, you should call ep_dispatch_async() first."
             )
             self._shared_expert_outputs[device_id] = (
-                call_ep_combine_fused_shared_expert(
+                call_ep_combine_async_fused_shared_expert(
                     input_tokens,
                     src_info,
                     self.atomic_counters[0][device_id],
@@ -388,7 +390,7 @@ class EPBatchManager:
                 )
             )
         else:
-            call_ep_combine(
+            call_ep_combine_async(
                 input_tokens,
                 src_info,
                 self.atomic_counters[0][device_id],
@@ -401,10 +403,10 @@ class EPBatchManager:
         # reset src_info to None to avoid reusing it for the next batch
         self._src_info[device_id] = None
 
-    def ep_combine_cb(
+    def ep_combine_wait(
         self, router_weight: TensorValue, device_id: int
     ) -> TensorValue:
-        """Complete Expert Parallelism combine phase.
+        """Wait for Expert Parallelism combine phase completion.
 
         This method waits for all expert output transfers to complete, then
         organizes the received tokens back into their original format and
@@ -425,9 +427,9 @@ class EPBatchManager:
         # two-batch-overlap.
         dispatch_dim = self._dispatch_dim[device_id]
         assert dispatch_dim is not None, (
-            "Dispatch dimension is not set, you should call ep_dispatch() first."
+            "Dispatch dimension is not set, you should call ep_dispatch_async() first."
         )
-        results = call_ep_combine_cb(
+        results = call_ep_combine_wait(
             self.atomic_counters[0][device_id],
             self.recv_buf_ptrs[COMBINE_GROUP],
             self.recv_count_ptrs[COMBINE_GROUP],

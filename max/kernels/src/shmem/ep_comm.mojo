@@ -142,7 +142,7 @@ fn ep_signal_completion[
             # all experts' messages to the target device. It doesn't guarantee
             # the the arrival of the previous experts' signals to the target
             # device. However, this does not matter as we will check the
-            # arrival signal individually in the dispatch_cb/combine_cb kernel.
+            # arrival signal individually in the dispatch_wait/combine_wait kernel.
             store_release[scope = Scope.SYSTEM](dst_p2p_ptr, signal)
             # Reset counter for next kernel invocation.
             rank_completion_counter[dst_p2p_rank] = 0
@@ -528,16 +528,18 @@ struct EPLocalSyncCounters[n_experts: Int](DevicePassable):
     """Manages atomic counters for EP kernel synchronization within a device.
 
     This struct provides dedicated atomic counter space for each of the four
-    EP kernels: dispatch, dispatch_cb, combine, and combine_cb. Each kernel
-    has its own memory region to avoid conflicts, except dispatch_cb and combine
-    which must share memory since combine reads data that dispatch_cb writes.
+    EP kernels: dispatch_async, dispatch_wait, combine_async, and combine_wait.
+    Each kernel has its own memory region to avoid conflicts, except
+    dispatch_wait and combine_async which must share memory since combine_async
+    reads data that dispatch_wait writes.
 
-    The struct is used to synchronize between thread blocks within the same device.
+    The struct is used to synchronize between thread blocks within the same
+    device.
 
     Memory Layout (all sizes in Int32 elements):
-    - dispatch: 2 * n_experts + MAX_GPUS_PER_NODE
-    - dispatch_cb/combine: 2 * n_experts + MAX_GPUS_PER_NODE
-    - combine_cb: 2 * n_experts
+    - dispatch_async: 2 * n_experts + MAX_GPUS_PER_NODE
+    - dispatch_wait/combine_async: 2 * n_experts + MAX_GPUS_PER_NODE
+    - combine_wait: 2 * n_experts
     """
 
     var ptr: UnsafePointer[Int32, MutExternalOrigin]
@@ -568,26 +570,27 @@ struct EPLocalSyncCounters[n_experts: Int](DevicePassable):
 
     @always_inline
     @staticmethod
-    fn dispatch_size() -> Int:
-        """Returns the size in Int32 elements needed by dispatch kernel."""
+    fn dispatch_async_size() -> Int:
+        """Returns the size in Int32 elements needed by dispatch_async kernel.
+        """
         return 2 * Self.n_experts + MAX_GPUS_PER_NODE
 
     @always_inline
     @staticmethod
-    fn dispatch_cb_size() -> Int:
-        """Returns the size in Int32 elements needed by dispatch_cb kernel."""
+    fn dispatch_wait_size() -> Int:
+        """Returns the size in Int32 elements needed by dispatch_wait kernel."""
         return 2 * Self.n_experts + MAX_GPUS_PER_NODE
 
     @always_inline
     @staticmethod
-    fn combine_size() -> Int:
-        """Returns the size in Int32 elements needed by combine kernel."""
+    fn combine_async_size() -> Int:
+        """Returns the size in Int32 elements needed by combine_async kernel."""
         return 2 * Self.n_experts + MAX_GPUS_PER_NODE
 
     @always_inline
     @staticmethod
-    fn combine_cb_size() -> Int:
-        """Returns the size in Int32 elements needed by combine_cb kernel."""
+    fn combine_wait_size() -> Int:
+        """Returns the size in Int32 elements needed by combine_wait kernel."""
         return 2 * Self.n_experts
 
     @always_inline
@@ -596,20 +599,20 @@ struct EPLocalSyncCounters[n_experts: Int](DevicePassable):
         """Returns the total size in Int32 elements needed for all counters."""
 
         __comptime_assert (
-            Self.combine_size() == Self.dispatch_cb_size()
-        ), "combine_size must be equal to dispatch_cb_size"
+            Self.combine_async_size() == Self.dispatch_wait_size()
+        ), "combine_async_size must be equal to dispatch_wait_size"
 
-        # The combine_size it omitted because the combine kernel reuse the
-        # counters of dispatch_cb kernel.
+        # The combine_async_size is omitted because the combine_async kernel reuses the
+        # counters of dispatch_wait kernel.
         return (
-            Self.dispatch_size()
-            + Self.dispatch_cb_size()
-            + Self.combine_cb_size()
+            Self.dispatch_async_size()
+            + Self.dispatch_wait_size()
+            + Self.combine_wait_size()
         )
 
     @always_inline
-    fn get_dispatch_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
-        """Returns pointer to dispatch kernel atomic counters.
+    fn get_dispatch_async_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
+        """Returns pointer to dispatch_async kernel atomic counters.
 
         Layout:
             [0, n_experts): reserved counters per expert
@@ -618,153 +621,179 @@ struct EPLocalSyncCounters[n_experts: Int](DevicePassable):
         return self.ptr
 
     @always_inline
-    fn get_dispatch_cb_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
-        """Returns pointer to dispatch_cb kernel atomic counters."""
-        return self.ptr + Self.dispatch_size()
+    fn get_dispatch_wait_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
+        """Returns pointer to dispatch_wait kernel atomic counters."""
+        return self.ptr + Self.dispatch_async_size()
 
     @always_inline
-    fn get_combine_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
-        """Returns pointer to combine kernel atomic counters.
+    fn get_combine_async_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
+        """Returns pointer to combine_async kernel atomic counters.
 
-        Note: Returns the same pointer as get_dispatch_cb_ptr() because
-        combine_kernel reads the offset/count data that dispatch_cb_kernel writes.
+        Note: Returns the same pointer as get_dispatch_wait_ptr() because
+        combine_async_kernel reads the offset/count data that dispatch_wait_kernel writes.
         """
-        return self.ptr + Self.dispatch_size()
+        return self.ptr + Self.dispatch_async_size()
 
     @always_inline
-    fn get_combine_cb_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
-        """Returns pointer to combine_cb kernel atomic counters."""
-        return self.ptr + Self.dispatch_size() + Self.dispatch_cb_size()
+    fn get_combine_wait_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
+        """Returns pointer to combine_wait kernel atomic counters."""
+        return self.ptr + Self.dispatch_async_size() + Self.dispatch_wait_size()
 
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
-)
-fn dispatch_kernel[
-    input_type: DType,
+# ===-----------------------------------------------------------------------===#
+# EPDispatchKernel - Dispatch Phase Implementation
+# ===-----------------------------------------------------------------------===#
+
+
+struct EPDispatchKernel[
     num_threads: Int,
-    input_tokens_layout: Layout,
-    topk_ids_layout: Layout,
     n_sms: Int,
-    n_aux_sms: Int,
     n_experts: Int,
     n_ranks: Int,
     max_tokens_per_rank: Int,
     p2p_world_size: Int,
     token_fmt_type: TokenFormat,
     use_shmem: Bool = True,
-](
-    input_tokens: LayoutTensor[input_type, input_tokens_layout, ImmutAnyOrigin],
-    topk_ids: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin],
-    send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
-    recv_buf_ptrs: InlineArray[
-        UnsafePointer[UInt8, MutExternalOrigin], p2p_world_size
-    ],
-    recv_count_ptrs: InlineArray[
-        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
-    ],
-    ep_counters: EPLocalSyncCounters[n_experts],
-    my_rank: Int32,
-):
-    """
-    Dispatch tokens to experts on remote ranks based on the top-k expert IDs.
-    This kernel utilizes the non-blocking SHMEM API if `use_shmem` is True, and
-    would return immediately after initiating the communication. The
-    communication is considered complete after calling the `dispatch_cb_kernel`.
+    expert_m_padding: Int = 0,
+    fused_shared_expert: Bool = False,
+]:
+    """Implements dispatch_async and dispatch_wait kernel logic for Expert Parallelism.
+
+    This struct encapsulates the token dispatch operations used in MoE (Mixture
+    of Experts) models with expert parallelism. It provides methods for:
+
+    1. Async Dispatch:
+       - `monitor_and_signal_completion`: Aux SMs count tokens per expert and
+         signal completion when all tokens for an expert have been sent.
+       - `copy_and_send_tokens`: Comm SMs copy tokens to send buffer and
+         transfer them to destination ranks.
+
+    2. Wait for Arrivals:
+       - `wait_for_arrivals_and_compute_offsets`: Aux SMs wait for token
+         arrivals and compute output tensor offsets. Also signals other SMs to
+         copy the tokens to the output tensor once data is ready.
+       - `copy_received_tokens_to_output`: Comm SMs copy received tokens to the
+         output tensor.
 
     Parameters:
-        input_type: The type of the input tokens.
-        num_threads: The number of threads in the block.
-        input_tokens_layout: The layout of the input tokens.
-        topk_ids_layout: The layout of the top-k expert IDs.
+        num_threads: The number of threads per block.
         n_sms: The total number of SMs in the device.
-        n_aux_sms: The number SMs that are used for counting the number of tokens
-            for each expert, and for signaling the completion of the communication.
         n_experts: The total number of experts in the model.
-        n_ranks: The number of all devices participating in the communication.
+        n_ranks: The number of devices participating in communication.
         max_tokens_per_rank: The maximum number of tokens per rank.
-        p2p_world_size: Size of a High-speed GPU interconnect group.
-        token_fmt_type: Type conforming to TokenFormat trait that defines the
-            token encoding scheme.
-        use_shmem: Whether to use the SHMEM API for the communication.
-
-    Args:
-        input_tokens: The input tokens to be dispatched.
-        topk_ids: The top-k expert IDs for each token.
-        send_buf_p: The pointer to the send buffer. The underlying buffer is
-            of shape `(max_tokens_per_rank, msg_bytes)`. Need to be allocated
-            using `shmem_alloc` if `use_shmem` is True.
-        recv_buf_ptrs: An array of pointers to the receive buffers for each
-            device in the p2p world. Each buffer is of shape
-            `(n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)`. Need
-            to be allocated using `shmem_alloc` if `use_shmem` is True.
-        recv_count_ptrs: An array of pointers to the receive count buffers for
-            each device in the p2p world. Each buffer is of shape
-            `(n_local_experts, n_ranks)`. Need to be allocated using
-            `shmem_alloc` if `use_shmem` is True.
-        ep_counters: EP atomic counters for kernel synchronization.
-        my_rank: The rank of the current device.
+        p2p_world_size: Size of a high-speed GPU interconnect group.
+        token_fmt_type: Type conforming to TokenFormat trait.
+        use_shmem: Whether to use the SHMEM API for communication.
+        expert_m_padding: The padding size for each expert.
+        fused_shared_expert: Whether to pack the shared expert inputs with the
+            routed experts' inputs.
     """
 
-    comptime n_local_experts = n_experts // n_ranks
-    comptime n_warps = num_threads // WARP_SIZE
-    comptime n_comm_sms = n_sms - n_aux_sms
-    __comptime_assert n_local_experts <= n_warps or n_ranks == p2p_world_size, (
-        "EP dispatch: number of experts per rank must be less than or equal to "
-        + String(n_warps)
-    )
+    comptime n_local_experts = Self.n_experts // Self.n_ranks
+    comptime n_warps = Self.num_threads // WARP_SIZE
+    comptime top_k = Self.token_fmt_type.top_k
+    comptime hid_dim = Self.token_fmt_type.hid_dim
+    comptime msg_bytes = Self.token_fmt_type.msg_size()
 
-    comptime top_k = topk_ids.shape[1]()
-    comptime hid_dim = input_tokens.shape[1]()
-    comptime msg_bytes = token_fmt_type.msg_size()
+    # Aux SMs for dispatch_async kernel: one SM handles n_warps experts for
+    # monitoring.
+    comptime n_signal_sms = ceildiv(Self.n_experts, Self.n_warps)
+    # Aux SMs for dispatch_wait kernel: single SM computes offsets.
+    comptime n_offset_sms = 1
+    # Communication SMs for each kernel phase.
+    comptime n_dispatch_async_comm_sms = Self.n_sms - Self.n_signal_sms
+    comptime n_dispatch_wait_comm_sms = Self.n_sms - Self.n_offset_sms
 
-    var send_buf_layout = RuntimeLayout[
-        Layout.row_major(max_tokens_per_rank, msg_bytes),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ]()
     comptime recv_layout_static = Layout.row_major(
-        n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes
+        Self.n_local_experts,
+        Self.n_ranks,
+        Self.max_tokens_per_rank,
+        Self.msg_bytes,
     )
-    var recv_buf_layout = RuntimeLayout[
-        recv_layout_static,
-        element_type = _get_layout_type(
-            recv_layout_static, AddressSpace.GENERIC
-        ),
-        linear_idx_type = _get_index_type(
-            recv_layout_static, AddressSpace.GENERIC
-        ),
-    ]()
-    var recv_count_layout = RuntimeLayout[
-        Layout.row_major(n_local_experts, n_ranks),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ]()
 
-    var tid = thread_idx.x
-    var num_tokens = input_tokens.dim[0]()
+    @staticmethod
+    @always_inline
+    fn _get_recv_buf_layout(
+        out result: RuntimeLayout[
+            Self.recv_layout_static,
+            element_type = _get_layout_type(
+                Self.recv_layout_static, AddressSpace.GENERIC
+            ),
+            linear_idx_type = _get_index_type(
+                Self.recv_layout_static, AddressSpace.GENERIC
+            ),
+        ]
+    ):
+        return type_of(result)()
 
-    # The reserved counter is incremented once a warp is ready to send.
-    # The finished counter is incremented once the token is sent.
-    var atomic_counter = ep_counters.get_dispatch_ptr()
-    var expert_reserved_counter = atomic_counter
-    var expert_finished_counter = atomic_counter + n_experts
-    # Per-rank completion counter for same-node signaling.
-    # Tracks how many experts have been signaled for each destination rank
-    # on this device.
-    var rank_completion_counter = atomic_counter + 2 * n_experts
+    @staticmethod
+    @always_inline
+    fn _get_recv_count_layout(
+        out result: RuntimeLayout[
+            Layout.row_major(Self.n_local_experts, Self.n_ranks),
+            element_type = DType.int32,
+            linear_idx_type = DType.int32,
+        ]
+    ):
+        return type_of(result)()
 
-    var my_p2p_world, my_p2p_rank = divmod(my_rank, p2p_world_size)
+    @staticmethod
+    @always_inline
+    fn _get_send_buf_layout(
+        out result: RuntimeLayout[
+            Layout.row_major(Self.max_tokens_per_rank, Self.msg_bytes),
+            element_type = DType.int32,
+            linear_idx_type = DType.int32,
+        ]
+    ):
+        return type_of(result)()
 
-    # The auxiliary SMs are used for counting counting the number of tokens
-    # that need to be sent to each expert. It also monitors the completion of
-    # the communication for each expert.
-    if block_idx.x < UInt(n_aux_sms):
-        var expert_idx = Int32(block_idx.x * UInt(n_warps) + warp_id())
+    # ===-------------------------------------------------------------------===#
+    # Dispatch Kernel Methods
+    # ===-------------------------------------------------------------------===#
+
+    @staticmethod
+    @always_inline
+    fn monitor_and_signal_completion[
+        topk_ids_layout: Layout, //
+    ](
+        topk_ids: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin],
+        recv_count_ptrs: InlineArray[
+            UnsafePointer[UInt64, MutExternalOrigin], Self.p2p_world_size
+        ],
+        expert_reserved_counter: UnsafePointer[Int32, MutExternalOrigin],
+        expert_finished_counter: UnsafePointer[Int32, MutExternalOrigin],
+        rank_completion_counter: UnsafePointer[Int32, MutExternalOrigin],
+        my_rank: Int32,
+    ) -> None:
+        """Auxiliary SM logic for dispatch_kernel.
+
+        Counts tokens per expert and signals completion when all tokens for an
+        expert have been sent. Each warp handles one expert.
+
+        Args:
+            topk_ids: The top-k expert IDs for each token.
+            recv_count_ptrs: Array of pointers to receive count buffers.
+            expert_reserved_counter: Counter for reserved slots per expert.
+            expert_finished_counter: Counter for finished sends per expert.
+            rank_completion_counter: Counter for per-rank completion tracking.
+            my_rank: The rank of the current device.
+        """
+
+        __comptime_assert Self.n_local_experts <= Self.n_warps, (
+            "EP dispatch_async: number of experts per rank must be less than or"
+            " equal to "
+            + String(Self.n_warps)
+        )
+
+        var recv_count_layout = Self._get_recv_count_layout()
+        var num_tokens = topk_ids.dim[0]()
+
+        var expert_idx = Int32(block_idx.x * UInt(Self.n_warps) + warp_id())
         var expert_count: Int32 = 0
 
-        if expert_idx < n_experts:
-            for i in range(lane_id(), num_tokens * top_k, WARP_SIZE):
+        if expert_idx < Self.n_experts:
+            for i in range(lane_id(), num_tokens * Self.top_k, WARP_SIZE):
                 if topk_ids.ptr[i] == expert_idx:
                     expert_count += 1
 
@@ -780,14 +809,14 @@ fn dispatch_kernel[
                 ):
                     pass
 
-                var dst_rank = expert_idx // n_local_experts
-                var dst_expert_local_idx = expert_idx % n_local_experts
+                var dst_rank = expert_idx // Self.n_local_experts
+                var dst_expert_local_idx = expert_idx % Self.n_local_experts
                 var signal_offset = recv_count_layout(
                     RtTuple_2(Int(dst_expert_local_idx), Int(my_rank))
                 )
 
                 ep_signal_completion[
-                    use_shmem, n_experts_per_device=n_local_experts
+                    Self.use_shmem, n_experts_per_device = Self.n_local_experts
                 ](
                     my_rank,
                     dst_rank,
@@ -800,35 +829,76 @@ fn dispatch_kernel[
                 expert_reserved_counter[expert_idx] = 0
                 expert_finished_counter[expert_idx] = 0
 
-    # All the other SMs are used for sending the tokens to the experts. A token will
-    # first be copied to the send buffer (so the NIC can see it), and then be sent
-    # to the remote device.
-    else:
+    @staticmethod
+    @always_inline
+    fn copy_and_send_tokens[
+        input_type: DType,
+        input_tokens_layout: Layout,
+        topk_ids_layout: Layout,
+        //,
+    ](
+        input_tokens: LayoutTensor[
+            input_type, input_tokens_layout, ImmutAnyOrigin
+        ],
+        topk_ids: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin],
+        send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+        recv_buf_ptrs: InlineArray[
+            UnsafePointer[UInt8, MutExternalOrigin], Self.p2p_world_size
+        ],
+        expert_reserved_counter: UnsafePointer[Int32, MutExternalOrigin],
+        expert_finished_counter: UnsafePointer[Int32, MutExternalOrigin],
+        my_rank: Int32,
+    ) -> None:
+        """Communication SM logic for dispatch_kernel.
+
+        Copies tokens to send buffer and transfers them to destination ranks.
+        Uses direct P2P transfers for same-node destinations and SHMEM for
+        cross-node destinations.
+
+        Args:
+            input_tokens: The input tokens to be dispatched.
+            topk_ids: The top-k expert IDs for each token.
+            send_buf_p: Pointer to the send buffer.
+            recv_buf_ptrs: Array of pointers to receive buffers.
+            expert_reserved_counter: Counter for reserved slots per expert.
+            expert_finished_counter: Counter for finished sends per expert.
+            my_rank: The rank of the current device.
+        """
+        var send_buf_layout = Self._get_send_buf_layout()
+        var recv_buf_layout = Self._get_recv_buf_layout()
+
+        var tid = thread_idx.x
+        var num_tokens = input_tokens.dim[0]()
+        var my_p2p_world, my_p2p_rank = divmod(my_rank, Self.p2p_world_size)
+
         for token_idx in range(
-            block_idx.x - UInt(n_aux_sms), num_tokens, n_comm_sms
+            block_idx.x - UInt(Self.n_signal_sms),
+            num_tokens,
+            Self.n_dispatch_async_comm_sms,
         ):
-            # First, all threads in the block copy the input token to the send buffer.
+            # First, all threads in the block copy the input token to the send
+            # buffer.
             var curr_send_buf_ptr = send_buf_p + send_buf_layout(
                 RtTuple_2(token_idx, 0)
             )
             var input_tensor_ptr = input_tokens.ptr + input_tokens._offset(
                 token_idx, 0
             )
-            token_fmt_type.copy_token_to_send_buf[
-                input_type, UInt(num_threads)
+            Self.token_fmt_type.copy_token_to_send_buf[
+                input_type, UInt(Self.num_threads)
             ](curr_send_buf_ptr, input_tensor_ptr)
 
-            if tid < UInt(top_k):
+            if tid < UInt(Self.top_k):
                 # Store all the top-k expert IDs in current token's message.
-                # The remote device will use the expert ID to determine a token's
-                # top-k id.
+                # The remote device will use the expert ID to determine a
+                # token's top-k id.
                 # Cast the expert ID to a 16-bit integer to save space.
                 var top_k_idx = topk_ids.load[width=1](token_idx, Int(tid))
                 curr_send_buf_ptr.store[
                     width = size_of[UInt16](),
                     alignment = align_of[DType.uint16](),
                 ](
-                    token_fmt_type.topk_info_offset()
+                    Self.token_fmt_type.topk_info_offset()
                     + Int(tid * UInt(size_of[UInt16]())),
                     bitcast[DType.uint8, size_of[UInt16]()](UInt16(top_k_idx)),
                 )
@@ -839,7 +909,7 @@ fn dispatch_kernel[
                         width = size_of[Int32](),
                         alignment = align_of[DType.int32](),
                     ](
-                        token_fmt_type.src_info_offset(),
+                        Self.token_fmt_type.src_info_offset(),
                         bitcast[DType.uint8, size_of[Int32]()](
                             Int32(token_idx)
                         ),
@@ -847,15 +917,15 @@ fn dispatch_kernel[
 
             barrier()
 
-            # Try to copy the message to the target expert's recv_buf if the target device
-            # is on the same node.
-            for topk_idx in range(warp_id(), top_k, n_warps):
+            # Try to copy the message to the target expert's recv_buf if the
+            # target device is on the same node.
+            for topk_idx in range(warp_id(), Self.top_k, Self.n_warps):
                 var target_expert = topk_ids.load[width=1](token_idx, topk_idx)
                 var dst_rank, dst_expert_local_idx = divmod(
-                    target_expert, n_local_experts
+                    target_expert, Self.n_local_experts
                 )
                 var dst_p2p_world, dst_p2p_rank = divmod(
-                    dst_rank, p2p_world_size
+                    dst_rank, Self.p2p_world_size
                 )
 
                 if my_p2p_world == dst_p2p_world:
@@ -877,7 +947,7 @@ fn dispatch_kernel[
                         )
                     )
 
-                    block_memcpy[msg_bytes, WARP_SIZE](
+                    block_memcpy[Self.msg_bytes, WARP_SIZE](
                         dst_recv_buf_ptr,
                         curr_send_buf_ptr,
                         lane_id(),
@@ -890,28 +960,31 @@ fn dispatch_kernel[
                             expert_finished_counter + target_expert, 1
                         )
 
-            # We set up `n_local_experts` Reliable Communications (RCs) for each remote
-            # device. We would like to use the same RC for each expert. However, NVSHMEM
-            # does not allow us to explicitly specify the RC for each transfer. Instead,
-            # we set the environment variable `NVSHMEM_IBGDA_RC_MAP_BY=warp` so that the RC
-            # is selected by the warp ID using round-robin. We can then control the RC
-            # for each expert by using the correct warp.
+            # We set up `n_local_experts` Reliable Communications (RCs) for each
+            # remote device. We would like to use the same RC for each expert.
+            # However, NVSHMEM does not allow us to explicitly specify the RC
+            # for each transfer. Instead, we set the environment variable
+            # `NVSHMEM_IBGDA_RC_MAP_BY=warp` so that the RC is selected by the
+            # warp ID using round-robin. We can then control the RC for each
+            # expert by using the correct warp.
             @parameter
-            if use_shmem:
+            if Self.use_shmem:
                 var rc_map_offset = Int32(
-                    (block_idx.x * UInt(n_warps) + warp_id())
-                    % UInt(n_local_experts)
+                    (block_idx.x * UInt(Self.n_warps) + warp_id())
+                    % UInt(Self.n_local_experts)
                 )
 
                 var topk_idx = lane_id()
-                if topk_idx < UInt(top_k) and warp_id() < UInt(n_local_experts):
+                if topk_idx < UInt(Self.top_k) and warp_id() < UInt(
+                    Self.n_local_experts
+                ):
                     var target_expert = topk_ids.load[width=1](
                         token_idx, Int(topk_idx)
                     )
                     var dst_rank, dst_expert_local_idx = divmod(
-                        target_expert, n_local_experts
+                        target_expert, Self.n_local_experts
                     )
-                    var dst_p2p_world = dst_rank // p2p_world_size
+                    var dst_p2p_world = dst_rank // Self.p2p_world_size
                     if (
                         rc_map_offset == dst_expert_local_idx
                         and my_p2p_world != dst_p2p_world
@@ -932,7 +1005,7 @@ fn dispatch_kernel[
                         shmem_put_nbi[kind = SHMEMScope.default](
                             dst_recv_buf_ptr,
                             curr_send_buf_ptr,
-                            UInt(msg_bytes),
+                            UInt(Self.msg_bytes),
                             dst_rank,
                         )
 
@@ -940,142 +1013,59 @@ fn dispatch_kernel[
                             expert_finished_counter + target_expert, 1
                         )
 
+    # ===-------------------------------------------------------------------===#
+    # Dispatch Callback Kernel Methods
+    # ===-------------------------------------------------------------------===#
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
-)
-fn dispatch_cb_kernel[
-    num_threads: Int,
-    output_tokens_layout: Layout,
-    row_offsets_layout: Layout,
-    expert_ids_layout: Layout,
-    src_info_layout: Layout,
-    n_sms: Int,
-    n_aux_sms: Int,
-    n_experts: Int,
-    n_ranks: Int,
-    max_tokens_per_rank: Int,
-    token_fmt_type: TokenFormat,
-    expert_m_padding: Int = 0,
-    fused_shared_expert: Bool = False,
-    shared_expert_input_dtype: DType = DType.bfloat16,
-](
-    format_handler: token_fmt_type,
-    row_offsets: LayoutTensor[DType.uint32, row_offsets_layout, MutAnyOrigin],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
-    src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
-    recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
-    recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
-    ep_counters: EPLocalSyncCounters[n_experts],
-    my_rank: Int32,
-    maybe_input_tokens: OptionalReg[
-        LayoutTensor[
-            shared_expert_input_dtype, Layout.row_major[2](), ImmutAnyOrigin
-        ]
-    ],
-):
-    """
-    This kernel is called after the `dispatch_kernel` to complete the communication.
-    It will keep polling the receive count buffer, and once the count is no longer
-    MAX_FINITE, it can confirm that the communication is complete from a remote rank.
+    @staticmethod
+    @always_inline
+    fn wait_for_arrivals_and_compute_offsets[
+        row_offsets_layout: Layout, expert_ids_layout: Layout, //
+    ](
+        row_offsets: LayoutTensor[
+            DType.uint32, row_offsets_layout, MutAnyOrigin
+        ],
+        expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+        recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
+        atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
+        my_rank: Int32,
+        reserved_shared_expert_tokens: UInt32 = 0,
+    ) -> None:
+        """Auxiliary SM logic for dispatch_wait_kernel.
 
-    The kernel will also aggregate the tokens from all the experts, and store them in
-    the output tensor using a ragged representation.
+        Waits for token arrivals from all ranks and computes the output tensor
+        offsets for each local expert. Each warp handles one local expert. Also
+        signals other SMs to copy the tokens to the output tensor once data is
+        ready.
 
-    Parameters:
-        num_threads: The number of threads in the block.
-        output_tokens_layout: The layout of the output tokens.
-        row_offsets_layout: The layout of the row offsets.
-        expert_ids_layout: The layout of the expert IDs.
-        src_info_layout: The layout of the source token info.
-        n_sms: The total number of SMs in the device.
-        n_aux_sms: The number of auxiliary SMs in the device.
-        n_experts: The number of experts in the device.
-        n_ranks: The number of ranks.
-        max_tokens_per_rank: The maximum number of tokens per rank.
-        token_fmt_type: Type conforming to TokenFormat trait that defines the
-            token encoding scheme.
-        expert_m_padding: If non-zero, the number of tokens for each local
-            expert will be padded to the next multiple of `expert_m_padding`.
-        fused_shared_expert: Whether to pack the shared expert inputs with the
-            routed experts' inputs.
-        shared_expert_input_dtype: The data type of the shared expert inputs.
+        Args:
+            row_offsets: Output row offsets for grouped matmul.
+            expert_ids: Output expert IDs for grouped matmul.
+            recv_count_p: Pointer to receive count buffer.
+            atomic_counter: Atomic counter for synchronization.
+            my_rank: The rank of the current device.
+            reserved_shared_expert_tokens: The number of tokens reserved for the
+                shared expert.
+        """
+        var recv_count_layout = Self._get_recv_count_layout()
 
-    Args:
-        format_handler: Instance of token_fmt_type that performs token decoding
-            and manages output tensor writes.
-        row_offsets: The row offsets to be updated. Will be consumed by the
-            `grouped_matmul` kernel.
-        expert_ids: The expert IDs to be updated. Will be consumed by the
-            `grouped_matmul` kernel.
-        src_info: The source token info to be updated. Once the expert
-            computation is complete, tokens will be send back to the original
-            rank using information in this tensor.
-        recv_buf_p: The pointer to the receive buffer. Need to be allocated using
-            `shmem_alloc`. The underlying buffer is of shape
-            `(n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)`.
-        recv_count_p: The pointer to the receive count buffer. Need to be allocated using
-            `shmem_alloc`. The underlying buffer is of shape
-            `(n_local_experts, n_ranks)`.
-        ep_counters: EP atomic counters for kernel synchronization.
-        my_rank: The rank of the current device.
-        maybe_input_tokens: The optional input tokens for the shared experts.
-            If fused_shared_expert is True, this will be used to load the
-            input tokens for the shared experts.
-    """
-    var atomic_counter = ep_counters.get_dispatch_cb_ptr()
-    comptime n_local_experts = n_experts // n_ranks
-    comptime n_warps = num_threads // WARP_SIZE
-    comptime n_comm_sms = n_sms - n_aux_sms
-
-    comptime top_k = token_fmt_type.top_k
-    comptime hid_dim = token_fmt_type.hid_dim
-    comptime msg_bytes = token_fmt_type.msg_size()
-    __comptime_assert (
-        n_local_experts <= n_warps
-    ), "EP dispatch: local experts per device should be less than " + String(
-        WARP_SIZE
-    )
-
-    comptime recv_layout_static = Layout.row_major(
-        n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes
-    )
-    var recv_buf_layout = RuntimeLayout[
-        recv_layout_static,
-        element_type = _get_layout_type(
-            recv_layout_static, AddressSpace.GENERIC
-        ),
-        linear_idx_type = _get_index_type(
-            recv_layout_static, AddressSpace.GENERIC
-        ),
-    ]()
-    var recv_count_layout = RuntimeLayout[
-        Layout.row_major(n_local_experts, n_ranks),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ]()
-
-    # The first SM is used for checking if any of a local expert has received
-    # tokens from all the remote ranks. It will also calculate the offset where
-    # the tokens start in the output tensor.
-    if block_idx.x < UInt(n_aux_sms):
         var shared_mem = stack_allocation[
             1, DType.uint32, address_space = AddressSpace.SHARED
         ]()
         if thread_idx.x == 0:
 
             @parameter
-            if fused_shared_expert:
-                var input_tokens = maybe_input_tokens.value()
-                var shared_expert_token_count = input_tokens.dim(0)
+            if Self.fused_shared_expert:
+                var shared_expert_token_count = reserved_shared_expert_tokens
 
                 @parameter
-                if expert_m_padding != 0:
+                if Self.expert_m_padding != 0:
                     shared_expert_token_count = align_up(
-                        Int(shared_expert_token_count), expert_m_padding
+                        Int(shared_expert_token_count), Self.expert_m_padding
                     )
 
-                # Place the shared expert's inputs before all routed experts' inputs.
+                # Place the shared expert's inputs before all routed experts'
+                # inputs.
                 shared_mem[] = shared_expert_token_count | 0x01000000
                 expert_ids[0] = 0
                 row_offsets[0] = 0
@@ -1086,18 +1076,19 @@ fn dispatch_cb_kernel[
         barrier()
 
         var local_expert_id = warp_id()
-        if local_expert_id >= UInt(n_local_experts):
+        if local_expert_id >= UInt(Self.n_local_experts):
             return
 
-        comptime scan_round = ceildiv(n_ranks, WARP_SIZE)
+        comptime scan_round = ceildiv(Self.n_ranks, WARP_SIZE)
         var prefix_sum_arr = stack_allocation[
             scan_round, DType.uint32, address_space = AddressSpace.LOCAL
         ]()
         var local_expert_token_count: UInt32 = 0
 
-        # We need to scan the receive count buffer for each rank to get the total
-        # number of tokens for the local expert. Also, we calculate the prefix sum
-        # to get the offset where each rank ends in the output tensor.
+        # We need to scan the receive count buffer for each rank to get the
+        # total number of tokens for the local expert. Also, we calculate the
+        # prefix sum to get the offset where each rank ends in the output
+        # tensor.
         @parameter
         for round_i in range(scan_round):
             var target_rank = lane_id() + UInt(round_i * WARP_SIZE)
@@ -1105,7 +1096,7 @@ fn dispatch_cb_kernel[
                 RtTuple_2(Int(local_expert_id), Int(target_rank))
             )
 
-            if target_rank < UInt(n_ranks):
+            if target_rank < UInt(Self.n_ranks):
                 var target_count_ptr = recv_count_p + expert_rank_offset
                 var token_count = load_acquire[scope = Scope.SYSTEM](
                     target_count_ptr
@@ -1128,7 +1119,7 @@ fn dispatch_cb_kernel[
             )
 
         local_expert_token_count = warp.shuffle_idx(
-            prefix_sum_arr[scan_round - 1], (n_ranks - 1) % WARP_SIZE
+            prefix_sum_arr[scan_round - 1], (Self.n_ranks - 1) % WARP_SIZE
         )
 
         # Only the last expert from a remote rank would actually use
@@ -1137,14 +1128,14 @@ fn dispatch_cb_kernel[
         barrier()
 
         @parameter
-        if expert_m_padding != 0:
+        if Self.expert_m_padding != 0:
             local_expert_token_count = align_up(
-                Int(local_expert_token_count), expert_m_padding
+                Int(local_expert_token_count), Self.expert_m_padding
             )
 
-        # Conduct a atomic add to get how many experts have already completed the
-        # communication, and the offset where the previous expert end in the output
-        # tensor.
+        # Conduct a atomic add to get how many experts have already completed
+        # the communication, and the offset where the previous expert end in the
+        # output tensor.
         var expert_idx_and_offsets: UInt32 = 0
         if lane_id() == 0:
             expert_idx_and_offsets = Atomic.fetch_add(
@@ -1163,7 +1154,7 @@ fn dispatch_cb_kernel[
                 RtTuple_2(Int(local_expert_id), Int(target_rank))
             )
 
-            if target_rank < UInt(n_ranks):
+            if target_rank < UInt(Self.n_ranks):
                 atomic_counter.store(
                     expert_rank_offset * 2,
                     Int32(
@@ -1174,8 +1165,9 @@ fn dispatch_cb_kernel[
                 )
 
         if lane_id() == 0:
-            # The shared expert's inputs are placed before the routed experts' inputs,
-            comptime expert_id_offset = 1 if fused_shared_expert else 0
+            # The shared expert's inputs are placed before the routed experts'
+            # inputs.
+            comptime expert_id_offset = 1 if Self.fused_shared_expert else 0
 
             expert_ids[Int(expert_idx)] = (
                 Int(local_expert_id) + expert_id_offset
@@ -1187,51 +1179,50 @@ fn dispatch_cb_kernel[
             if expert_idx == 0:
                 row_offsets[0] = 0
 
-    # All the other SMs are used for copying the tokens to the output tensor.
-    # The compute resources are partitioned into multiple work groups (wg), and
-    # each work group is responsible for copying tokens for a single expert from
-    # a remote rank.
-    else:
-        var sm_id = block_idx.x - UInt(n_aux_sms)
+    @staticmethod
+    @always_inline
+    fn copy_received_tokens_to_output[
+        src_info_layout: Layout, //
+    ](
+        format_handler: Self.token_fmt_type,
+        src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
+        recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+        recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
+        atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
+        my_rank: Int32,
+    ) -> None:
+        """Communication SM logic for dispatch_wait_kernel.
 
-        # If we need to pack the shared expert's inputs, we do that before
-        # waiting for the arrival of the routed experts' inputs.
-        @parameter
-        if fused_shared_expert:
-            var smem_buf_p = stack_allocation[
-                format_handler.token_size(),
-                DType.uint8,
-                alignment = simd_width_of[DType.uint8](),
-                address_space = AddressSpace.SHARED,
-            ]()
-            var input_tokens = maybe_input_tokens.value()
-            var shared_expert_token_count = input_tokens.dim(0)
+        Copies received tokens from the receive buffer to the output tensor.
 
-            for token_idx in range(
-                sm_id, shared_expert_token_count, n_comm_sms
-            ):
-                var input_tensor_p = input_tokens.ptr + token_idx * hid_dim
-                format_handler.copy_token_to_send_buf[
-                    shared_expert_input_dtype,
-                    UInt(num_threads),
-                    buf_addr_space = AddressSpace.SHARED,
-                ](smem_buf_p, input_tensor_p)
-                barrier()
-                format_handler.copy_msg_to_output_tensor(smem_buf_p, token_idx)
+        Args:
+            format_handler: Instance of token_fmt_type for token decoding.
+            src_info: Output tensor for source token info.
+            recv_buf_p: Pointer to the receive buffer.
+            recv_count_p: Pointer to the receive count buffer.
+            atomic_counter: Atomic counter for synchronization.
+            my_rank: The rank of the current device.
+        """
+        var recv_buf_layout = Self._get_recv_buf_layout()
+        var recv_count_layout = Self._get_recv_count_layout()
 
-        comptime n_wg_per_sm = ceildiv(n_experts, n_comm_sms)
-        comptime wg_size = n_warps // n_wg_per_sm
+        var sm_id = block_idx.x - UInt(Self.n_offset_sms)
+
+        comptime n_wg_per_sm = ceildiv(
+            Self.n_experts, Self.n_dispatch_wait_comm_sms
+        )
+        comptime wg_size = Self.n_warps // n_wg_per_sm
         comptime wg_threads = wg_size * WARP_SIZE
 
         var wg_idx = warp_id() // UInt(wg_size)
         var global_wg_idx = sm_id * UInt(n_wg_per_sm) + wg_idx
         var warp_id_in_wg = warp_id() % UInt(wg_size)
 
-        if wg_idx >= UInt(n_wg_per_sm) or global_wg_idx >= UInt(n_experts):
+        if wg_idx >= UInt(n_wg_per_sm) or global_wg_idx >= UInt(Self.n_experts):
             return
 
-        var local_expert_id = global_wg_idx % UInt(n_local_experts)
-        var target_rank = global_wg_idx // UInt(n_local_experts)
+        var local_expert_id = global_wg_idx % UInt(Self.n_local_experts)
+        var target_rank = global_wg_idx // UInt(Self.n_local_experts)
         var expert_rank_offset = recv_count_layout(
             RtTuple_2(Int(local_expert_id), Int(target_rank))
         )
@@ -1260,22 +1251,22 @@ fn dispatch_cb_kernel[
 
             format_handler.copy_msg_to_output_tensor(recv_buf_ptr, token_pos)
 
-            if lane_id() < UInt(top_k):
+            if lane_id() < UInt(Self.top_k):
                 # Load top-k expert IDs from the token's message.
                 var src_topk_idx = bitcast[DType.uint16, 1](
                     recv_buf_ptr.load[width = size_of[UInt16]()](
-                        token_fmt_type.topk_info_offset()
+                        Self.token_fmt_type.topk_info_offset()
                         + Int(lane_id() * UInt(size_of[UInt16]())),
                     )
                 )
-                var global_expert_idx = my_rank * n_local_experts + Int32(
+                var global_expert_idx = my_rank * Self.n_local_experts + Int32(
                     local_expert_id
                 )
                 if global_expert_idx == Int32(src_topk_idx):
                     # Store the source token index and the top-k id.
                     var src_idx = bitcast[DType.int32, 1](
                         recv_buf_ptr.load[width = size_of[Int32]()](
-                            token_fmt_type.src_info_offset()
+                            Self.token_fmt_type.src_info_offset()
                         )
                     )
 
@@ -1287,27 +1278,68 @@ fn dispatch_cb_kernel[
             recv_count_p.store(expert_rank_offset, UInt64.MAX_FINITE)
             offset_ptr.store(1, token_count)
 
+    @staticmethod
+    @always_inline
+    fn pack_shared_expert_inputs[
+        shared_expert_input_dtype: DType, shared_expert_input_layout: Layout, //
+    ](
+        format_handler: Self.token_fmt_type,
+        input_tokens: LayoutTensor[
+            shared_expert_input_dtype,
+            shared_expert_input_layout,
+            ImmutAnyOrigin,
+        ],
+    ) -> None:
+        """Packs shared expert inputs before waiting for routed expert arrivals.
+
+        This method copies the shared expert's input tokens to the output buffer
+        using the format handler. It is called before waiting for the arrival of
+        routed experts' inputs when fused_shared_expert is enabled.
+
+        Args:
+            format_handler: Instance of token_fmt_type for token encoding.
+            input_tokens: Input tokens for shared experts.
+        """
+        var smem_buf_p = stack_allocation[
+            format_handler.token_size(),
+            DType.uint8,
+            alignment = simd_width_of[DType.uint8](),
+            address_space = AddressSpace.SHARED,
+        ]()
+        var sm_id = block_idx.x - UInt(Self.n_offset_sms)
+        var shared_expert_token_count = input_tokens.dim(0)
+
+        for token_idx in range(
+            sm_id, shared_expert_token_count, Self.n_dispatch_wait_comm_sms
+        ):
+            var input_tensor_p = input_tokens.ptr + token_idx * Self.hid_dim
+            format_handler.copy_token_to_send_buf[
+                shared_expert_input_dtype,
+                UInt(Self.num_threads),
+                buf_addr_space = AddressSpace.SHARED,
+            ](smem_buf_p, input_tensor_p)
+            barrier()
+            format_handler.copy_msg_to_output_tensor(smem_buf_p, token_idx)
+
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
 )
-fn combine_kernel[
+fn dispatch_async_kernel[
     input_type: DType,
     num_threads: Int,
     input_tokens_layout: Layout,
-    src_info_layout: Layout,
+    topk_ids_layout: Layout,
     n_sms: Int,
-    top_k: Int,
     n_experts: Int,
     n_ranks: Int,
-    msg_bytes: Int,
     max_tokens_per_rank: Int,
     p2p_world_size: Int,
+    token_fmt_type: TokenFormat,
     use_shmem: Bool = True,
-    fused_shared_expert: Bool = False,
 ](
-    input_tokens: LayoutTensor[input_type, input_tokens_layout, MutAnyOrigin],
-    src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
+    input_tokens: LayoutTensor[input_type, input_tokens_layout, ImmutAnyOrigin],
+    topk_ids: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin],
     send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
     recv_buf_ptrs: InlineArray[
         UnsafePointer[UInt8, MutExternalOrigin], p2p_world_size
@@ -1317,247 +1349,359 @@ fn combine_kernel[
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
-    maybe_output_tokens: OptionalReg[
-        LayoutTensor[input_type, Layout.row_major[2](), MutAnyOrigin]
-    ],
 ):
     """
-    Send tokens to the original rank based on the src_info tensor.
-    This kernel utilizes the non-blocking SHMEM API, and would return immediately
-    after initiating the communication. The communication is considered complete
-    after calling the `combine_cb_kernel`.
+    Dispatch tokens to experts on remote ranks based on the top-k expert IDs.
+    This kernel utilizes the non-blocking SHMEM API if `use_shmem` is True, and
+    would return immediately after initiating the communication. The
+    communication is considered complete after calling the `dispatch_wait_kernel`.
 
     Parameters:
         input_type: The type of the input tokens.
         num_threads: The number of threads in the block.
         input_tokens_layout: The layout of the input tokens.
+        topk_ids_layout: The layout of the top-k expert IDs.
+        n_sms: The total number of SMs in the device.
+        n_experts: The total number of experts in the model.
+        n_ranks: The number of all devices participating in the communication.
+        max_tokens_per_rank: The maximum number of tokens per rank.
+        p2p_world_size: Size of a High-speed GPU interconnect group.
+        token_fmt_type: Type conforming to TokenFormat trait that defines the
+            token encoding scheme.
+        use_shmem: Whether to use the SHMEM API for the communication.
+
+    Args:
+        input_tokens: The input tokens to be dispatched.
+        topk_ids: The top-k expert IDs for each token.
+        send_buf_p: The pointer to the send buffer. The underlying buffer is of
+            shape `(max_tokens_per_rank, msg_bytes)`. Need to be allocated using
+            `shmem_alloc` if `use_shmem` is True.
+        recv_buf_ptrs: An array of pointers to the receive buffers for each
+            device in the p2p world. Each buffer is of shape
+            `(n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)`. Need
+            to be allocated using `shmem_alloc` if `use_shmem` is True.
+        recv_count_ptrs: An array of pointers to the receive count buffers for
+            each device in the p2p world. Each buffer is of shape
+            `(n_local_experts, n_ranks)`. Need to be allocated using
+            `shmem_alloc` if `use_shmem` is True.
+        ep_counters: EP atomic counters for kernel synchronization.
+        my_rank: The rank of the current device.
+    """
+
+    comptime dispatch_impl = EPDispatchKernel[
+        num_threads,
+        n_sms,
+        n_experts,
+        n_ranks,
+        max_tokens_per_rank,
+        p2p_world_size,
+        token_fmt_type,
+        use_shmem,
+    ]
+
+    # The reserved counter is incremented once a warp is ready to send.
+    # The finished counter is incremented once the token is sent.
+    var atomic_counter = ep_counters.get_dispatch_async_ptr()
+    var expert_reserved_counter = atomic_counter
+    var expert_finished_counter = atomic_counter + n_experts
+    # Per-rank completion counter for same-node signaling.
+    var rank_completion_counter = atomic_counter + 2 * n_experts
+
+    # The auxiliary SMs are used for counting the number of tokens that need to
+    # be sent to each expert. It also monitors the completion of
+    # the communication for each expert.
+    if block_idx.x < UInt(dispatch_impl.n_signal_sms):
+        dispatch_impl.monitor_and_signal_completion(
+            topk_ids,
+            recv_count_ptrs,
+            expert_reserved_counter,
+            expert_finished_counter,
+            rank_completion_counter,
+            my_rank,
+        )
+
+    # All the other SMs are used for sending the tokens to the experts.
+    else:
+        dispatch_impl.copy_and_send_tokens(
+            input_tokens,
+            topk_ids,
+            send_buf_p,
+            recv_buf_ptrs,
+            expert_reserved_counter,
+            expert_finished_counter,
+            my_rank,
+        )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+)
+fn dispatch_wait_kernel[
+    num_threads: Int,
+    output_tokens_layout: Layout,
+    row_offsets_layout: Layout,
+    expert_ids_layout: Layout,
+    src_info_layout: Layout,
+    n_sms: Int,
+    n_experts: Int,
+    n_ranks: Int,
+    max_tokens_per_rank: Int,
+    token_fmt_type: TokenFormat,
+    expert_m_padding: Int = 0,
+    fused_shared_expert: Bool = False,
+    shared_expert_input_dtype: DType = DType.bfloat16,
+    use_shmem: Bool = True,
+](
+    format_handler: token_fmt_type,
+    row_offsets: LayoutTensor[DType.uint32, row_offsets_layout, MutAnyOrigin],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
+    recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+    recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
+    ep_counters: EPLocalSyncCounters[n_experts],
+    my_rank: Int32,
+    maybe_input_tokens: OptionalReg[
+        LayoutTensor[
+            shared_expert_input_dtype, Layout.row_major[2](), ImmutAnyOrigin
+        ]
+    ],
+):
+    """
+    This kernel is called after the `dispatch_kernel` to complete the
+    communication. It will keep polling the receive count buffer, and once the
+    count is no longer MAX_FINITE, it can confirm that the communication is
+    complete from a remote rank.
+
+    The kernel will also aggregate the tokens from all the experts, and store
+    them in the output tensor using a ragged representation.
+
+    Parameters:
+        num_threads: The number of threads in the block.
+        output_tokens_layout: The layout of the output tokens.
+        row_offsets_layout: The layout of the row offsets.
+        expert_ids_layout: The layout of the expert IDs.
         src_info_layout: The layout of the source token info.
+        n_sms: The total number of SMs in the device.
+        n_experts: The number of experts in the device.
+        n_ranks: The number of ranks.
+        max_tokens_per_rank: The maximum number of tokens per rank.
+        token_fmt_type: Type conforming to TokenFormat trait that defines the
+            token encoding scheme.
+        expert_m_padding: If non-zero, the number of tokens for each local
+            expert will be padded to the next multiple of `expert_m_padding`.
+        fused_shared_expert: Whether to pack the shared expert inputs with the
+            routed experts' inputs.
+        shared_expert_input_dtype: The data type of the shared expert inputs.
+        use_shmem: Whether to use the SHMEM API for the communication.
+
+    Args:
+        format_handler: Instance of token_fmt_type that performs token decoding
+            and manages output tensor writes.
+        row_offsets: The row offsets to be updated. Will be consumed by the
+            `grouped_matmul` kernel.
+        expert_ids: The expert IDs to be updated. Will be consumed by the
+            `grouped_matmul` kernel.
+        src_info: The source token info to be updated. Once the expert
+            computation is complete, tokens will be send back to the original
+            rank using information in this tensor.
+        recv_buf_p: The pointer to the receive buffer. Need to be allocated
+            using `shmem_alloc` if `use_shmem` is True. The underlying buffer is
+            of shape
+            `(n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)`.
+        recv_count_p: The pointer to the receive count buffer. Need to be
+            allocated using `shmem_alloc` if `use_shmem` is True. The underlying
+            buffer is of shape `(n_local_experts, n_ranks)`.
+        ep_counters: EP atomic counters for kernel synchronization.
+        my_rank: The rank of the current device.
+        maybe_input_tokens: The optional input tokens for the shared experts.
+            If fused_shared_expert is True, this will be used to load the input
+            tokens for the shared experts.
+    """
+
+    comptime dispatch_impl = EPDispatchKernel[
+        num_threads,
+        n_sms,
+        n_experts,
+        n_ranks,
+        max_tokens_per_rank,
+        1,  # p2p world size
+        token_fmt_type,
+        use_shmem,
+        expert_m_padding,
+        fused_shared_expert,
+    ]
+
+    var atomic_counter = ep_counters.get_dispatch_wait_ptr()
+
+    # The first SM is used for checking if any of a local expert has received
+    # tokens from all the remote ranks. It will also calculate the offset where
+    # the tokens start in the output tensor.
+    if block_idx.x < UInt(dispatch_impl.n_offset_sms):
+        var reserved_shared_expert_tokens = 0
+
+        @parameter
+        if fused_shared_expert:
+            reserved_shared_expert_tokens = maybe_input_tokens.value().dim(0)
+
+        dispatch_impl.wait_for_arrivals_and_compute_offsets(
+            row_offsets,
+            expert_ids,
+            recv_count_p,
+            atomic_counter,
+            my_rank,
+            reserved_shared_expert_tokens,
+        )
+
+    # All the other SMs are used for copying the tokens to the output tensor.
+    else:
+        # If we need to pack the shared expert's inputs, we do that before
+        # waiting for the arrival of the routed experts' inputs.
+        @parameter
+        if fused_shared_expert:
+            dispatch_impl.pack_shared_expert_inputs(
+                format_handler, maybe_input_tokens.value()
+            )
+
+        dispatch_impl.copy_received_tokens_to_output(
+            format_handler,
+            src_info,
+            recv_buf_p,
+            recv_count_p,
+            atomic_counter,
+            my_rank,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# EPCombineKernel - Combine Phase Implementation
+# ===-----------------------------------------------------------------------===#
+
+
+struct EPCombineKernel[
+    num_threads: Int,
+    n_sms: Int,
+    top_k: Int,
+    n_experts: Int,
+    n_ranks: Int,
+    msg_bytes: Int,
+    max_tokens_per_rank: Int,
+    p2p_world_size: Int,
+    use_shmem: Bool = True,
+    fused_shared_expert: Bool = False,
+]:
+    """Implements combine_async and combine_wait kernel logic for Expert Parallelism.
+
+    This struct encapsulates the token combine operations used in MoE (Mixture
+    of Experts) models with expert parallelism. It provides methods for:
+
+    1. Async Combine:
+       - `send_tokens_back`: Send processed tokens back to their original ranks.
+
+    2. Wait for Arrivals:
+       - `wait_for_all_arrivals`: Aux SMs wait for all tokens to arrive.
+       - `reduce_and_copy_to_output`: Comm SMs reduce and copy tokens to output.
+
+    Parameters:
+        num_threads: The number of threads per block.
         n_sms: The total number of SMs in the device.
         top_k: The number of selected experts per token.
         n_experts: The total number of experts in the model.
-        n_ranks: The number of all devices participating in the communication.
-        msg_bytes: This is the total number of bytes we need to send for each token.
+        n_ranks: The number of devices participating in communication.
+        msg_bytes: The number of bytes per token message.
         max_tokens_per_rank: The maximum number of tokens per rank.
-        p2p_world_size: Size of a High-speed GPU interconnect group.
-        use_shmem: Whether to use the SHMEM API for the communication.
+        p2p_world_size: Size of a high-speed GPU interconnect group.
+        use_shmem: Whether to use the SHMEM API for communication.
         fused_shared_expert: Whether to filter out the shared expert's outputs.
-
-    Args:
-        input_tokens: The tokens to be sent back to the original rank.
-        src_info: The source token info tensor of shape
-            `(n_local_experts * n_ranks * max_tokens_per_rank, 2)`. The first
-            column stores a token's position in the original rank's tensor, and
-            the second column stores the top-k ID for the token.
-        send_buf_p: The pointer to the send buffer. Need to be allocated using
-            `shmem_alloc` if `use_shmem` is True. The underlying buffer is of
-            shape `(n_local_experts * n_ranks * max_tokens_per_rank, msg_bytes)`.
-        recv_buf_ptrs: An array of pointers to the receive buffers for each
-            device in the p2p world. Each buffer is of shape
-            `(max_tokens_per_rank, top_k, msg_bytes)`. Need to be allocated using
-            `shmem_alloc` if `use_shmem` is True.
-        recv_count_ptrs: An array of pointers to the receive count buffers for
-            each device in the p2p world. Each buffer is of shape
-            `(n_local_experts, n_ranks)`.
-        ep_counters: EP atomic counters for kernel synchronization.
-        my_rank: The rank of the current device.
-        maybe_output_tokens: The optional output for the shared experts.
-            If fused_shared_expert is True, this will be used to store the
-            output tokens for the shared experts.
     """
-    var atomic_counter = ep_counters.get_combine_ptr()
-    # Per-rank completion counter for same-node signaling.
-    # Tracks how many experts have been signaled for each destination rank
-    # on this device.
-    var rank_completion_counter = atomic_counter + 2 * n_experts
-    comptime n_local_experts = n_experts // n_ranks
-    comptime n_warps = num_threads // WARP_SIZE
 
-    comptime src_simd_width = simd_width_of[input_type]()
-    comptime byte_simd_width = simd_width_of[DType.uint8]()
+    comptime n_local_experts = Self.n_experts // Self.n_ranks
+    comptime n_warps = Self.num_threads // WARP_SIZE
 
-    comptime hid_dim = input_tokens.shape[1]()
-
-    __comptime_assert (
-        msg_bytes == hid_dim * size_of[Scalar[input_type]]()
-    ), "EP combine: input shape doesn't match message size."
-    __comptime_assert (
-        msg_bytes % byte_simd_width == 0
-    ), "EP combine: message size must be divisible by " + String(
-        byte_simd_width
-    )
+    # Aux SMs for combine_wait kernel: single SM waits for arrivals.
+    comptime n_wait_sms = 1
+    # Reduce SMs for combine_wait kernel.
+    comptime n_reduce_sms = Self.n_sms - Self.n_wait_sms
 
     comptime send_layout_static = Layout.row_major(
-        n_local_experts * n_ranks * max_tokens_per_rank, msg_bytes
+        Self.n_local_experts * Self.n_ranks * Self.max_tokens_per_rank,
+        Self.msg_bytes,
     )
-    var send_buf_layout = RuntimeLayout[
-        send_layout_static,
-        element_type = _get_layout_type(
-            send_layout_static, AddressSpace.GENERIC
-        ),
-        linear_idx_type = _get_index_type(
-            send_layout_static, AddressSpace.GENERIC
-        ),
-    ]()
-    var recv_buf_layout = RuntimeLayout[
-        Layout.row_major(max_tokens_per_rank, top_k, msg_bytes),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ]()
-    var recv_count_layout = RuntimeLayout[
-        Layout.row_major(n_local_experts, n_ranks),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ]()
 
-    var tid = Int(thread_idx.x)
-    var sm_id = Int(block_idx.x)
-    var my_p2p_world, my_p2p_rank = divmod(my_rank, p2p_world_size)
+    @staticmethod
+    @always_inline
+    fn _get_send_buf_layout(
+        out result: RuntimeLayout[
+            Self.send_layout_static,
+            element_type = _get_layout_type(
+                Self.send_layout_static, AddressSpace.GENERIC
+            ),
+            linear_idx_type = _get_index_type(
+                Self.send_layout_static, AddressSpace.GENERIC
+            ),
+        ]
+    ):
+        return type_of(result)()
 
-    # Each rank holds `n_local_experts` experts, and for each expert, it needs to
-    # send back different tokens to `n_ranks` remote ranks. We use one block
-    # per-expert-per-rank to send back the tokens.
-    for global_idx in range(sm_id, n_experts, n_sms):
-        var local_expert_id = global_idx % n_local_experts
-        var target_rank = global_idx // n_local_experts
-        var expert_rank_offset = recv_count_layout(
-            RtTuple_2(Int(local_expert_id), Int(target_rank))
-        )
-        var dst_p2p_world, dst_p2p_rank = divmod(target_rank, p2p_world_size)
+    @staticmethod
+    @always_inline
+    fn _get_recv_buf_layout(
+        out result: RuntimeLayout[
+            Layout.row_major(
+                Self.max_tokens_per_rank, Self.top_k, Self.msg_bytes
+            ),
+            element_type = DType.int32,
+            linear_idx_type = DType.int32,
+        ]
+    ):
+        return type_of(result)()
 
-        # Info for where the tokens for the current expert and rank start and end
-        # are stored in the atomic counter by the `dispatch_cb_kernel`.
-        comptime DATA_READY_FLAG = 1024
-        var token_end_count = atomic_counter.load[
-            width=2,
-            alignment = align_of[SIMD[DType.int32, 2]](),
-            invariant=True,
-        ](2 * expert_rank_offset)
-        var token_end = token_end_count[0] - DATA_READY_FLAG
-        var token_start = token_end - token_end_count[1]
+    @staticmethod
+    @always_inline
+    fn _get_recv_count_layout(
+        out result: RuntimeLayout[
+            Layout.row_major(Self.n_local_experts, Self.n_ranks),
+            element_type = DType.int32,
+            linear_idx_type = DType.int32,
+        ]
+    ):
+        return type_of(result)()
 
-        # If the target device is on the same node, we can directly copy the tokens
-        # to the receive buffer, skipping the send buffer.
-        if Int32(dst_p2p_world) == my_p2p_world:
-            for token_idx in range(token_start, token_end):
-                var src_token_info = src_info.aligned_load[2](Int(token_idx), 0)
-                var src_idx = src_token_info[0]
-                var src_topk_idx = src_token_info[1]
+    # ===-------------------------------------------------------------------===#
+    # Combine Kernel Methods
+    # ===-------------------------------------------------------------------===#
 
-                var dst_recv_buf_ptr = recv_buf_ptrs[
-                    dst_p2p_rank
-                ] + recv_buf_layout(
-                    RtTuple_3(Int(src_idx), Int(src_topk_idx), 0)
-                )
-                block_memcpy[hid_dim * size_of[input_type](), num_threads](
-                    dst_recv_buf_ptr,
-                    input_tokens.ptr_at_offset(
-                        IndexList[2](Int(token_idx), 0)
-                    ).bitcast[UInt8](),
-                    UInt(tid),
-                )
+    @staticmethod
+    @always_inline
+    fn copy_shared_expert_outputs[
+        input_type: DType,
+        input_tokens_layout: Layout,
+        output_tokens_layout: Layout,
+        //,
+    ](
+        input_tokens: LayoutTensor[
+            input_type, input_tokens_layout, MutAnyOrigin
+        ],
+        output_tokens: LayoutTensor[
+            input_type, output_tokens_layout, MutAnyOrigin
+        ],
+    ) -> None:
+        """Copies shared expert outputs to the output tensor.
 
-        # If the target device is on a different node, we need to send the tokens
-        # to the target device using the SHMEM API.
-        else:
+        This method copies the shared expert's output tokens from the input
+        tensor to the output tensor when fused_shared_expert is enabled.
 
-            @parameter
-            if use_shmem:
-                # The tokens are sent back to the original rank using the same RC as the
-                # one they come from.
-                var rc_map_offset = (
-                    sm_id * n_warps + Int(warp_id())
-                ) % n_local_experts
-
-                var n_rounds = ceildiv(token_end - token_start, n_warps)
-                for round_i in range(n_rounds):
-                    var token_idx = (
-                        token_start + round_i * n_warps + Int32(warp_id())
-                    )
-                    if token_idx < token_end:
-                        var curr_send_buf_ptr = send_buf_p + send_buf_layout(
-                            RtTuple_2(Int(token_idx), 0)
-                        )
-
-                        # To use SHMEM API, we need to copy the tokens to the
-                        # send buffer first.
-                        block_memcpy[
-                            hid_dim * size_of[input_type](), WARP_SIZE
-                        ](
-                            curr_send_buf_ptr,
-                            input_tokens.ptr_at_offset(
-                                IndexList[2](Int(token_idx), 0)
-                            ).bitcast[UInt8](),
-                            UInt(lane_id()),
-                        )
-
-                    barrier()
-
-                    if (
-                        warp_id() < UInt(n_local_experts)
-                        and local_expert_id == rc_map_offset
-                    ):
-                        var token_idx = (
-                            token_start + round_i * n_warps + Int32(lane_id())
-                        )
-                        if token_idx < token_end:
-                            var src_token_info = src_info.aligned_load[2](
-                                Int(token_idx), 0
-                            )
-                            var src_idx = src_token_info[0]
-                            var src_topk_idx = src_token_info[1]
-
-                            var curr_send_buf_ptr = (
-                                send_buf_p
-                                + send_buf_layout(RtTuple_2(Int(token_idx), 0))
-                            )
-                            var dst_recv_buf_ptr = recv_buf_ptrs[
-                                my_p2p_rank
-                            ] + recv_buf_layout(
-                                RtTuple_3(Int(src_idx), Int(src_topk_idx), 0)
-                            )
-
-                            shmem_put_nbi[kind = SHMEMScope.default](
-                                dst_recv_buf_ptr,
-                                curr_send_buf_ptr,
-                                UInt(msg_bytes),
-                                target_rank,
-                            )
-
-        barrier()
-
-        # Once all the tokens for the current expert and rank have been sent,
-        # signal the completion of the communication.
-        var rc_map_offset = (sm_id * n_warps + Int(warp_id())) % n_local_experts
-        if (
-            warp_id() < UInt(n_local_experts)
-            and local_expert_id == rc_map_offset
-        ):
-            if lane_id() == 0:
-                var signal_offset = my_rank * n_local_experts + local_expert_id
-
-                ep_signal_completion[
-                    use_shmem, n_experts_per_device=n_local_experts
-                ](
-                    my_rank,
-                    target_rank,
-                    recv_count_ptrs,
-                    signal_offset,
-                    UInt64(token_end - token_start),
-                    rank_completion_counter,
-                )
-
-                atomic_counter.store[
-                    width=2, alignment = align_of[SIMD[DType.int32, 2]]()
-                ](expert_rank_offset * 2, 0)
-
-    @parameter
-    if fused_shared_expert:
-        var output_tokens = maybe_output_tokens.value()
+        Args:
+            input_tokens: The input tokens containing shared expert outputs.
+            output_tokens: The output tensor to copy shared expert outputs to.
+        """
+        comptime hid_dim = input_tokens.shape[1]()
+        var tid = Int(thread_idx.x)
+        var sm_id = Int(block_idx.x)
         var shared_expert_token_count = output_tokens.dim(0)
 
-        for token_idx in range(sm_id, shared_expert_token_count, n_sms):
+        for token_idx in range(sm_id, shared_expert_token_count, Self.n_sms):
             var output_tokens_p = output_tokens.ptr + token_idx * hid_dim
-            block_memcpy[hid_dim * size_of[input_type](), num_threads](
+            block_memcpy[hid_dim * size_of[input_type](), Self.num_threads](
                 output_tokens_p.bitcast[UInt8](),
                 input_tokens.ptr_at_offset(
                     IndexList[2](Int(token_idx), 0)
@@ -1565,111 +1709,242 @@ fn combine_kernel[
                 UInt(tid),
             )
 
+    @staticmethod
+    @always_inline
+    fn send_tokens_back[
+        input_type: DType,
+        input_tokens_layout: Layout,
+        src_info_layout: Layout,
+        //,
+    ](
+        input_tokens: LayoutTensor[
+            input_type, input_tokens_layout, MutAnyOrigin
+        ],
+        src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
+        send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+        recv_buf_ptrs: InlineArray[
+            UnsafePointer[UInt8, MutExternalOrigin], Self.p2p_world_size
+        ],
+        recv_count_ptrs: InlineArray[
+            UnsafePointer[UInt64, MutExternalOrigin], Self.p2p_world_size
+        ],
+        atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
+        rank_completion_counter: UnsafePointer[Int32, MutExternalOrigin],
+        my_rank: Int32,
+    ) -> None:
+        """Send processed tokens back to their original ranks.
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
-)
-fn combine_cb_kernel[
-    output_type: DType,
-    num_threads: Int,
-    output_tokens_layout: Layout,
-    n_sms: Int,
-    n_aux_sms: Int,
-    top_k: Int,
-    n_experts: Int,
-    n_ranks: Int,
-    msg_bytes: Int,
-    max_tokens_per_rank: Int,
-    router_weights_wrapper: OptionalReg[
-        fn (Int, Int) capturing -> Float32
-    ] = None,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-](
-    output_tokens: LayoutTensor[
-        output_type, output_tokens_layout, MutAnyOrigin
-    ],
-    recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
-    recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
-    ep_counters: EPLocalSyncCounters[n_experts],
-    my_rank: Int32,
-):
-    """
-    This kernel is called after the `combine_kernel` to complete the communication.
-    It will keep polling the receive count buffer, and once the count is no longer
-    MAX_FINITE, it can confirm that the communication is complete from a remote rank.
+        Each SM handles one expert-rank pair, sending all tokens for that pair
+        back to the original rank. Uses direct P2P transfers for same-node
+        destinations and SHMEM for cross-node destinations.
 
-    Parameters:
-        output_type: The type of the output tokens.
-        num_threads: The number of threads in the block.
-        output_tokens_layout: The layout of the output tokens.
-        n_sms: The total number of SMs in the device.
-        n_aux_sms: The number of auxiliary SMs in the device.
-        top_k: The number of selected experts per token.
-        n_experts: The number of experts in the device.
-        n_ranks: The number of ranks.
-        msg_bytes: The number of bytes in the message for each token.
-        max_tokens_per_rank: The maximum number of tokens per rank.
-        router_weights_wrapper: The wrapper for the router weights. If provided,
-            all routed experts' outputs for a token will be weighted and summed.
-        elementwise_lambda_fn: Optional output lambda function.
+        Args:
+            input_tokens: The tokens to be sent back.
+            src_info: Source token info (original position and top-k ID).
+            send_buf_p: Pointer to the send buffer.
+            recv_buf_ptrs: Array of pointers to receive buffers.
+            recv_count_ptrs: Array of pointers to receive count buffers.
+            atomic_counter: Atomic counter for synchronization.
+            rank_completion_counter: Counter for per-rank completion tracking.
+            my_rank: The rank of the current device.
+        """
+        comptime hid_dim = input_tokens.shape[1]()
 
-    Args:
-        output_tokens: The tensor to store the output tokens.
-        recv_buf_p: The pointer to the receive buffer. Need to be allocated using
-            `shmem_alloc`. The underlying buffer is of shape
-            `(max_tokens_per_rank, top_k, msg_bytes)`.
-        recv_count_p: The pointer to the receive count buffer. Need to be allocated using
-            `shmem_alloc`. The underlying buffer is of shape
-            `(n_local_experts, n_ranks)`.
-        ep_counters: EP atomic counters for kernel synchronization.
-        my_rank: The rank of the current device.
-    """
-    var atomic_counter = ep_counters.get_combine_cb_ptr()
+        __comptime_assert (
+            Self.msg_bytes == hid_dim * size_of[Scalar[input_type]]()
+        ), "EP combine_async: input shape doesn't match message size."
 
-    comptime n_local_experts = n_experts // n_ranks
-    comptime n_warps = num_threads // WARP_SIZE
-    comptime n_red_sms = n_sms - n_aux_sms
+        var send_buf_layout = Self._get_send_buf_layout()
+        var recv_buf_layout = Self._get_recv_buf_layout()
+        var recv_count_layout = Self._get_recv_count_layout()
 
-    comptime dst_simd_width = simd_width_of[output_type]()
-    comptime byte_simd_width = simd_width_of[DType.uint8]()
+        var tid = Int(thread_idx.x)
+        var sm_id = Int(block_idx.x)
+        var my_p2p_world, my_p2p_rank = divmod(my_rank, Self.p2p_world_size)
 
-    comptime last_dim = 1 if router_weights_wrapper else 2
-    comptime hid_dim = output_tokens_layout.shape[last_dim].value()
+        # Each rank holds `n_local_experts` experts, and for each expert, it
+        # needs to send back different tokens to `n_ranks` remote ranks. We use
+        # one block per-expert-per-rank to send back the tokens.
+        for global_idx in range(sm_id, Self.n_experts, Self.n_sms):
+            var local_expert_id = global_idx % Self.n_local_experts
+            var target_rank = global_idx // Self.n_local_experts
+            var expert_rank_offset = recv_count_layout(
+                RtTuple_2(Int(local_expert_id), Int(target_rank))
+            )
+            var dst_p2p_world, dst_p2p_rank = divmod(
+                target_rank, Self.p2p_world_size
+            )
 
-    __comptime_assert (
-        msg_bytes == hid_dim * size_of[Scalar[output_type]]()
-    ), "EP combine: output shape doesn't match message size."
-    __comptime_assert (
-        msg_bytes % byte_simd_width == 0
-    ), "EP combine: message size must be divisible by " + String(
-        byte_simd_width
-    )
+            # Info for where the tokens for the current expert and rank start
+            # and end are stored in the atomic counter by the
+            # `dispatch_wait_kernel`.
+            comptime DATA_READY_FLAG = 1024
+            var token_end_count = atomic_counter.load[
+                width=2,
+                alignment = align_of[SIMD[DType.int32, 2]](),
+                invariant=True,
+            ](2 * expert_rank_offset)
+            var token_end = token_end_count[0] - DATA_READY_FLAG
+            var token_start = token_end - token_end_count[1]
 
-    var recv_buf_layout = RuntimeLayout[
-        Layout.row_major(max_tokens_per_rank, top_k, msg_bytes),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ]()
-    var recv_count_layout = RuntimeLayout[
-        Layout.row_major(n_local_experts, n_ranks),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ]()
+            # If the target device is on the same node, we can directly copy the
+            # tokens to the receive buffer, skipping the send buffer.
+            if Int32(dst_p2p_world) == my_p2p_world:
+                for token_idx in range(token_start, token_end):
+                    var src_token_info = src_info.aligned_load[2](
+                        Int(token_idx), 0
+                    )
+                    var src_idx = src_token_info[0]
+                    var src_topk_idx = src_token_info[1]
 
-    comptime DATA_READY_FLAG = 1024
-    comptime _align = align_of[SIMD[DType.uint8, byte_simd_width]]()
+                    var dst_recv_buf_ptr = recv_buf_ptrs[
+                        dst_p2p_rank
+                    ] + recv_buf_layout(
+                        RtTuple_3(Int(src_idx), Int(src_topk_idx), 0)
+                    )
+                    block_memcpy[
+                        hid_dim * size_of[input_type](), Self.num_threads
+                    ](
+                        dst_recv_buf_ptr,
+                        input_tokens.ptr_at_offset(
+                            IndexList[2](Int(token_idx), 0)
+                        ).bitcast[UInt8](),
+                        UInt(tid),
+                    )
 
-    # `num_tokens` is the total number of tokens before the EP communication. The
-    # actual number of tokens we receive is `num_tokens * top_k`.
-    var num_tokens = output_tokens.dim[0]()
-    var tid = Int(thread_idx.x)
-    var sm_id = Int(block_idx.x)
+            # If the target device is on a different node, we need to send the
+            # tokens to the target device using the SHMEM API.
+            else:
 
-    # The first SM is used for checking if we have received tokens from all the
-    # remote ranks.
-    if sm_id < n_aux_sms:
-        if tid < n_experts:
-            var target_count_ptr = recv_count_p + tid
+                @parameter
+                if Self.use_shmem:
+                    # The tokens are sent back to the original rank using the
+                    # same RC as the one they come from.
+                    var rc_map_offset = (
+                        sm_id * Self.n_warps + Int(warp_id())
+                    ) % Self.n_local_experts
+
+                    var n_rounds = ceildiv(
+                        token_end - token_start, Self.n_warps
+                    )
+                    for round_i in range(n_rounds):
+                        var token_idx = (
+                            token_start
+                            + round_i * Self.n_warps
+                            + Int32(warp_id())
+                        )
+                        if token_idx < token_end:
+                            var curr_send_buf_ptr = (
+                                send_buf_p
+                                + send_buf_layout(RtTuple_2(Int(token_idx), 0))
+                            )
+
+                            # To use SHMEM API, we need to copy the tokens to
+                            # the send buffer first.
+                            block_memcpy[
+                                hid_dim * size_of[input_type](), WARP_SIZE
+                            ](
+                                curr_send_buf_ptr,
+                                input_tokens.ptr_at_offset(
+                                    IndexList[2](Int(token_idx), 0)
+                                ).bitcast[UInt8](),
+                                UInt(lane_id()),
+                            )
+
+                        barrier()
+
+                        if (
+                            warp_id() < UInt(Self.n_local_experts)
+                            and local_expert_id == rc_map_offset
+                        ):
+                            var token_idx = (
+                                token_start
+                                + round_i * Self.n_warps
+                                + Int32(lane_id())
+                            )
+                            if token_idx < token_end:
+                                var src_token_info = src_info.aligned_load[2](
+                                    Int(token_idx), 0
+                                )
+                                var src_idx = src_token_info[0]
+                                var src_topk_idx = src_token_info[1]
+
+                                var curr_send_buf_ptr = (
+                                    send_buf_p
+                                    + send_buf_layout(
+                                        RtTuple_2(Int(token_idx), 0)
+                                    )
+                                )
+                                var dst_recv_buf_ptr = recv_buf_ptrs[
+                                    my_p2p_rank
+                                ] + recv_buf_layout(
+                                    RtTuple_3(
+                                        Int(src_idx), Int(src_topk_idx), 0
+                                    )
+                                )
+
+                                shmem_put_nbi[kind = SHMEMScope.default](
+                                    dst_recv_buf_ptr,
+                                    curr_send_buf_ptr,
+                                    UInt(Self.msg_bytes),
+                                    target_rank,
+                                )
+
+            barrier()
+
+            # Once all the tokens for the current expert and rank have been
+            # sent, signal the completion of the communication.
+            var rc_map_offset = (
+                sm_id * Self.n_warps + Int(warp_id())
+            ) % Self.n_local_experts
+            if (
+                warp_id() < UInt(Self.n_local_experts)
+                and local_expert_id == rc_map_offset
+            ):
+                if lane_id() == 0:
+                    var signal_offset = (
+                        my_rank * Self.n_local_experts + local_expert_id
+                    )
+
+                    ep_signal_completion[
+                        Self.use_shmem,
+                        n_experts_per_device = Self.n_local_experts,
+                    ](
+                        my_rank,
+                        target_rank,
+                        recv_count_ptrs,
+                        signal_offset,
+                        UInt64(token_end - token_start),
+                        rank_completion_counter,
+                    )
+
+                    atomic_counter.store[
+                        width=2, alignment = align_of[SIMD[DType.int32, 2]]()
+                    ](expert_rank_offset * 2, 0)
+
+    # ===-------------------------------------------------------------------===#
+    # Combine Callback Kernel Methods
+    # ===-------------------------------------------------------------------===#
+
+    @staticmethod
+    @always_inline
+    fn wait_for_all_arrivals(
+        recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
+        atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
+    ) -> None:
+        """Auxiliary SM logic for combine_wait_kernel.
+
+        Waits for all tokens to arrive from all ranks, then signals other SMs
+        that they can start copying tokens to the output tensor.
+
+        Args:
+            recv_count_p: Pointer to the receive count buffer.
+            atomic_counter: Atomic counter for synchronization.
+        """
+        comptime DATA_READY_FLAG = 1024
+
+        if thread_idx.x < UInt(Self.n_experts):
+            var target_count_ptr = recv_count_p + thread_idx.x
             while (
                 load_acquire[scope = Scope.SYSTEM](target_count_ptr)
                 == UInt64.MAX_FINITE
@@ -1679,14 +1954,62 @@ fn combine_cb_kernel[
             target_count_ptr[] = UInt64.MAX_FINITE
         barrier()
 
-        # Once all the tokens have been received, set flags for other SMs to copy
-        # the tokens to the output tensor.
-        if tid < n_red_sms:
-            atomic_counter.store(n_aux_sms + tid, DATA_READY_FLAG)
+        # Once all the tokens have been received, set flags for other SMs to
+        # copy the tokens to the output tensor.
+        if thread_idx.x < UInt(Self.n_reduce_sms):
+            atomic_counter.store(
+                Self.n_wait_sms + Int(thread_idx.x), DATA_READY_FLAG
+            )
 
-    # All the other SMs are used for copying the tokens to the output tensor.
-    else:
-        if tid == 0:
+    @staticmethod
+    @always_inline
+    fn reduce_and_copy_to_output[
+        output_type: DType,
+        output_tokens_layout: Layout,
+        router_weights_wrapper: OptionalReg[
+            fn (Int, Int) capturing -> Float32
+        ] = None,
+        elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    ](
+        output_tokens: LayoutTensor[
+            output_type, output_tokens_layout, MutAnyOrigin
+        ],
+        recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+        atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
+    ) -> None:
+        """Communication SM logic for combine_wait_kernel.
+
+        Copies received tokens to the output tensor, optionally applying
+        router weights and reduction across top-k experts.
+
+        Args:
+            output_tokens: The tensor to store the output tokens.
+            recv_buf_p: Pointer to the receive buffer.
+            atomic_counter: Atomic counter for synchronization.
+        """
+        comptime DATA_READY_FLAG = 1024
+        var num_tokens = output_tokens.dim[0]()
+        comptime dst_simd_width = simd_width_of[output_type]()
+        comptime byte_simd_width = simd_width_of[DType.uint8]()
+
+        comptime last_dim = 1 if router_weights_wrapper else 2
+        comptime hid_dim = output_tokens_layout.shape[last_dim].value()
+        comptime _align = align_of[SIMD[DType.uint8, byte_simd_width]]()
+
+        __comptime_assert (
+            Self.msg_bytes == hid_dim * size_of[Scalar[output_type]]()
+        ), "EP combine_async: output shape doesn't match message size."
+        __comptime_assert (
+            Self.msg_bytes % byte_simd_width == 0
+        ), "EP combine_async: message size must be divisible by " + String(
+            byte_simd_width
+        )
+
+        var recv_buf_layout = Self._get_recv_buf_layout()
+
+        var sm_id = Int(block_idx.x)
+
+        if thread_idx.x == 0:
             while (
                 load_acquire[scope = Scope.GPU](atomic_counter + sm_id)
                 != DATA_READY_FLAG
@@ -1703,14 +2026,18 @@ fn combine_cb_kernel[
 
         __comptime_assert (
             hid_dim % n_chunk_elems == 0
-        ), "EP combine: hid_dim must be divisible by n_chunk_elems"
+        ), "EP combine_async: hid_dim must be divisible by n_chunk_elems"
 
         # This will allow a single token to be processed by multiple blocks.
         # Reduce the latency when there is only a small number of tokens.
-        var global_id = sm_id - n_aux_sms + Int(warp_id()) * n_red_sms
+        var global_id = (
+            sm_id - Self.n_wait_sms + Int(warp_id()) * Self.n_reduce_sms
+        )
 
         for chunk_idx in range(
-            global_id, num_tokens * n_chunks_per_tok, n_warps * n_red_sms
+            global_id,
+            num_tokens * n_chunks_per_tok,
+            Self.n_warps * Self.n_reduce_sms,
         ):
             var token_idx, chunk_idx_in_token = divmod(
                 chunk_idx, n_chunks_per_tok
@@ -1720,7 +2047,7 @@ fn combine_cb_kernel[
             var recv_chunk = SIMD[output_type, dst_simd_width](0)
 
             @parameter
-            for topk_idx in range(top_k):
+            for topk_idx in range(Self.top_k):
                 var recv_buf_ptr = recv_buf_p + recv_buf_layout(
                     RtTuple_3(
                         token_idx,
@@ -1746,7 +2073,8 @@ fn combine_cb_kernel[
                     accum += weight * recv_chunk.cast[DType.float32]()
 
                 else:
-                    # The output tensor is of shape `(num_tokens, top_k, hid_dim)`.
+                    # The output tensor is of shape
+                    # `(num_tokens, top_k, hid_dim)`.
                     var output_token_slice = output_tokens.slice[:, :, (1, 2)](
                         IndexList[1](token_idx)
                     )
@@ -1782,6 +2110,214 @@ fn combine_cb_kernel[
                         + Int(lane_id()) * dst_simd_width,
                         accum.cast[output_type](),
                     )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+)
+fn combine_async_kernel[
+    input_type: DType,
+    num_threads: Int,
+    input_tokens_layout: Layout,
+    src_info_layout: Layout,
+    n_sms: Int,
+    top_k: Int,
+    n_experts: Int,
+    n_ranks: Int,
+    msg_bytes: Int,
+    max_tokens_per_rank: Int,
+    p2p_world_size: Int,
+    use_shmem: Bool = True,
+    fused_shared_expert: Bool = False,
+](
+    input_tokens: LayoutTensor[input_type, input_tokens_layout, MutAnyOrigin],
+    src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
+    send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+    recv_buf_ptrs: InlineArray[
+        UnsafePointer[UInt8, MutExternalOrigin], p2p_world_size
+    ],
+    recv_count_ptrs: InlineArray[
+        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
+    ],
+    ep_counters: EPLocalSyncCounters[n_experts],
+    my_rank: Int32,
+    maybe_output_tokens: OptionalReg[
+        LayoutTensor[input_type, Layout.row_major[2](), MutAnyOrigin]
+    ],
+):
+    """
+    Send tokens to the original rank based on the src_info tensor.
+    This kernel utilizes the non-blocking SHMEM API, and would return
+    immediately after initiating the communication. The communication is
+    considered complete after calling the `combine_wait_kernel`.
+
+    Parameters:
+        input_type: The type of the input tokens.
+        num_threads: The number of threads in the block.
+        input_tokens_layout: The layout of the input tokens.
+        src_info_layout: The layout of the source token info.
+        n_sms: The total number of SMs in the device.
+        top_k: The number of selected experts per token.
+        n_experts: The total number of experts in the model.
+        n_ranks: The number of all devices participating in the communication.
+        msg_bytes: This is the total number of bytes we need to send for each
+            token.
+        max_tokens_per_rank: The maximum number of tokens per rank.
+        p2p_world_size: Size of a High-speed GPU interconnect group.
+        use_shmem: Whether to use the SHMEM API for the communication.
+        fused_shared_expert: Whether to filter out the shared expert's outputs.
+
+    Args:
+        input_tokens: The tokens to be sent back to the original rank.
+        src_info: The source token info tensor of shape
+            `(n_local_experts * n_ranks * max_tokens_per_rank, 2)`. The first
+            column stores a token's position in the original rank's tensor, and
+            the second column stores the top-k ID for the token.
+        send_buf_p: The pointer to the send buffer. Need to be allocated using
+            `shmem_alloc` if `use_shmem` is True. The underlying buffer is of
+            shape `(n_local_experts * n_ranks * max_tokens_per_rank, msg_bytes)`.
+        recv_buf_ptrs: An array of pointers to the receive buffers for each
+            device in the p2p world. Each buffer is of shape
+            `(max_tokens_per_rank, top_k, msg_bytes)`. Need to be allocated using
+            `shmem_alloc` if `use_shmem` is True.
+        recv_count_ptrs: An array of pointers to the receive count buffers for
+            each device in the p2p world. Each buffer is of shape
+            `(n_local_experts, n_ranks)`.
+        ep_counters: EP atomic counters for kernel synchronization.
+        my_rank: The rank of the current device.
+        maybe_output_tokens: The optional output for the shared experts.
+            If fused_shared_expert is True, this will be used to store the
+            output tokens for the shared experts.
+    """
+
+    comptime combine_impl = EPCombineKernel[
+        num_threads,
+        n_sms,
+        top_k,
+        n_experts,
+        n_ranks,
+        msg_bytes,
+        max_tokens_per_rank,
+        p2p_world_size,
+        use_shmem,
+        fused_shared_expert,
+    ]
+
+    var atomic_counter = ep_counters.get_combine_async_ptr()
+    # Per-rank completion counter for same-node signaling.
+    var rank_completion_counter = atomic_counter + 2 * n_experts
+
+    combine_impl.send_tokens_back(
+        input_tokens,
+        src_info,
+        send_buf_p,
+        recv_buf_ptrs,
+        recv_count_ptrs,
+        atomic_counter,
+        rank_completion_counter,
+        my_rank,
+    )
+
+    # Copy the shared expert's outputs to the output tensor.
+    @parameter
+    if fused_shared_expert:
+        combine_impl.copy_shared_expert_outputs(
+            input_tokens, maybe_output_tokens.value()
+        )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+)
+fn combine_wait_kernel[
+    output_type: DType,
+    num_threads: Int,
+    output_tokens_layout: Layout,
+    n_sms: Int,
+    top_k: Int,
+    n_experts: Int,
+    n_ranks: Int,
+    msg_bytes: Int,
+    max_tokens_per_rank: Int,
+    router_weights_wrapper: OptionalReg[
+        fn (Int, Int) capturing -> Float32
+    ] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    use_shmem: Bool = True,
+](
+    output_tokens: LayoutTensor[
+        output_type, output_tokens_layout, MutAnyOrigin
+    ],
+    recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+    recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
+    ep_counters: EPLocalSyncCounters[n_experts],
+    my_rank: Int32,
+):
+    """
+    This kernel is called after the `combine_kernel` to complete the
+    communication. It will keep polling the receive count buffer, and once the
+    count is no longer MAX_FINITE, it can confirm that the communication is
+    complete from a remote rank.
+
+    Parameters:
+        output_type: The type of the output tokens.
+        num_threads: The number of threads in the block.
+        output_tokens_layout: The layout of the output tokens.
+        n_sms: The total number of SMs in the device.
+        top_k: The number of selected experts per token.
+        n_experts: The number of experts in the device.
+        n_ranks: The number of ranks.
+        msg_bytes: The number of bytes in the message for each token.
+        max_tokens_per_rank: The maximum number of tokens per rank.
+        router_weights_wrapper: The wrapper for the router weights. If provided,
+            all routed experts' outputs for a token will be weighted and summed.
+        elementwise_lambda_fn: Optional output lambda function.
+        use_shmem: Whether to use the SHMEM API for the communication.
+
+    Args:
+        output_tokens: The tensor to store the output tokens.
+        recv_buf_p: The pointer to the receive buffer. Need to be allocated using
+            `shmem_alloc`. The underlying buffer is of shape
+            `(max_tokens_per_rank, top_k, msg_bytes)`.
+        recv_count_p: The pointer to the receive count buffer. Need to be
+            allocated using `shmem_alloc` if `use_shmem` is True. The underlying
+            buffer is of shape `(n_local_experts, n_ranks)`.
+        ep_counters: EP atomic counters for kernel synchronization.
+        my_rank: The rank of the current device.
+    """
+
+    comptime combine_impl = EPCombineKernel[
+        num_threads,
+        n_sms,
+        top_k,
+        n_experts,
+        n_ranks,
+        msg_bytes,
+        max_tokens_per_rank,
+        1,  # p2p world size is not used in combine_wait
+        use_shmem,
+    ]
+
+    var atomic_counter = ep_counters.get_combine_wait_ptr()
+    var sm_id = Int(block_idx.x)
+
+    # The first SM is used for checking if we have received tokens from all the
+    # remote ranks.
+    if sm_id < combine_impl.n_wait_sms:
+        combine_impl.wait_for_all_arrivals(recv_count_p, atomic_counter)
+
+    # All the other SMs are used for copying the tokens to the output tensor.
+    else:
+        combine_impl.reduce_and_copy_to_output[
+            output_type,
+            output_tokens_layout,
+            router_weights_wrapper,
+            elementwise_lambda_fn,
+        ](
+            output_tokens,
+            recv_buf_p,
+            atomic_counter,
+        )
 
 
 # ===-----------------------------------------------------------------------===#

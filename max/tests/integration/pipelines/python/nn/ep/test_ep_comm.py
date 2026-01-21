@@ -152,8 +152,10 @@ def test_ep_comm(n_devices: int) -> None:
             outputs: list[TensorValue] = []
 
             for dev_idx in range(n_devices):
-                ep_manager.ep_dispatch(xs[dev_idx], topk_ids[dev_idx], dev_idx)
-                expert_inputs = ep_manager.ep_dispatch_cb(dev_idx)
+                ep_manager.ep_dispatch_async(
+                    xs[dev_idx], topk_ids[dev_idx], dev_idx
+                )
+                expert_inputs = ep_manager.ep_dispatch_wait(dev_idx)
 
                 expert_outputs = grouped_matmul_ragged(
                     expert_inputs[0],
@@ -161,14 +163,16 @@ def test_ep_comm(n_devices: int) -> None:
                     *expert_inputs[1:],
                 )
 
-                ep_manager.ep_combine(expert_outputs, dev_idx)
+                ep_manager.ep_combine_async(expert_outputs, dev_idx)
                 one = ops.constant(
                     1.0, dtype=DType.float32, device=DeviceRef.GPU(dev_idx)
                 )
                 router_weight = ops.broadcast_to(
                     one, (xs[dev_idx].shape[0], top_k)
                 )
-                outputs.append(ep_manager.ep_combine_cb(router_weight, dev_idx))
+                outputs.append(
+                    ep_manager.ep_combine_wait(router_weight, dev_idx)
+                )
 
             graph.output(*outputs)
 

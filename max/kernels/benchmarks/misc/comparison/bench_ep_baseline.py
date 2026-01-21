@@ -15,7 +15,7 @@
 # Run via Bazel: br //Kernels/benchmarks/comparison:bench_ep_baseline
 #
 # This script establishes baseline performance metrics for MAX EP dispatch/combine operations.
-# Times dispatch, dispatch_cb, combine, and combine_cb phases and reports effective GB/s.
+# Times dispatch_async, dispatch_wait, combine_async, and combine_wait phases and reports effective GB/s.
 
 from __future__ import annotations
 
@@ -68,11 +68,11 @@ class EPBenchmarkArgs:
 def build_ep_graph(config: EPConfig) -> Graph:
     """
     Build a MAX Graph that performs:
-      - ep_dispatch on all local GPUs
-      - ep_dispatch_cb to gather per-GPU received tokens
+      - ep_dispatch_async on all local GPUs
+      - ep_dispatch_wait to gather per-GPU received tokens
       - (no-op expert compute placeholder)
-      - ep_combine to return tokens
-      - ep_combine_cb to reconstruct per-device outputs
+      - ep_combine_async to return tokens
+      - ep_combine_wait to reconstruct per-device outputs
     The graph returns one small reduction per device to avoid large host copies.
     """
     manager = EPBatchManager(config)
@@ -149,26 +149,26 @@ def build_ep_graph(config: EPConfig) -> Graph:
 
         # Dispatch on each device
         for dev_id in range(config.n_gpus_per_node):
-            manager.ep_dispatch(
+            manager.ep_dispatch_async(
                 tokens_vals[dev_id], topk_vals[dev_id], device_id=dev_id
             )
 
         # Gather results
         dispatched: list[tuple[TensorValue, ...]] = []
         for dev_id in range(config.n_gpus_per_node):
-            dispatched.append(manager.ep_dispatch_cb(device_id=dev_id))
+            dispatched.append(manager.ep_dispatch_wait(device_id=dev_id))
             # dispatched entries (non-FP8): (recv_tokens, row_offsets, expert_ids, stats)
             # we ignore stats/ids here; feed recv_tokens back to combine below
 
-        # Combine on each device; use the first tensor returned by dispatch_cb as combine input
+        # Combine on each device; use the first tensor returned by dispatch_wait as combine input
         for dev_id in range(config.n_gpus_per_node):
             recv_tokens = dispatched[dev_id][0]  # tokens to send back
-            manager.ep_combine(recv_tokens, device_id=dev_id)
+            manager.ep_combine_async(recv_tokens, device_id=dev_id)
 
         # Complete combine
         outputs = []
         for dev_id in range(config.n_gpus_per_node):
-            out = manager.ep_combine_cb(
+            out = manager.ep_combine_wait(
                 router_weights_vals[dev_id], device_id=dev_id
             )  # (num_tokens, hidden)
             # Reduce to a small scalar per device (sum) to minimize host transfer
@@ -308,8 +308,8 @@ def run_bench_max_ep(args: EPBenchmarkArgs) -> None:
     times_dispatch = bench_kineto_with_cupti_warmup(
         run_once,
         kernel_names=(
-            "shmem_ep_comm_dispatch_kernel",
-            "shmem_ep_comm_dispatch_cb_kern",
+            "shmem_ep_comm_dispatch_async_k",
+            "shmem_ep_comm_dispatch_wait_ke",
         ),
         num_tests=args.iters,
         suppress_kineto_output=not args.profile,
@@ -320,8 +320,8 @@ def run_bench_max_ep(args: EPBenchmarkArgs) -> None:
     times_combine = bench_kineto_with_cupti_warmup(
         run_once,
         kernel_names=(
-            "shmem_ep_comm_combine_kernel",
-            "shmem_ep_comm_combine_cb_kerne",
+            "shmem_ep_comm_combine_async_ke",
+            "shmem_ep_comm_combine_wait_ker",
         ),
         num_tests=args.iters,
         suppress_kineto_output=not args.profile,
@@ -342,9 +342,9 @@ def run_bench_max_ep(args: EPBenchmarkArgs) -> None:
 
     # times_* are average per call; convert to GB/s
     dispatch_send_gbps = (dispatch_bytes / 1e9) / times_dispatch[0]
-    dispatch_cb_gbps = (dispatch_bytes / 1e9) / times_dispatch[1]
+    dispatch_wait_gbps = (dispatch_bytes / 1e9) / times_dispatch[1]
     combine_send_gbps = (combine_bytes / 1e9) / times_combine[0]
-    combine_cb_gbps = (combine_bytes / 1e9) / times_combine[1]
+    combine_wait_gbps = (combine_bytes / 1e9) / times_combine[1]
 
     total_bytes = dispatch_bytes + combine_bytes
     total_time_s = sum(times_dispatch) + sum(times_combine)
@@ -362,13 +362,13 @@ def run_bench_max_ep(args: EPBenchmarkArgs) -> None:
         f"{'dispatch':<20} {times_dispatch[0] * 1e3:<15.3f} {dispatch_send_gbps:<20.2f}"
     )
     print(
-        f"{'dispatch_cb':<20} {times_dispatch[1] * 1e3:<15.3f} {dispatch_cb_gbps:<20.2f}"
+        f"{'dispatch_wait':<20} {times_dispatch[1] * 1e3:<15.3f} {dispatch_wait_gbps:<20.2f}"
     )
     print(
         f"{'combine':<20} {times_combine[0] * 1e3:<15.3f} {combine_send_gbps:<20.2f}"
     )
     print(
-        f"{'combine_cb':<20} {times_combine[1] * 1e3:<15.3f} {combine_cb_gbps:<20.2f}"
+        f"{'combine_wait':<20} {times_combine[1] * 1e3:<15.3f} {combine_wait_gbps:<20.2f}"
     )
     print("-" * 80)
     print(f"{'dispatch+combine':<20} {'~':<15} {total_gbps:<20.2f}")

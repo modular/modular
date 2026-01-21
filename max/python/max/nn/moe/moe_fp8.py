@@ -104,8 +104,8 @@ class MoEFp8(MoE):
         assert self.float8_config is not None
         assert self.float8_config.input_scale.block_size is not None
         device_id = self.devices[0].id
-        self.ep_batch_manager.ep_dispatch(x, router_idx, device_id)
-        expert_inputs = self.ep_batch_manager.ep_dispatch_cb(device_id)
+        self.ep_batch_manager.ep_dispatch_async(x, router_idx, device_id)
+        expert_inputs = self.ep_batch_manager.ep_dispatch_wait(device_id)
 
         gate_up_projs = grouped_dynamic_scaled_fp8_matmul(
             expert_inputs[0],
@@ -140,8 +140,8 @@ class MoEFp8(MoE):
             tokens_padded_per_expert=True,
         )
 
-        self.ep_batch_manager.ep_combine(down_projs, device_id)
-        routed_expert_out = self.ep_batch_manager.ep_combine_cb(
+        self.ep_batch_manager.ep_combine_async(down_projs, device_id)
+        routed_expert_out = self.ep_batch_manager.ep_combine_wait(
             router_weight, device_id
         )
 

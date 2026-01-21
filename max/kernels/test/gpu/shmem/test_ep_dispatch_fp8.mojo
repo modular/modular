@@ -35,8 +35,8 @@ from shmem.ep_comm import (
     BlockwiseFP8TokenFormat,
     EP_DATA_READY_FLAG,
     EPLocalSyncCounters,
-    dispatch_cb_kernel,
-    dispatch_kernel,
+    dispatch_wait_kernel,
+    dispatch_async_kernel,
 )
 from shmem._mpi import MPI_Finalize
 from testing import assert_almost_equal, assert_equal
@@ -246,13 +246,12 @@ fn test_dispatch[
 
     comptime hw_info = ctx.default_device_info
 
-    comptime dispatch = dispatch_kernel[
+    comptime dispatch_async = dispatch_async_kernel[
         input_type,
         hw_info.max_thread_block_size,
         input_tokens_layout,
         topk_ids_layout,
         hw_info.sm_count,
-        n_experts // (hw_info.max_thread_block_size // hw_info.warp_size),
         n_experts,
         n_ranks,
         n_tokens_per_rank,
@@ -260,36 +259,35 @@ fn test_dispatch[
         token_fmt_type,
     ]
 
-    var func = ctx.compile_function[dispatch, dispatch]()
+    var func = ctx.compile_function[dispatch_async, dispatch_async]()
     shmem_module_init(func)
 
-    comptime dispatch_cb = dispatch_cb_kernel[
+    comptime dispatch_wait = dispatch_wait_kernel[
         hw_info.max_thread_block_size,
         output_layout,
         row_offsets_layout,
         expert_ids_layout,
         src_token_info_layout,
         hw_info.sm_count,
-        1,
         n_experts,
         n_ranks,
         n_tokens_per_rank,
         type_of(format_handler),
     ]
 
-    var func_cb = ctx.compile_function[dispatch_cb, dispatch_cb]()
+    var func_wait = ctx.compile_function[dispatch_wait, dispatch_wait]()
 
     var num_iters: Int = 100 if is_benchmark() or is_pressure_test() else 3
-    var dispatch_stat_m: Float64 = 0
-    var dispatch_stat_m2: Float64 = 0
-    var dispatch_cb_stat_m: Float64 = 0
-    var dispatch_cb_stat_m2: Float64 = 0
+    var dispatch_async_stat_m: Float64 = 0
+    var dispatch_async_stat_m2: Float64 = 0
+    var dispatch_wait_stat_m: Float64 = 0
+    var dispatch_wait_stat_m2: Float64 = 0
     var e2e_stat_m: Float64 = 0
     var e2e_stat_m2: Float64 = 0
 
     @always_inline
     @parameter
-    fn run_dispatch(ctx: DeviceContext) raises:
+    fn run_dispatch_async(ctx: DeviceContext) raises:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
         var recv_buf_ptrs = InlineArray[UnsafePointer[UInt8, MutAnyOrigin], 1](
             fill={}
@@ -315,9 +313,9 @@ fn test_dispatch[
 
     @always_inline
     @parameter
-    fn run_dispatch_cb(ctx: DeviceContext) raises:
+    fn run_dispatch_async_wait(ctx: DeviceContext) raises:
         ctx.enqueue_function(
-            func_cb,
+            func_wait,
             format_handler,
             row_offsets_tensor,
             expert_ids_tensor,
@@ -336,8 +334,8 @@ fn test_dispatch[
     @always_inline
     @parameter
     fn run_e2e(ctx: DeviceContext) raises:
-        run_dispatch(ctx)
-        run_dispatch_cb(ctx)
+        run_dispatch_async(ctx)
+        run_dispatch_async_wait(ctx)
 
     @always_inline
     @parameter
@@ -372,15 +370,17 @@ fn test_dispatch[
         var new_value: Float64
 
         # First, bench kernel overhead
-        new_value = ctx.execution_time[run_dispatch](1) * 1e-3
-        welford_update(dispatch_stat_m, dispatch_stat_m2, i + 1, new_value)
+        new_value = ctx.execution_time[run_dispatch_async](1) * 1e-3
+        welford_update(
+            dispatch_async_stat_m, dispatch_async_stat_m2, i + 1, new_value
+        )
 
         # sleep 10 ms to make sure transfer is finished
         time.sleep(1e-2)
 
-        new_value = ctx.execution_time[run_dispatch_cb](1) * 1e-3
+        new_value = ctx.execution_time[run_dispatch_async_wait](1) * 1e-3
         welford_update(
-            dispatch_cb_stat_m, dispatch_cb_stat_m2, i + 1, new_value
+            dispatch_wait_stat_m, dispatch_wait_stat_m2, i + 1, new_value
         )
         clean_up(ctx)
 
@@ -413,9 +413,9 @@ fn test_dispatch[
                 EPLocalSyncCounters[n_experts].total_size()
             )
             ctx.enqueue_copy(host_atomic_counter, atomic_counter)
-            var host_dispatch_cb_counter = EPLocalSyncCounters[n_experts](
+            var host_dispatch_wait_counter = EPLocalSyncCounters[n_experts](
                 host_atomic_counter
-            ).get_dispatch_cb_ptr()
+            ).get_dispatch_wait_ptr()
 
             ctx.synchronize()
 
@@ -473,7 +473,7 @@ fn test_dispatch[
                     host_row_offsets[expert_idx + 1],
                 ):
                     while (
-                        host_dispatch_cb_counter[
+                        host_dispatch_wait_counter[
                             2 * (curr_local_expert * n_ranks + remote_rank)
                         ]
                         <= Int32(token_idx) + EP_DATA_READY_FLAG
@@ -525,14 +525,14 @@ fn test_dispatch[
         clean_up(ctx)
 
     _printf[
-        "Rank #%d:  Dispatch latency: %4.2fus ± %1.2fus  Dispatch_cb latency:"
-        " %4.2fus ± %1.2fus  E2E latency: %4.2fus ± %1.2fus\n"
+        "Rank #%d:  Dispatch_async latency: %4.2fus ± %1.2fus  Dispatch_wait"
+        " latency: %4.2fus ± %1.2fus  E2E latency: %4.2fus ± %1.2fus\n"
     ](
         my_rank,
-        dispatch_stat_m,
-        sqrt(dispatch_stat_m2 / num_iters),
-        dispatch_cb_stat_m,
-        sqrt(dispatch_cb_stat_m2 / num_iters),
+        dispatch_async_stat_m,
+        sqrt(dispatch_async_stat_m2 / num_iters),
+        dispatch_wait_stat_m,
+        sqrt(dispatch_wait_stat_m2 / num_iters),
         e2e_stat_m,
         sqrt(e2e_stat_m2 / num_iters),
     )

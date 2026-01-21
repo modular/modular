@@ -24,21 +24,21 @@ from max.nn.float8_config import Float8InputScaleSpec
 #
 # Expert Parallelism consists of two sequential phases, each with two kernels:
 # 1. Dispatch phase: Route tokens to experts on different GPUs
-#    - dispatch_kernel: Initiates token transfer
-#    - dispatch_cb_kernel: Ensures current GPU received all tokens from other
+#    - dispatch_async_kernel: Initiates token transfer
+#    - dispatch_wait_kernel: Ensures current GPU received all tokens from other
 #      GPUs
 # 2. Combine phase: Return expert outputs to original GPUs
-#    - combine_kernel: Initiates expert output transfer
-#    - combine_cb_kernel: Ensures current GPU received all expert outputs
+#    - combine_async_kernel: Initiates expert output transfer
+#    - combine_wait_kernel: Ensures current GPU received all expert outputs
 #
-# When dispatch_cb_kernel completes on the current GPU, it only guarantees that
+# When dispatch_wait_kernel completes on the current GPU, it only guarantees that
 # THIS GPU has received all tokens. Other GPUs may still be writing to their
 # dispatch buffers or reading their own receive buffers. Therefore, we cannot
 # safely reuse dispatch phase buffers for the combine phase.
 #
-# We use dedicated buffers for each phase. When combine_cb_kernel completes, it
-# guarantees all GPUs have at least started their combine_kernel, which implies
-# they've finished their dispatch_cb_kernel. Only then is it safe to reuse the
+# We use dedicated buffers for each phase. When combine_wait_kernel completes, it
+# guarantees all GPUs have at least started their combine_async_kernel, which implies
+# they've finished their dispatch_wait_kernel. Only then is it safe to reuse the
 # dispatch buffers for the next iteration.
 NUM_GROUPS = 2
 

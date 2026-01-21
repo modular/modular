@@ -98,7 +98,7 @@ def call_ep_init(
     return results[0].tensor, results[1].tensor
 
 
-def call_ep_dispatch(
+def call_ep_dispatch_async(
     input_tokens: TensorValue,
     topk_ids: TensorValue,
     atomic_counter: BufferValue,
@@ -107,13 +107,12 @@ def call_ep_dispatch(
     recv_count_ptrs: TensorValue,
     config: EPConfig,
 ) -> None:
-    """Initiate Expert Parallelism token dispatch phase.
+    """Initiate Expert Parallelism token dispatch phase (async).
 
-    This function launches the EP dispatch kernel that distributes input tokens
-    to expert devices based on top-k routing decisions. The kernel uses
+    This function launches the EP async dispatch kernel that distributes input
+    tokens to expert devices based on top-k routing decisions. The kernel uses
     non-blocking SHMEM communication in multi-node scenarios and returns
     immediately after initiating transfers.
-    transfers.
 
     Args:
         input_tokens: Input tokens to be dispatched to experts.
@@ -135,8 +134,8 @@ def call_ep_dispatch(
         config: EP configuration.
 
     Note:
-        This is a non-blocking operation. Call call_ep_dispatch_cb() to wait for
-        completion and collect the dispatched tokens.
+        This is a non-blocking operation. Call call_ep_dispatch_wait() to wait
+        for completion and collect the dispatched tokens.
     """
 
     parameters: dict[str, bool | int | str | DType] = {
@@ -147,7 +146,7 @@ def call_ep_dispatch(
         "n_gpus_per_node": config.n_gpus_per_node,
         "n_nodes": config.n_nodes,
     }
-    op_name = "ep.dispatch"
+    op_name = "ep.dispatch_async"
     if config.dispatch_dtype.is_float8():
         assert config.dispatch_fp8_config is not None
         op_name += ".fp8"
@@ -173,17 +172,17 @@ def call_ep_dispatch(
     )
 
 
-def call_ep_dispatch_cb(
+def call_ep_dispatch_wait(
     atomic_counter: BufferValue,
     recv_buf_ptrs: TensorValue,
     recv_count_ptrs: TensorValue,
     config: EPConfig,
     input_tokens: TensorValue | None = None,
 ) -> tuple[TensorValue, ...]:
-    """Complete Expert Parallelism token dispatch and prepare for expert
+    """Wait for Expert Parallelism token dispatch and prepare for expert
     computation.
 
-    This function launches the EP dispatch callback kernel that waits for all
+    This function launches the EP dispatch wait kernel that waits for all
     inter-device communication to complete, then organizes the received tokens
     into a format suitable for grouped matmul computation.
 
@@ -238,7 +237,7 @@ def call_ep_dispatch_cb(
 
     device_ref = atomic_counter.device
 
-    op_name = "ep.dispatch_cb"
+    op_name = "ep.dispatch_wait"
     input_vals: list[Value[Any]] = [
         atomic_counter,
         recv_buf_ptrs,
@@ -288,17 +287,17 @@ def call_ep_dispatch_cb(
     return tuple([v.tensor for v in results])
 
 
-def call_ep_dispatch_cb_fp8(
+def call_ep_dispatch_wait_fp8(
     atomic_counter: BufferValue,
     recv_buf_ptrs: TensorValue,
     recv_count_ptrs: TensorValue,
     config: EPConfig,
     input_tokens: TensorValue | None = None,
 ) -> tuple[TensorValue, ...]:
-    """Complete Expert Parallelism token dispatch and prepare for expert
-    computation.
+    """Wait for Expert Parallelism token dispatch and prepare for expert
+    computation (FP8 variant).
 
-    This function launches the EP dispatch callback kernel that waits for all
+    This function launches the EP dispatch wait kernel that waits for all
     inter-device communication to complete, then organizes the received tokens
     into a format suitable for grouped matmul computation.
 
@@ -364,7 +363,7 @@ def call_ep_dispatch_cb_fp8(
 
     device_ref = atomic_counter.device
 
-    op_name = "ep.dispatch_cb.fp8"
+    op_name = "ep.dispatch_wait.fp8"
     input_vals: list[Value[Any]] = [
         atomic_counter,
         recv_buf_ptrs,
@@ -424,7 +423,7 @@ def call_ep_dispatch_cb_fp8(
     return tuple([v.tensor for v in results])
 
 
-def call_ep_combine(
+def call_ep_combine_async(
     input_tokens: TensorValue,
     src_info: TensorValue,
     atomic_counter: BufferValue,
@@ -433,12 +432,12 @@ def call_ep_combine(
     recv_count_ptrs: TensorValue,
     config: EPConfig,
 ) -> None:
-    """Initiate Expert Parallelism token combine phase.
+    """Initiate Expert Parallelism token combine phase (async).
 
-    This function launches the EP combine kernel that sends expert outputs back
-    to their original devices based on source routing information. The kernel
-    uses non-blocking SHMEM communication in multi-node scenarios and returns
-    immediately after initiating transfers.
+    This function launches the EP async combine kernel that sends expert outputs
+    back to their original devices based on source routing information. The
+    kernel uses non-blocking SHMEM communication in multi-node scenarios and
+    returns immediately after initiating transfers.
 
     Args:
         input_tokens: Expert output tokens to send back to original devices.
@@ -461,8 +460,8 @@ def call_ep_combine(
         config: EP configuration.
 
     Note:
-        This is a non-blocking operation. Call call_ep_combine_cb() to wait for
-        completion and collect the final outputs.
+        This is a non-blocking operation. Call call_ep_combine_wait() to wait
+        for completion and collect the final outputs.
     """
 
     parameters: dict[str, bool | int | str | DType] = {
@@ -476,7 +475,7 @@ def call_ep_combine(
     }
 
     ops.inplace_custom(
-        "ep.combine",
+        "ep.combine_async",
         device=input_tokens.device,
         values=[
             atomic_counter,
@@ -491,7 +490,7 @@ def call_ep_combine(
     )
 
 
-def call_ep_combine_fused_shared_expert(
+def call_ep_combine_async_fused_shared_expert(
     input_tokens: TensorValue,
     src_info: TensorValue,
     atomic_counter: BufferValue,
@@ -501,12 +500,12 @@ def call_ep_combine_fused_shared_expert(
     config: EPConfig,
     num_tokens: Dim,
 ) -> TensorValue:
-    """Initiate Expert Parallelism token combine phase.
+    """Initiate Expert Parallelism token combine phase (async, fused shared expert).
 
-    This function launches the EP combine kernel that sends expert outputs back
-    to their original devices based on source routing information. The kernel
-    uses non-blocking SHMEM communication in multi-node scenarios and returns
-    immediately after initiating transfers.
+    This function launches the EP async combine kernel that sends expert outputs
+    back to their original devices based on source routing information. The
+    kernel uses non-blocking SHMEM communication in multi-node scenarios and
+    returns immediately after initiating transfers.
 
     Args:
         input_tokens: Expert output tokens to send back to original devices.
@@ -535,8 +534,8 @@ def call_ep_combine_fused_shared_expert(
             The output tokens for the shared experts.
 
     Note:
-        This is a non-blocking operation. Call call_ep_combine_cb() to wait for
-        completion and collect the final outputs.
+        This is a non-blocking operation. Call call_ep_combine_wait() to wait
+        for completion and collect the final outputs.
     """
 
     parameters: dict[str, bool | int | str | DType] = {
@@ -552,7 +551,7 @@ def call_ep_combine_fused_shared_expert(
     device_ref = atomic_counter.device
 
     result = ops.inplace_custom(
-        "ep.combine.fused_shared_expert",
+        "ep.combine_async.fused_shared_expert",
         device=device_ref,
         values=[
             atomic_counter,
@@ -575,7 +574,7 @@ def call_ep_combine_fused_shared_expert(
     return result[0].tensor
 
 
-def call_ep_combine_cb(
+def call_ep_combine_wait(
     atomic_counter: BufferValue,
     recv_buf_ptrs: TensorValue,
     recv_count_ptrs: TensorValue,
@@ -583,9 +582,9 @@ def call_ep_combine_cb(
     num_tokens: Dim,
     router_weights: TensorValue,
 ) -> TensorValue:
-    """Complete Expert Parallelism token combine and return final outputs.
+    """Wait for Expert Parallelism token combine and return final outputs.
 
-    This function launches the EP combine callback kernel, which waits for all
+    This function launches the EP combine wait kernel, which waits for all
     inter-device communication to complete, then computes the weighted sum of
     routed expert outputs for each token.
 
@@ -628,7 +627,7 @@ def call_ep_combine_cb(
     device_ref = atomic_counter.device
 
     result = ops.inplace_custom(
-        "ep.combine_cb",
+        "ep.combine_wait",
         device=device_ref,
         values=[atomic_counter, recv_buf_ptrs, recv_count_ptrs, router_weights],
         out_types=[

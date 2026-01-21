@@ -41,9 +41,9 @@ def verify_ep_dispatch_results(
     atomic_counters_torch = [
         torch.from_dlpack(counter) for counter in atomic_counters
     ]
-    # dispatch_cb counters start at offset dispatch_size = 2 * n_experts + MAX_GPUS_PER_NODE
+    # dispatch_wait counters start at offset dispatch_size = 2 * n_experts + MAX_GPUS_PER_NODE
     dispatch_size = 2 * config.n_experts + MAX_GPUS_PER_NODE
-    dispatch_cb_counters_torch = [
+    dispatch_wait_counters_torch = [
         counter[dispatch_size:] for counter in atomic_counters_torch
     ]
 
@@ -64,7 +64,7 @@ def verify_ep_dispatch_results(
         row_offsets_torch = torch.from_dlpack(row_offsets)
         expert_ids_torch = torch.from_dlpack(expert_ids)
         src_token_info_torch = torch.from_dlpack(src_token_info)
-        dispatch_cb_counter_torch = dispatch_cb_counters_torch[device_idx]
+        dispatch_wait_counter_torch = dispatch_wait_counters_torch[device_idx]
 
         # Verify outputs for each expert on this device
         for expert_idx in range(n_local_experts):
@@ -80,7 +80,7 @@ def verify_ep_dispatch_results(
                 # Find which remote rank this token came from using atomic counters
                 while (
                     remote_rank < n_devices
-                    and dispatch_cb_counter_torch[
+                    and dispatch_wait_counter_torch[
                         2 * (curr_local_expert * n_devices + remote_rank)
                     ]
                     <= token_idx + EP_DATA_READY_FLAG
@@ -208,8 +208,10 @@ def test_ep_dispatch(n_devices: int) -> None:
             flattened_outputs: list[TensorValue] = []
 
             for dev_idx in range(n_devices):
-                ep_manager.ep_dispatch(xs[dev_idx], topk_ids[dev_idx], dev_idx)
-                outputs = ep_manager.ep_dispatch_cb(dev_idx)
+                ep_manager.ep_dispatch_async(
+                    xs[dev_idx], topk_ids[dev_idx], dev_idx
+                )
+                outputs = ep_manager.ep_dispatch_wait(dev_idx)
                 flattened_outputs.extend(outputs)
 
                 src_info = ep_manager._src_info[dev_idx]

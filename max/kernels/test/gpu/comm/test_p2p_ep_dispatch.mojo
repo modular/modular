@@ -41,8 +41,8 @@ from shmem.ep_comm import (
     BF16TokenFormat,
     EP_DATA_READY_FLAG,
     EPLocalSyncCounters,
-    dispatch_cb_kernel,
-    dispatch_kernel,
+    dispatch_wait_kernel,
+    dispatch_async_kernel,
 )
 from testing import assert_equal
 from utils import IndexList
@@ -275,13 +275,12 @@ fn test_dispatch[
         get_output_tensor(0, 0)
     )
 
-    comptime dispatch = dispatch_kernel[
+    comptime dispatch_async = dispatch_async_kernel[
         input_type,
         hw_info.max_thread_block_size,
         input_tokens_layout,
         topk_ids_layout,
         hw_info.sm_count,
-        n_experts // (hw_info.max_thread_block_size // hw_info.warp_size),
         n_experts,
         n_ranks,
         n_tokens_per_rank,
@@ -290,14 +289,13 @@ fn test_dispatch[
         use_shmem=False,
     ]
 
-    comptime dispatch_cb = dispatch_cb_kernel[
+    comptime dispatch_wait = dispatch_wait_kernel[
         hw_info.max_thread_block_size,
         output_layout,
         row_offsets_layout,
         expert_ids_layout,
         src_token_info_layout,
         hw_info.sm_count,
-        1,
         n_experts,
         n_ranks,
         n_tokens_per_rank,
@@ -306,9 +304,9 @@ fn test_dispatch[
 
     @always_inline
     @parameter
-    fn run_dispatch(dev_idx: Int, slot_idx: Int) raises:
+    fn run_dispatch_async(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function[dispatch, dispatch](
+        ctx.enqueue_function[dispatch_async, dispatch_async](
             get_input_tokens_tensor(dev_idx, slot_idx),
             get_topk_ids_tensor(dev_idx, slot_idx),
             get_send_buf_ptr(dev_idx, slot_idx),
@@ -322,9 +320,9 @@ fn test_dispatch[
 
     @always_inline
     @parameter
-    fn run_dispatch_cb(dev_idx: Int, slot_idx: Int) raises:
+    fn run_dispatch_async_wait(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function[dispatch_cb, dispatch_cb](
+        ctx.enqueue_function[dispatch_wait, dispatch_wait](
             type_of(format_handler)(get_output_tensor(dev_idx, slot_idx)),
             get_row_offsets_tensor(dev_idx, slot_idx),
             get_expert_ids_tensor(dev_idx, slot_idx),
@@ -344,8 +342,8 @@ fn test_dispatch[
     @parameter
     fn run_e2e(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        run_dispatch(dev_idx, slot_idx)
-        run_dispatch_cb(dev_idx, slot_idx)
+        run_dispatch_async(dev_idx, slot_idx)
+        run_dispatch_async_wait(dev_idx, slot_idx)
 
     @always_inline
     @parameter
@@ -383,7 +381,7 @@ fn test_dispatch[
             @always_inline
             fn call_fn(ctx: DeviceContext, cache_iter: Int) raises:
                 var dev_id = Int(ctx.id())
-                run_dispatch(dev_id, cache_iter)
+                run_dispatch_async(dev_id, cache_iter)
 
             b.iter_custom[call_fn](list_of_ctx[i])
 
@@ -412,12 +410,12 @@ fn test_dispatch[
     b_final.info_vec.append(results_b[max_loc].copy())
     b_final.dump_report()
 
-    # Then, bench the dispatch_cb kernel overhead
+    # Then, bench the dispatch_wait kernel overhead
     for dev_i in range(n_ranks):
         list_of_ctx[dev_i].synchronize()
 
     @parameter
-    fn per_gpu_dispatch_cb(i: Int) raises:
+    fn per_gpu_dispatch_wait(i: Int) raises:
         @parameter
         @always_inline
         fn bench_iter(mut b: Bencher) raises:
@@ -425,7 +423,7 @@ fn test_dispatch[
             @always_inline
             fn call_fn(ctx: DeviceContext, cache_iter: Int) raises:
                 var dev_id = Int(ctx.id())
-                run_dispatch_cb(dev_id, cache_iter)
+                run_dispatch_async_wait(dev_id, cache_iter)
 
             b.iter_custom[call_fn](list_of_ctx[i])
 
@@ -433,13 +431,13 @@ fn test_dispatch[
         bench_config.show_progress = False
         var b = Bench(bench_config^)
         b.bench_function[bench_iter](
-            BenchId("bench dispatch_cb"),
+            BenchId("bench dispatch_wait"),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots,
         )
         results_b[i] = b.info_vec[0].copy()
 
-    sync_parallelize[per_gpu_dispatch_cb](n_ranks)
+    sync_parallelize[per_gpu_dispatch_wait](n_ranks)
 
     max_time = 0.0
     max_loc = 0
@@ -471,8 +469,8 @@ fn test_dispatch[
                 @always_inline
                 fn call_fn(ctx: DeviceContext, cache_iter: Int) raises:
                     var dev_id = Int(ctx.id())
-                    run_dispatch(dev_id, cache_iter + 1)
-                    run_dispatch_cb(dev_id, cache_iter + 1)
+                    run_dispatch_async(dev_id, cache_iter + 1)
+                    run_dispatch_async_wait(dev_id, cache_iter + 1)
 
                 b.iter_custom[call_fn](list_of_ctx[i])
 
@@ -550,10 +548,10 @@ fn test_dispatch[
             var slot_src_token_info = (
                 host_src_token_info + slot_idx * max_recv_num_tokens * 2
             )
-            var slot_dispatch_cb_counter = EPLocalSyncCounters[n_experts](
+            var slot_dispatch_wait_counter = EPLocalSyncCounters[n_experts](
                 host_atomic_counter
                 + slot_idx * EPLocalSyncCounters[n_experts].total_size()
-            ).get_dispatch_cb_ptr()
+            ).get_dispatch_wait_ptr()
 
             # Check if we have received the correct number of tokens
             var expert_start_idx = n_local_experts * dev_idx
@@ -596,7 +594,7 @@ fn test_dispatch[
                 ):
                     # Find the remote rank that sent this token
                     while (
-                        slot_dispatch_cb_counter[
+                        slot_dispatch_wait_counter[
                             2 * (curr_local_expert * n_ranks + remote_rank)
                         ]
                         <= token_idx + EP_DATA_READY_FLAG
