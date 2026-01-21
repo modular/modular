@@ -17,7 +17,7 @@ import logging
 import math
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, cast
+from typing import Any, Tuple, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -300,7 +300,7 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
             huggingface_config
         )
 
-    def load_model(self) -> Callable[..., Any]:
+    def load_model(self) -> Tuple[Callable[..., Any], Callable[..., Any]]:
         """Loads the compiled Gemma3 MultiModal models into the MAX Engine session.
 
         Returns:
@@ -338,20 +338,14 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         ]
 
         # Build and compile language model
-        # timer = CompilationTimer("language model")
         language_model = self._compile_language_graph(
             model_config, language_weights_dict
         )
-        # timer.mark_build_complete()
-        # timer.done()
 
         # Build and compile vision model
-        # timer = CompilationTimer("vision model")
         vision_model = self._compile_vision_graph(
             model_config, vision_weights_dict
         )
-        # timer.mark_build_complete()
-        # timer.done()
 
         return vision_model, language_model
 
@@ -424,11 +418,12 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         state_dict: dict[str, WeightData],
     ) -> Callable[..., Any]:
         """Build the language model with our input types and graph"""
+        timer = CompilationTimer("language model")
         with F.lazy():
             language_model = Gemma3LanguageModel(config)
-            language_model.to(self.devices[0]) # TODO multi device...?
+            # language_model.to(self.devices[0]) # TODO multi device...?
             
-        # TODO timer.mark_build_complete()
+        timer.mark_build_complete()
 
         input_types=self._language_model_input_types(config)
         # Unpack inputs following InternVL pattern
@@ -436,24 +431,24 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
 
         # Extract input_row_offsets (one per device)
         input_row_offsets = [
-            v.tensor for v in variadic_args[: len(self.devices)]
+            v for v in variadic_args[: len(self.devices)]
         ]
         variadic_args = variadic_args[len(self.devices) :]
 
         # Extract image embeddings (one per device).
         image_embeddings = [
-            v.tensor for v in variadic_args[: len(self.devices)]
+            v for v in variadic_args[: len(self.devices)]
         ]
         variadic_args = variadic_args[len(self.devices) :]
 
         image_token_indices = [
-            v.tensor for v in variadic_args[: len(self.devices)]
+            v for v in variadic_args[: len(self.devices)]
         ]
         variadic_args = variadic_args[len(self.devices) :]
 
         # Extract signal buffers (one per device)
         signal_buffers = [
-            v.buffer for v in variadic_args[: len(self.devices)]
+            v for v in variadic_args[: len(self.devices)]
         ]
         variadic_args = variadic_args[len(self.devices) :]
 
@@ -463,14 +458,14 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         compiled_language_model = language_model.compile(
             tokens,
             return_n_logits,
-            signal_buffers,
-            input_row_offsets,
-            kv_cache,
-            image_embeddings,
-            image_token_indices,
+            # signal_buffers,
+            input_row_offsets[0],
+            # kv_cache[0],
+            image_embeddings[0],
+            image_token_indices[0],
             weights=state_dict,
         )
-        # TODO timer.done()
+        timer.done()
 
         return compiled_language_model
 
@@ -504,31 +499,32 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         state_dict: dict[str, WeightData],
     ) -> Callable[..., Any]:
         """Build the vision model with our input types and graph"""
+        timer = CompilationTimer("vision model")
         with F.lazy():
             vision_model = Gemma3VisionModel(config)
             vision_model.to(self.devices[0]) # TODO multi device...?
             
-        # TODO timer.mark_build_complete()
+        timer.mark_build_complete()
 
         input_types=self._vision_model_input_types(config)
 
         pixel_values = [
-            inp.tensor for inp in input_types[: len(self.devices)]
+            inp for inp in input_types[: len(self.devices)]
         ]
 
         signal_buffers = [
-            inp.buffer for inp in input_types[len(self.devices) :]
+            inp for inp in input_types[len(self.devices) :]
         ]
 
         image_embeddings = vision_model(pixel_values, signal_buffers)
 
         compiled_vision_model = vision_model.compile(
-            pixel_values,
-            signal_buffers,
+            pixel_values[0],
+            # signal_buffers,
             image_embeddings,
             weights=state_dict,
         )
-        # TODO timer.done()
+        timer.done()
 
         return compiled_vision_model
 
@@ -546,7 +542,7 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
             assert model_inputs.pixel_values is not None
 
             # Execute vision model: patched pixel_values -> image_embeddings.
-            vision_outputs = self.vision_model.execute(
+            vision_outputs = self.vision_model(
                 *model_inputs.pixel_values, *model_inputs.signal_buffers
             )
             assert len(vision_outputs) == len(self.devices)
@@ -566,7 +562,7 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         assert model_inputs.kv_cache_inputs
         curr_kv_cache_inputs = list(model_inputs.kv_cache_inputs)
 
-        model_outputs = self.language_model.execute(
+        model_outputs = self.language_model(
             model_inputs.tokens,
             model_inputs.return_n_logits,
             *input_row_offsets,
@@ -581,15 +577,15 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
             assert isinstance(model_outputs[1], Buffer)
             assert isinstance(model_outputs[2], Buffer)
             return ModelOutputs(
-                logits=model_outputs[1],
-                next_token_logits=model_outputs[0],
-                logit_offsets=model_outputs[2],
+                logits=model_outputs[1].driver_tensor,
+                next_token_logits=model_outputs[0].driver_tensor,
+                logit_offsets=model_outputs[2].driver_tensor,
             )
         else:
             assert isinstance(model_outputs[0], Buffer)
             return ModelOutputs(
-                logits=model_outputs[0],
-                next_token_logits=model_outputs[0],
+                logits=model_outputs[0].driver_tensor,
+                next_token_logits=model_outputs[0].driver_tensor,
             )
 
     def prepare_initial_token_inputs(
@@ -753,10 +749,10 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
             start_idx = i * len_of_kv_tuple_per_dev
             kv_caches_per_dev.append(
                 PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
+                    kv_blocks=kv_inputs_flat[start_idx],
+                    cache_lengths=kv_inputs_flat[start_idx + 1],
+                    lookup_table=kv_inputs_flat[start_idx + 2],
+                    max_lengths=kv_inputs_flat[start_idx + 3],
                 )
             )
         return kv_caches_per_dev
