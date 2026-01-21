@@ -48,6 +48,8 @@ from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
 from transformers import PreTrainedTokenizerFast
 
+from .utils import calculate_num_steps, update_context_and_prepare_responses
+
 if TYPE_CHECKING:
     from ..config import PipelineConfig
 
@@ -274,36 +276,6 @@ class TextGenerationPipeline(
         """Return the list of KV cache managers backing this pipeline."""
         return [self._pipeline_model.kv_manager]
 
-    def calculate_num_steps(
-        self,
-        num_steps: int,
-        context: TextGenerationContextType,
-    ) -> int:
-        """Compute the number of generation steps allowed for a context.
-
-        The value is clamped by the remaining capacity with respect to
-        the model's configured ``max_seq_len``.
-
-        Args:
-            num_steps: Desired number of steps to attempt.
-            context: The context whose sequence length constraints apply.
-
-        Returns:
-            The number of steps to execute for this context (>= 1).
-
-        Raises:
-            ValueError: If the current request length is already >= ``max_seq_len``.
-        """
-        max_seq_len = self._pipeline_model.max_seq_len
-        num_available_steps = context.compute_num_available_steps(max_seq_len)
-
-        if num_available_steps <= 0:
-            raise ValueError(
-                f"Request {context.request_id} length ({len(context.tokens)}) is larger than or equal to the configured max_length ({max_seq_len})"
-            )
-
-        return min(num_available_steps, num_steps)
-
     def update_for_structured_output(
         self,
         context: TextGenerationContextType,
@@ -441,7 +413,9 @@ class TextGenerationPipeline(
                 )
 
             # Update num_steps.
-            num_steps = self.calculate_num_steps(num_steps, context)
+            num_steps = calculate_num_steps(
+                context, num_steps, self._pipeline_model.max_seq_len
+            )
 
         # If structured output is enabled for a specific request, we only need to run for a single step.
         # This is the only check to ensure that we do not apply an outdated bitmask to new inputs, during the next step.
@@ -517,54 +491,6 @@ class TextGenerationPipeline(
             with open(self.batch_info_output_fname, "w") as f:
                 json.dump(output, f, indent=2)
                 f.flush()  # Refer to MAXSERV-893
-
-    @traced
-    def update_context_and_prepare_responses(
-        self,
-        generated_tokens_host: npt.NDArray[np.int32],
-        batch_log_probabilities: list[list[LogProbabilities | None]],
-        flat_batch: list[TextGenerationContextType],
-        num_steps: int,
-        enable_log_probs: bool,
-    ) -> dict[RequestID, TextGenerationOutput]:
-        """
-        Update the context objects and prepare the response objects for each context in the batch after generation.
-
-        Args:
-            generated_tokens_host: Array of generated tokens on the host, indexed as [batch, step].
-            batch_log_probabilities: List of per-step log probability outputs (or None), each entry is a list per batch for that step.
-            flat_batch: List of generation contexts, one per request, matching batch dimension.
-            num_steps: Number of generation steps to process for each context.
-            enable_log_probs: Whether to include log probability data in outputs.
-
-        Returns:
-            A dictionary mapping request IDs to their respective generation outputs.
-        """
-        res: dict[RequestID, TextGenerationOutput] = {}
-        for batch_index, context in enumerate(flat_batch):
-            for step in range(num_steps):
-                # Convert to a Python scalar to improve serialization performance.
-                next_token = int(generated_tokens_host[batch_index, step])
-
-                # Get Log probs if needed.
-                log_probs: LogProbabilities | None = None
-                if enable_log_probs and step < len(batch_log_probabilities):
-                    log_probs_for_step = batch_log_probabilities[step]
-                    if log_probs_for_step and batch_index < len(
-                        log_probs_for_step
-                    ):
-                        log_probs = log_probs_for_step[batch_index]
-
-                context.update(
-                    new_token=next_token, log_probabilities=log_probs
-                )
-
-                if context.is_done:
-                    break
-
-            res[context.request_id] = context.to_generation_output()
-
-        return res
 
     @traced
     def execute(
@@ -725,12 +651,12 @@ class TextGenerationPipeline(
             generated_tokens_np = generated_tokens_host.to_numpy()
 
         # Update the context object.
-        res = self.update_context_and_prepare_responses(
+        res = update_context_and_prepare_responses(
             generated_tokens_np,
-            batch_log_probabilities,
             flat_batch,
             num_steps,
-            inputs.enable_log_probs,
+            batch_log_probabilities=batch_log_probabilities,
+            enable_log_probs=inputs.enable_log_probs,
         )
 
         # Update the cache lengths in our kv_cache manager.
