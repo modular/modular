@@ -16,7 +16,11 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections.string.format import _FormatUtils
-from collections.string.string_slice import CodepointSliceIter, StaticString
+from collections.string.string_slice import (
+    CodepointSliceIter,
+    CodepointsIter,
+    StaticString,
+)
 from os import PathLike
 from sys.ffi import c_char, CStringSlice
 
@@ -258,13 +262,14 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return self.__str__()
 
+    @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
     fn __iter__(self) -> CodepointSliceIter[StaticConstantOrigin]:
         """Return an iterator over the string literal.
 
         Returns:
             An iterator over the string.
         """
-        return CodepointSliceIter(self.as_string_slice())
+        return self.codepoint_slices()
 
     fn __reversed__(self) -> CodepointSliceIter[StaticConstantOrigin, False]:
         """Iterate backwards over the string, returning immutable references.
@@ -750,6 +755,22 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             A copy of the string with no leading whitespaces.
         """
         return self.as_string_slice().lstrip()
+
+    fn codepoint_slices(self) -> CodepointSliceIter[StaticConstantOrigin]:
+        """Iterate over the string's codepoints as immutable slices.
+
+        Returns:
+            An iterator of codepoint slices.
+        """
+        return self.as_string_slice().codepoint_slices()
+
+    fn codepoints(self) -> CodepointsIter[StaticConstantOrigin]:
+        """Iterate over the `Codepoint`s in this string constant.
+
+        Returns:
+            An iterator over successive `Codepoint` values.
+        """
+        return self.as_string_slice().codepoints()
 
     fn format[*Ts: AnyType](self, *args: *Ts) -> String:
         """Produce a formatted string using the current string as a template.
