@@ -34,16 +34,19 @@ modular_py_test(
     }),
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
     ],
     deps = [
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/entrypoints",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures",
-        "//max/python/max/serve",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:context_utils",
+        requirement("numpy"),
         requirement("torch"),
         requirement("transformers"),
     ],
@@ -66,15 +69,15 @@ modular_py_test(
     gpu_constraints = ["//:has_multi_gpu"],
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/entrypoints",
+        "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures",
-        "//max/python/max/serve",
-        "//max/tests/integration/pipelines/python/test_common",
         requirement("torch"),
         requirement("transformers"),
     ],

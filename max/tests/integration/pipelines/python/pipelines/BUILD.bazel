@@ -17,7 +17,6 @@ modular_py_test(
         exclude = ["**/*_gpu.py"],
     ),
     tags = [
-        "no-pydeps",  # TODO: Fix and re-enable
         "requires-network",  # This is needed for escaping HF sandbox.
     ],
     target_compatible_with = select({
@@ -25,15 +24,21 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/interfaces",
-        "//max/python/max/pipelines",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
         "//max/python/max/support",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:mocks",
+        "//max/tests/integration/pipelines/python/test_common:numerics",
         requirement("numpy"),
-        requirement("pytest-asyncio"),
+        requirement("transformers"),
     ],
 )
 
@@ -51,13 +56,13 @@ modular_py_test(
     }),
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/interfaces",
-        "//max/python/max/pipelines",
-        "//max/python/max/pipelines/core",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python/test_common:numerics",
         requirement("numpy"),
     ],
