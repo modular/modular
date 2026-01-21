@@ -1962,14 +1962,14 @@ struct SIMD[dtype: DType, size: Int](
         self.write_repr_to(output)
         return output^
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __floor__(self) -> Self:
         """Performs elementwise floor on the elements of a SIMD vector.
 
         Returns:
             The elementwise floor of this SIMD vector.
         """
-        return self._floor_ceil_trunc_impl["llvm.floor"]()
+        return Self(mlir_value=__mlir_op.`pop.floor`(self._mlir_value))
 
     @always_inline("nodebug")
     fn __ceil__(self) -> Self:
