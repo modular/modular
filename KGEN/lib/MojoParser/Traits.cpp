@@ -1072,7 +1072,7 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // Get the StructMetaType or the TraitType of the value that we're checking
   // for conversion to the trait type.  This can also bind empty variadic
   // parameter lists and default parameters.
-  ASTType type = emitType({typePValue, value.expr}, /*allowUnbound*/ false);
+  ASTType type = emitType({typePValue, value.expr});
   if (!type)
     return {};
   value.ir = PValue(type); // update value.ir if the type was rebound.

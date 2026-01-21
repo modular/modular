@@ -2171,6 +2171,14 @@ kgen.generator @gen_structs() {
   // CHECK-NEXT: kgen.param.constant: i1 = <0>
   kgen.param.constant: i1 = <#kgen.is_struct_type<index>>
 
+  // Test get_base_type_name returns the base type name for parameterized types
+  // CHECK-NEXT: kgen.param.constant: string = <"WeirdStruct">
+  kgen.param.constant: string = <#kgen.get_base_type_name<#weird_struct>>
+
+  // Test get_base_type_name returns "<unknown>" for MLIR primitive types
+  // CHECK-NEXT: kgen.param.constant: string = <"<unknown>">
+  kgen.param.constant: string = <#kgen.get_base_type_name<index>>
+
   kgen.return
 }
 

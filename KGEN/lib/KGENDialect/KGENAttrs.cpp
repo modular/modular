@@ -810,6 +810,16 @@ bool StructFieldIndexByNameAttr::isConstant() const { return false; }
 bool StructFieldTypeByNameAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
+// GetBaseTypeNameAttr
+//===----------------------------------------------------------------------===//
+
+Type GetBaseTypeNameAttr::getType() const {
+  return StringType::get(getContext());
+}
+
+bool GetBaseTypeNameAttr::isConstant() const { return false; }
+
+//===----------------------------------------------------------------------===//
 // BindParamsAttr
 //===----------------------------------------------------------------------===//
 

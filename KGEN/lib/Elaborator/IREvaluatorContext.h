@@ -194,6 +194,7 @@ protected:
   FailureOr<TypedAttr> evaluateTypeConformToTraitAttr(
       TypeConformsToTraitAttr typeConformToTraitAttr);
   FailureOr<TypedAttr> evaluateIsStructTypeAttr(IsStructTypeAttr attr);
+  FailureOr<TypedAttr> evaluateGetBaseTypeNameAttr(GetBaseTypeNameAttr attr);
   FailureOr<TypedAttr> evaluateCompileOffloadClosureAttr(
       CompileOffloadClosureAttr compileOffloadClosureAttr);
   FailureOr<TypedAttr> evaluateCompileAssemblyAttr(CompileAssemblyAttr attr);
@@ -212,6 +213,12 @@ protected:
   EnvAttr env;
 
   InterpreterState *state = nullptr;
+
+protected:
+  /// Helper to get the base type name from a type reference.
+  /// Returns the name from the generator's valueDomainType, or nullptr if not
+  /// a struct type.
+  StringAttr getBaseTypeName(TypedAttr typeRef);
 
 private:
   MLIRContext *mlirCtx = nullptr;

@@ -107,6 +107,11 @@ private:
                                          bool withResultSlot);
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
   FailureOr<TypedAttr> evaluateVariadicSizeAttr(VariadicSizeAttr attr);
+  FailureOr<TypedAttr> evaluateGetBaseTypeNameAttr(GetBaseTypeNameAttr attr);
+
+  /// Helper to get the base generator symbol name from a type reference.
+  /// Returns the generator's symbol name, or nullptr if not a struct type.
+  StringAttr getGeneratorSymbolName(TypedAttr typeRef);
 
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);
