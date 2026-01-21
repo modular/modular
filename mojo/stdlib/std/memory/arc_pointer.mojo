@@ -21,6 +21,7 @@ from memory import ArcPointer
 
 from os.atomic import Atomic, Consistency, fence
 from sys.info import size_of
+from format._utils import Repr, FormatStruct
 from reflection.type_info import _unqualified_type_name
 from builtin.constrained import _constrained_conforms_to
 
@@ -292,6 +293,6 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
             Element = Self.T,
             ParentConformsTo="Writable",
         ]()
-        writer.write("ArcPointer[", _unqualified_type_name[Self.T](), "](")
-        trait_downcast[Writable](self[]).write_repr_to(writer)
-        writer.write_string(")")
+        FormatStruct(writer, "ArcPointer").params(
+            _unqualified_type_name[Self.T]()
+        ).fields(Repr(trait_downcast[Writable](self[])))
