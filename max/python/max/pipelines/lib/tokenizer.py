@@ -1020,21 +1020,13 @@ class PixelGenerationTokenizer(
         width: int,
         dtype: Any,
         seed: int | None,
-        latents: npt.NDArray[np.float32] | None = None,
+        vae_config: Any,
     ) -> npt.NDArray[np.float32]:
-        height = 2 * (
-            int(height) // (self.diffusers_config.vae.scale_factor * 2)
-        )
-        width = 2 * (int(width) // (self.diffusers_config.vae.scale_factor * 2))
+        height = 2 * (int(height) // (vae_config.vae_scale_factor * 2))
+        width = 2 * (int(width) // (vae_config.vae_scale_factor * 2))
         shape = (batch_size, num_channels_latents, height, width)
 
-        if latents is None:
-            latents = self._randn_tensor(shape, seed)
-        else:
-            if latents.shape != shape:
-                raise ValueError(
-                    f"Unexpected latents shape, got {latents.shape}, expected {shape}"
-                )
+        latents = self._randn_tensor(shape, seed)
         return latents
 
     async def _tokenize_prompt(
@@ -1298,12 +1290,13 @@ class PixelGenerationTokenizer(
         num_channels_latents = vae_config.get("latent_channels", 4)
 
         initial_noise = self._prepare_latents(
-            batch_size=request.num_images_per_prompt,
-            num_channels_latents=num_channels_latents,
-            height=height,
-            width=width,
-            dtype=np.float32,
-            seed=request.seed,
+            request.num_images_per_prompt,
+            num_channels_latents,
+            height,
+            width,
+            np.float32,
+            request.seed,
+            vae_config,
         )
 
         # 4. Compute timestep schedule
