@@ -158,10 +158,32 @@ struct ConvertPOPFloor : public ConvertPOPToLLVMPattern<FloorOp> {
       return success();
     }
     Type type = this->convertType(op.getType());
-    auto call = LLVM::CallIntrinsicOp::create(
-        rewriter, op.getLoc(), type, rewriter.getStringAttr("llvm.floor"),
+    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+        op, type, rewriter.getStringAttr("llvm.floor"),
         SmallVector<Value>{adaptor.getOperand()});
-    rewriter.replaceOp(op, call);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPCeil
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPCeil : public ConvertPOPToLLVMPattern<CeilOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(CeilOp op, CeilOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    KGENDType dtype = *op.getType().getResolvedDType();
+    if (!dtype.isFloat()) {
+      rewriter.replaceOp(op, adaptor.getOperand());
+      return success();
+    }
+    Type type = this->convertType(op.getType());
+    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+        op, type, rewriter.getStringAttr("llvm.ceil"),
+        SmallVector<Value>{adaptor.getOperand()});
     return success();
   }
 };
@@ -190,7 +212,6 @@ struct ConvertPOPShr : public ConvertPOPToLLVMPattern<ShrOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPFMA
 //===----------------------------------------------------------------------===//
 
 /// Convert integer pop.fma(x, y, z) -> x * y + z
@@ -2995,6 +3016,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPDiv,
       ConvertPOPDTypeFromUI8,
       ConvertPOPDTypeToUI8,
+      ConvertPOPCeil,
       ConvertPOPFence,
       ConvertPOPFloor,
       ConvertPOPFMA,

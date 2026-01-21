@@ -84,6 +84,16 @@ OpFoldResult FloorOp::fold(FoldAdaptor adaptor) {
       [](bool val) { return val; });
 }
 
+OpFoldResult CeilOp::fold(FoldAdaptor adaptor) {
+  return foldSIMDOp(
+      adaptor.getOperands(), [](APSInt val) { return val; },
+      [](APFloat val) {
+        val.roundToIntegral(APFloat::rmTowardPositive);
+        return val;
+      },
+      [](bool val) { return val; });
+}
+
 //===----------------------------------------------------------------------===//
 // Binary Operations
 
