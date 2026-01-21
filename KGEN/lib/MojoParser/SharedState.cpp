@@ -2800,6 +2800,10 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     if (auto operand = findValue(op.getOperand(0)))
       return POP::SIMDNegAttr::get(operand);
 
+  if (auto floorOp = dyn_cast<POP::FloorOp>(op))
+    if (auto operand = findValue(floorOp.getOperand()))
+      return POP::SIMDFloorAttr::get(operand);
+
   if (isa<POP::AddOp>(op))
     return foldSIMDBinOp<POP::SIMDAddAttr>(op, *this);
   if (isa<POP::SubOp>(op))

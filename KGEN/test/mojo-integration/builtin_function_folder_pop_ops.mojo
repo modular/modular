@@ -653,6 +653,95 @@ fn fold_pop_simd_neg() -> POPSInt8x4T[POP_SI8x4_Fold]:
 
 
 ##===----------------------------------------------------------------------===##
+# Fold pop.simd_floor
+##===----------------------------------------------------------------------===##
+
+
+struct POPF32x4T[x: __mlir_type.`!pop.simd<4, f32>`](ImplicitlyCopyable):
+    fn __init__(out self):
+        pass
+
+    fn __copyinit__(out self, existing: Self):
+        pass
+
+
+comptime POP_F32x4_Floor = __mlir_attr.`#pop.simd<"1.0", "-3.0", "0.0", "4.0"> : !pop.simd<4, f32>`
+
+
+@always_inline("builtin")
+fn pop_simd_floor(
+    x: __mlir_type.`!pop.simd<4, f32>`,
+) -> __mlir_type.`!pop.simd<4, f32>`:
+    return __mlir_op.`pop.floor`(x)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_floor
+fn fold_pop_simd_floor() -> POPF32x4T[POP_F32x4_Floor]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPF32x4T <:simd<4, f32> {{.*}} <"1.5", "-2.29999995", "0", "4.9000001">), <"1", "-3", "0", "4">)>>
+    var a = POPF32x4T[
+        pop_simd_floor(
+            __mlir_attr.`#pop.simd<"1.5", "-2.3", "0.0", "4.9"> : !pop.simd<4, f32>`
+        )
+    ]()
+    return a
+
+
+##===----------------------------------------------------------------------===##
+# Fold pop.simd_floor (non-float)
+##===----------------------------------------------------------------------===##
+
+
+comptime POP_SI8x4_Floor = __mlir_attr.`#pop.simd<7, -42, 1, 0> : !pop.simd<4, si8>`
+
+
+@always_inline("builtin")
+fn pop_simd_floor_si8(
+    x: __mlir_type.`!pop.simd<4, si8>`,
+) -> __mlir_type.`!pop.simd<4, si8>`:
+    return __mlir_op.`pop.floor`(x)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_floor_si8
+fn fold_pop_simd_floor_si8() -> POPSInt8x4T[POP_SI8x4_Floor]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPSInt8x4T <:simd<4, si8> {{.*}} <7, -42, 1, 0>), <7, -42, 1, 0>)>>
+    var a = POPSInt8x4T[
+        pop_simd_floor_si8(
+            __mlir_attr.`#pop.simd<7, -42, 1, 0> : !pop.simd<4, si8>`
+        )
+    ]()
+    return a
+
+
+struct POPBool2T[x: __mlir_type.`!pop.simd<2, bool>`](ImplicitlyCopyable):
+    fn __init__(out self):
+        pass
+
+    fn __copyinit__(out self, existing: Self):
+        pass
+
+
+comptime POP_BOOL2_Floor = __mlir_attr.`#pop.simd<true, false> : !pop.simd<2, bool>`
+
+
+@always_inline("builtin")
+fn pop_simd_floor_bool(
+    x: __mlir_type.`!pop.simd<2, bool>`,
+) -> __mlir_type.`!pop.simd<2, bool>`:
+    return __mlir_op.`pop.floor`(x)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_floor_bool
+fn fold_pop_simd_floor_bool() -> POPBool2T[POP_BOOL2_Floor]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPBool2T <:simd<2, bool> {{.*}} <true, false>), <true, false>)>>
+    var a = POPBool2T[
+        pop_simd_floor_bool(
+            __mlir_attr.`#pop.simd<true, false> : !pop.simd<2, bool>`
+        )
+    ]()
+    return a
+
+
+##===----------------------------------------------------------------------===##
 # Fold pop.simd_shl
 ##===----------------------------------------------------------------------===##
 
