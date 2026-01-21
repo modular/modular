@@ -67,6 +67,21 @@ kgen.func @ceil_simd(
   kgen.return %0, %1, %2, %3 : !pop.simd<4, f32>, !pop.simd<4, si32>, !pop.scalar<index>, !pop.scalar<uindex>
 }
 
+// CHECK-LABEL: @trunc_simd
+kgen.func @trunc_simd(
+  %arg0: !pop.simd<4, f32>, %arg1 : !pop.simd<4, si32>, %arg2 : !pop.scalar<index>, %arg3 : !pop.scalar<uindex>
+) -> (
+  !pop.simd<4, f32>, !pop.simd<4, si32>, !pop.scalar<index>, !pop.scalar<uindex>
+) {
+  // CHECK: llvm.trunc
+  // CHECK: kgen.return {{.*}}, %arg1, %arg2, %arg3
+  %0 = pop.trunc %arg0 : !pop.simd<4, f32>
+  %1 = pop.trunc %arg1 : !pop.simd<4, si32>
+  %2 = pop.trunc %arg2 : !pop.scalar<index>
+  %3 = pop.trunc %arg3 : !pop.scalar<uindex>
+  kgen.return %0, %1, %2, %3 : !pop.simd<4, f32>, !pop.simd<4, si32>, !pop.scalar<index>, !pop.scalar<uindex>
+}
+
 // CHECK-LABEL: @add_simd_si32
 kgen.func @add_simd_si32(%arg0: !pop.simd<4, si32>, %arg1: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
   // CHECK: llvm.add

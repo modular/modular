@@ -94,6 +94,16 @@ OpFoldResult CeilOp::fold(FoldAdaptor adaptor) {
       [](bool val) { return val; });
 }
 
+OpFoldResult TruncOp::fold(FoldAdaptor adaptor) {
+  return foldSIMDOp(
+      adaptor.getOperands(), [](APSInt val) { return val; },
+      [](APFloat val) {
+        val.roundToIntegral(APFloat::rmTowardZero);
+        return val;
+      },
+      [](bool val) { return val; });
+}
+
 //===----------------------------------------------------------------------===//
 // Binary Operations
 

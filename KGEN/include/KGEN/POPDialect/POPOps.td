@@ -119,6 +119,33 @@ def POP_CeilOp : POPOp<"ceil", [Pure, SameOperandsAndResultType]> {
 }
 
 //===----------------------------------------------------------------------===//
+// TruncOp
+//===----------------------------------------------------------------------===//
+
+def POP_TruncOp : POPOp<"trunc", [Pure, SameOperandsAndResultType]> {
+  let summary = "trunc";
+  let description = [{
+    The `pop.trunc` operation takes a `!pop.simd` value and returns the element
+    wise truncation of its values (rounding toward zero). The operand and result
+    types are the same and must be index-like, arithmetic, or boolean dtypes.
+    Integer, index, and boolean values are returned unchanged.
+
+    Example:
+
+    ```mlir
+    %b = pop.trunc %a : !pop.simd<size, f32>
+    ```
+  }];
+
+  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$operand);
+  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
+
+  let assemblyFormat = "$operand attr-dict `:` qualified(type($result))";
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // BinaryOp
 //===----------------------------------------------------------------------===//
 
