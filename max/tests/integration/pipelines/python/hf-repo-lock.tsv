@@ -32,6 +32,7 @@ Qwen/Qwen3-Embedding-8B	1d8ad4ca9b3dd8059ad90a75d4983776a23d44af
 Qwen/Qwen3-VL-235B-A22B-Instruct	710c13861be6c466e66de3f484069440b8f31389
 Qwen/Qwen3-VL-30B-A3B-Instruct	9c4b90e1e4ba969fd3b5378b57d966d725f1b86c
 Qwen/Qwen3-VL-30B-A3B-Thinking	d0ed0380729be07a546fdefafbb4fe411f341e92
+RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic	f4dbba5848122daa32a44a30978c0c1cd5105e43
 RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8	12fd6884d2585dd4d020373e7f39f74507b31866
 RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic	b0b04ce47ca8f21386149cf613f64dd611808c05
 RedHatAI/gemma-3-27b-it-FP8-dynamic	306078afe860ef87821018f28078ecf762f31455
