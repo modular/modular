@@ -22,18 +22,23 @@ modular_py_test(
     env = {
         "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
     },
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/serve",
-        "//max/python/max/serve/schemas",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/queue",
+        "//max/python/max/serve/telemetry",
         requirement("async-asgi-testclient"),
+        requirement("fastapi"),
+        requirement("httpx"),
         requirement("pytest-asyncio"),
         requirement("sse-starlette"),
     ],

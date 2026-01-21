@@ -73,8 +73,14 @@ def _get_files(bazel: Path, query: str) -> set[Path]:
 
 
 def _get_lit_directives(file: Path) -> set[str]:
+    if file.suffix == ".jpg":
+        return set()
     with file.open() as f:
-        return set(_LIT_REGEX.findall(f.read()))
+        try:
+            content = f.read()
+        except UnicodeDecodeError as e:
+            raise RuntimeError(f"error: failed to read {file}: {e}") from e
+        return set(_LIT_REGEX.findall(content))
 
 
 def _main() -> None:

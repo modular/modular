@@ -274,10 +274,6 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
     @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return PixtralConfig.get_num_layers(huggingface_config)
-
-    @classmethod
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,

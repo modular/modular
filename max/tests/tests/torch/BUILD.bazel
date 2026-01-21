@@ -28,9 +28,12 @@ modular_py_test(
         "no-pydeps",  # TODO: Fix and re-enable
     ],
     target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
-    }),  # FIXME: MOCO-2411
+    }) + select({
+        "//:asan": ["@platforms//:incompatible"],  # Too slow under ASAN
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/engine",

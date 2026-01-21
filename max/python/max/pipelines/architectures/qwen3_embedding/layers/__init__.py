@@ -10,17 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Config for DeepseekV3.2 models."""
+"""Qwen3 embedding model layers."""
 
-from __future__ import annotations
+from .attention import Qwen3AttentionNoCache
+from .pooling import last_token_pool, normalize_embeddings
+from .transformer import (
+    Qwen3EmbeddingTransformer,
+    Qwen3EmbeddingTransformerBlock,
+)
 
-from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
-
-
-class DeepseekV32Config(DeepseekV3Config):
-    """Configuration for DeepseekV3.2 models."""
-
-    # Added parameters for the Indexer used in DeepSeek Sparse Attention.
-    index_head_dim: int = 128
-    index_n_heads: int = 64
-    index_topk: int = 2048
+__all__ = [
+    "Qwen3AttentionNoCache",
+    "Qwen3EmbeddingTransformer",
+    "Qwen3EmbeddingTransformerBlock",
+    "last_token_pool",
+    "normalize_embeddings",
+]

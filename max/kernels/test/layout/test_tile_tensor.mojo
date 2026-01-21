@@ -11,10 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from buffer import NDBuffer, Dim, DimList
 from layout._layout import Layout, row_major
 from layout._tile_tensor import TileTensor
 from layout._coord import ComptimeInt, Idx, Coord, RuntimeInt
 from layout.int_tuple import IntTuple
+from layout.swizzle import Swizzle
 from math import ceildiv
 from testing import (
     TestSuite,
@@ -37,7 +39,7 @@ fn test_distribute() raises:
 
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
-    var layout_tensor = TileTensor[dtype = DType.uint32](
+    var layout_tensor = TileTensor(
         ptr=ptr,
         layout=Layout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
@@ -60,13 +62,131 @@ fn test_distribute() raises:
         assert_equal(ptr[i], expected[i])
 
 
+fn test_distribute_with_swizzle() raises:
+    """Test distribute with swizzle parameter.
+
+    This test verifies that the swizzle parameter correctly transforms
+    the memory access pattern. We use a simple swizzle that XORs bits
+    to remap thread offsets.
+    """
+    comptime thread_layout = row_major((Idx[2](), Idx[2]()))
+
+    # Use Swizzle(1, 0, 2) which XORs bit 2 with bit 0
+    # yyy_mask = 1 << 2 = 4 (binary: 100)
+    # swizzle(x) = x ^ ((x & 4) >> 2)
+    # For offset 0: swizzle(0) = 0 ^ ((0 & 4) >> 2) = 0 ^ 0 = 0
+    # For offset 1: swizzle(1) = 1 ^ ((1 & 4) >> 2) = 1 ^ 0 = 1
+    # For offset 4: swizzle(4) = 4 ^ ((4 & 4) >> 2) = 4 ^ 1 = 5
+    # For offset 5: swizzle(5) = 5 ^ ((5 & 4) >> 2) = 5 ^ 1 = 4
+    comptime swizzle = Swizzle(1, 0, 2)
+
+    var array = InlineArray[UInt32, 16](fill=-1)
+    var ptr = array.unsafe_ptr()
+
+    comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
+    comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
+    var layout_tensor = TileTensor[dtype = DType.uint32](
+        ptr=ptr,
+        layout=Layout(
+            shape=data_layout_shape(Idx[4](), Idx[4]()),
+            stride=data_layout_stride(Idx[4](), Idx[1]()),
+        ),
+    )
+
+    # Assign thread IDs to positions with swizzle
+    for th_id in range(4):
+        var frag = layout_tensor.distribute[
+            thread_layout=thread_layout, swizzle=swizzle
+        ](th_id)
+        # Write thread ID to each position in the fragment
+        for i in range(2):
+            for j in range(2):
+                frag[(Idx(i), Idx(j))] = th_id
+
+    # Thread layout row_major[2, 2] has strides [2, 1]
+    # Thread 0: coord (0, 0) -> base offset 0*4 + 0*1 = 0, swizzle(0) = 0
+    # Thread 1: coord (0, 1) -> base offset 0*4 + 1*1 = 1, swizzle(1) = 1
+    # Thread 2: coord (1, 0) -> base offset 1*4 + 0*1 = 4, swizzle(4) = 5
+    # Thread 3: coord (1, 1) -> base offset 1*4 + 1*1 = 5, swizzle(5) = 4
+
+    # Verify that thread assignments are swizzled correctly
+    # Thread 0 writes starting at offset 0
+    assert_equal(ptr[0], 0)
+
+    # Thread 1 writes starting at offset 1
+    assert_equal(ptr[1], 1)
+
+    # Thread 2 writes starting at swizzled offset 5 (from base 4)
+    assert_equal(ptr[5], 2)
+
+    # Thread 3 writes starting at swizzled offset 4 (from base 5)
+    assert_equal(ptr[4], 3)
+
+
+fn test_distribute_swizzle_vs_no_swizzle() raises:
+    """Test that swizzle actually changes the memory access pattern.
+
+    Compare the results of distribute with and without swizzle to verify
+    that swizzling produces different memory layouts.
+    """
+    comptime thread_layout = row_major((Idx[2](), Idx[2]()))
+    comptime swizzle = Swizzle(1, 0, 2)
+
+    # Array without swizzle
+    var array_no_swizzle = InlineArray[UInt32, 16](fill=0)
+    var ptr_no_swizzle = array_no_swizzle.unsafe_ptr()
+
+    # Array with swizzle
+    var array_with_swizzle = InlineArray[UInt32, 16](fill=0)
+    var ptr_with_swizzle = array_with_swizzle.unsafe_ptr()
+
+    comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
+    comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
+
+    var tensor_no_swizzle = TileTensor[dtype = DType.uint32](
+        ptr=ptr_no_swizzle,
+        layout=Layout(
+            shape=data_layout_shape(Idx[4](), Idx[4]()),
+            stride=data_layout_stride(Idx[4](), Idx[1]()),
+        ),
+    )
+
+    var tensor_with_swizzle = TileTensor[dtype = DType.uint32](
+        ptr=ptr_with_swizzle,
+        layout=Layout(
+            shape=data_layout_shape(Idx[4](), Idx[4]()),
+            stride=data_layout_stride(Idx[4](), Idx[1]()),
+        ),
+    )
+
+    # Fill both tensors with thread IDs
+    for th_id in range(4):
+        var frag_no_swizzle = tensor_no_swizzle.distribute[
+            thread_layout=thread_layout
+        ](th_id)
+        var frag_with_swizzle = tensor_with_swizzle.distribute[
+            thread_layout=thread_layout, swizzle=swizzle
+        ](th_id)
+
+        for i in range(2):
+            for j in range(2):
+                frag_no_swizzle[(Idx(i), Idx(j))] = th_id
+                frag_with_swizzle[(Idx(i), Idx(j))] = th_id
+
+    # Verify that the two arrays are different (swizzle changes layout)
+    var differ = False
+    for i in range(16):
+        if ptr_no_swizzle[i] != ptr_with_swizzle[i]:
+            differ = True
+            break
+    assert_true(differ, "Swizzle should produce different memory layout")
+
+
 fn test_tile() raises:
     # Create a 4x4 tensor with row-major layout
     var data = InlineArray[UInt32, 16](fill=0)
 
-    var layout_tensor = TileTensor[dtype = DType.uint32](
-        data, row_major((Idx[4](), Idx[4]()))
-    )
+    var layout_tensor = TileTensor(data, row_major((Idx[4](), Idx[4]())))
 
     var counter = 0
 
@@ -133,7 +253,7 @@ fn test_slice() raises:
     # [4  5  6  7]
     # [8  9  10 11]
     # [12 13 14 15]
-    var tensor_2d = TileTensor[dtype = DType.int32](data_2d, row_major[4, 4]())
+    var tensor_2d = TileTensor(data_2d, row_major[4, 4]())
 
     # Slice to extract middle 2x2 region [1:3, 1:3]:
     # [5  6]
@@ -177,9 +297,7 @@ fn test_slice_3d() raises:
     for i in range(64):
         data_3d[i] = i
 
-    var tensor_3d = TileTensor[dtype = DType.int32](
-        data_3d, row_major[4, 4, 4]()
-    )
+    var tensor_3d = TileTensor(data_3d, row_major[4, 4, 4]())
 
     # Slice [1:3, 1:3, 1:3] to get a 2x2x2 cube from the middle
     var sliced_3d = tensor_3d.slice[1:3, 1:3, 1:3]()
@@ -220,7 +338,7 @@ fn test_slice_3d() raises:
 #     )
 #     var layout = MixedLayout(shape^, stride^)
 #
-#     var tensor_runtime = TileTensor[dtype = DType.float32](
+#     var tensor_runtime = TileTensor(
 #         data.unsafe_ptr(), layout^
 #     )
 #
@@ -248,7 +366,7 @@ fn test_vectorize() raises:
     for i in range(256):
         data[i] = i
 
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[16, 16]())
+    var tensor = TileTensor(data, row_major[16, 16]())
 
     # Vectorize with 4x4 blocks
     var vectorized = tensor.vectorize[4, 4]()
@@ -288,7 +406,7 @@ fn test_vectorize_non_square() raises:
         data[i] = i
 
     # Create 8x8 tensor
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[8, 8]())
+    var tensor = TileTensor(data, row_major[8, 8]())
 
     # Vectorize with 2x4 blocks (different dimensions)
     var vectorized = tensor.vectorize[2, 4]()
@@ -316,7 +434,7 @@ fn test_vectorize_1d() raises:
         data[i] = i
 
     # Create 16-element 1D tensor
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[16]())
+    var tensor = TileTensor(data, row_major[16]())
 
     # Vectorize with width 4
     var vectorized = tensor.vectorize[4]()
@@ -393,7 +511,7 @@ fn test_coalesce_2d() raises:
         data[i] = i
 
     # Create 4x4 tensor
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[4, 4]())
+    var tensor = TileTensor(data, row_major[4, 4]())
 
     # Coalesce to rank-1
     var coalesced = tensor.coalesce()
@@ -417,7 +535,7 @@ fn test_coalesce_3d() raises:
         data[i] = i
 
     # Create 2x3x4 tensor
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[2, 3, 4]())
+    var tensor = TileTensor(data, row_major[2, 3, 4]())
 
     # Coalesce to rank-1
     var coalesced = tensor.coalesce()
@@ -441,7 +559,7 @@ fn test_coalesce_1d() raises:
         data[i] = i
 
     # Create 8-element 1D tensor
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[8]())
+    var tensor = TileTensor(data, row_major[8]())
 
     # Coalesce (should maintain rank-1)
     var coalesced = tensor.coalesce()
@@ -463,7 +581,7 @@ fn test_coalesce_element_size() raises:
         data[i] = i
 
     # Create 4x4 tensor
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[4, 4]())
+    var tensor = TileTensor(data, row_major[4, 4]())
 
     # Verify element_size is 1 for non-vectorized tensor
     assert_equal(tensor.element_size, 1)
@@ -483,19 +601,31 @@ fn test_coalesce_element_size() raises:
         assert_equal(coalesced[(Idx(i),)], i)
 
 
-fn test_coalesce_rejected_for_non_contiguous() raises:
-    """Test that coalesce is rejected at compile-time for non-contiguous tensors.
+fn test_to_nd_buffer_partially_dynamic() raises:
+    var stack = InlineArray[Int32, 16](fill=0)
+    var tensor = TileTensor(stack, row_major((Idx(4), Idx[4]())))
+    var buffer = tensor._to_ndbuffer()
+    assert_equal(buffer.shape.at[0](), Dim())
+    assert_equal(buffer.shape.at[1](), Dim(4))
+    assert_equal(buffer.dynamic_shape[0], 4)
+    assert_equal(buffer.dynamic_shape[1], 4)
 
-    This test documents the expected behavior: vectorized and tiled tensors
-    cannot be coalesced because they have non-row-major strides.
 
-    To verify this works, try uncommenting the code below - it should fail to compile:
+fn test_to_nd_buffer_fully_dynamic() raises:
+    var stack = InlineArray[Int32, 16](fill=0)
+    var tensor = TileTensor(stack, row_major((Idx(8), Idx(2))))
+    var buffer = tensor._to_ndbuffer()
+    assert_equal(buffer.shape.at[0](), Dim())
+    assert_equal(buffer.shape.at[1](), Dim())
+    assert_equal(buffer.dynamic_shape[0], 8)
+    assert_equal(buffer.dynamic_shape[1], 2)
 
-    ```
-    var tensor = TileTensor[dtype = DType.int32](data, row_major[8, 8]())
-    var vectorized = tensor.vectorize[2, 2]()
-    # This would fail: vectorized.coalesce()  # Error: violated constraint
-    ```
-    """
-    # This test just documents the behavior - actual verification is at compile time
-    pass
+
+fn test_to_nd_buffer_fully_static() raises:
+    var stack = InlineArray[Int32, 16](fill=0)
+    var tensor = TileTensor(stack, row_major((Idx[16](), Idx[1]())))
+    var buffer = tensor._to_ndbuffer()
+    assert_equal(buffer.shape.at[0](), Dim(16))
+    assert_equal(buffer.shape.at[1](), Dim(1))
+    assert_equal(buffer.dynamic_shape[0], 16)
+    assert_equal(buffer.dynamic_shape[1], 1)

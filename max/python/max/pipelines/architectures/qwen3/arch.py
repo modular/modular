@@ -35,6 +35,9 @@ qwen3_arch = SupportedArchitecture(
         SupportedEncoding.bfloat16: [
             KVCacheStrategy.PAGED,
         ],
+        SupportedEncoding.float32: [
+            KVCacheStrategy.PAGED,
+        ],
     },
     pipeline_model=Qwen3Model,
     tokenizer=TextTokenizer,

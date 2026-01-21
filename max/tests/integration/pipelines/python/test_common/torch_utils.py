@@ -162,17 +162,57 @@ def run_embeddings_generation(  # noqa: ANN201
     data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
     device: torch.device,
     prompts: Iterable[str],
+    pool_embeddings: bool = False,
 ):
-    """Generates embeddings for the input prompts."""
+    """Generates embeddings for the input prompts.
+
+    Args:
+        pool_embeddings: If True, applies last token pooling and L2 normalization
+                        as per Qwen3-Embedding. If False, returns raw hidden states.
+    """
+
+    def last_token_pool(
+        last_hidden_states: torch.Tensor,
+        attention_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Extract the hidden state of the last non-padding token."""
+        left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
+        if left_padding:
+            return last_hidden_states[:, -1]
+        else:
+            sequence_lengths = attention_mask.sum(dim=1) - 1
+            batch_size = last_hidden_states.shape[0]
+            return last_hidden_states[
+                torch.arange(batch_size, device=last_hidden_states.device),
+                sequence_lengths,
+            ]
+
     results = []
     for prompt in prompts:
         encoded_input = data_processor(
             [prompt], padding=True, truncation=True, return_tensors="pt"
         ).to(device)
         output = model(**encoded_input)
-        embeddings = (
-            output.last_hidden_state.cpu().detach().to(torch.float32).numpy()
-        )
-        embeddings = embeddings[0]
+
+        if pool_embeddings:
+            # Apply last token pooling to get single embedding per sequence
+            embeddings = last_token_pool(
+                output.last_hidden_state, encoded_input["attention_mask"]
+            )
+            # Apply L2 normalization
+            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+            embeddings = embeddings.cpu().detach().to(torch.float32).numpy()
+            # Squeeze batch dimension to match MAX output shape: [batch_size=1, hidden_dim] -> [hidden_dim]
+            if embeddings.shape[0] == 1:
+                embeddings = embeddings.squeeze(0)
+        else:
+            # Return raw hidden states without pooling [batch_size, seq_len, hidden_dim]
+            embeddings = (
+                output.last_hidden_state.cpu()
+                .detach()
+                .to(torch.float32)
+                .numpy()
+            )
+
         results.append({"prompt": prompt, "embeddings": embeddings})
     return results

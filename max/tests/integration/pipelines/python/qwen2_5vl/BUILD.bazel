@@ -84,7 +84,6 @@ modular_py_test(
 modular_py_test(
     name = "test_vision_functions",
     srcs = ["test_vision_functions.py"],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -93,6 +92,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures",
         requirement("torch"),
         requirement("numpy"),
+        requirement("transformers"),
     ],
 )
 
@@ -116,8 +116,8 @@ modular_py_library(
 modular_py_test(
     name = "test_compute_multimodal_merge_indices",
     srcs = ["test_compute_multimodal_merge_indices.py"],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
+        "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
         requirement("numpy"),
     ],

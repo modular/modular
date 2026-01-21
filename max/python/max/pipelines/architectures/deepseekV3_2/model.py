@@ -32,18 +32,18 @@ from max.pipelines.lib.float8 import parse_float8_config
 from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Model
-from .deepseekV32 import DeepseekV32
-from .model_config import DeepseekV32Config
+from .deepseekV3_2 import DeepseekV3_2
+from .model_config import DeepseekV3_2Config
 
 logger = logging.getLogger("max.pipelines")
 
 
-class DeepseekV32Model(DeepseekV3Model):
+class DeepseekV3_2Model(DeepseekV3Model):
     """A DeepseekV3.2 model."""
 
     def _create_model_config(
         self, state_dict: dict[str, WeightData]
-    ) -> DeepseekV32Config:
+    ) -> DeepseekV3_2Config:
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
@@ -58,7 +58,7 @@ class DeepseekV32Model(DeepseekV3Model):
         else:
             graph_mode = "auto"
 
-        kv_params = DeepseekV32Config.get_kv_params(
+        kv_params = DeepseekV3_2Config.get_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
@@ -118,7 +118,7 @@ class DeepseekV32Model(DeepseekV3Model):
             correction_bias_dtype = state_dict[correction_bias_key].dtype
         else:
             correction_bias_dtype = None
-        return DeepseekV32Config(
+        return DeepseekV3_2Config(
             dtype=self.encoding.dtype,
             norm_dtype=norm_dtype,
             correction_bias_dtype=correction_bias_dtype,
@@ -216,12 +216,12 @@ class DeepseekV32Model(DeepseekV3Model):
                     "EP node ID is not set. Please check if the EP initialization is successful."
                 )
 
-        nn_model = DeepseekV32(config)
+        nn_model = DeepseekV3_2(config)
         nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
 
         # Create the graph
         with Graph(
-            "deepseekV32_graph",
+            "deepseekV3_2_graph",
             input_types=nn_model.input_types(self.kv_params),
         ) as graph:
             (

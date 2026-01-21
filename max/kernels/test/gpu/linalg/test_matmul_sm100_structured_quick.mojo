@@ -41,7 +41,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 # Direct import of structured kernel (same name, different module)
-from linalg.matmul.gpu.sm100_structured import (
+from linalg.matmul.gpu.sm100_structured.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig

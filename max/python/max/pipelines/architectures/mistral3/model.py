@@ -72,10 +72,6 @@ class Mistral3Model(MistralModel):
         )
 
     @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return super().get_num_layers(huggingface_config.text_config)
-
-    @classmethod
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:

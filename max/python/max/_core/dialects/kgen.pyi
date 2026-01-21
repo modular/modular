@@ -565,6 +565,30 @@ class GeneratorAttr(max._core.Attribute):
     @property
     def metadata(self) -> GeneratorMetadataAttrInterface: ...
 
+class GetBaseTypeNameAttr(max._core.Attribute):
+    """
+    The `#kgen.get_base_type_name` attribute extracts the unqualified name of
+    the base (unparameterized) type from a parameterized type. For example,
+    given `List[Int]`, it returns the string `"List"`. For non-parameterized
+    types, it returns the type's simple name.
+
+    This is useful for reflection-based code that needs to identify the base
+    type of parameterized types.
+
+    Example:
+
+    ```mlir
+    #kgen.get_base_type_name<#List[Int]> : !kgen.string
+    // Returns "List"
+    ```
+    """
+
+    def __init__(
+        self, type_value: max._core.dialects.builtin.TypedAttr
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class GetLinkageNameAttr(max._core.Attribute):
     """
     The `#kgen.get_linkage_name` attribute is used to get the linkage name of

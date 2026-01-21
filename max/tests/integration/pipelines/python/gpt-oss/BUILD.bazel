@@ -30,20 +30,14 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
     ],
     deps = [
+        "//max/python/max/driver",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/python/max/serve",
-        "//max/tests/integration/API/python/graph:modular_graph_test",
-        "//max/tests/integration/pipelines/python/test_common",
         requirement("torch"),
         requirement("transformers"),
-        requirement("hypothesis"),
-        requirement("gguf"),
-        requirement("pytest-asyncio"),
     ],
 )

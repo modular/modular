@@ -141,6 +141,7 @@ class Qwen3Config(Llama3Config):
             cache_dtype=cache_dtype,
             kv_cache_config=kv_cache_config,
             return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
             norm_method=norm_method,
             attention_bias=attention_bias,
         )
@@ -179,6 +180,7 @@ class Qwen3Config(Llama3Config):
             model_quantization_encoding=base_config.model_quantization_encoding,
             quantization_config=base_config.quantization_config,
             return_logits=base_config.return_logits,
+            return_hidden_states=base_config.return_hidden_states,
             max_seq_len=base_config.max_seq_len,
             kv_params=qwen3_kv_params,  # Use Qwen3-specific KV params
             norm_method=base_config.norm_method,

@@ -834,20 +834,23 @@ fn gather[
 
 
 @fieldwise_init
-struct ScatterNegativeIndexStrategy(Equatable, ImplicitlyCopyable, Writable):
+struct ScatterOobIndexStrategy(Equatable, ImplicitlyCopyable, Writable):
+    """Valid indices are within the range [-dim_size, dim_size). Indices which
+    fall outside of that can be handled using different strategies. Note that
+    negative indices are allowed in order to support negative relative indexing.
+       Eg: x[-1] == x[dim_size - 1].
+    """
+
     var _value: Int32
 
-    comptime NORMALIZE = Self(0)
-    """Indices must be within the range [-dim_size, dim_size). Negative indices
-    are normalized to the positive range via incrementing by dim_size:
-        Eg: idx + dim_size if idx < 0 else idx.
-    This mode supports negative relative indexing:
-        Eg: x[-1] == x[dim_size - 1].
-    """
+    comptime UNDEFINED = Self(0)
+    """Users must not pass in invalid indices. If passed, the scatter method may
+    raise an error or return undefined results. Today, the scatter_nd kernel uses
+    `_unsafe_normalize_neg_index` which will render the output contents invalid."""
+
     comptime SKIP = Self(1)
-    """Indices must be within the range [-inf, dim_size). Negative indices are
-    are skipped and the update is not applied.
-    """
+    """Users may pass in indices outside of the range [-dim_size, dim_size). In
+    which case the corresponding update will be skipped."""
 
 
 @always_inline
@@ -855,7 +858,7 @@ fn scatter_nd_generator[
     output_type: DType,
     indices_type: DType,
     single_thread_blocking_override: Bool,
-    negative_index_strategy: ScatterNegativeIndexStrategy = ScatterNegativeIndexStrategy.NORMALIZE,
+    oob_index_strategy: ScatterOobIndexStrategy = ScatterOobIndexStrategy.UNDEFINED,
     target: StaticString = "cpu",
     reduce_fn: OptionalReg[
         fn[
@@ -887,7 +890,7 @@ fn scatter_nd_generator[
         indices_type: Type of the indices tensor.
         single_thread_blocking_override: If True, then the operation is run
           synchronously using a single thread.
-        negative_index_strategy: Strategy to handle negative indices.
+        oob_index_strategy: Strategy to handle out of bounds indices.
         target: Target cpu or cuda.
         reduce_fn: Reduction function to apply: none (default), add, mul, max,
                    min.
@@ -1031,8 +1034,12 @@ fn scatter_nd_generator[
                 var idx_on_axis = indices.load[width=1](indices_index)
 
                 @parameter
-                if negative_index_strategy == ScatterNegativeIndexStrategy.SKIP:
-                    if idx_on_axis < 0:
+                if oob_index_strategy == ScatterOobIndexStrategy.SKIP:
+                    # Quit if the index falls outside of [-input_ax_dim, input_ax_dim)
+                    if (
+                        idx_on_axis < -input_ax_dim
+                        or idx_on_axis >= input_ax_dim
+                    ):
                         return
                     output_index_tensor[dim] = Int(idx_on_axis)
                 else:
@@ -1120,7 +1127,7 @@ fn scatter_nd[
         output_type,
         indices_type,
         single_thread_blocking_override,
-        negative_index_strategy = ScatterNegativeIndexStrategy.NORMALIZE,
+        oob_index_strategy = ScatterOobIndexStrategy.UNDEFINED,
         target=target,
         reduce_fn=None,
     ](data, indices, updates, output, context)

@@ -11,6 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .arch import deepseekV32_arch
+# RUN: not %mojo %s 2>&1 | FileCheck %s
 
-__all__ = ["deepseekV32_arch"]
+# Test that the default Hashable implementation produces a clear error message
+# when a field does not implement Hashable.
+
+
+@fieldwise_init
+struct NotHashable(ImplicitlyCopyable):
+    var x: Int
+
+
+@fieldwise_init
+struct HasBadField(Hashable):
+    var field: NotHashable
+
+
+# CHECK: Could not derive Hashable for HasBadField - member field `field: NotHashable` does not implement Hashable
+def main():
+    var a = HasBadField(NotHashable(1))
+    hash(a)

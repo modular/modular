@@ -45,6 +45,9 @@ from .base import CancelRequest, PrefillRequest, PrefillResponse
 from .config import TokenGenerationSchedulerConfig
 from .decode_scheduler import load_decode_scheduler
 from .embeddings_scheduler import EmbeddingsScheduler, EmbeddingsSchedulerConfig
+from .overlap_text_generation_scheduler import (
+    load_overlap_text_generation_scheduler,
+)
 from .prefill_scheduler import load_prefill_scheduler
 from .text_generation_scheduler import load_text_generation_scheduler
 
@@ -121,6 +124,20 @@ def load_scheduler(
             response_queue=response_queue,
             cancel_queue=cancel_queue,
             paged_manager=paged_manager,
+        )
+    elif pipeline_config.enable_overlap_scheduler:
+        assert isinstance(pipeline, Pipeline)
+        text_pipeline = cast(
+            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+            pipeline,
+        )
+        assert pipeline.__class__.__name__ == "OverlapTextGenerationPipeline"
+        return load_overlap_text_generation_scheduler(
+            text_pipeline,
+            pipeline_config,
+            request_queue=request_queue,
+            response_queue=response_queue,
+            cancel_queue=cancel_queue,
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
         assert isinstance(pipeline, Pipeline)

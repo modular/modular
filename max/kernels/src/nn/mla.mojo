@@ -322,7 +322,7 @@ fn flare_mla_decoding_dispatch[
     ragged: Bool = False,
     # Work arounds to unify KVCache and LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]inputs:
     # Differentiate two cases, KV cache's length is before adding the latest
-    # tokens e.g. zero for CE, and KV NDBuffer's length is the latest length
+    # tokens e.g. zero for CE, and KV LayoutTensor's length is the latest length
     # e.g. prompt length for CE.
     _is_cache_length_accurate: Bool = False,
     # valid_length is needed for KV cache inputs and is empty for LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]inputs

@@ -14,13 +14,23 @@ modular_py_test(
         "-n",
         "auto",
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    ignore_extra_deps = [
+        # Used for parallelizing tests
+        requirement("pytest-xdist"),
+    ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max",
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/python/max/mlir",
         requirement("pytest-xdist"),
+        requirement("numpy"),
     ],
 )

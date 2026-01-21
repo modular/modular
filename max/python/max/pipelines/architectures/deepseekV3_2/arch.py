@@ -22,10 +22,10 @@ from max.pipelines.lib import (
 )
 
 from . import weight_adapters
-from .model import DeepseekV32Model
+from .model import DeepseekV3_2Model
 
-deepseekV32_arch = SupportedArchitecture(
-    name="DeepseekV32ForCausalLM",
+deepseekV3_2_arch = SupportedArchitecture(
+    name="DeepseekV3_2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "deepseek-ai/DeepSeek-V3.2",
@@ -36,7 +36,7 @@ deepseekV32_arch = SupportedArchitecture(
         SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
     },
     multi_gpu_supported=True,
-    pipeline_model=DeepseekV32Model,
+    pipeline_model=DeepseekV3_2Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,

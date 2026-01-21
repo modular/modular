@@ -42,6 +42,7 @@ from max.serve.queue.zmq_queue import (
     generate_zmq_ipc_path,
 )
 from max.serve.scheduler.queues import EngineQueue
+from pytest_mock import MockerFixture
 
 
 def dataclass_equal(left: Any, right: Any) -> bool:
@@ -122,7 +123,7 @@ def test_serialization_and_deserialization_through_queue_with_msgpack() -> None:
     sys.platform == "darwin",
     reason="Shared memory via /dev/shm is not supported on macOS",
 )
-def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
+def test_vision_context_shared_memory_fallback(mocker: MockerFixture) -> None:
     """Test that vision context serialization falls back gracefully when shared memory is exhausted."""
 
     # Create realistic vision context with InternVL-sized image

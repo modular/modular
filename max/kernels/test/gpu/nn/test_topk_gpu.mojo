@@ -88,7 +88,7 @@ fn test_case_batched[
         out_idxs_shape.flattened_length()
     )
 
-    # Create NDBuffer for fill_fn (required by function signature)
+    # Create LayoutTensor for fill_fn (required by function signature)
     comptime in_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     var in_tensor = LayoutTensor[dtype, in_layout](
         in_host_ptr, RuntimeLayout[in_layout].row_major(in_shape)
@@ -404,7 +404,7 @@ fn test_case_multi_rank[
         out_idxs_shape.flattened_length()
     )
 
-    # Create NDBuffer for fill_fn (required by function signature)
+    # Create LayoutTensor for fill_fn (required by function signature)
     comptime in_layout = Layout.row_major[rank]()
     var in_tensor = LayoutTensor[dtype, in_layout](
         in_host_ptr, RuntimeLayout[in_layout].row_major(input_shape)

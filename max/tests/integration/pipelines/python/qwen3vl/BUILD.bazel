@@ -181,6 +181,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
+        requirement("pillow"),
         requirement("transformers"),
     ],
 )

@@ -270,11 +270,6 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
             cache_dtype,
         )
 
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Gets the number of hidden layers from the HuggingFace configuration."""
-        return Idefics3Config.get_num_layers(huggingface_config)
-
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled Idefics3 models into the MAX Engine session.
 
