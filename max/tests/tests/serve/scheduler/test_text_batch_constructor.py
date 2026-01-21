@@ -140,7 +140,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
-        max_batch_context_length=None,
+        max_batch_total_tokens=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=False,
@@ -175,7 +175,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
 
     assert batch_constructor._identify_priority(0) == RequestType.CE
     inputs = batch_constructor.construct_batch()
-    # 9 * 4 = 36 tokens, since no max_batch_context_length is set, we should have 4 requests in the batch
+    # 9 * 4 = 36 tokens, since no max_batch_total_tokens is set, we should have 4 requests in the batch
     assert len(inputs.batches[0]) == 4
     # since this is CE, we should have 1 step
     assert inputs.num_steps == 1
@@ -257,7 +257,7 @@ def test_text_batch_constructor__batch_construction_no_requests(
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
-        max_batch_context_length=None,
+        max_batch_total_tokens=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=False,
@@ -288,7 +288,7 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
-        max_batch_context_length=None,
+        max_batch_total_tokens=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=False,
@@ -328,7 +328,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
-        max_batch_context_length=None,
+        max_batch_total_tokens=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=True,
@@ -476,7 +476,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_batch_context_length=None,
+        max_batch_total_tokens=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=True,
         enable_chunked_prefill=True,
@@ -557,7 +557,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_batch_context_length=None,
+        max_batch_total_tokens=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=True,
         enable_chunked_prefill=False,

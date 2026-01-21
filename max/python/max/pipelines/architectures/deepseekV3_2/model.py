@@ -47,9 +47,9 @@ class DeepseekV3_2Model(DeepseekV3Model):
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
-        max_batch_context_length = self.pipeline_config.max_batch_context_length
+        max_batch_total_tokens = self.pipeline_config.max_batch_total_tokens
         # PipelineConfig would automatically resolve it if not set by user.
-        assert max_batch_context_length is not None, "max_length must be set"
+        assert max_batch_total_tokens is not None, "max_length must be set"
 
         if self.pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
             graph_mode = "prefill"
@@ -87,7 +87,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
-                max_tokens_per_rank=self.pipeline_config.prefill_chunk_size,
+                max_tokens_per_rank=self.pipeline_config.max_batch_input_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
                 dispatch_fp8_config=None,
@@ -156,7 +156,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
-            max_batch_context_length=max_batch_context_length,
+            max_batch_context_length=max_batch_total_tokens,
             float8_config=float8_config,
             ep_config=ep_config,
             graph_mode=graph_mode,

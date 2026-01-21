@@ -53,8 +53,8 @@ from .speculative_config import SpeculativeConfig
 
 logger = logging.getLogger("max.pipelines")
 
-# Default prefill chunk size for chunked prefill and memory estimation.
-DEFAULT_PREFILL_CHUNK_SIZE = 8192
+# Default max batch input tokens for chunked prefill and memory estimation.
+DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
 
 
 class PipelineConfig(ConfigFileModel):
@@ -136,7 +136,7 @@ class PipelineConfig(ConfigFileModel):
         default=True,
         description=(
             "Enable chunked prefill to split context encoding requests into "
-            "multiple chunks based on prefill_chunk_size."
+            "multiple chunks based on max_batch_input_tokens."
         ),
     )
 
@@ -157,8 +157,8 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    prefill_chunk_size: int = Field(
-        default=DEFAULT_PREFILL_CHUNK_SIZE,
+    max_batch_input_tokens: int = Field(
+        default=DEFAULT_MAX_BATCH_INPUT_TOKENS,
         description=(
             "The target number of un-encoded tokens to include in each batch. "
             "This value is used for chunked prefill and memory estimation."
@@ -232,11 +232,11 @@ class PipelineConfig(ConfigFileModel):
         description="Whether the scheduler should execute empty batches.",
     )
 
-    max_batch_context_length: int | None = Field(
+    max_batch_total_tokens: int | None = Field(
         default=None,
         description=(
             "Ensures that the sum of the context length in a batch does not "
-            "exceed max_batch_context_length. If None, the sum is not limited."
+            "exceed max_batch_total_tokens. If None, the sum is not limited."
         ),
     )
 
@@ -1031,17 +1031,17 @@ class PipelineConfig(ConfigFileModel):
                 )
                 self.max_length = clamped_max_seq_len
 
-        # Validate whether the architecture requires a max batch context length to be specified.
+        # Validate whether the architecture requires a max batch total tokens to be specified.
         # This needs to be done after max_length is resolved.
         if (
             arch.requires_max_batch_context_length
-            and self.max_batch_context_length is None
+            and self.max_batch_total_tokens is None
         ):
             logger.warning(
-                f"Architecture '{arch.name}' requires max-batch-context-length to be specified but found None. "
+                f"Architecture '{arch.name}' requires max-batch-total-tokens to be specified but found None. "
                 f"Defaulting to the max sequence length of the model: {self.max_length}"
             )
-            self.max_batch_context_length = self.max_length
+            self.max_batch_total_tokens = self.max_length
 
     # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
     #
@@ -1185,7 +1185,9 @@ class PipelineConfig(ConfigFileModel):
         logger.info(
             f"    chunked_prefill        : {self.enable_chunked_prefill}"
         )
-        logger.info(f"    prefill_chunk_size     : {self.prefill_chunk_size}")
+        logger.info(
+            f"    max_batch_input_tokens : {self.max_batch_input_tokens}"
+        )
         logger.info(
             f"    in_flight_batching     : {self.enable_in_flight_batching}"
         )

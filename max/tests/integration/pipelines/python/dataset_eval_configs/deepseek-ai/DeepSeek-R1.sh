@@ -18,7 +18,7 @@ max_length=50000
 extra_pipelines_args=(
   # --enable-echo  # Not needed for gsm8k_cot_llama
   --device-memory-utilization=0.6
-  --prefill-chunk-size=128
+  --max-batch-input-tokens=128
   --ep-size=8
   --data-parallel-degree=8
 )

@@ -291,7 +291,7 @@ class InternVLModel(
         `mgp.buffer.plan` op, and verifying with GPU free memory at runtime.
 
         The vision encoder memory scales with the number of images that can be
-        processed concurrently, which is limited by prefill_chunk_size / num_image_tokens
+        processed concurrently, which is limited by max_batch_input_tokens / num_image_tokens
         where num_image_tokens=256 for InternVL.
 
         TODO(GEX-2365): Replace this with a more general solution that analyzes
@@ -315,7 +315,8 @@ class InternVLModel(
         # Maximum number of images that can be processed is limited by
         # how many image tokens fit in the target new tokens
         max_images = (
-            pipeline_config.prefill_chunk_size // image_config.num_image_token
+            pipeline_config.max_batch_input_tokens
+            // image_config.num_image_token
         )
         # Ensure at least 1 image worth of memory.
         max_images = max(1, max_images)
@@ -336,7 +337,7 @@ class InternVLModel(
         # ~100KB per token for intermediate activations
         llm_memory_per_token = 100 * 1024  # 100 KiB
         llm_activation_memory = (
-            pipeline_config.prefill_chunk_size * llm_memory_per_token
+            pipeline_config.max_batch_input_tokens * llm_memory_per_token
         )
 
         total_activation_memory = (

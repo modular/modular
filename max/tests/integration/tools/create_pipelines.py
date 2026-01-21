@@ -1399,7 +1399,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={
             "max_length": 516,
             "trust_remote_code": False,
-            "prefill_chunk_size": 512,
+            "max_batch_input_tokens": 512,
             "ep_size": 8,
             "data_parallel_degree": 8,
         },
