@@ -50,7 +50,7 @@ from .audio_generator_pipeline import AudioGeneratorPipeline
 from .config_enums import RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo
-from .interfaces import PipelineModel
+from .interfaces import ArchConfig, PipelineModel
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
@@ -208,6 +208,9 @@ class SupportedArchitecture:
     This should be a class (not an instance) that implements either the `TextGenerationContext`
     or `EmbeddingsContext` protocol, defining how the pipeline processes and tracks requests.
     """
+
+    config: ArchConfig | None = None
+    """The architecture-specific configuration for the model."""
 
     rope_type: RopeType = RopeType.none
     """The type of RoPE (Rotary Position Embedding) used by the model."""
