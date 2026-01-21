@@ -40,8 +40,7 @@ comptime Never = __mlir_type.`!kgen.never`
 comptime EllipsisType = __mlir_type.`!lit.ellipsis`
 
 
-@register_passable("trivial")
-struct Origin[*, mut: Bool]:
+struct Origin[*, mut: Bool](AnyTrivialRegType):
     comptime _mlir_type = __mlir_type[
         `!lit.origin<`,
         Self.mut._mlir_value,
@@ -127,8 +126,7 @@ struct Error(Copyable):
         pass
 
 
-@register_passable("trivial")
-struct NoneType:
+struct NoneType(AnyTrivialRegType):
     comptime _mlir_type = __mlir_type.`!kgen.none`
     """Raw MLIR type of the `None` value."""
 
@@ -142,8 +140,7 @@ struct NoneType:
 
 
 @nonmaterializable(Int)
-@register_passable("trivial")
-struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
+struct IntLiteral[value: __mlir_type.`!pop.int_literal`](AnyTrivialRegType):
     comptime _zero = IntLiteral[
         __mlir_attr.`#pop.int_literal<0> : !pop.int_literal`
     ]()
@@ -264,8 +261,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
 
 
 @nonmaterializable(FloatDyn)
-@register_passable("trivial")
-struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
+struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](AnyTrivialRegType):
     @always_inline("builtin")
     fn __init__(out self):
         pass
@@ -319,8 +315,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
         return {}
 
 
-@register_passable("trivial")
-struct FloatDyn:
+struct FloatDyn(AnyTrivialRegType):
     var _mlir_value: __mlir_type.`!pop.scalar<f64>`
 
     @always_inline("builtin")
@@ -523,8 +518,7 @@ struct Int(AnyTrivialRegType, Intable, Stringable):
         return "[unimplemented]"
 
 
-@register_passable("trivial")
-struct UInt8:
+struct UInt8(AnyTrivialRegType):
     fn __init__(out self):
         pass
 
@@ -536,13 +530,12 @@ struct UInt8:
 comptime Byte = UInt8
 
 
-@register_passable("trivial")
 struct Span[
     mut: Bool,
     //,
     T: ImplicitlyCopyable,
     origin: Origin[mut=mut],
-]:
+](AnyTrivialRegType):
     # Field
     var _data: UnsafePointer[Self.T, Self.origin]
     var _len: Int
@@ -557,9 +550,8 @@ struct Span[
         return self._data
 
 
-@register_passable("trivial")
 @nonmaterializable(String)
-struct StringLiteral[value: __mlir_type.`!kgen.string`]:
+struct StringLiteral[value: __mlir_type.`!kgen.string`](AnyTrivialRegType):
     @always_inline("builtin")
     fn __init__(out self):
         pass
@@ -578,8 +570,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`]:
         return self
 
 
-@register_passable("trivial")
-struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]]:
+struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](AnyTrivialRegType):
     var _slice: Span[Byte, Self.origin]
 
     @implicit
@@ -709,8 +700,7 @@ struct Bool(AnyTrivialRegType):
         return __mlir_op.`pop.and`(self._mlir_value, rhs._mlir_value)
 
 
-@register_passable("trivial")
-struct Slice:
+struct Slice(AnyTrivialRegType):
     @implicit
     fn __init__(out self, end: Int):
         pass
@@ -858,8 +848,7 @@ trait ImplicitlyDestructible:
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-struct VariadicList[type: __TypeOfAllTypes]:
+struct VariadicList[type: __TypeOfAllTypes](AnyTrivialRegType):
     comptime _mlir_type = __mlir_type[`!kgen.variadic<`, Self.type, `>`]
 
     var value: Self._mlir_type
@@ -1041,8 +1030,7 @@ struct __ParameterClosureCaptureList[
         __mlir_op.`kgen.capture_list.expand`(self.value)
 
 
-@register_passable("trivial")
-struct AddressSpace:
+struct AddressSpace(AnyTrivialRegType):
     """Address space of the pointer."""
 
     var _value: Int
@@ -1067,14 +1055,13 @@ struct AddressSpace:
         return self._value._mlir_value
 
 
-@register_passable("trivial")
 struct Pointer[
     mut: Bool,
     //,
     type: AnyType,
     origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-]:
+](AnyTrivialRegType):
     comptime _mlir_type = __mlir_type[
         `!lit.ref<`,
         Self.type,
@@ -1151,7 +1138,6 @@ struct Tuple[*element_types: AnyType](ImplicitlyCopyable):
             pass
 
 
-@register_passable("trivial")
 struct UnsafePointer[
     mut: Bool,
     //,
@@ -1159,7 +1145,7 @@ struct UnsafePointer[
     origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-]:
+](AnyTrivialRegType):
     comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         Self.type,
@@ -1230,8 +1216,7 @@ comptime MutOpaquePointer[
 ] = UnsafePointer[NoneType, origin, address_space=address_space]
 
 
-@register_passable("trivial")
-struct _StridedRangeIterator(Iterator):
+struct _StridedRangeIterator(AnyTrivialRegType, Iterator):
     var start: Int
     var end: Int
     var step: Int
@@ -1260,8 +1245,7 @@ struct _StridedRangeIterator(Iterator):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct StopIteration:
+struct StopIteration(AnyTrivialRegType):
     pass
 
 
@@ -1433,8 +1417,7 @@ trait Intable:
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-struct DType:
+struct DType(AnyTrivialRegType):
     comptime type = __mlir_type.`!kgen.dtype`
     var _mlir_value: Self.type
 
@@ -1459,8 +1442,7 @@ comptime UInt32 = SIMD[DType.uint32, 1]
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-struct SIMD[dtype: DType, size: Int]:
+struct SIMD[dtype: DType, size: Int](AnyTrivialRegType):
     comptime _mlir_type = __mlir_type[
         `!pop.simd<`, Self.size._mlir_value, `, `, Self.dtype._mlir_value, `>`
     ]
