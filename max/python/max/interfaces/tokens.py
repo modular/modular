@@ -206,6 +206,7 @@ class TokenBuffer:
     occurs during chunked prefill).
 
     This includes one attribute for accessing tokens:
+
     - `active`: The slice of the array containing the tokens scheduled
       for processing in the next batch.
 
@@ -328,8 +329,7 @@ class TokenBuffer:
     # ============================================================================
 
     def __getitem__(self, index: int | slice) -> TokenSlice:
-        """
-        Retrieve token(s) from the buffer at the specified index or slice.
+        """Retrieve token(s) from the buffer at the specified index or slice.
 
         Args:
             index: An integer or slice specifying the token(s) to access.
@@ -408,6 +408,7 @@ class TokenBuffer:
         """Return the total number of valid tokens in the buffer.
 
         This includes both prompt and generated tokens currently held in the buffer.
+
         Returns:
             int: The current total number of tokens.
         """
@@ -599,8 +600,7 @@ class TokenBuffer:
 
     @property
     def has_outstanding_generated_tokens(self) -> bool:
-        """
-        Indicates whether there are generated tokens that have not yet been consumed.
+        """Indicates whether there are generated tokens that have not yet been consumed.
 
         Returns:
             bool: True if there are outstanding generated tokens to be streamed or processed; False otherwise.
