@@ -115,6 +115,11 @@ MODELS = {
         "max-ci@2xH100",
     ],
     "redhatai/gemma-3-27b-it-fp8-dynamic": [],
+    "state-spaces/mamba-130m-hf": [
+        "sglang",  # SGLang doesn't support Mamba architecture
+        "vllm",  # vLLM doesn't support Mamba architecture
+        "multi",  # Skip multi-GPU for now
+    ],
     "tbmod/gemma-3-4b-it": [
         "multi",
         "H100",

@@ -1176,9 +1176,14 @@ class PipelineConfig(ConfigFileModel):
         kv_config = self.model.kv_cache
         if kv_config._available_cache_memory is None:
             raise ValueError(
-                "KVCache config is not available after config resolution."
+                "Cache config is not available after config resolution."
             )
         memory_str = to_human_readable_bytes(kv_config._available_cache_memory)
+
+        # Determine cache type based on architecture
+        cache_label = (
+            "ssm_cache_memory" if "Mamba" in arch.name else "cache_memory"
+        )
 
         devices_str = ", ".join(
             f"{d.device_type}[{d.id}]" for d in self.model.device_specs
@@ -1197,7 +1202,7 @@ class PipelineConfig(ConfigFileModel):
         logger.info(f"    devices            : {devices_str}")
         logger.info(f"    max_batch_size     : {self.max_batch_size}")
         logger.info(f"    max_seq_len        : {self.max_length}")
-        logger.info(f"    cache_memory       : {memory_str}")
+        logger.info(f"    {cache_label:18} : {memory_str}")
         logger.info("")
 
     @staticmethod

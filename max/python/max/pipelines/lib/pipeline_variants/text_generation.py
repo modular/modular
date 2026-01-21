@@ -57,6 +57,7 @@ from ..config_enums import RepoType
 from ..hf_utils import download_weight_files
 from ..interfaces import PipelineModel
 from ..interfaces.generate import GenerateMixin
+from ..interfaces.kv_cache import KVCacheMixin
 from ..sampling import (
     FusedSamplingProcessor,
     apply_logits_processors,
@@ -274,7 +275,9 @@ class TextGenerationPipeline(
         self,
     ) -> list[Any]:
         """Return the list of KV cache managers backing this pipeline."""
-        return [self._pipeline_model.kv_manager]
+        if isinstance(self._pipeline_model, KVCacheMixin):
+            return [self._pipeline_model.kv_manager]
+        return []
 
     def update_for_structured_output(
         self,
@@ -407,10 +410,13 @@ class TextGenerationPipeline(
             if bitmask is not None:
                 self.update_for_structured_output(context, bitmask, i)
 
-            if not self._pipeline_model.kv_manager.contains(context.request_id):
-                self._pipeline_model.kv_manager.claim(
-                    context.request_id, replica_idx=replica_idx
-                )
+            if isinstance(self._pipeline_model, KVCacheMixin):
+                if not self._pipeline_model.kv_manager.contains(
+                    context.request_id
+                ):
+                    self._pipeline_model.kv_manager.claim(
+                        context.request_id, replica_idx=replica_idx
+                    )
 
             # Update num_steps.
             num_steps = calculate_num_steps(
@@ -422,26 +428,45 @@ class TextGenerationPipeline(
         if bitmask is not None:
             num_steps = 1
 
-        # Retrieve the KV Cache Inputs.
-        kv_cache_inputs = self._pipeline_model.kv_manager.get_runtime_inputs(
-            flat_batch, num_steps
-        )
+        # Retrieve the KV Cache Inputs (only for models that use KV cache).
+        kv_cache_inputs = None
+        if isinstance(self._pipeline_model, KVCacheMixin):
+            kv_cache_inputs = (
+                self._pipeline_model.kv_manager.get_runtime_inputs(
+                    flat_batch, num_steps
+                )
+            )
 
         # Log batch details
         if self.batch_info_output_fname is not None:
             self._record_batch_info(flat_batch, num_steps)
 
-        return (
-            self._pipeline_model.prepare_initial_token_inputs(
-                replica_batches=replica_batches,
-                kv_cache_inputs=KVCacheInputsSequence(
-                    kv_cache_inputs=kv_cache_inputs
+        # Prepare initial token inputs
+        if (
+            isinstance(self._pipeline_model, KVCacheMixin)
+            and kv_cache_inputs is not None
+        ):
+            return (
+                self._pipeline_model.prepare_initial_token_inputs(
+                    replica_batches=replica_batches,
+                    kv_cache_inputs=KVCacheInputsSequence(
+                        kv_cache_inputs=kv_cache_inputs
+                    ),
                 ),
-            ),
-            num_steps,
-            bitmask,
-            flat_batch,
-        )
+                num_steps,
+                bitmask,
+                flat_batch,
+            )
+        else:
+            # For models without KV cache (e.g., Mamba)
+            return (
+                self._pipeline_model.prepare_initial_token_inputs(
+                    replica_batches=replica_batches,
+                ),
+                num_steps,
+                bitmask,
+                flat_batch,
+            )
 
     @traced
     def _maybe_sort_loras(
@@ -606,20 +631,23 @@ class TextGenerationPipeline(
             if i == num_steps - 1:
                 break
 
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs, KVCacheInputsSequence
-            ), (
-                "prepare_batch instantiates and passes this as a KVCacheInputsSequence"
-            )
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
-            ), "increment_cache_lengths instantiates and passes this as a list"
-            curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
-                self._pipeline_model.kv_manager.increment_cache_lengths(
-                    curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
-                    curr_step_inputs,
+            if isinstance(self._pipeline_model, KVCacheMixin):
+                assert isinstance(
+                    curr_step_inputs.kv_cache_inputs, KVCacheInputsSequence
+                ), (
+                    "prepare_batch instantiates and passes this as a KVCacheInputsSequence"
                 )
-            )
+                assert isinstance(
+                    curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
+                ), (
+                    "increment_cache_lengths instantiates and passes this as a list"
+                )
+                curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
+                    self._pipeline_model.kv_manager.increment_cache_lengths(
+                        curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
+                        curr_step_inputs,
+                    )
+                )
             with Tracer(f"prepare_next_token_inputs_{i}"):
                 curr_step_inputs = (
                     self._pipeline_model.prepare_next_token_inputs(
@@ -661,10 +689,12 @@ class TextGenerationPipeline(
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
-        self._pipeline_model.kv_manager.step(flat_batch)
+        if isinstance(self._pipeline_model, KVCacheMixin):
+            self._pipeline_model.kv_manager.step(flat_batch)
 
         return res
 
     def release(self, request_id: RequestID) -> None:
         """Mark the context as complete, releasing the cache slot from the KV manager."""
-        self._pipeline_model.kv_manager.release(request_id)
+        if isinstance(self._pipeline_model, KVCacheMixin):
+            self._pipeline_model.kv_manager.release(request_id)
