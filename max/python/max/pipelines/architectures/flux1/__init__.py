@@ -10,27 +10,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Interfaces for MAX pipelines."""
 
-from .arch_config import ArchConfig, ArchConfigWithAttentionKVCache
-from .diffusion_pipeline import DiffusionPipeline
-from .generate import GenerateMixin
-from .kv_cache import KVCacheMixin
-from .pipeline_model import (
-    AlwaysSignalBuffersMixin,
-    ModelInputs,
-    ModelOutputs,
-    PipelineModel,
-)
-
-__all__ = [
-    "AlwaysSignalBuffersMixin",
-    "ArchConfig",
-    "ArchConfigWithAttentionKVCache",
-    "DiffusionPipeline",
-    "GenerateMixin",
-    "KVCacheMixin",
-    "ModelInputs",
-    "ModelOutputs",
-    "PipelineModel",
-]
+from .arch import flux1_arch
