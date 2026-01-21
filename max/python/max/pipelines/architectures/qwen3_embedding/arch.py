@@ -13,37 +13,35 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.architectures.llama3 import weight_adapters
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
 )
 
-from ..llama3 import weight_adapters
-from .model import Qwen3Model
+from .model import Qwen3EmbeddingModel
 
-qwen3_arch = SupportedArchitecture(
+qwen3_embedding_arch = SupportedArchitecture(
     name="Qwen3ForCausalLM",
-    task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["Qwen/Qwen3-8B", "Qwen/Qwen3-30B-A3B"],
-    default_weights_format=WeightsFormat.safetensors,
+    task=PipelineTask.EMBEDDINGS_GENERATION,
+    example_repo_ids=[
+        "Qwen/Qwen3-Embedding-0.6B",
+        "Qwen/Qwen3-Embedding-4B",
+        "Qwen/Qwen3-Embedding-8B",
+    ],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.bfloat16: [
-            KVCacheStrategy.PAGED,
-        ],
-        SupportedEncoding.float32: [
-            KVCacheStrategy.PAGED,
-        ],
+        SupportedEncoding.float32: [],
+        SupportedEncoding.bfloat16: [],
     },
-    pipeline_model=Qwen3Model,
+    pipeline_model=Qwen3EmbeddingModel,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type=RopeType.normal,
+    default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+        WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
 )
