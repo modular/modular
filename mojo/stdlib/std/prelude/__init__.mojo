@@ -116,6 +116,7 @@ from builtin.simd import (
     UInt64,
     UInt128,
     UInt256,
+    UInt,
 )
 from builtin.sort import partition, sort
 from builtin.str import Stringable
@@ -137,7 +138,6 @@ from builtin.type_aliases import (
     MutExternalOrigin,
     unsafe_origin_mutcast,
 )
-from builtin.uint import UInt
 from builtin.value import (
     Copyable,
     Defaultable,

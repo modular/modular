@@ -39,7 +39,6 @@ _LIT_TESTS = [
     "test_print_long_string.mojo",
     "test_print_stderr.mojo",
     "test_stdin.mojo",
-    "test_uint_error.mojo",
 ]
 
 _MOJO_COMPILE_OPTS = {

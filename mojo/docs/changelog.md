@@ -805,6 +805,17 @@ what we publish.
 - `StringSlice.char_length()` has been renamed `count_codepoints()`. The same
   function was added to `String` and `StringLiteral`.
 
+- The `UInt` struct has been replaced by a new `UInt` type alias to
+  `Scalar[DType.uint]`. This is a major change that enables more powerful
+  generic programming by abstracting over unsigned SIMD data dtypes of machine
+  word size.
+
+  This change will likely break code that relies on implicit conversions to/from
+  `UInt` and `Int`/`SIMD`. The `SIMD` type is also slightly less foldable at
+  compile time, which can cause some code in where clauses, comptime
+  expressions, and other code in parametric contexts to now fail or crash. These
+  shortcomings will be addressed in subsequent patches as needed.
+
 ### Tooling changes
 
 - The Mojo compiler now supports the `-Werror` flag, which treats all warnings

@@ -69,11 +69,10 @@ fn next_power_of_two_uint_v1(val: UInt) -> UInt:
 
 
 fn next_power_of_two_uint_v2(val: UInt) -> UInt:
-    var v = Scalar[DType.int](val)
     return UInt(
-        mlir_value=v.ne(0)
-        .select(1 << (bit_width_of[UInt]() - count_leading_zeros(v - 1)), 1)
-        .__mlir_index__()
+        val.eq(0).select(
+            1 << (bit_width_of[UInt]() - count_leading_zeros(val - 1)), 1
+        )
     )
 
 
