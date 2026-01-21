@@ -41,10 +41,9 @@ static LogicalResult verifyAttributes(Operation *op, TargetInfoAttr target) {
                              /*replaceLocs=*/false,
                              /*replaceTypes=*/false);
 
-  if (hasHeapAllocation && isGPUTriple(target.getTriple())) {
-    op->emitError("heap allocation is not supported on GPU");
-    return failure();
-  }
+  if (hasHeapAllocation && isGPUTriple(target.getTriple()))
+    return op->emitError("heap allocation is not supported on GPU");
+
   return success();
 }
 
@@ -56,13 +55,20 @@ static LogicalResult verifyOperation(Operation *op, TargetInfoAttr target) {
   // functions, since GPU module may have lots of these operations from the
   // beginning, but they may not be used and will be cleared by some
   // optimization later.
-  if (isa<POP::AlignedAllocOp>(op)) {
-    op->emitError("heap allocation is not supported on GPU");
-    return failure();
-  }
-  if (isa<POP::AlignedFreeOp>(op)) {
-    op->emitError("heap deallocation is not supported on GPU");
-    return failure();
+  if (isa<POP::AlignedAllocOp>(op))
+    return op->emitError("heap allocation is not supported on GPU");
+
+  if (isa<POP::AlignedFreeOp>(op))
+    return op->emitError("heap deallocation is not supported on GPU");
+
+  if (isMetalTriple(target.getTriple())) {
+    if (isa<POP::AtomicRMWOp, POP::AtomicCmpXchgOp>(op)) {
+      // TODO: remove after MOCO-2423 is fixed
+      return op->emitError(
+          "atomic operations are not yet implemented on Apple GPU");
+    }
+    if (isa<POP::ExternPointerSymbolOp>(op))
+      return op->emitError("external memory is not supported on Apple GPU");
   }
   return verifyAttributes(op, target);
 }
