@@ -80,6 +80,25 @@ def test_rebind_var_does_not_copy_only_moves():
     assert_equal(rebound.moved, 1)
 
 
+def test_rebind_owned_does_not_copy_only_moves():
+    var counter = MoveCopyCounter()
+    var rebound = rebind[MoveCopyCounter](counter^)
+    assert_equal(rebound.copied, 0)
+    assert_equal(rebound.moved, 1)
+
+
+fn indirect_rebind_owned[x: Int](var a: MyMemStruct[x]) -> MyMemStruct[4]:
+    return rebind[MyMemStruct[4]](a^)
+
+
+def test_rebind_owned_with_movable_type():
+    # Test that rebind works with owned values of Movable types
+    var value = MyMemStruct[4](17)
+    var rebound = indirect_rebind_owned(value^)
+    assert_equal(rebound.size, 4)
+    assert_equal(rebound.value, 17)
+
+
 def test_rebind_does_not_call_del():
     var n_dels = 0
     var counter = DelCounter(UnsafePointer(to=n_dels))

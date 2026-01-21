@@ -74,6 +74,40 @@ fn rebind[
 
 
 @always_inline("nodebug")
+fn rebind[
+    src_type: Movable,
+    //,
+    dest_type: Movable,
+](var src: src_type) -> dest_type:
+    """Statically assert that a parameter input type `src_type` resolves to the
+    same type as a parameter result type `dest_type` after function
+    instantiation and "rebind" the input to the result type, returning an
+    owned value with an adjusted type.
+
+    This overload takes an owned variable and moves the value to the return
+    type, avoiding the need for the type to be `ImplicitlyCopyable`.
+
+    This function is meant to be used in uncommon cases where a parametric type
+    depends on the value of a constrained parameter in order to manually refine
+    the type with the constrained parameter value.
+
+    Parameters:
+        src_type: The original type.
+        dest_type: The type to rebind to.
+
+    Args:
+        src: The value to rebind.
+
+    Returns:
+        An owned value rebound as `dest_type`.
+    """
+    ref dest_ref = rebind[dest_type](src)
+    var result = UnsafePointer(to=dest_ref).take_pointee()
+    __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(src))
+    return result^
+
+
+@always_inline("nodebug")
 fn rebind_var[
     src_type: Movable,
     //,
@@ -120,7 +154,7 @@ Parameters:
 
 @always_inline
 fn trait_downcast[
-    T: __TypeOfAllTypes, //, Trait: type_of(AnyType)
+    T: Movable, //, Trait: type_of(Movable)
 ](var src: T) -> downcast[T, Trait]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving
@@ -137,7 +171,7 @@ fn trait_downcast[
     Returns:
         The downcasted value.
     """
-    return rebind[downcast[T, Trait]](src)
+    return rebind[downcast[T, Trait]](src^)
 
 
 fn trait_downcast_var[
