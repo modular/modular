@@ -189,6 +189,29 @@ struct ConvertPOPCeil : public ConvertPOPToLLVMPattern<CeilOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPTrunc
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPTrunc : public ConvertPOPToLLVMPattern<TruncOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(TruncOp op, TruncOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    KGENDType dtype = *op.getType().getResolvedDType();
+    if (!dtype.isFloat()) {
+      rewriter.replaceOp(op, adaptor.getOperand());
+      return success();
+    }
+    Type type = this->convertType(op.getType());
+    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+        op, type, rewriter.getStringAttr("llvm.trunc"),
+        SmallVector<Value>{adaptor.getOperand()});
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPShr
 //===----------------------------------------------------------------------===//
 
@@ -3046,6 +3069,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPStringAddress,
       ConvertPOPStringSize,
       ConvertPOPSub,
+      ConvertPOPTrunc,
       ConvertPOPUnionBitcast,
       ConvertPOPUnionUnwrap,
       ConvertPOPUnionWrap,

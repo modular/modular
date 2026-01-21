@@ -51,6 +51,25 @@ kgen.func @ceil() -> (!pop.simd<2, f32>, !pop.simd<2, si8>,
                                !pop.scalar<index>, !pop.scalar<uindex>
 }
 
+// CHECK-LABEL: @trunc
+kgen.func @trunc() -> (!pop.simd<2, f32>, !pop.simd<2, si8>,
+                       !pop.scalar<index>, !pop.scalar<uindex>) {
+  // CHECK-DAG: <"1", "-1">
+  // CHECK-DAG: <3, -4>
+  // CHECK-DAG: <7>
+  // CHECK-DAG: <8>
+  %0 = kgen.param.constant: simd<2, f32> = <<"1.9", "-1.2">>
+  %1 = kgen.param.constant: simd<2, si8> = <<3, -4>>
+  %2 = kgen.param.constant: scalar<index> = <7>
+  %3 = kgen.param.constant: scalar<uindex> = <8>
+  %4 = pop.trunc %0 : !pop.simd<2, f32>
+  %5 = pop.trunc %1 : !pop.simd<2, si8>
+  %6 = pop.trunc %2 : !pop.scalar<index>
+  %7 = pop.trunc %3 : !pop.scalar<uindex>
+  kgen.return %4, %5, %6, %7 : !pop.simd<2, f32>, !pop.simd<2, si8>,
+                               !pop.scalar<index>, !pop.scalar<uindex>
+}
+
 // CHECK-LABEL: @add
 kgen.func @add() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
   // CHECK-DAG: <4>
