@@ -275,11 +275,6 @@ class InternVLModel(
         )
 
     @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Gets the number of hidden layers from the HuggingFace configuration."""
-        return InternVLConfig.get_num_layers(huggingface_config)
-
-    @classmethod
     def estimate_activation_memory(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:

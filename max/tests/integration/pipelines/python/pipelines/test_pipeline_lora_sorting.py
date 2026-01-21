@@ -142,11 +142,6 @@ class MockPipelineModel(PipelineModel[ContextT]):
         )
 
     @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        del huggingface_config
-        return 1
-
-    @classmethod
     def infer_optional_batch_size(
         cls,
         pipeline_config: PipelineConfig,

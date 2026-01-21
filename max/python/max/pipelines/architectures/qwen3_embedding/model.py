@@ -455,15 +455,3 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             )
 
         return configured_max
-
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Get number of transformer layers.
-
-        Args:
-            huggingface_config: HuggingFace configuration
-
-        Returns:
-            Number of layers
-        """
-        return huggingface_config.num_hidden_layers

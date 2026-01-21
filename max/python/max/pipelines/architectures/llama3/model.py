@@ -184,10 +184,6 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             cache_dtype,
         )
 
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return Llama3Config.get_num_layers(huggingface_config)
-
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
         assert isinstance(model_inputs, Llama3Inputs)

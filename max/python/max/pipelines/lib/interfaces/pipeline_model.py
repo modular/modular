@@ -320,8 +320,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
         # TODO we should map HF configs to a unified MAX Config object
         # this would help avoid these excessive calls to class methods.
-        n_layers = cls.get_num_layers(huggingface_config=huggingface_config)
-
         kv_params = cls.get_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
@@ -329,6 +327,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
+        n_layers = kv_params.num_layers
         inferred_batch_size = infer_optimal_batch_size(
             params=kv_params,
             max_seq_len=cls.calculate_max_seq_len(

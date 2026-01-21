@@ -143,7 +143,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             )
 
     @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+    def _get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         if hasattr(huggingface_config, "num_hidden_layers"):
             return huggingface_config.num_hidden_layers
         elif hasattr(huggingface_config, "num_layers"):
@@ -171,7 +171,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             dtype=cache_dtype,
             n_kv_heads=num_kv_heads,
             head_dim=hidden_size // num_kv_heads,
-            num_layers=cls.get_num_layers(huggingface_config),
+            num_layers=cls._get_num_layers(huggingface_config),
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,

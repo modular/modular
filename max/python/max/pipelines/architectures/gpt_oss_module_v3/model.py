@@ -189,21 +189,6 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             cache_dtype,
         )
 
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Gets the number of hidden layers from the HuggingFace configuration.
-
-        Delegates to the :obj:`GptOssConfig.get_num_layers` static method.
-
-        Args:
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The number of hidden layers.
-        """
-        return GptOssConfig.get_num_layers(huggingface_config)
-
     def load_model(self) -> Callable[..., Any]:
         """Loads the compiled GPT OSS model into the MAX Engine session.
 

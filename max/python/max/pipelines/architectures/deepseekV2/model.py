@@ -202,10 +202,6 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         )
 
     @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return huggingface_config.num_hidden_layers
-
-    @classmethod
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,

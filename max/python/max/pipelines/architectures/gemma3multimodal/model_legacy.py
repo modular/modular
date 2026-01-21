@@ -144,18 +144,3 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
             kv_cache_config,
             cache_dtype,
         )
-
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Gets the number of hidden layers from the HuggingFace configuration.
-
-        Delegates to the :obj:`Gemma3Config.get_num_layers` static method.
-
-        Args:
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The number of hidden layers.
-        """
-        return super().get_num_layers(huggingface_config.text_config)

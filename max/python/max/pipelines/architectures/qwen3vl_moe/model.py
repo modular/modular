@@ -206,12 +206,6 @@ class Qwen3VLModel(
         )
 
     # TODO: Seems like a common pattern. Implement in a base class?
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Gets the number of hidden layers from the HuggingFace configuration."""
-        return Qwen3VLConfig.get_num_layers(huggingface_config)
-
-    # TODO: Seems like a common pattern. Implement in a base class?
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
