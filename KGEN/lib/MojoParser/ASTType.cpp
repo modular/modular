@@ -669,6 +669,14 @@ bool ASTType::isAnyTrivialRegType(llvm::SMLoc loc, SharedState &shared) const {
   if (!typeDecl)
     return true; // MLIR Types are trivial register passable.
 
+  // TODO: probably no need to check this
+  // once we deprecate @register_passable("trivial")
+  if (auto structOp =
+          dyn_cast_or_null<StructDeclOp>(typeDecl->getIfOperation())) {
+    if (structOp.isRegisterPassableTrivial())
+      return true;
+  }
+
   // Check whether the type conforms to `AnyTrivialRegType` trait.
   ASTDecl *traitDecl = shared.lookupBuiltinTrait("AnyTrivialRegType", typeDecl,
                                                  typeDecl->getLoc());

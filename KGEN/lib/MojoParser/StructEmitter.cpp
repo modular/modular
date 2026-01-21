@@ -792,11 +792,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   // in one shot instead of breaking it down into fields because we know all the
   // underlying copy/move operations are trivial.
   // TODO: Use memcpy for memory trivial types when we have them.
-  bool isTrivialRegisterPassableType =
-      structDecl.getTypeDeclSelf().isAnyTrivialRegType(structDecl.getLoc(),
-                                                       shared);
-  if (structDeclOp.isRegisterPassableTrivial() ||
-      isTrivialRegisterPassableType) {
+  if (structDecl.getTypeDeclSelf().isAnyTrivialRegType(structDecl.getLoc(),
+                                                       shared)) {
     structDeclOp.setConvention(
         M::KGEN::LIT::TypeConvention::RegisterPassableTrivial);
     Value value = LIT::RefLoadOp::create(b, existingArg);
@@ -960,11 +957,9 @@ void StructEmitter::populateExplicitCopy(ASTDecl &fnDecl) {
   Value resultToReturn;
   if (structDecl.getTypeDeclSelf().isImplicitlyCopyable(fnDecl.getLoc(),
                                                         shared)) {
-    bool isTrivialRegisterPassableType =
-        structDecl.getTypeDeclSelf().isAnyTrivialRegType(structDecl.getLoc(),
-                                                         shared);
-    if (structDeclOp.isRegisterPassableTrivial() ||
-        isTrivialRegisterPassableType) {
+
+    if (structDecl.getTypeDeclSelf().isAnyTrivialRegType(structDecl.getLoc(),
+                                                         shared)) {
       resultToReturn = fn.getArgument(0);
     } else if (structDeclOp.isRegisterPassable()) {
       MBValue selfArg = MBValue(fn.getArgument(0));
