@@ -10,12 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Shared memory utilities for zero-copy NumPy array transfer."""
+"""Shared memory utilities for zero-copy NumPy array transfer.
+
+Note:
+    Shared memory is disabled on macOS as /dev/shm is not supported on Darwin systems.
+    On macOS, arrays will fall back to standard msgpack serialization.
+"""
 
 from __future__ import annotations
 
 import logging
 import os
+import platform
 import time
 import uuid
 import weakref
@@ -33,6 +39,15 @@ LAST_WARNING = time.monotonic()
 WARNING_INTERVAL = 30.0  # seconds
 
 
+def _is_macos() -> bool:
+    """Check if the current platform is macOS.
+
+    Returns:
+        True if running on macOS (Darwin), False otherwise
+    """
+    return platform.system() == "Darwin"
+
+
 def can_allocate(size: int) -> bool:
     """Check if we can allocate the given size in shared memory.
 
@@ -42,6 +57,10 @@ def can_allocate(size: int) -> bool:
     Returns:
         True if allocation is likely to succeed
     """
+    # macOS doesn't support /dev/shm, so shared memory allocation is disabled
+    if _is_macos():
+        return False
+
     try:
         stat = os.statvfs(path="/dev/shm")
         available = stat.f_bsize * stat.f_bavail
@@ -75,8 +94,13 @@ def ndarray_to_shared_memory(arr: npt.NDArray[Any]) -> SharedMemoryArray | None:
         arr: The NumPy array to store in shared memory
 
     Returns:
-        SharedMemoryArray if successful, None if shared memory is full or creation fails
+        SharedMemoryArray if successful, None if shared memory is full or creation fails.
+        On macOS, always returns None as /dev/shm is not supported.
     """
+    # macOS doesn't support /dev/shm, so disable shared memory completely
+    if _is_macos():
+        return None
+
     # Check shared memory capacity.
     if not can_allocate(arr.nbytes):
         global LAST_WARNING
