@@ -34,6 +34,19 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 
+def replace_deprecated_model_flag(args: list[str]) -> list[str]:
+    """Replace deprecated --model flag with --model-path."""
+    updated_args: list[str] = []
+    for arg in args:
+        if arg == "--model":
+            updated_args.append("--model-path")
+        elif arg.startswith("--model="):
+            updated_args.append("--model-path" + arg[len("--model") :])
+        else:
+            updated_args.append(arg)
+    return updated_args
+
+
 class WithLazyPipelineOptions(click.Command):
     """Command wrapper that defers loading pipeline configuration options
 
@@ -85,8 +98,14 @@ class WithLazyPipelineOptions(click.Command):
         return super().invoke(ctx)
 
     def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        # Accept deprecated --model flag by rewriting it to --model-path.
         self._ensure_options_loaded()
-        return super().parse_args(ctx, args)
+        updated_args = replace_deprecated_model_flag(args)
+        if updated_args != args:
+            logger.warning(
+                "Deprecated flag --model detected; use --model-path instead."
+            )
+        return super().parse_args(ctx, updated_args)
 
     def get_params(self, ctx: click.Context) -> list[click.Parameter]:
         self._ensure_options_loaded()
