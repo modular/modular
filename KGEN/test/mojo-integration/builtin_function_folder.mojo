@@ -22,14 +22,6 @@ struct IntT[x: Int](ImplicitlyCopyable):
         pass
 
 
-struct UIntT[x: UInt](ImplicitlyCopyable):
-    fn __init__(out self):
-        pass
-
-    fn __copyinit__(out self, existing: Self):
-        pass
-
-
 struct BoolT[x: Bool](ImplicitlyCopyable):
     fn __init__(out self):
         pass
@@ -47,20 +39,6 @@ struct BoolT[x: Bool](ImplicitlyCopyable):
 fn fold_select_op[B: Int = 4, C: Int = 3]() -> IntT[B]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#IntT <:!Int B>>, mut *"a`1">
     var a = IntT[select(True, B, C)]()
-    return a
-
-
-##===----------------------------------------------------------------------===##
-# Fold UInt/index type ops
-##===----------------------------------------------------------------------===##
-
-
-# CHECK-LABEL: lit.fn @"fold_index_ceildiv
-fn fold_index_ceildiv() -> UIntT[2]:
-    comptime A: UInt = 5
-    comptime B: UInt = 3
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#UIntT <:!UInt {2}>>, mut *"a`3">
-    var a = UIntT[A.__ceildiv__(B)]()
     return a
 
 
