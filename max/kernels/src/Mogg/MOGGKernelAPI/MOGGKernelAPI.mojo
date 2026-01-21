@@ -227,6 +227,7 @@ from nn.slice import (
     slice_shape,
     sliced_add,
 )
+from nn.shard_and_stack import shard_and_stack
 from nn.softmax import logsoftmax, softmax
 from nn.split import split
 from nn.tile import tile, tile_shape
@@ -4406,6 +4407,22 @@ fn concat_shape_impl[
     var output_shape = inputs[0].shape()
     output_shape[axis] = concat_axis_dim_sum
     return output_shape
+
+
+@compiler.register("mo.shard_and_stack")
+struct ShardWeights:
+    @staticmethod
+    fn execute[
+        axis: Int,
+    ](
+        outputs: OutputVariadicTensors,
+        inputs: InputVariadicTensors[
+            dtype = outputs.dtype,
+            rank = outputs.rank - 1,
+        ],
+        dev_ctxs_input: DeviceContextPtrList,
+    ) raises:
+        shard_and_stack[axis](outputs, inputs, dev_ctxs_input)
 
 
 @compiler.register("mo.concat")
