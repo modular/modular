@@ -14,10 +14,12 @@
 import argparse
 from pathlib import Path
 
-from max.entrypoints.diffusion import DiffusionPipeline
+import numpy as np
+from PIL import Image
+from max.entrypoints.diffusion import PixelGenerator
 from max.experimental.realization_context import set_seed
 from max.pipelines import PipelineConfig
-
+from max.entrypoints.diffusion import _PixelBatchResponse
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -25,29 +27,31 @@ def main() -> None:
         "--model-path", type=str, default="black-forest-labs/FLUX.1-dev"
     )
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--output-path", type=str, default="output.png")
     args = parser.parse_args()
 
     model_path = args.model_path
     set_seed(args.seed)
     pipeline_config = PipelineConfig(model_path=model_path)
-    pipe = DiffusionPipeline(pipeline_config)
+    pipe = PixelGenerator(pipeline_config)
 
     prompt = "A cat holding a sign that says hello world"
     print(f"Prompt: {prompt}")
 
-    result = pipe(
-        prompt=prompt,
+    result: _PixelBatchResponse = pipe.generate(
+        prompts=prompt,
         height=1024,
         width=1024,
         num_inference_steps=50,
         guidance_scale=3.5,
     )
 
-    images = result.images
+    image:np.ndarray = result.outputs[0].pixel_data[0]
 
-    output_path = Path("output.png")
+    output_path = Path(args.output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    images[0].save(output_path)
+    Image.fromarray(image.astype(np.uint8)).save(output_path)
+    
     print(f"Image saved to: {output_path}")
 
 
