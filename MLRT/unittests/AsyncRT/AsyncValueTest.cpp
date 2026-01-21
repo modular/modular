@@ -29,8 +29,7 @@ protected:
   std::unique_ptr<Runtime> createRuntime(int numThreads = 4,
                                          bool mainWillDonate = true) {
     RuntimeOptions runtimeOptions;
-    runtimeOptions.allocatorOptions.wrapperAllocator =
-        AllocatorOptions::kLeakCheckerAllocator;
+    runtimeOptions.leakCheckedAllocator = true;
     runtimeOptions.singleThreaded = GetParam() == kSingleThread;
     runtimeOptions.numThreads = numThreads;
     runtimeOptions.mainWillDonate = mainWillDonate;

@@ -11,6 +11,29 @@ using namespace M::AsyncRT;
 
 std::unique_ptr<Runtime> RuntimeOptions::createRuntime() const {
   RuntimeOptions runtimeOptions; //{*this};
+  switch (allocatorType) {
+  case RuntimeOptions::AllocatorType::kMalloc:
+    runtimeOptions.tcmallocAllocator = false;
+    break;
+  case RuntimeOptions::AllocatorType::kTCMalloc:
+    runtimeOptions.tcmallocAllocator = true;
+    break;
+  case RuntimeOptions::AllocatorType::kLeakChecker:
+    runtimeOptions.leakCheckedAllocator = true;
+    break;
+  case RuntimeOptions::AllocatorType::kProfiler:
+    runtimeOptions.profilingAllocator = true;
+    break;
+  case RuntimeOptions::AllocatorType::kUseAfterFree:
+#if HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
+    runtimeOptions.useAfterFreeAllocator = true;
+#else
+    llvm::errs() << "The use-after-free allocator is not available for this "
+                    "target. Using the leak-checker runtime instead.";
+    options.leakCheckedAllocator = true;
+#endif
+    break;
+  }
   // runtimeOptions.workQueueType = getWorkQueueType();
   switch (getWorkQueueType()) {
   case RuntimeOptions::WorkQueueType::kDefault:

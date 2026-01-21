@@ -85,32 +85,22 @@ AsyncRT::getAllocator(const AllocatorOptions &options) {
   // Create base allocator: UseAfterFree, TCMalloc, or Malloc
   // These are mutually exclusive and must be enabled at compile time.
   std::unique_ptr<Allocator> allocator;
-  switch (options.baseAllocator) {
-  case AllocatorOptions::kMallocAllocator:
-    allocator = createMallocAllocator();
-    break;
-  case AllocatorOptions::kTcMallocAllocator:
-    allocator = createTCMallocAllocator();
-    break;
-  case AllocatorOptions::kUseAfterFreeAllocator:
+  if (options.useAfterFreeAllocator) {
 #if HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
     allocator = createUseAfterFreeAllocator();
 #else
     llvm_unreachable("cannot use the user-after-free allocator");
 #endif
-    break;
+  } else if (options.tcmallocAllocator) {
+    allocator = createTCMallocAllocator();
+  } else {
+    allocator = createMallocAllocator();
   }
-  // Optionally wrap in a debug allocator.
-  switch (options.wrapperAllocator) {
-  case AllocatorOptions::kNoWrappedAllocator:
-    break;
-  case AllocatorOptions::kLeakCheckerAllocator:
+  // Optionally wrap in one or more debug allocators.
+  if (options.leakCheckedAllocator)
     allocator = createLeakCheckAllocator(std::move(allocator));
-    break;
-  case AllocatorOptions::kProfilerAllocator:
+  if (options.profilingAllocator)
     allocator = createProfilingAllocator(std::move(allocator));
-    break;
-  }
   return allocator;
 }
 
@@ -120,7 +110,8 @@ AsyncRT::createUniqueRuntime(const RuntimeOptions &options) {
          "creating a runtime from a thread already associated with an outer "
          "runtime");
   CompactRuntimePtr runtimePtr = CompactRuntimePtr::reserve();
-  std::unique_ptr<Allocator> allocator = getAllocator(options.allocatorOptions);
+  std::unique_ptr<Allocator> allocator =
+      getAllocator(options.getAllocatorOptions());
   std::unique_ptr<WorkQueue> workQueue =
       options.singleThreaded
           ? createSingleThreadWorkQueue(runtimePtr)

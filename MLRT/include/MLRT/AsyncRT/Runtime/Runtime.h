@@ -43,11 +43,32 @@ class WorkQueue;
 // Runtime
 //===----------------------------------------------------------------------===//
 
+struct AllocatorOptions {
+  bool leakCheckedAllocator = false;
+  bool tcmallocAllocator = true;
+  bool profilingAllocator = false;
+  bool useAfterFreeAllocator = false;
+};
+
 /// Collects all the options which influence a runtime.
 struct RuntimeOptions {
   enum class OnFailure {
     kContinue,
     kExit,
+  };
+  enum class AllocatorType {
+    /// Allocator that just calls malloc/free.
+    kMalloc,
+    /// Allocator that calls into tcmalloc.
+    kTCMalloc,
+    /// Allocator that does leak checking.
+    kLeakChecker,
+    /// Allocator that does profiling (and leak checking).
+    kProfiler,
+    /// Allocator that read/write protects every freed block
+    /// to detect use-after-free errors without ASAN. Nat available
+    /// on all targets.
+    kUseAfterFree,
   };
 
   enum class WorkQueueType {
@@ -130,9 +151,20 @@ struct RuntimeOptions {
     return !(env.has_value() && M::isTrueLike(*env));
   }();
   std::string_view poolName = "🔥 Thread";
-  AllocatorOptions allocatorOptions = AllocatorOptions::fromConfig();
+  bool leakCheckedAllocator = false;
+  bool tcmallocAllocator = true;
+  bool profilingAllocator = false;
+  bool useAfterFreeAllocator = false;
   OnFailure onFailure{RuntimeOptions::OnFailure::kExit};
   WorkQueueType workQueueType{RuntimeOptions::WorkQueueType::kDefault};
+
+  AllocatorType allocatorType{
+#ifdef MODULAR_DEBUG
+      RuntimeOptions::AllocatorType::kLeakChecker
+#else
+      RuntimeOptions::AllocatorType::kMalloc
+#endif
+  };
 
   ProfilerDebuginfo profilerDebuginfo = ProfilerDebuginfo::kNoProfiler;
   const RuntimeOptions::WorkQueueType defaultWorkQueue;
@@ -187,9 +219,34 @@ struct RuntimeOptions {
     return profileFilename;
   }
 
+  // Temporary shim, remove once we separate the Allocator from the Runtime
+  // Extract the Allocator-specific options from the RuntimeOptions into a
+  // new struct.
+  AllocatorOptions getAllocatorOptions() const {
+    return {leakCheckedAllocator, tcmallocAllocator, profilingAllocator,
+            useAfterFreeAllocator};
+  }
+
   /// Print information about the runtime configuration to standard out.
   void printRuntimeConfig() const {
     printf("runtime using ");
+    switch (allocatorType) {
+    case RuntimeOptions::AllocatorType::kMalloc:
+      printf("malloc");
+      break;
+    case RuntimeOptions::AllocatorType::kTCMalloc:
+      printf("tcmalloc");
+      break;
+    case RuntimeOptions::AllocatorType::kLeakChecker:
+      printf("leak check");
+      break;
+    case RuntimeOptions::AllocatorType::kProfiler:
+      printf("profiling");
+      break;
+    case RuntimeOptions::AllocatorType::kUseAfterFree:
+      printf("use-after-free");
+      break;
+    }
     printf(" allocator, and ");
     switch (getWorkQueueType()) {
     case RuntimeOptions::WorkQueueType::kDefault:
@@ -222,7 +279,7 @@ struct RuntimeOptions {
 
   RuntimeOptions &forDebug() {
     singleThreaded = true;
-    allocatorOptions.wrapperAllocator = AllocatorOptions::kLeakCheckerAllocator;
+    leakCheckedAllocator = true;
     return *this;
   }
 
@@ -238,23 +295,17 @@ struct RuntimeOptions {
 
   RuntimeOptions &
   withLeakCheckedAllocator(bool newLeakCheckedAllocator = true) {
-    allocatorOptions.wrapperAllocator =
-        newLeakCheckedAllocator ? AllocatorOptions::kLeakCheckerAllocator
-                                : AllocatorOptions::kNoWrappedAllocator;
+    leakCheckedAllocator = newLeakCheckedAllocator;
     return *this;
   }
 
   RuntimeOptions &withTCMallocAllocator(bool newTcmallocAllocator = true) {
-    allocatorOptions.baseAllocator = newTcmallocAllocator
-                                         ? AllocatorOptions::kTcMallocAllocator
-                                         : AllocatorOptions::kMallocAllocator;
+    tcmallocAllocator = newTcmallocAllocator;
     return *this;
   }
 
   RuntimeOptions &withProfilingAllocator(bool newProfilingAllocator = true) {
-    allocatorOptions.wrapperAllocator =
-        newProfilingAllocator ? AllocatorOptions::kProfilerAllocator
-                              : AllocatorOptions::kNoWrappedAllocator;
+    profilingAllocator = newProfilingAllocator;
     return *this;
   }
 
