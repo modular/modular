@@ -90,6 +90,15 @@ def _process_third_party_deps(
         elif dep == "@@rules_python+//python/runfiles:runfiles":
             import_paths = ["python.runfiles"]
             results.append(_ThirdPartyDep(dep, import_paths))
+        elif (
+            dep
+            == "@@//max/kernels/benchmarks/misc/blackwell_bench:cutlass-imports"
+        ):
+            import_paths = ["cutlass"]
+            results.append(_ThirdPartyDep(dep, import_paths))
+        elif "@@//max/kernels/benchmarks/misc/blackwell_bench:" in dep:
+            import_paths = [dep.split(":")[-1].replace("-", "_")]
+            results.append(_ThirdPartyDep(dep, import_paths))
         else:
             raise ValueError(f"Unsupported dep format: {dep}")
 

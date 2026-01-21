@@ -130,6 +130,8 @@ def _split_third_party_deps(name, **kwargs):
                 for dep in values:
                     if "pycross" in dep.repo_name:
                         pycross_deps.append(str(dep))
+                    elif dep.package == "max/kernels/benchmarks/misc/blackwell_bench":
+                        pycross_deps.append(str(dep))
                     else:
                         new_select_deps.append(dep)
                 new_select[key] = new_select_deps
@@ -137,6 +139,8 @@ def _split_third_party_deps(name, **kwargs):
         else:
             for dep in elements:
                 if "pycross" in dep.repo_name:
+                    pycross_deps.append(str(dep))
+                elif dep.package == "max/kernels/benchmarks/misc/blackwell_bench":
                     pycross_deps.append(str(dep))
                 else:
                     new_deps.append(dep)
