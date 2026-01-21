@@ -2796,13 +2796,15 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     }
   }
 
-  if (isa<POP::NegOp>(op))
-    if (auto operand = findValue(op.getOperand(0)))
+  if (auto negOp = dyn_cast<POP::NegOp>(op))
+    if (auto operand = findValue(negOp.getOperand()))
       return POP::SIMDNegAttr::get(operand);
-
   if (auto floorOp = dyn_cast<POP::FloorOp>(op))
     if (auto operand = findValue(floorOp.getOperand()))
       return POP::SIMDFloorAttr::get(operand);
+  if (auto ceilOp = dyn_cast<POP::CeilOp>(op))
+    if (auto operand = findValue(ceilOp.getOperand()))
+      return POP::SIMDCeilAttr::get(operand);
 
   if (isa<POP::AddOp>(op))
     return foldSIMDBinOp<POP::SIMDAddAttr>(op, *this);
