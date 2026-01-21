@@ -31,7 +31,7 @@ from max.interfaces import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
+from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext, PixelContext
 
 
 def dataclass_equal(left: Any, right: Any) -> bool:
@@ -1107,4 +1107,54 @@ def does_not_raise_due_to_check_in_property_method() -> None:
     # isinstance(ctx, VLMTextGenerationContext) so we are validating this case here.
     # See GENAI-318 for details.
     _ = isinstance(ctx, VLMTextGenerationContext)
+
+
+def test_pixel_context_serializable() -> None:
+    # Test that we can encode a sample PixelContext with Pickle
+    original_context = PixelContext(
+        request_id=RequestID(),
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+    )
+
+    pickle_encoded = pickle.dumps(original_context)
+    pickle_decoded = pickle.loads(pickle_encoded)
+
+    assert isinstance(pickle_decoded, PixelContext)
+    assert dataclass_equal(pickle_decoded, original_context)
+
+    # Test that we can encode a sample PixelContext with MsgPack
+    serialize = msgpack_numpy_encoder()
+    deserialize = msgpack_numpy_decoder(PixelContext)
+    msgpack_encoded = serialize(original_context)
+    msgpack_decoded = deserialize(msgpack_encoded)
+
+    assert dataclass_equal(msgpack_decoded, original_context)
+
+def test_pixel_context_tuple_serializable() -> None:
+    # Test that we can encode a tuple of (str, PixelContext) with Pickle
+    original_context = PixelContext(
+        request_id=RequestID(),
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+    )
+    original_tuple = ("test_key", original_context)
+
+    pickle_encoded = pickle.dumps(original_tuple)
+    pickle_decoded = pickle.loads(pickle_encoded)
+
+    assert pickle_decoded[0] == original_tuple[0]
+    assert dataclass_equal(pickle_decoded[1], original_tuple[1])
+
+    # Test that we can encode a tuple of (str, PixelContext) with MsgPack
+    serialize = msgpack_numpy_encoder()
+    deserialize = msgpack_numpy_decoder(
+        tuple[str, PixelContext],
+    )
+    msgpack_encoded = serialize(original_tuple)
+    msgpack_decoded = deserialize(msgpack_encoded)
+
+    assert msgpack_decoded[0] == original_tuple[0]
+    assert dataclass_equal(msgpack_decoded[1], original_tuple[1])
+
     _ = isinstance(ctx, PixelGenerationContext)

@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Types to interface with ML pipelines such as text/token generation."""
+"""Types to interface with ML pipelines such as text/token/pixel generation."""
 
 from .architectures import register_all_models
-from .core import TextAndVisionContext, TextContext, TTSContext
+from .core import TextAndVisionContext, TextContext, TTSContext, PixelContext
 from .lib.config import (
     AudioGenerationConfig,
     PipelineConfig,
@@ -87,6 +87,7 @@ __all__ = [
     "TextContext",
     "TextGenerationPipeline",
     "TextTokenizer",
+    "PixelContext",
     "download_weight_files",
     "upper_bounded_default",
 ]
