@@ -143,6 +143,30 @@ struct ConvertPOPNeg : public ConvertPOPToLLVMPattern<NegOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPFloor
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPFloor : public ConvertPOPToLLVMPattern<FloorOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(FloorOp op, FloorOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    KGENDType dtype = *op.getType().getResolvedDType();
+    if (!dtype.isFloat()) {
+      rewriter.replaceOp(op, adaptor.getOperand());
+      return success();
+    }
+    Type type = this->convertType(op.getType());
+    auto call = LLVM::CallIntrinsicOp::create(
+        rewriter, op.getLoc(), type, rewriter.getStringAttr("llvm.floor"),
+        SmallVector<Value>{adaptor.getOperand()});
+    rewriter.replaceOp(op, call);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPShr
 //===----------------------------------------------------------------------===//
 
@@ -2972,6 +2996,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPDTypeFromUI8,
       ConvertPOPDTypeToUI8,
       ConvertPOPFence,
+      ConvertPOPFloor,
       ConvertPOPFMA,
       ConvertPOPInlineAsm,
       ConvertPOPLoad,

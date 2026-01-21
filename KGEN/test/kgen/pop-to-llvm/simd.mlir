@@ -37,6 +37,21 @@ kgen.func @neg_simd(%arg0: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
   kgen.return %0 : !pop.simd<4, f32>
 }
 
+// CHECK-LABEL: @floor_simd
+kgen.func @floor_simd(
+  %arg0: !pop.simd<4, f32>, %arg1 : !pop.simd<4, si32>, %arg2 : !pop.scalar<index>, %arg3 : !pop.scalar<uindex>
+) -> (
+  !pop.simd<4, f32>, !pop.simd<4, si32>, !pop.scalar<index>, !pop.scalar<uindex>
+) {
+  // CHECK: llvm.floor
+  // CHECK: kgen.return {{.*}}, %arg1, %arg2, %arg3
+  %0 = pop.floor %arg0 : !pop.simd<4, f32>
+  %1 = pop.floor %arg1 : !pop.simd<4, si32>
+  %2 = pop.floor %arg2 : !pop.scalar<index>
+  %3 = pop.floor %arg3 : !pop.scalar<uindex>
+  kgen.return %0, %1, %2, %3 : !pop.simd<4, f32>, !pop.simd<4, si32>, !pop.scalar<index>, !pop.scalar<uindex>
+}
+
 // CHECK-LABEL: @add_simd_si32
 kgen.func @add_simd_si32(%arg0: !pop.simd<4, si32>, %arg1: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
   // CHECK: llvm.add
