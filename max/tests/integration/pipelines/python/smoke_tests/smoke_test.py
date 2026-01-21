@@ -147,7 +147,15 @@ def get_server_cmd(framework: str, model: str) -> list[str]:
             "max": [*interpreter, *MAX.split()],
         }
         cmd = commands[framework]
-    return cmd + ["--port", "8000", "--trust-remote-code", "--model", model]
+
+    cmd = cmd + ["--port", "8000", "--trust-remote-code", "--model", model]
+
+    # GPT-OSS uses repetition_penalty in lm_eval to prevent reasoning loops,
+    # so we need to enable penalties on the server
+    if "gpt-oss" in model and framework in ["max-ci", "max"]:
+        cmd += ["--enable-penalties"]
+
+    return cmd
 
 
 def safe_model_name(model: str) -> str:
