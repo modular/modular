@@ -24,7 +24,11 @@ package(default_visibility = [
                 "test_paged_scheduler.py",
             ] else []  # Times out if run with too many other tests
         ),
-        deps = [":common"],
+        deps = [
+            ":common",
+            requirement("pytest-asyncio"),
+            requirement("pytest-mock"),
+        ],
     )
     for src in glob(
         ["*.py"],
@@ -46,13 +50,22 @@ modular_py_test(
     }),
     tags = [
         "external-exclusive",  # Times out if run with too many other tests
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     target_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    deps = [":common"],
+    deps = [
+        ":common",
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
+        "//max/python/max/kv_cache",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/queue",
+        "//max/python/max/serve/scheduler",
+        requirement("numpy"),
+    ],
 )
 
 # GPU tests
@@ -90,13 +103,16 @@ modular_py_library(
     name = "common",
     srcs = ["common.py"],
     imports = ["../../.."],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/kv_cache",
         "//max/python/max/nn",
-        "//max/python/max/serve",
+        "//max/python/max/pipelines/core",
         "//max/python/max/serve/scheduler",
         requirement("numpy"),
-        requirement("pytest-mock"),
-        requirement("pytest-asyncio"),
     ],
 )

@@ -18,24 +18,23 @@ modular_py_test(
     ),
     tags = [
         "external-exclusive",  # Times out if run with too many other tests
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
         "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/python/max/serve",
         "//max/tests/integration/API/python/graph:modular_graph_test",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:context_utils",
+        requirement("numpy"),
         requirement("torch"),
-        requirement("transformers"),
         requirement("hypothesis"),
-        requirement("gguf"),
-        requirement("pytest-asyncio"),
     ],
 )
 
@@ -61,20 +60,19 @@ modular_py_test(
     }),
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
         "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/python/max/serve",
         "//max/tests/integration/API/python/graph:modular_graph_test",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:context_utils",
         requirement("torch"),
-        requirement("transformers"),
+        requirement("numpy"),
         requirement("hypothesis"),
-        requirement("gguf"),
-        requirement("pytest-asyncio"),
     ],
 )
 
@@ -99,22 +97,22 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
+    ignore_extra_deps = [
+        # Used for parallelizing tests
+        requirement("pytest-xdist"),
+    ],
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/python/max/serve",
         "//max/tests/integration/API/python/graph:modular_graph_test",
-        "//max/tests/integration/pipelines/python/test_common",
         requirement("torch"),
-        requirement("transformers"),
         requirement("hypothesis"),
-        requirement("gguf"),
-        requirement("pytest-asyncio"),
         requirement("pytest-xdist"),
     ],
 )
@@ -123,24 +121,20 @@ modular_py_test(
     name = "attention_no_opaque_tests",
     timeout = "long",
     srcs = ["test_attention_no_opaque.py"],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/kv_cache",
         "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/python/max/serve",
-        "//max/tests/integration/API/python/graph:modular_graph_test",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:context_utils",
+        requirement("numpy"),
         requirement("torch"),
-        requirement("transformers"),
-        requirement("hypothesis"),
-        requirement("gguf"),
-        requirement("pytest-asyncio"),
     ],
 )
 
@@ -156,16 +150,18 @@ modular_py_test(
     },
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     target_compatible_with = ["//:amd_gpu"],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
         "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/tests/integration/API/python/graph:modular_graph_test",
-        "//max/tests/integration/pipelines/python/test_common",
-        requirement("torch"),
+        "//max/tests/integration/pipelines/python/test_common:context_utils",
+        requirement("hypothesis"),
         requirement("numpy"),
+        requirement("torch"),
     ],
 )

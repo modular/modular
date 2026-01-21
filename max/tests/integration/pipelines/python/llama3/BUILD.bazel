@@ -37,9 +37,12 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
+    ignore_extra_deps = [
+        # Used as a pytest plugin
+        "//max/tests/integration/pipelines/python/test_common:registry",
+    ],
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
@@ -51,7 +54,8 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:graph_utils",
+        "//max/tests/integration/pipelines/python/test_common:registry",
         requirement("hypothesis"),
         requirement("torch"),
         requirement("transformers"),

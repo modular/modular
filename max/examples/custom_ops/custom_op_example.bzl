@@ -33,7 +33,9 @@ def custom_op_example_py_binary(
             requirement("numpy"),
         ] + extra_deps,
         target_compatible_with = target_compatible_with,
-        tags = ["no-pydeps"],  # TODO: Fix and re-enable
+        ignore_extra_deps = [
+            requirement("numpy"),  # Provided as a convenience, most examples use it
+        ],
     )
 
     # Run each example as a simple non-zero-exit-code test.

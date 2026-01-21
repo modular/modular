@@ -14,11 +14,10 @@ custom_op_example_py_binary(
     extra_data = [
         ":operations",
     ],
-    extra_deps = [
+    deps = [
         "//max/python/max/torch",
         requirement("torch"),
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )
 
 custom_op_example_py_binary(
@@ -27,12 +26,12 @@ custom_op_example_py_binary(
     extra_data = [
         ":operations",
     ],
-    extra_deps = [
+    deps = [
         "//max/python/max/torch",
+        requirement("numpy"),
         requirement("torch"),
         requirement("pillow"),
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )
 
 custom_op_example_py_binary(
@@ -42,24 +41,22 @@ custom_op_example_py_binary(
     extra_data = [
         ":operations",
     ],
-    extra_deps = [
+    deps = [
         "//max/python/max/torch",
         requirement("torch"),
         requirement("transformers"),
         requirement("datasets"),
-        requirement("librosa"),
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )
 
 custom_op_example_py_binary(
     name = "graph",
     srcs = ["graph.py"],
-    extra_deps = [
+    deps = [
+        "//max/python/max/graph",
         "//max/python/max/torch",
         requirement("torch"),
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )
 
 mojo_library(

@@ -23,13 +23,12 @@ modular_py_test(
     imports = ["."],
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
-        "//max/python/max/engine",
+        "//max/python/max/driver",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures",
-        requirement("numpy"),
+        "//max/python/max/pipelines/lib",
         requirement("transformers"),
     ],
 )
