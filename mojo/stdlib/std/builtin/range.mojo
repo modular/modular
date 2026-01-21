@@ -283,22 +283,6 @@ fn range[T: IntableRaising, //](end: T) raises -> _ZeroStartingRange:
 
 
 @always_inline
-fn range(end: PythonObject) raises -> _ZeroStartingRange:
-    """Constructs a [0; end) Range from a Python `int`.
-
-    Args:
-        end: The end of the range as a Python `int`.
-
-    Returns:
-        The constructed range.
-
-    Raises:
-        An error if converting `end` to an `Int` failed.
-    """
-    return range(Int(py=end))
-
-
-@always_inline
 fn range[T0: Indexer, T1: Indexer, //](start: T0, end: T1) -> _SequentialRange:
     """Constructs a [start; end) Range.
 
@@ -337,23 +321,6 @@ fn range[
         An error if converting `start` or `end` to an `Int` failed.
     """
     return _SequentialRange(Int(start), Int(end))
-
-
-@always_inline
-fn range(start: PythonObject, end: PythonObject) raises -> _SequentialRange:
-    """Constructs a [start; end) Range from Python `int` objects.
-
-    Args:
-        start: The start of the range as a Python `int`.
-        end: The end of the range as a Python `int`.
-
-    Returns:
-        The constructed range.
-
-    Raises:
-        An error if converting `start` or `end` to an `Int` failed.
-    """
-    return range(Int(py=start), Int(py=end))
 
 
 @always_inline
@@ -401,27 +368,6 @@ fn range[
         An error if converting `start`, `end`, or `step` to an `Int` failed.
     """
     return _StridedRange(Int(start), Int(end), Int(step))
-
-
-@always_inline
-fn range(
-    start: PythonObject, end: PythonObject, step: PythonObject
-) raises -> _StridedRange:
-    """Constructs a [start; end) Range from Python `int` objects with a given
-    step.
-
-    Args:
-        start: The start of the range as a Python `int`.
-        end: The end of the range as a Python `int`.
-        step: The step for the range as a Python `int`.
-
-    Returns:
-        The constructed range.
-
-    Raises:
-        An error if converting `start`, `end`, or `step` to an `Int` failed.
-    """
-    return range(Int(py=start), Int(py=end), Int(py=step))
 
 
 # ===----------------------------------------------------------------------=== #
