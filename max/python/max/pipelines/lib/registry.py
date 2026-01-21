@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast
 import numpy as np
 import numpy.typing as npt
 from huggingface_hub import model_info
-from max.driver import load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
     EmbeddingsContext,
@@ -565,7 +564,6 @@ class PipelineRegistry:
 
         # Architecture should not be None here, as the engine is MAX.
         assert arch is not None
-        devices = load_devices(pipeline_config.model.device_specs)
 
         max_length = arch.pipeline_model.calculate_max_seq_len(
             pipeline_config, huggingface_config=huggingface_config

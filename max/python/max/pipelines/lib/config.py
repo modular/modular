@@ -80,10 +80,6 @@ class PipelineConfig(ConfigFileModel):
     set higher based on server capacity.
     """
 
-    max_ce_batch_size: int = Field(default=192)
-    """Maximum cache size to reserve for a single context encoding batch.
-    The actual limit is the lesser of this and `max_batch_size`."""
-
     max_queue_size_tg: int | None = Field(default=None)
     """Maximum number of requests in decode queue. By default, this is max-batch-size."""
 
@@ -735,6 +731,39 @@ class PipelineConfig(ConfigFileModel):
             )
 
             self._validate_pipeline_config_for_speculative_decoding()
+
+        # Disable features that are not supported with the overlap scheduler.
+        if self.enable_overlap_scheduler:
+            if self.pipeline_role != PipelineRole.PrefillAndDecode:
+                raise ValueError(
+                    "The Overlap scheduler does not support Disaggregated Inference yet. "
+                    "It is only supported with the PrefillAndDecode pipeline role. "
+                    f"Found {self.pipeline_role}."
+                )
+            if self.model.kv_cache.enable_prefix_caching:
+                raise ValueError(
+                    "Prefix caching is not supported with the Overlap scheduler. Overriding to False."
+                )
+            if self.enable_chunked_prefill:
+                raise ValueError(
+                    "Chunked prefill is not supported with the Overlap scheduler. Overriding to False."
+                )
+            if self.sampling.enable_structured_output:
+                raise ValueError(
+                    "Structured outputs are not supported with the Overlap scheduler. Overriding to False."
+                )
+            if self.sampling.enable_variable_logits:
+                raise ValueError(
+                    "Variable logits are not supported with the Overlap scheduler. Overriding to False."
+                )
+            if self.speculative:
+                raise ValueError(
+                    "Speculative decoding is not supported with the Overlap scheduler. Overriding to None."
+                )
+            if self.lora:
+                raise ValueError(
+                    "LoRA is not supported with the Overlap scheduler. Overriding to None."
+                )
 
     def _validate_and_resolve_max_num_steps(self) -> None:
         """
