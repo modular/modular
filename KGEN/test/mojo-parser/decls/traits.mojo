@@ -499,8 +499,7 @@ fn bind_regpassable_required_type():
 
 
 # CHECK-LABEL: lit.struct.decl @RegTrivialSpecial
-@register_passable("trivial")
-struct RegTrivialSpecial(AnyType, ImplicitlyCopyable):
+struct RegTrivialSpecial(AnyTrivialRegType, AnyType, ImplicitlyCopyable):
     pass
     # CHECK: lit.fn @"__del__
     # CHECK: lit.fn @"__moveinit__
@@ -677,8 +676,7 @@ fn pass_up_trait[T: Father](x: T):
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-struct MovableType[T: Movable]:
+struct MovableType[T: Movable](AnyTrivialRegType):
     pass
 
 
@@ -690,9 +688,8 @@ struct Collection[T: InCollection]:
     var x: MovableType[Self.T]
 
 
-@register_passable("trivial")
 # CHECK-LABEL: lit.struct.decl @Item
-struct Item(InCollection):
+struct Item(AnyTrivialRegType, InCollection):
     pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}Movable
@@ -768,8 +765,7 @@ struct ABC(SomeTrait):
         pass
 
 
-@register_passable("trivial")
-struct ABCOptionalParamInt[dim_parametric: ABCDim]:
+struct ABCOptionalParamInt[dim_parametric: ABCDim](AnyTrivialRegType):
     fn __init__(out self):
         pass
 
@@ -914,8 +910,7 @@ struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
         self.take_any_type(a_value)
 
 
-@register_passable("trivial")
-struct ParamType[x: Int]:
+struct ParamType[x: Int](AnyTrivialRegType):
     pass
 
 # CHECK: lit.trait.decl @RGTrait{{.*}} register_passable
@@ -927,8 +922,7 @@ trait RGTrait:
     # CHECK: lit.fn @"__del__({{.*}})"[mut *"{{.*}}"](%self: !lit.ref<:!RGTrait *"{{.*}}", mut *"{{.*}}"> deinit_mem, |) -> !kgen.none
 
 # CHECK-LABEL: lit.trait.decl @RGTrivialTrait{{.*}} register_passable_trivial
-@register_passable("trivial")
-trait RGTrivialTrait:
+trait RGTrivialTrait(AnyTrivialRegType):
     # CHECK-NEXT: lit.fn @"doSomething{{.*}}"(%self: !kgen.param<:!RGTrivialTrait {{.*}}>) -> !kgen.none
     fn doSomething(self):
         ...
@@ -936,8 +930,7 @@ trait RGTrivialTrait:
 
 # https://github.com/modular/mojo/issues/3540: Using the output slot breaks trait conformance
 # CHECK-LABEL: lit.struct.decl @TestNamedResultConformance
-@register_passable("trivial")
-struct TestNamedResultConformance(Trait1):
+struct TestNamedResultConformance(AnyTrivialRegType, Trait1):
 
     # CHECK: lit.fn @"f
     # CHECK-SAME: (%self: !TestNamedResultConformance) -> !TestNamedResultConformance
@@ -994,13 +987,11 @@ fn test_parametric_anytype_movable[element_trait: _CollectionElementMetaType,
 # This test ensure that overload resolution properly ignores methods coming
 # from parent traits when the child trait also has an equivalent definition.
 
-@register_passable("trivial")
-trait A:
+trait A(AnyTrivialRegType):
     fn foo(self: Self):
       pass
 
-@register_passable("trivial")
-trait B(A):
+trait B(A, AnyTrivialRegType):
     fn foo(self: Self):
       pass
 
