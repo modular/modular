@@ -151,6 +151,8 @@ IREvaluator::evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) {
     return evaluateTypeConformToTraitAttr(typeConformToTraitAttr);
   if (auto isStructTypeAttr = dyn_cast<IsStructTypeAttr>(attr))
     return evaluateIsStructTypeAttr(isStructTypeAttr);
+  if (auto getBaseTypeNameAttr = dyn_cast<GetBaseTypeNameAttr>(attr))
+    return evaluateGetBaseTypeNameAttr(getBaseTypeNameAttr);
   if (auto compileOffloadClosureAttr =
           dyn_cast<CompileOffloadClosureAttr>(attr))
     return evaluateCompileOffloadClosureAttr(compileOffloadClosureAttr);
@@ -381,6 +383,70 @@ IREvaluator::evaluateVariadicSizeAttr(VariadicSizeAttr attr) {
 
   return {cast<TypedAttr>(
       Builder(attr.getContext()).getIndexAttr(vaAttr.getValues().size()))};
+}
+
+//===----------------------------------------------------------------------===//
+// Base Type Reflection Evaluators
+//===----------------------------------------------------------------------===//
+
+/// Helper to get the base generator symbol name from a type reference.
+/// Returns the generator's symbol name. For types without a generator (e.g.,
+/// MLIR primitives), returns a fallback based on the type's symbol or a
+/// placeholder string.
+StringAttr IREvaluator::getGeneratorSymbolName(TypedAttr typeRef) {
+  typeRef = SugarAttr::strip(typeRef);
+
+  // For TypeInstanceRefAttr, look up the generator through the elaborator.
+  if (auto instanceRef = dyn_cast<TypeInstanceRefAttr>(typeRef)) {
+    ParamNodeBase *genNode = lookupParamNodeBase(instanceRef.getSymbol());
+    if (genNode && genNode->gen) {
+      // StructGeneratorOp is the common case for type generators.
+      if (auto structGen =
+              dyn_cast<StructGeneratorOp>(genNode->gen.getOperation()))
+        return structGen.getSymNameAttr();
+      // Other generators may also be SymbolOpInterface.
+      if (auto symOp =
+              dyn_cast<mlir::SymbolOpInterface>(genNode->gen.getOperation()))
+        return symOp.getNameAttr();
+    }
+    // Fallback: use the instance symbol directly. This handles types where
+    // we can't look up the generator (e.g., non-struct parameterized types).
+    return cast<FlatSymbolRefAttr>(instanceRef.getSymbol()).getAttr();
+  }
+
+  // For TypeGeneratorRefAttr, extract the symbol from the reference.
+  if (auto genRef = dyn_cast<TypeGeneratorRefAttr>(typeRef))
+    return cast<FlatSymbolRefAttr>(genRef.getSymbol()).getAttr();
+
+  return nullptr;
+}
+
+FailureOr<TypedAttr>
+IREvaluator::evaluateGetBaseTypeNameAttr(GetBaseTypeNameAttr attr) {
+  // Get the underlying type reference.
+  // Returns null for MLIR primitives (index, i64, etc.) since they're not type
+  // refs, and also for types that aren't fully resolved yet.
+  TypedAttr typeRef = getTypeRefForTypeValueIfResolved(attr.getTypeValue());
+
+  // For primitives or non-struct types, return "<unknown>".
+  // We don't defer here because primitives will never resolve to struct types.
+  if (!typeRef)
+    return {StringAttr::get("<unknown>", attr.getType())};
+
+  // Get the generator symbol name using the common helper.
+  StringAttr generatorSymbol = getGeneratorSymbolName(typeRef);
+
+  // For types without a generator symbol, return "<unknown>".
+  if (!generatorSymbol)
+    return {StringAttr::get("<unknown>", attr.getType())};
+
+  // Extract just the unqualified name (last component after "::")
+  StringRef fullName = generatorSymbol.getValue();
+  size_t lastSep = fullName.rfind("::");
+  StringRef simpleName =
+      (lastSep != StringRef::npos) ? fullName.substr(lastSep + 2) : fullName;
+
+  return {StringAttr::get(simpleName, attr.getType())};
 }
 
 ParamNodeBase *IREvaluator::lookupParamNodeBase(SymbolRefAttr symbol) {

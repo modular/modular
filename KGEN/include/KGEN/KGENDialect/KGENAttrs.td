@@ -1057,6 +1057,42 @@ def KGEN_IsStructTypeAttr : KGENAttr<"IsStructType", "is_struct_type",
 }
 
 //===----------------------------------------------------------------------===//
+// GetBaseTypeNameAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_GetBaseTypeNameAttr : KGEN_ExprAttr<"GetBaseTypeName", "get_base_type_name",
+    [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Get the unqualified name of a type's base type.";
+  let description = [{
+    The `#kgen.get_base_type_name` attribute extracts the unqualified name of
+    the base (unparameterized) type from a parameterized type. For example,
+    given `List[Int]`, it returns the string `"List"`. For non-parameterized
+    types, it returns the type's simple name.
+
+    This is useful for reflection-based code that needs to identify the base
+    type of parameterized types.
+
+    Example:
+
+    ```mlir
+    #kgen.get_base_type_name<#List[Int]> : !kgen.string
+    // Returns "List"
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$typeValue
+  );
+
+  let assemblyFormat = "`<` custom<TypeParamValue>($typeValue) `>`";
+
+  let extraClassDeclaration = [{
+    /// Get the type of the attribute. It is always StringType.
+    Type getType() const;
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // BindParams
 //===----------------------------------------------------------------------===//
 

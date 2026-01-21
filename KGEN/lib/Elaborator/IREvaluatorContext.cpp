@@ -185,6 +185,71 @@ IREvaluatorContext::evaluateIsStructTypeAttr(IsStructTypeAttr attr) {
   return {BoolAttr::get(ctx, true)};
 }
 
+//===----------------------------------------------------------------------===//
+// Base Type Reflection Evaluators
+//===----------------------------------------------------------------------===//
+
+/// Helper to get the base type name from a type reference.
+/// Returns the unqualified name from the generator's valueDomainType.
+/// For non-struct types, returns null.
+StringAttr IREvaluatorContext::getBaseTypeName(TypedAttr typeRef) {
+  typeRef = SugarAttr::strip(typeRef);
+
+  // Helper to extract unqualified name from a StructGeneratorOp.
+  auto getNameFromStructGen = [](StructGeneratorOp structGen) -> StringAttr {
+    Type valueDomainType = structGen.getValueDomainType();
+    if (auto structInstType = dyn_cast<StructInstanceType>(valueDomainType)) {
+      StringRef fullName = structInstType.getName().getValue();
+      // Strip module qualification (e.g., "std::builtin::int::Int" -> "Int")
+      size_t lastSep = fullName.rfind("::");
+      StringRef baseName = (lastSep != StringRef::npos)
+                               ? fullName.substr(lastSep + 2)
+                               : fullName;
+      return StringAttr::get(structGen.getContext(), baseName);
+    }
+    return nullptr;
+  };
+
+  // For TypeInstanceRefAttr, look up the generator through the evaluator.
+  if (auto instanceRef = dyn_cast<TypeInstanceRefAttr>(typeRef)) {
+    ParamNodeBase *genNode = lookupParamNodeBase(instanceRef.getSymbol());
+    if (genNode && genNode->gen) {
+      if (auto structGen =
+              dyn_cast<StructGeneratorOp>(genNode->gen.getOperation()))
+        return getNameFromStructGen(structGen);
+    }
+    return nullptr;
+  }
+
+  // For TypeGeneratorRefAttr, look up the generator.
+  if (auto genRef = dyn_cast<TypeGeneratorRefAttr>(typeRef)) {
+    GeneratorOp gen = getGenerator(genRef.getSymbol());
+    if (auto structGen = dyn_cast<StructGeneratorOp>(*gen))
+      return getNameFromStructGen(structGen);
+    return nullptr;
+  }
+
+  return nullptr;
+}
+
+FailureOr<TypedAttr>
+IREvaluatorContext::evaluateGetBaseTypeNameAttr(GetBaseTypeNameAttr attr) {
+  // Get the underlying type reference.
+  // Returns null for primitives (index, i64, etc.) since they're not type refs.
+  TypedAttr typeRef = getTypeRefForTypeValueIfResolved(attr.getTypeValue());
+
+  // For primitives or non-struct types, return "<unknown>".
+  if (!typeRef)
+    return {StringAttr::get("<unknown>", attr.getType())};
+
+  // Get the base type name from the generator's valueDomainType.
+  StringAttr name = getBaseTypeName(typeRef);
+  if (!name)
+    return {StringAttr::get("<unknown>", attr.getType())};
+
+  return {StringAttr::get(name.getValue(), attr.getType())};
+}
+
 static void emitDiagnosticToStream(raw_ostream &os, Diagnostic &diag) {
   os << "\n" << diag.getLocation() << ": " << diag;
   for (Diagnostic &note : diag.getNotes())
