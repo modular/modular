@@ -868,6 +868,15 @@ static TypedAttr stripTypeValueUpcast(TypedAttr typeValue) {
   return typeValue;
 }
 
+static TypedAttr stripTypeValueDowncast(TypedAttr typeValue) {
+  if (auto downcast = sugarDynCast<DowncastAttr>(typeValue))
+    return stripTypeValueDowncast(downcast.getInputTypeValue());
+  if (auto typeParam = sugarDynCast<TypeParamAttr>(typeValue))
+    if (auto paramType = sugarDynCast<ParamType>(typeParam.getTypeValue()))
+      return stripTypeValueDowncast(paramType.getParam());
+  return typeValue;
+}
+
 static bool canZeroCostConvertParamTypes(ParamType fromParamType,
                                          ParamType toParamType,
                                          SharedState &shared) {
@@ -887,6 +896,27 @@ static bool canZeroCostConvertParamTypes(ParamType fromParamType,
 
       return true;
     }
+  }
+
+  // Handle downcast<X> -> X conversions.
+  // A downcasted type is semantically equivalent to its underlying type for
+  // rebind purposes - the downcast only adds compile-time trait constraints.
+  auto fromParam = fromParamType.getParam();
+  auto toParam = toParamType.getParam();
+
+  auto strippedFrom = stripTypeValueDowncast(fromParam);
+  auto strippedTo = stripTypeValueDowncast(toParam);
+
+  // If either had downcast wrappers, compare the underlying types
+  if (strippedFrom != fromParam || strippedTo != toParam) {
+    if (strippedFrom == strippedTo)
+      return true;
+    // Handle combined upcast/downcast cases, e.g. when a downcasted type from
+    // struct_field_types is compared against an upcasted metatype. This can
+    // occur in generic serialization code that uses reflection to iterate over
+    // fields while also using trait-based dispatch.
+    if (stripTypeValueUpcast(strippedFrom) == stripTypeValueUpcast(strippedTo))
+      return true;
   }
 
   return false;
