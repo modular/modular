@@ -92,6 +92,33 @@ def POP_FloorOp : POPOp<"floor", [Pure, SameOperandsAndResultType]> {
 }
 
 //===----------------------------------------------------------------------===//
+// CeilOp
+//===----------------------------------------------------------------------===//
+
+def POP_CeilOp : POPOp<"ceil", [Pure, SameOperandsAndResultType]> {
+  let summary = "ceil";
+  let description = [{
+    The `pop.ceil` operation takes a `!pop.simd` value and returns the element
+    wise ceiling of its values. The operand and result types are the same and
+    must be index-like, arithmetic, or boolean dtypes. Integer, index, and
+    boolean values are returned unchanged.
+
+    Example:
+
+    ```mlir
+    %b = pop.ceil %a : !pop.simd<size, f32>
+    ```
+  }];
+
+  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$operand);
+  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
+
+  let assemblyFormat = "$operand attr-dict `:` qualified(type($result))";
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // BinaryOp
 //===----------------------------------------------------------------------===//
 
