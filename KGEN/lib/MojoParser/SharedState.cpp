@@ -2896,10 +2896,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     // Which happens in ctors for builtin operations.  Ignore anything more
     // complex.
     ASTDecl *decl = ASTType(eltType).getDecl(shared);
-    StructDeclOp structOp;
-    if (decl &&
-        (structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) &&
-        structOp.getConvention() == TypeConvention::RegisterPassableTrivial) {
+    if (decl && ASTType(eltType).isAnyTrivialRegType(decl->getLoc(), shared)) {
       varDeclSoFar[varDecl] = UnknownAttr::get(eltType);
       return TypedAttr();
     }
