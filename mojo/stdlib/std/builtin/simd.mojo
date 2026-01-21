@@ -1971,14 +1971,14 @@ struct SIMD[dtype: DType, size: Int](
         """
         return Self(mlir_value=__mlir_op.`pop.floor`(self._mlir_value))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ceil__(self) -> Self:
         """Performs elementwise ceiling on the elements of a SIMD vector.
 
         Returns:
             The elementwise ceiling of this SIMD vector.
         """
-        return self._floor_ceil_trunc_impl["llvm.ceil"]()
+        return Self(mlir_value=__mlir_op.`pop.ceil`(self._mlir_value))
 
     @always_inline("nodebug")
     fn __trunc__(self) -> Self:
