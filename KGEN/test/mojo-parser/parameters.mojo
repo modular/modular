@@ -61,8 +61,7 @@ fn call_generic[dt: DType]():
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
 # CHECK-SAME: [[A:.*]]: !Int>
 @fieldwise_init
-@register_passable("trivial")
-struct TestParamStruct[A: Int]:
+struct TestParamStruct[A: Int](AnyTrivialRegType):
 
   # CHECK: lit.fn @"method{{.*}}"<B: !Int>(%self: !lit.struct<#TestParamStruct <:!Int [[A]]>
   # CHECK-SAME: %other: {{.*}}#TestParamStruct <:!Int {{.*}}{_mlir_value = add(#lit.struct.extract<:!Int [[A]], "_mlir_value">, #lit.struct.extract<:!Int B, "_mlir_value">)}
@@ -202,8 +201,7 @@ fn str_input_param():
   meta_str["123"]()
 
 @fieldwise_init
-@register_passable("trivial")
-struct TwoParams[a: Int, b: Int]:
+struct TwoParams[a: Int, b: Int](AnyTrivialRegType):
     pass
 
 # CHECK-LABEL: lit.fn @"signature_capture{{.*}}"<
@@ -282,8 +280,7 @@ fn autoparam_param_alias(x: TwoParamsSwap, y: TwoParamsSwap[_, 2]) -> Int:
 fn autoparam_param_alias_params[x: Int, //, y: TwoParamsSwap[2, _]]():
     pass
 
-@register_passable("trivial")
-struct IndexParam[x: Int]:
+struct IndexParam[x: Int](AnyTrivialRegType):
     @implicit
     fn __init__(out self, p: __mlir_type.`!kgen.none`):
         pass
@@ -300,8 +297,7 @@ fn autoparam_of_struct_metatype_params[a: type_of(IndexParam)]():
     pass
 
 @fieldwise_init
-@register_passable("trivial")
-struct DependentParams[x: Int, //, p: IndexParam[x]]:
+struct DependentParams[x: Int, //, p: IndexParam[x]](AnyTrivialRegType):
     pass
 
 
@@ -446,8 +442,7 @@ fn callMemoryValueParam():
 fn memoryParam[value: MemoryType]():
     pass
 
-@register_passable("trivial")
-struct InitSelfCtor:
+struct InitSelfCtor(AnyTrivialRegType):
     var x: Int
 
     @always_inline("builtin")
@@ -459,8 +454,7 @@ struct InitSelfCtor:
     fn __add__(self, rhs: Self) -> Self:
         return self.x + rhs.x
 
-@register_passable("trivial")
-struct InitSelfParam[x: InitSelfCtor]:
+struct InitSelfParam[x: InitSelfCtor](AnyTrivialRegType):
     pass
 
 
@@ -583,8 +577,7 @@ fn passFunctionParam2():
   takeCallable2[callableWithParam]()
 
 
-@register_passable("trivial")
-struct ParamType[x: Int]:
+struct ParamType[x: Int](AnyTrivialRegType):
     pass
 
 
@@ -813,8 +806,7 @@ fn form_reference_to_overloaded():
 # Parameter Inference
 ##===----------------------------------------------------------------------===##
 
-@register_passable("trivial")
-struct StaticVec[size: Int]:
+struct StaticVec[size: Int](AnyTrivialRegType):
   fn __init__[type: __mlir_type.`!kgen.dtype`](out self, v: __mlir_type[`!pop.simd<`, Self.size._mlir_value, `, `, type, `>`]):
       pass
 
@@ -850,8 +842,7 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
 # CHECK-LABEL: lit.struct.decl @Abstraction
 # CHECK-SAMEL <[[A:.*]]: !Int>
 @fieldwise_init
-@register_passable("trivial")
-struct Abstraction[a: Int]:
+struct Abstraction[a: Int](AnyTrivialRegType):
   comptime val = Self.a._mlir_value
 
   @implicit
@@ -1035,8 +1026,7 @@ trait ToInt:
         ...
 
 @fieldwise_init
-@register_passable("trivial")
-struct HasToInt(ToInt):
+struct HasToInt(AnyTrivialRegType, ToInt):
     var inner: Int
     @always_inline("nodebug")
     fn to_int(self) -> Int:
@@ -1044,8 +1034,7 @@ struct HasToInt(ToInt):
 
 # COM: https://linear.app/modularml/issue/MOCO-885/crash-when-using-autoparam-in-parametrized-structs
 @fieldwise_init
-@register_passable("trivial")
-struct MixedInferAndPosParam[size: Int]:
+struct MixedInferAndPosParam[size: Int](AnyTrivialRegType):
     var f0: Int
 
     # CHECK-LABEL: lit.fn @"__init__[{{.*}}ToInt](
@@ -1054,8 +1043,7 @@ struct MixedInferAndPosParam[size: Int]:
         self.f0 = a.to_int()
 
 @fieldwise_init
-@register_passable("trivial")
-struct MixedInferAndPosParamWithInferredOnStruct[ST: ToInt, //, size: Int]:
+struct MixedInferAndPosParamWithInferredOnStruct[ST: ToInt, //, size: Int](AnyTrivialRegType):
     var f0: Int
 
     # CHECK-LABEL: lit.fn @"__init__[{{.*}}ToInt](
@@ -1070,8 +1058,7 @@ fn useMixedInferAndPosParam():
     # CHECK: lit.call {{.*}}::@MixedInferAndPosParamWithInferredOnStruct::@"__init__{{.*}}<:!ToInt !HasToInt, :!Int {27}, :!ToInt !HasToInt, :!ToInt !HasToInt
     _ = MixedInferAndPosParamWithInferredOnStruct[27](HasToInt(99), HasToInt(37), HasToInt(47))
 
-@register_passable("trivial")
-struct Box[T: AnyType]:
+struct Box[T: AnyType](AnyTrivialRegType):
     @implicit
     fn __init__(out self, x: Self.T):
         pass
@@ -1462,8 +1449,7 @@ fn test_partial_binding_CTAD(multi: CtadStructWithMultiDefault[5]):
 # COM: https://github.com/modular/mojo/issues/1227
 # COM: Ensure default parameters are rebound during CTAD.
 @fieldwise_init
-@register_passable("trivial")
-struct DependentDefault[x: Int = 1, y: Int = x]:
+struct DependentDefault[x: Int = 1, y: Int = x](AnyTrivialRegType):
     pass
 
 
@@ -1592,8 +1578,7 @@ fn testMOCO1826[o: ImmutOrigin](a: MyTypeWithOrigin[origin=o]): pass
 # Origin Parameters
 ##===----------------------------------------------------------------------===##
 
-@register_passable("trivial")
-struct SomeReference[lt: __mlir_type.`!lit.origin<0>`]:
+struct SomeReference[lt: __mlir_type.`!lit.origin<0>`](AnyTrivialRegType):
     pass
 
 
@@ -1672,18 +1657,15 @@ struct CanonicalTypesInDel[input_rank: Int, conv_attr: StructWithIntParam[input_
     pass
 
 # Test remapping of parameter decls in the face of sugar.
-@register_passable("trivial")
-struct IO:
+struct IO(AnyTrivialRegType):
     @always_inline("builtin") # Sugared ctor.
     fn __init__(out self):
         pass
 @fieldwise_init
-@register_passable("trivial")
-struct IOSpec[input: IO]:
+struct IOSpec[input: IO](AnyTrivialRegType):
     pass
 @fieldwise_init
-@register_passable("trivial")
-struct ManagedTensorSlice[input: IO, //, io_spec: IOSpec[input]]:
+struct ManagedTensorSlice[input: IO, //, io_spec: IOSpec[input]](AnyTrivialRegType):
     pass
 comptime InputTensor = ManagedTensorSlice[IOSpec[IO()]()]
 

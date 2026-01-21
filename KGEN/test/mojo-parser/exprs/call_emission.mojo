@@ -278,8 +278,7 @@ fn mutate_in_addrspace(
     a.mutateArg(ptr[])
 
 
-@register_passable("trivial")
-struct ExampleRegPassable:
+struct ExampleRegPassable(AnyTrivialRegType):
     fn __init__(out self):
         pass
 

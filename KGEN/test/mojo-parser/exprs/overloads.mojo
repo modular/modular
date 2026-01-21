@@ -7,8 +7,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-@register_passable("trivial")
-struct MyInt:
+struct MyInt(AnyTrivialRegType):
     var value: Int
 
     @always_inline("nodebug")
@@ -86,8 +85,7 @@ fn test_static_overload():
 # COM: Issue https://github.com/modular/mojo/issues/1408
 # COM: Test that the number of implicit conversions is more important than
 # COM: convention mismatches.
-@register_passable("trivial")
-struct MyElement(ImplicitlyCopyable):
+struct MyElement(AnyTrivialRegType):
     pass
 
 

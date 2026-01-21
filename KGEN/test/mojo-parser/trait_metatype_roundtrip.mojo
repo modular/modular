@@ -18,8 +18,7 @@ trait Trait:
         ...
 
 
-@register_passable("trivial")
-struct SomeStruct[param: Int](Trait):
+struct SomeStruct[param: Int](AnyTrivialRegType, Trait):
     fn method(self) -> Int:
         pass
 

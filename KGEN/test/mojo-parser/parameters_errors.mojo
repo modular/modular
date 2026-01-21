@@ -530,8 +530,7 @@ fn unused_init_self_param():
     var slice = UnusedInitSelfParam()
 
 
-@register_passable("trivial")
-struct SimpleSIMD[arg1: Int, size: Int]:
+struct SimpleSIMD[arg1: Int, size: Int](AnyTrivialRegType):
     # expected-note @below {{function declared here}}
     fn __init__[T: AnyType](out self: SimpleSIMD[Self.arg1, 1], value: T): pass
 

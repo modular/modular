@@ -7,8 +7,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-@register_passable("trivial")
-struct SimpleIntRange:
+struct SimpleIntRange(AnyTrivialRegType):
     fn __init__(out self):
         pass
 
@@ -70,8 +69,7 @@ fn var_let_decls():
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-struct IntList:
+struct IntList(AnyTrivialRegType):
     fn __init__(out self, *list_elements: Int, __list_literal__: () = ()):
         pass
 
@@ -331,8 +329,7 @@ fn test_any_collection():
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-struct IntPairRange:
+struct IntPairRange(AnyTrivialRegType):
     fn __init__(out self):
         pass
 

@@ -6,8 +6,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-@register_passable("trivial")
-struct Thing[a: MutOrigin]:
+struct Thing[a: MutOrigin](AnyTrivialRegType):
     pass
 
 

@@ -28,9 +28,8 @@ trait R1Child(R1):
     pass
 
 
-@register_passable("trivial")
 # CHECK-LABEL: lit.struct.decl @S1<X: !Int>
-struct S1[X: Int](Movable, R1, R1Child, R2):
+struct S1[X: Int](AnyTrivialRegType, R1, R1Child, R2):
     comptime N: Int = Self.X
     comptime T: AnyType = Int
 
