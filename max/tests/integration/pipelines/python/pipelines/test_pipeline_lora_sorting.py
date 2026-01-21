@@ -322,7 +322,6 @@ def create_pipeline_with_lora(
             self._devices = [CPU()]
             self._eos_token_id = {999}
             self._tokenizer = MagicMock()
-            self._weight_adapters = {}
             self.batch_info_output_fname = None
             self.batch_infos = []
             self.vocab_size = 1000
@@ -350,7 +349,6 @@ def create_pipeline_with_lora(
             self._devices = [CPU()]
             self._eos_token_id = {999}
             self._tokenizer = MagicMock()
-            self._weight_adapters = {}
             self.batch_info_output_fname = None
             self.batch_infos = []
             self.vocab_size = 1000

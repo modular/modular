@@ -154,4 +154,3 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
     def release(self, request_id: RequestID) -> None:
         # Nothing to release.
         pass
-        pass

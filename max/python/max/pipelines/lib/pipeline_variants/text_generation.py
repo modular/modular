@@ -48,13 +48,16 @@ from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
 from transformers import PreTrainedTokenizerFast
 
-from .utils import calculate_num_steps, update_context_and_prepare_responses
+from .utils import (
+    calculate_num_steps,
+    get_eos_tokens,
+    get_weight_paths,
+    update_context_and_prepare_responses,
+)
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
 
-from ..config_enums import RepoType
-from ..hf_utils import download_weight_files
 from ..interfaces import PipelineModel
 from ..interfaces.generate import GenerateMixin
 from ..sampling import (
@@ -121,8 +124,10 @@ class TextGenerationPipeline(
                 requested without a valid tokenizer delegate.
         """
         self._pipeline_config = pipeline_config
-        self._devices = load_devices(pipeline_config.model.device_specs)
-        self._weight_adapters = weight_adapters
+        model_config = pipeline_config.model
+        huggingface_config = model_config.huggingface_config
+
+        self._devices = load_devices(model_config.device_specs)
         self._tokenizer = tokenizer
 
         self.batch_info_output_fname = environ.get(
@@ -130,29 +135,7 @@ class TextGenerationPipeline(
         )
         self.batch_infos: list[BatchInfo] = []
 
-        # Expand eos tokens if more are provided in pipeline_config
-        if "eos_token_id" in self._pipeline_config.model.huggingface_config:
-            eos_tokens = (
-                self._pipeline_config.model.huggingface_config.eos_token_id
-            )
-            if isinstance(eos_tokens, int):
-                if eos_tokens != eos_token_id:
-                    msg = f"eos_token_id provided in huggingface config ({eos_tokens}), does not match provided eos_token_id ({eos_token_id}), using provided eos_token_id"
-                    logger.warning(msg)
-
-                self._eos_token_id = set([eos_tokens])
-            elif isinstance(eos_tokens, list):
-                if eos_token_id in eos_tokens:
-                    self._eos_token_id = set(eos_tokens)
-                else:
-                    self._eos_token_id = set([eos_token_id])
-            else:
-                msg = f"eos_token_id in huggingface_config is neither int or list: {eos_tokens}"
-                logger.warning(msg)
-                self._eos_token_id = set([eos_token_id])
-
-        else:
-            self._eos_token_id = set([eos_token_id])
+        self._eos_token_id = get_eos_tokens(huggingface_config, eos_token_id)
 
         # Create a grammar compiler if constrained decoding is enabled
         self.vocab_size = None
@@ -176,34 +159,11 @@ class TextGenerationPipeline(
         self._pipeline_config.configure_session(session)
 
         # Load model.
-        if not self._pipeline_config.model.quantization_encoding:
+        if not model_config.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
 
         # Retrieve the weights repo id (falls back to model_path when unset).
-        weight_model_id = self._pipeline_config.model.huggingface_weight_repo_id
-
-        weight_paths: list[Path] = []
-        if (
-            self._pipeline_config.model.huggingface_weight_repo.repo_type
-            == RepoType.online
-        ):
-            # Download weight files if not existent.
-            weight_paths = download_weight_files(
-                huggingface_model_id=weight_model_id,
-                filenames=[
-                    str(x) for x in self._pipeline_config.model.weight_path
-                ],
-                revision=self._pipeline_config.model.huggingface_weight_revision,
-                force_download=self._pipeline_config.model.force_download,
-            )
-        else:
-            # Use the resolved repo_id (which points to local cache in offline mode)
-            local_path = Path(
-                self._pipeline_config.model.huggingface_weight_repo.repo_id
-            )
-            weight_paths = [
-                local_path / x for x in self._pipeline_config.model.weight_path
-            ]
+        weight_paths: list[Path] = get_weight_paths(model_config)
 
         # late imports to minimize header deps
         from max.graph.weights import load_weights as _load_weights
@@ -212,14 +172,12 @@ class TextGenerationPipeline(
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=self._pipeline_config.model.huggingface_config,
-            encoding=self._pipeline_config.model.quantization_encoding,
+            huggingface_config=huggingface_config,
+            encoding=model_config.quantization_encoding,
             devices=self._devices,
-            kv_cache_config=self._pipeline_config.model.kv_cache,
+            kv_cache_config=model_config.kv_cache,
             weights=_load_weights(weight_paths),
-            adapter=self._weight_adapters.get(
-                _weights_format(weight_paths), None
-            ),
+            adapter=weight_adapters.get(_weights_format(weight_paths)),
             return_logits=ReturnLogits.ALL
             if self._pipeline_config.enable_echo
             else ReturnLogits.LAST_TOKEN,
@@ -229,14 +187,14 @@ class TextGenerationPipeline(
         from max.graph import DeviceRef as _DeviceRef
 
         self._sampler_with_bitmask: Model | None = None
-        if self._pipeline_config.sampling.enable_structured_output:
+        if pipeline_config.sampling.enable_structured_output:
             self._sampler_with_bitmask = session.load(
                 token_sampler(
-                    self._pipeline_config.sampling,
+                    pipeline_config.sampling,
                     device=_DeviceRef.from_device(self._devices[0]),
                 )
             )
-            cfg_without_bitmask = copy.deepcopy(self._pipeline_config.sampling)
+            cfg_without_bitmask = copy.deepcopy(pipeline_config.sampling)
             cfg_without_bitmask.enable_structured_output = False
             self._sampler_without_bitmask = session.load(
                 token_sampler(
@@ -247,7 +205,7 @@ class TextGenerationPipeline(
         else:
             self._sampler_without_bitmask = session.load(
                 token_sampler(
-                    self._pipeline_config.sampling,
+                    pipeline_config.sampling,
                     device=_DeviceRef.from_device(self._devices[0]),
                 )
             )
