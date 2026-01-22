@@ -65,7 +65,7 @@ struct MatmulConfig[
     var num_pipeline_stages: Int
     var num_clc_pipeline_stages: Int
     var num_accum_pipeline_stages: Int
-    var num_output_stages: UInt
+    var num_output_stages: Int
     var output_tile_shape: IndexList[2]
     var a_swizzle: TensorMapSwizzle
     var b_swizzle: TensorMapSwizzle
@@ -156,7 +156,7 @@ struct MatmulConfig[
         var c_smem_bytes = (
             self.output_tile_shape[0]
             * self.output_tile_shape[1]
-            * Int(self.num_output_stages)
+            * self.num_output_stages
             * size_of[Self.c_type]()
         )
         # Add tmem addr (4) and tmem dealloc mbar(8)
@@ -498,7 +498,7 @@ struct BlockScaledMatmulConfig[
     var num_pipeline_stages: Int
     var num_clc_pipeline_stages: Int
     var num_accum_pipeline_stages: Int
-    var num_output_stages: UInt
+    var num_output_stages: Int
     var output_tile_shape: IndexList[2]
     var a_swizzle: TensorMapSwizzle
     var b_swizzle: TensorMapSwizzle
@@ -608,7 +608,7 @@ struct BlockScaledMatmulConfig[
         var c_smem_bytes = (
             self.output_tile_shape[0]
             * self.output_tile_shape[1]
-            * Int(self.num_output_stages)
+            * self.num_output_stages
             * size_of[Self.c_type]()
         )
         # Add tmem addr (4) and tmem dealloc mbar(8)

@@ -779,9 +779,7 @@ struct B200BlockScaledMatmulSmem[
 
     comptime a_smem_size = Self.BM * Self.BK * Self.config.num_pipeline_stages
     comptime b_smem_size = Self.BN * Self.BK * Self.config.num_pipeline_stages
-    comptime c_smem_size = Self.OutputM * Self.OutputN * Int(
-        Self.config.num_output_stages
-    )
+    comptime c_smem_size = Self.OutputM * Self.OutputN * Self.config.num_output_stages
 
     comptime sfa_smem_size = (
         Self.config.num_sf_k_tiles

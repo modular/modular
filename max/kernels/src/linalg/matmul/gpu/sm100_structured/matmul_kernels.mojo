@@ -376,7 +376,7 @@ struct B200MatmulSmem[
     comptime num_group_pipeline_stages = (
         Self.num_pipeline_stages // Int(Self.config.k_group_size)
     )
-    comptime num_output_stages = Int(Self.config.num_output_stages)
+    comptime num_output_stages: Int = Self.config.num_output_stages
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_clc_pipeline_stages: Int = Self.config.num_clc_pipeline_stages
 
@@ -608,7 +608,7 @@ struct BlackwellMatmulSM100Kernel[
     )
     comptime num_clc_pipeline_stages: Int = Self.config.num_clc_pipeline_stages
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
-    comptime num_output_stages = Int(Self.config.num_output_stages)
+    comptime num_output_stages: Int = Self.config.num_output_stages
 
     # TMEM configuration
     comptime NUM_TMEM_COLS = 512

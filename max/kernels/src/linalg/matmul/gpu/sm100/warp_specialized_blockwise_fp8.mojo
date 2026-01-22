@@ -852,7 +852,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime b_smem_size = b_smem_layout.size() * num_pipeline_stages
     comptime c_smem_size = config.output_tile_shape[
         0
-    ] * config.output_tile_shape[1] * Int(config.num_output_stages)
+    ] * config.output_tile_shape[1] * config.num_output_stages
 
     comptime a_scales_smem_size = a_scales_smem_layout.size() * num_pipeline_stages
 
@@ -1397,7 +1397,7 @@ fn sm100_warp_specialized_blockwise_fp8[
 
     comptime c_smem_bytes = config.output_tile_shape[
         0
-    ] * config.output_tile_shape[1] * Int(config.num_output_stages) * size_of[
+    ] * config.output_tile_shape[1] * config.num_output_stages * size_of[
         c_type
     ]()
 

@@ -201,7 +201,7 @@ struct BlackwellBlockScaledMatmulKernel[
     comptime num_group_pipeline_stages = Self.num_pipeline_stages // Self.config.k_group_size
     comptime num_clc_pipeline_stages: Int = Self.config.num_clc_pipeline_stages
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
-    comptime num_output_stages = Int(Self.config.num_output_stages)
+    comptime num_output_stages: Int = Self.config.num_output_stages
 
     # TMEM configuration
     comptime NUM_TMEM_COLS = 512
@@ -393,7 +393,7 @@ struct BlackwellBlockScaledMatmulKernel[
         c_swizzle = Self.config.c_swizzle,
         transpose_c = Self.config.AB_swapped,
         c_smem_layout = Self.SmemType.c_smem_layout,
-        num_output_stages = Int(Self.config.num_output_stages),
+        num_output_stages = Self.config.num_output_stages,
         stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
     ]
