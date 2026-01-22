@@ -55,9 +55,10 @@ modular_py_test(
         "tests/test.toml",
     ],
     imports = ["."],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
-        ":mblack",
+        ":mblack-lib",
+        requirement("click"),
+        requirement("pathspec"),
     ],
 )
 
