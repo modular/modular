@@ -339,6 +339,20 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "longbench-v2-eval",
+    testonly = True,
+    srcs = ["run_longbench_v2.py"],
+    main = "run_longbench_v2.py",
+    deps = [
+        requirement("click"),
+        requirement("datasets"),
+        requirement("openai"),
+        requirement("tqdm"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_binary(
     name = "pipelines-lm-eval",
     testonly = True,
     srcs = ["pipelines_lm_eval.py"],
@@ -355,6 +369,7 @@ modular_py_binary(
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":lm-eval",
+        ":longbench-v2-eval",
         ":mistral-eval",
         "//max/python/max/entrypoints:pipelines",  # The transitive mojo deps from this target must be available
         "//max/tests/integration/pipelines/python/eval_tasks/human_eval",
