@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
-from math import align_up
+from math import align_up, ceildiv
 from sys import env_get_bool, env_get_dtype, env_get_int, size_of, simd_width_of
 
 from benchmark import (
@@ -110,8 +110,7 @@ fn bench_broadcast[
 
     # Create signal buffers for synchronization AND payload space
     # Two-stage broadcast needs payload space for each GPU's chunk
-    # Chunk size = num_bytes / (ngpus - 1), rounded up
-    var chunk_bytes = (num_bytes + ngpus - 2) // (ngpus - 1)
+    var chunk_bytes = ceildiv(num_bytes, ngpus)
     var signal_buf_size = size_of[Signal]() + chunk_bytes
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
