@@ -332,7 +332,9 @@ class Gemma3Model(
             ignored_modules_prefix=state_dict_prefix or "model.",
         )
 
-        model_config = Gemma3Config.initialize(self.pipeline_config)
+        model_config = Gemma3Config.initialize_from_config(
+            self.pipeline_config, huggingface_config
+        )
         model_config.finalize(
             huggingface_config=huggingface_config,
             state_dict=state_dict,
