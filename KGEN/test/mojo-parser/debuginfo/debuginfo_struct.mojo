@@ -16,7 +16,7 @@
 # CHECK: lit.struct.decl @MyRP
 # CHECK-SAME: sourceName = #[[SOURCENAME_RP]]
 @fieldwise_init
-struct MyRP[A: Int](AnyTrivialRegType):
+struct MyRP[A: Int](TrivialRegisterType):
     var a: Int
     var b: Int
 

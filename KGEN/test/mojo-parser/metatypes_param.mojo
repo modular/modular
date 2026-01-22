@@ -12,7 +12,7 @@
 
 # CHECK-LABEL: lit.struct.decl @Param
 @fieldwise_init
-struct Param[x: Int](AnyTrivialRegType):
+struct Param[x: Int](TrivialRegisterType):
     comptime value = Self.x
 
     @staticmethod
@@ -29,7 +29,7 @@ struct Param[x: Int](AnyTrivialRegType):
 
 # CHECK-LABEL: lit.struct.decl @TwoParam
 @fieldwise_init
-struct TwoParam[x: Int, y: Int](AnyTrivialRegType):
+struct TwoParam[x: Int, y: Int](TrivialRegisterType):
     comptime first = Self.x
     comptime second = Self.y
 
@@ -115,7 +115,7 @@ fn partial_autoparam(value: TwoParam[y=1]):
 
 # CHECK-LABEL: lit.struct.decl @ParamVarArg<F: !Int, I: variadic<!Int> pos_vararg>
 @fieldwise_init
-struct ParamVarArg[F: Int, *I: Int](AnyTrivialRegType):
+struct ParamVarArg[F: Int, *I: Int](TrivialRegisterType):
     # CHECK-LABEL: lit.fn @"self_type
     # CHECK-SAME: #ParamVarArg <:!Int F, :variadic<!Int> I>
     @staticmethod

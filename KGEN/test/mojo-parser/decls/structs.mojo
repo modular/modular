@@ -10,7 +10,7 @@
 # Support types
 # ===----------------------------------------------------------------------=== #
 
-trait RPTTrait(AnyTrivialRegType):
+trait RPTTrait(TrivialRegisterType):
     pass
 
 # ===----------------------------------------------------------------------=== #
@@ -23,7 +23,7 @@ trait RPTTrait(AnyTrivialRegType):
 # It does have a destructor though because of AnyType conformance.
 # CHECK-NOT: destructor :!lit.generator
 # CHECK: lit.fn @"__del__
-struct DtorExample1(AnyTrivialRegType, AnyType):
+struct DtorExample1(TrivialRegisterType, AnyType):
     var a: Int
 
 
@@ -31,7 +31,7 @@ struct DtorExample1(AnyTrivialRegType, AnyType):
 # Shouldn't have a registered destructor because it's trivial and not explicit
 # CHECK-NOT: destructor :!lit.generator
 # CHECK: lit.fn @"__del__
-struct DtorExample2(AnyTrivialRegType, AnyType):
+struct DtorExample2(TrivialRegisterType, AnyType):
     var a: Int
 
 
@@ -226,7 +226,7 @@ struct MyStructWith2PFuncs[m1: MyParam[_]]:
 
 
 @fieldwise_init("implicit")
-struct NmTarget(AnyTrivialRegType):
+struct NmTarget(TrivialRegisterType):
     var x: Bool
 
     @always_inline("builtin")
@@ -239,7 +239,7 @@ struct NmTarget(AnyTrivialRegType):
 
 
 @nonmaterializable(NmTarget)
-struct NmStruct(AnyTrivialRegType):
+struct NmStruct(TrivialRegisterType):
     var x: Int
 
     @always_inline("builtin")

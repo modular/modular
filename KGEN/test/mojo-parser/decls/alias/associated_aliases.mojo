@@ -10,7 +10,7 @@
 
 
 @fieldwise_init
-struct ZInt(AnyTrivialRegType):
+struct ZInt(TrivialRegisterType):
     pass
 
 
@@ -86,7 +86,7 @@ fn testTraitWithAliasAndStructWithMatchingAlias():
 
 
 @fieldwise_init
-struct ZInt(AnyTrivialRegType):
+struct ZInt(TrivialRegisterType):
     pass
 
 
@@ -118,7 +118,7 @@ fn testTraitWithRefinedTypeAlias[T: TraitWithSameTypeAlias]():
 
 
 @fieldwise_init
-struct ZInt(ATrait, AnyTrivialRegType):
+struct ZInt(ATrait, TrivialRegisterType):
     pass
 
 
@@ -166,7 +166,7 @@ fn testUpcastingStructWithAliasArgMethod():
 
 
 @fieldwise_init
-struct ZInt(ATrait, AnyTrivialRegType):
+struct ZInt(ATrait, TrivialRegisterType):
     pass
 
 
@@ -212,7 +212,7 @@ fn testUpcastingStructWithAliasArgMethod():
 
 
 @fieldwise_init
-struct ZInt(AnyTrivialRegType):
+struct ZInt(TrivialRegisterType):
     pass
 
 
@@ -248,7 +248,7 @@ fn callTraitMethodWithAliasArg[
 
 
 @fieldwise_init
-struct ZInt(AnyTrivialRegType):
+struct ZInt(TrivialRegisterType):
     pass
 
 
@@ -285,7 +285,7 @@ fn callTraitMethodWithAliasArg[
 
 
 @fieldwise_init
-struct ZInt(ATrait, AnyTrivialRegType):
+struct ZInt(ATrait, TrivialRegisterType):
     pass
 
 
@@ -335,7 +335,7 @@ fn receiveTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
 
 
 @fieldwise_init
-struct ZInt(ATrait, AnyTrivialRegType):
+struct ZInt(ATrait, TrivialRegisterType):
     pass
 
 
@@ -442,7 +442,7 @@ fn callTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
 
 
 @fieldwise_init
-struct ZInt(ATrait, AnyTrivialRegType):
+struct ZInt(ATrait, TrivialRegisterType):
     pass
 
 
@@ -493,7 +493,7 @@ fn receiveTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
 
 
 @fieldwise_init
-struct ZInt(ATrait, AnyTrivialRegType):
+struct ZInt(ATrait, TrivialRegisterType):
     pass
 
 
@@ -541,7 +541,7 @@ fn receiveTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
 
 
 @fieldwise_init
-struct ZInt(ATrait, AnyTrivialRegType):
+struct ZInt(ATrait, TrivialRegisterType):
     pass
 
 
@@ -594,7 +594,7 @@ fn upcastStructWithSelfDotAliasReturnMethod(
 
 
 @fieldwise_init
-struct ZInt(ATrait, AnyTrivialRegType):
+struct ZInt(ATrait, TrivialRegisterType):
     pass
 
 
@@ -646,7 +646,7 @@ fn upcastStructWithSelfDotAliasReturnMethod(
 
 
 @fieldwise_init
-struct ZInt(ATrait, AnyTrivialRegType):
+struct ZInt(ATrait, TrivialRegisterType):
     pass
 
 
@@ -705,7 +705,7 @@ fn testUpcastingGenericStructWithSelfDotAliasReturnMethod():
 
 
 @fieldwise_init
-struct ZInt(ATrait, AnyTrivialRegType):
+struct ZInt(ATrait, TrivialRegisterType):
     pass
 
 
@@ -767,7 +767,7 @@ trait ASubTrait(ATrait):
     pass
 
 
-struct ZInt(ASubTrait, ATrait, AnyTrivialRegType):
+struct ZInt(ASubTrait, ATrait, TrivialRegisterType):
     pass
 
 
@@ -810,7 +810,7 @@ trait ASubTrait(ATrait):
     pass
 
 
-struct ZInt(ASubTrait, ATrait, AnyTrivialRegType):
+struct ZInt(ASubTrait, ATrait, TrivialRegisterType):
     pass
 
 
@@ -1014,7 +1014,7 @@ trait C(B):
 
 
 @fieldwise_init
-struct ZInt(AnyTrivialRegType):
+struct ZInt(TrivialRegisterType):
     pass
 
 

@@ -122,7 +122,7 @@ fn callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
     trait_pack(1, 2, 3)
 
 
-struct MyInt(AnyTrivialRegType):
+struct MyInt(TrivialRegisterType):
     var value: Int
 
     @implicit
@@ -273,7 +273,7 @@ struct RPStructWithInit:
     var y: Int
 
 
-struct RPStructWithInitTrivial(AnyTrivialRegType):
+struct RPStructWithInitTrivial(TrivialRegisterType):
     var x: __mlir_type.index
 
 
@@ -555,7 +555,7 @@ fn raise_and_return(a: Error) raises -> Error:
 
 
 @fieldwise_init
-struct RaisingGetterSetter(AnyTrivialRegType):
+struct RaisingGetterSetter(TrivialRegisterType):
     fn __getitem__(self, i: Int) raises -> FloatDyn:
         return 1.0
 
@@ -905,7 +905,7 @@ struct LegacyInOutInit:
 ##===----------------------------------------------------------------------===##
 
 
-struct Container[T: AnyType](AnyTrivialRegType):
+struct Container[T: AnyType](TrivialRegisterType):
     comptime _mlir_type = __mlir_type[`!kgen.pointer<`, Self.T, `>`]
     var address: Self._mlir_type
 
@@ -1096,7 +1096,7 @@ fn closureParameterCaptures[
     pass
 
 
-struct HasParam[p: Int](AnyTrivialRegType):
+struct HasParam[p: Int](TrivialRegisterType):
     pass
 
 
@@ -1106,7 +1106,7 @@ fn closureParameterInference[
     pass
 
 
-struct HasLifetimeParam[p: MutOrigin](AnyTrivialRegType):
+struct HasLifetimeParam[p: MutOrigin](TrivialRegisterType):
     pass
 
 

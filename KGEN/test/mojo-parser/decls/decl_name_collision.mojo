@@ -8,7 +8,7 @@
 
 
 # MOCO-2327
-struct Foo(AnyTrivialRegType):
+struct Foo(TrivialRegisterType):
     # CHECK: lit.fn @"__init__(::Int)"
     fn __init__(out self, *, a: Int):
         pass

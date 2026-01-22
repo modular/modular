@@ -469,7 +469,7 @@ struct TwoAndThreeList:
    # expected-note @below {{missing 3 required positional arguments: 'a', 'b', 'c'}}
    fn __init__(out self, a: Int, b: Int, c: Int, __list_literal__: ()): pass
 
-struct SimpleRange(AnyTrivialRegType):
+struct SimpleRange(TrivialRegisterType):
     fn __init__(out self): pass
     fn __len__(self) -> Int:
         pass
@@ -1071,7 +1071,7 @@ fn sugar_test():
 
 
 # PR5618 - Compiler crash when should be implicit conversion error
-struct MemberAliasSugarCrash(AnyTrivialRegType):
+struct MemberAliasSugarCrash(TrivialRegisterType):
     comptime ValueType = Int
     var _value: Self.ValueType
 

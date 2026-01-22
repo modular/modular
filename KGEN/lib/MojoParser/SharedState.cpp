@@ -2902,7 +2902,8 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     // Which happens in ctors for builtin operations.  Ignore anything more
     // complex.
     ASTDecl *decl = ASTType(eltType).getDecl(shared);
-    if (decl && ASTType(eltType).isAnyTrivialRegType(decl->getLoc(), shared)) {
+    if (decl &&
+        ASTType(eltType).isTrivialRegisterType(decl->getLoc(), shared)) {
       varDeclSoFar[varDecl] = UnknownAttr::get(eltType);
       return TypedAttr();
     }

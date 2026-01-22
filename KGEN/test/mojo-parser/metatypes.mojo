@@ -11,7 +11,7 @@
 
 
 @fieldwise_init
-struct Thing(AnyTrivialRegType):
+struct Thing(TrivialRegisterType):
     @implicit
     fn __init__(out self, x: NMType):
         return

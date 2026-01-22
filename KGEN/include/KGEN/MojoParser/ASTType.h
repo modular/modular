@@ -135,9 +135,9 @@ public:
   bool isMovableFrom(ASTExprAnd<CValue> value, SharedState &shared) const;
 
   /// Return true if this type is trivial register passable because
-  /// is trivial or conforms to AnyTrivialRegType trait.
+  /// is trivial or conforms to TrivialRegisterType trait.
   /// Note: this resolves the body of a struct type.
-  bool isAnyTrivialRegType(llvm::SMLoc loc, SharedState &shared) const;
+  bool isTrivialRegisterType(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Given a reference, return the element as an ASTType.  This aborts
   /// if the current type isn't a reference.
