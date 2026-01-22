@@ -4625,6 +4625,10 @@ class StructType(max._core.Type):
     strips away all information except for those necessary for understanding the
     memory layout of the data it describes.
 
+    The element types are stored as a `TypedAttr` which can be either:
+    - A concrete `VariadicAttr` with resolved types
+    - A parametric expression (e.g., a variadic parameter reference) before elaboration
+
     Example:
 
     ```mlir
@@ -4646,26 +4650,35 @@ class StructType(max._core.Type):
 
     // A struct with parameterized element types.
     !kgen.struct<(type, array<size, scalar<dtype>>)>
+
+    // A struct parameterized on a variadic sequence of element types.
+    kgen.generator @example<Ts: variadic<!kgen.type>>(
+      %0: !kgen.struct<(Ts)>,
+    ) { kgen.return }
     ```
     """
 
     @overload
-    def __init__(self, types: Sequence[max._core.Type]) -> None: ...
-    @overload
-    def __init__(self, types: Sequence[max._core.Type]) -> None: ...
+    def __init__(
+        self,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        is_memory_only: bool = False,
+    ) -> None: ...
     @overload
     def __init__(
-        self, types: Sequence[max._core.Type], is_memory_only: bool
+        self, types: Sequence[max._core.Type], is_memory_only: bool = False
     ) -> None: ...
     @overload
     def __init__(
         self,
-        element_types: Sequence[max._core.Type],
-        is_memory_only: bool,
-        min_alignment: max._core.dialects.builtin.TypedAttr,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        is_memory_only: bool = False,
+        min_alignment: max._core.dialects.builtin.TypedAttr = ...,
     ) -> None: ...
     @property
-    def element_types(self) -> Sequence[max._core.Type]: ...
+    def element_types_variadic(
+        self,
+    ) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def is_memory_only(self) -> bool: ...
     @property
