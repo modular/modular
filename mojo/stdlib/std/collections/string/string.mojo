@@ -1964,8 +1964,8 @@ struct String(
         """
         return _FormatUtils.format(self, args)
 
-    fn isdigit(self) -> Bool:
-        """A string is a digit string if all characters in the string are digits
+    fn is_ascii_digit(self) -> Bool:
+        """A string is a digit string if all characters in the string are ASCII digits
         and there is at least one character in the string.
 
         Note that this currently only works with ASCII strings.
@@ -1995,7 +1995,7 @@ struct String(
         """
         return self.as_string_slice().islower()
 
-    fn isprintable(self) -> Bool:
+    fn is_ascii_printable(self) -> Bool:
         """Returns True if all characters in the string are ASCII printable.
 
         Note that this currently only works with ASCII strings.

@@ -657,15 +657,15 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return self.as_string_slice().endswith(suffix, start, end)
 
-    fn isdigit(self) -> Bool:
-        """Returns True if all characters in the string literal are digits.
+    fn is_ascii_digit(self) -> Bool:
+        """Returns True if all characters in the string literal are ASCII digits.
 
         Note that this currently only works with ASCII strings.
 
         Returns:
             True if all characters are digits else False.
         """
-        return String(self).isdigit()
+        return String(self).is_ascii_digit()
 
     fn isupper(self) -> Bool:
         """Returns True if all cased characters in the string literal are
