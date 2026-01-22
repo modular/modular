@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import time
-import traceback
 
 from max.interfaces import (
     MAXPullQueue,
@@ -157,10 +156,7 @@ class TokenGenerationScheduler(Scheduler):
         try:
             responses = self.pipeline.execute(inputs)
         except Exception as exc:
-            logger.error(
-                "Exception during pipeline execution: %s",
-                traceback.format_exc(),
-            )
+            logger.exception("Exception during pipeline execution")
 
             # Send error results to ALL requests in the batch
             self.response_queue.put_nowait(

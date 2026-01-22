@@ -16,7 +16,6 @@ import json
 import logging
 import os
 import time
-import traceback
 import uuid
 from collections import deque
 from collections.abc import Generator
@@ -438,10 +437,7 @@ class AudioGenerationScheduler(Scheduler):
                         self._prev_num_steps = response.steps_executed
                         break
         except Exception as exc:
-            logger.error(
-                "Exception during pipeline execution: %s",
-                traceback.format_exc(),
-            )
+            logger.exception("Exception during pipeline execution")
 
             # Send error results to ALL requests in the batch
             self.response_queue.put_nowait(
@@ -453,8 +449,7 @@ class AudioGenerationScheduler(Scheduler):
 
             # Release all requests from scheduler state
             for req_id in batch_request_ids:
-                if req_id in self.decode_reqs:
-                    del self.decode_reqs[req_id]
+                self.decode_reqs.pop(req_id, None)
                 self.pipeline.release(req_id)
 
             # Set a default num_steps for logging
