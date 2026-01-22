@@ -156,6 +156,10 @@ private:
   evaluateStructFieldIndexByName(StructFieldIndexByNameAttr attr);
   FailureOr<TypedAttr>
   evaluateStructFieldTypeByName(StructFieldTypeByNameAttr attr);
+  FailureOr<TypedAttr>
+  evaluateStructFieldOffsetByIndex(StructFieldOffsetByIndexAttr attr);
+  FailureOr<TypedAttr>
+  evaluateStructFieldOffsetByName(StructFieldOffsetByNameAttr attr);
 };
 
 /// An evaluation context that exposes a LockedSymbolTableCollection.

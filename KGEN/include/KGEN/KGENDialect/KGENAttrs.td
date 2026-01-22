@@ -1023,6 +1023,75 @@ def KGEN_StructFieldTypeByNameAttr : KGEN_ExprAttr<"StructFieldTypeByName",
 }
 
 //===----------------------------------------------------------------------===//
+// StructFieldOffsetByIndexAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructFieldOffsetByIndexAttr : KGEN_ExprAttr<"StructFieldOffsetByIndex",
+    "struct_field_offset_by_index", [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Get the byte offset of a struct field by index.";
+  let description = [{
+    The `#kgen.struct_field_offset_by_index` attribute returns the byte offset
+    of a field in a struct type given the field index. Produces a compile error
+    if the field index is out of bounds.
+
+    The offset is computed using the target's data layout to determine field
+    sizes and alignment requirements.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_offset_by_index<#MyStruct, 0 : index, #target> : index
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$typeValue,
+    "TypedAttr":$fieldIndex,
+    "TypedAttr":$target
+  );
+
+  let assemblyFormat = "`<` custom<TypeParamValue>($typeValue) `,` $fieldIndex `,` $target `>`";
+  let extraClassDeclaration = [{ Type getType() const; }];
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// StructFieldOffsetByNameAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructFieldOffsetByNameAttr : KGEN_ExprAttr<"StructFieldOffsetByName",
+    "struct_field_offset_by_name", [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Get the byte offset of a struct field by name.";
+  let description = [{
+    The `#kgen.struct_field_offset_by_name` attribute returns the byte offset
+    of a field in a struct type given the field name. Produces a compile error
+    if the field name does not exist in the struct.
+
+    The fieldName parameter should resolve to a StringAttr (kgen.string) after
+    parameter evaluation.
+
+    The offset is computed using the target's data layout to determine field
+    sizes and alignment requirements.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_offset_by_name<#MyStruct, "x", #target> : index
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$typeValue,
+    "TypedAttr":$fieldName,
+    "TypedAttr":$target
+  );
+
+  let assemblyFormat = "`<` custom<TypeParamValue>($typeValue) `,` $fieldName `,` $target `>`";
+  let extraClassDeclaration = [{ Type getType() const; }];
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // IsStructTypeAttr
 //===----------------------------------------------------------------------===//
 
