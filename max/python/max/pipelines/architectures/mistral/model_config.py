@@ -114,7 +114,14 @@ class MistralConfig(ArchConfigWithKVCache):
         Returns:
             An initialized MistralConfig instance.
         """
-        huggingface_config = pipeline_config.model.huggingface_config
+        return cls.initialize_from_config(
+            pipeline_config, pipeline_config.model.huggingface_config
+        )
+
+    @classmethod
+    def initialize_from_config(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> Self:
         kv_cache_config = pipeline_config.model.kv_cache
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:

@@ -333,7 +333,9 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
 
-        model_config = MistralConfig.initialize(self.pipeline_config)
+        model_config = MistralConfig.initialize_from_config(
+            self.pipeline_config, self.huggingface_config
+        )
         model_config.return_logits = self.return_logits
 
         # Get Graph Inputs
