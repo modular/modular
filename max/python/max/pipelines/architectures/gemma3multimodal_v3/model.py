@@ -17,7 +17,7 @@ import logging
 import math
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Tuple, cast
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -185,7 +185,9 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin):
+class Gemma3_MultiModalModelV3(
+    PipelineModel[TextAndVisionContext], KVCacheMixin
+):
     """Gemma 3 multimodal pipeline model for text generation using MAX V3 API.
 
     This class integrates the Gemma 3 multimodal architecture with the MAX Engine pipeline
@@ -284,7 +286,7 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
             huggingface_config
         )
 
-    def load_model(self) -> Tuple[Callable[..., Any], Callable[..., Any]]:
+    def load_model(self) -> tuple[Callable[..., Any], Callable[..., Any]]:
         """Loads the compiled Gemma3 MultiModal models into the MAX Engine session.
 
         Returns:
@@ -317,7 +319,9 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         input_row_offsets_prealloc_host = Buffer.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         )
-        self._input_row_offsets_prealloc = input_row_offsets_prealloc_host.to(self.devices[0])
+        self._input_row_offsets_prealloc = input_row_offsets_prealloc_host.to(
+            self.devices[0]
+        )
 
         # Build and compile language model
         language_model = self._compile_language_graph(
@@ -391,28 +395,22 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         with F.lazy():
             language_model = Gemma3LanguageModel(config)
             # language_model.to(self.devices[0]) # TODO multi device...?
-            
+
         timer.mark_build_complete()
 
-        input_types=self._language_model_input_types(config)
+        input_types = self._language_model_input_types(config)
         # Unpack inputs following InternVL pattern
         (tokens, return_n_logits, *variadic_args) = input_types
 
         # Extract input_row_offsets (one per device)
-        input_row_offsets = [
-            v for v in variadic_args[: len(self.devices)]
-        ]
+        input_row_offsets = [v for v in variadic_args[: len(self.devices)]]
         variadic_args = variadic_args[len(self.devices) :]
 
         # Extract image embeddings (one per device).
-        image_embeddings = [
-            v for v in variadic_args[: len(self.devices)]
-        ]
+        image_embeddings = [v for v in variadic_args[: len(self.devices)]]
         variadic_args = variadic_args[len(self.devices) :]
 
-        image_token_indices = [
-            v for v in variadic_args[: len(self.devices)]
-        ]
+        image_token_indices = [v for v in variadic_args[: len(self.devices)]]
         variadic_args = variadic_args[len(self.devices) :]
 
         # Extract KV cache inputs
@@ -458,14 +456,12 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         with F.lazy():
             vision_model = Gemma3VisionModel(config)
             # vision_model.to(self.devices[0]) # TODO multi device...?
-            
+
         timer.mark_build_complete()
 
-        input_types=self._vision_model_input_types(config)
+        input_types = self._vision_model_input_types(config)
 
-        pixel_values = [
-            inp for inp in input_types[: len(self.devices)]
-        ]
+        pixel_values = [inp for inp in input_types[: len(self.devices)]]
 
         image_embeddings = vision_model(pixel_values)
 
@@ -492,9 +488,7 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
             assert model_inputs.pixel_values is not None
 
             # Execute vision model: patched pixel_values -> image_embeddings.
-            vision_outputs = self.vision_model(
-                *model_inputs.pixel_values
-            )
+            vision_outputs = self.vision_model(*model_inputs.pixel_values)
             assert len(vision_outputs) == len(self.devices)
 
             image_embeddings = [

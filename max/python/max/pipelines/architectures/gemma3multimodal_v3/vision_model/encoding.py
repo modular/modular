@@ -88,6 +88,7 @@ class Gemma3VisionEncoderLayer(Module):
 
         return hidden_states
 
+
 class Gemma3VisionEncoder(Module):
     """Wrapper class for a stack of vision encoder layers"""
 

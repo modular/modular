@@ -21,9 +21,9 @@ from max.graph import (
 )
 from max.graph.ops import avg_pool2d
 from max.nn.module_v3 import Linear, Module
-from .rms_norm import Gemma3RMSNorm
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
+from .rms_norm import Gemma3RMSNorm
 
 
 class Gemma3MultiModalProjector(Module):
@@ -123,7 +123,7 @@ class Gemma3VisionMLP(Module):
         self.intermediate_size = config.vision_config.intermediate_size
         self.device = device if device is not None else config.devices[0]
 
-        vision_dtype = DType.bfloat16 # TODO what do after move to V3?
+        vision_dtype = DType.bfloat16  # TODO what do after move to V3?
 
         self.fc1 = Linear(
             self.hidden_size,
@@ -141,7 +141,8 @@ class Gemma3VisionMLP(Module):
         """Expands hidden states to intermediate size, applies GELU activation,
         then projects back to hidden size."""
         x = self.fc1(x)
-        x = F.gelu(x, self.config.vision_config.hidden_act, approximate=True) # TODO true is correct or?
+        x = F.gelu(
+            x, self.config.vision_config.hidden_act, approximate=True
+        )  # TODO true is correct or?
         x = self.fc2(x)
         return x
-
