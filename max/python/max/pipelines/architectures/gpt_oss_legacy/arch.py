@@ -25,6 +25,7 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import GptOssModel
+from .model_config import GptOssConfig
 
 gpt_oss_legacy_arch = SupportedArchitecture(
     name="GptOssForCausalLM_Legacy",
@@ -47,4 +48,5 @@ gpt_oss_legacy_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    config=GptOssConfig,
 )
