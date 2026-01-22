@@ -16,7 +16,9 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -603,7 +605,20 @@ ErrorOr<NUMATopology> NUMATopology::get() {
        std::filesystem::directory_iterator("/sys/bus/pci/devices", err)) {
     if (err)
       break;
+
     std::string pciBusId = entry.path().filename().string();
+
+    // Normalize to 8-digit domain format to match CUDA's format
+    // e.g., "0000:17:00.0" -> "00000000:17:00.0"
+    size_t firstColon = pciBusId.find(':');
+    if (firstColon != std::string::npos && firstColon < 8)
+      pciBusId = std::string(8 - firstColon, '0') + pciBusId;
+
+    // Convert to uppercase to match CUDA's format
+    // e.g., "00000000:1a:00.0" -> "00000000:1A:00.0"
+    std::transform(pciBusId.begin(), pciBusId.end(), pciBusId.begin(),
+                   ::toupper);
+
     std::string numaPath = entry.path().string() + "/numa_node";
 
     auto buf = fileBuffer(numaPath);
