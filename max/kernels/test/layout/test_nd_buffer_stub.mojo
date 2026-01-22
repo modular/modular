@@ -264,7 +264,7 @@ fn test_copy_to_nd_buffer_vectors():
     buff.zero()
 
     comptime threads_layout = Layout.row_major(4, 4)
-    for th_id in range(threads_layout.size()):
+    for th_id in range(comptime (threads_layout.size())):
         var thread_local_layout_tensor = layout_tensor.vectorize[
             1, 4
         ]().distribute[threads_layout](UInt(th_id))
@@ -291,7 +291,7 @@ fn test_copy_to_nd_buffer_vectors():
     print_buff(buff)
     buff.zero()
 
-    for th_id in range(threads_layout.size()):
+    for th_id in range(comptime (threads_layout.size())):
         var thread_local_layout_tensor = layout_tensor.vectorize[
             4, 4
         ]().distribute[threads_layout](UInt(th_id))

@@ -579,7 +579,7 @@ fn test_pad_constant_nd[
             output_rec, input, paddings.ptr, constant
         )
         for i in range(out_size):
-            var idx = out_layout(i)
+            var idx = materialize[out_layout]()(i)
             assert_true(output.ptr[idx] == output_rec.ptr[idx])
 
         output_rec_ptr.free()
@@ -662,7 +662,7 @@ fn test_pad_reflect_nd[
         pad_reflect_dispatch[recursive=1](output_rec, input, paddings.ptr)
 
         for i in range(out_size):
-            var idx = out_layout(i)
+            var idx = materialize[out_layout]()(i)
             assert_true(output.ptr[idx] == output_rec.ptr[idx])
 
         output_rec_ptr.free()

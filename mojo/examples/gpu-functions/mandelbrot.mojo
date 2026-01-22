@@ -44,7 +44,7 @@ def main():
     var ctx = DeviceContext()
 
     # Allocate a tensor on the target device to hold the resulting set.
-    var dev_buf = ctx.enqueue_create_buffer[int_dtype](layout.size())
+    var dev_buf = ctx.enqueue_create_buffer[int_dtype](comptime (layout.size()))
     var out_tensor = LayoutTensor[int_dtype, layout](dev_buf)
 
     # Compute how many blocks are needed in each dimension to fully cover the grid,

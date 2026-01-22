@@ -66,7 +66,7 @@ fn _reshape_to_3d[layout: Layout]() -> Layout:
 
     @parameter
     if rank == 3:
-        return layout
+        return materialize[layout]()
     else:
         return Layout.row_major(
             1,

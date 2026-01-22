@@ -31,10 +31,10 @@ fn test_convert_e4m3fn_to_e4m3fnuz_basic() raises:
 
     # Create device buffers
     var device_in = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
-        layout.size()
+        comptime (layout.size())
     )
     var device_out = ctx.enqueue_create_buffer[DType.float8_e4m3fnuz](
-        layout.size()
+        comptime (layout.size())
     )
 
     # Initialize input data on host

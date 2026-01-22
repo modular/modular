@@ -25,18 +25,18 @@ fn test_composed_layout() raises:
 
     comptime comp_layout = ComposedLayout[Layout, Layout, 0](layout_b, layout_a)
 
-    assert_equal(comp_layout(0), 0)
-    assert_equal(comp_layout(1), 24)
-    assert_equal(comp_layout(2), 2)
-    assert_equal(comp_layout(3), 26)
-    assert_equal(comp_layout(4), 8)
-    assert_equal(comp_layout(5), 32)
-    assert_equal(comp_layout(6), 10)
-    assert_equal(comp_layout(7), 34)
-    assert_equal(comp_layout(8), 16)
-    assert_equal(comp_layout(9), 40)
-    assert_equal(comp_layout(10), 18)
-    assert_equal(comp_layout(11), 42)
+    assert_equal(comptime (comp_layout(0)), 0)
+    assert_equal(comptime (comp_layout(1)), 24)
+    assert_equal(comptime (comp_layout(2)), 2)
+    assert_equal(comptime (comp_layout(3)), 26)
+    assert_equal(comptime (comp_layout(4)), 8)
+    assert_equal(comptime (comp_layout(5)), 32)
+    assert_equal(comptime (comp_layout(6)), 10)
+    assert_equal(comptime (comp_layout(7)), 34)
+    assert_equal(comptime (comp_layout(8)), 16)
+    assert_equal(comptime (comp_layout(9)), 40)
+    assert_equal(comptime (comp_layout(10)), 18)
+    assert_equal(comptime (comp_layout(11)), 42)
 
 
 fn test_composed_layout_swizzle() raises:
@@ -45,7 +45,7 @@ fn test_composed_layout_swizzle() raises:
     var swizzle = Swizzle(1, 0, 2)
     var layout = Layout(IntTuple(6, 2), IntTuple(8, 2))
 
-    var comp_layout = ComposedLayout[Layout, Swizzle, 0](layout, swizzle)
+    var comp_layout = ComposedLayout[Layout, Swizzle, 0](layout^, swizzle)
 
     assert_equal(comp_layout(0), 0)
     assert_equal(comp_layout(1), 8)
@@ -61,7 +61,7 @@ fn test_composed_layout_swizzle_rt() raises:
     var swizzle = Swizzle(1, 0, 2)
     var layout = Layout(IntTuple(6, 2), IntTuple(8, 2))
 
-    var comp_layout = ComposedLayout[Layout, Swizzle, 0](layout, swizzle)
+    var comp_layout = ComposedLayout[Layout, Swizzle, 0](layout^, swizzle)
 
     assert_equal(comp_layout(0), 0)
     assert_equal(comp_layout(1), 8)

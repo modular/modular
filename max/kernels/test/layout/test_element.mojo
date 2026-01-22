@@ -46,7 +46,7 @@ fn test_element_load():
     for i in range(8):
         for j in range(2):
             var tensor_8x8_v_1_4 = tensor_8x8.get_immutable().vectorize[1, 4]()
-            var offset = tensor_8x8_v_1_4.layout(IntTuple(i, j))
+            var offset = materialize[tensor_8x8_v_1_4.layout]()(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_1_4.dtype, tensor_8x8_v_1_4.element_layout
             ].load(tensor_8x8_v_1_4.ptr + offset)
@@ -60,7 +60,7 @@ fn test_element_load():
     for i in range(2):
         for j in range(8):
             var tensor_8x8_v_4_1 = tensor_8x8.get_immutable().vectorize[4, 1]()
-            var offset = tensor_8x8_v_4_1.layout(IntTuple(i, j))
+            var offset = materialize[tensor_8x8_v_4_1.layout]()(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_4_1.dtype, tensor_8x8_v_4_1.element_layout
             ].load(tensor_8x8_v_4_1.ptr + offset)
@@ -74,7 +74,7 @@ fn test_element_load():
     for i in range(2):
         for j in range(2):
             var tensor_8x8_v_4_4 = tensor_8x8.get_immutable().vectorize[4, 4]()
-            var offset = tensor_8x8_v_4_4.layout(IntTuple(i, j))
+            var offset = materialize[tensor_8x8_v_4_4.layout]()(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_4_4.dtype, tensor_8x8_v_4_4.element_layout
             ].load(tensor_8x8_v_4_4.ptr + offset)
@@ -103,7 +103,7 @@ fn test_element_store():
     for i in range(8):
         for j in range(2):
             var tensor_8x8_v_1_4 = tensor_8x8.vectorize[1, 4]()
-            var offset = tensor_8x8_v_1_4.layout(IntTuple(i, j))
+            var offset = materialize[tensor_8x8_v_1_4.layout]()(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_1_4.dtype, tensor_8x8_v_1_4.element_layout
             ].load(tensor_8x8_v_1_4.ptr + offset)
@@ -124,7 +124,7 @@ fn test_element_store():
     for i in range(2):
         for j in range(8):
             var tensor_8x8_v_4_1 = tensor_8x8.vectorize[4, 1]()
-            var offset = tensor_8x8_v_4_1.layout(IntTuple(i, j))
+            var offset = materialize[tensor_8x8_v_4_1.layout]()(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_4_1.dtype, tensor_8x8_v_4_1.element_layout
             ].load(tensor_8x8_v_4_1.ptr + offset)
@@ -145,7 +145,7 @@ fn test_element_store():
     for i in range(2):
         for j in range(2):
             var tensor_8x8_v_4_4 = tensor_8x8.vectorize[4, 4]()
-            var offset = tensor_8x8_v_4_4.layout(IntTuple(i, j))
+            var offset = materialize[tensor_8x8_v_4_4.layout]()(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_4_4.dtype, tensor_8x8_v_4_4.element_layout
             ].load(tensor_8x8_v_4_4.ptr + offset)
@@ -238,7 +238,7 @@ fn test_element_dynamic_layout() raises:
     # CHECK: [20.0, 20.5, 21.0, 21.5] [22.0, 22.5, 23.0, 23.5]
     # CHECK: [24.0, 24.5, 25.0, 25.5] [26.0, 26.5, 27.0, 27.5]
     # CHECK: [28.0, 28.5, 29.0, 29.5] [30.0, 30.5, 31.0, 31.5]
-    print(tensor_Ux8_vec4_d1.element_layout)
+    print(materialize[tensor_Ux8_vec4_d1.element_layout]())
     print(tensor_Ux8_vec4_d1)
 
     comptime layout8xU = Layout.row_major(8, UNKNOWN_VALUE)
@@ -265,7 +265,7 @@ fn test_element_dynamic_layout() raises:
     # CHECK: ((4, 1):(-1, 0))
     # CHECK: [0.0, 1.0, 2.0, 3.0] [0.5, 1.5, 2.5, 3.5]
     # CHECK: [4.0, 5.0, 6.0, 7.0] [4.5, 5.5, 6.5, 7.5]
-    print(tensor_Ux8_vec4_d0.element_layout)
+    print(materialize[tensor_Ux8_vec4_d0.element_layout]())
     print(tensor_Ux8_vec4_d0)
 
     _ = tensor_Ux8^

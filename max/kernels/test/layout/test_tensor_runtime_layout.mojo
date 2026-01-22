@@ -114,11 +114,12 @@ def test_tile():
     ](storage, dynamic_layout)
     arange(tensor)
 
+    var tile = tensor.tile[2, 2](0, 0)
     # CHECK: ((2, 2):(-1, 1))
-    print(tensor.tile[2, 2](0, 0).layout)
+    print(materialize[tile.layout]())
 
     # CHECK: ((2, 2):(4, 1))
-    print(tensor.tile[2, 2](0, 0).runtime_layout)
+    print(tile.runtime_layout)
 
     # CHECK: ----tile-data[ 0 , 0 ]----
     # CHECK: 0.0 1.0
@@ -579,7 +580,7 @@ fn test_random_fill():
     ]
 
     var dynamic_layout = RuntimeLayoutType(
-        RuntimeLayoutType.ShapeType(layout.size()),
+        RuntimeLayoutType.ShapeType(comptime (layout.size())),
         RuntimeLayoutType.StrideType(1),
     )
     var src_tensor = LayoutTensor[
@@ -762,7 +763,7 @@ fn test_split():
     var tensor_4x4_split1 = tensor_4x4.split[axis=0](2, 1)
 
     # CHECK: ((-1, 4):(4, 1))
-    print(tensor_4x4_split0.layout)
+    print(materialize[tensor_4x4_split0.layout]())
     # CHECK: ((2, 4):(4, 1))
     print(tensor_4x4_split0.runtime_layout)
     # CHECK: 0.0 1.0 2.0 3.0
@@ -770,7 +771,7 @@ fn test_split():
     print(tensor_4x4_split0)
 
     # CHECK: ((-1, 4):(4, 1))
-    print(tensor_4x4_split1.layout)
+    print(materialize[tensor_4x4_split1.layout]())
     # CHECK: ((2, 4):(4, 1))
     print(tensor_4x4_split1.runtime_layout)
     # CHECK: 8.0 9.0 10.0 11.0
@@ -795,7 +796,7 @@ fn test_split():
     var tensor_Ux8_split2 = tensor_Ux8.split[1, split_alignment=3](3, 2)
 
     # CHECK: ((-1, -1):(8, 1))
-    print(tensor_Ux8_split0.layout)
+    print(materialize[tensor_Ux8_split0.layout]())
     # CHECK: ((2, 3):(8, 1))
     print(tensor_Ux8_split0.runtime_layout)
     # CHECK: 0.0 1.0 2.0
@@ -803,7 +804,7 @@ fn test_split():
     print(tensor_Ux8_split0)
 
     # CHECK: ((-1, -1):(8, 1))
-    print(tensor_Ux8_split1.layout)
+    print(materialize[tensor_Ux8_split1.layout]())
     # CHECK: ((2, 3):(8, 1))
     print(tensor_Ux8_split1.runtime_layout)
     # CHECK: 3.0 4.0 5.0
@@ -811,7 +812,7 @@ fn test_split():
     print(tensor_Ux8_split1)
 
     # CHECK: ((-1, -1):(8, 1))
-    print(tensor_Ux8_split2.layout)
+    print(materialize[tensor_Ux8_split2.layout]())
     # CHECK: ((2, 2):(8, 1))
     print(tensor_Ux8_split2.runtime_layout)
     # CHECK: 6.0 7.0
@@ -824,7 +825,7 @@ fn test_split():
     var tensor_8x2_split2 = tensor_8x2.split[0, split_alignment=3](3, 2)
 
     # CHECK: ((-1, 2):(2, 1))
-    print(tensor_8x2_split1.layout)
+    print(materialize[tensor_8x2_split1.layout]())
     # CHECK: ((3, 2):(2, 1))
     print(tensor_8x2_split1.runtime_layout)
     # CHECK: 6.0 7.0
@@ -833,7 +834,7 @@ fn test_split():
     print(tensor_8x2_split1)
 
     # CHECK: ((-1, 2):(2, 1))
-    print(tensor_8x2_split2.layout)
+    print(materialize[tensor_8x2_split2.layout]())
     # CHECK: ((2, 2):(2, 1))
     print(tensor_8x2_split2.runtime_layout)
     # CHECK: 12.0 13.0

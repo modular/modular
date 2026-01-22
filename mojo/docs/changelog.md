@@ -278,6 +278,43 @@ what we publish.
 
 ### Library changes
 
+- `Layout` no longer conforms to `ImplicitlyCopyable`. The motivation for this
+  change is that it was easy to accidentally materialize a `Layout` at runtime
+  using methods such as `Layout.size()`. There are a few downstream changes
+  users will have to adapt to with this change. Below are some common patterns
+  which will help with this transition:
+
+  ```mojo
+  from layout import Layout
+
+
+  fn foo(a: Layout) -> Layout:
+      return a.copy()  # `a` needs to be explicitly copied.
+
+
+  fn bar(var a: Layout) -> Layout:
+      return a^  # If a is taken by value, one can use the transfer operator.
+
+
+  fn baz():
+      comptime a = Layout.row_major(4, 4)
+      # `a` needs to be materialized because `foo` returns a type that
+      # is not ImplicitlyCopyable (`Layout`).
+      var b = foo(materialize[a]())
+
+      # `bar` moves `b` by value, but `foo` also takes `b` by reference,
+      # so we need to explicitly copy.
+      _ = bar(b.copy())
+      _ = foo(b)
+      # Since we are no longer using `b`, it's fine to take it by value here.
+      _ = bar(b^)
+
+      # Since `Layout.size()` returns an `Int`, we can use a `comptime`
+      # expression to compute the return value without materializing `a`.
+      for i in range(comptime (a.size())):
+          ...
+  ```
+
 - The `reflection` module has been significantly expanded with new compile-time
   introspection capabilities. The module has moved from `compile.reflection` to
   a top-level `reflection` module (update imports from

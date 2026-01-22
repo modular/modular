@@ -182,18 +182,11 @@ struct IntArray(ImplicitlyCopyable):
 
         Returns:
             The integer value at the specified index.
-
-        Note:
-            Bounds checking is performed when assertions are enabled (e.g., -D ASSERT=all).
         """
-        debug_assert(
-            idx >= 0 and idx < self.size(),
-            "IntArray index out of bounds: ",
-            idx,
-            " (size: ",
-            self.size(),
-            ")",
-        )
+        # TODO(MOCO-3154) - put a bounds check here when the le comparison is fixed.
+        # and add below back to the docstring.
+        # Note:
+        #     Bounds checking is performed when assertions are enabled (e.g., -D ASSERT=all).
 
         return self._data[idx]
 
@@ -1128,19 +1121,12 @@ struct IntTuple(
 
         Returns:
             An `IntTuple` containing either a single value or a sub-tuple.
-
-        Notes:
-            If index is out of bounds, assertion fails with an error message.
         """
         var idx = len(self) + _idx if _idx < 0 else _idx
-        debug_assert(
-            idx >= 0 and idx < len(self),
-            "IntTuple index out of bounds: ",
-            idx,
-            " (length: ",
-            len(self),
-            ")",
-        )
+        # TODO(MOCO-3154) - put a bounds check here when the le comparison is fixed.
+        # and add below back to the docstring.
+        # Notes:
+        #     If index is out of bounds, assertion fails with an error message.
 
         # The int value or the (negated) offset to the tuple
         var val = self._store[idx + 1]

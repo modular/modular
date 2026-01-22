@@ -257,7 +257,7 @@ struct BF16TokenFormat[
     fn get_type_name() -> String:
         return String(
             "BF16TokenFormat[output_layout = ",
-            String(Self.output_layout),
+            String(materialize[Self.output_layout]()),
             ", hid_dim = ",
             String(Self.hid_dim),
             ", top_k = ",
@@ -369,9 +369,9 @@ struct BlockwiseFP8TokenFormat[
             ", scales_dtype = ",
             String(Self.scales_dtype),
             ", output_layout = ",
-            String(Self.output_layout),
+            String(materialize[Self.output_layout]()),
             ", scales_layout = ",
-            String(Self.scales_layout),
+            String(materialize[Self.scales_layout]()),
             ", hid_dim = ",
             String(Self.hid_dim),
             ", top_k = ",

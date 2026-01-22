@@ -671,9 +671,9 @@ struct TMATensorTile[
             "TMATensorTile[dtype = ",
             Self.dtype,
             ", layout = ",
-            Self.layout,
+            materialize[Self.layout](),
             ", desc_layout = ",
-            Self.desc_layout,
+            materialize[Self.desc_layout](),
             ", is_k_major = ",
             Self.is_k_major,
             "]",
@@ -2977,9 +2977,9 @@ struct TMATensorTileArray[
             ", dtype = ",
             Self.dtype,
             ", cta_tile_layout = ",
-            Self.cta_tile_layout,
+            materialize[Self.cta_tile_layout](),
             ", desc_layout = ",
-            Self.desc_layout,
+            materialize[Self.desc_layout](),
             "]",
         )
 
@@ -3334,7 +3334,7 @@ struct RaggedTensorMap[
             layout.shape.replace_entry(idx, int_value=UNKNOWN_VALUE)
             layout.stride.replace_entry(idx, int_value=UNKNOWN_VALUE)
 
-        return layout
+        return layout^
 
     comptime device_type: AnyType = Self
     """The TensorMapDescriptorArray type."""

@@ -238,7 +238,8 @@ def test_tma_ragged_store[
     comptime global_layout = Layout.row_major(total_num_sequences, depth)
     var max_length = max_length(sequence_lengths)
 
-    var device_buffer = ctx.enqueue_create_buffer[dtype](global_layout.size())
+    comptime global_layout_size = global_layout.size()
+    var device_buffer = ctx.enqueue_create_buffer[dtype](global_layout_size)
 
     comptime GlobalTensorType[sequence_length: Int] = LayoutTensor[
         dtype,

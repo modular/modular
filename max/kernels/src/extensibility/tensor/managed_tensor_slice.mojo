@@ -703,7 +703,7 @@ struct ManagedTensorSlice[
             + ", dtype = "
             + String(Self.device_type.dtype)
             + ", layout = "
-            + String(Self.device_type.layout)
+            + String(materialize[Self.device_type.layout]())
             + ", address_space = "
             + String(Self.device_type.address_space)
             + "]"

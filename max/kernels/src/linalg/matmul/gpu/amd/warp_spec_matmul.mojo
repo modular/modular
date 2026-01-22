@@ -179,7 +179,11 @@ fn smem_tile_layout[
     comptime base_layout = Layout.row_major(block_rows, k_tile_size)
     comptime num_repeats = block_cols // k_tile_size
     comptime tiler_layout = Layout.row_major(1, num_repeats)
-    return blocked_product(base_layout, tiler_layout, coalesce_output=True)
+    return blocked_product(
+        materialize[base_layout](),
+        materialize[tiler_layout](),
+        coalesce_output=True,
+    )
 
 
 @parameter
@@ -230,7 +234,9 @@ fn get_producer_warp_thread_layout[
         num_repeats_row,
         num_repeats_col,
     )
-    return blocked_product(base_layout, tiler_layout)
+    return blocked_product(
+        materialize[base_layout](), materialize[tiler_layout]()
+    )
 
 
 @always_inline

@@ -181,9 +181,9 @@ def test_tma_5d_load_row_major[
 
     ctx.synchronize()
 
-    print("src layout:", src_layout)
-    print("cta tile layout:", cta_tile_layout)
-    print("desc layout:", type_of(tma_tensor).desc_layout)
+    print("src layout:", materialize[src_layout]())
+    print("cta tile layout:", materialize[cta_tile_layout]())
+    print("desc layout:", materialize[type_of(tma_tensor).desc_layout]())
 
     comptime kernel = test_tma_5d_load_kernel[
         type_of(tma_tensor).dtype,
