@@ -892,7 +892,7 @@ FnOp StructEmitter::synthesizeEmptyExplicitCopy(ASTDecl &structDecl) {
   //
   // If the type is register passable trivial, the 'existing' value will
   // be passed as a register, otherwise a reference.
-  if (selfType.isTrivial(structDecl.getLoc(), shared)) {
+  if (selfType.isAnyTrivialRegType(structDecl.getLoc(), shared)) {
     // Self is register trivial
     argTypes.push_back(selfType);
     argConventions.push_back(ArgConvention::ReadReg);
