@@ -361,17 +361,17 @@ def compare_text_generation(
             expected_next_token = expected_results["next_token"]
             if inference_next_token != expected_next_token:
                 # Always use logits for comparison (logits are always present)
-                inference_values = inference_results["logits"]
-                expected_values = expected_results["logits"]
+                inference_logits = inference_results["logits"]
+                expected_logits = expected_results["logits"]
                 print(
                     f"⚠️ Got mismatching next_token: {inference_next_token} !="
                     f" {expected_next_token} on step={step} for the prompt='{short}'"
                 )
                 print(
-                    f"Logits for generated token {inference_next_token}: {inference_values[inference_next_token]} (inference) vs {expected_values[inference_next_token]} (reference)"
+                    f"Logits for generated token {inference_next_token}: {inference_logits[inference_next_token]} (inference) vs {expected_logits[inference_next_token]} (reference)"
                 )
                 print(
-                    f"Logits for expected token {expected_next_token}: {inference_values[expected_next_token]} (inference) vs {expected_values[expected_next_token]} (reference)"
+                    f"Logits for expected token {expected_next_token}: {inference_logits[expected_next_token]} (inference) vs {expected_logits[expected_next_token]} (reference)"
                 )
 
             for key, value in inference_results.items():
