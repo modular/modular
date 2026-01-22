@@ -810,6 +810,46 @@ bool StructFieldIndexByNameAttr::isConstant() const { return false; }
 bool StructFieldTypeByNameAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
+// StructFieldOffsetByIndexAttr
+//===----------------------------------------------------------------------===//
+
+Type StructFieldOffsetByIndexAttr::getType() const {
+  return IndexType::get(getContext());
+}
+
+bool StructFieldOffsetByIndexAttr::isConstant() const { return false; }
+
+LogicalResult StructFieldOffsetByIndexAttr::verify(
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+    TypedAttr typeValue, TypedAttr fieldIndex, TypedAttr target) {
+  // Only verify target type - fieldIndex type is checked during evaluation
+  // since it may be a Mojo Int that gets converted to index.
+  if (!::isa<TargetType>(target.getType()))
+    return emitError() << "target operand must be of `!kgen.target` type";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// StructFieldOffsetByNameAttr
+//===----------------------------------------------------------------------===//
+
+Type StructFieldOffsetByNameAttr::getType() const {
+  return IndexType::get(getContext());
+}
+
+bool StructFieldOffsetByNameAttr::isConstant() const { return false; }
+
+LogicalResult StructFieldOffsetByNameAttr::verify(
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+    TypedAttr typeValue, TypedAttr fieldName, TypedAttr target) {
+  // Only verify target type - fieldName type is checked during evaluation
+  // since it may be a Mojo StringLiteral that gets converted to kgen.string.
+  if (!::isa<TargetType>(target.getType()))
+    return emitError() << "target operand must be of `!kgen.target` type";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // GetBaseTypeNameAttr
 //===----------------------------------------------------------------------===//
 

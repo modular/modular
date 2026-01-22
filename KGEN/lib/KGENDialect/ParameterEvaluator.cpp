@@ -162,6 +162,14 @@ FailureOr<TypedAttr> ParameterEvaluationContext::evaluateExpression(
           sugarDynCast<StructFieldTypeByNameAttr>(typedAttr))
     return evaluateStructFieldTypeByName(structFieldTypeByName);
 
+  if (auto structFieldOffsetByIndex =
+          sugarDynCast<StructFieldOffsetByIndexAttr>(typedAttr))
+    return evaluateStructFieldOffsetByIndex(structFieldOffsetByIndex);
+
+  if (auto structFieldOffsetByName =
+          sugarDynCast<StructFieldOffsetByNameAttr>(typedAttr))
+    return evaluateStructFieldOffsetByName(structFieldOffsetByName);
+
   // Handle VariadicReduceAttr - common across contexts.
   if (auto variadicReduce = sugarDynCast<VariadicReduceAttr>(typedAttr))
     return variadicReduce.evaluateWith(this);
@@ -338,6 +346,246 @@ FailureOr<TypedAttr> ParameterEvaluationContext::evaluateStructFieldTypeByName(
   withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
                 [&](ParameterEvaluator &evaluator) {
                   result = evaluator.getReboundAttribute(fieldType);
+                });
+  return result;
+}
+
+/// Compute the byte offset of a field within a struct given its field types.
+/// Returns failure if the field index is out of bounds or if size/alignment
+/// cannot be determined for any field type.
+static FailureOr<int64_t>
+computeStructFieldOffset(ArrayRef<Type> fieldTypes, int64_t fieldIndex,
+                         TargetInfoAttr target,
+                         llvm::function_ref<void(const Twine &)> emitError) {
+  if (fieldIndex < 0 || fieldIndex >= static_cast<int64_t>(fieldTypes.size())) {
+    emitError("field index " + std::to_string(fieldIndex) +
+              " is out of bounds for struct with " +
+              std::to_string(fieldTypes.size()) + " fields");
+    return failure();
+  }
+
+  int64_t offset = 0;
+  for (int64_t i = 0; i < fieldIndex; ++i) {
+    std::optional<int64_t> curFieldAlign =
+        DataLayoutInterface::getTypeABIAlign(target, fieldTypes[i]);
+    std::optional<int64_t> curFieldSize =
+        DataLayoutInterface::getTypeAllocSize(target, fieldTypes[i]);
+    if (!curFieldAlign || !curFieldSize) {
+      emitError("could not determine size or alignment for field type");
+      return failure();
+    }
+    offset = llvm::alignTo(offset, *curFieldAlign) + *curFieldSize;
+  }
+
+  // Align to the target field's alignment.
+  std::optional<int64_t> fieldAlign =
+      DataLayoutInterface::getTypeABIAlign(target, fieldTypes[fieldIndex]);
+  if (!fieldAlign) {
+    emitError("could not determine alignment for field type");
+    return failure();
+  }
+  return llvm::alignTo(offset, *fieldAlign);
+}
+
+/// Extract field types from a struct, wrapping each in ParamType.
+static SmallVector<Type>
+getFieldTypesFromStruct(StructInstanceType structType) {
+  SmallVector<Type> fieldTypes;
+  for (StructDefFieldAttr field : structType.getFields())
+    fieldTypes.push_back(ParamType::get(field.getTypeValue()));
+  return fieldTypes;
+}
+
+/// Extract and rebind field types from a struct declaration using an evaluator.
+/// Returns std::nullopt on rebinding failure, or an empty vector for empty
+/// structs. If emitError is provided, it will be called with a diagnostic
+/// message when rebinding fails.
+static std::optional<SmallVector<Type>>
+rebindFieldTypes(StructDeclInterface decl, ParameterEvaluator &evaluator,
+                 llvm::function_ref<void(const Twine &)> emitError = nullptr) {
+  SmallVector<TypedAttr> fieldTypeAttrs;
+  decl.getFieldTypes(fieldTypeAttrs);
+
+  SmallVector<Type> fieldTypes;
+  for (auto [idx, typeAttr] : llvm::enumerate(fieldTypeAttrs)) {
+    FailureOr<TypedAttr> rebound = evaluator.getReboundAttribute(typeAttr);
+    if (failed(rebound)) {
+      if (emitError)
+        emitError("failed to rebind type for field at index " +
+                  std::to_string(idx) + " during offset calculation");
+      return std::nullopt;
+    }
+    fieldTypes.push_back(ParamType::get(*rebound));
+  }
+  return fieldTypes;
+}
+
+FailureOr<TypedAttr>
+ParameterEvaluationContext::evaluateStructFieldOffsetByIndex(
+    StructFieldOffsetByIndexAttr attr) {
+  // Return failure() without an error if parameters aren't resolved to
+  // constants yet. The evaluation framework will retry later when more
+  // information is available. This is the standard pattern for contextually
+  // evaluated attrs.
+  auto fieldIndexAttr = dyn_cast<IntegerAttr>(attr.getFieldIndex());
+  if (!fieldIndexAttr)
+    return failure();
+
+  auto targetAttr = sugarDynCast<TargetParamAttr>(attr.getTarget());
+  if (!targetAttr)
+    return failure();
+
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      resolveStructOp(attr.getTypeValue(), /*acceptAsync=*/true);
+  if (failed(resolvedOr)) {
+    emitEvaluationError("struct_field_offset_by_index requires a struct type");
+    return failure();
+  }
+  ResolvedStructHandle resolved = *resolvedOr;
+  int64_t fieldIndex = fieldIndexAttr.getInt();
+  TargetInfoAttr target = targetAttr.getTarget();
+  MLIRContext *ctx = attr.getType().getContext();
+
+  auto emitError = [this](const Twine &msg) { emitEvaluationError(msg); };
+
+  // If concrete instance is available, use its field types directly.
+  if (resolved.instance) {
+    // When instance is valid, decl must also be valid per ResolvedStructHandle
+    // contract. Assert this invariant to catch future refactoring errors.
+    assert(resolved.decl && "instance requires valid decl");
+    auto structType =
+        cast<StructInstanceType>(resolved.instance.getValueDomainType());
+    SmallVector<Type> fieldTypes = getFieldTypesFromStruct(structType);
+
+    FailureOr<int64_t> offsetOr =
+        computeStructFieldOffset(fieldTypes, fieldIndex, target, emitError);
+    if (failed(offsetOr))
+      return failure();
+    return cast<TypedAttr>(Builder(ctx).getIndexAttr(*offsetOr));
+  }
+
+  // If the decl is null, we are in an async context and the struct instance is
+  // not yet ready.
+  if (!resolved.decl)
+    return TypedAttr();
+
+  // Otherwise, use generator's field types with rebinding.
+  FailureOr<TypedAttr> result = failure();
+  withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
+                [&](ParameterEvaluator &evaluator) {
+                  std::optional<SmallVector<Type>> fieldTypesOpt =
+                      rebindFieldTypes(resolved.decl, evaluator, emitError);
+                  if (!fieldTypesOpt)
+                    return;
+
+                  FailureOr<int64_t> offsetOr = computeStructFieldOffset(
+                      *fieldTypesOpt, fieldIndex, target, emitError);
+                  if (failed(offsetOr))
+                    return;
+                  result =
+                      cast<TypedAttr>(Builder(ctx).getIndexAttr(*offsetOr));
+                });
+  return result;
+}
+
+FailureOr<TypedAttr>
+ParameterEvaluationContext::evaluateStructFieldOffsetByName(
+    StructFieldOffsetByNameAttr attr) {
+  // Return failure() without an error if parameters aren't resolved to
+  // constants yet. The evaluation framework will retry later when more
+  // information is available. This is the standard pattern for contextually
+  // evaluated attrs.
+  auto fieldNameAttr = dyn_cast<StringAttr>(attr.getFieldName());
+  if (!fieldNameAttr)
+    return failure();
+
+  auto targetAttr = sugarDynCast<TargetParamAttr>(attr.getTarget());
+  if (!targetAttr)
+    return failure();
+
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      resolveStructOp(attr.getTypeValue(), /*acceptAsync=*/true);
+  if (failed(resolvedOr)) {
+    emitEvaluationError("struct_field_offset_by_name requires a struct type");
+    return failure();
+  }
+  ResolvedStructHandle resolved = *resolvedOr;
+  StringRef fieldName = fieldNameAttr.getValue();
+  TargetInfoAttr target = targetAttr.getTarget();
+  MLIRContext *ctx = attr.getType().getContext();
+
+  auto emitError = [this](const Twine &msg) { emitEvaluationError(msg); };
+
+  // Helper to find field index by name and emit error if not found.
+  auto findFieldIndexOrError =
+      [&](auto fields, StringRef structName) -> std::optional<int64_t> {
+    int64_t idx = 0;
+    for (auto field : fields) {
+      if (field.getName().getValue() == fieldName)
+        return idx;
+      ++idx;
+    }
+    emitEvaluationError("struct '" + structName + "' has no field named '" +
+                        fieldName + "'");
+    return std::nullopt;
+  };
+
+  // If concrete instance is available, use its fields directly.
+  if (resolved.instance) {
+    // When instance is valid, decl must also be valid per ResolvedStructHandle
+    // contract. Assert this invariant to catch future refactoring errors.
+    assert(resolved.decl && "instance requires valid decl");
+    auto structType =
+        cast<StructInstanceType>(resolved.instance.getValueDomainType());
+    auto fields = structType.getFields();
+    StringRef structName =
+        SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue();
+
+    std::optional<int64_t> fieldIndexOpt =
+        findFieldIndexOrError(fields, structName);
+    if (!fieldIndexOpt)
+      return failure();
+
+    SmallVector<Type> fieldTypes = getFieldTypesFromStruct(structType);
+    FailureOr<int64_t> offsetOr =
+        computeStructFieldOffset(fieldTypes, *fieldIndexOpt, target, emitError);
+    if (failed(offsetOr))
+      return failure();
+    return cast<TypedAttr>(Builder(ctx).getIndexAttr(*offsetOr));
+  }
+
+  // If the decl is null, we are in an async context and the struct instance is
+  // not yet ready.
+  if (!resolved.decl)
+    return TypedAttr();
+
+  // Find field index using the decl.
+  std::optional<uint64_t> fieldIndexOpt =
+      resolved.decl.findFieldIndex(fieldName);
+  if (!fieldIndexOpt) {
+    emitEvaluationError(
+        "struct '" +
+        SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
+        "' has no field named '" + fieldName + "'");
+    return failure();
+  }
+  int64_t fieldIndex = static_cast<int64_t>(*fieldIndexOpt);
+
+  // Use generator's field types with rebinding.
+  FailureOr<TypedAttr> result = failure();
+  withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
+                [&](ParameterEvaluator &evaluator) {
+                  std::optional<SmallVector<Type>> fieldTypesOpt =
+                      rebindFieldTypes(resolved.decl, evaluator, emitError);
+                  if (!fieldTypesOpt)
+                    return;
+
+                  FailureOr<int64_t> offsetOr = computeStructFieldOffset(
+                      *fieldTypesOpt, fieldIndex, target, emitError);
+                  if (failed(offsetOr))
+                    return;
+                  result =
+                      cast<TypedAttr>(Builder(ctx).getIndexAttr(*offsetOr));
                 });
   return result;
 }
