@@ -74,4 +74,8 @@ def wno_error : Flag<["--", "-"], "Wno-error">,
   Group<DiagnosticOptionGroup>, Index<11>,
   HelpText<"Do not treat warnings as errors.">;
 
+def warn_on_unstable_apis : Flag<["--", "-"], "warn-on-unstable-apis">,
+  Group<DiagnosticOptionGroup>, Index<12>,
+  HelpText<"Warn when using unstable APIs from the standard library.">;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_DIAGNOSTICOPTIONS_TD

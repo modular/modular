@@ -1,0 +1,299 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "StabilityMarkers.h"
+#include "KGEN/LITDialect/LITInterfaces.h"
+#include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/ASTType.h"
+#include "KGEN/MojoParser/SharedState.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
+
+using namespace M::KGEN::LIT;
+using namespace M::KGEN;
+using namespace mlir;
+using M::SourceRange;
+
+/// Returns the name of the declaration. Asserts if the name is not available.
+static StringRef getDeclName(Operation *op) {
+  if (auto declItf = dyn_cast_if_present<ASTDeclInterface>(op))
+    if (StringAttr name = declItf.getDeclName())
+      return name.getValue();
+  llvm_unreachable("declaration should have a name");
+}
+
+static StringRef getDeclName(ASTDecl &decl) {
+  return getDeclName(decl.getIfOperation());
+}
+
+/// Returns true if the declaration is marked @stable.
+static bool hasStableDecorator(ASTDecl &decl) {
+  if (auto stabilityIface = dyn_cast_if_present<StabilityDecoratorInterface>(
+          decl.getIfOperation()))
+    return stabilityIface.isStable();
+  return false;
+}
+
+/// Returns true if the given package has opted into stability markers.
+static bool isPackageOptedIntoStabilityMarkers(StringRef packageName) {
+  // Currently only the standard library is opted into stability markers.
+  // In the future, this could be extended to support third-party packages
+  // that declare their opt-in via package manifest configuration.
+  //
+  // "test_std_mock" is a test-only package name that allows writing tests
+  // for stability markers without depending on the real standard library.
+  return packageName == "std" || packageName == "test_std_mock";
+}
+
+/// Get the package name that contains the given declaration.
+/// Returns std::nullopt if the declaration is not within a package.
+static std::optional<llvm::StringRef> getPackageNameForDecl(ASTDecl &decl) {
+  // Walk up the parent chain to find the enclosing package.
+  if (ASTDecl *pkgDecl = decl.getNearestDeclOfType<PackageOp>()) {
+    if (auto *op = pkgDecl->getIfOperation()) {
+      if (auto pkgOp = dyn_cast<PackageOp>(op))
+        return pkgOp.getSymName();
+    }
+  }
+  return std::nullopt;
+}
+
+/// Returns true if the declaration is from a package that has opted into
+/// stability markers.
+static bool isDeclFromOptedInPackage(ASTDecl &decl) {
+  if (auto pkgName = getPackageNameForDecl(decl))
+    return isPackageOptedIntoStabilityMarkers(*pkgName);
+  return false;
+}
+
+/// Returns true if the declaration is from an opted-in package AND marked
+/// @stable.
+static bool isOptedInStable(ASTDecl &decl) {
+  return isDeclFromOptedInPackage(decl) && hasStableDecorator(decl);
+}
+
+/// Returns true if the declaration is from an opted-in package AND NOT marked
+/// @stable.
+static bool isUnstable(ASTDecl &decl) {
+  return isDeclFromOptedInPackage(decl) && !hasStableDecorator(decl);
+}
+
+void M::KGEN::LIT::checkStabilityAndWarn(ASTDecl &decl, SMLoc useLoc,
+                                         ASTDecl &useSiteDecl,
+                                         SharedState &shared,
+                                         SourceRange range) {
+  // Check if the warning flag is enabled.
+  if (!shared.options.warnOnUnstableAPIs)
+    return;
+
+  // Check if the declaration is unstable (from opted-in package and not marked
+  // @stable).
+  if (!isUnstable(decl))
+    return;
+
+  // Check if the use site is in the same opted-in package (no warning for
+  // intra-package usage).
+  auto declPkgName = getPackageNameForDecl(decl);
+  auto useSitePkgName = getPackageNameForDecl(useSiteDecl);
+  if (useSitePkgName && declPkgName && *useSitePkgName == *declPkgName)
+    return;
+
+  // Declaration is unstable, emit warning.
+  StringRef declName = getDeclName(decl);
+  auto diag = shared.emitWarning(useLoc, "use of unstable API '")
+              << declName << "'";
+  if (range.isValid())
+    diag << range;
+  diag.attachNote(decl.getLoc()) << "'" << declName << "' declared here";
+}
+
+void M::KGEN::LIT::checkDeprecationAndWarn(ASTDecl &decl, SMLoc useLoc,
+                                           SharedState &shared,
+                                           SourceRange range) {
+  // Check if the declaration has a @deprecated decorator.
+  // Use StabilityDecoratorInterface which now handles both @stable and
+  // @deprecated.
+  auto stabilityItf =
+      dyn_cast_if_present<StabilityDecoratorInterface>(decl.getIfOperation());
+  if (!stabilityItf || !stabilityItf.isDeprecated())
+    return;
+
+  StringAttr warning = stabilityItf.getDeprecationWarningAttr();
+  auto diag = shared.emitWarning(useLoc, warning.getValue());
+  if (range.isValid())
+    diag << range;
+
+  StringRef declName = getDeclName(decl);
+  diag.attachNote(decl.getLoc()) << "'" << declName << "' declared here";
+}
+
+void M::KGEN::LIT::checkDeclUsageWarnings(ASTDecl &decl, SMLoc useLoc,
+                                          ASTDecl &useSiteDecl,
+                                          SharedState &shared,
+                                          SourceRange range) {
+  // Check for deprecation warning first.
+  checkDeprecationAndWarn(decl, useLoc, shared, range);
+
+  // Check for stability warning.
+  checkStabilityAndWarn(decl, useLoc, useSiteDecl, shared, range);
+}
+
+void M::KGEN::LIT::checkStableTraitMemberImplementation(
+    ASTDecl &structDecl, ASTDecl &traitDecl, ASTDecl &structMemberDecl,
+    ASTDecl &traitMemberDecl, SharedState &shared) {
+  // This is an API author check - it should always run regardless of the
+  // --warn-on-unstable-apis flag.
+
+  // Check if the struct, trait, and trait member are all opted-in
+  // stable. Otherwise, do not check anything.
+  //
+  // If the trait is from a non-opted-in package,
+  // do not do any check (no matter what is the struct's status).
+  //
+  // There is an interesting case where the trait is unsafe
+  // but the struct is non-opted-in-safe. Is not possible to hit
+  // this case until we have non-stdlib opted-in packages.
+  // For now, consider this edge case as "do not check"
+
+  if (!isOptedInStable(structDecl) || !isOptedInStable(traitDecl) ||
+      !isOptedInStable(traitMemberDecl))
+    return;
+
+  // Check if the struct's implementing member is stable.
+  if (hasStableDecorator(structMemberDecl))
+    return; // All good - stable implementation.
+
+  // Determine member kind from the trait member's operation type.
+  StringRef memberKind =
+      isa<AliasDeclOp>(traitMemberDecl.getIfOperation()) ? "alias" : "method";
+
+  // Error: stable struct implements stable trait member with unstable member.
+  StringRef memberName = getDeclName(traitMemberDecl);
+  StringRef structName = getDeclName(structDecl);
+  StringRef traitName = getDeclName(traitDecl);
+
+  auto diag = shared.emitWarning(structMemberDecl.getLoc())
+              << "stable struct '" << structName << "' implements stable trait "
+              << memberKind << " '" << memberName
+              << "' with unstable implementation";
+  diag.attachNote(traitMemberDecl.getLoc())
+      << "trait " << memberKind << " '" << memberName << "' in '" << traitName
+      << "' is marked @stable";
+}
+
+void M::KGEN::LIT::checkStableFunctionReturnType(ASTDecl &funcDecl,
+                                                 ASTType returnType,
+                                                 SharedState &shared) {
+  // This is an API author check - it should always run regardless of the
+  // --warn-on-unstable-apis flag.
+
+  // Check if the function is intentionally (opted-in) stable.
+  // Otherwise, don't check.
+  if (!isOptedInStable(funcDecl))
+    return;
+
+  // Get the underlying declaration for the return type.
+  if (!returnType || !returnType.mlirType)
+    return;
+
+  // Try to get the struct/trait declaration from the return type.
+  ASTDecl *returnTypeDecl = returnType.getDecl(shared);
+  if (!returnTypeDecl)
+    return;
+
+  // Check if the return type is unstable.
+  if (!isUnstable(*returnTypeDecl))
+    return;
+
+  // Warning: stable function returns unstable type.
+  StringRef funcName = getDeclName(funcDecl);
+  StringRef returnTypeName = getDeclName(*returnTypeDecl);
+
+  auto diag = shared.emitWarning(funcDecl.getLoc())
+              << "stable function '" << funcName << "' returns unstable type '"
+              << returnTypeName << "'";
+  diag.attachNote(returnTypeDecl->getLoc())
+      << "type '" << returnTypeName << "' is not marked @stable";
+}
+
+void M::KGEN::LIT::checkStableTraitInheritance(ASTDecl &traitDecl,
+                                               ASTDecl &parentTraitDecl,
+                                               ASTDecl &declScope,
+                                               SharedState &shared) {
+  // This is an API author check - it should always run regardless of the
+  // --warn-on-unstable-apis flag.
+
+  // We use declScope for the package check because during signature resolution,
+  // the trait's own parent chain may not be fully established yet.
+  if (!isDeclFromOptedInPackage(declScope))
+    return;
+
+  // Check if the trait being defined is stable and parent trait is unstable.
+  if (!hasStableDecorator(traitDecl) || !isUnstable(parentTraitDecl))
+    return;
+
+  // Warning: stable trait inherits from unstable trait.
+  StringRef traitName = getDeclName(traitDecl);
+  StringRef parentTraitName = getDeclName(parentTraitDecl);
+
+  auto diag = shared.emitWarning(traitDecl.getLoc())
+              << "stable trait '" << traitName
+              << "' cannot inherit from unstable trait '" << parentTraitName
+              << "'";
+  diag.attachNote(parentTraitDecl.getLoc())
+      << "trait '" << parentTraitName << "' is not marked @stable";
+}
+
+bool M::KGEN::LIT::checkStableMemberInUnstableParent(ASTDecl &memberDecl,
+                                                     SMLoc decoratorLoc,
+                                                     SharedState &shared) {
+  // Check for @stable member in an unstable struct/trait.
+  // Members of unstable types cannot be marked stable because the type
+  // itself is not part of the stable API surface.
+  //
+  // This check only applies when the parent is from an opted-in package.
+  // In non-opted-in packages, types without @stable are stable by default,
+  // so @stable members are allowed.
+  ASTDecl *parent = memberDecl.getParentDecl();
+  if (!parent || !isUnstable(*parent))
+    return false;
+
+  // Determine if parent is a struct or trait for the error message.
+  if (isa<StructDeclOp>(parent->getIfOperation())) {
+    shared.emitWarning(
+        decoratorLoc,
+        "@stable member cannot be declared in an unstable struct");
+    return true;
+  }
+  if (isa<TraitDeclOp>(parent->getIfOperation())) {
+    shared.emitWarning(
+        decoratorLoc, "@stable member cannot be declared in an unstable trait");
+    return true;
+  }
+
+  return false;
+}
+
+void M::KGEN::LIT::checkMagicFunctionAndWarn(StringRef spelling, SMLoc useLoc,
+                                             ASTDecl &useSiteDecl,
+                                             SharedState &shared,
+                                             SourceRange range) {
+  // Check if the warning flag is enabled.
+  if (!shared.options.warnOnUnstableAPIs)
+    return;
+
+  // Check if the use site is in an opted-in package (no warning for
+  // intra-package usage). The std package is allowed to use magic functions
+  // without warnings since it's implementing the stable API layer.
+  if (isDeclFromOptedInPackage(useSiteDecl))
+    return;
+
+  // Emit warning for unstable magic function usage.
+  auto diag = shared.emitWarning(useLoc, "use of unstable function '")
+              << spelling << "'";
+  if (range.isValid())
+    diag << range;
+}

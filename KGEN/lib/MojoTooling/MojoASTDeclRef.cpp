@@ -166,8 +166,9 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
 }
 
 std::optional<StringRef> MojoASTDeclRef::getDeprecationWarning() const {
-  if (auto declItf = dyn_cast<ASTDeclInterface>(decl->getIfOperation()))
-    if (StringAttr attr = declItf.getDeprecationWarningAttr())
+  if (auto stabilityItf =
+          dyn_cast<StabilityDecoratorInterface>(decl->getIfOperation()))
+    if (StringAttr attr = stabilityItf.getDeprecationWarningAttr())
       return attr.getValue();
   return {};
 }

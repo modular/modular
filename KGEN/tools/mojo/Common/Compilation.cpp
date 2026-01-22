@@ -124,6 +124,11 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
           optionIDs.largeDataThreshold))
     return err.takeError();
 
+  // Parse stability options.
+  if (optionIDs.warnOnUnstableAPIs.isValid())
+    result.compilationOptions.warnOnUnstableAPIs =
+        args.hasArg(optionIDs.warnOnUnstableAPIs);
+
   // Store the parsed args for the caller.
   result.args = std::move(args);
 

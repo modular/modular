@@ -684,14 +684,15 @@ struct FunctionTypeNode final : public ExprNode {
 /// __get_address_as_owned_value(some_ptr) # returns RValue
 /// origin_of(decl)                        # returns !lit.origin<mut>
 struct MagicFunctionNode final : public ExprNode {
-  MagicFunctionNode(ExprNode::Kind kind, SMLoc baseLoc,
+  MagicFunctionNode(ExprNode::Kind kind, SMLoc baseLoc, StringRef spelling,
                     ArrayRef<ExprNode *> subExprs, SMLoc rparenLoc)
-      : ExprNode(kind), baseLoc(baseLoc), subExprs(subExprs),
-        rparenLoc(rparenLoc) {
+      : ExprNode(kind), baseLoc(baseLoc), spelling(spelling),
+        subExprs(subExprs), rparenLoc(rparenLoc) {
     assert(classof(this) && "Kind is wrong");
   }
 
   const SMLoc baseLoc;
+  const StringRef spelling; // The magic function keyword as written in source.
   const ArrayRef<ExprNode *> subExprs;
   const SMLoc rparenLoc;
 

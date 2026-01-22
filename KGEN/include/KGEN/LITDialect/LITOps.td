@@ -46,7 +46,8 @@ def LIT_FnOp : LITOp<"fn", [
     FunctionLike, FunctionOpInterface, SymbolTable, SingleBlock,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>,
-    ASTDeclInterface, DeclInterface, FuncInterface, ExportInterface]> {
+    ASTDeclInterface, DeclInterface, FuncInterface, ExportInterface,
+    StabilityDecoratorInterface]> {
   let summary = "Mojo function definition";
   let description = "The `lit.fn` operation models a fn/def declaration.";
 
@@ -87,6 +88,8 @@ def LIT_FnOp : LITOp<"fn", [
     OptionalAttr<StrAttr>:$namedResult,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
+    // Present if the decl has an @stable decorator on it.
+    UnitAttr:$hasStableDecorator,
     // To be able to store pre-elaborated names of the `llvm_metadata`,
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
@@ -354,7 +357,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     IsolatedFromAbove, Symbol, SymbolTable, DeclInterface, SingleBlock,
     ASTDeclInterface, NoTerminator,
     DeclareOpInterfaceMethods<StructDeclInterface>,
-    DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>
+    DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>,
+    StabilityDecoratorInterface
   ]> {
   let summary = "Struct declaration.";
   let description = [{
@@ -402,6 +406,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$closureSignature,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
+    // Present if the decl has an @stable decorator on it.
+    UnitAttr:$hasStableDecorator,
     OptionalAttr<SourceNameAttr>:$sourceName,
     // Explicit minimum alignment specified via @align(N) decorator.
     OptionalAttr<I64Attr>:$minAlignment,
@@ -648,7 +654,8 @@ def LIT_ExtensionDeclOp : LITOp<"extension.decl", [
 def LIT_TraitDeclOp : LITOp<"trait.decl", [
     IsolatedFromAbove, Symbol, SymbolTable, DeclInterface, SingleBlock,
     ASTDeclInterface, NoTerminator,
-    DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>
+    DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>,
+    StabilityDecoratorInterface
   ]> {
   let summary = "Trait declaration.";
   let description = [{
@@ -683,6 +690,8 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     OptionalAttr<KGEN_GetWitnessAttr>:$dtorWitness,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
+    // Present if the decl has an @stable decorator on it.
+    UnitAttr:$hasStableDecorator,
     // This is the error message to produce if a non-destructible type needs an
     // implicit destructor call.
     OptionalAttr<StrAttr>:$linearTypeErrorMsg,
@@ -858,7 +867,8 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
 //===----------------------------------------------------------------------===//
 
 def LIT_AliasDeclOp : LITOp<"alias.decl", [
-    ASTDeclInterface, DeclareOpInterfaceMethods<ParamOpInterface>
+    ASTDeclInterface, DeclareOpInterfaceMethods<ParamOpInterface>,
+    StabilityDecoratorInterface
   ]>, OneParamDecl {
   let summary = "`alias x: T = value` or `alias x: T` declaration";
   let description = [{
@@ -884,7 +894,9 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
     // Present for defaulted associated alias. This bit should be set before
     // parsing the alias declaration this allow use to probe whether the alias
     // decl is defaulted or not without body resolve it first.
-    UnitAttr:$defaultedAssociatedAlias
+    UnitAttr:$defaultedAssociatedAlias,
+    // Present if the decl has an @stable decorator on it.
+    UnitAttr:$hasStableDecorator
   );
   let assemblyFormat = [{
     custom<AliasDeclOpValue>($paramDecl, $value) attr-dict

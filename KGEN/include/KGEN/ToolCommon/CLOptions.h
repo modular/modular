@@ -138,6 +138,8 @@ public:
 
   unsigned elaborationMaxDepth{std::numeric_limits<unsigned>::max()};
 
+  bool warnOnUnstableAPIs{false};
+
   /// Get the include directories that exist on the file system.
   std::vector<std::string> getIncludePaths() const {
     std::vector<std::string> result;
@@ -168,6 +170,7 @@ public:
         targetCpu, targetFeatures, targetAccelerator, elaborationErrorLimit,
         elaborationErrorIncludePrelude, elaborationErrorVerbose,
         elaborationMaxDepth);
+    options.warnOnUnstableAPIs = warnOnUnstableAPIs;
 
     return options;
   }
@@ -484,6 +487,12 @@ private:
                "std::numeric_limits<unsigned>::max(). Elaborator errors out if "
                "the depth of compile time recursion exceeds this value."),
       llvm::cl::location(options.elaborationMaxDepth),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<bool, true> warnOnUnstableAPIs{
+      "warn-on-unstable-apis",
+      cl::desc("Warn when using unstable APIs from the standard library."),
+      llvm::cl::location(options.warnOnUnstableAPIs),
       llvm::cl::cat(KGENOptionsCategory)};
 };
 class KGENOptions : public KGENCommonOptions, public CommonOptions {

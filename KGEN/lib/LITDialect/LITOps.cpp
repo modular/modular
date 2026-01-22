@@ -902,7 +902,8 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(SpecialFunctionKind::kNormal)),
         StringAttr(), sourceName, /*inheritedFrom=*/{}, StringAttr(),
-        DocStringAttr(), StringAttr(), ArrayAttr::get(ctx, {}),
+        DocStringAttr(), /*deprecationWarning=*/StringAttr(),
+        /*hasStableDecorator=*/none, ArrayAttr::get(ctx, {}),
         ArrayAttr::get(ctx, {}), Attribute());
   result.regions[0]->push_back(new Block());
 }
@@ -1111,7 +1112,8 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         /*isSynthetic=*/{},
         /*nonmaterializableTarget=*/{}, /*destructor=*/{}, /*moveInit=*/{},
         /*copyInit=*/{}, /*linearTypeErrorMsg*/ {}, /*closureSignature=*/{},
-        /*docString=*/{}, /*deprecationWarning=*/{}, /*sourceName=*/{},
+        /*docString=*/{}, /*deprecationWarning=*/{},
+        /*hasStableDecorator=*/{}, /*sourceName=*/{},
         /*minAlignment=*/{}, /*convention=*/{});
   result.regions[0]->push_back(new Block());
 }
@@ -1627,8 +1629,8 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
         /*convention=*/TypeConvention::Unspecified,
         /*definesClosure=*/none,
         /*dtorWitness=*/{}, /*docString=*/{},
-        /*deprecationWarning=*/{}, /*linearTypeErrorMsg*/ {},
-        /*closureSignature*/ {});
+        /*deprecationWarning=*/{}, /*hasStableDecorator=*/{},
+        /*linearTypeErrorMsg*/ {}, /*closureSignature*/ {});
   result.regions[0]->push_back(new Block());
 }
 

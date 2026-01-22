@@ -2396,7 +2396,7 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
                  CallSyntax::kMethodCallSynthetic);
   /// Perform rebind on method that implements the trait function but with
   /// different argument names.
-  PValue newWitness = ov.filterOverloadSetForValueType(
+  auto [newWitness, _] = ov.filterOverloadSetForValueType(
       traitSignature, emitter.getDeclScope(), nullptr);
   if (newWitness) {
     if (rebind) {

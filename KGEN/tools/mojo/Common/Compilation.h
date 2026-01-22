@@ -87,6 +87,9 @@ struct CommonOptionIDs {
   llvm::opt::OptSpecifier disableBuiltins;
   llvm::opt::OptSpecifier fixit;
   llvm::opt::OptSpecifier exportFixit;
+
+  // Stability options
+  llvm::opt::OptSpecifier warnOnUnstableAPIs;
 };
 
 /// Configuration flags for common argument parsing behavior.

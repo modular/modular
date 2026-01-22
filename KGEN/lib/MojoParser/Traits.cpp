@@ -16,6 +16,7 @@
 #include "IREmitter.h"
 #include "MojoUtils.h"
 #include "ParserEvaluationContext.h"
+#include "StabilityMarkers.h"
 #include "StructEmitter.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -164,7 +165,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
       //
       // Defer to using filterOverloadSetForValueType since it already handles
       // such differences.
-      PValue result = ov.filterOverloadSetForValueType(
+      auto [result, _] = ov.filterOverloadSetForValueType(
           wrapperSignature, emitter.getDeclScope(), nullptr);
       if (result) {
         structDefinesMethod = true;
@@ -485,14 +486,20 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     // register-passable.
     OverloadSet ov(name, decls, std::move(bindings),
                    CallSyntax::kMethodCallSynthetic);
-    PValue result = ov.filterOverloadSetForValueType(
-        traitSignature, emitter.getDeclScope(),
-        function_ref<MojoInflightDiag &(SMLoc)>(
-            [&](SMLoc loc) -> MojoInflightDiag & {
-              return diag->attachNote(traitFnDecl->getLoc());
-            }));
+    auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
+      return diag->attachNote(traitFnDecl->getLoc());
+    };
+    auto [result, selectedStructMethod] = ov.filterOverloadSetForValueType(
+        traitSignature, emitter.getDeclScope(), emitError);
     if (!result)
       return failure();
+
+    // Check for API author error: stable struct implementing stable trait
+    // must use stable methods for stable trait methods.
+    if (selectedStructMethod) {
+      checkStableTraitMemberImplementation(
+          structDecl, traitDecl, *selectedStructMethod, *traitFnDecl, shared);
+    }
 
     WitnessOp::create(b, traitFn.getSymNameAttr(), result.get());
     return success();
@@ -630,6 +637,12 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       // Since we cloned the defaulted op from the trait, there is no need for
       // us to convert the type as they are guaranteed to be matched.
     }
+
+    // Check for API author error: stable struct implementing stable trait
+    // must use stable aliases for stable trait aliases.
+    checkStableTraitMemberImplementation(
+        structDecl, traitDecl, *structAliasDecl, *traitAliasDecl, shared);
+
     WitnessOp::create(b, name, aliasValue.get());
     traitAliasReplacer.setDeclBinding(traitAlias.getParamDecl(), aliasValue);
 

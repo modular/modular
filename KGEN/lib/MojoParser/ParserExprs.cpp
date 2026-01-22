@@ -1257,7 +1257,9 @@ ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
     break;
   }
 
-  SMLoc baseLoc = consumeToken().getLoc();
+  Token tok = consumeToken();
+  SMLoc baseLoc = tok.getLoc();
+  StringRef spelling = tok.getSpelling();
 
   SmallVector<ExprNode *> subExprs;
   SMLoc rpLoc;
@@ -1272,7 +1274,7 @@ ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
       return failure();
   }
 
-  result = alloc<MagicFunctionNode>(nodeKind, baseLoc,
+  result = alloc<MagicFunctionNode>(nodeKind, baseLoc, spelling,
                                     copyArrayRef<ExprNode *>(subExprs), rpLoc);
   return success();
 }

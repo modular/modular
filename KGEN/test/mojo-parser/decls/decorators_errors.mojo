@@ -113,42 +113,14 @@ fn bad_no_inline_2():
 
 
 # ===----------------------------------------------------------------------=== #
-# @deprecated
+# @deprecated (cross-module test only - requires imported_module)
+# Other tests for deprecated are in mojo-parser/decorators/deprecated
 # ===----------------------------------------------------------------------=== #
-
-@deprecated("use of deprecated struct 'DeprecatedStruct'")
-# expected-note @below {{'DeprecatedStruct' declared here}}
-struct DeprecatedStruct:
-    pass
-
-@deprecated("deprecated overload")
-# expected-note @below {{'foobar' declared here}}
-fn foobar():
-    pass
-
-@deprecated("deprecated alias")
-# expected-note @below {{'deprecated_alias' declared here}}
-comptime deprecated_alias = 42
-
-# expected-warning @below {{use of deprecated struct 'DeprecatedStruct'}}
-fn foobar(value: DeprecatedStruct):
-    pass
-
-fn deprecated_function():
-   # expected-warning @below {{deprecated overload}}
-   foobar()
-   # expected-warning @below {{deprecated alias}}
-   _ = deprecated_alias
 
 from imported_module import DeprecatedInAnotherModule
 
 # expected-warning @below {{use of deprecated struct 'DeprecatedInAnotherModule'}}
 fn use_deprecated_import(value: DeprecatedInAnotherModule):
-    pass
-
-# expected-error @below {{@deprecated requires a warning message}}
-@deprecated
-fn no_message():
     pass
 
 

@@ -16,6 +16,7 @@
 #include "ParserBase.h"
 #include "ParserEvaluationContext.h"
 #include "Signatures.h"
+#include "StabilityMarkers.h"
 #include "StructEmitter.h"
 #include "Traits.h"
 
@@ -125,6 +126,10 @@ public:
   /// Handle the `@deprecated` decorator for all decls.
   LogicalResult handleDeprecated(ExprNode *expr, ASTDecl &decl);
 
+  /// Handle the `@stable` decorator for decls that implement
+  /// StabilityDecoratorInterface.
+  LogicalResult handleStable(ExprNode *expr, ASTDecl &decl);
+
   /// Process signature decorators on the declaration using the provided
   /// functor. The functor should return success if the decorator was processed
   /// as a signature decorator. Any leftover decorators are emitted and deferred
@@ -171,6 +176,20 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
   auto declRef = dyn_cast<DeclRefNode>(callNode->callee);
   if (!declRef || declRef->spelling != "deprecated")
     return failure();
+
+  // From here on, we've matched @deprecated - all paths must return success().
+
+  // Check that the decl's operation implements StabilityDecoratorInterface.
+  Operation *op = decl.getIfOperation();
+  auto stabilityInterface =
+      op ? dyn_cast<StabilityDecoratorInterface>(op) : nullptr;
+  if (!stabilityInterface) {
+    shared.emitError(
+        expr->getLoc(),
+        "@deprecated decorator is not supported on this declaration");
+    return success();
+  }
+
   if (callNode->operands.size() != 1) {
     shared.emitError(expr->getLoc(),
                      "@deprecated accepts either a warning message or a "
@@ -182,12 +201,14 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
   // Handle a positional string, or a keyword argument reason=
   if (arg.isPositional() || (arg.isKeyword() && arg.name == "reason")) {
     auto strExpr = dyn_cast<StringLiteralNode>(arg.expr);
-    if (!strExpr)
-      return failure();
+    if (!strExpr) {
+      shared.emitError(arg.expr->getLoc(),
+                       "'reason' argument must be a string literal");
+      return success();
+    }
 
-    cast<ASTDeclInterface>(decl.getIfOperation())
-        .setDeprecationWarningAttr(
-            StringAttr::get(getContext(), strExpr->getValue()));
+    stabilityInterface.setDeprecationWarningAttr(
+        StringAttr::get(getContext(), strExpr->getValue()));
 
     return success();
   }
@@ -196,20 +217,20 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
     auto target = dyn_cast<DeclRefNode>(arg.expr);
     if (!target) {
       shared.emitError(arg.expr->getLoc(), "'use' must reference a symbol");
-      return failure();
+      return success();
     }
 
     LookupResult lookup = shared.lookupAndResolveDecl(
         target->spelling, target->getLoc(), *decl.getParentDecl(),
         /*searchParentScopes=*/true);
     if (lookup.isErroneous())
-      return failure();
+      return success();
 
     ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
     if (decls.empty()) {
       shared.emitError(target->getLoc(), "cannot reference unknown value '")
           << target->spelling << "'";
-      return failure();
+      return success();
     }
 
     std::string sourceName;
@@ -225,19 +246,55 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
       sourceName = "<unhandled case>";
     }
 
-    cast<ASTDeclInterface>(decl.getIfOperation())
-        .setDeprecationWarningAttr(StringAttr::get(
-            getContext(),
-            llvm::formatv("'{0}' is deprecated, use '{1}' instead", sourceName,
-                          target->spelling)));
+    stabilityInterface.setDeprecationWarningAttr(StringAttr::get(
+        getContext(), llvm::formatv("'{0}' is deprecated, use '{1}' instead",
+                                    sourceName, target->spelling)));
 
     return success();
   } else {
-    emitError(expr->getLoc(), "deprecated must specify either a message or a "
-                              "symbol (with the 'use' argument)");
+    shared.emitError(expr->getLoc(),
+                     "deprecated must specify either a message or a "
+                     "symbol (with the 'use' argument)");
   }
 
-  return failure();
+  return success();
+}
+
+LogicalResult Decorators::handleStable(ExprNode *expr, ASTDecl &decl) {
+  // Check for @stable with arguments (CallNode) - emit error since arguments
+  // are not yet supported.
+  if (auto callNode = dyn_cast<CallNode>(expr)) {
+    if (auto callee = dyn_cast<DeclRefNode>(callNode->callee);
+        callee && callee->spelling == "stable") {
+      shared.emitError(expr->getLoc(),
+                       "@stable decorator does not support arguments");
+      return success(); // Handled (with error).
+    }
+  }
+
+  // Only handle bare `@stable` decorator (no arguments for now).
+  auto declRef = dyn_cast<DeclRefNode>(expr);
+  if (!declRef || declRef->spelling != "stable")
+    return failure(); // Not a @stable decorator, let other handlers try.
+
+  // From here on, we've matched @stable - all paths must return success().
+
+  // Check that the decl's operation implements StabilityDecoratorInterface.
+  Operation *op = decl.getIfOperation();
+  auto stabilityInterface =
+      op ? dyn_cast<StabilityDecoratorInterface>(op) : nullptr;
+  if (!stabilityInterface) {
+    shared.emitError(expr->getLoc(),
+                     "@stable decorator is not supported on this declaration");
+    return success();
+  }
+
+  // Check for @stable member in an unstable struct/trait - this is an error.
+  if (checkStableMemberInUnstableParent(decl, expr->getLoc(), shared))
+    return success(); // Handled (with error).
+
+  stabilityInterface.setHasStableDecorator(true);
+  return success();
 }
 
 void Decorators::applySignatureDecorators(
@@ -248,6 +305,7 @@ void Decorators::applySignatureDecorators(
   SmallVector<ExprNode *> bodyDecorators;
   for (auto &[decorator, _] : decoratorExprs) {
     if (succeeded(handleDeprecated(decorator, decl)) ||
+        succeeded(handleStable(decorator, decl)) ||
         succeeded(process(decorator)))
       continue;
     bodyDecorators.push_back(decorator);
@@ -259,6 +317,21 @@ void Decorators::applySignatureDecorators(
         << SourceRange(bodyDecorators.front()->getRangeStart(),
                        bodyDecorators.back()->getRangeEnd());
     return;
+  }
+
+  // Check for mutual exclusivity: @deprecated and @stable cannot be used
+  // together on the same declaration.
+  if (auto stabilityInterface =
+          dyn_cast_if_present<StabilityDecoratorInterface>(
+              decl.getIfOperation());
+      stabilityInterface && stabilityInterface.isStable() &&
+      stabilityInterface.isDeprecated()) {
+    // Use the first decorator's location for the error message.
+    SMLoc errorLoc = decoratorExprs.empty()
+                         ? decl.getLoc()
+                         : decoratorExprs.front().first->getLoc();
+    shared.emitError(errorLoc,
+                     "@deprecated and @stable cannot be used together");
   }
 
   // Defer the rest of the decorators through the shared state.
@@ -1612,6 +1685,10 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // Bulk update the attributes.
   funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
 
+  // Check for API author error: stable function should return stable types.
+  checkStableFunctionReturnType(decl, ASTType(signature.getUserResultType()),
+                                shared);
+
   // Set the symbol and notice if we are redeclaring something.
   if (Operation *existing = finalizeFuncSignature(funcOp, decl)) {
     const char *errorMessage = nullptr;
@@ -2445,6 +2522,16 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
       if (inheritedFrom->contains(symbol))
         continue;
       ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+
+      // Check if implementing an unstable trait should trigger a warning.
+      checkStabilityAndWarn(traitDecl, loc, decl, shared);
+
+      // Check for API author error: stable trait cannot inherit from unstable.
+      // Only applies when `decl` is a trait (not a struct conforming to a
+      // trait).
+      if (isa<TraitDeclOp>(decl.getIfOperation()))
+        checkStableTraitInheritance(decl, traitDecl, declScope, shared);
+
       TraitType canonicalParent =
           cast_or_null<TraitDeclOp>(traitDecl.getIfOperation())
               .getCanonicalTrait();
