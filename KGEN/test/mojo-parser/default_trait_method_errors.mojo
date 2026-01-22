@@ -66,7 +66,7 @@ trait WithAsyncMethod:
 # TODO: Should the 'original' implementation not be FooC here? It's ordering
 # alphabetically.
 @fieldwise_init
-struct RP(AnyTrivialRegType):
+struct RP(TrivialRegisterType):
     pass
 
 trait FooC:

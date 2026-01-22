@@ -15,7 +15,7 @@ trait SomeTrait:
     pass
 
 
-struct ParamType[x: Int](AnyTrivialRegType, SomeTrait):
+struct ParamType[x: Int](TrivialRegisterType, SomeTrait):
     pass
 
 
@@ -24,7 +24,7 @@ struct ParamType[x: Int](AnyTrivialRegType, SomeTrait):
 ##===----------------------------------------------------------------------===##
 
 
-struct DependentParam[x: Int, y: ParamType[x]](AnyTrivialRegType):
+struct DependentParam[x: Int, y: ParamType[x]](TrivialRegisterType):
     pass
 
 

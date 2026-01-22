@@ -12,7 +12,7 @@ fn imported_fn():
     return
 
 @fieldwise_init
-struct VeryUniqueStruct(AnyTrivialRegType):
+struct VeryUniqueStruct(TrivialRegisterType):
     var very_unique_field: __mlir_type.index
 
     # C-3PO is a short and very unique argument name. We use it to make

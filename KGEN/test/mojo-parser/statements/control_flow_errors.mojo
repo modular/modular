@@ -174,7 +174,7 @@ fn testBadCM():
     pass
 
 
-struct MyBool(AnyTrivialRegType):
+struct MyBool(TrivialRegisterType):
     var _mlir_value: __mlir_type.i1
 
     # expected-note @below {{function declared here}}

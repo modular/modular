@@ -27,7 +27,7 @@ struct CacheLineAligned:
 # CHECK-SAME: register_passable_trivial
 # CHECK-SAME: minAlignment = 32 : i64
 @align(32)
-struct AlignedRegisterPassable(AnyTrivialRegType):
+struct AlignedRegisterPassable(TrivialRegisterType):
     var value: __mlir_type.index
 
 
@@ -81,5 +81,5 @@ struct HexAligned:
 # CHECK-SAME: register_passable_trivial
 # CHECK-SAME: minAlignment = 32 : i64
 @align(32)
-struct ReversedDecoratorOrder(AnyTrivialRegType):
+struct ReversedDecoratorOrder(TrivialRegisterType):
     var value: __mlir_type.index

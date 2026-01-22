@@ -217,7 +217,7 @@ fn useIntConstructable[T: Defaultable & IntConstructable]() -> T:
     return T(33)
 
 
-struct MyStruct(AnyTrivialRegType, Defaultable, IntConstructable):
+struct MyStruct(TrivialRegisterType, Defaultable, IntConstructable):
     var x: Int
 
     fn __init__(out self):

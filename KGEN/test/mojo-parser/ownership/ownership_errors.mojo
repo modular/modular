@@ -382,7 +382,7 @@ fn test_no_unused_warning() -> Int:
     # This is syntactically a use, but n is a parameter, so the warning does show up.
     return s.n
 
-struct TestUnused[T: RPTTrait](AnyTrivialRegType):
+struct TestUnused[T: RPTTrait](TrivialRegisterType):
     var thing: Self.T
 
     fn __init__(out self, xyz: Self):
@@ -390,7 +390,7 @@ struct TestUnused[T: RPTTrait](AnyTrivialRegType):
         self.thing = other.thing
         _ = self.thing
 
-trait RPTTrait(AnyTrivialRegType):
+trait RPTTrait(TrivialRegisterType):
     pass
 
 
@@ -442,7 +442,7 @@ struct WrapperNestedInt:
 
 
 @fieldwise_init
-struct TrivialRange(AnyTrivialRegType, Iterator):
+struct TrivialRange(TrivialRegisterType, Iterator):
     comptime Element = Int
 
     fn __iter__(self) -> Self:
@@ -567,7 +567,7 @@ fn test_owned_warning(var arg: TrivialAggregate):
     arg = TrivialAggregate()
 
 
-struct TrivialAggregate(AnyTrivialRegType):
+struct TrivialAggregate(TrivialRegisterType):
     var a: Int
     var b: Int
 

@@ -18,7 +18,7 @@ trait Trait:
         ...
 
 
-struct SomeStruct[param: Int](AnyTrivialRegType, Trait):
+struct SomeStruct[param: Int](TrivialRegisterType, Trait):
     fn method(self) -> Int:
         pass
 

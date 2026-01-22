@@ -21,7 +21,7 @@ trait TraitForReg:
         ...
 
 
-struct RegTypeTrivial(AnyTrivialRegType, TraitForReg):
+struct RegTypeTrivial(TrivialRegisterType, TraitForReg):
     @implicit
     fn __init__(out self, x: Int):
         pass
@@ -48,7 +48,7 @@ struct AsyncStruct(AsyncTrait):
 
 
 # CHECK-LABEL: lit.struct.decl @AsyncStructReg
-struct AsyncStructReg(AnyTrivialRegType, AsyncTrait):
+struct AsyncStructReg(TrivialRegisterType, AsyncTrait):
     async fn foo(self) -> Int:
         pass
 

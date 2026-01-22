@@ -6,7 +6,7 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics -split-input-file %s
 
-struct a(AnyTrivialRegType):
+struct a(TrivialRegisterType):
     @always_inline("builtin")
     fn b(c, d: a):
         c & d
@@ -18,7 +18,7 @@ struct a(AnyTrivialRegType):
 
 # // -----
 
-struct S(AnyTrivialRegType):
+struct S(TrivialRegisterType):
   @always_inline("builtin")
   fn f(self, x: S):
 # expected-error @below {{'@always_inline("builtin")' does not support recursion}}
@@ -26,7 +26,7 @@ struct S(AnyTrivialRegType):
 
 # // -----
 
-struct S(AnyTrivialRegType):
+struct S(TrivialRegisterType):
   @always_inline("builtin")
   fn f(self, x: S):
     self.g(x)

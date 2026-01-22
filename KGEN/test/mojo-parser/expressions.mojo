@@ -996,7 +996,7 @@ struct RegType: pass
 
 # CHECK-LABEL: lit.struct.decl @ParamType
 # CHECK-SAME: <a: !Int>
-struct ParamType[a: Int](AnyTrivialRegType): pass
+struct ParamType[a: Int](TrivialRegisterType): pass
 
 # CHECK-LABEL: lit.fn @"function_types
 fn function_types[
@@ -1115,7 +1115,7 @@ fn useBigNumber() -> Int:
   var minInt = -(2<<62)
   return notSoBig
 
-struct IndexList[size: Int](AnyTrivialRegType):
+struct IndexList[size: Int](TrivialRegisterType):
     @implicit
     fn __init__(out self, *elements: Int):
         pass

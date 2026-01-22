@@ -322,7 +322,7 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   if (auto expectedParamRef = dyn_cast<ParamType>(expectedType)) {
     // If this is a non-materializable type (like IntLiteral), infer it like its
     // materializable type (like Int), for example:
-    //    fn example[T: AnyTrivialRegType](a: T): ...
+    //    fn example[T: TrivialRegisterType](a: T): ...
     //    example(1) # T should be Int, not IntLiteral.
     // TODO: Why is this here?  Seems like a strange place to do this.
     if (ASTType nmTarget =

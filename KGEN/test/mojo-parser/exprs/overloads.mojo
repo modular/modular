@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-struct MyInt(AnyTrivialRegType):
+struct MyInt(TrivialRegisterType):
     var value: Int
 
     @always_inline("nodebug")
@@ -85,7 +85,7 @@ fn test_static_overload():
 # COM: Issue https://github.com/modular/mojo/issues/1408
 # COM: Test that the number of implicit conversions is more important than
 # COM: convention mismatches.
-struct MyElement(AnyTrivialRegType):
+struct MyElement(TrivialRegisterType):
     pass
 
 
