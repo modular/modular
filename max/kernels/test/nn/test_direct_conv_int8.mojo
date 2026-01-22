@@ -82,9 +82,7 @@ fn test[
     var input_ptr = alloc[Scalar[input_type]](N * H * W * C)
     var filter_ptr = alloc[Scalar[filter_type]](R * S * C * F)
     var output_ptr = alloc[Scalar[output_type]](N * HO * WO * F)
-    var output_ref_ptr = alloc[Scalar[output_type]](
-        N * HO * WO * F
-    )
+    var output_ref_ptr = alloc[Scalar[output_type]](N * HO * WO * F)
 
     rand[input_type](input_ptr, N * H * W * C)
     rand[filter_type](filter_ptr, R * S * C * F)
@@ -102,9 +100,7 @@ fn test[
     # Rounded C and F size for pre-packed filter.
     comptime micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
-    var packed_filter_ptr = alloc[Scalar[filter_type]](
-        R * S * C * rounded_F
-    )
+    var packed_filter_ptr = alloc[Scalar[filter_type]](R * S * C * rounded_F)
 
     comptime layout_4d = Layout.row_major[4]()
     comptime layout_5d = Layout.row_major[5]()

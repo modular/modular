@@ -74,21 +74,11 @@ fn test_conv_cudnn[
     comptime output_dim_flattened = Nout * Hout * Wout * Cout
 
     # Allocate host memory
-    var input_host_ptr = alloc[Scalar[input_type]](
-        input_dim_flattened
-    )
-    var filter_host_ptr = alloc[Scalar[filter_type]](
-        filter_dim_flattened
-    )
-    var filter_nchw_host_ptr = alloc[Scalar[filter_type]](
-        filter_dim_flattened
-    )
-    var output_ref_host_ptr = alloc[Scalar[output_type]](
-        output_dim_flattened
-    )
-    var output_host_ptr = alloc[Scalar[output_type]](
-        output_dim_flattened
-    )
+    var input_host_ptr = alloc[Scalar[input_type]](input_dim_flattened)
+    var filter_host_ptr = alloc[Scalar[filter_type]](filter_dim_flattened)
+    var filter_nchw_host_ptr = alloc[Scalar[filter_type]](filter_dim_flattened)
+    var output_ref_host_ptr = alloc[Scalar[output_type]](output_dim_flattened)
+    var output_host_ptr = alloc[Scalar[output_type]](output_dim_flattened)
 
     # Create host LayoutTensors
     var input_host = LayoutTensor[input_type, input_layout](input_host_ptr)

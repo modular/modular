@@ -143,15 +143,9 @@ fn test_conv_transposed_cudnn[
     # -------------------------------------------------------------
 
     # Allocate host memory for NCHW tensors (for cuDNN)
-    var input_nchw_host_ptr = alloc[Scalar[dtype]](
-        input_nchw_size
-    )
-    var filter_nchw_host_ptr = alloc[Scalar[dtype]](
-        filter_nchw_size
-    )
-    var output_nchw_host_ptr = alloc[Scalar[dtype]](
-        output_nchw_size
-    )
+    var input_nchw_host_ptr = alloc[Scalar[dtype]](input_nchw_size)
+    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_nchw_size)
+    var output_nchw_host_ptr = alloc[Scalar[dtype]](output_nchw_size)
 
     # Create host LayoutTensors for NCHW
     var input_nchw_host = LayoutTensor[dtype, input_nchw_layout](
