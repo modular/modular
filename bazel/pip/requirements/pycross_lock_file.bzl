@@ -53,6 +53,7 @@ PINS = {
     "fastapi": "fastapi@0.124.4",
     "filelock": "filelock@3.16.1",
     "fire": "fire@0.7.0",
+    "flashinfer-cubin": "flashinfer-cubin@0.6.1",
     "gguf": "gguf@0.17.1",
     "google-auth": "google-auth@2.29.0",
     "google-cloud-bigquery": "google-cloud-bigquery@3.22.0",
@@ -2176,6 +2177,17 @@ def targets():
         deps = _fire_0_7_0_deps,
         wheel = ":_wheel_fire@0.7.0",
         testonly = "fire" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_flashinfer-cubin@0.6.1",
+        actual = "@pycross_lock_file_wheel_flashinfer_cubin_0.6.1_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "flashinfer-cubin@0.6.1",
+        wheel = ":_wheel_flashinfer-cubin@0.6.1",
+        testonly = "flashinfer-cubin" in _TESTONLY_DEPS,
     )
 
     _flashinfer_python_0_5_3_deps = [
@@ -13849,6 +13861,16 @@ def repositories():
         ],
         sha256 = "2082e5703d51fbf98ea75855d9d5527e33d8ff23099bec374a134febee6946b0",
         downloaded_file_path = "filelock-3.16.1-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_flashinfer_cubin_0.6.1_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/8a/79/7325af801aa7a4704d5e35be7324d117d17739167e2fd1241c2e1d73499a/flashinfer_cubin-0.6.1-py3-none-any.whl",
+        ],
+        sha256 = "4fc4290169ba397e5b481d4d6daee1ec231743280e9232c8a92ec19dbce9c90b",
+        downloaded_file_path = "flashinfer_cubin-0.6.1-py3-none-any.whl",
     )
 
     maybe(

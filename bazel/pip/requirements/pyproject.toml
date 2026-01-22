@@ -199,6 +199,7 @@ nvidia = [
   "vllm==0.12.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
 
   "accelerate",
+  "flashinfer-cubin",
   "lm-eval[api,ifeval,math]>=0.4.9.1",
   "mteb",
   "optimum",
