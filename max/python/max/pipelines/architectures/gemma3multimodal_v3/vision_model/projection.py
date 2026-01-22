@@ -12,28 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 from max.dtype import DType
+from max.experimental import functional as F
 from max.graph import (
     DeviceRef,
-    ShardingStrategy,
     TensorValue,
     Weight,
-    ops,
 )
 from max.graph.ops import avg_pool2d
-from max.nn import (
-    Linear,
-    Module,
-)
-from max.nn.layer import Shardable
-from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
+from max.nn.module_v3 import Linear, Module
+from .rms_norm import Gemma3RMSNorm
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 
 
-class Gemma3MultiModalProjector(Module, Shardable):
+class Gemma3MultiModalProjector(Module):
     """Projects vision encoder outputs to text embedding space."""
 
     def __init__(
@@ -79,7 +72,7 @@ class Gemma3MultiModalProjector(Module, Shardable):
 
         transposed_vision_outputs = vision_outputs.transpose(1, 2)
 
-        reshaped_vision_outputs = ops.reshape(
+        reshaped_vision_outputs = F.reshape(
             transposed_vision_outputs,
             [
                 batch_size,
@@ -90,7 +83,7 @@ class Gemma3MultiModalProjector(Module, Shardable):
         )
 
         # reshape to 0 2 3 1 NHWL (or NHWC) for avg pool
-        reshaped_vision_outputs = ops.permute(
+        reshaped_vision_outputs = F.permute(
             reshaped_vision_outputs, [0, 2, 3, 1]
         )
         pooled_vision_outputs = avg_pool2d(
@@ -99,7 +92,7 @@ class Gemma3MultiModalProjector(Module, Shardable):
             stride=self.kernel_size,
         )
 
-        pooled_vision_outputs = ops.permute(pooled_vision_outputs, [0, 3, 1, 2])
+        pooled_vision_outputs = F.permute(pooled_vision_outputs, [0, 3, 1, 2])
         pooled_vision_outputs = pooled_vision_outputs.flatten(2)
         pooled_vision_outputs = pooled_vision_outputs.transpose(1, 2)
 
@@ -109,46 +102,11 @@ class Gemma3MultiModalProjector(Module, Shardable):
             normed_vision_outputs @ self.mm_input_projection_weight
         )
 
-        image_hidden_states = ops.flatten(
+        image_hidden_states = F.flatten(
             projected_vision_outputs, start_dim=0, end_dim=1
         )
 
         return image_hidden_states
-
-    @property
-    def sharding_strategy(self) -> ShardingStrategy | None:
-        return self.mm_input_projection_weight.sharding_strategy
-
-    @sharding_strategy.setter
-    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        self.mm_input_projection_weight.sharding_strategy = strategy
-        self.mm_soft_emb_norm.weight.sharding_strategy = strategy
-
-    def shard(
-        self, devices: Iterable[DeviceRef]
-    ) -> list[Gemma3MultiModalProjector]:
-        assert self.sharding_strategy
-
-        projection_weight_shards = self.mm_input_projection_weight.shard(
-            devices
-        )
-        norm_weight_shards = self.mm_soft_emb_norm.weight.shard(devices)
-
-        shards = []
-        for device, proj_weight_shard, norm_weight_shard in zip(
-            devices,
-            projection_weight_shards,
-            norm_weight_shards,
-            strict=True,
-        ):
-            sharded = Gemma3MultiModalProjector(self.config, device)
-
-            sharded.mm_input_projection_weight = proj_weight_shard
-            sharded.mm_soft_emb_norm.weight = norm_weight_shard
-
-            shards.append(sharded)
-
-        return shards
 
 
 class Gemma3VisionMLP(Module):
@@ -165,21 +123,17 @@ class Gemma3VisionMLP(Module):
         self.intermediate_size = config.vision_config.intermediate_size
         self.device = device if device is not None else config.devices[0]
 
-        vision_dtype = DType.bfloat16
+        vision_dtype = DType.bfloat16 # TODO what do after move to V3?
 
         self.fc1 = Linear(
             self.hidden_size,
             self.intermediate_size,
-            dtype=vision_dtype,
-            device=self.device,
             has_bias=True,
         )
 
         self.fc2 = Linear(
             self.intermediate_size,
             self.hidden_size,
-            dtype=vision_dtype,
-            device=self.device,
             has_bias=True,
         )
 
@@ -187,37 +141,7 @@ class Gemma3VisionMLP(Module):
         """Expands hidden states to intermediate size, applies GELU activation,
         then projects back to hidden size."""
         x = self.fc1(x)
-        x = ops.gelu(x, self.config.vision_config.hidden_act)
+        x = F.gelu(x, self.config.vision_config.hidden_act, approximate=True) # TODO true is correct or?
         x = self.fc2(x)
         return x
 
-    @property
-    def sharding_strategy(self) -> ShardingStrategy | None:
-        return self.fc1.sharding_strategy
-
-    @sharding_strategy.setter
-    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        self.fc1.sharding_strategy = strategy
-        self.fc2.sharding_strategy = strategy
-
-    def shard(self, devices: Iterable[DeviceRef]) -> list[Gemma3VisionMLP]:
-        assert self.sharding_strategy
-
-        fc1_shards = self.fc1.shard(devices)
-        fc2_shards = self.fc2.shard(devices)
-
-        shards = []
-        for device, fc1_shard, fc2_shard in zip(
-            devices,
-            fc1_shards,
-            fc2_shards,
-            strict=True,
-        ):
-            sharded = Gemma3VisionMLP(self.config, device)
-
-            sharded.fc1 = fc1_shard
-            sharded.fc2 = fc2_shard
-
-            shards.append(sharded)
-
-        return shards

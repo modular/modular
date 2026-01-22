@@ -18,35 +18,28 @@ import logging
 from collections.abc import Sequence
 
 from max.dtype import DType
+from max.experimental import functional as F
 from max.graph import (
-    BufferValue,
     DeviceRef,
     ShardingStrategy,
     TensorValue,
     Weight,
-    ops,
 )
 from max.nn import (
     MLP,
-    ColumnParallelLinear,
     LayerList,
     LayerNorm,
     ReturnLogits,
 )
-from max.nn.module_v3 import Module
+from max.nn.module_v3 import Embedding, Linear, Module
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
-from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
-from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
-from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import (
-    ScaledWordEmbedding,
-)
-from max.pipelines.architectures.gemma3.layers.transformer_block import (
-    Gemma3TransformerBlock,
-)
+from attention import Gemma3Attention
+from rms_norm import Gemma3RMSNorm
+from transformer_block import Gemma3TransformerBlock
 from max.pipelines.architectures.internvl.embedding_utils import (
     merge_multimodal_embeddings,
 )
@@ -99,16 +92,9 @@ class Gemma3LanguageModel(Module):
             scaling_params=None,  # No scaling
         )
 
-        embedding_output_dtype = config.dtype
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
-
-        self.embed_tokens = ScaledWordEmbedding(
-            text_config.vocab_size,
-            text_config.hidden_size,
-            embedding_output_dtype,
-            config.devices,
-            embed_scale=text_config.hidden_size**0.5,
+        self.embed_tokens = Embedding(
+            config.vocab_size,
+            dim=config.hidden_size,
         )
 
         self.norm = Gemma3RMSNorm(
@@ -121,11 +107,9 @@ class Gemma3LanguageModel(Module):
         )
         self.norm_shards = self.norm.shard(config.devices)
 
-        self.lm_head = ColumnParallelLinear(
+        self.lm_head = Linear(
             text_config.hidden_size,
             text_config.vocab_size,
-            dtype=config.dtype,
-            devices=config.devices,
             tied_weight=(
                 self.embed_tokens.weight if config.tie_word_embeddings else None
             ),
@@ -188,10 +172,9 @@ class Gemma3LanguageModel(Module):
         input_row_offsets: Sequence[TensorValue],
         image_embeddings: Sequence[TensorValue],
         image_token_indices: Sequence[TensorValue],
-        signal_buffers: Sequence[BufferValue],
         kv_collections: Sequence[PagedCacheValues],
     ) -> tuple[TensorValue, ...]:
-        h = self.embed_tokens(tokens, signal_buffers)
+        h = self.embed_tokens(tokens)
 
         # Replace image placeholder tokens with vision embeddings
         h = [
@@ -207,13 +190,12 @@ class Gemma3LanguageModel(Module):
 
         # Run through transformer layers
         for idx, layer in enumerate(self.layers):
-            layer_idx_tensor = ops.constant(
+            layer_idx_tensor = F.constant(
                 idx, DType.uint32, device=self.devices[0]
             )
             h = layer(
                 layer_idx_tensor,
                 h,
-                signal_buffers,
                 kv_collections,
                 input_row_offsets=input_row_offsets,
             )
@@ -222,17 +204,16 @@ class Gemma3LanguageModel(Module):
         last_token_h = []
         if h:
             last_token_h = [
-                ops.gather(h_device, indices, axis=0)
+                F.gather(h_device, indices, axis=0)
                 for h_device, indices in zip(h, last_token_indices, strict=True)
             ]
-        last_logits = ops.cast(
+        last_logits = F.cast(
             # Take only the device 0 logits to device-to-host transfer.
             self.lm_head(
                 [
                     self.norm_shards[i](last_token_h[i])
                     for i in range(len(last_token_h))
                 ],
-                signal_buffers,
             )[0],
             DType.float32,
         )
@@ -242,7 +223,7 @@ class Gemma3LanguageModel(Module):
 
         if self.return_logits == ReturnLogits.VARIABLE and h:
             # Create range and gather indices for variable logits
-            return_range = ops.range(
+            return_range = F.arange(
                 start=return_n_logits[0],
                 stop=0,
                 step=-1,
@@ -251,8 +232,8 @@ class Gemma3LanguageModel(Module):
                 device=self.devices[0],
             )
             last_indices = [
-                ops.reshape(
-                    ops.unsqueeze(row_offset[1:], -1) - return_range,
+                F.reshape(
+                    F.unsqueeze(row_offset[1:], -1) - return_range,
                     shape=(-1,),
                 )
                 for row_offset in input_row_offsets
@@ -260,15 +241,15 @@ class Gemma3LanguageModel(Module):
 
             # Gather, normalize, and get logits
             variable_tokens = [
-                self.norm_shards[i](ops.gather(h_device, indices, axis=0))
+                self.norm_shards[i](F.gather(h_device, indices, axis=0))
                 for i, (h_device, indices) in enumerate(
                     zip(h, last_indices, strict=True)
                 )
             ]
-            logits = ops.cast(
-                self.lm_head(variable_tokens, signal_buffers)[0], DType.float32
+            logits = F.cast(
+                self.lm_head(variable_tokens)[0], DType.float32
             )
-            offsets = ops.range(
+            offsets = F.arange(
                 0,
                 last_indices[0].shape[0] + return_n_logits[0],
                 return_n_logits[0],
@@ -282,8 +263,8 @@ class Gemma3LanguageModel(Module):
             all_normalized = [
                 self.norm_shards[i](h_device) for i, h_device in enumerate(h)
             ]
-            logits = ops.cast(
-                self.lm_head(all_normalized, signal_buffers)[0], DType.float32
+            logits = F.cast(
+                self.lm_head(all_normalized)[0], DType.float32
             )
             offsets = input_row_offsets[0]
 
@@ -375,7 +356,6 @@ class Gemma3VisionModel(Module):
     def __call__(
         self,
         pixel_values: Sequence[TensorValue],
-        signal_buffers: Sequence[BufferValue],
     ) -> Sequence[TensorValue]:
         """Processes vision inputs through the Gemma3 vision tower and produces a
         sequence of image embeddings"""
@@ -387,7 +367,7 @@ class Gemma3VisionModel(Module):
         ]
 
         # Pass through encoder layers
-        hidden_states = self.encoder(hidden_states, signal_buffers)
+        hidden_states = self.encoder(hidden_states)
 
         # Apply post-encoder layer norm
         if isinstance(hidden_states, Sequence):

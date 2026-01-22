@@ -12,11 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 from max.dtype import DType
-from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn import Linear
+from max.experimental import functional as F
+from max.graph import DeviceRef, TensorValue
+from max.nn.module_v3 import Linear
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu
 from max.nn.layer import Module
@@ -37,7 +36,7 @@ class Gemma3VisionAttention(Module):
         super().__init__()
         self.config = config
         vision_config = config.vision_config
-        vision_dtype = DType.bfloat16
+        vision_dtype = DType.bfloat16 # TODO hmmm?  what do with this after V3 move
 
         self.layer_idx = layer_idx
         self.device = device if device is not None else config.devices[0]
@@ -51,29 +50,21 @@ class Gemma3VisionAttention(Module):
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
             has_bias=vision_config.attention_bias,
-            dtype=vision_dtype,
-            device=self.device,
         )
         self.k_proj = Linear(
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
             has_bias=vision_config.attention_bias,
-            dtype=vision_dtype,
-            device=self.device,
         )
         self.v_proj = Linear(
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
             has_bias=vision_config.attention_bias,
-            dtype=vision_dtype,
-            device=self.device,
         )
         self.out_proj = Linear(
             self.num_heads * self.head_dim,
             vision_config.hidden_size,
             has_bias=vision_config.attention_bias,
-            dtype=vision_dtype,
-            device=self.device,
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -86,13 +77,13 @@ class Gemma3VisionAttention(Module):
         xv = self.v_proj(x)
 
         # Reshape to multi-head format [batch, n_patches, n_heads, head_dim]
-        xq = ops.reshape(
+        xq = F.reshape(
             xq, [batch_size, n_patches, self.num_heads, self.head_dim]
         )
-        xk = ops.reshape(
+        xk = F.reshape(
             xk, [batch_size, n_patches, self.num_heads, self.head_dim]
         )
-        xv = ops.reshape(
+        xv = F.reshape(
             xv, [batch_size, n_patches, self.num_heads, self.head_dim]
         )
 
@@ -107,49 +98,3 @@ class Gemma3VisionAttention(Module):
         output = output.reshape([batch_size, n_patches, -1])
 
         return self.out_proj(output)
-
-    @property
-    def sharding_strategy(self) -> ShardingStrategy | None:
-        return self.q_proj.sharding_strategy
-
-    @sharding_strategy.setter
-    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        if not strategy.is_replicate:
-            raise ValueError(
-                "only replicate is currently supported for Gemma3VisionAttention"
-            )
-
-        self.q_proj.sharding_strategy = strategy
-        self.k_proj.sharding_strategy = strategy
-        self.v_proj.sharding_strategy = strategy
-        self.out_proj.sharding_strategy = strategy
-
-    def shard(
-        self, devices: Iterable[DeviceRef]
-    ) -> list[Gemma3VisionAttention]:
-        assert self.sharding_strategy
-
-        q_proj_shards = self.q_proj.shard(devices)
-        k_proj_shards = self.k_proj.shard(devices)
-        v_proj_shards = self.v_proj.shard(devices)
-        out_proj_shards = self.out_proj.shard(devices)
-
-        shards = []
-        for device, q_shard, k_shard, v_shard, out_shard in zip(
-            devices,
-            q_proj_shards,
-            k_proj_shards,
-            v_proj_shards,
-            out_proj_shards,
-            strict=True,
-        ):
-            sharded = Gemma3VisionAttention(self.config, self.layer_idx, device)
-
-            sharded.q_proj = q_shard
-            sharded.k_proj = k_shard
-            sharded.v_proj = v_shard
-            sharded.out_proj = out_shard
-
-            shards.append(sharded)
-
-        return shards
