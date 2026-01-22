@@ -12,6 +12,7 @@ _DATA = [
     "**/test_package.foo",
     "**/test_package/**",
     "**/test_package_user/**/*.mojo",
+    "**/test_std_mock/**",
 ]
 
 lit_tests(

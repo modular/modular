@@ -237,6 +237,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   options.verboseOutput = (clOptions.cmd == Command::kEmitAssemblyVerbose);
   options.bitcodeLibs = llvm::to_vector_of<std::string>(clOptions.bitcodeLibs);
   options.cacheBaseExtra = "kgen";
+  options.warnOnUnstableAPIs = clOptions.warnOnUnstableAPIs;
 
   OwningOpRef<ModuleOp> theModule;
   auto inputFileName = llvm::StringRef(clOptions.inputFilename);

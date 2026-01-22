@@ -17,6 +17,7 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "ParserEvaluationContext.h"
+#include "StabilityMarkers.h"
 
 #include "ExprNodes.h"
 #include "MojoUtils.h"
@@ -1013,18 +1014,11 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   assert(decls.size() == 1 && "Only functions may be overloaded");
   ASTDecl *decl = decls[0];
 
-  // If the referenced decl is deprecated, emit a deprecation warning.
+  // Check for deprecation and stability warnings on the referenced decl.
   // Overloaded declarations like functions can't be handled here. They are
-  // handled when overload sets are resolved to a deprecated entry.
-  if (auto declItf =
-          dyn_cast_or_null<ASTDeclInterface>(decl->getIfOperation())) {
-    if (StringAttr warning = declItf.getDeprecationWarningAttr()) {
-      auto diag = emitter.emitWarning(loc, warning.getValue())
-                  << expr->getRange();
-      diag.attachNote(decl->getLoc())
-          << "'" << declItf.getDeclName().getValue() << "' declared here";
-    }
-  }
+  // handled when overload sets are resolved in CallEmission.cpp.
+  checkDeclUsageWarnings(*decl, loc, emitter.getDeclScope(), emitter.shared,
+                         expr->getRange());
 
   // Aliases form a PValue.
   if (auto param = dyn_cast_or_null<AliasDeclOp>(decl->getIfOperation())) {
@@ -2033,6 +2027,12 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
   assert(memberDecls.size() == 1 && "only methods may be overloaded");
   ASTDecl &memberDecl = *memberDecls[0];
+
+  // Check deprecation and stability for non-function members (fields, aliases).
+  // Functions are checked in CallEmission.cpp::getCallee after overload
+  // resolution.
+  checkDeclUsageWarnings(memberDecl, getIdentifierLoc(), emitter.getDeclScope(),
+                         shared, getRange());
 
   // References to an AliasDecl form a PValue.
   if (auto aliasDeclOpParam =
@@ -4086,7 +4086,26 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   return emitter.emitResult(ASTType(signature), this, dest);
 }
 
+/// Return true if the magic function kind is considered stable.
+/// Stable magic functions do not emit warnings with --warn-on-unstable-apis.
+static bool isStableMagicFunction(ExprNode::Kind kind) {
+  switch (kind) {
+  case ExprNode::kOriginOf:
+  case ExprNode::kTypeOf:
+  case ExprNode::kConformsTo:
+  case ExprNode::kFunctionsInModule:
+    return true;
+  default:
+    return false;
+  }
+}
+
 AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
+  // Emit stability warning for unstable magic functions.
+  if (!isStableMagicFunction(kind))
+    checkMagicFunctionAndWarn(spelling, getLoc(), emitter.getDeclScope(),
+                              emitter.shared, getRange());
+
   // Helper lambda to check argument count and emit an error if mismatched.
   // Returns true if the argument count matches, false otherwise.
   auto checkArgCount = [&](size_t expected) -> bool {

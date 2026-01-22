@@ -168,8 +168,9 @@ public:
 
   /// Filter down and complete this overload set based on knowledge that we need
   /// to produce a function pointer with the specified type.  This returns a
-  /// PValue for the callee if resolvable or null if not.
-  PValue filterOverloadSetForValueType(
+  /// pair of PValue for the callee (or null if not resolvable) and the selected
+  /// method declaration (or null if no unique match).
+  std::pair<PValue, ASTDecl *> filterOverloadSetForValueType(
       ASTType functionType, ASTDecl &declScope,
       function_ref<MojoInflightDiag &(llvm::SMLoc)> emitError) const;
 

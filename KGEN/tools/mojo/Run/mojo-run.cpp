@@ -183,6 +183,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .disableBuiltins = options::OPT_disable_builtins,
       .fixit = options::OPT_fixit,
       .exportFixit = options::OPT_export_fixit,
+      .warnOnUnstableAPIs = options::OPT_warn_on_unstable_apis,
   };
 
   // Configure parsing for `mojo run` - only parse args up to the input file.

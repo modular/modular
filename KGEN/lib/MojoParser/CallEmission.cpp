@@ -14,6 +14,7 @@
 #include "MojoUtils.h"
 #include "OverloadFitness.h"
 #include "ParamInf.h"
+#include "StabilityMarkers.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -71,15 +72,10 @@ SMLoc OverloadSet::getExprLoc() const { return getExpr()->getLoc(); }
 
 /// Resolve the callee into a single PValue callee.
 static PValue getCallee(ASTDecl *fnDecl, const ParamBindings &paramBindings) {
-  auto funcOp = cast<FnOp>(fnDecl->getIfOperation());
-  // Check if the function overload set resolved to a deprecated overload.
-  if (StringAttr warning = funcOp.getDeprecationWarningAttr()) {
-    auto diag = paramBindings.shared.emitWarning(paramBindings.getExprLoc(),
-                                                 warning.getValue())
-                << paramBindings.getExpr()->getRange();
-    diag.attachNote(fnDecl->getLoc())
-        << "'" << *funcOp.getSourceName() << "' declared here";
-  }
+  // Check deprecation and stability warnings for the resolved function.
+  checkDeclUsageWarnings(*fnDecl, paramBindings.getExprLoc(),
+                         paramBindings.declScope, paramBindings.shared,
+                         paramBindings.getExpr()->getRange());
   return paramBindings.getBoundConstAttrForFn(*fnDecl);
 }
 
@@ -767,9 +763,10 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   return {};
 }
 
-PValue OverloadSet::filterOverloadSetForValueType(
+std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
     ASTType functionType, ASTDecl &declScope,
     function_ref<MojoInflightDiag &(SMLoc)> emitError) const {
+
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
   if (!sugarIsa<FnTypeGeneratorType>(functionType)) {
@@ -855,15 +852,18 @@ PValue OverloadSet::filterOverloadSetForValueType(
 
   // If we have exactly one viable candidate, then we succeed.
   if (validCandidates.size() == 1) {
+    ASTDecl *selectedMethod = validCandidates.front();
+
     ParamBindings newBindings(paramBindings.declScope, getExpr());
     for (TypedAttr bind : candidateBindings.front())
       newBindings.addPrechecked(getExpr(), bind);
 
     // Use an emitter with invalid context, since errors aren't expected.
     IREmitter emitter(declScope, EC_InvalidContext);
-    PValue callee = getCallee(validCandidates.front(), newBindings);
-    return emitter.emitPValue({callee, getExpr()}, EC_InvalidContext,
-                              functionType);
+    PValue callee = getCallee(selectedMethod, newBindings);
+    PValue result = emitter.emitPValue({callee, getExpr()}, EC_InvalidContext,
+                                       functionType);
+    return {result, selectedMethod};
   }
 
   // If we aren't to emit a diagnostic, just return the failure.
@@ -1097,9 +1097,13 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType,
   // Handle the case of a single candidate.
   if (fnDecls.size() == 1) {
     // This is an unbound function. Just return a reference.
-    if (paramBindings.empty())
+    if (paramBindings.empty()) {
+      // Check deprecation and stability warnings for the function reference.
+      checkDeclUsageWarnings(*fnDecls.front(), getExprLoc(), declScope,
+                             getShared(), getExpr()->getRange());
       return cast<FnOp>(fnDecls.front()->getIfOperation())
           .getBoundReference(getShared().getEvaluationContext());
+    }
 
     // Bind the parameters.
     return getBoundConstantAttr();
@@ -1112,7 +1116,9 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType,
     auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
       return diag.emplace(getShared().emitError(loc));
     };
-    return filterOverloadSetForValueType(expectedType, declScope, emitError);
+    auto [result, _] =
+        filterOverloadSetForValueType(expectedType, declScope, emitError);
+    return result;
   }
 
   // If the overload set has parameter bindings, try to resolve the candidates

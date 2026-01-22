@@ -57,23 +57,57 @@ def ASTDeclInterface : OpInterface<"ASTDeclInterface"> {
     }]>,
 
     InterfaceMethod<[{
-      If the decl has an attached deprecation warning, return it.
-    }], "StringAttr", "getDeprecationWarningAttr", (ins), [{}], [{
-      return StringAttr();
-    }]>,
-
-    InterfaceMethod<[{
-      Set the deprecation warning for the operation.
-    // }], "void", "setDeprecationWarningAttr", (ins "StringAttr":$warning), [{}], [{
-      llvm_unreachable("TODO: decl does not support deprecation warnings");
-    }]>,
-
-    InterfaceMethod<[{
       Set the decorators on this operation.
     }], "void", "setDecoratorsAttr", (ins "DecoratorsAttr":$decorators), [{}], [{
       llvm_unreachable("TODO: decl does not support decorators");
     }]>,
   ];
+}
+
+//===----------------------------------------------------------------------===//
+// StabilityDecoratorInterface
+//===----------------------------------------------------------------------===//
+
+def StabilityDecoratorInterface : OpInterface<"StabilityDecoratorInterface",
+                                              [ASTDeclInterface]> {
+  let description = [{
+    This interface represents an operation that can have @stable and @deprecated
+    decorators. The @stable decorator indicates that the API is considered stable
+    and will not change in backward-incompatible ways except in major releases.
+    The @deprecated decorator indicates that the API should no longer be used.
+    These decorators are mutually exclusive.
+
+    This interface inherits from ASTDeclInterface since all declarations that
+    support stability decorators also have names accessible via getDeclName().
+  }];
+  let cppNamespace = "::M::KGEN::LIT";
+
+  let methods = [
+    InterfaceMethod<[{
+      Return whether this decl has an @stable decorator.
+    }], "bool", "getHasStableDecorator", (ins)>,
+
+    InterfaceMethod<[{
+      Set whether this decl has an @stable decorator.
+    }], "void", "setHasStableDecorator", (ins "bool":$stable)>,
+
+    InterfaceMethod<[{
+      Return the deprecation warning message if this decl has an @deprecated
+      decorator, or nullptr if not deprecated.
+    }], "StringAttr", "getDeprecationWarningAttr", (ins)>,
+
+    InterfaceMethod<[{
+      Set the deprecation warning message for this decl.
+    }], "void", "setDeprecationWarningAttr", (ins "StringAttr":$warning)>,
+  ];
+
+  let extraSharedClassDeclaration = [{
+    /// Returns true if the declaration is marked stable.
+    bool isStable() { return $_op.getHasStableDecorator(); }
+
+    /// Returns true if the declaration is marked deprecated.
+    bool isDeprecated() { return $_op.getDeprecationWarningAttr() != nullptr; }
+  }];
 }
 
 #endif // KGEN_LITDIALECT_LITDECLINTERFACE_TD
