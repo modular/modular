@@ -359,8 +359,8 @@ fn async_copy_with_bound_check[
     # Create swizzle pattern to avoid shared memory bank conflicts
     comptime swizzle = make_swizzle[
         8,
-        Int(swizzle_bytes // size_of[dst.dtype]()),
-        Int(simd_width_of[dst.dtype]()),
+        swizzle_bytes // size_of[dst.dtype](),
+        simd_width_of[dst.dtype](),
     ]()
 
     comptime num_vecs = dst_frag.layout.size()

@@ -192,9 +192,7 @@ fn parse_shape[name: StaticString]() -> List[Int]:
     @parameter
     for i in range(len(name)):
         comptime diff = Int(name_unsafe_ptr[i] - zero)
-        __comptime_assert Bool(name_unsafe_ptr[i] == x_ptr) or Bool(
-            0 <= diff <= 9
-        )
+        __comptime_assert name_unsafe_ptr[i] == x_ptr or 0 <= diff <= 9
 
         @parameter
         if name_unsafe_ptr[i] == x_ptr:
@@ -409,7 +407,7 @@ fn init_vector_gpu[
             if i == 3:
                 if tid >= UInt(len):
                     return
-            x[tid] = Scalar[dtype](values[i])
+            x[tid] = values[i]
             tid += stride
 
     var values = SIMD[dtype, 4]()
@@ -462,7 +460,7 @@ fn _pretty_print_float(val: Float64) -> String:
         _pretty_print_float(2.0) returns "2"
         _pretty_print_float(2.5) returns "2.5"
     """
-    if Float64(floor(val)) == val:
+    if floor(val) == val:
         return String(Int(val))
     return String(val)
 

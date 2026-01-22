@@ -512,7 +512,7 @@ struct TileScheduler[
             m=ret_val[0],
             n=ret_val[1],
             k_start=ret_val[2],
-            is_valid_tile=Bool(ret_val[3] == 1),
+            is_valid_tile=(ret_val[3] == 1),
         )
 
     @always_inline

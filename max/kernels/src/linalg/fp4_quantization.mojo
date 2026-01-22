@@ -916,7 +916,7 @@ fn quantize_dynamic_scaled_async_kernel[
                 ]()
                 var swizzle_offset = local_row_idx * Int(
                     STAGE_GROUP_SIZE // 2
-                ) + Int(idx) * Int(SF_VECTOR_SIZE)
+                ) + idx * Int(SF_VECTOR_SIZE)
                 var output_swizzle_idx = output_swizzle(swizzle_offset)
                 output_smem.ptr.store[
                     alignment = align_of[
@@ -1102,7 +1102,7 @@ fn quantize_dynamic_scaled_fp4_async[
             1,
         ),
         block_dim=(SF_MN_GROUP_SIZE + 32),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
 

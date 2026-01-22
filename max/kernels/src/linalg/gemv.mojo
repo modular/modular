@@ -226,9 +226,9 @@ fn gemv_kernel_vector[
     if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
-    for i in range(Int(ceildiv(k // Int(simd_width), WARP_SIZE))):
-        var a_tile = a.tile[1, Int(WARP_SIZE * Int(simd_width))](warp_id, i)
-        var b_tile = b.tile[1, Int(WARP_SIZE * Int(simd_width))](0, i)
+    for i in range(ceildiv(k // Int(simd_width), WARP_SIZE)):
+        var a_tile = a.tile[1, WARP_SIZE * Int(simd_width)](warp_id, i)
+        var b_tile = b.tile[1, WARP_SIZE * Int(simd_width)](0, i)
 
         if idx >= UInt(k):
             continue
@@ -481,7 +481,7 @@ fn gevm_kernel[
         wait_on_dependent_grids()
 
     # Every block computes warp size length of output values
-    for i in range(ceildiv(UInt(k), UInt(warps_per_block))):
+    for i in range(ceildiv(UInt(k), warps_per_block)):
         var row = i * warps_per_block + warp_id
         var lhs = a.load(row)
         var rhs = b.load(row * UInt(n) + col)

@@ -176,8 +176,8 @@ struct BlackwellBlockScaledMatmulKernel[
     comptime accum_type = DType.float32  # Hardcoded for block-scaled
     comptime cta_group = Self.config.cta_group
 
-    comptime CLUSTER_M = Int(Self.config.cluster_shape[0])
-    comptime CLUSTER_N = Int(Self.config.cluster_shape[1])
+    comptime CLUSTER_M: Int = Self.config.cluster_shape[0]
+    comptime CLUSTER_N: Int = Self.config.cluster_shape[1]
     comptime CLUSTER_SIZE = Self.CLUSTER_M * Self.CLUSTER_N
 
     # ========== Thread/Warp Organization ==========
@@ -268,7 +268,7 @@ struct BlackwellBlockScaledMatmulKernel[
         + Self.b_expected_bytes
         + Self.sfa_expected_bytes
         + Self.sfb_expected_bytes
-    ) * Int(Self.config.k_group_size)
+    ) * Self.config.k_group_size
 
     # TMA descriptor layout sizes for peer CTA slicing
     comptime a_tma_load_size = Self.a_desc_layout.size()
@@ -345,7 +345,7 @@ struct BlackwellBlockScaledMatmulKernel[
     comptime InputTilePipeline = InputTilePipeline[
         Self.TilePayload,
         Self.SmemType.num_group_pipeline_stages,
-        Int(Self.config.k_group_size),
+        Self.config.k_group_size,
     ]
 
     # ========== TMEM and Output Pipeline Types ==========
@@ -418,7 +418,7 @@ struct BlackwellBlockScaledMatmulKernel[
             tiles_origin,
             Self.TilePayload,
             Self.SmemType.num_group_pipeline_stages,
-            Int(Self.config.k_group_size),
+            Self.config.k_group_size,
         ],
         peer_cta_coord: Tuple[UInt, UInt, UInt],
         work_tile_coord: Tuple[UInt, UInt, UInt],
@@ -468,12 +468,12 @@ struct BlackwellBlockScaledMatmulKernel[
             # Get barrier for TMA multicast loads
             var barrier = tiles.barrier()
 
-            for jj in range(Int(Self.config.k_group_size)):
+            for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
                 # Get tiles at this pipeline stage using the payload accessor
                 var a_tile, b_tile, sfa_tile, sfb_tile = (
-                    tiles.payload().get_tile[Int(Self.config.k_group_size)](
+                    tiles.payload().get_tile[Self.config.k_group_size](
                         tiles.stage(), jj
                     )
                 )
@@ -492,13 +492,13 @@ struct BlackwellBlockScaledMatmulKernel[
                 a_tma_op.async_multicast_load_3d[Self.cta_group](
                     a_peer_tile,
                     barrier[0],
-                    (k_coord, UInt(a_gmem_m_coord), UInt(batch_coord)),
+                    (k_coord, a_gmem_m_coord, batch_coord),
                     a_multicast_mask,
                 )
                 b_tma_op.async_multicast_load_3d[Self.cta_group](
                     b_peer_tile,
                     barrier[0],
-                    (k_coord, UInt(b_gmem_n_coord), UInt(batch_coord)),
+                    (k_coord, b_gmem_n_coord, batch_coord),
                     b_multicast_mask,
                 )
 
@@ -539,7 +539,7 @@ struct BlackwellBlockScaledMatmulKernel[
             tiles_origin,
             Self.TilePayload,
             Self.SmemType.num_group_pipeline_stages,
-            Int(Self.config.k_group_size),
+            Self.config.k_group_size,
         ],
         mma_op: Self.MmaOp,
         tmem_addr: UInt32,
@@ -563,19 +563,19 @@ struct BlackwellBlockScaledMatmulKernel[
             k_start: Starting K iteration (for init_c determination).
         """
         if elect_one_sync():
-            for jj in range(Int(Self.config.k_group_size)):
+            for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
                 # Get tiles at this pipeline stage using the payload accessor
                 var a_tile, b_tile, sfa_tile, sfb_tile = (
-                    tiles.payload().get_tile[Int(Self.config.k_group_size)](
+                    tiles.payload().get_tile[Self.config.k_group_size](
                         tiles.stage(), jj
                     )
                 )
 
                 # Calculate tile index for TMEM offset calculation
                 var tile_idx = (
-                    Int(tiles.stage()) * Int(Self.config.k_group_size) + jj
+                    Int(tiles.stage()) * Self.config.k_group_size + jj
                 )
 
                 # Calculate TMEM offsets for scaling factors

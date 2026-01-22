@@ -228,14 +228,14 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[0],
-            (iter_idx * UInt(BK), UInt(a_gmem_slice_coord)),
+            (iter_idx * UInt(BK), a_gmem_slice_coord),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[0],
-            (iter_idx * UInt(BK), UInt(b_gmem_slice_coord)),
+            (iter_idx * UInt(BK), b_gmem_slice_coord),
             b_multicast_mask,
         )
 
@@ -387,8 +387,8 @@ fn multi_stage_reg_epilogue[
             c_tma_op.async_store(
                 c_smem_split,
                 (
-                    UInt(coord_n),
-                    UInt(coord_m),
+                    coord_n,
+                    coord_m,
                 ),
             )
             c_tma_op.commit_group()
@@ -821,8 +821,8 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime num_n_mmas = BN // (config.mma_shape[1] // config.cta_group)
     comptime num_k_mmas = BK // config.mma_shape[2]
 
-    comptime CLUSTER_M = Int(config.cluster_shape[0])
-    comptime CLUSTER_N = Int(config.cluster_shape[1])
+    comptime CLUSTER_M: Int = config.cluster_shape[0]
+    comptime CLUSTER_N: Int = config.cluster_shape[1]
 
     comptime a_tma_load_size = a_desc_layout.size()
     comptime b_tma_load_size = b_desc_layout.size()
@@ -1028,8 +1028,8 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        UInt(rank_m % UInt(config.cta_group)),
-        UInt(rank_m // UInt(config.cta_group)),
+        rank_m % UInt(config.cta_group),
+        rank_m // UInt(config.cta_group),
         rank_n,
     )  # v,m,n
 
@@ -1485,8 +1485,8 @@ fn sm100_warp_specialized_blockwise_fp8[
     ]
 
     var grid_dim = (
-        align_up(ceildiv(M, BM), Int(config.cluster_shape[0])),
-        align_up(ceildiv(N, MMA_N), Int(config.cluster_shape[1])),
+        align_up(ceildiv(M, BM), config.cluster_shape[0]),
+        align_up(ceildiv(N, MMA_N), config.cluster_shape[1]),
         1,
     )
 

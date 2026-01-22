@@ -307,7 +307,7 @@ struct SMemTileArray[
             Self.dtype, Self.layout, length, Self.alignment
         ],
     ):
-        return type_of(result)(self.ptr + eval[Self.layout.size()] * Int(start))
+        return type_of(result)(self.ptr + eval[Self.layout.size()] * start)
 
     @always_inline
     @staticmethod

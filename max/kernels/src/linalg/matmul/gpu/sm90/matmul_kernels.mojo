@@ -686,12 +686,8 @@ struct HopperMatmulSM90Kernel[
         ](k_iter: Int):
             @parameter
             for j in range(num_pipeline_stages_to_unroll):
-                var k_offset = UInt(
-                    k_coord
-                    + UInt(
-                        k_iter * Self.num_pipeline_stages
-                        + (j * Self.k_group_size)
-                    )
+                var k_offset = k_coord + UInt(
+                    k_iter * Self.num_pipeline_stages + (j * Self.k_group_size)
                 )
 
                 # Get the next available tile slot from the ring buffer.
@@ -859,7 +855,7 @@ struct HopperMatmulSM90Kernel[
                 output_reg_tile,
                 warp_group_thread_idx,
                 local_warp_group_idx,
-                UInt(thread_idx.x - UInt(WARPGROUP_SIZE)),
+                thread_idx.x - UInt(WARPGROUP_SIZE),
                 block_idx_swizzle[1],
                 block_idx_swizzle[0],
             )
@@ -1030,8 +1026,8 @@ struct HopperMatmulSM90Kernel[
                             c,
                             smem.c_tile,
                             output_reg_tile,
-                            UInt(warp_group_thread_idx),
-                            UInt(local_warp_group_idx),
+                            warp_group_thread_idx,
+                            local_warp_group_idx,
                             thread_idx.x - UInt(WARPGROUP_SIZE),
                             Int(block_y),
                             Int(block_x),
@@ -1220,7 +1216,7 @@ struct HopperMatmulSM90Kernel[
                 output_reg_tile,
                 warp_group_thread_idx,
                 local_warp_group_idx,
-                UInt(thread_idx.x - UInt(WARPGROUP_SIZE)),
+                thread_idx.x - UInt(WARPGROUP_SIZE),
                 block_idx_swizzle[1],
                 block_idx_swizzle[0],
             )

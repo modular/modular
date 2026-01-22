@@ -235,7 +235,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime K = a_tensor_batched.layout.shape[2].value()
 
     __comptime_assert (
-        ceildiv(K, BK) % Int(config.k_group_size) == 0
+        ceildiv(K, BK) % config.k_group_size == 0
     ), "K iterations must be a multiple of k_group_size"
 
     # ===== Create TMA Descriptors =====
@@ -424,8 +424,8 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     # ===== Grid and Block Dimensions =====
     var grid_dim = (
-        align_up(ceildiv(M_maybe_swapped, BM), Int(cluster_shape[0])),
-        align_up(ceildiv(N_maybe_swapped, MMA_N), Int(cluster_shape[1])),
+        align_up(ceildiv(M_maybe_swapped, BM), cluster_shape[0]),
+        align_up(ceildiv(N_maybe_swapped, MMA_N), cluster_shape[1]),
         B,
     )
 

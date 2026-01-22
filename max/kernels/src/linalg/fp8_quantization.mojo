@@ -227,9 +227,9 @@ fn quantize_fp8_kernel[
     with PDL():
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
-            input_vec = input_fn[simd_width, simd_width](
-                Int(row), Int(idx)
-            ).cast[accum_type]()
+            input_vec = input_fn[simd_width, simd_width](row, idx).cast[
+                accum_type
+            ]()
             thread_max = max(thread_max, abs(input_vec).reduce_max())
 
         var group_max = block.max[block_size=num_threads, broadcast=True](
@@ -266,9 +266,9 @@ fn quantize_fp8_kernel[
             if use_warp_tiling:
                 pass
             else:
-                input_vec = input_fn[simd_width, simd_width](
-                    Int(row), Int(idx)
-                ).cast[accum_type]()
+                input_vec = input_fn[simd_width, simd_width](row, idx).cast[
+                    accum_type
+                ]()
 
             var output_vec = input_vec * scale_factor_recip
 

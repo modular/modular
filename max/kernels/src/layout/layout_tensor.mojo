@@ -253,8 +253,8 @@ fn _distribute_is_masked[
 
     @parameter
     for i in range(layout.rank()):
-        comptime layout_dim = Int(product(layout.shape[i]))
-        comptime thread_dim = Int(product(threads_layout.shape[i]))
+        comptime layout_dim = product(layout.shape[i])
+        comptime thread_dim = product(threads_layout.shape[i])
 
         @parameter
         if layout_dim % thread_dim != 0:
@@ -1125,7 +1125,7 @@ struct LayoutTensor[
             @parameter
             if static_strides[i] == UNKNOWN_VALUE:
                 # Use runtime stride for unknown dimensions
-                offset += Int(self.runtime_layout.stride.value[i]) * coords[i]
+                offset += self.runtime_layout.stride.value[i] * coords[i]
             else:
                 # Use compile-time stride for known dimensions (enables
                 # constant folding)
@@ -2250,7 +2250,7 @@ struct LayoutTensor[
         - The elements are loaded according to the tensor's stride configuration.
         """
         __comptime_assert self.rank == coords.size
-        debug_assert(Int(self.runtime_layout.stride.value[self.rank - 1]) == 1)
+        debug_assert(self.runtime_layout.stride.value[self.rank - 1] == 1)
 
         return self.ptr.load[width=width, alignment = Self.alignment](
             self._offset(coords)
@@ -2521,7 +2521,7 @@ struct LayoutTensor[
         - This operation modifies the tensor's data in-place.
         """
         __comptime_assert self.rank == coords.size
-        debug_assert(Int(self.runtime_layout.stride.value[self.rank - 1]) == 1)
+        debug_assert(self.runtime_layout.stride.value[self.rank - 1] == 1)
 
         return self.ptr.store[alignment = Self.alignment](
             self._offset(coords), val
@@ -2728,7 +2728,7 @@ struct LayoutTensor[
         @parameter
         for i in range(len(t)):
             # Use product() to handle both scalar and nested tuples
-            st[i] = Int(product(t[i]))
+            st[i] = product(t[i])
         return st
 
     @staticmethod
@@ -3901,9 +3901,7 @@ struct LayoutTensor[
                 thread_shape_i
             )
             var tile_shape_i = ceildiv(self.dim[i](), thread_shape_i)
-            var bound_i = Int(
-                (tile_shape_i - 1) * thread_shape_i + Int(tile_idx)
-            )
+            var bound_i = (tile_shape_i - 1) * thread_shape_i + Int(tile_idx)
             tile_shape[i] = min(self.dim[i]() - bound_i, tile_shape_i)
 
         return tile_shape
@@ -4131,9 +4129,7 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(flatten(Self.layout.stride))):
-                var fragments_stride_i = Int(
-                    self.runtime_layout.stride.value[i]
-                )
+                var fragments_stride_i = self.runtime_layout.stride.value[i]
                 comptime shape_i = Int(thread_projected_shape[i])
                 comptime stride_i = Int(thread_projected_stride[i])
                 var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
@@ -5390,7 +5386,7 @@ struct LayoutTensor[
     #
     @always_inline
     fn _get_element_idx[elem_i: Int](self) -> Scalar[Self.linear_idx_type]:
-        comptime element_size = Int(self.element_size)
+        comptime element_size = self.element_size
 
         @parameter
         if Self.layout.all_dims_known():
@@ -5467,8 +5463,8 @@ struct LayoutTensor[
         """
         comptime other_layout = other.layout
 
-        comptime dst_element_size = Int(self.element_size)
-        comptime src_element_size = Int(other.element_size)
+        comptime dst_element_size = self.element_size
+        comptime src_element_size = other.element_size
 
         comptime dst_size = Self.layout.size()
         comptime src_size = other_layout.size()
@@ -5634,8 +5630,8 @@ struct LayoutTensor[
         comptime dst_size = Self.layout.size()
         comptime src_size = src.layout.size()
 
-        comptime dst_element_size = Int(self.element_size)
-        comptime src_element_size = Int(src.element_size)
+        comptime dst_element_size = self.element_size
+        comptime src_element_size = src.element_size
         __comptime_assert (
             dst_element_size == src_element_size
         ), "copy_from_async should move data of the same element size"

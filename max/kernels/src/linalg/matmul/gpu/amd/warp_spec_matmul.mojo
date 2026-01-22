@@ -450,12 +450,8 @@ fn warp_specialized_matmul_kernel[
     barrier()  # Ensure that RingBuffers are initialized across warps.
 
     comptime tile_count = K // BK
-    comptime warps_processed_per_producer_a = Int(
-        m_warps_per_block // a_producer_warps
-    )
-    comptime warps_processed_per_producer_b = Int(
-        n_warps_per_block // b_producer_warps
-    )
+    comptime warps_processed_per_producer_a = m_warps_per_block // a_producer_warps
+    comptime warps_processed_per_producer_b = n_warps_per_block // b_producer_warps
 
     # Producer logic - simplified using generic function
     if role is ThreadRole.PRODUCER:
@@ -582,7 +578,7 @@ fn warp_specialized_matmul_kernel[
 
                 # Write this tile's result to global memory
                 var c_warp_tile = c_block_tile.tile[WM, WN](
-                    Int(m_warp_idx), Int(n_warp_idx)
+                    m_warp_idx, n_warp_idx
                 )
 
                 c_scatter_gather.copy(

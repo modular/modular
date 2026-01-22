@@ -97,7 +97,7 @@ struct ThreadInfo:
             ThreadInfo struct with computed warp_id, lane_id, lane_row, and lane_col.
         """
         var warp_id = warp_group_thread_idx // UInt(WARP_SIZE)
-        var lid = UInt(lane_id())
+        var lid = lane_id()
         var lane_row, lane_col = divmod(UInt32(lid), 4)
         return ThreadInfo(warp_id, lid, lane_row, lane_col)
 
@@ -780,7 +780,7 @@ struct RegisterToGMemWriter[
         # Get the warp's portion of the tile
         var warp_tile = self.dst.tile[
             Self.wgmma_shape[0] // 4, Self.wgmma_shape[1]
-        ](Int(m_mma * 4 + Int(self.thread_info.warp_id)), n_mma)
+        ](m_mma * 4 + Int(self.thread_info.warp_id), n_mma)
 
         # Get the corresponding register fragment
         var c_frag = c_reg_tile.tile[1, Self.c_frag_size](mma_id, 0)
@@ -804,7 +804,7 @@ struct RegisterToGMemWriter[
         var warp_tile, warp_tile_coords, warp_tile_offset = (
             self.dst.tile_with_offset[
                 Self.wgmma_shape[0] // 4, Self.wgmma_shape[1]
-            ](Int(m_mma * 4 + Int(self.thread_info.warp_id)), n_mma)
+            ](m_mma * 4 + Int(self.thread_info.warp_id), n_mma)
         )
 
         # Calculate global coordinates
@@ -835,8 +835,8 @@ struct RegisterToGMemWriter[
             comptime dst_idx = gmem_frag.layout(frag_idx)
             comptime dst_m_offset = dst_idx // Self.N
             comptime dst_n_offset = dst_idx % Self.N
-            var m = Int(coords[0] + dst_m_offset)
-            var n = Int(coords[1] + dst_n_offset)
+            var m = coords[0] + dst_m_offset
+            var n = coords[1] + dst_n_offset
 
             # Bounds check and apply transformation
             if m < Int(max_row) and n < Self.N:
@@ -899,10 +899,10 @@ struct RegisterToGMemWriter[
             1
         ] if not Self.swapAB else Self.wgmma_shape[0] // 4
 
-        var coord_0 = Int(
+        var coord_0 = (
             m_mma * 4 + Int(self.thread_info.warp_id)
-        ) if not Self.swapAB else Int(n_mma)
-        var coord_1 = Int(n_mma) if not Self.swapAB else Int(
+        ) if not Self.swapAB else n_mma
+        var coord_1 = n_mma if not Self.swapAB else (
             m_mma * 4 + Int(self.thread_info.warp_id)
         )
 
@@ -958,20 +958,20 @@ struct RegisterToGMemWriter[
                         if Self.swapAB:
                             # In swapAB mode, coordinates are transposed
                             return (
-                                Int(warp_tile_coords[0])
+                                warp_tile_coords[0]
                                 + Int(
                                     n_frag * 8
                                     + self.thread_info.lane_col * 2
                                     + i
                                 ),
-                                Int(warp_tile_coords[1])
+                                warp_tile_coords[1]
                                 + Int(m_frag * 8 + self.thread_info.lane_row),
                             )
                         else:
                             return (
-                                Int(warp_tile_coords[0])
+                                warp_tile_coords[0]
                                 + Int(m_frag * 8 + self.thread_info.lane_row),
-                                Int(warp_tile_coords[1])
+                                warp_tile_coords[1]
                                 + Int(
                                     n_frag * 8
                                     + self.thread_info.lane_col * 2

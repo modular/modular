@@ -1856,7 +1856,7 @@ fn format_layout[W: Writer](layout: Layout, mut writer: W):
 
         for n in range(layout[1].size()):
             writer.write("| ")
-            Int(layout([m, n])).write_padded(
+            layout([m, n]).write_padded(
                 writer,
                 width=idx_width - 2,
             )

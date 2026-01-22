@@ -936,7 +936,7 @@ fn _distribute[
         comptime shape_i = thread_layout.shape_types[i].STATIC_VALUE
         var thread_coord_i = (thread_id // stride_i) % shape_i
         offset += UInt(
-            thread_coord_i * Int(data_layout_tensor.layout.stride[i].value())
+            thread_coord_i * data_layout_tensor.layout.stride[i].value()
         )
 
     # Swizzling applies to the index of elements rather than scalars because
@@ -1045,7 +1045,7 @@ fn _tile[
         offset += UInt(
             tile_coords[i].value()
             * tile_shape[i].value()
-            * Int(data_layout_tensor.layout.stride[i].value())
+            * data_layout_tensor.layout.stride[i].value()
         )
 
     var tile_layout = Layout(

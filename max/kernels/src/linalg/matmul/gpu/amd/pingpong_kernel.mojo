@@ -1516,7 +1516,7 @@ struct AMDPingPongMatmul[
 
         @always_inline
         fn s_setprio[priority: Int16]():
-            llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](Int16(priority))
+            llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](priority)
 
         # ================================================================
         # PHASE SYNCHRONIZATION

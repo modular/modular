@@ -270,7 +270,7 @@ fn multistage_dual_mma[
     comptime num_reg_tiles = 2 * Int(k_group_size)
     # Register tiles.
     comptime a_reg_layout = Layout.row_major(
-        Int(2 * Int(k_group_size) * num_m_mmas), a_frag_size
+        2 * Int(k_group_size) * num_m_mmas, a_frag_size
     )
     var a_reg_tiles = (
         LayoutTensor[
@@ -280,11 +280,11 @@ fn multistage_dual_mma[
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
-        .split[Int(2 * Int(k_group_size))]()
+        .split[2 * Int(k_group_size)]()
     )
 
     comptime b_reg_layout = Layout.row_major(
-        Int(2 * Int(k_group_size) * num_n_mmas), b_frag_size
+        2 * Int(k_group_size) * num_n_mmas, b_frag_size
     )
     var b0_reg_tiles = (
         LayoutTensor[
@@ -295,7 +295,7 @@ fn multistage_dual_mma[
         ]
         .stack_allocation()
         .vectorize[1, b_frag_size]()
-        .split[Int(2 * Int(k_group_size))]()
+        .split[2 * Int(k_group_size)]()
     )
     var b1_reg_tiles = (
         LayoutTensor[
@@ -306,7 +306,7 @@ fn multistage_dual_mma[
         ]
         .stack_allocation()
         .vectorize[1, b_frag_size]()
-        .split[Int(2 * Int(k_group_size))]()
+        .split[2 * Int(k_group_size)]()
     )
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
@@ -727,7 +727,7 @@ fn multistage_dual_gemm_kernel[
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 if m < Int(M) and n < Int(N):
                     epilogue[alignment=alignment](
-                        (Int(m), Int(n)),
+                        (m, n),
                         accum_smem_warp_tile.ptr.load[
                             width=simd_size, alignment=alignment
                         ](swizzled_idx).cast[c_type](),
@@ -774,7 +774,7 @@ fn multistage_dual_gemm_kernel[
                     var vec = (c_reg_frag.ptr + src_idx).load[
                         width=2, alignment = align_of[SIMD[c_type, 2]]()
                     ]()
-                    epilogue[alignment=alignment]((Int(m), Int(n)), vec)
+                    epilogue[alignment=alignment]((m, n), vec)
 
         else:
             copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](

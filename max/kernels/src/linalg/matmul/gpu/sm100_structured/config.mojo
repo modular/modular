@@ -163,7 +163,7 @@ struct MatmulConfig[
         var output_smem_bytes = c_smem_bytes + 12
 
         # response 128B, clc mbar 16B, clc-load pipeline mbar 16B
-        var clc_smem_bytes = 160 * Int(self.num_clc_pipeline_stages)
+        var clc_smem_bytes = 160 * self.num_clc_pipeline_stages
 
         # Usage by mma-output-pipeline
         var mma_output_smem_bytes = self.num_accum_pipeline_stages * 16
@@ -615,7 +615,7 @@ struct BlockScaledMatmulConfig[
         var output_smem_bytes = c_smem_bytes + 12
 
         # response 128B, clc mbar 16B, clc-load pipeline mbar 16B
-        var clc_smem_bytes = 160 * Int(self.num_clc_pipeline_stages)
+        var clc_smem_bytes = 160 * self.num_clc_pipeline_stages
 
         # Usage by mma-output-pipeline
         var mma_output_smem_bytes = self.num_accum_pipeline_stages * 16

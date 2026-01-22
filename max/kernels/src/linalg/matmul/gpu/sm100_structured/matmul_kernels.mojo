@@ -223,8 +223,8 @@ struct KernelContext[
 
         # Peer CTA coordinate: (peer_id, mma_coord_m, mma_coord_n)
         self.peer_cta_coord = (
-            UInt(self.rank_m % UInt(Self.cta_group)),
-            UInt(self.rank_m // UInt(Self.cta_group)),
+            self.rank_m % UInt(Self.cta_group),
+            self.rank_m // UInt(Self.cta_group),
             self.rank_n,
         )
 
@@ -372,9 +372,9 @@ struct B200MatmulSmem[
     comptime OutputN = Self.config.output_tile_shape[1]
 
     # Pipeline stage counts
-    comptime num_pipeline_stages = Int(Self.config.num_pipeline_stages)
-    comptime num_group_pipeline_stages = (
-        Self.num_pipeline_stages // Int(Self.config.k_group_size)
+    comptime num_pipeline_stages: Int = Self.config.num_pipeline_stages
+    comptime num_group_pipeline_stages: Int = (
+        Self.num_pipeline_stages // Self.config.k_group_size
     )
     comptime num_output_stages: Int = Self.config.num_output_stages
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
@@ -602,10 +602,8 @@ struct BlackwellMatmulSM100Kernel[
 
     # ========== Pipeline Configuration ==========
 
-    comptime num_pipeline_stages = Int(Self.config.num_pipeline_stages)
-    comptime num_group_pipeline_stages = Self.num_pipeline_stages // Int(
-        Self.config.k_group_size
-    )
+    comptime num_pipeline_stages = Self.config.num_pipeline_stages
+    comptime num_group_pipeline_stages = Self.num_pipeline_stages // Self.config.k_group_size
     comptime num_clc_pipeline_stages: Int = Self.config.num_clc_pipeline_stages
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_output_stages: Int = Self.config.num_output_stages
@@ -687,7 +685,7 @@ struct BlackwellMatmulSM100Kernel[
     comptime InputTilePipeline = InputTilePipeline[
         Self.TilePayload,
         Self.SmemType.num_group_pipeline_stages,
-        Int(Self.config.k_group_size),
+        Self.config.k_group_size,
     ]
 
     # ========== Tile Loader Types ==========
@@ -706,7 +704,7 @@ struct BlackwellMatmulSM100Kernel[
     ]()
     comptime input_expected_bytes = Self.cta_group * (
         Self.a_expected_bytes + Self.b_expected_bytes
-    ) * Int(Self.config.k_group_size)
+    ) * Self.config.k_group_size
 
     # TMA descriptor layout sizes for peer CTA slicing
     comptime a_tma_load_size = Self.a_desc_layout.size()
@@ -910,7 +908,7 @@ struct BlackwellMatmulSM100Kernel[
             tiles_origin,
             Self.TilePayload,
             Self.SmemType.num_group_pipeline_stages,
-            Int(Self.config.k_group_size),
+            Self.config.k_group_size,
         ],
         mma_op: MmaOpSM100_SS,
         elect_one_warp: Bool,
@@ -939,10 +937,10 @@ struct BlackwellMatmulSM100Kernel[
         if elect_one_sync():
 
             @parameter
-            for j in range(Int(Self.config.k_group_size)):
+            for j in range(Self.config.k_group_size):
                 # Get tiles using payload accessor
                 var a_tile, b_tile = tiles.payload().get_tile[
-                    Int(Self.config.k_group_size)
+                    Self.config.k_group_size
                 ](tiles.stage(), j)
                 var is_first_k = (iter_idx + j) == k_start
                 mma_op.mma(
@@ -976,7 +974,7 @@ struct BlackwellMatmulSM100Kernel[
             tiles_origin,
             Self.TilePayload,
             Self.SmemType.num_group_pipeline_stages,
-            Int(Self.config.k_group_size),
+            Self.config.k_group_size,
         ],
         iter_idx: UInt32,
         work_m_coord: UInt,
@@ -1024,10 +1022,10 @@ struct BlackwellMatmulSM100Kernel[
             var barrier = tiles.barrier()
 
             @parameter
-            for j in range(Int(Self.config.k_group_size)):
+            for j in range(Self.config.k_group_size):
                 # Get tiles using payload accessor
                 var a_tile, b_tile = tiles.payload().get_tile[
-                    Int(Self.config.k_group_size)
+                    Self.config.k_group_size
                 ](tiles.stage(), j)
 
                 # Peer CTA slice using pointer arithmetic (not tile[]).

@@ -170,7 +170,7 @@ fn store_fragment_to_smem[
         comptime trans_layout = Layout(
             IntTuple(8, 2, 2), IntTuple(stride0, 8 * stride1, 8 * stride0)
         )
-        stsm_lane_offset = UInt32(RLayout32Bits[trans_layout]()(Int(lane)))
+        stsm_lane_offset = RLayout32Bits[trans_layout]()(Int(lane))
     else:
         stsm_lane_offset = (
             UInt32(lane & 15) * UInt32(stride0) + UInt32(lane >> 4) * 8
@@ -1088,9 +1088,9 @@ struct SMemEpilogueWriter[
 
             var c_smem_warp_tile_upper = c_smem_warp_tile
             warp_offset = Int(self.warp_id) * tile_width
-            store_fragment_to_smem[
-                Self.swizzle, Int(Self.stageN), Self.transpose_c
-            ](upper_frag, c_smem_warp_tile_upper, warp_offset)
+            store_fragment_to_smem[Self.swizzle, Self.stageN, Self.transpose_c](
+                upper_frag, c_smem_warp_tile_upper, warp_offset
+            )
 
             Self.OutputSyncBarrier.sync()
 
@@ -1248,9 +1248,9 @@ fn shared_memory_epilogue_transpose[
                     Int(0),
                     Int(crd[3].get_int()),
                     Int(warp_j),
-                    Int(iter_j),
+                    iter_j,
                     Int(warp_i),
-                    Int(iter_i),
+                    iter_i,
                 )
                 var offset = simd_size * RLayout32Bits[result]()(coord)
                 var logical_crd = idx2crd(
@@ -1332,9 +1332,9 @@ fn shared_memory_epilogue_transpose[
                         Int(crd[0].get_int()),
                         Int(0),
                         Int(crd[2].get_int()),
-                        Int(iter_j),
+                        iter_j,
                         Int(warp_i),
-                        Int(iter_i),
+                        iter_i,
                     )
                     var offset = simd_size * RLayout32Bits[result]()(coord)
                     var logical_crd = idx2crd(

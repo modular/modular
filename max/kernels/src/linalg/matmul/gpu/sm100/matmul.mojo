@@ -368,9 +368,9 @@ fn shared_memory_epilogue_transpose[
                     Int(0),
                     Int(crd[3].get_int()),
                     Int(warp_j),
-                    Int(iter_j),
+                    iter_j,
                     Int(warp_i),
-                    Int(iter_i),
+                    iter_i,
                 )
                 var offset = simd_size * RLayout32Bits[result]()(coord)
                 var logical_crd = idx2crd(
@@ -452,9 +452,9 @@ fn shared_memory_epilogue_transpose[
                         Int(crd[0].get_int()),
                         Int(0),
                         Int(crd[2].get_int()),
-                        Int(iter_j),
+                        iter_j,
                         Int(warp_i),
-                        Int(iter_i),
+                        iter_i,
                     )
                     var offset = simd_size * RLayout32Bits[result]()(coord)
                     var logical_crd = idx2crd(
@@ -618,12 +618,14 @@ fn shared_memory_epilogue[
             var section_offset_lower = lower_coord[1][1].get_int()
             var col_offset_lower = lower_coord[1][0].get_int()
 
-            shared_upper_col = section_offset_upper * Int64(
-                num_stages * stageN
-            ) + Int64(col_offset_upper)
-            shared_lower_col = section_offset_lower * Int64(
-                num_stages * stageN
-            ) + Int64(col_offset_lower)
+            shared_upper_col = (
+                section_offset_upper * Int64(num_stages * stageN)
+                + col_offset_upper
+            )
+            shared_lower_col = (
+                section_offset_lower * Int64(num_stages * stageN)
+                + col_offset_lower
+            )
 
         else:
             # can't cast to uint64 as it's not supported yet

@@ -908,4 +908,4 @@ fn get_required_locks_buffer_size_bytes[
 
     var locks_workspace_bytes = num_output_tiles * size_of[Int32]()
 
-    return Int(locks_workspace_bytes)
+    return locks_workspace_bytes
