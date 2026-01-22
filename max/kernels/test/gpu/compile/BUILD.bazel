@@ -31,6 +31,10 @@ _EXTRA_CONSTRAINTS = {
     "test_cuda_target.mojo": ["//:nvidia_gpu"],
     "test_simd.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_wmma_nvptx.mojo": ["//:a100_gpu"],  # SM80 WMMA instructions specific to A100
+    "test_compile_to_llvm_codegen.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: KERN-2360 - external_memory is not supported on Apple silicon
 }
 
 [

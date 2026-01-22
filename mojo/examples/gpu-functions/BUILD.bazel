@@ -73,7 +73,10 @@ modular_run_binary_test(
 mojo_binary(
     name = "reduction",
     srcs = ["reduction.mojo"],
-    target_compatible_with = ["//:has_gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-3157 - atomics not currently supported on Apple silicon
     deps = [
         "//max:layout",
         "@mojo//:std",
