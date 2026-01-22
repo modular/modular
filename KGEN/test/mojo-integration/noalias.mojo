@@ -39,7 +39,7 @@ fn noalias(
 # CHECK-SAME: ptr noalias noundef nonnull readnone captures(none) %0,
 # CHECK-SAME: ptr noalias noundef nonnull readnone captures(none) %1)
 @export
-fn any_life[life: MutOrigin](ref [life]r: Int, mut x: Int):
+fn any_life(ref [MutAnyOrigin]r: Int, mut x: Int):
     pass
 
 
@@ -47,5 +47,5 @@ fn any_life[life: MutOrigin](ref [life]r: Int, mut x: Int):
 # CHECK-SAME: ptr noundef nonnull readnone captures(none) %0,
 # CHECK-SAME: ptr noalias noundef nonnull readnone captures(none) %1)
 @export
-fn imm_life[life: ImmutOrigin](ref [life]r: Int, mut x: Int):
+fn imm_life(ref [ImmutAnyOrigin]r: Int, mut x: Int):
     pass

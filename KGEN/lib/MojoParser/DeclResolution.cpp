@@ -593,6 +593,12 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
 
   StringRef spelling = declRef->spelling;
   if (spelling == "export") {
+    if (!tcSignature.paramList.names.empty()) {
+      emitError(decorator->getLoc(),
+                "@export can not be applied on parametric functions");
+      decl.setErroneous();
+      return failure();
+    }
     // TODO: improve this
     if (callNode)
       applyExport(decorator->getLoc(), decl, baseName, *callNode, funcOp);
