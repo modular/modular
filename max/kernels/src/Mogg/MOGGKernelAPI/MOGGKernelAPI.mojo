@@ -7664,11 +7664,11 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
             transpose_b=True,
             target=target,
         ](
-            managed_tensor_slice_to_ndbuffer(c),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(a_scales),
-            managed_tensor_slice_to_ndbuffer(b_scales),
+            c.to_layout_tensor(),
+            a.to_layout_tensor(),
+            b.to_layout_tensor(),
+            a_scales.to_layout_tensor(),
+            b_scales.to_layout_tensor(),
             cuda_ctx,
         )
 
