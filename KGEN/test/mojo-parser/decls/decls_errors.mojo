@@ -1211,3 +1211,14 @@ fn bad_raises_fn2() raises:
   except e:
     # expected-error @+1 {{cannot implicitly convert 'Int' value to 'String'}}
     var x: String = e
+
+
+# expected-error @+1 {{@export can not be applied on parametric functions}}
+@export
+fn foo(s: SIMD):
+    pass
+
+# expected-error @+1 {{@export can not be applied on parametric functions}}
+@export
+fn bar[n: Int]():
+    pass
