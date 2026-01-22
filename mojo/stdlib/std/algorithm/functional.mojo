@@ -1846,7 +1846,7 @@ fn _elementwise_impl_gpu[
                     for off in range(Int(simd_width)):
                         func[1, rank](
                             _get_start_indices_of_nth_subvolume_uint[0](
-                                UInt(idx * simd_width + UInt(off)),
+                                idx * simd_width + UInt(off),
                                 shape,
                             ).canonicalize()
                         )
@@ -1876,7 +1876,7 @@ fn _elementwise_impl_gpu[
         ]
         ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
-            block_dim=Int(block_size),
+            block_dim=block_size,
             attributes=pdl_launch_attributes(),
         )
     else:
@@ -1885,7 +1885,7 @@ fn _elementwise_impl_gpu[
         ]
         ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
-            block_dim=Int(block_size),
+            block_dim=block_size,
             attributes=pdl_launch_attributes(),
         )
 

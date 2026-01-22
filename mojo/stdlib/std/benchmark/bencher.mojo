@@ -662,9 +662,9 @@ struct Bench(Stringable, Writable):
         if self.config.out_file:
             stem = String(self.config.out_file.value())
             current_suffix = String("")
-            split = String(stem).split(".")
+            split = stem.split(".")
             if len(split) > 1:
-                stem = String(".".join(split[:-1]))
+                stem = ".".join(split[:-1])
                 current_suffix = String(split[-1])
 
             self.config.out_file = Path(
@@ -1214,7 +1214,7 @@ struct Bench(Stringable, Writable):
     fn _get_max_name_width(self, label: StaticString) -> Int:
         var max_val = len(label)
         for i in range(len(self.info_vec)):
-            var namelen = len(String(self.info_vec[i].name))
+            var namelen = len(self.info_vec[i].name)
             max_val = max(max_val, namelen)
         return max_val
 

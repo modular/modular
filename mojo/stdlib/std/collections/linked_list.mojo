@@ -418,7 +418,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Notes:
             Time Complexity: O(n) in len(self).
         """
-        var current = self._get_node_ptr(Int(index(i)))
+        var current = self._get_node_ptr(index(i))
 
         if not current:
             return Optional[Self.ElementType]()

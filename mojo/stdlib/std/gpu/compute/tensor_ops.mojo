@@ -269,7 +269,7 @@ fn _tc_reduce_scalar[
     if out_type == DType.float32 and in_type == DType.float16:
         var d_reg = SIMD[out_type, 2]()
         var a_reg = Scalar[in_type](1)
-        var b_reg = Scalar[in_type](val)
+        var b_reg: Scalar[in_type] = val
         var c_reg = SIMD[out_type, 2]()
 
         mma(d_reg, a_reg, b_reg, c_reg)
@@ -297,7 +297,7 @@ fn _tc_reduce_scalar[
     elif out_type == DType.float32 and in_type == DType.float32:
         var d_reg = SIMD[out_type, 4]()
         var a_reg = SIMD[in_type, 2](1)
-        var b_reg = Scalar[in_type](val)
+        var b_reg: Scalar[in_type] = val
         var c_reg = SIMD[out_type, 4]()
 
         mma(d_reg, a_reg, b_reg, c_reg)
@@ -313,7 +313,7 @@ fn _tc_reduce_scalar[
         ), "unsupported dtype"
         var d_reg = SIMD[out_type, 2]()
         var a_reg = Scalar[in_type](1)
-        var b_reg = Scalar[in_type](val)
+        var b_reg: Scalar[in_type] = val
         var c_reg = SIMD[out_type, 2]()
 
         mma(d_reg, a_reg, b_reg, c_reg)

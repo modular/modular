@@ -454,7 +454,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
             # Advance the pointer in _slice.
             self._slice._slice._data += char_len
             # Decrement the byte-length of _slice.
-            self._slice._slice._len -= Int(char_len)
+            self._slice._slice._len -= char_len
 
         return result
 

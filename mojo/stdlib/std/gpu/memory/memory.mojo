@@ -658,7 +658,7 @@ fn async_copy[
     comptime cp_async_asm = "cp.async." + cache_op + ".shared.global" + cache_hint + l2_prefetch_substr
 
     @parameter
-    if Bool(fill) and Bool(fill.value() == 0):
+    if Bool(fill) and fill.value() == 0:
         debug_assert(
             not predicate, "Predicate bit has to be set False for zero fill."
         )

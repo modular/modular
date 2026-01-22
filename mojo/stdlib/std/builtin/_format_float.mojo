@@ -321,7 +321,7 @@ fn _to_decimal[
         CarrierDType, FP[dtype].total_bits, FP[dtype].cache_bits
     ](cache_index, beta)
     var z_result = _compute_mul[CarrierDType](
-        Scalar[CarrierDType]((two_fc | 1) << beta), cache_index
+        ((two_fc | 1) << beta), cache_index
     )
 
     ################################################################
@@ -561,16 +561,16 @@ fn _divide_by_pow10[
     if CarrierDType == DType.uint64:
 
         @parameter
-        if N == 1 and Bool(n_max <= 4611686018427387908):
+        if N == 1 and n_max <= 4611686018427387908:
             return _umul128_upper64(n, 1844674407370955162)
-        elif N == 3 and Bool(n_max <= 15534100272597517998):
+        elif N == 3 and n_max <= 15534100272597517998:
             return _umul128_upper64(n, 4722366482869645214) >> 8
         else:
             return n / pow(10, N)
     else:
 
         @parameter
-        if N == 1 and Bool(n_max <= 1073741828):
+        if N == 1 and n_max <= 1073741828:
             return (_umul64(n.cast[DType.uint32](), 429496730) >> 32).cast[
                 CarrierDType
             ]()
@@ -644,7 +644,7 @@ fn _check_divisibility_and_divide_by_pow10[
     var magic_number = materialize[divide_magic_number]()[N - 1]
     var prod = (n * magic_number.cast[CarrierDType]()).cast[DType.uint32]()
 
-    var mask = UInt32((UInt32(1) << 16) - 1)
+    var mask = (UInt32(1) << 16) - 1
     var result = (prod & mask) < magic_number
 
     n = (prod >> 16).cast[CarrierDType]()

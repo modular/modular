@@ -1455,10 +1455,9 @@ struct String(
             The length of this string in bytes.
         """
         if self._is_inline():
-            return Int(
-                (self._capacity_or_data & Self.INLINE_LENGTH_MASK)
-                >> Self.INLINE_LENGTH_START
-            )
+            return (
+                self._capacity_or_data & Self.INLINE_LENGTH_MASK
+            ) >> Self.INLINE_LENGTH_START
         else:
             return self._len_or_data
 
@@ -2647,7 +2646,7 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
     var log2 = Int(
         (bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
     )
-    return (n0 + lookup_table[Int(log2)]) >> 32
+    return (n0 + lookup_table[log2]) >> 32
 
 
 fn _calc_initial_buffer_size_int64(n0: UInt64) -> Int:

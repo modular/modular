@@ -605,7 +605,7 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
     var prev_iters: Int = 0
 
     report.warmup_duration = 0
-    var num_warmup_iters = Int(opts.num_warmup_iters)
+    var num_warmup_iters = opts.num_warmup_iters
     if num_warmup_iters:
         prev_dur += opts.timing_fn(num_warmup_iters)
         prev_iters += num_warmup_iters

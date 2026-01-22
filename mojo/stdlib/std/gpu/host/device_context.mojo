@@ -2271,9 +2271,7 @@ struct DeviceFunction[
             _populate_arg_sizes[i]()
 
         for i in range(num_captures):
-            dense_args_sizes[num_args + i] = UInt64(
-                self._func_impl.capture_sizes[i]
-            )
+            dense_args_sizes[num_args + i] = self._func_impl.capture_sizes[i]
 
         if cluster_dim:
             attributes.append(
@@ -2812,9 +2810,9 @@ struct DeviceFunction[
                 translated_arg_idx += 1
 
         for i in range(num_captures):
-            dense_args_sizes[num_passed_args + i] = UInt64(
-                self._func_impl.capture_sizes[i]
-            )
+            dense_args_sizes[
+                num_passed_args + i
+            ] = self._func_impl.capture_sizes[i]
 
         if cluster_dim:
             attributes.append(
