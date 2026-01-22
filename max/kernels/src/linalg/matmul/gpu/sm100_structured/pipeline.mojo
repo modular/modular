@@ -14,6 +14,29 @@
 
 This module provides pipeline synchronization primitives for warp-specialized
 GPU kernels, enabling efficient producer-consumer patterns between warps.
+
+Key abstraction:
+- ProducerConsumerPipeline: Low-level barrier management for N-stage pipelines
+
+Context manager API (recommended):
+    # Producer side (e.g., MMA warp producing to epilogue):
+    with pipeline.produce() as stage:
+        # stage.index() - current stage index
+        # stage.mbar() - barrier for signaling (use with mma_arrive)
+        # ... do work ...
+        # Must signal via stage.mbar() before exit
+    # __exit__ calls producer_step()
+
+    # Consumer side (e.g., epilogue consuming from MMA):
+    with pipeline.consume() as stage:
+        # stage.index() - current stage index
+        # ... do work ...
+    # __exit__ signals consumption complete and calls consumer_step()
+
+Direct API (for special cases):
+    pipeline.wait_producer() / wait_consumer()
+    pipeline.producer_step() / consumer_step()
+    pipeline.producer_mbar(stage) / consumer_mbar(stage)
 """
 
 from sys import size_of
@@ -209,3 +232,275 @@ struct ProducerConsumerPipeline[num_stages: Int]:
         self.wait_producer()
         _ = self.empty[self._consumer_stage].arrive()
         self.consumer_step()
+
+    # =========================================================================
+    # Context Manager API - Encapsulated barrier operations
+    # =========================================================================
+
+    @always_inline
+    fn produce[
+        origin: MutOrigin, //
+    ](ref [origin]self) -> ProduceContext[origin, Self.num_stages]:
+        """Produce one pipeline stage with encapsulated barriers.
+
+        Usage:
+            with pipeline.produce() as stage:
+                # stage.index() gives current stage
+                # stage.mbar() gives barrier for signaling
+                # __exit__ calls producer_step()
+
+        Returns:
+            Context that waits for consumer on enter, advances on exit.
+        """
+        return ProduceContext(Pointer(to=self))
+
+    @always_inline
+    fn consume[
+        origin: MutOrigin, //
+    ](ref [origin]self) -> ConsumeContext[origin, Self.num_stages]:
+        """Consume one pipeline stage with encapsulated barriers.
+
+        Usage:
+            with pipeline.consume() as stage:
+                # stage.index() gives current stage
+                # __exit__ signals consumer done and advances
+
+        Returns:
+            Context that waits for producer on enter, signals+advances on exit.
+        """
+        return ConsumeContext(Pointer(to=self))
+
+    @always_inline
+    fn consume_explicit[
+        origin: MutOrigin, //
+    ](ref [origin]self) -> ExplicitConsumeContext[origin, Self.num_stages]:
+        """Consume one pipeline stage with EXPLICIT barrier arrive.
+
+        Use this for kernels requiring lane-guarded or specialized signaling.
+
+        Usage:
+            with pipeline.consume_explicit() as stage:
+                # ... do work ...
+                if lane_id() < CLUSTER_SIZE:
+                    stage.arrive()  # Lane-guarded arrive
+            # __exit__ only advances, does NOT arrive
+
+        For specialized signaling (e.g., umma_arrive_leader_cta):
+            with pipeline.consume_explicit() as stage:
+                if cta_group == 1:
+                    stage.arrive()
+                else:
+                    umma_arrive_leader_cta(stage.mbar())
+
+        Returns:
+            Context that waits for producer on enter, advances only on exit.
+        """
+        return ExplicitConsumeContext(Pointer(to=self))
+
+
+# =============================================================================
+# Context Managers for ProducerConsumerPipeline
+# =============================================================================
+
+
+@register_passable("trivial")
+struct ProducerStage:
+    """Stage info returned by ProduceContext.__enter__."""
+
+    var _index: UInt32
+    var _mbar: MbarPtr
+
+    @always_inline
+    fn __init__(out self, index: UInt32, mbar: MbarPtr):
+        self._index = index
+        self._mbar = mbar
+
+    @always_inline
+    fn index(self) -> UInt32:
+        """Get the current stage index."""
+        return self._index
+
+    @always_inline
+    fn mbar(self) -> MbarPtr:
+        """Get the barrier to signal when production is complete.
+
+        Caller is responsible for signaling via mma_arrive or similar.
+        """
+        return self._mbar
+
+
+@register_passable("trivial")
+struct ProduceContext[
+    pipeline_origin: MutOrigin,
+    num_stages: Int,
+]:
+    """Context for producing one pipeline stage.
+
+    - __enter__: Waits for consumer to be ready, returns stage info
+    - __exit__: Advances producer to next stage
+
+    Note: The actual production signal (mma_arrive) is kernel-specific
+    and must be called by the user before exiting the context.
+    """
+
+    var pipeline: Pointer[
+        ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
+    ]
+
+    @always_inline
+    fn __init__(
+        out self,
+        pipeline: Pointer[
+            ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
+        ],
+    ):
+        self.pipeline = pipeline
+
+    @always_inline
+    fn __enter__(self) -> ProducerStage:
+        """Wait for consumer and return stage info."""
+        self.pipeline[].wait_consumer()
+        return ProducerStage(
+            self.pipeline[].producer_stage(),
+            self.pipeline[].producer_mbar(self.pipeline[].producer_stage()),
+        )
+
+    @always_inline
+    fn __exit__(self):
+        """Advance producer to next stage."""
+        self.pipeline[].producer_step()
+
+
+@register_passable("trivial")
+struct ConsumerStage:
+    """Stage info returned by ConsumeContext.__enter__."""
+
+    var _index: UInt32
+    var _mbar: MbarPtr
+    var _pipeline_ptr: UnsafePointer[NoneType]  # For accessing empty barriers
+
+    @always_inline
+    fn __init__(out self, index: UInt32):
+        self._index = index
+        self._mbar = MbarPtr()
+        self._pipeline_ptr = UnsafePointer[NoneType]()
+
+    @always_inline
+    fn __init__(out self, index: UInt32, mbar: MbarPtr):
+        self._index = index
+        self._mbar = mbar
+        self._pipeline_ptr = UnsafePointer[NoneType]()
+
+    @always_inline
+    fn index(self) -> UInt32:
+        """Get the current stage index."""
+        return self._index
+
+    @always_inline
+    fn mbar(self) -> MbarPtr:
+        """Get the empty barrier for manual signaling.
+
+        Prefer using `signal()` for cleaner code. Use this for
+        specialized signaling like `umma_arrive_leader_cta`.
+        """
+        return self._mbar
+
+    @always_inline
+    fn arrive(self):
+        """Arrive on this stage's consumer barrier.
+
+        Use with lane-guarded patterns:
+            if lane_id() < CLUSTER_SIZE:
+                stage.arrive()
+
+        For specialized signaling (e.g., umma_arrive_leader_cta),
+        use stage.mbar() directly.
+        """
+        _ = self._mbar[0].arrive()
+
+
+@register_passable("trivial")
+struct ConsumeContext[
+    pipeline_origin: MutOrigin,
+    num_stages: Int,
+]:
+    """Context for consuming one pipeline stage.
+
+    - __enter__: Waits for producer to be ready, returns stage info
+    - __exit__: Signals consumption complete and advances to next stage
+    """
+
+    var pipeline: Pointer[
+        ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
+    ]
+
+    @always_inline
+    fn __init__(
+        out self,
+        pipeline: Pointer[
+            ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
+        ],
+    ):
+        self.pipeline = pipeline
+
+    @always_inline
+    fn __enter__(self) -> ConsumerStage:
+        """Wait for producer and return stage info."""
+        self.pipeline[].wait_producer()
+        return ConsumerStage(self.pipeline[].consumer_stage())
+
+    @always_inline
+    fn __exit__(self):
+        """Signal consumption complete and advance."""
+        _ = self.pipeline[].empty[self.pipeline[].consumer_stage()].arrive()
+        self.pipeline[].consumer_step()
+
+
+@register_passable("trivial")
+struct ExplicitConsumeContext[
+    pipeline_origin: MutOrigin,
+    num_stages: Int,
+]:
+    """Context for consuming one pipeline stage with EXPLICIT arrive.
+
+    Use this when you need lane-guarded or specialized barrier signaling.
+
+    - __enter__: Waits for producer to be ready, returns stage info with mbar
+    - __exit__: Only advances stage counter, does NOT arrive on barrier
+
+    The caller is responsible for calling arrive via stage.arrive() or stage.mbar():
+        with pipeline.consume_explicit() as stage:
+            # ... do work ...
+            if lane_id() < CLUSTER_SIZE:
+                stage.arrive()
+        # __exit__ only calls consumer_step(), not arrive()
+    """
+
+    var pipeline: Pointer[
+        ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
+    ]
+
+    @always_inline
+    fn __init__(
+        out self,
+        pipeline: Pointer[
+            ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
+        ],
+    ):
+        self.pipeline = pipeline
+
+    @always_inline
+    fn __enter__(self) -> ConsumerStage:
+        """Wait for producer and return stage info with barrier access."""
+        self.pipeline[].wait_producer()
+        var stage_idx = self.pipeline[].consumer_stage()
+        return ConsumerStage(
+            stage_idx,
+            self.pipeline[].consumer_mbar(stage_idx),
+        )
+
+    @always_inline
+    fn __exit__(self):
+        """Advance to next stage WITHOUT signaling barrier."""
+        # Caller is responsible for signaling via stage.mbar()
+        self.pipeline[].consumer_step()

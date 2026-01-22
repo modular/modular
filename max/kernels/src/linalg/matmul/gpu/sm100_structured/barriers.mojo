@@ -60,9 +60,11 @@ struct TmemDeallocBarrier[cta_group: Int]:
     supporting both single-CTA and multi-CTA (cta_group=2) configurations.
     """
 
-    var barrier: SMemArrayType[SharedMemBarrier, 1]
+    comptime BarrierStorage = SMemArrayType[SharedMemBarrier, 1]
 
-    fn __init__(out self, barrier: SMemArrayType[SharedMemBarrier, 1]):
+    var barrier: Self.BarrierStorage
+
+    fn __init__(out self, barrier: Self.BarrierStorage):
         """Initialize with shared memory barrier array."""
         self.barrier = barrier
 

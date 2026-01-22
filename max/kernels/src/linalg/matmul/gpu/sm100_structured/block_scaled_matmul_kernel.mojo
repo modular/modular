@@ -96,7 +96,6 @@ from linalg.fp4_utils import (
 )
 from .config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
-from .pipeline import ProducerConsumerPipeline
 
 # Structured kernel imports
 from .matmul_kernels import WarpRole, KernelContext
@@ -609,12 +608,8 @@ struct BlackwellBlockScaledMatmulKernel[
     fn epilogue(
         c_tiles: Self.SmemType.CTileArray,
         c_tma_op: TMATensorTile[Self.c_type, Self.c_layout, Self.c_desc_layout],
-        mma_output_pipeline: ProducerConsumerPipeline[
-            Self.config.num_accum_pipeline_stages
-        ],
-        tmem_addr: UInt32,
+        stage: Self.TileWriterType.Stage,
         work_tile_coord: Tuple[UInt32, UInt32, UInt32],
-        elect_one_warp: Bool,
         M: UInt32,
         N: UInt32,
     ):
@@ -627,35 +622,21 @@ struct BlackwellBlockScaledMatmulKernel[
         - 3D TMA store (M, N, Batch coordinates)
         - tma_wait_pipelined() for TMA wait
 
+        Barrier synchronization (wait/step) is handled by caller via consumer() context.
+
         Args:
             c_tiles: SMEM tile array for C output.
             c_tma_op: TMA descriptor for C matrix.
-            mma_output_pipeline: Pipeline for MMA→epilogue sync.
-            tmem_addr: Base TMEM address for accumulators.
+            stage: OutputStage from consumer() context with pipeline, index, and TMEM.
             work_tile_coord: (m, n, k_start) coordinates.
-            elect_one_warp: Whether this warp should execute (unused).
             M: Problem M dimension.
             N: Problem N dimension.
         """
-        # Wait for MMA to finish and get the current stage
-        var mma_output_stage = mma_output_pipeline.consumer_stage()
-        mma_output_pipeline.wait_producer()
-
-        # Compute TMEM offset for this stage
-        var tmem_offset = (
-            mma_output_stage * UInt32(Self.stage_stride_cols) + tmem_addr
-        )
-
-        # Create OutputStage from raw parts (unified abstraction with TileWriter)
-        var output_stage = Self.TileWriterType.Stage.from_raw(
-            mma_output_pipeline, mma_output_stage, tmem_offset
-        )
-
         # Use BlockScaledTileWriter for structured epilogue
         var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
         tile_writer.write(
             c_tiles,
-            output_stage,
+            stage,
             work_tile_coord,
             (M, N),
         )
@@ -817,23 +798,23 @@ struct BlackwellBlockScaledMatmulKernel[
                 if Self.pdl_level > PDLLevel.OFF:
                     wait_on_dependent_grids()
 
-                while work_iter.has_work():
-                    with work_iter.next() as current:
-                        # CLC throttle prevents each CTA from going ahead
-                        work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
+                with input_pipeline.producer() as producer:
+                    while work_iter.has_work():
+                        with work_iter.next() as current:
+                            work_iter.throttle_signal(
+                                ctx.is_first_cta_in_cluster
+                            )
 
-                        # DO TMA LOAD for full K range
-                        with input_pipeline.producer() as producer:
                             for i in range(
                                 num_iters // UInt32(Self.config.k_group_size)
                             ):
-                                with producer.acquire() as stage:
+                                with producer.acquire() as tiles:  # waits for consumer
                                     Self.load_input_tiles(
                                         a_tma_op,
                                         b_tma_op,
                                         sfa_tma_op,
                                         sfb_tma_op,
-                                        stage,
+                                        tiles,
                                         ctx.peer_cta_coord,
                                         (
                                             UInt(current.m),
@@ -846,25 +827,17 @@ struct BlackwellBlockScaledMatmulKernel[
                                         ctx.elect_one_cta,
                                     )
 
-                        # Ensure all TMA loads complete before advancing work
-                        syncwarp()
+                            syncwarp()
 
-                # Drain pipeline to prevent CTA exit while MMA is still consuming
-                @parameter
-                for i in range(Self.num_group_pipeline_stages):
-                    input_pipeline.pipeline.wait_consumer()
-                    input_pipeline.pipeline.producer_step()
+                    producer.drain()  # wait for consumer before CTA exits
 
         # ===== SCHEDULER WARP =====
         if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-            # Implies each SM will only process initial work, there is no
-            # more work to schedule.
+
             @parameter
             if Self.num_clc_pipeline_stages == 0:
                 return
 
-            # Scheduler warp uses its own iterator that manages both
-            # producer and consumer state, plus throttle signaling
             var sched_iter = scheduler.scheduler_iterator()
 
             with MatmulProfilerType[1](workspace, 0):
@@ -877,13 +850,11 @@ struct BlackwellBlockScaledMatmulKernel[
                     with sched_iter.next():
                         sched_iter.signal_and_advance()
 
-                # Drain all pending CLC requests before kernel exit
                 sched_iter.drain()
 
         # ===== MMA WARP =====
         if WarpRole.is_mma():
             with MatmulProfilerType[2](workspace, 0):
-                # Use structured TMEM allocation and warp context
                 var tmem = Self.Tmem.allocate(smem.tmem_addr())
                 var mma_ctx = Self.MmaCtx(
                     tmem,
@@ -893,7 +864,6 @@ struct BlackwellBlockScaledMatmulKernel[
                     Self.TmemDealloc(smem.tmem_dealloc()),
                 )
 
-                # Compute SF TMEM offsets (block-scaled specific)
                 var sfa_tmem = tmem.addr + UInt32(
                     Self.num_accum_pipeline_stages * Self.MMA_N
                 )
@@ -901,15 +871,13 @@ struct BlackwellBlockScaledMatmulKernel[
                     Self.num_pipeline_stages
                 )
 
-                with mma_ctx:
+                with mma_ctx:  # TMEM lifecycle
                     while work_iter.has_work():
-                        # Prefetch next work BEFORE doing MMA (software pipelining)
-                        with work_iter.next_prefetch():
+                        with work_iter.wait_and_advance():  # blocks on CLC
                             if ctx.elect_one_cta:
-                                with mma_ctx.output_pipeline.producer() as out_stage:
-                                    # Get TMEM offset for this output stage
+                                with mma_ctx.output_pipeline.producer() as output_stage:  # waits for epilogue
                                     var tmem_offset = UInt32(
-                                        out_stage.tmem.offset()
+                                        output_stage.tmem.offset()
                                     )
 
                                     with input_pipeline.consumer() as consumer:
@@ -917,9 +885,9 @@ struct BlackwellBlockScaledMatmulKernel[
                                             num_iters
                                             // UInt32(Self.config.k_group_size)
                                         ):
-                                            with consumer.acquire() as stage:
+                                            with consumer.acquire() as input_tiles:  # waits for TMA
                                                 Self.mma(
-                                                    stage,
+                                                    input_tiles,
                                                     mma_op,
                                                     tmem_offset,
                                                     sfa_tmem,
@@ -937,14 +905,9 @@ struct BlackwellBlockScaledMatmulKernel[
 
         # ===== EPILOGUE WARPS =====
         if WarpRole.is_epilogue():
-            # Wait for MMA to allocate TMEM before reading address
-            Self.MmaEpilogueSync.wait()
+            Self.MmaEpilogueSync.wait()  # wait for MMA to publish TMEM addr
 
-            # Get TMEM address from shared memory
             var tmem = Self.Tmem.from_shared(smem.tmem_addr())
-
-            # Create epilogue context with OutputPipeline
-            # EpilogueCtx manages TMEM lifecycle and dealloc barrier signaling
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
@@ -953,26 +916,24 @@ struct BlackwellBlockScaledMatmulKernel[
                 Self.TmemDealloc(smem.tmem_dealloc()),
             )
 
-            with epi_ctx:
+            with epi_ctx:  # signals TMEM dealloc on exit
                 var tile_idx = 0
 
                 while work_iter.has_work():
                     with work_iter.next() as current:
                         with MatmulProfilerType[3](workspace, tile_idx):
-                            Self.epilogue(
-                                c_tiles,
-                                c_tma_op,
-                                epi_ctx.output_pipeline.pipeline,
-                                tmem.addr,
-                                work_tile_coord=(
-                                    current.m,
-                                    current.n,
-                                    current.k_start,
-                                ),
-                                elect_one_warp=ctx.elect_one_warp,
-                                M=mnk[0],
-                                N=mnk[1],
-                            )
-                            epi_ctx.output_pipeline.pipeline.consumer_step()
+                            with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
+                                Self.epilogue(
+                                    c_tiles,
+                                    c_tma_op,
+                                    output_stage,
+                                    work_tile_coord=(
+                                        current.m,
+                                        current.n,
+                                        current.k_start,
+                                    ),
+                                    M=mnk[0],
+                                    N=mnk[1],
+                                )
 
                     tile_idx += 1

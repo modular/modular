@@ -107,8 +107,10 @@ _B200_TESTS = [
     "test_matmul_sm100_structured_quick.mojo",
     "test_matmul_sm100_blockwise_fp8.mojo",
     "test_grouped_matmul_dynamic_scaled_fp8.mojo",
-    "test_matmul_sm100_1sm_blockwise_fp8.mojo",
-    "test_matmul_sm100_2sm_blockwise_fp8.mojo",
+    "test_matmul_sm100_1sm_blockwise_fp8_part_a.mojo",
+    "test_matmul_sm100_1sm_blockwise_fp8_part_b.mojo",
+    "test_matmul_sm100_2sm_blockwise_fp8_part_a.mojo",
+    "test_matmul_sm100_2sm_blockwise_fp8_part_b.mojo",
     "test_grouped_matmul_sm100_blockwise_fp8.mojo",
     "test_batched_matmul_sm100_scaled.mojo",
     "test_matmul_sm100_epilogue.mojo",
@@ -184,6 +186,10 @@ _GPU_MEMORY = {
         enable_assertions = src not in [
             "test_matmul_sm100_1sm_blockwise_fp8.mojo",  # KERN-2339: bounds check reveals kernel bug
             "test_matmul_sm100_2sm_blockwise_fp8.mojo",  # KERN-2339: bounds check reveals kernel bug
+            "test_matmul_sm100_1sm_blockwise_fp8_part_a.mojo",  # KERN-2339: split test
+            "test_matmul_sm100_1sm_blockwise_fp8_part_b.mojo",  # KERN-2339: split test
+            "test_matmul_sm100_2sm_blockwise_fp8_part_a.mojo",  # KERN-2339: split test
+            "test_matmul_sm100_2sm_blockwise_fp8_part_b.mojo",  # KERN-2339: split test
         ],
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),

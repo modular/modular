@@ -43,11 +43,11 @@ from utils.index import Index, IndexList, StaticTuple
 from utils.numerics import get_accum_type, max_finite, min_finite
 
 from .matmul import matmul
-from .matmul.gpu.sm100.warp_specialized_blockwise_fp8 import (
-    sm100_warp_specialized_blockwise_fp8,
+from .matmul.gpu.sm100_structured.blockwise_fp8_matmul import (
+    blockwise_fp8_matmul,
 )
 from .utils import elementwise_epilogue_type
-from linalg.matmul.gpu.sm100.config import MatmulConfig
+from linalg.matmul.gpu.sm100_structured.config import MatmulConfig
 
 
 comptime logger = Logger()
@@ -1286,7 +1286,7 @@ fn blockwise_scaled_fp8_with_epilogue[
             if not c.ptr:
                 raise "c must be allocated!"
 
-            sm100_warp_specialized_blockwise_fp8[
+            blockwise_fp8_matmul[
                 transpose_b=transpose_b,
                 config=matmul_config,
             ](
@@ -1326,7 +1326,7 @@ fn blockwise_scaled_fp8_with_epilogue[
                 var m = c.dim[0]()
                 var n = c.dim[1]()
 
-                sm100_warp_specialized_blockwise_fp8[
+                blockwise_fp8_matmul[
                     transpose_b=transpose_b,
                     config=matmul_config,
                 ](
