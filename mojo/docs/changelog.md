@@ -278,32 +278,110 @@ what we publish.
 
 ### Library changes
 
-- [Issue #5734](https://github.com/modular/modular/issues/5734): Added
-  `is_struct_type[T]()` function to the `reflection` module. This function
-  returns `True` if `T` is a Mojo struct type, `False` otherwise. It is useful
-  for guarding reflection code that uses struct-specific APIs like
-  `struct_field_count` or `struct_field_names` to avoid compiler errors on
-  non-struct types (such as MLIR primitive types). Use `@parameter if` with this
-  function since the guarded reflection APIs are evaluated at compile time.
+- The `reflection` module has been significantly expanded with new compile-time
+  introspection capabilities. The module has moved from `compile.reflection` to
+  a top-level `reflection` module (update imports from
+  `from compile.reflection import ...` to `from reflection import ...`).
+  Internally, the module is now organized into `type_info` and `struct_fields`
+  submodules, though the public API via `from reflection import ...` remains
+  unchanged.
 
-- [Issue #5735](https://github.com/modular/modular/issues/5735): Added
-  `get_base_type_name[T]()` function to the `reflection` module that returns
-  the unqualified name of a parameterized type's base type. For example,
-  `get_base_type_name[List[Int]]()` returns `"List"`. This is useful for
-  metaprogramming and other reflection-based code that needs to identify
-  collection types regardless of their element types.
+  **Struct field introspection** - New APIs for compile-time struct analysis:
 
-- The `reflection` module has been reorganized into `type_info` and
-  `struct_fields` submodules. The public API via `from reflection import ...`
-  remains unchanged. Users who were importing internal symbols directly from
-  `reflection.reflection` should update their imports to use
-  `reflection.type_info` or `reflection.struct_fields` as appropriate.
+  - `struct_field_count[T]()` - Returns the number of fields in a struct
+  - `struct_field_names[T]()` - Returns field names as
+    `InlineArray[StaticString, N]`
+  - `struct_field_types[T]()` - Returns a variadic of all field types
+  - `struct_field_index_by_name[T, name]()` - Returns field index by name
+  - `struct_field_type_by_name[T, name]()` - Returns field type wrapped in
+    `ReflectedType`
 
-- The `Hashable` trait now has a default implementation of
-  `__hash__[H: Hasher](self, mut hasher: H)` that uses
-  reflection to automatically hash all struct fields.
-  This means simple structs can conform to `Hashable` without
-  implementing any methods:
+  These APIs work with both concrete types and generic type parameters:
+
+  ```mojo
+  fn print_fields[T: AnyType]():
+      comptime names = struct_field_names[T]()
+      comptime types = struct_field_types[T]()
+      @parameter
+      for i in range(struct_field_count[T]()):
+          print(names[i], get_type_name[types[i]]())
+  ```
+
+  **Field access by index** - Two new magic functions enable index-based field
+  access without copying:
+
+  - `__struct_field_type_at_index(T, idx)` - Returns field type at index
+  - `__struct_field_ref(idx, ref s)` - Returns a reference to the field
+
+  Unlike `kgen.struct.extract` which copies, `__struct_field_ref` returns a
+  reference, enabling reflection utilities to work with non-copyable types:
+
+  ```mojo
+  fn print_all_fields[T: AnyType](ref s: T):
+      comptime names = struct_field_names[T]()
+      @parameter
+      for i in range(struct_field_count[T]()):
+          print(names[i], "=", __struct_field_ref(i, s))
+  ```
+
+  **Type introspection utilities:**
+
+  - `is_struct_type[T]()` - Returns `True` if `T` is a Mojo struct type. Useful
+    for guarding reflection code that uses struct-specific APIs to avoid
+    compiler errors on non-struct types (e.g., MLIR primitive types). Use
+    `@parameter if` since these APIs are evaluated at compile time.
+    ([Issue #5734](https://github.com/modular/modular/issues/5734))
+
+  - `get_base_type_name[T]()` - Returns the unqualified name of a parameterized
+    type's base type. For example, `get_base_type_name[List[Int]]()` returns
+    `"List"`. Useful for identifying collection types regardless of element
+    types. ([Issue #5735](https://github.com/modular/modular/issues/5735))
+
+  **Source location introspection:**
+
+  - `SourceLocation` - A struct holding file name, line, and column information
+  - `source_location()` - Returns the location where it's called
+  - `call_location()` - Returns the location where the caller was invoked
+    (requires the caller to be `@always_inline`)
+
+  These were previously internal APIs (`_SourceLocation`, `__source_location`,
+  `__call_location`) in `builtin._location`. The old module has been removed.
+
+  ```mojo
+  from reflection import source_location, call_location, SourceLocation
+
+  fn main():
+      var loc = source_location()
+      print(loc)  # main.mojo:5:15
+
+  @always_inline
+  fn log_here():
+      var caller_loc = call_location()
+      print("Called from:", caller_loc)
+  ```
+
+  Note: These APIs do not work correctly in parameter expressions (comptime
+  contexts return placeholder values).
+
+  **Trait conformance checking** - The `conforms_to` builtin now accepts types
+  from reflection APIs like `struct_field_types[T]()`, enabling conformance
+  checks on dynamically obtained field types:
+
+  ```mojo
+  @parameter
+  for i in range(struct_field_count[MyStruct]()):
+      comptime field_type = struct_field_types[MyStruct]()[i]
+      @parameter
+      if conforms_to(field_type, Copyable):
+          print("Field", i, "is Copyable")
+  ```
+
+- Several traits now have default implementations that use reflection to
+  automatically derive behavior from struct fields. This means simple structs
+  can conform to these traits without implementing any methods - all fields
+  just need to conform to the same trait:
+
+  **`Hashable`** - Default `__hash__` hashes all fields:
 
   ```mojo
   @fieldwise_init
@@ -311,15 +389,10 @@ what we publish.
       var x: Float64
       var y: Float64
 
-  var p = Point(1.5, 2.7)
-  hash(p)
+  hash(Point(1.5, 2.7))  # Works automatically
   ```
 
-  All fields must conform to `Hashable`. Override `__hash__` for custom hashing.
-
-- The `Writable` trait now has a default implementation of `write_to()` that uses
-  reflection to automatically format all struct fields. This means simple structs
-  can conform to `Writable` without implementing any methods:
+  **`Writable`** - Default `write_to()` formats all fields:
 
   ```mojo
   @fieldwise_init
@@ -327,19 +400,10 @@ what we publish.
       var x: Float64
       var y: Float64
 
-  var p = Point(1.5, 2.7)
-  print(p)  # Point(x=1.5, y=2.7)
+  print(Point(1.5, 2.7))  # Point(x=1.5, y=2.7)
   ```
 
-  All fields must conform to `Writable`. Override `write_to()` for custom
-  formatting.
-
-- `InlineArray` no longer conforms to `ImplicitlyCopyable`.
-  Users must explicitly copy arrays or take references.
-
-- The `Equatable` trait now has a default implementation of `__eq__()` that uses
-  reflection to compare all fields. This means simple structs can conform to
-  `Equatable` without implementing any methods:
+  **`Equatable`** - Default `__eq__()` compares all fields:
 
   ```mojo
   @fieldwise_init
@@ -347,16 +411,15 @@ what we publish.
       var x: Int
       var y: Int
 
-  var p1 = Point(1, 2)
-  var p2 = Point(1, 2)
-  print(p1 == p2)  # True
+  print(Point(1, 2) == Point(1, 2))  # True
   ```
 
-  All fields must conform to `Equatable`. If a field doesn't implement
-  `Equatable`, a clear compile-time error is produced. Override `__eq__()` for
-  custom equality semantics. Note: The default performs memberwise equality,
-  which may not be appropriate for types with floating-point fields (due to NaN
-  semantics).
+  Note: The default `Equatable` performs memberwise equality, which may not be
+  appropriate for types with floating-point fields (due to NaN semantics).
+  Override any of these methods for custom behavior.
+
+- `InlineArray` no longer conforms to `ImplicitlyCopyable`.
+  Users must explicitly copy arrays or take references.
 
 - `PythonObject` now supports implicit conversion from `None`, allowing more
   natural Python-like code:
@@ -407,133 +470,6 @@ what we publish.
   minor performance win in some cases.
 
 - `Variadic` now has `zip_types`, `zip_values`, and `slice_types`.
-
-- The `reflection` module has been moved from `compile.reflection` to a top-level
-  `reflection` module. Update imports from `from compile.reflection import ...`
-  to `from reflection import ...`.
-
-- The `reflection` module now supports compile-time struct field introspection:
-
-  - `struct_field_count[T]()` returns the number of fields
-  - `struct_field_names[T]()` returns an `InlineArray[StaticString, N]` of
-    all field names
-  - `struct_field_types[T]()` returns a variadic of all field types
-  - `struct_field_index_by_name[T, name]()` returns the index of a field by name
-  - `struct_field_type_by_name[T, name]()` returns the type of a field,
-    wrapped in a `ReflectedType` struct
-
-  These APIs work with both concrete types and generic type parameters,
-  enabling generic serialization, comparison, and other reflection-based
-  utilities.
-
-  Example iterating over fields (works with generics):
-
-  ```mojo
-  fn print_fields[T: AnyType]():
-      comptime names = struct_field_names[T]()
-      comptime types = struct_field_types[T]()
-      @parameter
-      for i in range(struct_field_count[T]()):
-          print(names[i], get_type_name[types[i]]())
-
-  fn main():
-      print_fields[Point]()  # Works with any struct!
-  ```
-
-  Example looking up a field by name:
-
-  ```mojo
-  comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
-  comptime field_type = struct_field_type_by_name[Point, "y"]()
-  var value: field_type.T = 3.14  # field_type.T is Float64
-  ```
-
-- Two new magic functions have been added for index-based struct field access:
-
-  - `__struct_field_type_at_index(T, idx)` returns the type of the field at the
-    given index.
-  - `__struct_field_ref(idx, ref s)` returns a reference to the field at the
-    given index.
-
-  Unlike `kgen.struct.extract` which copies the field value, `__struct_field_ref`
-  returns a reference, enabling reflection-based utilities to work with
-  non-copyable types:
-
-  ```mojo
-  struct Container:
-      var id: Int
-      var resource: NonCopyableResource  # Cannot be copied!
-
-  fn inspect(ref c: Container):
-      # Get references to fields without copying
-      ref id_ref = __struct_field_ref(0, c)
-      ref resource_ref = __struct_field_ref(1, c)
-
-      print("id:", id_ref)
-      print("resource:", resource_ref.data)
-
-      # Mutation through reference also works
-      __struct_field_ref(0, c) = 42
-  ```
-
-  The index can be either a literal integer or a parametric index (such as a
-  loop variable in a `@parameter for` loop), enabling generic field iteration:
-
-  ```mojo
-  fn print_all_fields[T: AnyType](ref s: T):
-      comptime names = struct_field_names[T]()
-      @parameter
-      for i in range(struct_field_count[T]()):
-          print(names[i], "=", __struct_field_ref(i, s))
-
-  fn main():
-      var c = Container(42, NonCopyableResource(100))
-      print_all_fields(c)  # Works with any struct!
-  ```
-
-  This enables implementing generic Debug traits and serialization utilities
-  that work with any struct, regardless of whether its fields are copyable.
-
-- The `conforms_to` builtin now accepts types from the reflection APIs like
-  `struct_field_types[T]()`. This enables checking trait conformance on
-  dynamically obtained field types:
-
-  ```mojo
-  @parameter
-  for i in range(struct_field_count[MyStruct]()):
-      comptime field_type = struct_field_types[MyStruct]()[i]
-      @parameter
-      if conforms_to(field_type, Copyable):
-          print("Field", i, "is Copyable")
-  ```
-
-- The `reflection` module now provides source location introspection APIs:
-
-  - `SourceLocation` - A struct holding file name, line, and column information
-  - `source_location()` - Returns the location where it's called
-  - `call_location()` - Returns the location where the caller was invoked
-    (requires the caller to be `@always_inline`)
-
-  These were previously internal APIs (`_SourceLocation`, `__source_location`,
-  `__call_location`) in `builtin._location`. The old module has been removed.
-
-  Example:
-
-  ```mojo
-  from reflection import source_location, call_location, SourceLocation
-
-  fn main():
-      var loc = source_location()
-      print(loc)  # main.mojo:5:15
-
-  @always_inline
-  fn log_here():
-      var caller_loc = call_location()
-      print("Called from:", caller_loc)
-  ```
-
-  Note: These APIs do not work correctly in parameter expressions (comptime
-  contexts return placeholder values).
 
 - The `Copyable` trait now refines the `Movable` trait.  This means that structs
   and generic algorithms that already require `Copyable` don't need to also
@@ -969,9 +905,21 @@ or removed in future releases.
   (NUL) when passed an empty span. Instead, a `debug_assert` now enforces the
   requirement that the input span be non-empty, consistent with the function's
   existing safety contract.
-- [Issue #5732](https://github.com/modular/modular/issues/5732): Compiler
-  crash when using `get_type_name` with types containing constructor calls in
-  their parameters (like `A[B(True)]`) when extracted via `struct_field_types`.
+- Several reflection-related compiler crashes have been fixed:
+  - [Issue #5731](https://github.com/modular/modular/issues/5731): Reflection
+    functions now work correctly on builtin types like `Int`, `NoneType`, and
+    `Origin`.
+  - [Issue #5732](https://github.com/modular/modular/issues/5732): `get_type_name`
+    now handles types with constructor calls in their parameters (like
+    `A[B(True)]`) when extracted via `struct_field_types`.
+  - [Issue #5723](https://github.com/modular/modular/issues/5723): `get_type_name`
+    now handles nested parametric types from `struct_field_types`.
+  - [Issue #5754](https://github.com/modular/modular/issues/5754):
+    `struct_field_type_by_name` now works correctly when using `ReflectedType.T`
+    as a type annotation.
+  - [Issue #5808](https://github.com/modular/modular/issues/5808):
+    `rebind` and `rebind_var` now accept downcasted types from `struct_field_types`,
+    allowing patterns like `rebind_var[types[i]](downcast[types[i], Trait]()^)`.
 - [Issue #1850](https://github.com/modular/modular/issues/1850): Mojo assumes
   string literal at start of a function is a doc comment
 - [Issue #4501](https://github.com/modular/modular/issues/4501): Incorrect
@@ -990,14 +938,3 @@ or removed in future releases.
   when should be implicit conversion error.
 - [Issue #5635](https://github.com/modular/modular/issues/5635): `Deque` shrink
   reallocation incorrectly handled empty deque with `capacity > min_capacity`.
-- [Issue #5723](https://github.com/modular/modular/issues/5723): Compiler crash
-  when using `get_type_name` with nested parametric types from `struct_field_types`.
-- [Issue #5731](https://github.com/modular/modular/issues/5731): Compiler crash
-  when using reflection functions on builtin types like `Int`, `NoneType`, or
-  `Origin`.
-- [Issue #5754](https://github.com/modular/modular/issues/5754):
-  `struct_field_type_by_name` now works correctly when using `ReflectedType.T`
-  as a type annotation.
-- [Issue #5808](https://github.com/modular/modular/issues/5808):
-  `rebind` and `rebind_var` now accept downcasted types from `struct_field_types`,
-  allowing patterns like `rebind_var[types[i]](downcast[types[i], Trait]()^)`.
