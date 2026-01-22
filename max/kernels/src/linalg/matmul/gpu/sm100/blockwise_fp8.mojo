@@ -303,29 +303,33 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                 a_smem_tile_3D_view,
                 tma_mbar[0],
                 (
-                    UInt(k_iter) * UInt(BK),
-                    block_idx.y * UInt(BM),
-                    UInt(block_idx.z),
+                    Int(k_iter) * BK,
+                    Int(block_idx.y) * BM,
+                    Int(block_idx.z),
                 ),
             )
 
             a_scales_tma_op.async_copy_3d(
                 a_scales_smem_tile_3D_view,
                 tma_mbar[0],
-                (block_idx.y * UInt(BM), UInt(k_iter), UInt(block_idx.z)),
+                (
+                    Int(block_idx.y) * BM,
+                    Int(k_iter),
+                    Int(block_idx.z),
+                ),
             )
 
             b_tma_op.async_copy_3d(
                 b_smem_tile_3D_view,
                 tma_mbar[0],
                 (
-                    UInt(k_iter) * UInt(BK),
-                    block_idx.x * UInt(BN),
-                    block_idx.z,
+                    Int(k_iter) * BK,
+                    Int(block_idx.x) * BN,
+                    Int(block_idx.z),
                 ) if transpose_b else (
-                    block_idx.x * UInt(BN),
-                    UInt(k_iter) * UInt(BK),
-                    block_idx.z,
+                    Int(block_idx.x) * BN,
+                    Int(k_iter) * BK,
+                    Int(block_idx.z),
                 ),
             )
 

@@ -139,7 +139,7 @@ fn test_tma_load_kernel[
         tma_tile.async_copy(
             tile,
             mbar[0],
-            (block_idx.x * UInt(tileN), block_idx.y * UInt(tileM)),
+            (Int(block_idx.x) * tileN, Int(block_idx.y) * tileM),
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
@@ -193,7 +193,7 @@ fn test_tma_multiple_loads_kernel[
             tma_tile.async_copy(
                 tile,
                 mbar[0],
-                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
+                (i * tileN, Int(block_idx.y) * tileM),
             )
         # Ensure all threads sees initialized mbarrier
         barrier()
@@ -714,12 +714,12 @@ fn test_tma_loads_two_buffers_kernel[
             a_tma_tile.async_copy(
                 a_tile,
                 mbar[0],
-                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
+                (i * tileN, Int(block_idx.y) * tileM),
             )
             b_tma_tile.async_copy(
                 b_tile,
                 mbar[0],
-                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
+                (i * tileN, Int(block_idx.y) * tileM),
             )
 
         # Ensure all threads sees initialized mbarrier
@@ -873,12 +873,12 @@ fn test_tma_loads_and_store_two_buffers_kernel[
             a_tma_src_tile.async_copy(
                 a_tile,
                 mbar[0],
-                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
+                (i * tileN, Int(block_idx.y) * tileM),
             )
             b_tma_src_tile.async_copy(
                 b_tile,
                 mbar[0],
-                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
+                (i * tileN, Int(block_idx.y) * tileM),
             )
 
         # Ensure all threads sees initialized mbarrier

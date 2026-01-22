@@ -88,9 +88,9 @@ fn test_tma_3d_load_kernel[
             smem_tile,
             mbar[0],
             (
-                UInt(block_idx.x * UInt(cta_tile_dim2)),
-                UInt(block_idx.y * UInt(cta_tile_dim1)),
-                UInt(block_idx.z * UInt(cta_tile_dim0)),
+                Int(block_idx.x) * cta_tile_dim2,
+                Int(block_idx.y) * cta_tile_dim1,
+                Int(block_idx.z) * cta_tile_dim0,
             ),
         )
     # Ensure all threads sees initialized mbarrier

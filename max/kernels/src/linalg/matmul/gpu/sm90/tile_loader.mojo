@@ -183,7 +183,7 @@ struct TileLoaderTMA[
             self.tma_op[].async_copy(
                 dst,
                 mem_barrier[],
-                coords,
+                (Int(coords[0]), Int(coords[1])),
             )
 
 

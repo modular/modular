@@ -458,13 +458,13 @@ fn grouped_matmul_kernel_sm100[
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
-                    (UInt(k_start), UInt(a_m_start)),
+                    (Int(k_start), Int(a_m_start)),
                 )
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
                     tma_mbar[0],
-                    (UInt(k_start), UInt(b_n_start)),
+                    (Int(k_start), Int(b_n_start)),
                 )
         # wait for the copy to finish
         tma_mbar[0].wait(tma_phase)

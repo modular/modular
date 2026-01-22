@@ -273,9 +273,9 @@ fn tma_umma_kernel_ss[
         if elect_one_thread:
             tma_mbar[0].expect_bytes(expected_bytes)
 
-            var m = block_idx.y * UInt(BM)
-            var n = block_idx.x * UInt(BN)
-            var k = i * UInt(BK)
+            var m = Int(block_idx.y) * BM
+            var n = Int(block_idx.x) * BN
+            var k = Int(i) * BK
             a_tma_op.async_copy(
                 a_smem_tile,
                 tma_mbar[0],
@@ -559,9 +559,9 @@ fn tma_umma_kernel_ts[
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
-                (i * UInt(BK), block_idx.x * UInt(BN)) if transpose_b else (
-                    block_idx.x * UInt(BN),
-                    i * UInt(BK),
+                (Int(i) * BK, Int(block_idx.x) * BN) if transpose_b else (
+                    Int(block_idx.x) * BN,
+                    Int(i) * BK,
                 ),
             )
 

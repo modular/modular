@@ -320,19 +320,19 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         if elect_one_thread:
             tma_mbar[0].expect_bytes(expected_bytes)
 
-            var k_start = UInt(k_iter) * UInt(BK)
+            var k_start = Int(k_iter) * BK
             a_tma_op.async_copy(
                 a_smem_tile,
                 tma_mbar[0],
-                (UInt(k_start), UInt(a_m_start)),
+                (k_start, Int(a_m_start)),
             )
 
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
-                (UInt(k_start), UInt(b_n_start)) if transpose_b else (
-                    UInt(b_n_start),
-                    UInt(k_start),
+                (k_start, Int(b_n_start)) if transpose_b else (
+                    Int(b_n_start),
+                    k_start,
                 ),
             )
 
@@ -834,7 +834,7 @@ fn load_AB[
         a_scales_tma_op.async_copy[cta_group](
             a_scales_smem_tile,
             tma_mbar[0],
-            (UInt(work_tile_coord[0]), UInt(iter_idx)),
+            (Int(work_tile_coord[0]), Int(iter_idx)),
         )
 
 

@@ -30,6 +30,7 @@ from ._utils import (
     int_list_to_tuple,
     parse_shape,
     update_bench_config_args,
+    ufloordiv,
 )
 from .amd_configs import TuningConfigAMD, TuningTableAMD
 from .dispatch_utils import Table, TuningConfig

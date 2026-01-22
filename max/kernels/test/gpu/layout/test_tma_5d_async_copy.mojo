@@ -97,11 +97,11 @@ fn test_tma_5d_load_kernel[
             smem_tile,
             mbar[0],
             (
-                UInt(idx4 * cta_tile_dim4),
-                UInt(idx3 * cta_tile_dim3),
-                UInt(idx2 * cta_tile_dim2),
-                UInt(idx1 * cta_tile_dim1),
-                UInt(idx0 * cta_tile_dim0),
+                idx4 * cta_tile_dim4,
+                idx3 * cta_tile_dim3,
+                idx2 * cta_tile_dim2,
+                idx1 * cta_tile_dim1,
+                idx0 * cta_tile_dim0,
             ),
         )
     # Ensure all threads see initialized mbarrier

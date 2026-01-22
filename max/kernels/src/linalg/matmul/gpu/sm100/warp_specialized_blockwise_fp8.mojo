@@ -242,7 +242,7 @@ fn load_AB[
         a_scales_tma_op.async_copy[cta_group](
             a_scales_smem_tile,
             tma_mbar[0],
-            (work_tile_coord[0] * UInt(BM), iter_idx),
+            (Int(work_tile_coord[0]) * BM, Int(iter_idx)),
         )
 
 

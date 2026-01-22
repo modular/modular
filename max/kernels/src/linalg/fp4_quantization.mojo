@@ -749,7 +749,7 @@ fn quantize_dynamic_scaled_async_kernel[
     comptime output_smem_tile_size = output_cta_tile_layout.size()
     comptime scales_smem_tile_size = scales_tma_tile_layout.size()
 
-    comptime SF_K_GROUP_SIZE = SF_VECTOR_SIZE * SF_ATOM_K
+    comptime SF_K_GROUP_SIZE: UInt = SF_VECTOR_SIZE * SF_ATOM_K
     comptime STAGE_GROUP_SIZE = SF_K_GROUP_SIZE // NUM_PIPELINES_STAGES
 
     __comptime_assert (
@@ -835,9 +835,11 @@ fn quantize_dynamic_scaled_async_kernel[
                     smem_tile,
                     tma_mbar[iter_idx],
                     (
-                        UInt(block_idx.y * SF_K_GROUP_SIZE)
-                        + UInt(iter_idx * STAGE_GROUP_SIZE),
-                        UInt(block_idx.x * UInt(SF_MN_GROUP_SIZE)),
+                        Int(
+                            (block_idx.y * SF_K_GROUP_SIZE)
+                            + (iter_idx * STAGE_GROUP_SIZE)
+                        ),
+                        Int(block_idx.x) * SF_MN_GROUP_SIZE,
                     ),
                 )
 

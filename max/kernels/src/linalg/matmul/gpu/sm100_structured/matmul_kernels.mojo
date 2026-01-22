@@ -1678,17 +1678,17 @@ struct BlackwellMatmulSM100FallbackKernel[
                 a_tma_op.async_copy(
                     a_smem_tile,
                     tma_mbar[0],
-                    (UInt(i) * UInt(Self.BK), block_idx.y * UInt(Self.BM)),
+                    (Int(i) * Self.BK, Int(block_idx.y) * Self.BM),
                 )
                 b_tma_op.async_copy(
                     b_smem_tile,
                     tma_mbar[0],
                     (
-                        UInt(i) * UInt(Self.BK),
-                        block_idx.x * UInt(Self.BN),
+                        Int(i) * Self.BK,
+                        Int(block_idx.x) * Self.BN,
                     ) if Self.transpose_b else (
-                        block_idx.x * UInt(Self.BN),
-                        UInt(i) * UInt(Self.BK),
+                        Int(block_idx.x) * Self.BN,
+                        Int(i) * Self.BK,
                     ),
                 )
 

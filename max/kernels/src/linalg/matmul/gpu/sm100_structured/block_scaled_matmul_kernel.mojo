@@ -508,23 +508,23 @@ struct BlackwellBlockScaledMatmulKernel[
                     sfa_tile,
                     barrier[0],
                     (
-                        UInt(0),
-                        UInt(0),
-                        UInt(iter_idx + j) * UInt(Self.config.num_sf_k_tiles),
-                        work_tile_coord[0] * UInt(Self.BM // SF_MN_GROUP_SIZE),
-                        UInt(batch_coord),
+                        0,
+                        0,
+                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(work_tile_coord[0]) * (Self.BM // SF_MN_GROUP_SIZE),
+                        Int(batch_coord),
                     ),
                 )
                 sfb_tma_op.async_copy_5d[Self.cta_group](
                     sfb_tile,
                     barrier[0],
                     (
-                        UInt(0),
-                        UInt(0),
-                        UInt(iter_idx + j) * UInt(Self.config.num_sf_k_tiles),
-                        work_tile_coord[1]
-                        * UInt(Self.MMA_N // SF_MN_GROUP_SIZE),
-                        UInt(batch_coord),
+                        0,
+                        0,
+                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(work_tile_coord[1])
+                        * (Self.MMA_N // SF_MN_GROUP_SIZE),
+                        Int(batch_coord),
                     ),
                 )
 

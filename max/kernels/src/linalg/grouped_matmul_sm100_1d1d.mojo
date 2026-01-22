@@ -107,6 +107,8 @@ from linalg.matmul.gpu.sm100.matmul import (
 )
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
+from internal_utils import ufloordiv
+
 
 @always_inline
 fn copy_accum_to_gmem[
@@ -991,11 +993,11 @@ fn load_AB[
                 sfa_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(iter_idx + j) * UInt(num_sf_k_tiles),
-                    work_tile_coord[0] // UInt(SF_MN_GROUP_SIZE)
-                    + UInt(a_scale_offset_vec[0]),
+                    0,
+                    0,
+                    Int(iter_idx + j) * Int(num_sf_k_tiles),
+                    ufloordiv(Int(work_tile_coord[0]), SF_MN_GROUP_SIZE)
+                    + Int(a_scale_offset_vec[0]),
                 ),
             )
 
@@ -1005,11 +1007,13 @@ fn load_AB[
                 sfb_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(iter_idx + j) * UInt(num_sf_k_tiles),
-                    (work_tile_coord[1] + UInt(b_offset))
-                    // UInt(SF_MN_GROUP_SIZE),
+                    0,
+                    0,
+                    Int(iter_idx + j) * Int(num_sf_k_tiles),
+                    ufloordiv(
+                        Int(work_tile_coord[1]) + Int(b_offset),
+                        SF_MN_GROUP_SIZE,
+                    ),
                 ),
             )
 
