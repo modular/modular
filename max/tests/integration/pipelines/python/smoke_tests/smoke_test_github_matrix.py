@@ -60,6 +60,12 @@ MODELS = {
         "sglang@B200",
         "vllm@B200",
     ],
+    "deepseek-ai/deepseek-r1-0528": [
+        "H100",
+        "B200",
+        "MI355",
+        "2xH100",
+    ],
     # E2EOPT-571: DeepSeek v2 lite chat not working on MAX
     "deepseek-ai/deepseek-v2-lite-chat": [
         "max-ci",
