@@ -115,6 +115,9 @@ dependencies = [
   # nsight-sql-tool
   "sqlalchemy>=2.0.29",
 
+  #accuracy_testing_framework
+  "ml_dtypes",
+
   # perfsect
   "responses>=0.23.3",
 
