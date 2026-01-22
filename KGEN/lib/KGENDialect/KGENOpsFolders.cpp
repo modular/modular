@@ -1469,17 +1469,22 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
 
   // Move the address over the elements before the one we are reading.
   unsigned index = idxAttr.getInt();
-  if (index >= structType.getNumElements())
+  auto numElements = structType.getNumElements();
+  if (!numElements || index >= *numElements)
     return ErrorTree(getLoc(), "struct field index out of bounds");
 
+  auto elementTypes = structType.getElementTypes();
+  if (!elementTypes)
+    return ErrorTree(getLoc(), "struct element types not resolved");
+
   for (unsigned i = 0; i != index; ++i) {
-    auto dl = cast<DataLayoutInterface>(structType.getElementTypes()[i]);
+    auto dl = cast<DataLayoutInterface>((*elementTypes)[i]);
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
     offset += *dl.getTypeSize(state.getTarget());
   }
 
   // Align the address to the target element.
-  Type targetType = structType.getElementTypes()[index];
+  Type targetType = (*elementTypes)[index];
   offset = llvm::alignTo(
       offset,
       *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
@@ -1503,17 +1508,22 @@ StructGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
 
   // Move the address over the elements before the one we are reading.
   unsigned index = idxAttr.getInt();
-  if (index >= structType.getNumElements())
+  auto numElements = structType.getNumElements();
+  if (!numElements || index >= *numElements)
     return ErrorTree(getLoc(), "struct field index out of bounds");
 
+  auto elementTypes = structType.getElementTypes();
+  if (!elementTypes)
+    return ErrorTree(getLoc(), "struct element types not resolved");
+
   for (unsigned i = 0; i != index; ++i) {
-    auto dl = cast<DataLayoutInterface>(structType.getElementTypes()[i]);
+    auto dl = cast<DataLayoutInterface>((*elementTypes)[i]);
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
     offset += *dl.getTypeSize(state.getTarget());
   }
 
   // Align the address to the target element.
-  Type targetType = structType.getElementTypes()[index];
+  Type targetType = (*elementTypes)[index];
   offset = llvm::alignTo(
       offset,
       *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));

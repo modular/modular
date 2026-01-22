@@ -561,8 +561,10 @@ static void optimizeReadOnlyMemory(Region &funcBody, PassInfo &pass) {
       return true;
     if (auto simd = dyn_cast<SIMDType>(type))
       return simd.isScalar();
-    if (auto structTy = dyn_cast<StructType>(type))
-      return llvm::all_of(structTy.getElementTypes(), isSupportedType);
+    if (auto structTy = dyn_cast<StructType>(type)) {
+      auto elementTypes = structTy.getElementTypes();
+      return elementTypes && llvm::all_of(*elementTypes, isSupportedType);
+    }
     return false;
   };
 

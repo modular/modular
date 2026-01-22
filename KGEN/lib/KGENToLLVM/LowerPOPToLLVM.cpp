@@ -3199,14 +3199,11 @@ namespace {
 static SmallVector<Type> expandOperandTypes(TypeRange types) {
   SmallVector<Type> operandTypes;
   operandTypes.reserve(types.size());
-  for (auto type : types) {
-    if (auto structTy = dyn_cast<StructType>(type)) {
-      operandTypes.append(structTy.getElementTypes().begin(),
-                          structTy.getElementTypes().end());
-    } else {
+  for (auto type : types)
+    if (auto structTy = dyn_cast<StructType>(type))
+      llvm::append_range(operandTypes, *structTy.getElementTypes());
+    else
       operandTypes.push_back(type);
-    }
-  }
   return operandTypes;
 }
 

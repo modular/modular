@@ -506,6 +506,10 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     strips away all information except for those necessary for understanding the
     memory layout of the data it describes.
 
+    The element types are stored as a `TypedAttr` which can be either:
+    - A concrete `VariadicAttr` with resolved types
+    - A parametric expression (e.g., a variadic parameter reference) before elaboration
+
     Example:
 
     ```mlir
@@ -527,11 +531,16 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
 
     // A struct with parameterized element types.
     !kgen.struct<(type, array<size, scalar<dtype>>)>
+
+    // A struct parameterized on a variadic sequence of element types.
+    kgen.generator @example<Ts: variadic<!kgen.type>>(
+      %0: !kgen.struct<(Ts)>,
+    ) { kgen.return }
     ```
   }];
 
   let parameters = (ins
-    OptionalArrayRefParameter<"Type">:$elementTypes,
+    "TypedAttr":$elementTypesVariadic,
     "bool":$isMemoryOnly,
     // Explicit minimum alignment specified via @align(N). A value of 1 means
     // no explicit alignment (the default). Uses TypedAttr to support future
@@ -540,31 +549,56 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     DefaultValuedParameter<"TypedAttr",
                            "$_builder.getIntegerAttr($_builder.getIntegerType(64), 1)">:$minAlignment
   );
-  let assemblyFormat = [{
-    `<` `(` (`)`) : (custom<ParamTypes>($elementTypes)^ `)`)?
-    `` custom<IsMemoryOnly>($isMemoryOnly)
-    `` custom<MinAlignment>($minAlignment) `>`
-  }];
+  // Use hasCustomAssemblyFormat since we need to handle empty struct specially.
+  let hasCustomAssemblyFormat = 1;
+  let genVerifyDecl = 1;
 
+  // Skip default builders - we provide custom builders.
+  let skipDefaultBuilders = 1;
   let builders = [
-    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$types)>,
-    TypeBuilder<(ins "ArrayRef<Type>":$types), [{
-      mlir::Builder b($_ctxt);
-      return $_get($_ctxt, types, /*isMemoryOnly=*/false,
-                   /*minAlignment=*/b.getIntegerAttr(b.getIntegerType(64), 1));
+    // Main builder with explicit context - implemented in KGENTypes.cpp.
+    // minAlignment defaults to 1 (no explicit alignment) when TypedAttr{} is passed.
+    TypeBuilder<(ins "TypedAttr":$variadic,
+                     CArg<"bool", "false">:$isMemoryOnly,
+                     CArg<"TypedAttr", "{}">:$minAlignment), [{}]>,
+    // Builder with TypedAttr variadic (infers context from variadic).
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$variadic,
+                                        CArg<"bool", "false">:$isMemoryOnly), [{
+      return get(variadic.getContext(), variadic, isMemoryOnly,
+                 /*minAlignment=*/TypedAttr{});
     }]>,
-    TypeBuilder<(ins "ArrayRef<Type>":$types, "bool":$isMemoryOnly), [{
-      mlir::Builder b($_ctxt);
-      return $_get($_ctxt, types, isMemoryOnly,
-                   /*minAlignment=*/b.getIntegerAttr(b.getIntegerType(64), 1));
-    }]>
+    // Builders with ArrayRef<Type> - implementations in KGENTypes.cpp.
+    // These convert types to VariadicAttr and route through the main builder.
+    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$types,
+                                        CArg<"bool", "false">:$isMemoryOnly), [{}]>
   ];
 
   let extraClassDeclaration = [{
     /// Return true if the specified type is a NoneType or an empty struct.
     static bool isNoneOrEmpty(Type type);
-    /// Get the number of struct elements.
-    unsigned getNumElements() const { return getElementTypes().size(); }
+
+    /// If the struct type is concrete (not parametric), returns the attribute
+    /// representing the variadic sequence. Otherwise, returns a null attribute.
+    VariadicAttr getVariadicIfResolved() const;
+
+    /// Returns whether this struct type is resolved (element types are concrete).
+    bool isResolved() const;
+
+    /// Get the element types. Returns std::nullopt if the struct is parametric.
+    std::optional<SmallVector<Type>> getElementTypes() const;
+
+    /// Get the number of struct elements. Returns std::nullopt if parametric.
+    std::optional<size_t> getNumElements() const;
+
+    /// Builders with explicit context.
+    static StructType get(MLIRContext *context, ArrayRef<Type> types,
+                          bool isMemoryOnly = false,
+                          TypedAttr minAlignment = {});
+
+    /// Checked builder with explicit context (for empty structs).
+    static StructType getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                 MLIRContext *context, ArrayRef<Type> types,
+                                 bool isMemoryOnly = false);
   }];
 }
 

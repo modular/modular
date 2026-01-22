@@ -174,6 +174,127 @@ TEST_F(EnvAttrTest, testParseDefines) {
   }
 }
 
+//===----------------------------------------------------------------------===//
+// StructType (KGEN)
+//===----------------------------------------------------------------------===//
+
+// Use explicit namespace to avoid ambiguity with LIT::StructType.
+using KGENStructType = KGEN::StructType;
+
+namespace {
+class StructTypeTest : public Test {
+protected:
+  MLIRContext ctx{MLIRContext::Threading::DISABLED};
+
+  StructTypeTest() { ctx.loadDialect<KGENDialect, LITDialect>(); }
+};
+} // namespace
+
+TEST_F(StructTypeTest, UniquingConsistency) {
+  // Test that StructType created via different paths produces the same type.
+  auto i32Type = IntegerType::get(&ctx, 32);
+  auto i64Type = IntegerType::get(&ctx, 64);
+
+  // Create via ArrayRef<Type>
+  KGENStructType fromTypes = KGENStructType::get(&ctx, {i32Type, i64Type});
+
+  // Create via VariadicAttr with TypeParamAttrs
+  auto metatype = TypeType::get(&ctx);
+  auto variadicType = VariadicType::get(metatype);
+  SmallVector<TypedAttr> elements = {TypeParamAttr::get(i32Type, metatype),
+                                     TypeParamAttr::get(i64Type, metatype)};
+  VariadicAttr variadic = VariadicAttr::get(elements, variadicType);
+  KGENStructType fromVariadic = KGENStructType::get(&ctx, variadic, false);
+
+  // These should be the exact same type (pointer equality due to uniquing).
+  EXPECT_EQ(fromTypes, fromVariadic);
+}
+
+TEST_F(StructTypeTest, UniquingWithParamTypes) {
+  // Test that StructType with ParamTypes as elements unique correctly.
+  auto metatype = TypeType::get(&ctx);
+
+  // Create a ParamType wrapping a ParamDeclRefAttr.
+  auto paramRef = ParamDeclRefAttr::get(StringAttr::get(&ctx, "T"), metatype);
+  auto paramType = ParamType::get(paramRef);
+
+  // Create struct via ArrayRef<Type>
+  KGENStructType fromTypes = KGENStructType::get(&ctx, {paramType});
+
+  // Create via ArrayRef<Type> again - should get the same type.
+  KGENStructType fromTypes2 = KGENStructType::get(&ctx, {paramType});
+  EXPECT_EQ(fromTypes, fromTypes2);
+
+  // Create via VariadicAttr using TypeParamAttr::get - should get same type.
+  auto variadicType = VariadicType::get(metatype);
+  SmallVector<TypedAttr> elements = {
+      cast<TypedAttr>(TypeParamAttr::get(paramType, metatype))};
+  VariadicAttr variadic = VariadicAttr::get(elements, variadicType);
+  KGENStructType fromVariadic = KGENStructType::get(&ctx, variadic, false);
+
+  EXPECT_EQ(fromTypes, fromVariadic);
+}
+
+TEST_F(StructTypeTest, UniquingWithCanonicalizingTypeParamAttr) {
+  // This test verifies that TypeParamAttr::get() canonicalization is
+  // deterministic: the same input always produces the same output, ensuring
+  // consistent type uniquing even when TypeParamAttr::get() returns a
+  // ParamOperatorAttr instead of a TypeParamAttr.
+  auto metatype = TypeType::get(&ctx);
+
+  // Create a ParamType wrapping a ParamDeclRefAttr.
+  auto paramRef = ParamDeclRefAttr::get(StringAttr::get(&ctx, "T"), metatype);
+  auto paramType = ParamType::get(paramRef);
+
+  // Create struct via ArrayRef<Type>.
+  KGENStructType fromTypes = KGENStructType::get(&ctx, {paramType});
+
+  // Create struct via VariadicAttr using TypeParamAttr::get() directly.
+  // TypeParamAttr::get(paramType, metatype) may return a ParamOperatorAttr
+  // instead of a TypeParamAttr due to canonicalization.
+  auto variadicType = VariadicType::get(metatype);
+  TypedAttr typeParamResult = TypeParamAttr::get(paramType, metatype);
+
+  // Note: typeParamResult might be a ParamOperatorAttr, not a TypeParamAttr!
+  // Since canonicalization is deterministic, both paths produce the same attr.
+  SmallVector<TypedAttr> elements = {typeParamResult};
+  VariadicAttr variadic = VariadicAttr::get(elements, variadicType);
+  KGENStructType fromVariadic = KGENStructType::get(&ctx, variadic, false);
+
+  // Since canonicalization is deterministic, these should be the same type.
+  EXPECT_EQ(fromTypes, fromVariadic);
+
+  // Verify we can get the element types back correctly.
+  auto elementTypes = fromVariadic.getElementTypes();
+  ASSERT_TRUE(elementTypes.has_value());
+  EXPECT_EQ(elementTypes->size(), 1u);
+  EXPECT_EQ((*elementTypes)[0], paramType);
+}
+
+TEST_F(StructTypeTest, UniquingEmptyStruct) {
+  // Test that empty structs unique correctly.
+  KGENStructType empty1 = KGENStructType::get(&ctx, ArrayRef<Type>{});
+  KGENStructType empty2 = KGENStructType::get(&ctx, ArrayRef<Type>{});
+  EXPECT_EQ(empty1, empty2);
+
+  // Check isNoneOrEmpty works.
+  EXPECT_TRUE(KGENStructType::isNoneOrEmpty(empty1));
+}
+
+TEST_F(StructTypeTest, GetElementTypes) {
+  // Test that getElementTypes returns the correct types.
+  auto i32Type = IntegerType::get(&ctx, 32);
+  auto i64Type = IntegerType::get(&ctx, 64);
+
+  KGENStructType structType = KGENStructType::get(&ctx, {i32Type, i64Type});
+  auto elementTypes = structType.getElementTypes();
+
+  ASSERT_TRUE(elementTypes.has_value());
+  EXPECT_EQ(elementTypes->size(), 2u);
+  EXPECT_EQ((*elementTypes)[0], i32Type);
+  EXPECT_EQ((*elementTypes)[1], i64Type);
+}
+
 TEST_F(EnvAttrTest, testQueryValue) {
   // Create test EnvAttr with mixed values
   std::vector<std::string> defines = {"DEBUG", "COUNT=42", "NAME=test",

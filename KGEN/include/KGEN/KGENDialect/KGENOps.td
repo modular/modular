@@ -1689,7 +1689,7 @@ def KGEN_StructCreateOp : KGENOp<"struct.create", [Pure,
     DeclareOpInterfaceMethods<InterpreterOpInterface>,
     TypesMatchWith<"operand types match struct element types",
                    "result", "elements",
-                   "llvm::cast<StructType>($_self).getElementTypes()">
+                   "*llvm::cast<StructType>($_self).getElementTypes()">
 ]> {
   let summary = "create an instance of a struct";
   let description = [{

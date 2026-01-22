@@ -48,8 +48,11 @@ static Type tryReplaceVariadicSplat(Type type) {
 
   // Handle `!kgen.struct`.
   if (auto structType = dyn_cast<StructType>(type)) {
-    SmallVector<Type> newTypes =
-        processVariadicSplatType(structType.getElementTypes());
+    std::optional<SmallVector<Type>> elementTypes =
+        structType.getElementTypes();
+    if (!elementTypes)
+      return type;
+    SmallVector<Type> newTypes = processVariadicSplatType(*elementTypes);
     if (newTypes.empty())
       return type;
     return StructType::get(context, newTypes);
