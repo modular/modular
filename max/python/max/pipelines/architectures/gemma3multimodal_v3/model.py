@@ -21,7 +21,7 @@ from typing import Any, Tuple, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device, DLPackArray
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
@@ -33,7 +33,7 @@ from max.kv_cache import (
     PagedKVCacheManager,
     load_kv_manager,
 )
-from max.nn import ReturnLogits, Signals
+from max.nn import ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -147,9 +147,6 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     or the attention mask for the padded input sequence. For distributed execution,
     this can be a list of tensors, one per device."""
 
-    signal_buffers: list[Buffer]
-    """Device buffers used for synchronization in communication collectives."""
-
     pixel_values: list[Buffer] | None = None
     """Raw pixel values for vision inputs: [batch, channels, height, width]."""
 
@@ -164,7 +161,6 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         tokens: Buffer,
         input_row_offsets: list[Buffer],
         return_n_logits: Buffer,
-        signal_buffers: list[Buffer],
         kv_cache_inputs: KVCacheInputs | None = None,
         pixel_values: list[Buffer] | None = None,
         image_token_indices: list[Buffer] | None = None,
@@ -174,12 +170,10 @@ class Gemma3MultiModalModelInputs(ModelInputs):
             tokens: Input token IDs.
             input_row_offsets: Input row offsets (ragged tensors).
             return_n_logits: Number of logits to return.
-            signal_buffers: Device buffers for distributed communication.
             kv_cache_inputs: Inputs for the KV cache.
         """
         self.tokens = tokens
         self.input_row_offsets = input_row_offsets
-        self.signal_buffers = signal_buffers
         self.kv_cache_inputs = kv_cache_inputs
         self.return_n_logits = return_n_logits
         self.pixel_values = pixel_values
@@ -222,9 +216,7 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
-        """Initialize a PipelineModel with default values for signal_buffers,
-        then begin the loading of our vision and language models.
-
+        """
         Args:
             pipeline_config: The configuration settings for the entire pipeline.
             session: The MAX Engine inference session managing the runtime.
@@ -254,14 +246,6 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
             adapter,
             return_logits,
         )
-
-        # Initialize empty signal buffers
-        self.signal_buffers = [
-            Buffer.zeros(
-                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
-            )
-            for dev in self.devices
-        ]
 
         self._stacker = _VisionStacker()
         self.vision_model, self.language_model = self.load_model()
@@ -333,9 +317,7 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         input_row_offsets_prealloc_host = Buffer.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         )
-        self._input_row_offsets_prealloc = [
-            input_row_offsets_prealloc_host.to(dev) for dev in self.devices
-        ]
+        self._input_row_offsets_prealloc = input_row_offsets_prealloc_host.to(self.devices[0])
 
         # Build and compile language model
         language_model = self._compile_language_graph(
@@ -353,47 +335,35 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         self, config: Gemma3ForConditionalGenerationConfig
     ) -> Sequence[TensorType]:
         """Prepare the Tensor input types that our language graph will work with"""
-        device_ref = DeviceRef.from_device(self.devices[0])
+        device0 = self.devices[0]
+        device_ref = DeviceRef.from_device(device0)
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
         )
 
-        input_row_offsets_types = [
-            TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
+        input_row_offsets_types = TensorType(
+            DType.uint32,
+            shape=["input_row_offsets_len"],
+            device=device0,
+        )
 
-        image_embeddings_types = [
-            TensorType(
-                DType.bfloat16,
-                shape=[
-                    "num_image_tokens",
-                    config.text_config.hidden_size,
-                ],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
+        image_embeddings_types = TensorType(
+            DType.bfloat16,
+            shape=[
+                "num_image_tokens",
+                config.text_config.hidden_size,
+            ],
+            device=device0,
+        )
 
-        image_token_indices_types = [
-            TensorType(
-                DType.int32,
-                shape=["total_image_tokens"],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
+        image_token_indices_types = TensorType(
+            DType.int32,
+            shape=["total_image_tokens"],
+            device=device0,
+        )
 
         return_n_logits_type = TensorType(
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        signals = Signals(
-            devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
@@ -405,10 +375,9 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         return (
             tokens_type,
             return_n_logits_type,
-            *input_row_offsets_types,
-            *image_embeddings_types,
-            *image_token_indices_types,
-            *signals.input_types(),
+            input_row_offsets_types,
+            image_embeddings_types,
+            image_token_indices_types,
             *flattened_kv_types,
         )
 
@@ -446,19 +415,12 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         ]
         variadic_args = variadic_args[len(self.devices) :]
 
-        # Extract signal buffers (one per device)
-        signal_buffers = [
-            v for v in variadic_args[: len(self.devices)]
-        ]
-        variadic_args = variadic_args[len(self.devices) :]
-
         # Extract KV cache inputs
-        kv_cache = self._unflatten_kv_inputs(variadic_args)
+        # kv_cache = self._unflatten_kv_inputs(variadic_args)
 
         compiled_language_model = language_model.compile(
             tokens,
             return_n_logits,
-            # signal_buffers,
             input_row_offsets[0],
             # kv_cache[0],
             image_embeddings[0],
@@ -473,25 +435,18 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         self, config: Gemma3ForConditionalGenerationConfig
     ) -> list[Type[Any]]:
         """Build the vision model graph for processing images."""
-        pixel_values_types = [
-            TensorType(
-                DType.bfloat16,
-                shape=[
-                    "batch_size",
-                    3,
-                    config.vision_config.image_size,
-                    config.vision_config.image_size,
-                ],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
-
-        # Create signal types for distributed communication
-        signals = Signals(
-            devices=(DeviceRef(d.label, d.id) for d in self.devices)
+        device0 = self.devices[0]
+        pixel_values_types = TensorType(
+            DType.bfloat16,
+            shape=[
+                "batch_size",
+                3,
+                config.vision_config.image_size,
+                config.vision_config.image_size,
+            ],
+            device=DeviceRef.from_device(device0),
         )
-        return [*pixel_values_types, *signals.input_types()]
+        return [pixel_values_types]
 
     def _compile_vision_graph(
         self,
@@ -502,7 +457,7 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         timer = CompilationTimer("vision model")
         with F.lazy():
             vision_model = Gemma3VisionModel(config)
-            vision_model.to(self.devices[0]) # TODO multi device...?
+            # vision_model.to(self.devices[0]) # TODO multi device...?
             
         timer.mark_build_complete()
 
@@ -512,15 +467,10 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
             inp for inp in input_types[: len(self.devices)]
         ]
 
-        signal_buffers = [
-            inp for inp in input_types[len(self.devices) :]
-        ]
-
-        image_embeddings = vision_model(pixel_values, signal_buffers)
+        image_embeddings = vision_model(pixel_values)
 
         compiled_vision_model = vision_model.compile(
             pixel_values[0],
-            # signal_buffers,
             image_embeddings,
             weights=state_dict,
         )
@@ -543,7 +493,7 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
 
             # Execute vision model: patched pixel_values -> image_embeddings.
             vision_outputs = self.vision_model(
-                *model_inputs.pixel_values, *model_inputs.signal_buffers
+                *model_inputs.pixel_values
             )
             assert len(vision_outputs) == len(self.devices)
 
@@ -568,7 +518,6 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
             *input_row_offsets,
             *image_embeddings,
             *image_token_indices,
-            *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
         )
 
@@ -595,7 +544,7 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepare our inputs for the first execution pass of the multimodal model."""
-
+        device0 = self.devices[0]
         if len(replica_batches) > 1:
             raise ValueError("Model does not support DP>1")
 
@@ -610,9 +559,7 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
                 dtype=np.uint32,
             )
         )
-        input_row_offsets_tensors = [
-            input_row_offsets.to(device) for device in self.devices
-        ]
+        input_row_offsets_tensors = input_row_offsets.to(device0)
 
         tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
 
@@ -628,7 +575,6 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
             return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
-            signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
             pixel_values=pixel_values,
             image_token_indices=image_token_indices,
@@ -650,16 +596,16 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
             tokens=next_tokens,
             input_row_offsets=next_row_offsets,
             return_n_logits=prev_model_inputs.return_n_logits,
-            signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             pixel_values=None,
         )
 
     def _prepare_vision_inputs(
-        self, context_batch: Sequence[TextAndVisionContext]
+        self, context_batch: TextAndVisionContext
     ) -> list[Buffer] | None:
         """Use the VisionStacker to prepare batched vision inputs from multiple contexts.
         The Tokenizer should have already processed images into pixel_values (pan and scan etc)"""
+        device0 = self.devices[0]
         images = []
         for context in context_batch:
             for img in context.next_images:
@@ -674,10 +620,10 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
             final_images, DType.float32, DType.bfloat16, self.devices[0]
         )
 
-        return [tensor.to(dev) for dev in self.devices]
+        return tensor.to(device0)
 
     def _batch_image_token_indices(
-        self, context_batch: Sequence[TextAndVisionContext]
+        self, context_batch: TextAndVisionContext
     ) -> list[Buffer] | None:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
@@ -709,7 +655,7 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
         )
 
         # Create tensor and distribute to device
-        return [Buffer.from_numpy(np_indices).to(dev) for dev in self.devices]
+        return Buffer.from_numpy(np_indices).to(self.devices[0])
 
     def load_kv_manager(
         self,
@@ -759,17 +705,11 @@ class Gemma3_MultiModalModelV3(PipelineModel[TextAndVisionContext], KVCacheMixin
 
     def _create_empty_image_embeddings(self) -> list[Buffer]:
         """Create empty image embeddings for text-only inputs."""
-        return [
-            Buffer.zeros(
-                shape=[0, self.huggingface_config.text_config.hidden_size],
-                dtype=DType.bfloat16,
-            ).to(dev)
-            for dev in self.devices
-        ]
+        return Buffer.zeros(
+            shape=[0, self.huggingface_config.text_config.hidden_size],
+            dtype=DType.bfloat16,
+        ).to(self.devices[0])
 
     def _create_empty_indices(self) -> list[Buffer]:
         """Create empty image token indices tensor."""
-        return [
-            Buffer.zeros(shape=[0], dtype=DType.int32).to(dev)
-            for dev in self.devices
-        ]
+        return Buffer.zeros(shape=[0], dtype=DType.int32).to(self.devices[0])
