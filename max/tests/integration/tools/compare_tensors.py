@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tool to compare max buffers and torch tensors.
+"""Tool to compare max and torch tensors.
 
 Example usage:
     Compare two tensor files
-        bazel run //max/tests/integration/tools:compare_buffers -- \
+        bazel run //max/tests/integration/tools:compare_tensors -- \
             --torch-tensor ref.pt --max-tensor out.max --rtol 1e-5 --atol 1e-8
 
     Auto-match tensors in directories
-        bazel run //max/tests/integration/tools:compare_buffers -- \
+        bazel run //max/tests/integration/tools:compare_tensors -- \
             --torch-tensor torch_dir/ --max-tensor max_dir/
 """
 
@@ -65,7 +65,7 @@ def load_torch_tensor(file_path: Path) -> torch.Tensor:
     return tensor.cpu() if tensor.is_cuda else tensor
 
 
-def load_max_buffer_as_torch(file_path: Path) -> torch.Tensor:
+def load_max_tensor_as_torch(file_path: Path) -> torch.Tensor:
     """Load a max tensor and convert it to torch tensor.
 
     Args:
@@ -74,8 +74,8 @@ def load_max_buffer_as_torch(file_path: Path) -> torch.Tensor:
     Returns:
         Torch tensor converted from max tensor.
     """
-    tensor = load_max_buffer(file_path)
-    torch_tensor = torch.from_dlpack(tensor).cpu()
+    buffer = load_max_buffer(file_path)
+    torch_tensor = torch.from_dlpack(buffer).cpu()
     return torch_tensor
 
 
@@ -89,7 +89,7 @@ def compute_comparison_metrics(
 
     Args:
         torch_tensor: Reference tensor from torch.
-        max_tensor: Buffer to compare from max.
+        max_tensor: Tensor to compare from max.
         rtol: Relative tolerance for tolerance check. If None, relative tolerance is not checked.
         atol: Absolute tolerance for tolerance check. If None, absolute tolerance is not checked.
 
@@ -136,7 +136,7 @@ def compute_comparison_metrics(
     )
 
 
-def compare_buffers(
+def compare_tensors(
     torch_tensor: torch.Tensor,
     max_tensor: torch.Tensor,
     torch_name: str,
@@ -149,7 +149,7 @@ def compare_buffers(
 
     Args:
         torch_tensor: Reference tensor from torch.
-        max_tensor: Buffer to compare from max.
+        max_tensor: Tensor to compare from max.
         torch_name: Name of the torch tensor.
         max_name: Name of the max tensor.
         rtol: Relative tolerance. If None, relative tolerance is not checked.
@@ -289,9 +289,9 @@ def main(
             f"Comparing tensors:\n  Torch: {torch_path}\n  Max:   {max_path}\n"
         )
         results.append(
-            compare_buffers(
+            compare_tensors(
                 load_torch_tensor(torch_path),
-                load_max_buffer_as_torch(max_path),
+                load_max_tensor_as_torch(max_path),
                 torch_path.stem,
                 max_path.stem,
                 rtol=rtol,
@@ -311,9 +311,9 @@ def main(
 
         for torch_file, max_file in matching_pairs:
             results.append(
-                compare_buffers(
+                compare_tensors(
                     load_torch_tensor(torch_file),
-                    load_max_buffer_as_torch(max_file),
+                    load_max_tensor_as_torch(max_file),
                     torch_file.stem,
                     max_file.stem,
                     rtol=rtol,

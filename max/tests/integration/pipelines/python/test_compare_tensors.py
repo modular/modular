@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for compare_buffers CLI tool."""
+"""Tests for compare_tensors CLI tool."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import compare_buffers
+import compare_tensors
 import pytest
 import torch
 from click.testing import CliRunner
@@ -94,7 +94,7 @@ def test_cli_specific_tensors(
 
     runner = CliRunner()
     result = runner.invoke(
-        compare_buffers.main,
+        compare_tensors.main,
         [
             "--torch-tensor",
             str(torch_file),
@@ -126,7 +126,7 @@ def test_cli_auto_match(
 
     runner = CliRunner()
     result = runner.invoke(
-        compare_buffers.main,
+        compare_tensors.main,
         [
             "--torch-tensor",
             str(torch_dir),
@@ -158,7 +158,7 @@ def test_cli_custom_tolerances(
 
     runner = CliRunner()
     result = runner.invoke(
-        compare_buffers.main,
+        compare_tensors.main,
         [
             "--torch-tensor",
             str(torch_file),
