@@ -55,33 +55,32 @@ TEST(RuntimeTest, MaxRuntimeUtilize) {
 
 TEST(RuntimeTest, DefaultAffinityBehavior) {
   // Ensure env var is not set (may already be in environment)
-  unsetenv("MODULAR_DISABLE_AFFINITY");
+  unsetenv("MODULAR_ENABLE_AFFINITY");
+  AsyncRT::RuntimeOptions options;
+  // Disabled by default.
+  EXPECT_FALSE(options.withAffinity);
+}
+
+TEST(RuntimeTest, EnvVarEnablesAffinity) {
+  setenv("MODULAR_ENABLE_AFFINITY", "1", 1);
   AsyncRT::RuntimeOptions options;
   EXPECT_TRUE(options.withAffinity);
+  unsetenv("MODULAR_ENABLE_AFFINITY");
 }
 
-TEST(RuntimeTest, EnvVarDisablesAffinity) {
-  setenv("MODULAR_DISABLE_AFFINITY", "1", 1);
+TEST(RuntimeTest, EnvVarEnablesAffinityWithTrue) {
+  setenv("MODULAR_ENABLE_AFFINITY", "true", 1);
   AsyncRT::RuntimeOptions options;
-  EXPECT_FALSE(options.withAffinity);
-  unsetenv("MODULAR_DISABLE_AFFINITY");
-}
-
-TEST(RuntimeTest, EnvVarDisablesAffinityWithOne) {
-  setenv("MODULAR_DISABLE_AFFINITY", "1", 1);
-  AsyncRT::RuntimeOptions options;
-  EXPECT_FALSE(options.withAffinity);
-  unsetenv("MODULAR_DISABLE_AFFINITY");
+  EXPECT_TRUE(options.withAffinity);
+  unsetenv("MODULAR_ENABLE_AFFINITY");
 }
 
 TEST(RuntimeTest, BuilderMethodOverridesEnvVar) {
-  setenv("MODULAR_DISABLE_AFFINITY", "1", 1);
+  // Even when env var doesn't enable, builder can enable
+  unsetenv("MODULAR_ENABLE_AFFINITY");
   AsyncRT::RuntimeOptions options;
-  // Env var should disable affinity first
   EXPECT_FALSE(options.withAffinity);
-  // Builder method should be able to re-enable it
   options.withCPUAffinity(true);
   EXPECT_TRUE(options.withAffinity);
-  unsetenv("MODULAR_DISABLE_AFFINITY");
 }
 } // namespace
