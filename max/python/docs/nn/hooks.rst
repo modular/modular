@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.hooks
+.. automodule:: max.nn.legacy.hooks
    :members:
    :undoc-members:

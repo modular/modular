@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.clamp
+.. automodule:: max.nn.legacy.clamp
    :members:
    :undoc-members:

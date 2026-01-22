@@ -10,6 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides internal formatting utilities for the standard library.
+
+This module contains helper types and functions used internally by the Mojo
+standard library for formatting and writing data. These utilities are not
+intended for public use and may change without notice.
+"""
 
 from io.io import _printf
 from os import abort
@@ -19,6 +25,213 @@ from sys.param_env import env_get_int
 
 from bit import byte_swap
 from memory import Span, bitcast, memcpy
+
+
+@always_inline
+fn write_sequence_to[
+    *Ts: Writable,
+](
+    mut writer: Some[Writer],
+    *args: *Ts,
+    open: StaticString,
+    close: StaticString,
+    sep: StaticString = ", ",
+):
+    """Writes a sequence of writable values to a writer with delimiters.
+
+    This function formats a variadic list of writable values as a delimited
+    sequence, such as `[item1, item2, item3]`.
+
+    Parameters:
+        Ts: Types of the values to write. Must conform to `Writable`.
+
+    Args:
+        writer: The writer to write to.
+        args: The variadic list of values to write.
+        open: The opening delimiter.
+        close: The closing delimiter.
+        sep: The separator between items (default: `", "`).
+    """
+    write_sequence_to(writer, pack=args, open=open, close=close, sep=sep)
+
+
+@always_inline
+fn write_sequence_to[
+    *Ts: Writable,
+](
+    mut writer: Some[Writer],
+    pack: VariadicPack[_, Writable, *Ts],
+    open: StaticString,
+    close: StaticString,
+    sep: StaticString = ", ",
+):
+    """Writes a sequence of writable values from a pack to a writer with delimiters.
+
+    This function formats a variadic pack of writable values as a delimited
+    sequence, writing each element separated by the specified separator and
+    enclosed by opening and closing delimiters.
+
+    Parameters:
+        Ts: Types of the values in the pack. Must conform to `Writable`.
+
+    Args:
+        writer: The writer to write to.
+        pack: The variadic pack of values to write.
+        open: The opening delimiter.
+        close: The closing delimiter.
+        sep: The separator between items (default: `", "`).
+    """
+    writer.write_string(open)
+
+    @parameter
+    for i in range(pack.__len__()):
+
+        @parameter
+        if i != 0:
+            writer.write_string(sep)
+        pack[i].write_to(writer)
+    writer.write_string(close)
+
+
+struct Repr[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
+    """A wrapper type that writes the repr representation of a value.
+
+    This struct wraps a reference to a `Writable` value and ensures that when
+    the wrapper is written to a writer, it calls the underlying value's
+    `write_repr_to` method instead of `write_to`. This allows formatting code
+    to uniformly call `write_to` on the wrapper while still getting repr output.
+
+    Parameters:
+        T: The type of the value to wrap. Must conform to `Writable`.
+        o: The immutable origin of the referenced value.
+    """
+
+    var _value: Pointer[Self.T, Self.o]
+
+    @always_inline
+    fn __init__(out self, ref [Self.o]value: Self.T):
+        """Constructs a `Repr` wrapper around a reference to a value.
+
+        Args:
+            value: The value to wrap. A reference is stored, not a copy.
+        """
+        self._value = Pointer(to=value)
+
+    @always_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the repr representation of the wrapped value.
+
+        This method delegates to the wrapped value's `write_repr_to` method,
+        ensuring repr output when the wrapper is written.
+
+        Args:
+            writer: The writer to write to.
+        """
+        self._value[].write_repr_to(writer)
+
+
+struct Named[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
+    """A wrapper type that writes a named field in the format `name=value`.
+
+    This struct is useful for formatting struct fields or named parameters,
+    producing output like `field_name=42`. It wraps a reference to a value
+    along with its name.
+
+    Parameters:
+        T: The type of the value. Must conform to `Writable`.
+        o: The immutable origin of the referenced value.
+    """
+
+    var _name: StaticString
+    var _value: Pointer[Self.T, Self.o]
+
+    @always_inline
+    fn __init__(out self, name: StaticString, ref [Self.o]value: Self.T):
+        """Constructs a `Named` wrapper for a field.
+
+        Args:
+            name: The name of the field.
+            value: The value of the field. A reference is stored, not a copy.
+        """
+        self._name = name
+        self._value = Pointer(to=value)
+
+    @always_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the named field in the format `name=value`.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(self._name, "=", self._value[])
+
+
+struct FormatStruct[T: Writer, o: MutOrigin](Movable):
+    """A helper type for formatting struct representations.
+
+    This struct provides a fluent interface for writing struct-like
+    representations in the format `StructName[param1, param2](field1, field2)`.
+    It is designed to simplify the implementation of `write_to` and
+    `write_repr_to` methods for user-defined types.
+
+    The typical usage pattern is:
+    1. Construct with the struct name (writes the name immediately)
+    2. Optionally call `params()` to write type parameters in brackets
+    3. Call `fields()` to write field values in parentheses
+
+    Parameters:
+        T: The writer type. Must conform to `Writer`.
+        o: The mutable origin of the writer.
+    """
+
+    var _writer: Pointer[Self.T, Self.o]
+
+    @always_inline
+    fn __init__(out self, ref [Self.o]writer: Self.T, name: StaticString):
+        """Constructs a `FormatStruct` and writes the struct name.
+
+        Args:
+            writer: The writer to write to.
+            name: The name of the struct to write.
+        """
+        writer.write_string(name)
+        self._writer = Pointer(to=writer)
+
+    @always_inline
+    fn params[*Ts: Writable](self, *args: *Ts) -> ref [self] Self:
+        """Writes type parameters in bracket notation `[param1, param2, ...]`.
+
+        This method is used to write compile-time parameters of a parameterized
+        struct. It returns a reference to self to enable method chaining.
+
+        Parameters:
+            Ts: Types of the parameters to write. Must conform to `Writable`.
+
+        Args:
+            args: The parameter values to write.
+
+        Returns:
+            A reference to this `FormatStruct` instance for method chaining.
+        """
+        write_sequence_to(self._writer[], args, open="[", close="]")
+        return self
+
+    @always_inline
+    fn fields[*Ts: Writable](self, *args: *Ts):
+        """Writes field values in parentheses `(field1, field2, ...)`.
+
+        This method is used to write the runtime field values of a struct.
+        This should typically be the final call in a formatting chain, as it
+        does not return a reference for further chaining.
+
+        Parameters:
+            Ts: Types of the fields to write. Must conform to `Writable`.
+
+        Args:
+            args: The field values to write.
+        """
+        write_sequence_to(self._writer[], args, open="(", close=")")
+
 
 comptime HEAP_BUFFER_BYTES = env_get_int["HEAP_BUFFER_BYTES", 2048]()
 """How much memory to pre-allocate for the heap buffer, will abort if exceeded."""

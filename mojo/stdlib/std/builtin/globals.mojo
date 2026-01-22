@@ -18,20 +18,26 @@ compile-time constants without materializing entire data structures in memory.
 
 
 fn global_constant[T: AnyType, //, value: T]() -> ref [StaticConstantOrigin] T:
-    """Creates a reference to a compile-time constant value.
+    """Creates a reference to a compile-time constant value stored in static memory.
 
-    This function uses the MLIR `pop.global_constant` operation to create a
-    reference to a compile-time value without materializing the entire value
-    at runtime. This is particularly useful for large lookup tables where you
-    want to avoid materializing the entire table when accessing individual
-    elements.
+    This function stores the compile-time constant in the binary's read-only data
+    section and returns a reference to it, avoiding runtime materialization. This
+    is useful for large lookup tables where you want to access individual elements
+    without copying the entire structure onto the stack.
+
+    Constraints:
+        The type `T` must be trivially register-passable. Self-contained types
+        like `Int`, `SIMD`, and `InlineArray` work. Types with heap allocations
+        like `Dict`, `List`, or `String` do not work because their internal
+        pointers would be invalid at runtime. Using unsupported types will
+        result in a compilation error.
 
     Parameters:
-        T: The type of the constant value.
+        T: The type of the constant value. Must be trivially register-passable.
         value: The compile-time constant value.
 
     Returns:
-        A reference to the global constant.
+        A reference to the global constant with `StaticConstantOrigin`.
 
     Examples:
     ```mojo

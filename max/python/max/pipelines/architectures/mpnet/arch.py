@@ -24,7 +24,7 @@ from . import weight_adapters
 from .model import MPNetPipelineModel
 
 mpnet_arch = SupportedArchitecture(
-    name="MPNetForMaskedLM",
+    name="MPNetForMaskedLM_Legacy",
     task=PipelineTask.EMBEDDINGS_GENERATION,
     example_repo_ids=[
         "sentence-transformers/all-mpnet-base-v2",

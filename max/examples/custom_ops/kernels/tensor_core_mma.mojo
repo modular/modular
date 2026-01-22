@@ -1430,7 +1430,7 @@ fn mma_tile_buffers[
         )
 
         # (((4, 8), (4, 2)):((4, 32), (1, 16))) or (((8, 4), (2, 4)):((2, 64), (1, 16)))
-        return blocked_product(base_layout, tiler_layout)
+        return materialize[blocked_product(base_layout, tiler_layout)]()
 
     # Helper function for shared memory layout
     @parameter
@@ -1465,8 +1465,7 @@ fn mma_tile_buffers[
         comptime num_repeats = BK // k_tile_size
         comptime tiler_layout = Layout.row_major(1, num_repeats)
 
-        # return blocked_product(base_layout, tiler_layout, coalesce_output=True)
-        return blocked_product(base_layout, tiler_layout)
+        return materialize[blocked_product(base_layout, tiler_layout)]()
 
     # AMD TensorCore operator for matrix multiplication
     comptime mma_shape = IndexList[3](MMA_M, MMA_N, MMA_K)

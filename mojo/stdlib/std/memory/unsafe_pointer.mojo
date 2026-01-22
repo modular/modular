@@ -28,6 +28,7 @@ from builtin.format_int import _write_int
 from builtin.simd import _simd_construction_checks
 from builtin.variadics import Variadic
 from compile import get_type_name
+from format._utils import FormatStruct, Named
 from memory import memcpy
 from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
@@ -931,17 +932,11 @@ struct UnsafePointer[
         Args:
             writer: The object to write to.
         """
-        writer.write(
-            "UnsafePointer[mut=",
-            Self.mut,
-            ", ",
+        FormatStruct(writer, "UnsafePointer").params(
+            Named("mut", Self.mut),
             _unqualified_type_name[Self.type](),
-            ", address_space=",
-            Self.address_space,
-            "](",
-            self,
-            ")",
-        )
+            Named("address_space", Self.address_space),
+        ).fields(self)
 
     # ===-------------------------------------------------------------------===#
     # Methods

@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib.config_enums import RopeType, SupportedEncoding
 from max.pipelines.lib.registry import SupportedArchitecture

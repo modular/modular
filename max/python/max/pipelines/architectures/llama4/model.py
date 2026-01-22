@@ -24,14 +24,15 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import ReturnLogits, Signals
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
     PagedCacheValues,
     RaggedKVCacheInputs,
 )
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -188,7 +189,7 @@ class Llama4Model(
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Llama 4.
 
-        Delegates to the :obj:`Llama4Config.get_kv_params` static method.
+        Delegates to the :obj:`Llama4Config.construct_kv_params` static method.
 
         Args:
             huggingface_config: The HuggingFace model configuration object
@@ -203,7 +204,7 @@ class Llama4Model(
         Returns:
             The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
         """
-        return Llama4Config.get_kv_params(
+        return Llama4Config.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,

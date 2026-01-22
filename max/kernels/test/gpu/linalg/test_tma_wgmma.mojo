@@ -198,17 +198,17 @@ fn tma_wgmma_kernel[
             a_tma_op.async_copy(
                 a_smem_tile,
                 mbar[0],
-                (UInt(i) * UInt(BK), block_idx.y * UInt(BM)),
+                (Int(i) * BK, Int(block_idx.y) * BM),
             )
             b_tma_op.async_copy(
                 b_smem_tile,
                 mbar[0],
                 (
-                    UInt(i) * UInt(BK),
-                    block_idx.x * UInt(BN),
+                    Int(i) * BK,
+                    Int(block_idx.x) * BN,
                 ) if transpose_b else (
-                    block_idx.x * UInt(BN),
-                    UInt(i) * UInt(BK),
+                    Int(block_idx.x) * BN,
+                    Int(i) * BK,
                 ),
             )
 

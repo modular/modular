@@ -95,6 +95,7 @@ def run_text_generation(
     num_steps: int = 10,
     print_outputs: bool = False,
     use_cache: bool | None = None,
+    generate_logprobs: bool = False,
 ) -> list[dict[str, Any]]:
     """Run text generation using Qwen3VL processor for both text and images."""
 
@@ -132,6 +133,7 @@ def run_text_generation(
         print_outputs=print_outputs,
         use_cache=use_cache,
         request_processor_fn=request_processor,
+        generate_logprobs=generate_logprobs,
     )
 
 
@@ -148,10 +150,13 @@ def run_text_generation_with_custom_image_processing(
         [MockTextGenerationRequest], dict[str, torch.Tensor]
     ],
     use_cache: bool | None = None,
+    generate_logprobs: bool = False,
 ) -> list[dict[str, Any]]:
     """Run text generation with custom request processing for specialized models."""
     del device, use_cache  # Unused.
-    saved_logits, store_logits = _create_logits_store()
+    saved_logits, store_logits = _create_logits_store(
+        generate_logprobs=generate_logprobs
+    )
     results = []
 
     for request in textgen_requests:

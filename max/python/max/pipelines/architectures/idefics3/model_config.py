@@ -20,8 +20,8 @@ from typing import Literal
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
@@ -156,7 +156,7 @@ class Idefics3Config(MAXModelConfigBase):
         }
 
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -168,7 +168,7 @@ class Idefics3Config(MAXModelConfigBase):
         text_config = getattr(
             huggingface_config, "text_config", huggingface_config
         )
-        return Llama3Config.get_kv_params(
+        return Llama3Config.construct_kv_params(
             huggingface_config=text_config,
             pipeline_config=pipeline_config,
             devices=devices,
@@ -230,16 +230,15 @@ class Idefics3Config(MAXModelConfigBase):
         hf_text_config = getattr(
             huggingface_config, "text_config", huggingface_config
         )
-        text_config = Llama3Config.generate(
-            pipeline_config=pipeline_config,
+        text_config = Llama3Config.initialize_from_config(
+            pipeline_config, hf_text_config
+        )
+        text_config.finalize(
             huggingface_config=hf_text_config,
             state_dict=llm_state_dict,
-            dtype=dtype,
-            n_devices=len(devices),
-            cache_dtype=cache_dtype,
-            kv_cache_config=kv_cache_config,
-            return_logits=return_logits,
             norm_method=norm_method,
+            attention_bias=False,
+            return_logits=return_logits,
         )
 
         # Create Idefics3VisionConfig from the vision config

@@ -76,10 +76,7 @@ modular_py_binary(
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
-    mojo_deps = select({
-        "//:emit_mojo_enabled": PROD_MOJOPKGS,
-        "//conditions:default": [],
-    }),
+    mojo_deps = PROD_MOJOPKGS,
     deps = [
         ":entrypoints",
         "//max/python/max:_core",

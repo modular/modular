@@ -8,6 +8,18 @@ package(default_visibility = [
 ])
 
 modular_py_test(
+    name = "test_overlap_text_generation_pipeline",
+    size = "large",
+    srcs = ["test_overlap_text_generation_pipeline.py"],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_empty_batches",
     size = "large",
     srcs = ["test_text_generation_pipeline_empty_batches.py"],

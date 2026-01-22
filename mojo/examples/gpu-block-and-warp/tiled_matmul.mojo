@@ -187,21 +187,21 @@ def main():
 
         # Allocate device buffers
         var matrix_a_buffer = ctx.enqueue_create_buffer[float_dtype](
-            matrix_a_layout.size()
+            comptime (matrix_a_layout.size())
         )
         var matrix_b_buffer = ctx.enqueue_create_buffer[float_dtype](
-            matrix_b_layout.size()
+            comptime (matrix_b_layout.size())
         )
         var matrix_c_buffer = ctx.enqueue_create_buffer[float_dtype](
-            matrix_c_layout.size()
+            comptime (matrix_c_layout.size())
         )
 
         # Create host buffers and initialize input data
         var host_matrix_a_buffer = ctx.enqueue_create_host_buffer[float_dtype](
-            matrix_a_layout.size()
+            comptime (matrix_a_layout.size())
         )
         var host_matrix_b_buffer = ctx.enqueue_create_host_buffer[float_dtype](
-            matrix_b_layout.size()
+            comptime (matrix_b_layout.size())
         )
         ctx.synchronize()
 
@@ -268,7 +268,7 @@ def main():
 
         # Retrieve results from device
         var host_matrix_c_buffer = ctx.enqueue_create_host_buffer[float_dtype](
-            matrix_c_layout.size()
+            comptime (matrix_c_layout.size())
         )
         ctx.enqueue_copy(src_buf=matrix_c_buffer, dst_buf=host_matrix_c_buffer)
         ctx.synchronize()

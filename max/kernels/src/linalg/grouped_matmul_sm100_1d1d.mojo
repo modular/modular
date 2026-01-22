@@ -107,6 +107,8 @@ from linalg.matmul.gpu.sm100.matmul import (
 )
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
+from internal_utils import ufloordiv
+
 
 @always_inline
 fn copy_accum_to_gmem[
@@ -316,7 +318,7 @@ fn copy_accum_to_gmem[
                             new_smem.layout,
                             swizzle,
                             elementwise_compute_lambda_fn.value(),
-                            UInt(num_output_warps),
+                            num_output_warps,
                             2,
                             MMA_M,
                             BN,
@@ -372,7 +374,7 @@ fn copy_accum_to_gmem[
                             new_smem.layout,
                             swizzle,
                             elementwise_compute_lambda_fn.value(),
-                            UInt(num_output_warps),
+                            num_output_warps,
                             1,
                             MMA_M,
                             BN,
@@ -387,9 +389,7 @@ fn copy_accum_to_gmem[
                             UInt(0),
                         )
         else:
-            comptime c_smem_tile_m = 32 if cta_group == 2 else BM // Int(
-                num_output_warps
-            )
+            comptime c_smem_tile_m = 32 if cta_group == 2 else BM // num_output_warps
             var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, stageN](
                 Int(warp_id), 0
             )
@@ -432,7 +432,7 @@ fn copy_accum_to_gmem[
                         c_smem_warp_tile_lower.layout,
                         swizzle,
                         elementwise_compute_lambda_fn.value(),
-                        UInt(num_output_warps),
+                        num_output_warps,
                     ](
                         M,
                         N,
@@ -521,7 +521,7 @@ fn copy_accum_to_gmem[
                     c_tma_op.wait_group[0]()
         else:
             if size_of[c_type]() != 2 or UInt32(coord_m) + UInt32(TMA_BM) >= M:
-                comptime output_threads = Int(num_output_warps) * Int(WARP_SIZE)
+                comptime output_threads = num_output_warps * WARP_SIZE
                 comptime c_smem_M = c_smem_tile.layout.shape[0].value()
                 comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
                     layout,
@@ -640,7 +640,6 @@ fn multi_stage_store_C[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
     num_output_warps: Int = 4,
-    max_tmem_cols: Int = 512,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
@@ -994,11 +993,11 @@ fn load_AB[
                 sfa_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(iter_idx + j) * UInt(num_sf_k_tiles),
-                    work_tile_coord[0] // UInt(SF_MN_GROUP_SIZE)
-                    + UInt(a_scale_offset_vec[0]),
+                    0,
+                    0,
+                    Int(iter_idx + j) * Int(num_sf_k_tiles),
+                    ufloordiv(Int(work_tile_coord[0]), SF_MN_GROUP_SIZE)
+                    + Int(a_scale_offset_vec[0]),
                 ),
             )
 
@@ -1008,11 +1007,13 @@ fn load_AB[
                 sfb_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(iter_idx + j) * UInt(num_sf_k_tiles),
-                    (work_tile_coord[1] + UInt(b_offset))
-                    // UInt(SF_MN_GROUP_SIZE),
+                    0,
+                    0,
+                    Int(iter_idx + j) * Int(num_sf_k_tiles),
+                    ufloordiv(
+                        Int(work_tile_coord[1]) + Int(b_offset),
+                        SF_MN_GROUP_SIZE,
+                    ),
                 ),
             )
 
@@ -2041,7 +2042,6 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     c_swizzle = config.c_swizzle,
                     cta_group = config.cta_group,
                     num_output_warps=num_output_warps,
-                    max_tmem_cols=max_tmem_cols,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     register_based_epilogue=register_based_epilogue,
                     transpose_c = config.AB_swapped,

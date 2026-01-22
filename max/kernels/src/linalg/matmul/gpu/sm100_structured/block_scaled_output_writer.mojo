@@ -74,7 +74,7 @@ struct BlockScaledTileWriter[
     c_smem_layout: Layout,
     num_output_stages: Int,
     stage_stride_cols: Int,
-    num_output_warps: UInt,
+    num_output_warps: Int,
 ]:
     """Output tile writer for SM100 block-scaled matmul epilogue.
 
@@ -158,7 +158,7 @@ struct BlockScaledTileWriter[
         Self.MMA_N,
         Self.stageN,
         Self.cta_group,
-        Int(Self.num_output_warps),
+        Self.num_output_warps,
         Self.c_swizzle,
         Self.transpose_c,
     ]
@@ -275,7 +275,7 @@ struct BlockScaledTileWriter[
                 c_smem_tile,
             )
 
-            WarpGroupBarrier[Int(Self.num_output_warps) * WARP_SIZE].sync()
+            WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
             # ================================================================
             # PHASE 4: TMA Store - Using TMAStoreExecutor with batched=True
@@ -314,4 +314,4 @@ struct BlockScaledTileWriter[
 
             @parameter
             if loop_stage > 0 or loop_stage == Self.num_stages - 1:
-                WarpGroupBarrier[Int(Self.num_output_warps) * WARP_SIZE].sync()
+                WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()

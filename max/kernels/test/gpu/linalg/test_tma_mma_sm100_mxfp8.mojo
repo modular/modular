@@ -300,37 +300,37 @@ fn block_scaled_mxfp8_kernel[
             a_tma_op.async_copy(
                 a_smem_tile,
                 tma_mbar[0],
-                (k_iter * UInt(BK), block_idx.y * UInt(BM)),
+                (Int(k_iter) * BK, Int(block_idx.y) * BM),
             )
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
                 (
-                    k_iter * UInt(BK),
-                    block_idx.x * UInt(BN),
+                    Int(k_iter) * BK,
+                    Int(block_idx.x) * BN,
                 ) if transpose_b else (
-                    block_idx.x * UInt(BN),
-                    k_iter * UInt(BK),
+                    Int(block_idx.x) * BN,
+                    Int(k_iter) * BK,
                 ),
             )
             a_scales_tma_op.async_copy_4d(
                 a_scales_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(k_iter),
-                    block_idx.y * UInt(BM // SF_MN_GROUP_SIZE),
+                    0,
+                    0,
+                    Int(k_iter),
+                    Int(block_idx.y) * (BM // SF_MN_GROUP_SIZE),
                 ),
             )
             b_scales_tma_op.async_copy_4d(
                 b_scales_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(k_iter),
-                    block_idx.x * UInt(BN // SF_MN_GROUP_SIZE),
+                    0,
+                    0,
+                    Int(k_iter),
+                    Int(block_idx.x) * (BN // SF_MN_GROUP_SIZE),
                 ),
             )
 

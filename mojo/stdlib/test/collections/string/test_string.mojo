@@ -925,6 +925,14 @@ def test_rstrip():
     assert_true(str4.rstrip("sip ") == "mississippimississippi \n")
     assert_true(str4.rstrip("sip \n") == "mississippim")
 
+    # should strip off single codepoints
+    var str5 = "😀smile😀"
+    assert_true(str5.rstrip("😀") == "😀smile")
+
+    # Ñ and Ò share the leading utf-8 byte of 0xc3
+    var str6 = "eeeeÑ"
+    assert_true(str6.rstrip("Ò") == "eeeeÑ")
+
 
 def test_lstrip():
     # with default lstrip chars
@@ -950,6 +958,14 @@ def test_lstrip():
     var str4 = " \n mississippimississippi"
     assert_true(str4.lstrip("mis ") == "\n mississippimississippi")
     assert_true(str4.lstrip("mis \n") == "ppimississippi")
+
+    # should strip off single codepoints
+    var str5 = "😀smile😀"
+    assert_true(str5.lstrip("😀") == "smile😀")
+
+    # Ñ and Ò share the leading utf-8 byte of 0xc3
+    var str6 = "Ñeeee"
+    assert_true(str6.lstrip("Ò") == "Ñeeee")
 
 
 def test_strip():
@@ -996,6 +1012,14 @@ def test_strip():
         " \n mississippimississippi \n ".strip(" ")
     )
     assert_true(comp_str4_stripped == "\n mississippimississippi \n")
+
+    # should strip off single codepoints
+    var str5 = "😀smile😀"
+    assert_true(str5.strip("😀") == "smile")
+
+    # Ñ and Ò share the leading utf-8 byte of 0xc3
+    var str6 = "ÑeeeeÑ"
+    assert_true(str6.strip("Ò") == "ÑeeeeÑ")
 
 
 def test_hash():

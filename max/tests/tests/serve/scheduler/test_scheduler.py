@@ -20,6 +20,7 @@ from max.interfaces import (
     GenerationStatus,
     MAXPullQueue,
     MAXPushQueue,
+    Pipeline,
     RequestID,
     SchedulerResult,
     TextGenerationInputs,
@@ -438,7 +439,7 @@ def test_scheduler_empty_batch() -> None:
 
 def _create_failing_pipeline() -> Mock:
     """Create a mock pipeline that raises an exception on execute."""
-    pipeline = Mock()
+    pipeline = Mock(spec=Pipeline)
     pipeline.execute = Mock(side_effect=RuntimeError("CUDA out of memory"))
     pipeline.release = Mock()
     pipeline._pipeline_model = Mock(_lora_manager=None)

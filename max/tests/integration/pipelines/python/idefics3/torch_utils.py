@@ -41,6 +41,7 @@ def run_text_generation(  # noqa: ANN201
     num_steps: int = 10,
     print_outputs: bool = False,
     use_cache: bool | None = None,
+    generate_logprobs: bool = False,
 ):
     """Run text generation using standard data processor for both text and images."""
 
@@ -76,6 +77,7 @@ def run_text_generation(  # noqa: ANN201
         print_outputs=print_outputs,
         use_cache=use_cache,
         request_processor_fn=idefics_request_processor,
+        generate_logprobs=generate_logprobs,
     )
 
 
@@ -93,9 +95,12 @@ def run_text_generation_with_custom_image_processing(  # noqa: ANN201
         [MockTextGenerationRequest], dict[str, torch.Tensor]
     ],
     use_cache: bool | None = None,
+    generate_logprobs: bool = False,
 ):
     """Run text generation with custom request processing for specialized models."""
-    saved_logits, store_logits = _create_logits_store()
+    saved_logits, store_logits = _create_logits_store(
+        generate_logprobs=generate_logprobs
+    )
     results = []
 
     for request in textgen_requests:

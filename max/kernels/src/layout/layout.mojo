@@ -51,7 +51,7 @@ var layout = Layout.row_major(3, 4)
 var memory_idx = layout([1, 2])
 
 # Create a tiled layout for blocked matrix multiplication
-var tiled = blocked_product(layout, Layout([2, 2]))
+var tiled = blocked_product(layout^, Layout([2, 2]))
 ```
 """
 
@@ -91,7 +91,7 @@ from .int_tuple import (
 # ===-----------------------------------------------------------------------===#
 
 
-trait LayoutTrait(ImplicitlyCopyable):
+trait LayoutTrait(Copyable):
     """Defines the interface for mapping between logical coordinates and memory indices.
 
     The `LayoutTrait` provides a common interface for all layout types, including
@@ -307,9 +307,9 @@ struct _LayoutIter[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
 
 
 struct Layout(
+    Copyable,
     Defaultable,
     Equatable,
-    ImplicitlyCopyable,
     Iterable,
     LayoutTrait,
     Sized,
@@ -1048,7 +1048,7 @@ comptime LayoutList = List[Layout]
 
 
 @always_inline("nodebug")
-fn MakeLayoutList(v0: Layout, v1: Layout) -> LayoutList:
+fn MakeLayoutList(var v0: Layout, var v1: Layout) -> LayoutList:
     """Creates a list containing two layouts.
 
     This is a convenience function for creating a LayoutList with two elements.
@@ -1060,7 +1060,7 @@ fn MakeLayoutList(v0: Layout, v1: Layout) -> LayoutList:
     Returns:
         A LayoutList containing the two provided layouts.
     """
-    return [v0, v1]
+    return [v0^, v1^]
 
 
 fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
@@ -1178,7 +1178,7 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
     return Layout(result_shape, result_stride)
 
 
-fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
+fn composition(var layout_a: Layout, var layout_b: Layout) -> Layout:
     """Composes two layouts to create a new layout.
 
     This function creates a new layout by composing two layouts, where the first
@@ -1206,19 +1206,19 @@ fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
     # Compose a row-major layout with a tiling layout
     var base = Layout.row_major(6, 8)
     var tiling = Layout(IntTuple(3, 2), IntTuple(1, 3))
-    var composed = composition(base, tiling)
+    var composed = composition(base^, tiling^)
     # Result: A layout that represents a 3x2 tile from
     # layout_a
     ```
     """
     if len(layout_b) == 0:
-        return layout_a
+        return layout_a^
 
     if is_tuple(layout_b.shape):
         var r = Layout()
         for layoutB_i in layout_b:
-            r.append(composition(layout_a, layoutB_i))
-        return r
+            r.append(composition(layout_a.copy(), layoutB_i^))
+        return r^
 
     if layout_b.stride == 0:
         return Layout(layout_b.shape, 0)
@@ -1249,7 +1249,7 @@ fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
 
 
 # Tuple of layouts
-fn composition(layout_a: Layout, tiler: LayoutList) -> Layout:
+fn composition(var layout_a: Layout, tiler: LayoutList) -> Layout:
     """Composes a layout with a list of layouts to create a hierarchical layout.
 
     This function creates a new layout by composing each element of the first layout
@@ -1274,19 +1274,19 @@ fn composition(layout_a: Layout, tiler: LayoutList) -> Layout:
     var tilers = LayoutList()
     tilers.append(Layout(IntTuple(2, 2), IntTuple(1, 2)))
     tilers.append(Layout(IntTuple(3, 3), IntTuple(1, 3)))
-    var composed = composition(base, tilers)
+    var composed = composition(base^, tilers^)
     # Result: A layout with hierarchical tiling based on the tiler list
     ```
     """
     var result = Layout()
     for layout_item, tiler_item in zip(layout_a, tiler):
-        result.append(composition(layout_item, tiler_item))
+        result.append(composition(layout_item.copy(), tiler_item.copy()))
 
     # Remainder if tiler is shorter.
     for i in range(len(tiler), len(layout_a)):
         result.append(layout_a[i])
 
-    return result
+    return result^
 
 
 fn complement(layout: Layout, size: Int = 1) -> Layout:
@@ -1356,8 +1356,8 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
 
 @always_inline
 fn apply_tiler[
-    func: fn (Layout, Layout) -> Layout
-](layout_a: Layout, tiler: LayoutList) -> Layout:
+    func: fn (var Layout, var Layout) -> Layout
+](var layout_a: Layout, tiler: LayoutList) -> Layout:
     """Applies a layout transformation function to each element of a layout with a tiler.
 
     This utility function applies the specified transformation function to each
@@ -1384,15 +1384,15 @@ fn apply_tiler[
     var base = Layout.row_major(6, 8)
     var tilers = LayoutList()
     tilers.append(Layout(IntTuple(2, 2), IntTuple(1, 2)))
-    var result = apply_tiler[logical_divide](base, tilers)
+    var result = apply_tiler[logical_divide](base^, tilers)
     ```
     """
     if len(tiler) == 0:
-        return layout_a
+        return layout_a^
     var result = Layout()
     for i in range(len(tiler)):
-        result.append(func(layout_a[i], tiler[i]))
-    return result
+        result.append(func(layout_a[i], tiler[i].copy()))
+    return result^
 
 
 fn logical_divide(layout_a: Layout, _layout_b: Layout) -> Layout:
@@ -1410,7 +1410,8 @@ fn logical_divide(layout_a: Layout, _layout_b: Layout) -> Layout:
         A new layout representing the hierarchical division.
     """
     return composition(
-        layout_a, make_layout(_layout_b, complement(_layout_b, layout_a.size()))
+        layout_a.copy(),
+        make_layout(_layout_b, complement(_layout_b, layout_a.size())),
     )
 
 
@@ -1427,10 +1428,10 @@ fn logical_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
     Returns:
         A new layout representing the hierarchical division.
     """
-    return apply_tiler[logical_divide](layout_a, tiler)
+    return apply_tiler[logical_divide](layout_a.copy(), tiler)
 
 
-fn logical_product(_layout_a: Layout, layout_b: Layout) -> Layout:
+fn logical_product(var _layout_a: Layout, var layout_b: Layout) -> Layout:
     """Creates a product of two layouts.
 
     This function creates a hierarchical layout by taking the logical product
@@ -1448,7 +1449,7 @@ fn logical_product(_layout_a: Layout, layout_b: Layout) -> Layout:
         _layout_a,
         composition(
             complement(_layout_a, _layout_a.size() * layout_b.cosize()),
-            layout_b,
+            layout_b.copy(),
         ),
     )
 
@@ -1474,14 +1475,14 @@ fn zip_modes(layout_a: Layout, layout_b: Layout) -> Layout:
             zipped.append(layout_a[i])
         else:
             zipped.append(make_layout(layout_a[i], bi))
-    return zipped
+    return zipped^
 
 
 # If there is a 0-shape mode in layout_b, then the corresponding mode in
 # layout_a is taken as is without adding any additional tiling modes.
 fn blocked_product(
-    layout_a: Layout,
-    layout_b: Layout,
+    var layout_a: Layout,
+    var layout_b: Layout,
     coalesce_output: Bool = False,
 ) -> Layout:
     """Creates a blocked layout by combining two layouts.
@@ -1512,7 +1513,7 @@ fn blocked_product(
     # Define 2x2 blocks
     var block = Layout.row_major(2, 2)
     # Create a blocked layout with 2x2 blocks
-    var blocked = blocked_product(block, matrix)
+    var blocked = blocked_product(block^, matrix^)
     ```
 
     Output:
@@ -1532,17 +1533,17 @@ fn blocked_product(
     ```
     """
     # ((a_0, a_1, ...), (tile_0, tile_1, ...))
-    var lp = logical_product(layout_a, layout_b)
+    var lp = logical_product(layout_a^, layout_b^)
     # ((a_0, tile_0), (a_1, tile_1), ...)
     var zipped = zip_modes(lp[0], lp[1])
     if coalesce_output:
         return coalesce(zipped, keep_rank=True)
     else:
-        return zipped
+        return zipped^
 
 
 fn tile_to_shape(
-    tile: Layout, target_shape: IntTuple, order: Optional[IntTuple] = None
+    var tile: Layout, target_shape: IntTuple, order: Optional[IntTuple] = None
 ) -> Layout:
     """Creates a layout by tiling a base layout to match a target shape.
 
@@ -1569,7 +1570,7 @@ fn tile_to_shape(
     # Create a 2x2 tile layout
     var tile = Layout.row_major(2, 2)
     # Tile it to create a 6x4 layout
-    var tiled = tile_to_shape(tile, IntTuple(6, 4))
+    var tiled = tile_to_shape(tile^, IntTuple(6, 4))
     # Result: A layout with 3x2 tiles of size 2x2 each
     ```
     """
@@ -1595,10 +1596,10 @@ fn tile_to_shape(
     else:
         new_order = prefix_product(tiler_shape)  # default to column major
     var tiler = make_ordered_layout(tiler_shape, new_order)
-    return blocked_product(tile, tiler)
+    return blocked_product(tile^, tiler^)
 
 
-fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:
+fn logical_product(var layout_a: Layout, tiler: LayoutList) -> Layout:
     """Creates a product of a layout with a list of layouts.
 
     This is a variant of logical_product that works with a list of layouts
@@ -1622,12 +1623,12 @@ fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:
     var base = Layout.row_major(6, 8)
     var tilers = LayoutList()
     tilers.append(Layout(IntTuple(2, 2)))
-    var result = logical_product(base, tilers)
+    var result = logical_product(base^, tilers)
     ```
     """
     if len(tiler) == 1:
-        return logical_product(layout_a, tiler[0])
-    return apply_tiler[logical_product](layout_a, tiler)
+        return logical_product(layout_a^, tiler[0].copy())
+    return apply_tiler[logical_product](layout_a^, tiler)
 
 
 fn hierarchical_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
@@ -2073,7 +2074,7 @@ fn right_inverse(layout: Layout) -> Layout:
     return Layout(shape, stride)
 
 
-fn upcast[check: Bool = True](layout: Layout, factor: Int) -> Layout:
+fn upcast[check: Bool = True](var layout: Layout, factor: Int) -> Layout:
     """Fuses consecutive elements in a layout to create a coarser layout.
 
     This function is useful for converting between different data type granularities,
@@ -2091,7 +2092,7 @@ fn upcast[check: Bool = True](layout: Layout, factor: Int) -> Layout:
     """
     if is_int(layout.shape):
         if layout.stride == 0:
-            return layout
+            return layout^
         else:
             var fac = IntTuple(factor)
             var up_shape = shape_div[check](
@@ -2103,7 +2104,7 @@ fn upcast[check: Bool = True](layout: Layout, factor: Int) -> Layout:
         var res = Layout()
         for i in range(layout.rank()):
             res.append(upcast(layout[i], factor))
-        return res
+        return res^
 
 
 fn downcast(layout: Layout, factor: Int) -> Layout:

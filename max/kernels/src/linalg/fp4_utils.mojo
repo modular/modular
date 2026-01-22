@@ -22,8 +22,8 @@ from builtin.simd import _convert_f32_to_float8_ue8m0
 
 comptime SF_ATOM_M = (32, 4)
 comptime SF_ATOM_K = 4
-comptime SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
-comptime SF_K_GROUP_SIZE[SF_VECTOR_SIZE: Int] = SF_ATOM_K * SF_VECTOR_SIZE
+comptime SF_MN_GROUP_SIZE: Int = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+comptime SF_K_GROUP_SIZE[SF_VECTOR_SIZE: Int]: Int = SF_ATOM_K * SF_VECTOR_SIZE
 
 comptime NVFP4_SF_VECTOR_SIZE = 16
 comptime MXFP4_SF_VECTOR_SIZE = 32

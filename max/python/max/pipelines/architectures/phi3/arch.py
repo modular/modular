@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -26,7 +26,7 @@ from ..llama3 import weight_adapters
 from .model import Phi3Model
 
 phi3_arch = SupportedArchitecture(
-    name="Phi3ForCausalLM",
+    name="Phi3ForCausalLM_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["microsoft/phi-4", "microsoft/Phi-3.5-mini-instruct"],
     default_weights_format=WeightsFormat.gguf,

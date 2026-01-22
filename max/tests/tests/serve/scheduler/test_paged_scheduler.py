@@ -811,12 +811,12 @@ def test_paged_scheduler_oom_tg() -> None:
     assert_batch_info_equal(actual, expected)
 
 
-def test_paged_scheduler_max_batch_context_length_ce() -> None:
-    max_batch_context_length = 1000
+def test_paged_scheduler_max_batch_total_tokens_ce() -> None:
+    max_batch_total_tokens = 1000
     scheduler, request_queue = create_paged_scheduler(
-        max_seq_len=max_batch_context_length,
-        max_batch_context_length=max_batch_context_length,
-        target_tokens_per_batch_ce=max_batch_context_length,
+        max_seq_len=max_batch_total_tokens,
+        max_batch_total_tokens=max_batch_total_tokens,
+        target_tokens_per_batch_ce=max_batch_total_tokens,
         enable_chunked_prefill=True,
     )
 
@@ -845,15 +845,15 @@ def test_paged_scheduler_max_batch_context_length_ce() -> None:
         steps = batch.steps
         batch_size = batch.batch_size
         if batch.batch_type == BatchType.CE:
-            assert cached_toks + batch_size * steps <= max_batch_context_length
+            assert cached_toks + batch_size * steps <= max_batch_total_tokens
 
 
-def test_paged_scheduler_max_batch_context_length_tg() -> None:
-    max_batch_context_length = 1000
+def test_paged_scheduler_max_batch_total_tokens_tg() -> None:
+    max_batch_total_tokens = 1000
     scheduler, request_queue = create_paged_scheduler(
-        max_seq_len=max_batch_context_length,
-        max_batch_context_length=max_batch_context_length,
-        target_tokens_per_batch_ce=max_batch_context_length,
+        max_seq_len=max_batch_total_tokens,
+        max_batch_total_tokens=max_batch_total_tokens,
+        target_tokens_per_batch_ce=max_batch_total_tokens,
         enable_chunked_prefill=True,
     )
 
@@ -877,7 +877,7 @@ def test_paged_scheduler_max_batch_context_length_tg() -> None:
         steps = batch.steps
         batch_size = batch.batch_size
         if batch.batch_type == BatchType.CE:
-            assert cached_toks + batch_size * steps <= max_batch_context_length
+            assert cached_toks + batch_size * steps <= max_batch_total_tokens
 
 
 def test_paged_scheduler_dp8() -> None:

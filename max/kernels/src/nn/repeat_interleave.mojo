@@ -74,9 +74,8 @@ fn repeat_interleave[
         axis: The axis along which to repeat values.
         output: The output buffer.
     """
-    debug_assert(
-        is_row_major[input.rank](input.layout)
-        and is_row_major[output.rank](output.layout)
+    __comptime_assert (is_row_major[input.rank](input.layout)) and (
+        is_row_major[output.rank](output.layout)
     )
     __comptime_assert input.rank == output.rank
     __comptime_assert repeats.rank == 1

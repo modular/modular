@@ -31,8 +31,13 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn import ReturnLogits, Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -266,7 +271,7 @@ class InternVLModel(
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for InternVL."""
-        return InternVLConfig.get_kv_params(
+        return InternVLConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
@@ -291,7 +296,7 @@ class InternVLModel(
         `mgp.buffer.plan` op, and verifying with GPU free memory at runtime.
 
         The vision encoder memory scales with the number of images that can be
-        processed concurrently, which is limited by prefill_chunk_size / num_image_tokens
+        processed concurrently, which is limited by max_batch_input_tokens / num_image_tokens
         where num_image_tokens=256 for InternVL.
 
         TODO(GEX-2365): Replace this with a more general solution that analyzes
@@ -315,7 +320,8 @@ class InternVLModel(
         # Maximum number of images that can be processed is limited by
         # how many image tokens fit in the target new tokens
         max_images = (
-            pipeline_config.prefill_chunk_size // image_config.num_image_token
+            pipeline_config.max_batch_input_tokens
+            // image_config.num_image_token
         )
         # Ensure at least 1 image worth of memory.
         max_images = max(1, max_images)
@@ -336,7 +342,7 @@ class InternVLModel(
         # ~100KB per token for intermediate activations
         llm_memory_per_token = 100 * 1024  # 100 KiB
         llm_activation_memory = (
-            pipeline_config.prefill_chunk_size * llm_memory_per_token
+            pipeline_config.max_batch_input_tokens * llm_memory_per_token
         )
 
         total_activation_memory = (
@@ -553,7 +559,7 @@ class InternVLModel(
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        kv_params = InternVLConfig.get_kv_params(
+        kv_params = InternVLConfig.construct_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],

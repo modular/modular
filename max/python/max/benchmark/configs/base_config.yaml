@@ -13,7 +13,7 @@
 
 # Base Configuration for All Benchmarks
 # This is the root configuration that contains parameters common to all benchmark types.
-# It is inherited by serving_config.yaml and throughput_config.yaml.
+# It is inherited by serving_config.yaml.
 
 # Configuration metadata
 name: "Base Benchmark Configuration"

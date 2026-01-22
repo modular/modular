@@ -245,7 +245,7 @@ struct PythonObject(
             var val = c_long(Int(value))
             self = Self(from_owned=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():
-            var val = c_size_t(mlir_value=value.cast[DType.int]()._mlir_value)
+            var val = c_size_t(value.cast[DType.uint]())
             self = Self(from_owned=cpy.PyLong_FromSize_t(val))
         elif dtype.is_integral():
             var val = c_ssize_t(value.cast[DType.int]()._mlir_value)

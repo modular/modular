@@ -16,8 +16,9 @@ from __future__ import annotations
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn import ReturnLogits, YarnScalingParams
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.rotary_embedding import YarnScalingParams
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfigBase,
@@ -132,7 +133,7 @@ class GptOssConfig(MAXModelConfigBase):
     """KV cache parameters."""
 
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -152,15 +153,16 @@ class GptOssConfig(MAXModelConfigBase):
         """
         return KVCacheParams(
             dtype=cache_dtype,
+            num_layers=GptOssConfig.get_num_layers(huggingface_config),
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
-            num_layers=GptOssConfig.get_num_layers(huggingface_config),
             page_size=kv_cache_config.kv_cache_page_size,
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             devices=devices,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
     @staticmethod
@@ -344,7 +346,7 @@ class GptOssConfig(MAXModelConfigBase):
             devices=device_refs,
             interleaved_rope_weights=interleaved_rope_weights,
             return_logits=return_logits,
-            kv_params=GptOssConfig.get_kv_params(
+            kv_params=GptOssConfig.construct_kv_params(
                 huggingface_config=huggingface_config,
                 pipeline_config=pipeline_config,
                 devices=device_refs,
