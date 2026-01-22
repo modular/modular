@@ -24,8 +24,10 @@ from click.testing import CliRunner
 from max.driver import DeviceSpec
 from max.engine import GPUProfilingMode
 from max.entrypoints.cli import (
+    get_config_skip_fields,
     get_default,
     get_field_type,
+    get_fields_from_pydantic_model,
     is_flag,
     is_multiple,
     is_optional,
@@ -384,13 +386,18 @@ VALID_RESULTS = {
 def test_pipeline_config_cli_parsing() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
     field_types = get_type_hints(PipelineConfig)
-    for field_name, field_info in PipelineConfig.model_fields.items():
+    skip_fields = get_config_skip_fields(PipelineConfig)
+    for field in get_fields_from_pydantic_model(PipelineConfig):
         # Pydantic models aren't dataclasses; use model_fields for introspection.
         # `section_name` is an internal helper for config-file section selection,
         # not a real CLI/config parameter.
-        if field_name.startswith("_") or field_name == "section_name":
+        field_name = field.name
+        if field_name == "section_name" or field_name in skip_fields:
             continue
-        validate_field_type(field_types.get(field_name, field_info.annotation))
+        field_type = field_types.get(
+            field_name, PipelineConfig.model_fields[field_name].annotation
+        )
+        validate_field_type(field_type)
 
 
 @prepare_registry
