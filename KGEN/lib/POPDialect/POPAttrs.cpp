@@ -2002,6 +2002,46 @@ LogicalResult SIMDCeilAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDTruncAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr SIMDTruncAttr::get(MLIRContext *ctx, TypedAttr operand) {
+  // Fold if possible.
+  if (auto fold = foldSIMDOp(
+          {operand}, [](APSInt operand) { return operand; },
+          [](APFloat operand) {
+            operand.roundToIntegral(APFloat::rmTowardZero);
+            return operand;
+          },
+          [](bool operand) { return operand; })) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, operand);
+}
+
+TypedAttr
+SIMDTruncAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                          MLIRContext *context, TypedAttr operand) {
+  if (failed(verify(emitError, operand)))
+    return {};
+  return SIMDTruncAttr::get(context, operand);
+}
+
+bool SIMDTruncAttr::isConstant() const { return false; }
+
+Type SIMDTruncAttr::getType() const { return getOperand().getType(); }
+
+LogicalResult
+SIMDTruncAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                      TypedAttr operand) {
+  auto simdType = dyn_cast<SIMDType>(operand.getType());
+  if (!simdType)
+    return emitError() << "requires a SIMD-typed operand";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // SIMD Binary Operation Attrs
 //===----------------------------------------------------------------------===//
 
