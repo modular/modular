@@ -132,10 +132,6 @@ run --run_env=MODULAR_TELEMETRY_ENABLED=false
 # Fix parallel tests competing for a single CPU on graviton
 build --test_env=KMP_AFFINITY=none
 
-build --action_env=MODULAR_DISABLE_AFFINITY=1
-build --host_action_env=MODULAR_DISABLE_AFFINITY=1
-build --test_env=MODULAR_DISABLE_AFFINITY=1
-
 # Differentiate between accidental 'bazel run' vs 'bazel test'
 test --test_env=MODULAR_RUNNING_TESTS=true
 
