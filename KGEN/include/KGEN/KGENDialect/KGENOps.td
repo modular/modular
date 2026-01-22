@@ -383,6 +383,12 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
     - The `immediateParents` parameter contains the conformance tables that this
       conformance table directly inherits from. It only includes the first level
       of parents, not any further ancestors.
+    - The `constraint` parameter specifies the condition under which this
+      conformance applies. This is used for conditional trait conformance,
+      where a struct only conforms to a trait when certain conditions are met.
+      Unconditional conformances use a trivially true constraint (proposition =
+      constant 1) and are not printed with a `where` clause. Note: the builder
+      canonicalizes null constraints to the trivially true constraint.
 
     Logically, a ConformanceOp represents a witness table whose contents is a
     concatenation of each parent ConformanceOp's conformance table followed by
@@ -401,16 +407,61 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
       ...
     }
     ```
+
+    Example with conditional conformance:
+
+    ```mlir
+    kgen.struct.generator @List<T: type> = ... {
+      kgen.conformance @Copyable where #kgen.constraint<conforms_to(T, Copyable), loc> {
+        ...
+      }
+      ...
+    }
+    ```
   }];
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     OptionalAttr<SymbolRefAttr>:$traitRef,
-    DefaultValuedAttr<M_SymbolRefArrayAttr, "ArrayRef<SymbolRefAttr>{}">:$immediateParents
+    DefaultValuedAttr<M_SymbolRefArrayAttr, "ArrayRef<SymbolRefAttr>{}">:$immediateParents,
+    KGEN_ConstraintAttr:$constraint
   );
   let regions = (region SizedRegion<1>:$body);
 
-  let assemblyFormat = "$sym_name $body attr-dict-with-keyword";
+  let hasCustomAssemblyFormat = 1;
+
+  // Skip default builders to avoid conflict with our canonicalizing builders.
+  let skipDefaultBuilders = 1;
+
+  // Builders with constraint canonicalization - null constraints become
+  // the trivially true constraint (proposition = constant 1).
+  let builders = [
+    // Primary builder that canonicalizes null constraints to the trivially
+    // true constraint. This allows callers to pass a potentially-null
+    // constraint.
+    OpBuilder<(ins "StringAttr":$sym_name,
+                   "SymbolRefAttr":$traitRef,
+                   "SymbolRefArrayAttr":$immediateParents,
+                   "ConstraintAttr":$constraint), [{
+      $_state.addAttribute(getSymNameAttrName($_state.name), sym_name);
+      if (traitRef)
+        $_state.addAttribute(getTraitRefAttrName($_state.name), traitRef);
+      $_state.addAttribute(getImmediateParentsAttrName($_state.name),
+                           immediateParents);
+      $_state.addAttribute(getConstraintAttrName($_state.name),
+                           constraint ? constraint
+                                      : getUnconditionalConstraint(
+                                            $_builder.getContext()));
+      (void)$_state.addRegion();
+    }]>,
+    // Builder for unconditional conformance (no constraint argument).
+    OpBuilder<(ins "StringAttr":$sym_name,
+                   "SymbolRefAttr":$traitRef,
+                   "SymbolRefArrayAttr":$immediateParents), [{
+      build($_builder, $_state, sym_name, traitRef, immediateParents,
+            /*constraint=*/ConstraintAttr());
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
