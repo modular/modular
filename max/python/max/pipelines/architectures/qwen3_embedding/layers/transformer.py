@@ -17,10 +17,9 @@ from __future__ import annotations
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, TensorValueLike, ops
 from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.layer import Layer, LayerList, Module
+from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.transformer import ReturnHiddenStates
 
 
 class Qwen3EmbeddingTransformerBlock(Module):
@@ -35,9 +34,9 @@ class Qwen3EmbeddingTransformerBlock(Module):
     def __init__(
         self,
         attention: Module,
-        mlp: Layer,
-        attention_norm: Layer,
-        mlp_norm: Layer,
+        mlp: Module,
+        attention_norm: Module,
+        mlp_norm: Module,
         residual_multiplier: float = 1.0,
     ) -> None:
         super().__init__()
@@ -99,11 +98,10 @@ class Qwen3EmbeddingTransformer(Module):
         dim: int,
         n_heads: int,
         layers: list[Qwen3EmbeddingTransformerBlock],
-        norm: Layer,
+        norm: Module,
         output: Linear,  # Still keep for weight sharing, but won't use
         embedding: Embedding,
         rope: RotaryEmbedding,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.ALL,
         embedding_multiplier: float = 1.0,
         device: DeviceRef = DeviceRef.CPU(),
     ) -> None:
@@ -117,7 +115,6 @@ class Qwen3EmbeddingTransformer(Module):
             output: Output projection (for weight sharing with embedding)
             embedding: Token embedding layer
             rope: Rotary position embedding
-            return_hidden_states: Which hidden states to return
             embedding_multiplier: Multiplier for embeddings (if applicable)
         """
         super().__init__()
@@ -129,7 +126,6 @@ class Qwen3EmbeddingTransformer(Module):
         self.embed_tokens = embedding
         self.embedding_multiplier = embedding_multiplier
         self.rope = rope
-        self.return_hidden_states = return_hidden_states
         self.device = device
 
     def input_types(self) -> tuple[TensorType, ...]:
@@ -155,7 +151,7 @@ class Qwen3EmbeddingTransformer(Module):
         tokens: TensorValueLike,
         input_row_offsets: TensorValue,
         return_n_logits: TensorValue,  # Kept for interface compatibility
-    ) -> tuple[TensorValue, ...]:
+    ) -> TensorValue:
         """Forward pass for embedding generation.
 
         Args:
@@ -164,7 +160,7 @@ class Qwen3EmbeddingTransformer(Module):
             return_n_logits: Number of logits to return (unused for embeddings)
 
         Returns:
-            Tuple containing hidden states based on return_hidden_states setting
+            Hidden states tensor [total_seq_len, hidden_size]
         """
         # Embed tokens
         h = self.embed_tokens(tokens)
@@ -177,19 +173,6 @@ class Qwen3EmbeddingTransformer(Module):
         input_row_offsets_device = input_row_offsets.to(self.device)
         for layer in self.layers:
             h = layer(h, input_row_offsets_device)
-        # For embedding models, we typically return all hidden states
-        # The pooling will be done outside the transformer
-        if self.return_hidden_states == ReturnHiddenStates.ALL:
-            return (h,)
-        elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-            return (self.norm(h),)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST:
-            # Return last token of each sequence
-            last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
-            return (last_h,)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-            last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
-            return (self.norm(last_h),)
-        else:
-            # Default: return all hidden states
-            return (h,)
+        h = self.norm(h)
+
+        return h
