@@ -31,7 +31,7 @@ from layout.tensor_core_async import (
 )
 
 from .config import MatmulConfig
-from linalg.structuring import SMemTileArrayType, SMemArrayType
+from linalg.structuring import SMemTileArray, SMemArray
 
 
 struct BlockwiseFP8Smem[
@@ -86,25 +86,25 @@ struct BlockwiseFP8Smem[
     comptime a_scales_smem_layout = Layout.row_major(1, Self.BM)
 
     # ========== Tile Array Type Aliases ==========
-    comptime ATileArray = SMemTileArrayType[
+    comptime ATileArray = SMemTileArray[
         Self.a_type,
         Self.a_smem_layout,
         Self.num_pipeline_stages,
         alignment=128,
     ]
-    comptime BTileArray = SMemTileArrayType[
+    comptime BTileArray = SMemTileArray[
         Self.b_type,
         Self.b_smem_layout,
         Self.num_pipeline_stages,
         alignment=128,
     ]
-    comptime CTileArray = SMemTileArrayType[
+    comptime CTileArray = SMemTileArray[
         Self.c_type,
         Self.c_smem_layout,
         Self.num_output_stages,
         alignment=128,
     ]
-    comptime AScalesTileArray = SMemTileArrayType[
+    comptime AScalesTileArray = SMemTileArray[
         Self.a_scales_type,
         Self.a_scales_smem_layout,
         Self.num_pipeline_stages,
@@ -112,10 +112,10 @@ struct BlockwiseFP8Smem[
     ]
 
     # ========== Storage Fields ==========
-    var a_tiles_storage: Self.ATileArray.StorageType
-    var b_tiles_storage: Self.BTileArray.StorageType
-    var c_tiles_storage: Self.CTileArray.StorageType
-    var a_scales_tiles_storage: Self.AScalesTileArray.StorageType
+    var a_tiles_storage: Self.ATileArray.Storage
+    var b_tiles_storage: Self.BTileArray.Storage
+    var c_tiles_storage: Self.CTileArray.Storage
+    var a_scales_tiles_storage: Self.AScalesTileArray.Storage
 
     @always_inline
     fn a_tiles(ref [AddressSpace.SHARED]self) -> Self.ATileArray:
@@ -134,31 +134,31 @@ struct BlockwiseFP8Smem[
         return Self.AScalesTileArray(self.a_scales_tiles_storage)
 
     # ========== Barrier Type Aliases ==========
-    comptime InputBarriers = SMemArrayType[
+    comptime InputBarriers = SMemArray[
         SharedMemBarrier, Self.num_group_pipeline_stages * 2
     ]
-    comptime AccumBarriers = SMemArrayType[
+    comptime AccumBarriers = SMemArray[
         SharedMemBarrier, Self.num_accum_pipeline_stages * 2
     ]
-    comptime ClcBarriers = SMemArrayType[
+    comptime ClcBarriers = SMemArray[
         SharedMemBarrier, Self.num_clc_pipeline_stages
     ]
-    comptime ClcThrottleBarriers = SMemArrayType[
+    comptime ClcThrottleBarriers = SMemArray[
         SharedMemBarrier, Self.num_clc_pipeline_stages * 2
     ]
-    comptime ClcResponse = SMemArrayType[UInt128, Self.num_clc_pipeline_stages]
-    comptime TmemDealloc = SMemArrayType[SharedMemBarrier, 1]
-    comptime TmemAddr = SMemArrayType[UInt32, 1]
+    comptime ClcResponse = SMemArray[UInt128, Self.num_clc_pipeline_stages]
+    comptime TmemDealloc = SMemArray[SharedMemBarrier, 1]
+    comptime TmemAddr = SMemArray[UInt32, 1]
 
     # ========== Barrier Storage Fields ==========
-    var tma_mma_mbars_storage: Self.InputBarriers.StorageType
-    var accum_mbars_storage: Self.AccumBarriers.StorageType
-    var clc_mbars_full_storage: Self.ClcBarriers.StorageType
-    var clc_mbars_empty_storage: Self.ClcBarriers.StorageType
-    var clc_throttle_mbars_storage: Self.ClcThrottleBarriers.StorageType
-    var clc_response_storage: Self.ClcResponse.StorageType
-    var tmem_dealloc_mbar_storage: Self.TmemDealloc.StorageType
-    var tmem_addr_storage: Self.TmemAddr.StorageType
+    var tma_mma_mbars_storage: Self.InputBarriers.Storage
+    var accum_mbars_storage: Self.AccumBarriers.Storage
+    var clc_mbars_full_storage: Self.ClcBarriers.Storage
+    var clc_mbars_empty_storage: Self.ClcBarriers.Storage
+    var clc_throttle_mbars_storage: Self.ClcThrottleBarriers.Storage
+    var clc_response_storage: Self.ClcResponse.Storage
+    var tmem_dealloc_mbar_storage: Self.TmemDealloc.Storage
+    var tmem_addr_storage: Self.TmemAddr.Storage
 
     # ========== Barrier Accessors ==========
     @always_inline

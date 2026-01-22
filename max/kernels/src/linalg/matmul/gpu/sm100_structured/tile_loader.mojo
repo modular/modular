@@ -29,7 +29,7 @@ Usage:
 
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 
-from linalg.structuring import SMemTileType
+from linalg.structuring import SMemTile
 
 
 @register_passable("trivial")
@@ -83,7 +83,7 @@ struct TileLoaderTMA[
         alignment: Int = 128,
     ](
         self,
-        dest: SMemTileType[Self.dtype, tile_layout, alignment=alignment],
+        dest: SMemTile[Self.dtype, tile_layout, alignment=alignment],
         ref [AddressSpace.SHARED]barrier: SharedMemBarrier,
         k_coord: UInt,
         row_coord: UInt,
@@ -152,7 +152,7 @@ struct ScalesTileLoader[
         alignment: Int = 128,
     ](
         self,
-        dest: SMemTileType[Self.dtype, tile_layout, alignment=alignment],
+        dest: SMemTile[Self.dtype, tile_layout, alignment=alignment],
         ref [AddressSpace.SHARED]barrier: SharedMemBarrier,
         row_coord: Int,
         k_coord: Int,

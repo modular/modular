@@ -22,7 +22,7 @@ This module provides:
 
 from gpu import thread_idx, WARP_SIZE
 from layout import Layout
-from linalg.structuring import SMemArrayType
+from linalg.structuring import SMemArray
 from os.atomic import Atomic
 from sys._assembly import inlined_assembly
 from utils import StaticTuple
@@ -173,7 +173,7 @@ struct SingleCounterSync[
     comptime writes_per_warp_block = 1
     comptime block_warps = Self.block_rows // Self.warp_rows
     comptime total_tiles = Self.block_warps * Self.pipeline_stages
-    comptime SyncCounterArray = SMemArrayType[Int32, Self.total_tiles]
+    comptime SyncCounterArray = SMemArray[Int32, Self.total_tiles]
 
     var sync_counter: Self.SyncCounterArray
 
@@ -247,8 +247,8 @@ struct SplitCounterSync[
     comptime block_warps = Self.block_rows // Self.warp_rows
     comptime total_tiles = Self.block_warps * Self.pipeline_stages
 
-    comptime ProducerCounterArray = SMemArrayType[Int32, Self.total_tiles]
-    comptime ConsumerCounterArray = SMemArrayType[Int32, Self.total_tiles]
+    comptime ProducerCounterArray = SMemArray[Int32, Self.total_tiles]
+    comptime ConsumerCounterArray = SMemArray[Int32, Self.total_tiles]
 
     var producer_counters: Self.ProducerCounterArray
     var consumer_counters: Self.ConsumerCounterArray

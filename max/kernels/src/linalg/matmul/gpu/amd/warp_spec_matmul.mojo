@@ -54,7 +54,7 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg
-from linalg.structuring import ScatterGatherAmd, SMemArrayType
+from linalg.structuring import ScatterGatherAmd, SMemArray
 from utils import IndexList, StaticTuple
 
 # Unified implementation with configurable sync strategies

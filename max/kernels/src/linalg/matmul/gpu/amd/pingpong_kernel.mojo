@@ -45,7 +45,7 @@ from gpu._utils import to_i64
 
 from collections import OptionalReg
 
-from ....structuring import SMemTileType, RegTileType, eval
+from ....structuring import SMemTile, RegTile, eval
 from ....utils import elementwise_epilogue_type
 from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout
 from layout.swizzle import Swizzle
@@ -250,7 +250,7 @@ struct TileLoaderLDS[
         //,
     ](
         self,
-        dst: SMemTileType[Self.dtype, dst_layout, ...],
+        dst: SMemTile[Self.dtype, dst_layout, ...],
         src_row: Int,
         src_col: Int,
     ):
@@ -425,10 +425,10 @@ fn load_lds_fragment[
     mma_access_layout: Layout,
     swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
 ](
-    smem_tile: SMemTileType[
+    smem_tile: SMemTile[
         dtype, smem_layout, element_layout=smem_element_layout, ...
     ],
-    reg_frag: RegTileType[
+    reg_frag: RegTile[
         dtype, frag_layout, element_layout=frag_element_layout, ...
     ],
 ):
@@ -636,7 +636,7 @@ struct MmaOp[
     It processes warp-sized tiles (WM × BK for A, WN × BK for B) without
     knowledge of the broader kernel architecture.
 
-    MmaOp accepts generic SMemTileType and validates compatibility at
+    MmaOp accepts generic SMemTile and validates compatibility at
     compile-time via load_lds_fragment constraints.
 
     Note: Several values are derived from other parameters:
@@ -725,13 +725,13 @@ struct MmaOp[
     comptime lgkm_per_load_ab = Self.lgkm_per_load_a + Self.lgkm_per_load_b  # Combined A+B load
 
     # Register tile type aliases - sized for MMA fragment width
-    comptime RegTileType[num_mmas: Int] = RegTileType[
+    comptime RegTile[num_mmas: Int] = RegTile[
         Self.in_type,
         Layout.row_major(num_mmas, Self.num_k_mmas * Self.mma_frag_width),
         alignment = Self.alignment,
     ]
-    comptime ARegTileType = Self.RegTileType[Self.num_m_mmas]
-    comptime BRegTileType = Self.RegTileType[Self.num_n_mmas]
+    comptime ARegTile = Self.RegTile[Self.num_m_mmas]
+    comptime BRegTile = Self.RegTile[Self.num_n_mmas]
 
     # Output layout: Single contiguous register tile for all accumulators
     # Layout: (num_m_mmas, num_n_mmas * accum_width) = (8, 4*4) = (8, 16)
@@ -740,7 +740,7 @@ struct MmaOp[
     comptime out_reg_layout = Layout.row_major(
         Self.num_m_mmas, Self.num_n_mmas * Self.accum_width
     )
-    comptime OutRegTileType = RegTileType[
+    comptime OutRegTile = RegTile[
         Self.accum_type,
         Self.out_reg_layout,
         alignment = Self.alignment,
@@ -760,12 +760,12 @@ struct MmaOp[
     )
 
     # Register tiles for A and B inputs
-    var a_reg_tile: Self.ARegTileType
-    var b_reg_tile: Self.BRegTileType
+    var a_reg_tile: Self.ARegTile
+    var b_reg_tile: Self.BRegTile
 
     # Single contiguous output register tile
     # Quadrants accessed via .tile[] views: out_reg_tile.tile[quadrant_m_size, quadrant_n_size](qa, qb)
-    var out_reg_tile: Self.OutRegTileType
+    var out_reg_tile: Self.OutRegTile
 
     @always_inline
     fn __init__(out self):
@@ -775,11 +775,11 @@ struct MmaOp[
         constrained[Self.BK % Self.MMA_K == 0]()
         constrained[(Self.MMA_M * Self.MMA_N) % WARP_SIZE == 0]()
 
-        self.a_reg_tile = Self.ARegTileType.stack_allocation()
-        self.b_reg_tile = Self.BRegTileType.stack_allocation()
+        self.a_reg_tile = Self.ARegTile.stack_allocation()
+        self.b_reg_tile = Self.BRegTile.stack_allocation()
 
         # Initialize contiguous output tile to zero
-        self.out_reg_tile = Self.OutRegTileType.stack_allocation().fill(0)
+        self.out_reg_tile = Self.OutRegTile.stack_allocation().fill(0)
 
     @always_inline
     fn reset_accumulator(self):
@@ -787,10 +787,10 @@ struct MmaOp[
         _ = self.out_reg_tile.fill(0)
 
     @always_inline
-    fn load_a[which: Int](self, smem_tile: SMemTileType[Self.in_type, ...]):
+    fn load_a[which: Int](self, smem_tile: SMemTile[Self.in_type, ...]):
         """Load A[which] from LDS → registers.
 
-        Accepts SMemTileType with matching dtype - layout compatibility validated
+        Accepts SMemTile with matching dtype - layout compatibility validated
         at compile-time via load_lds_fragment constraints.
 
         For FP8 16×16×128: Uses lds_frag_width=16 with 2 K-iterations per MMA.
@@ -808,10 +808,10 @@ struct MmaOp[
         ](smem_frag, reg_frag)
 
     @always_inline
-    fn load_b[which: Int](self, smem_tile: SMemTileType[Self.in_type, ...]):
+    fn load_b[which: Int](self, smem_tile: SMemTile[Self.in_type, ...]):
         """Load B[which] from LDS → registers.
 
-        Accepts SMemTileType with matching dtype - layout compatibility validated
+        Accepts SMemTile with matching dtype - layout compatibility validated
         at compile-time via load_lds_fragment constraints.
 
         For FP8 16×16×128: Uses lds_frag_width=16 with 2 K-iterations per MMA.
@@ -953,7 +953,7 @@ struct TileBuffers[
     comptime mma_tile_n = Self.WN // 2
 
     # Type aliases for shared memory tiles
-    comptime SMemTile[rows: Int, cols: Int] = SMemTileType[
+    comptime SMemTile[rows: Int, cols: Int] = SMemTile[
         Self.in_type,
         Layout.row_major(rows, cols),
         alignment = Self.alignment,

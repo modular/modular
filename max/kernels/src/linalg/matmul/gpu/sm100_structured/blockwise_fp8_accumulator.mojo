@@ -34,7 +34,7 @@ from layout import Layout, LayoutTensor
 from utils.index import IndexList
 from utils.static_tuple import StaticTuple
 
-from linalg.structuring import RegTileType, SMemTileType, SMemTileArrayType
+from linalg.structuring import RegTile, SMemTile, SMemTileArray
 from .pipeline import ProducerConsumerPipeline
 from .tile_pipeline import OutputStage, EpilogueKStage
 from .tmem import TmemAddress, TmemFragments
@@ -125,8 +125,8 @@ struct BlockwiseFP8Accumulator[
     comptime MMA_M = Self.mma_shape[0]
     comptime MMA_N = Self.mma_shape[1]
 
-    comptime UpperTile = RegTileType[Self.accum_type, Self.accum_layout]
-    comptime LowerTile = RegTileType[Self.accum_type, Self.accum_layout]
+    comptime UpperTile = RegTile[Self.accum_type, Self.accum_layout]
+    comptime LowerTile = RegTile[Self.accum_type, Self.accum_layout]
 
     comptime num_stages = Self.accum_layout.shape[0].value()
     comptime num_elements = Self.accum_layout.shape[1].value()
@@ -181,7 +181,7 @@ struct BlockwiseFP8Accumulator[
     ](
         mut self,
         b_scales: LayoutTensor[b_scales_dtype, b_scales_layout, MutAnyOrigin],
-        a_scales_tiles: SMemTileArrayType[
+        a_scales_tiles: SMemTileArray[
             a_scales_dtype,
             a_scales_smem_layout,
             num_pipeline_stages,

@@ -29,7 +29,7 @@ from utils.index import IndexList
 
 from .blockwise_fp8_accumulator import BlockwiseFP8Accumulator
 from .tile_writer import store_fragment_to_smem
-from linalg.structuring import SMemTileArrayType
+from linalg.structuring import SMemTileArray
 
 
 # =============================================================================
@@ -55,7 +55,7 @@ struct BlockwiseFP8TileWriter[
     """Write register accumulators to GMEM via SMEM and TMA."""
 
     # ========== Tile Array Type ==========
-    comptime CTileArray = SMemTileArrayType[
+    comptime CTileArray = SMemTileArray[
         Self.c_type, Self.c_smem_layout, Self.num_output_stages, alignment=128
     ]
 

@@ -219,8 +219,8 @@ __extension HopperMatmulSM90Kernel:
             warpgroup_reg_alloc[232]()
 
             var local_warp_group_idx = warp_group_idx - 1
-            var c_reg_tile = Self.AccumRegTileType.stack_allocation()
-            var final_c_reg_tile = Self.AccumRegTileType.stack_allocation()
+            var c_reg_tile = Self.AccumRegTile.stack_allocation()
+            var final_c_reg_tile = Self.AccumRegTile.stack_allocation()
 
             # Enter consumer mode
             with ring_buffer.consumer() as consumer:

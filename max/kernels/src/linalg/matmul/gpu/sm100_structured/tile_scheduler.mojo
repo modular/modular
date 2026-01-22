@@ -27,7 +27,7 @@ from layout.tma_async import PipelineState, SharedMemBarrier
 
 from utils.fast_div import FastDiv
 
-from linalg.structuring import SMemPtr, SMemArrayType
+from linalg.structuring import SMemPtr, SMemArray
 from .pipeline import ProducerConsumerPipeline
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -437,9 +437,9 @@ struct TileScheduler[
     comptime ThrottlePipeline = ProducerConsumerPipeline[Self.num_stages]
 
     # Typed barrier array aliases for clean API
-    comptime ClcResponseArray = SMemArrayType[UInt128, Self.num_stages]
-    comptime ClcBarrierArray = SMemArrayType[SharedMemBarrier, Self.num_stages]
-    comptime ThrottleBarrierArray = SMemArrayType[
+    comptime ClcResponseArray = SMemArray[UInt128, Self.num_stages]
+    comptime ClcBarrierArray = SMemArray[SharedMemBarrier, Self.num_stages]
+    comptime ThrottleBarrierArray = SMemArray[
         SharedMemBarrier, Self.num_stages * 2
     ]
 

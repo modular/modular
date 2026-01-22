@@ -75,7 +75,7 @@ from layout import Layout
 from layout.tma_async import SharedMemBarrier
 from .pipeline import ProducerConsumerPipeline
 from .tmem import TmemAllocation, TmemStage
-from linalg.structuring import SMemPtr, SMemTileArrayType, SMemArrayType
+from linalg.structuring import SMemPtr, SMemTileArray, SMemArray
 
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
@@ -103,10 +103,10 @@ struct StandardTilePayload[
 ](TilePayload):
     """Tile payload for standard matmul (A and B tiles)."""
 
-    comptime ATileArray = SMemTileArrayType[
+    comptime ATileArray = SMemTileArray[
         Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
     ]
-    comptime BTileArray = SMemTileArrayType[
+    comptime BTileArray = SMemTileArray[
         Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
     ]
     comptime ATile = Self.ATileArray.Tile
@@ -157,19 +157,19 @@ struct BlockScaledTilePayload[
 ](TilePayload):
     """Tile payload for block-scaled matmul (A, B, SFA, SFB tiles)."""
 
-    comptime ATileArray = SMemTileArrayType[
+    comptime ATileArray = SMemTileArray[
         Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
     ]
-    comptime BTileArray = SMemTileArrayType[
+    comptime BTileArray = SMemTileArray[
         Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
     ]
-    comptime SFATileArray = SMemTileArrayType[
+    comptime SFATileArray = SMemTileArray[
         Self.sfa_type,
         Self.sfa_tile_layout,
         Self.num_pipeline_stages,
         alignment=128,
     ]
-    comptime SFBTileArray = SMemTileArrayType[
+    comptime SFBTileArray = SMemTileArray[
         Self.sfb_type,
         Self.sfb_tile_layout,
         Self.num_pipeline_stages,
@@ -258,13 +258,13 @@ struct BlockwiseFP8TilePayload[
     B-scales are read directly from global memory during the epilogue phase.
     """
 
-    comptime ATileArray = SMemTileArrayType[
+    comptime ATileArray = SMemTileArray[
         Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
     ]
-    comptime BTileArray = SMemTileArrayType[
+    comptime BTileArray = SMemTileArray[
         Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
     ]
-    comptime AScalesTileArray = SMemTileArrayType[
+    comptime AScalesTileArray = SMemTileArray[
         Self.a_scales_type,
         Self.a_scales_tile_layout,
         Self.num_pipeline_stages,
@@ -343,7 +343,7 @@ struct InputTilePipeline[
     """
 
     comptime Pipeline = ProducerConsumerPipeline[Self.num_group_stages]
-    comptime BarrierArray = SMemArrayType[
+    comptime BarrierArray = SMemArray[
         SharedMemBarrier, Self.num_group_stages * 2
     ]
 
@@ -661,10 +661,10 @@ struct TilePipeline[
     """
 
     comptime Pipeline = ProducerConsumerPipeline[Self.num_group_stages]
-    comptime ATileArray = SMemTileArrayType[
+    comptime ATileArray = SMemTileArray[
         Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
     ]
-    comptime BTileArray = SMemTileArrayType[
+    comptime BTileArray = SMemTileArray[
         Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
     ]
     comptime ATile = Self.ATileArray.Tile
@@ -684,7 +684,7 @@ struct TilePipeline[
         var pipeline = Self.Pipeline(storage_ptr)
         pipeline.init_mbars(producer_arv_count, consumer_arv_count)
 
-    comptime BarrierArray = SMemArrayType[
+    comptime BarrierArray = SMemArray[
         SharedMemBarrier, Self.num_group_stages * 2
     ]
 
@@ -1149,7 +1149,7 @@ struct OutputTilePipeline[
     """Pipeline for MMA→Epilogue TMEM stage synchronization."""
 
     comptime Pipeline = ProducerConsumerPipeline[Self.num_stages]
-    comptime BarrierArray = SMemArrayType[SharedMemBarrier, Self.num_stages * 2]
+    comptime BarrierArray = SMemArray[SharedMemBarrier, Self.num_stages * 2]
     comptime Tmem = TmemAllocation[Self.cta_group]
     comptime Stage = OutputStage[
         Self.num_stages, Self.stage_stride_cols, Self.cta_group

@@ -20,7 +20,7 @@ from gpu.primitives.cluster import block_rank_in_cluster
 from gpu.sync import named_barrier, named_barrier_arrive
 from layout.tma_async import SharedMemBarrier
 
-from linalg.structuring import SMemArrayType
+from linalg.structuring import SMemArray
 
 from .tmem import TmemAllocation
 
@@ -60,7 +60,7 @@ struct TmemDeallocBarrier[cta_group: Int]:
     supporting both single-CTA and multi-CTA (cta_group=2) configurations.
     """
 
-    comptime BarrierStorage = SMemArrayType[SharedMemBarrier, 1]
+    comptime BarrierStorage = SMemArray[SharedMemBarrier, 1]
 
     var barrier: Self.BarrierStorage
 

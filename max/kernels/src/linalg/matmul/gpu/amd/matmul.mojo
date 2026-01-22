@@ -45,9 +45,9 @@ from utils.numerics import get_accum_type
 
 from ....structuring import (
     IteratorScatterGatherAmd,
-    RegTileType,
+    RegTile,
     ScatterGatherAmd,
-    SMemTileType,
+    SMemTile,
 )
 from ....utils import elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig
@@ -59,7 +59,7 @@ from itertools import product
 
 comptime SMemWarpTileType[
     _dtype: DType, layout: Layout, warp_rows: Int, warp_cols: Int
-] = SMemTileType[_dtype, layout].TileType[warp_rows, warp_cols]
+] = SMemTile[_dtype, layout].TileType[warp_rows, warp_cols]
 """Type alias for warp-level shared memory tiles with specified dimensions."""
 
 
@@ -89,40 +89,40 @@ struct MmaOpAMD[
         num_mmas * Self.num_k_tiles, Self.simd_width
     )
 
-    comptime RegTileType[num_mmas: Int] = RegTileType[
+    comptime RegTile[num_mmas: Int] = RegTile[
         Self.in_type, Self.reg_tile_layout[num_mmas]
     ]
 
     # Register-level storage for matrix data during computation
-    var _a_reg_tile: Self.RegTileType[Self.num_m_mmas]
-    var _b_reg_tile: Self.RegTileType[Self.num_n_mmas]
+    var _a_reg_tile: Self.RegTile[Self.num_m_mmas]
+    var _b_reg_tile: Self.RegTile[Self.num_n_mmas]
 
     # FIXME: We didn't use to support 3D layouts, now we do.
     # This should really be Layout.row_major(num_m_mmas, num_n_mmas, out_frag_size)
     comptime out_reg_layout = Layout.row_major(
         Self.num_m_mmas * Self.num_n_mmas, Self.out_frag_size
     )
-    comptime OutRegTileType = RegTileType[Self.out_type, Self.out_reg_layout]
+    comptime OutRegTile = RegTile[Self.out_type, Self.out_reg_layout]
 
     # Accumulation registers for result
-    var out_reg_tile: Self.OutRegTileType
+    var out_reg_tile: Self.OutRegTile
 
     @always_inline
     fn __init__(out self):
-        self._a_reg_tile = Self.RegTileType[Self.num_m_mmas].stack_allocation()
-        self._b_reg_tile = Self.RegTileType[Self.num_n_mmas].stack_allocation()
-        self.out_reg_tile = Self.OutRegTileType.stack_allocation()
+        self._a_reg_tile = Self.RegTile[Self.num_m_mmas].stack_allocation()
+        self._b_reg_tile = Self.RegTile[Self.num_n_mmas].stack_allocation()
+        self.out_reg_tile = Self.OutRegTile.stack_allocation()
 
     @always_inline
     fn a_reg_tile(
         self, k_tile_idx: Int
-    ) -> Self.RegTileType[Self.num_m_mmas].SIMDTileType[Self.num_m_mmas]:
+    ) -> Self.RegTile[Self.num_m_mmas].SIMDTileType[Self.num_m_mmas]:
         return self._a_reg_tile.simd_tile[Self.num_m_mmas](k_tile_idx)
 
     @always_inline
     fn b_reg_tile(
         self, k_tile_idx: Int
-    ) -> Self.RegTileType[Self.num_n_mmas].SIMDTileType[Self.num_n_mmas]:
+    ) -> Self.RegTile[Self.num_n_mmas].SIMDTileType[Self.num_n_mmas]:
         return self._b_reg_tile.simd_tile[Self.num_n_mmas](k_tile_idx)
 
     @always_inline
@@ -175,8 +175,8 @@ struct MMATileBuffers[
     # Tensor types for different memory regions
 
     # Shared memory tiles
-    comptime SMemTileType = SMemTileType[Self._dtype, Self.smem_layout]
-    var smem_tile: Self.SMemTileType
+    comptime SMemTile = SMemTile[Self._dtype, Self.smem_layout]
+    var smem_tile: Self.SMemTile
 
     # View on Shared memory tiles optimized for MmaOp
     var smem_warp_tile: SMemWarpTileType[
@@ -184,8 +184,8 @@ struct MMATileBuffers[
     ]
 
     # Register tile fragments for data movement from GMEM to SMEM
-    comptime MMARegTileType = RegTileType[Self._dtype, Self.reg_tile_layout]
-    var load_reg_tile: Self.MMARegTileType
+    comptime MMARegTile = RegTile[Self._dtype, Self.reg_tile_layout]
+    var load_reg_tile: Self.MMARegTile
 
     @always_inline
     fn __init__(
@@ -203,11 +203,11 @@ struct MMATileBuffers[
             warp_k_idx: The warp index within the computation grid (used for MMA operations).
             block_idx: The block index within the computation grid (used for warp tiling).
         """
-        self.smem_tile = Self.SMemTileType.stack_allocation()
+        self.smem_tile = Self.SMemTile.stack_allocation()
         self.smem_warp_tile = self.smem_tile.tile[
             Self.warp_rows, Self.warp_cols
         ](warp_idx, warp_k_idx)
-        self.load_reg_tile = Self.MMARegTileType.stack_allocation()
+        self.load_reg_tile = Self.MMARegTile.stack_allocation()
 
     @always_inline
     fn copy_to_smem(self):

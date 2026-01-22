@@ -31,7 +31,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout, LayoutTensor
 from layout.tma_async import TMATensorTile
 
-from linalg.structuring import SMemTileArrayType
+from linalg.structuring import SMemTileArray
 from linalg.utils import elementwise_compute_lambda_type
 
 from utils.index import IndexList
@@ -96,7 +96,7 @@ struct TileWriter[
         Self.c_type, Self.c_layout, Self.c_desc_layout
     ]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
-    comptime CTileArray = SMemTileArrayType[
+    comptime CTileArray = SMemTileArray[
         Self.c_type, Self.c_smem_layout, Self.num_output_stages, alignment=128
     ]
     comptime Stage = OutputStage[

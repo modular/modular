@@ -102,10 +102,10 @@ from .tile_scheduler_splitk import TileScheduler as TileSchedulerSplitK
 from .tile_writer import EpilogueConfig
 from linalg.structuring import (
     SMemPtr,
-    SMemTileType,
+    SMemTile,
     SMemTileIter,
-    SMemTileArrayType,
-    SMemArrayType,
+    SMemTileArray,
+    SMemArray,
 )
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
 
@@ -202,7 +202,7 @@ struct KernelContext[
     # SchedulerWorkIterator and WorkIterator respectively.
 
     # ===== TMEM Pointer =====
-    comptime TmemAddrArray = SMemArrayType[UInt32, 1]
+    comptime TmemAddrArray = SMemArray[UInt32, 1]
     var ptr_tmem_addr: SMemPtr[UInt32]
 
     @always_inline
@@ -394,20 +394,20 @@ struct B200MatmulSmem[
     comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
 
     # ========== Tile Array Type Aliases ==========
-    # SMemTileArrayType for indexing into pipeline stages (uses [index] syntax)
-    comptime ATileArray = SMemTileArrayType[
+    # SMemTileArray for indexing into pipeline stages (uses [index] syntax)
+    comptime ATileArray = SMemTileArray[
         Self.a_type,
         Self.a_smem_layout,
         Self.num_pipeline_stages,
         alignment=128,
     ]
-    comptime BTileArray = SMemTileArrayType[
+    comptime BTileArray = SMemTileArray[
         Self.b_type,
         Self.b_smem_layout,
         Self.num_pipeline_stages,
         alignment=128,
     ]
-    comptime CTileArray = SMemTileArrayType[
+    comptime CTileArray = SMemTileArray[
         Self.c_type,
         Self.c_smem_layout,
         Self.num_output_stages,
@@ -416,9 +416,9 @@ struct B200MatmulSmem[
 
     # ========== Storage Fields ==========
     # Tile storage sized to match tile array requirements
-    var a_tiles_storage: Self.ATileArray.StorageType
-    var b_tiles_storage: Self.BTileArray.StorageType
-    var c_tiles_storage: Self.CTileArray.StorageType
+    var a_tiles_storage: Self.ATileArray.Storage
+    var b_tiles_storage: Self.BTileArray.Storage
+    var c_tiles_storage: Self.CTileArray.Storage
 
     @always_inline
     fn a_tiles(ref [AddressSpace.SHARED]self) -> Self.ATileArray:
@@ -433,31 +433,31 @@ struct B200MatmulSmem[
         return Self.CTileArray(self.c_tiles_storage)
 
     # ========== Barrier Type Aliases ==========
-    comptime InputBarriers = SMemArrayType[
+    comptime InputBarriers = SMemArray[
         SharedMemBarrier, Self.num_group_pipeline_stages * 2
     ]
-    comptime AccumBarriers = SMemArrayType[
+    comptime AccumBarriers = SMemArray[
         SharedMemBarrier, Self.num_accum_pipeline_stages * 2
     ]
-    comptime ClcBarriers = SMemArrayType[
+    comptime ClcBarriers = SMemArray[
         SharedMemBarrier, Self.num_clc_pipeline_stages
     ]
-    comptime ClcThrottleBarriers = SMemArrayType[
+    comptime ClcThrottleBarriers = SMemArray[
         SharedMemBarrier, Self.num_clc_pipeline_stages * 2
     ]
-    comptime ClcResponse = SMemArrayType[UInt128, Self.num_clc_pipeline_stages]
-    comptime TmemDealloc = SMemArrayType[SharedMemBarrier, 1]
-    comptime TmemAddr = SMemArrayType[UInt32, 1]
+    comptime ClcResponse = SMemArray[UInt128, Self.num_clc_pipeline_stages]
+    comptime TmemDealloc = SMemArray[SharedMemBarrier, 1]
+    comptime TmemAddr = SMemArray[UInt32, 1]
 
     # ========== Barrier Storage ==========
-    var input_barriers_storage: Self.InputBarriers.StorageType
-    var accum_barriers_storage: Self.AccumBarriers.StorageType
-    var clc_full_storage: Self.ClcBarriers.StorageType
-    var clc_empty_storage: Self.ClcBarriers.StorageType
-    var clc_throttle_storage: Self.ClcThrottleBarriers.StorageType
-    var clc_response_storage: Self.ClcResponse.StorageType
-    var tmem_dealloc_storage: Self.TmemDealloc.StorageType
-    var tmem_addr_storage: Self.TmemAddr.StorageType
+    var input_barriers_storage: Self.InputBarriers.Storage
+    var accum_barriers_storage: Self.AccumBarriers.Storage
+    var clc_full_storage: Self.ClcBarriers.Storage
+    var clc_empty_storage: Self.ClcBarriers.Storage
+    var clc_throttle_storage: Self.ClcThrottleBarriers.Storage
+    var clc_response_storage: Self.ClcResponse.Storage
+    var tmem_dealloc_storage: Self.TmemDealloc.Storage
+    var tmem_addr_storage: Self.TmemAddr.Storage
 
     # ========== Barrier Accessors ==========
     @always_inline
@@ -717,10 +717,10 @@ struct BlackwellMatmulSM100Kernel[
     # Peer tile types - each peer CTA loads a slice matching the TMA descriptor
     # These have the correct shape (a_desc_layout, b_desc_layout) rather than
     # the full SMEM tile shape (a_smem_layout, b_smem_layout)
-    comptime APeerTile = SMemTileType[
+    comptime APeerTile = SMemTile[
         Self.a_type, Self.a_desc_layout, alignment=128
     ]
-    comptime BPeerTile = SMemTileType[
+    comptime BPeerTile = SMemTile[
         Self.b_type, Self.b_desc_layout, alignment=128
     ]
 
@@ -1536,12 +1536,12 @@ struct BlackwellMatmulSM100FallbackKernel[
     comptime b_size = Self.b_smem_layout.size()
 
     # ========== Tile Type Aliases ==========
-    comptime ATile = SMemTileType[
+    comptime ATile = SMemTile[
         Self.a_type,
         Self.a_smem_layout,
         alignment=128,
     ]
-    comptime BTile = SMemTileType[
+    comptime BTile = SMemTile[
         Self.b_type,
         Self.b_smem_layout,
         alignment=128,

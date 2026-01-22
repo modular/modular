@@ -32,7 +32,7 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
 )
 from .config import BlockScaledMatmulConfig
-from linalg.structuring import SMemTileArrayType, SMemArrayType
+from linalg.structuring import SMemTileArray, SMemArray
 
 
 struct BlockScaledSmem[
@@ -99,31 +99,31 @@ struct BlockScaledSmem[
     ]()
 
     # ========== Tile Array Type Aliases ==========
-    comptime ATileArray = SMemTileArrayType[
+    comptime ATileArray = SMemTileArray[
         Self.a_type,
         Self.a_smem_layout,
         Self.num_pipeline_stages,
         alignment=128,
     ]
-    comptime BTileArray = SMemTileArrayType[
+    comptime BTileArray = SMemTileArray[
         Self.b_type,
         Self.b_smem_layout,
         Self.num_pipeline_stages,
         alignment=128,
     ]
-    comptime CTileArray = SMemTileArrayType[
+    comptime CTileArray = SMemTileArray[
         Self.c_type,
         Self.c_smem_layout,
         Self.num_output_stages,
         alignment=128,
     ]
-    comptime SFATileArray = SMemTileArrayType[
+    comptime SFATileArray = SMemTileArray[
         Self.sfa_dtype,
         Self.sfa_smem_layout,
         Self.num_pipeline_stages,
         alignment=128,
     ]
-    comptime SFBTileArray = SMemTileArrayType[
+    comptime SFBTileArray = SMemTileArray[
         Self.sfb_dtype,
         Self.sfb_smem_layout,
         Self.num_pipeline_stages,
@@ -131,11 +131,11 @@ struct BlockScaledSmem[
     ]
 
     # ========== Storage Fields ==========
-    var a_tiles_storage: Self.ATileArray.StorageType
-    var b_tiles_storage: Self.BTileArray.StorageType
-    var c_tiles_storage: Self.CTileArray.StorageType
-    var sfa_tiles_storage: Self.SFATileArray.StorageType
-    var sfb_tiles_storage: Self.SFBTileArray.StorageType
+    var a_tiles_storage: Self.ATileArray.Storage
+    var b_tiles_storage: Self.BTileArray.Storage
+    var c_tiles_storage: Self.CTileArray.Storage
+    var sfa_tiles_storage: Self.SFATileArray.Storage
+    var sfb_tiles_storage: Self.SFBTileArray.Storage
 
     @always_inline
     fn a_tiles(ref [AddressSpace.SHARED]self) -> Self.ATileArray:
@@ -158,31 +158,31 @@ struct BlockScaledSmem[
         return Self.SFBTileArray(self.sfb_tiles_storage)
 
     # ========== Barrier Type Aliases ==========
-    comptime InputBarriers = SMemArrayType[
+    comptime InputBarriers = SMemArray[
         SharedMemBarrier, Self.num_group_pipeline_stages * 2
     ]
-    comptime AccumBarriers = SMemArrayType[
+    comptime AccumBarriers = SMemArray[
         SharedMemBarrier, Self.num_accum_pipeline_stages * 2
     ]
-    comptime ClcBarriers = SMemArrayType[
+    comptime ClcBarriers = SMemArray[
         SharedMemBarrier, Self.num_clc_pipeline_stages
     ]
-    comptime ClcThrottleBarriers = SMemArrayType[
+    comptime ClcThrottleBarriers = SMemArray[
         SharedMemBarrier, Self.num_clc_pipeline_stages * 2
     ]
-    comptime ClcResponse = SMemArrayType[UInt128, Self.num_clc_pipeline_stages]
-    comptime TmemDealloc = SMemArrayType[SharedMemBarrier, 1]
-    comptime TmemAddr = SMemArrayType[UInt32, 1]
+    comptime ClcResponse = SMemArray[UInt128, Self.num_clc_pipeline_stages]
+    comptime TmemDealloc = SMemArray[SharedMemBarrier, 1]
+    comptime TmemAddr = SMemArray[UInt32, 1]
 
     # ========== Barrier Storage Fields ==========
-    var tma_mma_mbars_storage: Self.InputBarriers.StorageType
-    var accum_mbars_storage: Self.AccumBarriers.StorageType
-    var clc_mbars_full_storage: Self.ClcBarriers.StorageType
-    var clc_mbars_empty_storage: Self.ClcBarriers.StorageType
-    var clc_throttle_mbars_storage: Self.ClcThrottleBarriers.StorageType
-    var clc_response_storage: Self.ClcResponse.StorageType
-    var tmem_dealloc_mbar_storage: Self.TmemDealloc.StorageType
-    var tmem_addr_storage: Self.TmemAddr.StorageType
+    var tma_mma_mbars_storage: Self.InputBarriers.Storage
+    var accum_mbars_storage: Self.AccumBarriers.Storage
+    var clc_mbars_full_storage: Self.ClcBarriers.Storage
+    var clc_mbars_empty_storage: Self.ClcBarriers.Storage
+    var clc_throttle_mbars_storage: Self.ClcThrottleBarriers.Storage
+    var clc_response_storage: Self.ClcResponse.Storage
+    var tmem_dealloc_mbar_storage: Self.TmemDealloc.Storage
+    var tmem_addr_storage: Self.TmemAddr.Storage
 
     @always_inline
     fn tma_mma_mbars(ref [AddressSpace.SHARED]self) -> Self.InputBarriers:
