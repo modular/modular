@@ -45,11 +45,53 @@ _EXTRA_MOJO_TEST_CONSTRAINTS = {
     for src in glob(
         ["**/*.mojo"],
         exclude = [
+            "test_device_external_function.mojo",
             "test_function_error.mojo",
             "test_function_error_sync_mode.mojo",
         ],
     )
 ]
+
+filegroup(
+    name = "vec_add_cubin_sm80",
+    testonly = True,
+    srcs = ["data/vec_add.sm80.cubin"],
+)
+
+filegroup(
+    name = "vec_add_cubin_sm90",
+    testonly = True,
+    srcs = ["data/vec_add.sm90.cubin"],
+)
+
+filegroup(
+    name = "vec_add_cubin_sm100",
+    testonly = True,
+    srcs = ["data/vec_add.sm100.cubin"],
+)
+
+mojo_test(
+    name = "test_device_external_function.mojo.test",
+    srcs = ["test_device_external_function.mojo"],
+    data = select({
+        "//:b200_gpu": [":vec_add_cubin_sm100"],
+        "//:h100_gpu": [":vec_add_cubin_sm90"],
+        "//conditions:default": [":vec_add_cubin_sm80"],
+    }),
+    env = select({
+        "//:b200_gpu": {"CUBIN_PATH": "$(location :vec_add_cubin_sm100)"},
+        "//:h100_gpu": {"CUBIN_PATH": "$(location :vec_add_cubin_sm90)"},
+        "//conditions:default": {"CUBIN_PATH": "$(location :vec_add_cubin_sm80)"},
+    }),
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)
 
 mojo_filecheck_test(
     name = "test_function_error.mojo.test",

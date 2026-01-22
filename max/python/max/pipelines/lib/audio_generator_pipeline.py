@@ -24,7 +24,7 @@ from max.interfaces import (
     RequestID,
 )
 from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
-from max.nn import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TTSContext
 
 if TYPE_CHECKING:

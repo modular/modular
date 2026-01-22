@@ -394,7 +394,6 @@ fn multi_stage_store_C[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
     num_output_warps: Int = 4,
-    max_tmem_cols: Int = 512,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     transpose_c: Bool = False,
 ](
@@ -1143,7 +1142,6 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 c_swizzle=c_swizzle,
                 cta_group=cta_group,
                 num_output_warps=num_output_warps,
-                max_tmem_cols=max_tmem_cols,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 transpose_c=transpose_c,
             ](

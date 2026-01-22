@@ -32,12 +32,10 @@ modular_py_test(
     ],
     imports = ["."],
     mojo_deps = [
+        "//max:MOGGKernelAPI",
         "//max/tests/integration:test_user_op",
         "@mojo//:std",
-    ] + select({
-        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
-        "//conditions:default": [],
-    }),
+    ],
     deps = [
         "//max/python/max:_core",
         "//max/python/max/driver",

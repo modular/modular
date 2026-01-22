@@ -21,6 +21,7 @@ from sys.intrinsics import gather, scatter, strided_load, strided_store
 from builtin.rebind import downcast
 from builtin.simd import _simd_construction_checks
 from builtin.variadics import Variadic
+from format._utils import FormatStruct, Named
 from reflection.type_info import _unqualified_type_name
 from memory import memcpy
 from memory.memory import _free, _malloc
@@ -502,17 +503,11 @@ struct LegacyUnsafePointer[
         Args:
             writer: The object to write to.
         """
-        writer.write(
-            "LegacyUnsafePointer[mut=",
-            Self.mut,
-            ", ",
+        FormatStruct(writer, "LegacyUnsafePointer").params(
+            Named("mut", Self.mut),
             _unqualified_type_name[Self.type](),
-            ", address_space=",
-            Self.address_space,
-            "](",
-            self,
-            ")",
-        )
+            Named("address_space", Self.address_space),
+        ).fields(self)
 
     # ===-------------------------------------------------------------------===#
     # Methods

@@ -11,4 +11,4 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""GptOss layers."""
+"""GPT-Oss layers."""

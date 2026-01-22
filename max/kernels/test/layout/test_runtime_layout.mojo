@@ -44,7 +44,7 @@ def test_runtime_layout_const():
         layout, element_type = DType.uint32, linear_idx_type = DType.uint32
     ](shape_runtime, stride_runtime)
 
-    assert_equal(String(layout_r.layout), "((-1, 8):(8, 1))")
+    assert_equal(String(materialize[layout_r.layout]()), "((-1, 8):(8, 1))")
     assert_equal(String(layout_r), "((16, 8):(8, 1))")
 
 
@@ -146,7 +146,9 @@ def test_coalesce():
         RuntimeTuple[layout_t.stride, element_type = DType.uint32](1, 1),
     )
     assert_equal(String(coalesce(layout)), "((8, 1):(1, 1))")
-    assert_equal(String(coalesce_layout(layout_t)), "((-1, -1):(-1, 1))")
+    assert_equal(
+        String(coalesce_layout(materialize[layout_t]())), "((-1, -1):(-1, 1))"
+    )
 
     comptime layout_t_2 = Layout(
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, 8, 1),
@@ -165,7 +167,7 @@ def test_coalesce():
 
     assert_equal(String(coalesce(layout_2)), "((32, 16, 8):(16, 8, 1))")
     assert_equal(
-        String(coalesce_layout(layout_t_2)),
+        String(coalesce_layout(materialize[layout_t_2]())),
         "((-1, -1, 8):(-1, 8, 1))",
     )
 

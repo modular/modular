@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from transformers import AutoConfig
 
@@ -30,7 +30,7 @@ class BertModelConfig(MAXModelConfig):
         return {}
 
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],

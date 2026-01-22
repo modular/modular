@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.transformer.distributed_transformer
+.. automodule:: max.nn.legacy.transformer.distributed_transformer
    :members:
    :undoc-members:

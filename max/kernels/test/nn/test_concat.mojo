@@ -109,7 +109,7 @@ def test_concat():
             Index(output.size())
         ),
     )
-    for i in range(out_layout.size()):
+    for i in range(comptime (out_layout.size())):
         print(output_flat.load[1](Index(i)))
 
 
@@ -189,7 +189,7 @@ def test_concat_parallel():
             Index(output.size())
         ),
     )
-    for i in range(out_layout.size()):
+    for i in range(comptime (out_layout.size())):
         print(output_flat.load[1](Index(i)))
 
 
@@ -262,7 +262,7 @@ def test_concat_inner():
             Index(output.size())
         ),
     )
-    for i in range(out_layout.size()):
+    for i in range(comptime (out_layout.size())):
         print(output_flat.load[1](Index(i)))
 
 

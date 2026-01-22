@@ -20,8 +20,8 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
 
@@ -122,7 +122,7 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Gemma 3.
 
-        Delegates to the :obj:`Gemma3Config.get_kv_params` static method.
+        Delegates to the :obj:`Gemma3Config.construct_kv_params` static method.
 
         Args:
             huggingface_config: The HuggingFace model configuration object

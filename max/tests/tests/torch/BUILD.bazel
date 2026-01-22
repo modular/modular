@@ -25,7 +25,6 @@ modular_py_test(
     ],
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     target_compatible_with = select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
@@ -35,11 +34,11 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/mlir",
         "//max/python/max/torch",
-        requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
     ],

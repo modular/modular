@@ -14,7 +14,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -25,9 +25,10 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import Gemma3Model
+from .model_config import Gemma3Config
 
 gemma3_arch = SupportedArchitecture(
-    name="Gemma3ForCausalLM",
+    name="Gemma3ForCausalLM_Legacy",
     example_repo_ids=[
         # it = Instruction tuned (recommended).
         # pt = Pre-trained.
@@ -50,4 +51,5 @@ gemma3_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    config=Gemma3Config,
 )

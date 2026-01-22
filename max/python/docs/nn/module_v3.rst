@@ -1,9 +1,9 @@
-:title: module_v3
+:title: module
 :type: module
 :lang: python
 
-.. py:currentmodule:: max.nn.module_v3
+.. py:currentmodule:: max.nn
 
-.. automodule:: max.nn.module_v3
+.. automodule:: max.nn.module
    :members:
    :undoc-members:

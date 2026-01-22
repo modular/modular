@@ -10,17 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.nn.module_v3.rope."""
+"""Tests for max.nn.rope."""
 
 from __future__ import annotations
 
 import pytest
-from max.experimental.tensor import Tensor, TensorType
-from max.nn.module_v3.rope import (
+from max.nn.rope import (
     RotaryEmbedding,
     TransposedRotaryEmbedding,
     rope,
 )
+from max.tensor import Tensor, TensorType
 
 
 def test_repr() -> None:

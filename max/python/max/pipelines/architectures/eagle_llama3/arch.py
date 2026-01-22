@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -22,11 +22,12 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
+from ..llama3.model_config import Llama3Config
 from . import weight_adapters
 from .model import EagleLlama3Model
 
 eagle_llama_arch = SupportedArchitecture(
-    name="EagleLlamaForCausalLM",
+    name="EagleLlamaForCausalLM_Legacy",
     example_repo_ids=[
         "lmsys/sglang-EAGLE-LLaMA3-Instruct-8B",
     ],
@@ -46,4 +47,5 @@ eagle_llama_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     task=PipelineTask.TEXT_GENERATION,
+    config=Llama3Config,
 )

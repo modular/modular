@@ -46,7 +46,7 @@ trait Indexer:
     """
     The `Indexer` trait is used for types that can index into a collection or
     pointer. The type returned is the underlying __mlir_type.index, enabling
-    types like `UInt` to not have to be converted to an `Int` first.
+    types like `SIMD` to not have to be converted to an `Int` first.
     """
 
     fn __mlir_index__(self) -> __mlir_type.index:
@@ -286,15 +286,6 @@ struct Int(
             value: The init value.
         """
         self = value.__int__()
-
-    @always_inline("builtin")
-    fn __init__(out self, value: UInt):
-        """Construct Int from the given UInt value.
-
-        Args:
-            value: The init value.
-        """
-        self._mlir_value = value._mlir_value
 
     @always_inline("nodebug")
     fn __init__[T: Intable](out self, value: T):

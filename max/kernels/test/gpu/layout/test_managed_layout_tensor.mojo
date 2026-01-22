@@ -30,14 +30,14 @@ fn test_managed_layout_tensor_1d() raises:
     # Test with CPU context
     var cpu_tensor = ManagedLayoutTensor[DType.float32, layout_1d]()
     var host_tensor_1d = cpu_tensor.tensor[update=False]()
-    assert_equal(host_tensor_1d.layout.rank(), 1)
+    assert_equal(comptime (host_tensor_1d.layout.rank()), 1)
     assert_equal(host_tensor_1d.dim[0](), 10)
 
     # Test with GPU context
     var gpu_ctx = DeviceContext()
     var gpu_tensor = ManagedLayoutTensor[DType.float32, layout_1d](gpu_ctx)
     var device_tensor_1d = gpu_tensor.device_tensor[update=False]()
-    assert_equal(device_tensor_1d.layout.rank(), 1)
+    assert_equal(comptime (device_tensor_1d.layout.rank()), 1)
     assert_equal(device_tensor_1d.dim[0](), 10)
 
 
@@ -48,7 +48,7 @@ fn test_managed_layout_tensor_2d() raises:
     # Test with CPU context
     var cpu_tensor = ManagedLayoutTensor[DType.float32, layout_2d]()
     var host_tensor_2d = cpu_tensor.tensor[update=False]()
-    assert_equal(host_tensor_2d.layout.rank(), 2)
+    assert_equal(comptime (host_tensor_2d.layout.rank()), 2)
     assert_equal(host_tensor_2d.dim[0](), 4)
     assert_equal(host_tensor_2d.dim[1](), 6)
 
@@ -56,7 +56,7 @@ fn test_managed_layout_tensor_2d() raises:
     var gpu_ctx = DeviceContext()
     var gpu_tensor = ManagedLayoutTensor[DType.float32, layout_2d](gpu_ctx)
     var device_tensor_2d = gpu_tensor.device_tensor[update=False]()
-    assert_equal(device_tensor_2d.layout.rank(), 2)
+    assert_equal(comptime (device_tensor_2d.layout.rank()), 2)
     assert_equal(device_tensor_2d.dim[0](), 4)
     assert_equal(device_tensor_2d.dim[1](), 6)
 
@@ -68,7 +68,7 @@ fn test_managed_layout_tensor_3d() raises:
     # Test with CPU context
     var cpu_tensor = ManagedLayoutTensor[DType.float32, layout_3d]()
     var host_tensor_3d = cpu_tensor.tensor[update=False]()
-    assert_equal(host_tensor_3d.layout.rank(), 3)
+    assert_equal(comptime (host_tensor_3d.layout.rank()), 3)
     assert_equal(host_tensor_3d.dim[0](), 2)
     assert_equal(host_tensor_3d.dim[1](), 3)
     assert_equal(host_tensor_3d.dim[2](), 4)
@@ -77,7 +77,7 @@ fn test_managed_layout_tensor_3d() raises:
     var gpu_ctx = DeviceContext()
     var gpu_tensor = ManagedLayoutTensor[DType.float32, layout_3d](gpu_ctx)
     var device_tensor_3d = gpu_tensor.device_tensor[update=False]()
-    assert_equal(device_tensor_3d.layout.rank(), 3)
+    assert_equal(comptime (device_tensor_3d.layout.rank()), 3)
     assert_equal(device_tensor_3d.dim[0](), 2)
     assert_equal(device_tensor_3d.dim[1](), 3)
     assert_equal(device_tensor_3d.dim[2](), 4)
@@ -97,7 +97,7 @@ fn test_managed_layout_tensor_dynamic() raises:
         runtime_layout
     )
     var host_tensor_dynamic = cpu_tensor.tensor[update=False]()
-    assert_equal(host_tensor_dynamic.layout.rank(), 3)
+    assert_equal(comptime (host_tensor_dynamic.layout.rank()), 3)
     assert_equal(host_tensor_dynamic.dim[0](), 5)
     assert_equal(host_tensor_dynamic.dim[1](), 8)
     assert_equal(host_tensor_dynamic.dim[2](), 4)
@@ -108,7 +108,7 @@ fn test_managed_layout_tensor_dynamic() raises:
         runtime_layout, gpu_ctx
     )
     var device_tensor_dynamic = gpu_tensor.device_tensor[update=False]()
-    assert_equal(device_tensor_dynamic.layout.rank(), 3)
+    assert_equal(comptime (device_tensor_dynamic.layout.rank()), 3)
     assert_equal(device_tensor_dynamic.dim[0](), 5)
     assert_equal(device_tensor_dynamic.dim[1](), 8)
     assert_equal(device_tensor_dynamic.dim[2](), 4)

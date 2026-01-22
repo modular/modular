@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.attention.ragged_attention
+.. automodule:: max.nn.legacy.attention.ragged_attention
    :members:
    :undoc-members:

@@ -18,7 +18,7 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import Signals
+from max.nn.legacy import Signals
 from max.pipelines.architectures.llama4.layers.moe import (
     DistributedLlama4MoE,
     Llama4MoEGate,

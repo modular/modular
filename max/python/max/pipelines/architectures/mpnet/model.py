@@ -26,8 +26,8 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.dataprocessing import collate_batch
 from max.pipelines.lib import (
@@ -107,7 +107,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return MPNetConfig.get_kv_params(
+        return MPNetConfig.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=devices,

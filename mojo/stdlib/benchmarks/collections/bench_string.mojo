@@ -19,7 +19,7 @@ from pathlib import _dir_of_current_file
 from random import seed
 from sys import stderr
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 
 # ===-----------------------------------------------------------------------===#
@@ -63,13 +63,12 @@ fn make_string[
 @parameter
 fn bench_string_init(mut b: Bencher) raises:
     @always_inline
-    @parameter
-    fn call_fn():
+    fn call_fn() unified {}:
         for _ in range(1000):
-            var d = String()
-            keep(d.unsafe_ptr())
+            var string = String()
+            keep(string)
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -84,13 +83,11 @@ fn bench_string_count[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var amnt = items.count(sequence)
+    fn call_fn() unified {read}:
+        var amnt = black_box(items).count(black_box(sequence))
         keep(amnt)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -107,19 +104,21 @@ fn bench_string_split[
     )
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
+    fn call_fn() unified {read}:
         var res: List[type_of(items)]
 
         @parameter
         if sequence:
-            res = _split[has_maxsplit=False](items, sequence.value(), -1)
+            res = _split[has_maxsplit=False](
+                black_box(items), black_box(sequence.value()), black_box(-1)
+            )
         else:
-            res = _split[has_maxsplit=False](items, None, -1)
-        keep(res.unsafe_ptr())
+            res = _split[has_maxsplit=False](
+                black_box(items), None, black_box(-1)
+            )
+        keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -133,19 +132,19 @@ fn bench_string_join[short: Bool](mut b: Bencher) raises:
     else:
         count = 1000
 
-    word_list = List[String](capacity=count)
+    var word_list = List[String](capacity=count)
     for i in range(count):
         word_list.append(String(i))
 
-    @always_inline
-    @parameter
-    fn call_fn() raises:
-        for _ in range(1_000):
-            res = String(",").join(word_list)
-            keep(Bool(res))
+    var separator = String(",")
 
-    b.iter[call_fn]()
-    keep(Bool(word_list))
+    @always_inline
+    fn call_fn() unified {read}:
+        for _ in range(1_000):
+            var res = black_box(separator).join(black_box(word_list))
+            keep(res)
+
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -158,14 +157,12 @@ fn bench_string_splitlines[
     var items = make_string[length](filename + ".txt").as_string_slice()
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
+    fn call_fn() unified {read}:
         for _ in range(1_000_000 // length):
-            var res = items.splitlines()
-            keep(res.unsafe_ptr())
+            var res = black_box(items).splitlines()
+            keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -178,13 +175,11 @@ fn bench_string_lower[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var res = items.lower()
-        keep(res.unsafe_ptr())
+    fn call_fn() unified {read}:
+        var res = black_box(items).lower()
+        keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -197,13 +192,11 @@ fn bench_string_upper[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var res = items.upper()
-        keep(res.unsafe_ptr())
+    fn call_fn() unified {read}:
+        var res = black_box(items).upper()
+        keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -219,13 +212,11 @@ fn bench_string_replace[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var res = items.replace(old, new)
-        keep(res.unsafe_ptr())
+    fn call_fn() unified {read}:
+        var res = black_box(items).replace(black_box(old), black_box(new))
+        keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -238,13 +229,11 @@ fn bench_string_count_codepoints[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var res = items.count_codepoints()
+    fn call_fn() unified {read}:
+        var res = black_box(items).count_codepoints()
         keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -257,15 +246,15 @@ fn bench_string_find_single[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
+    fn call_fn() unified {read}:
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
-            var res = items.find("Z")  # something that probably won't be there
+            var res = black_box(items).find(
+                black_box("Z")
+            )  # something that probably won't be there
             keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -279,16 +268,13 @@ fn bench_string_find_multiple[
     var sequence = "ZZZZ"  # something that probably won't be there
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
+    fn call_fn() unified {read}:
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
-            var res = items.find(sequence)
+            var res = black_box(items).find(black_box(sequence))
             keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
-    keep(Bool(sequence))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -301,13 +287,11 @@ fn bench_string_is_valid_utf8[
     var items = make_string[length](filename + ".html")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var res = _is_valid_utf8(items.as_bytes())
+    fn call_fn() unified {read}:
+        var res = _is_valid_utf8(black_box(items).as_bytes())
         keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -325,20 +309,17 @@ fn bench_write_utf8[
         codepoints.append(c)
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
+    fn call_fn() unified {read}:
         var data = InlineArray[Byte, 4](uninitialized=True)
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
             for i in range(len(codepoints)):
-                var res = codepoints.unsafe_get(i).unsafe_write_utf8(
-                    data.unsafe_ptr()
+                var res = black_box(codepoints.unsafe_get(i)).unsafe_write_utf8(
+                    black_box(data).unsafe_ptr()
                 )
-                keep(Bool(res))
+                keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
-    keep(Bool(codepoints))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -355,24 +336,30 @@ fn bench_string_write[short: Bool](mut b: Bencher) raises:
     var items_5 = items.copy()
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
+    fn call_fn() unified {read}:
         for _ in range(1_000_000):
             var res: String
 
             @parameter
             if short:  # less than 24 bytes
-                res = String.write(0, " is ", "a", String(" number"))
+                res = String.write(
+                    black_box(0),
+                    black_box(" is "),
+                    black_box("a"),
+                    black_box(String(" number")),
+                )
             else:  # 5001 bytes long
-                res = String.write(0, items, items_2, items_3, items_4, items_5)
-            keep(Bool(res))
+                res = String.write(
+                    black_box(0),
+                    black_box(items),
+                    black_box(items_2),
+                    black_box(items_3),
+                    black_box(items_4),
+                    black_box(items_5),
+                )
+            keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
-    keep(Bool(items_2))
-    keep(Bool(items_3))
-    keep(Bool(items_4))
-    keep(Bool(items_5))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#

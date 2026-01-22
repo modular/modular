@@ -380,7 +380,7 @@ struct RuntimeLayout[
         Returns:
             The number of dimensions (rank) of the layout.
         """
-        return len(Self.layout)
+        return comptime (len(Self.layout))
 
 
 fn coalesce[

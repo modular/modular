@@ -24,7 +24,7 @@ from max.pipelines.lib import (
 from .model import Qwen3EmbeddingModel
 
 qwen3_embedding_arch = SupportedArchitecture(
-    name="Qwen3ForCausalLM",
+    name="Qwen3ForCausalLM_Legacy",
     task=PipelineTask.EMBEDDINGS_GENERATION,
     example_repo_ids=[
         "Qwen/Qwen3-Embedding-0.6B",

@@ -102,7 +102,9 @@ fn test_index_tensor_DLRM(ctx: DeviceContext) raises:
 
     # dim_0 x dim_1 x dim_2 input tensor.
     comptime input_layout = Layout.row_major(dim_0, dim_1, dim_2)
-    var input = ctx.enqueue_create_buffer[input_type](input_layout.size())
+    var input = ctx.enqueue_create_buffer[input_type](
+        comptime (input_layout.size())
+    )
     var input_tensor = LayoutTensor[input_type, input_layout](input)
 
     # Initialize with sequential data for test purposes.
@@ -112,7 +114,9 @@ fn test_index_tensor_DLRM(ctx: DeviceContext) raises:
 
     # We have a 2D tensor of shape (2,index_len).
     comptime indices_layout = Layout.row_major(index_len, 2)
-    var indices = ctx.enqueue_create_buffer[DType.uint64](indices_layout.size())
+    var indices = ctx.enqueue_create_buffer[DType.uint64](
+        comptime (indices_layout.size())
+    )
     with indices.map_to_host() as indices_host:
         var indices_host_tensor = LayoutTensor[DType.uint64, indices_layout](
             indices_host
@@ -129,7 +133,9 @@ fn test_index_tensor_DLRM(ctx: DeviceContext) raises:
 
     # Reference output of shape dim_0 x index_len.
     comptime output_layout = Layout.row_major(dim_0, index_len)
-    var ref_output = ctx.enqueue_create_buffer[input_type](output_layout.size())
+    var ref_output = ctx.enqueue_create_buffer[input_type](
+        comptime (output_layout.size())
+    )
     with ref_output.map_to_host() as ref_output_host:
         with input.map_to_host() as input_host:
             with indices.map_to_host() as indices_host:
@@ -178,7 +184,9 @@ fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
 
     # dim_0 x dim_1 x dim_2 x dim_3 input tensor.
     comptime input_layout = Layout.row_major(dim_0, dim_1, dim_2, dim_3)
-    var input = ctx.enqueue_create_buffer[input_type](input_layout.size())
+    var input = ctx.enqueue_create_buffer[input_type](
+        comptime (input_layout.size())
+    )
     var input_tensor = LayoutTensor[input_type, input_layout](input)
 
     # Initialize with sequential data for test purposes.
@@ -188,7 +196,9 @@ fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
 
     # We have a 2D tensor of shape (index_len, 2).
     comptime indices_layout = Layout.row_major(index_len, 2)
-    var indices = ctx.enqueue_create_buffer[DType.uint64](indices_layout.size())
+    var indices = ctx.enqueue_create_buffer[DType.uint64](
+        comptime (indices_layout.size())
+    )
     with indices.map_to_host() as indices_host:
         var indices_host_tensor = LayoutTensor[DType.uint64, indices_layout](
             indices_host
@@ -205,7 +215,9 @@ fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
 
     # Reference output of shape dim_0 x dim_1 x index_len.
     comptime output_layout = Layout.row_major(dim_0, dim_1, index_len)
-    var ref_output = ctx.enqueue_create_buffer[input_type](output_layout.size())
+    var ref_output = ctx.enqueue_create_buffer[input_type](
+        comptime (output_layout.size())
+    )
     with ref_output.map_to_host() as ref_output_host:
         with input.map_to_host() as input_host:
             with indices.map_to_host() as indices_host:

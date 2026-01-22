@@ -161,6 +161,6 @@ from .bencher import (
     ThroughputMeasure,
 )
 from .benchmark import Batch, Report, Unit, run
-from .compiler import keep
+from .compiler import black_box, keep
 from .memory import clobber_memory
 from .quick_bench import QuickBench

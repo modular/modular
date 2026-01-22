@@ -142,20 +142,6 @@ fn max(x: Int, y: Int, /) -> Int:
 
 
 @always_inline("nodebug")
-fn max(x: UInt, y: UInt, /) -> UInt:
-    """Gets the maximum of two integers.
-
-    Args:
-        x: Integer input to max.
-        y: Integer input to max.
-
-    Returns:
-        Maximum of x and y.
-    """
-    return UInt(mlir_value=__mlir_op.`index.maxu`(x._mlir_value, y._mlir_value))
-
-
-@always_inline("nodebug")
 fn max[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
     """Performs elementwise maximum of x and y.
 
@@ -221,20 +207,6 @@ fn min(x: Int, y: Int, /) -> Int:
         Minimum of x and y.
     """
     return Int(mlir_value=__mlir_op.`index.mins`(x._mlir_value, y._mlir_value))
-
-
-@always_inline("nodebug")
-fn min(x: UInt, y: UInt, /) -> UInt:
-    """Gets the minimum of two integers.
-
-    Args:
-        x: Integer input to min.
-        y: Integer input to min.
-
-    Returns:
-        Minimum of x and y.
-    """
-    return UInt(mlir_value=__mlir_op.`index.minu`(x._mlir_value, y._mlir_value))
 
 
 @always_inline("nodebug")

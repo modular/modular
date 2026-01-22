@@ -42,6 +42,12 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "top_k",
     srcs = ["top_k.py"],
+    # TODO: enable when test won't generate external memory on Apple GPU
+    # KERN-2360
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 custom_op_example_py_binary(
@@ -70,6 +76,12 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "histogram",
     srcs = ["histogram.py"],
+    # TODO: enable when atomics support is added to Apple GPU
+    # MOCO-2423
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 mojo_binary(

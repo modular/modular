@@ -50,9 +50,9 @@ class BatchMetrics:
     terminated_reqs: int
     num_pending_reqs: int
     num_input_tokens: int
-    prefill_chunk_size: int
+    max_batch_input_tokens: int
     num_context_tokens: int
-    max_batch_context_length: int
+    max_batch_total_tokens: int
     batch_creation_time_s: float
     batch_execution_time_s: float
     prompt_throughput: float
@@ -125,9 +125,9 @@ class BatchMetrics:
             terminated_reqs=num_terminated_reqs,
             num_pending_reqs=num_pending_reqs,
             num_input_tokens=num_input_tokens,
-            prefill_chunk_size=sch_config.target_tokens_per_batch_ce,
+            max_batch_input_tokens=sch_config.target_tokens_per_batch_ce,
             num_context_tokens=inputs.context_tokens,
-            max_batch_context_length=sch_config.max_batch_context_length or 0,
+            max_batch_total_tokens=sch_config.max_batch_total_tokens or 0,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
             prompt_throughput=prompt_throughput,
@@ -146,8 +146,8 @@ class BatchMetrics:
 
     def pretty_format(self) -> str:
         context_tokens_str = ""
-        if self.max_batch_context_length != 0:
-            context_tokens_str = f"Context Tokens: {self.num_context_tokens}/{self.max_batch_context_length} toks | "
+        if self.max_batch_total_tokens != 0:
+            context_tokens_str = f"Context Tokens: {self.num_context_tokens}/{self.max_batch_total_tokens} toks | "
 
         kv_str = ""
         if self.total_kv_blocks != 0:
@@ -167,7 +167,7 @@ class BatchMetrics:
             f"Executed {self.batch_type.value} batch with {self.batch_size} reqs | "
             f"Terminated: {self.terminated_reqs} reqs, "
             f"Pending: {self.num_pending_reqs} reqs | "
-            f"Input Tokens: {self.num_input_tokens}/{self.prefill_chunk_size} toks | "
+            f"Input Tokens: {self.num_input_tokens}/{self.max_batch_input_tokens} toks | "
             f"{context_tokens_str}"
             f"Prompt Tput: {_to_human_readable_throughput(self.prompt_throughput)}, "
             f"Generation Tput: {_to_human_readable_throughput(self.generation_throughput)} | "

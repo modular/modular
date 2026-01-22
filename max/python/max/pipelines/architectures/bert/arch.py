@@ -25,7 +25,7 @@ from .model import BertPipelineModel
 from .tokenizer import BertTokenizer
 
 bert_arch = SupportedArchitecture(
-    name="BertModel",
+    name="BertModel_Legacy",
     task=PipelineTask.EMBEDDINGS_GENERATION,
     example_repo_ids=[
         "sentence-transformers/all-MiniLM-L6-v2",

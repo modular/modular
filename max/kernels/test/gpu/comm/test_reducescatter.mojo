@@ -16,12 +16,14 @@ from itertools import product
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from collections.optional import OptionalReg
 from comm import Signal, MAX_GPUS
-from comm.reducescatter import reducescatter
+from comm.reducescatter import reducescatter, elementwise_epilogue_type
 from internal_utils import human_readable_size
 from comm_test_utils import test_value_for_gpu_element
 from gpu.host import DeviceBuffer, DeviceContext
 from testing import assert_almost_equal, assert_true
+from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
 # Shared test configurations
@@ -40,11 +42,12 @@ fn reducescatter_test[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    # TODO(KERN-2293): test use_custom_epilogue
+    use_custom_epilogue: Bool = False,
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
     """Test reduce-scatter operation.
 
     Each GPU receives 1/ngpus of the reduced data in its output partition.
+    When use_custom_epilogue is True, tests with a negating epilogue.
     """
     constrained[ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"]()
     constrained[rank == 1, "this test code currently assumes rank 1"]()
@@ -57,6 +60,7 @@ fn reducescatter_test[
             ngpus,
             "-",
             human_readable_size(size_of[dtype]() * length),
+            "-custom_epilogue=" if use_custom_epilogue else "",
         )
     )
 
@@ -124,12 +128,44 @@ fn reducescatter_test[
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
+    # Copy-capture in registers since the lambda will be used on GPU.
+    var out_bufs_capture = StaticTuple[
+        NDBuffer[dtype, rank, MutAnyOrigin], ngpus
+    ](NDBuffer[dtype, rank, MutAnyOrigin]())
+
+    for i in range(ngpus):
+        out_bufs_capture[i] = NDBuffer[dtype, rank](
+            out_bufs_list[i].unsafe_ptr(), DimList(output_length)
+        )
+
+    # Custom epilogue that negates values to distinguish from default
+    @always_inline
+    @parameter
+    @__copy_capture(out_bufs_capture)
+    fn outputs_lambda[
+        input_index: Int,
+        _dtype: DType,
+        _rank: Int,
+        _width: Int,
+        *,
+        _alignment: Int,
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+        out_bufs_capture[input_index].store[width=_width, alignment=_alignment](
+            rebind[IndexList[rank]](coords),
+            rebind[SIMD[dtype, _width]](
+                -val
+            ),  # Negate to distinguish from default
+        )
+
     # Perform reduce-scatter
     @parameter
     for i in range(ngpus):
-        reducescatter[ngpus=ngpus](
-            in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i]
-        )
+        reducescatter[
+            ngpus=ngpus,
+            output_lambda = OptionalReg[elementwise_epilogue_type](
+                outputs_lambda[input_index=i]
+            ) if use_custom_epilogue else None,
+        ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
 
     # Synchronize all devices after reduce-scatter
     for i in range(ngpus):
@@ -158,7 +194,12 @@ fn reducescatter_test[
                     k, global_idx
                 )
                 accum += Scalar[accum_t](term_dtype)
-            var expected = Scalar[dtype](accum)
+            var expected_sum = Scalar[dtype](accum)
+
+            # Custom epilogue negates the result
+            var expected = (
+                -expected_sum if use_custom_epilogue else expected_sum
+            )
 
             var actual = result_host[j]
             assert_almost_equal(
@@ -191,21 +232,26 @@ fn run_reducescatter_sweep[
         list_of_ctx.append(DeviceContext(i))
 
     @parameter
-    for dtype_idx, ngpus_idx, length_idx in product(
+    for dtype_idx, ngpus_idx, length_idx, epilogue_idx in product(
         range(len(test_dtypes)),
         range(len(test_gpu_counts)),
         range(len(test_lengths)),
+        range(2),  # Test both default and custom epilogue
     ):
         comptime dtype = test_dtypes[dtype_idx]
         comptime ngpus = test_gpu_counts[ngpus_idx]
         comptime length = test_lengths[length_idx]
+        comptime use_custom_epilogue = epilogue_idx == 1
 
         if DeviceContext.number_of_devices() < ngpus:
             continue
 
-        reducescatter_test[dtype=dtype, rank=1, ngpus=ngpus](
-            list_of_ctx, length
-        )
+        reducescatter_test[
+            dtype=dtype,
+            rank=1,
+            ngpus=ngpus,
+            use_custom_epilogue=use_custom_epilogue,
+        ](list_of_ctx, length)
 
 
 def main():

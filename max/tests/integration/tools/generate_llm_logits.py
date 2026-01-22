@@ -128,6 +128,13 @@ EX_TEMPFAIL = 75
     default=False,
     help="Run only a single prompt for a single step.",
 )
+@click.option(
+    "--generate-logprobs",
+    "generate_logprobs",
+    is_flag=True,
+    default=False,
+    help="Generate logprobs in addition to logits.",
+)
 def main(
     device_type: str | list[int],
     framework_name: str,
@@ -139,6 +146,7 @@ def main(
     max_batch_size: int | None,
     log_hf_downloads: bool,
     mini: bool,
+    generate_logprobs: bool,
 ) -> None:
     if "gemma3" in pipeline_name:
         # Running into dynamo error:
@@ -179,6 +187,7 @@ def main(
             max_batch_size=max_batch_size,
             log_hf_downloads=log_hf_downloads,
             mini=mini,
+            generate_logprobs=generate_logprobs,
         )
     except Flake:
         sys.exit(EX_TEMPFAIL)
@@ -196,6 +205,7 @@ def generate_llm_logits(
     reference: list[ModelOutput] | None = None,
     log_hf_downloads: bool = False,
     mini: bool = False,
+    generate_logprobs: bool = False,
 ) -> None:
     """Output logits to a file for a model based on a fixed set of prompts.
 
@@ -257,6 +267,7 @@ def generate_llm_logits(
                 num_steps=num_steps,
                 evaluation_batch_size=evaluation_batch_size,
                 reference=reference,
+                generate_logprobs=generate_logprobs,
             )
         elif framework_name == "torch":
             torch_device = get_torch_device(device_specs)
@@ -278,10 +289,12 @@ def generate_llm_logits(
                 device=torch_device,
                 inputs=inputs,
                 num_steps=num_steps,
+                generate_logprobs=generate_logprobs,
             )
         elif framework_name == "vllm":
-            # NOTE: We do NOT call get_torch_device() here to avoid premature CUDA initialization
-            # which can cause vLLM to crash in certain multiprocessing contexts.
+            # We don't call `get_torch_device()` here to avoid premature CUDA
+            # initialization, which can cause vLLM to crash in certain
+            # multiprocessing contexts.
 
             print(f"Running {pipeline_name} model on vLLM")
 

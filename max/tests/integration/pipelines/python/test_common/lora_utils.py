@@ -21,7 +21,7 @@ from unittest.mock import NonCallableMock
 import hf_repo_lock
 import torch
 from max.driver import DeviceSpec
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,

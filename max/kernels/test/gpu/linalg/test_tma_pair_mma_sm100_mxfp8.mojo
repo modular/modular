@@ -370,10 +370,10 @@ fn blockscaled_pair_cta_mxfp8[
                 a_scales_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(k_iter),
-                    UInt((block_idx.x) * UInt(BM // SF_MN_GROUP_SIZE)),
+                    0,
+                    0,
+                    Int(k_iter),
+                    Int(block_idx.x) * (BM // SF_MN_GROUP_SIZE),
                 ),
             )
 
@@ -381,10 +381,10 @@ fn blockscaled_pair_cta_mxfp8[
                 b_scales_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(k_iter),
-                    UInt(block_idx.y * UInt(MMA_N // SF_MN_GROUP_SIZE)),
+                    0,
+                    0,
+                    Int(k_iter),
+                    Int(block_idx.y) * (MMA_N // SF_MN_GROUP_SIZE),
                 ),
             )
 

@@ -50,10 +50,10 @@ from shmem.ep_comm import (
     BF16TokenFormat,
     BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
-    dispatch_kernel,
-    dispatch_cb_kernel,
-    combine_kernel,
-    combine_cb_kernel,
+    dispatch_async_kernel,
+    dispatch_wait_kernel,
+    combine_async_kernel,
+    combine_wait_kernel,
     elementwise_epilogue_type,
     fused_silu_kernel,
     fused_silu_fp8_kernel,
@@ -264,8 +264,8 @@ struct Struct_ep_init:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("ep.dispatch")
-struct Struct_ep_dispatch:
+@compiler.register("ep.dispatch_async")
+struct Struct_ep_dispatch_async:
     @always_inline
     @staticmethod
     fn execute[
@@ -287,9 +287,9 @@ struct Struct_ep_dispatch:
         recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
         context: DeviceContextPtr,
     ) raises:
-        """Execute the Expert Parallelism dispatch kernel.
+        """Execute the Expert Parallelism async dispatch kernel.
 
-        This function launches the dispatch_kernel from ep_comm.mojo to
+        This function launches the dispatch_async_kernel from ep_comm.mojo to
         initiate token distribution across expert devices. In multi-node
         scenarios, all the communication buffers need to be allocated using
         `shmem_malloc`.
@@ -346,13 +346,12 @@ struct Struct_ep_dispatch:
 
         comptime n_ranks = n_gpus_per_node * n_nodes
 
-        comptime dispatch = dispatch_kernel[
+        comptime dispatch_async = dispatch_async_kernel[
             input_dtype,
             hw_info.max_thread_block_size,
             input_tokens_tensor.layout,
             topk_ids_tensor.layout,
             hw_info.sm_count,
-            n_experts // (hw_info.max_thread_block_size // hw_info.warp_size),
             n_experts,
             n_ranks,
             max_token_per_rank,
@@ -381,7 +380,9 @@ struct Struct_ep_dispatch:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var func = gpu_ctx.compile_function[dispatch, dispatch]()
+            var func = gpu_ctx.compile_function[
+                dispatch_async, dispatch_async
+            ]()
             var cached_module_key = String("EP_DISPATCH_INITED_DEV_", gpu_id)
 
             # Don't initialize the module repeatedly
@@ -433,8 +434,8 @@ struct Struct_ep_dispatch:
             )
 
 
-@compiler.register("ep.dispatch_cb")
-struct Struct_ep_dispatch_cb:
+@compiler.register("ep.dispatch_wait")
+struct Struct_ep_dispatch_wait:
     @always_inline
     @staticmethod
     fn execute[
@@ -460,7 +461,7 @@ struct Struct_ep_dispatch_cb:
     ) raises:
         """Execute the Expert Parallelism dispatch completion kernel.
 
-        This function launches the dispatch_cb_kernel from ep_comm.mojo to
+        This function launches the dispatch_wait_kernel from ep_comm.mojo to
         complete the token dispatch phase. It waits for all inter-device
         communication to complete, then organizes the received tokens into a
         format suitable for grouped matmul computation.
@@ -498,7 +499,7 @@ struct Struct_ep_dispatch_cb:
         # Ensure the shape for the input tensors are correct
         __comptime_assert (
             output_tokens_tensor.shape[1]() == hidden_size
-        ), "EP dispatch_cb: output tokens shape doesn't match hidden size."
+        ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
@@ -519,14 +520,13 @@ struct Struct_ep_dispatch_cb:
             output_tokens_tensor.bitcast[DType.bfloat16]()
         )
 
-        comptime dispatch_cb = dispatch_cb_kernel[
+        comptime dispatch_wait = dispatch_wait_kernel[
             hw_info.max_thread_block_size,
             output_tokens_tensor.layout,
             row_offsets_tensor.layout,
             expert_ids_tensor.layout,
             src_info_tensor.layout,
             hw_info.sm_count,
-            1,
             n_experts,
             n_ranks,
             max_token_per_rank,
@@ -550,7 +550,7 @@ struct Struct_ep_dispatch_cb:
             # fmt: on
 
         with Trace[TraceLevel.OP, target=target](
-            "ep.dispatch_cb",
+            "ep.dispatch_wait",
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
@@ -564,7 +564,7 @@ struct Struct_ep_dispatch_cb:
                 atomic_counters._ptr
             )
 
-            gpu_ctx.enqueue_function[dispatch_cb, dispatch_cb](
+            gpu_ctx.enqueue_function[dispatch_wait, dispatch_wait](
                 format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
@@ -591,8 +591,8 @@ struct Struct_ep_dispatch_cb:
             )  # number of active experts
 
 
-@compiler.register("ep.dispatch_cb.fused_shared_expert")
-struct Struct_ep_dispatch_cb_fused_shared_expert:
+@compiler.register("ep.dispatch_wait.fused_shared_expert")
+struct Struct_ep_dispatch_wait_fused_shared_expert:
     @always_inline
     @staticmethod
     fn execute[
@@ -620,7 +620,7 @@ struct Struct_ep_dispatch_cb_fused_shared_expert:
     ) raises:
         """Execute the Expert Parallelism dispatch completion kernel.
 
-        This function launches the dispatch_cb_kernel from ep_comm.mojo to
+        This function launches the dispatch_wait_kernel from ep_comm.mojo to
         complete the token dispatch phase. It waits for all inter-device
         communication to complete, then organizes the received tokens into a
         format suitable for grouped matmul computation. This kernel also packs
@@ -674,7 +674,7 @@ struct Struct_ep_dispatch_cb_fused_shared_expert:
         # Ensure the shape for the input tensors are correct
         __comptime_assert (
             output_tokens_tensor.shape[1]() == hidden_size
-        ), "EP dispatch_cb: output tokens shape doesn't match hidden size."
+        ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
@@ -695,14 +695,13 @@ struct Struct_ep_dispatch_cb_fused_shared_expert:
             output_tokens_tensor.bitcast[DType.bfloat16]()
         )
 
-        comptime dispatch_cb = dispatch_cb_kernel[
+        comptime dispatch_wait = dispatch_wait_kernel[
             hw_info.max_thread_block_size,
             output_tokens_tensor.layout,
             row_offsets_tensor.layout,
             expert_ids_tensor.layout,
             src_info_tensor.layout,
             hw_info.sm_count,
-            1,
             n_experts,
             n_ranks,
             max_token_per_rank,
@@ -727,7 +726,7 @@ struct Struct_ep_dispatch_cb_fused_shared_expert:
             # fmt: on
 
         with Trace[TraceLevel.OP, target=target](
-            "ep.dispatch_cb",
+            "ep.dispatch_wait",
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
@@ -741,7 +740,7 @@ struct Struct_ep_dispatch_cb_fused_shared_expert:
                 atomic_counters._ptr
             )
 
-            gpu_ctx.enqueue_function[dispatch_cb, dispatch_cb](
+            gpu_ctx.enqueue_function[dispatch_wait, dispatch_wait](
                 format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
@@ -764,8 +763,8 @@ struct Struct_ep_dispatch_cb_fused_shared_expert:
             )  # number of active experts
 
 
-@compiler.register("ep.dispatch.fp8")
-struct Struct_ep_dispatch_fp8:
+@compiler.register("ep.dispatch_async.fp8")
+struct Struct_ep_dispatch_async_fp8:
     @always_inline
     @staticmethod
     fn execute[
@@ -792,7 +791,7 @@ struct Struct_ep_dispatch_fp8:
     ) raises:
         """Execute the Expert Parallelism dispatch kernel.
 
-        This function launches the dispatch_kernel from ep_comm.mojo to
+        This function launches the dispatch_async_kernel from ep_comm.mojo to
         initiate token distribution across expert devices. In multi-node
         scenarios, all the communication buffers need to be allocated using
         `shmem_malloc`.
@@ -861,13 +860,12 @@ struct Struct_ep_dispatch_fp8:
 
         comptime n_ranks = n_gpus_per_node * n_nodes
 
-        comptime dispatch = dispatch_kernel[
+        comptime dispatch_async = dispatch_async_kernel[
             input_dtype,
             hw_info.max_thread_block_size,
             input_tokens_tensor.layout,
             topk_ids_tensor.layout,
             hw_info.sm_count,
-            n_experts // (hw_info.max_thread_block_size // hw_info.warp_size),
             n_experts,
             n_ranks,
             max_token_per_rank,
@@ -899,7 +897,9 @@ struct Struct_ep_dispatch_fp8:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var func = gpu_ctx.compile_function[dispatch, dispatch]()
+            var func = gpu_ctx.compile_function[
+                dispatch_async, dispatch_async
+            ]()
             var cached_module_key = String("EP_DISPATCH_INITED_DEV_", gpu_id)
 
             # Don't initialize the module repeatedly
@@ -951,8 +951,8 @@ struct Struct_ep_dispatch_fp8:
             )
 
 
-@compiler.register("ep.dispatch_cb.fp8")
-struct Struct_ep_dispatch_cb_fp8:
+@compiler.register("ep.dispatch_wait.fp8")
+struct Struct_ep_dispatch_wait_fp8:
     @always_inline
     @staticmethod
     fn execute[
@@ -981,7 +981,7 @@ struct Struct_ep_dispatch_cb_fp8:
     ) raises:
         """Execute the Expert Parallelism dispatch completion kernel.
 
-        This function launches the dispatch_cb_kernel from ep_comm.mojo to
+        This function launches the dispatch_wait_kernel from ep_comm.mojo to
         complete the token dispatch phase. It waits for all inter-device
         communication to complete, then organizes the received tokens into a
         format suitable for grouped matmul computation.
@@ -1026,7 +1026,7 @@ struct Struct_ep_dispatch_cb_fp8:
         # Ensure the shape for the input tensors are correct
         __comptime_assert (
             output_tokens_tensor.shape[1]() == hidden_size
-        ), "EP dispatch_cb: output tokens shape doesn't match hidden size."
+        ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
@@ -1050,14 +1050,13 @@ struct Struct_ep_dispatch_cb_fp8:
         # alligned to 16 bytes.
         comptime expert_m_padding = 16 // size_of[dispatch_scale_dtype]()
 
-        comptime dispatch_cb = dispatch_cb_kernel[
+        comptime dispatch_wait = dispatch_wait_kernel[
             hw_info.max_thread_block_size,
             output_tokens_tensor.layout,
             row_offsets_tensor.layout,
             expert_ids_tensor.layout,
             src_info_tensor.layout,
             hw_info.sm_count,
-            1,
             n_experts,
             n_ranks,
             max_token_per_rank,
@@ -1084,7 +1083,7 @@ struct Struct_ep_dispatch_cb_fp8:
             # fmt: on
 
         with Trace[TraceLevel.OP, target=target](
-            "ep.dispatch_cb.fp8",
+            "ep.dispatch_wait.fp8",
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
@@ -1098,7 +1097,7 @@ struct Struct_ep_dispatch_cb_fp8:
                 atomic_counters._ptr
             )
 
-            gpu_ctx.enqueue_function[dispatch_cb, dispatch_cb](
+            gpu_ctx.enqueue_function[dispatch_wait, dispatch_wait](
                 format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
@@ -1125,8 +1124,8 @@ struct Struct_ep_dispatch_cb_fp8:
             )  # number of active experts
 
 
-@compiler.register("ep.dispatch_cb.fp8.fused_shared_expert")
-struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
+@compiler.register("ep.dispatch_wait.fp8.fused_shared_expert")
+struct Struct_ep_dispatch_wait_fp8_fused_shared_expert:
     @always_inline
     @staticmethod
     fn execute[
@@ -1157,7 +1156,7 @@ struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
     ) raises:
         """Execute the Expert Parallelism dispatch completion kernel.
 
-        This function launches the dispatch_cb_kernel from ep_comm.mojo to
+        This function launches the dispatch_wait_kernel from ep_comm.mojo to
         complete the token dispatch phase. It waits for all inter-device
         communication to complete, then organizes the received tokens into a
         format suitable for grouped matmul computation. This kernel also packs
@@ -1219,7 +1218,7 @@ struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
         # Ensure the shape for the input tensors are correct
         __comptime_assert (
             output_tokens_tensor.shape[1]() == hidden_size
-        ), "EP dispatch_cb: output tokens shape doesn't match hidden size."
+        ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
@@ -1243,14 +1242,13 @@ struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
         # alligned to 16 bytes.
         comptime expert_m_padding = 16 // size_of[dispatch_scale_dtype]()
 
-        comptime dispatch_cb = dispatch_cb_kernel[
+        comptime dispatch_wait = dispatch_wait_kernel[
             hw_info.max_thread_block_size,
             output_tokens_tensor.layout,
             row_offsets_tensor.layout,
             expert_ids_tensor.layout,
             src_info_tensor.layout,
             hw_info.sm_count,
-            1,
             n_experts,
             n_ranks,
             max_token_per_rank,
@@ -1278,7 +1276,7 @@ struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
             # fmt: on
 
         with Trace[TraceLevel.OP, target=target](
-            "ep.dispatch_cb.fp8",
+            "ep.dispatch_wait.fp8",
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
@@ -1292,7 +1290,7 @@ struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
                 atomic_counters._ptr
             )
 
-            gpu_ctx.enqueue_function[dispatch_cb, dispatch_cb](
+            gpu_ctx.enqueue_function[dispatch_wait, dispatch_wait](
                 format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
@@ -1320,8 +1318,8 @@ struct Struct_ep_dispatch_cb_fp8_fused_shared_expert:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("ep.combine")
-struct Struct_ep_combine:
+@compiler.register("ep.combine_async")
+struct Struct_ep_combine_async:
     @always_inline
     @staticmethod
     fn execute[
@@ -1345,7 +1343,7 @@ struct Struct_ep_combine:
     ) raises:
         """Execute the Expert Parallelism combine kernel.
 
-        This function launches the combine_kernel from ep_comm.mojo to initiate
+        This function launches the combine_async_kernel from ep_comm.mojo to initiate
         sending expert outputs back to their original devices. The kernel uses
         source routing information to determine destinations. In multi-node
         scenarios, all the communication buffers need to be allocated using
@@ -1390,7 +1388,7 @@ struct Struct_ep_combine:
 
         comptime n_ranks = n_gpus_per_node * n_nodes
 
-        comptime combine = combine_kernel[
+        comptime combine_async = combine_async_kernel[
             combine_dtype,
             hw_info.max_thread_block_size,
             input_tokens_tensor.layout,
@@ -1425,7 +1423,7 @@ struct Struct_ep_combine:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var func = gpu_ctx.compile_function[combine, combine]()
+            var func = gpu_ctx.compile_function[combine_async, combine_async]()
             var cached_module_key = String("EP_COMBINE_INITED_DEV_", gpu_id)
 
             # Don't initialize the module repeatedly
@@ -1482,8 +1480,8 @@ struct Struct_ep_combine:
             )
 
 
-@compiler.register("ep.combine.fused_shared_expert")
-struct Struct_ep_combine_fused_shared_expert:
+@compiler.register("ep.combine_async.fused_shared_expert")
+struct Struct_ep_combine_async_fused_shared_expert:
     @always_inline
     @staticmethod
     fn execute[
@@ -1508,7 +1506,7 @@ struct Struct_ep_combine_fused_shared_expert:
     ) raises:
         """Execute the Expert Parallelism combine kernel.
 
-        This function launches the combine_kernel from ep_comm.mojo to initiate
+        This function launches the combine_async_kernel from ep_comm.mojo to initiate
         sending expert outputs back to their original devices. The kernel uses
         source routing information to determine destinations. This kernel will
         also filter out the shared expert's outputs and store them in a separate
@@ -1569,7 +1567,7 @@ struct Struct_ep_combine_fused_shared_expert:
 
         comptime n_ranks = n_gpus_per_node * n_nodes
 
-        comptime combine = combine_kernel[
+        comptime combine_async = combine_async_kernel[
             combine_dtype,
             hw_info.max_thread_block_size,
             input_tokens_tensor.layout,
@@ -1605,7 +1603,7 @@ struct Struct_ep_combine_fused_shared_expert:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var func = gpu_ctx.compile_function[combine, combine]()
+            var func = gpu_ctx.compile_function[combine_async, combine_async]()
             var cached_module_key = String("EP_COMBINE_INITED_DEV_", gpu_id)
 
             # Don't initialize the module repeatedly
@@ -1658,8 +1656,8 @@ struct Struct_ep_combine_fused_shared_expert:
             )
 
 
-@compiler.register("ep.combine_cb")
-struct Struct_ep_combine_cb:
+@compiler.register("ep.combine_wait")
+struct Struct_ep_combine_wait:
     @parameter
     @always_inline
     @staticmethod
@@ -1685,7 +1683,7 @@ struct Struct_ep_combine_cb:
     ) raises:
         """Execute the Expert Parallelism combine completion kernel.
 
-        This function launches the combine_cb_kernel from ep_comm.mojo to
+        This function launches the combine_wait_kernel from ep_comm.mojo to
         complete the token combine phase. It waits for all inter-device
         communication to complete, then computes the weighted sum of routed
         expert outputs for each token.
@@ -1749,12 +1747,11 @@ struct Struct_ep_combine_cb:
                 rebind[SIMD[combine_dtype, width]](val),
             )
 
-        comptime combine_cb = combine_cb_kernel[
+        comptime combine_wait = combine_wait_kernel[
             combine_dtype,
             hw_info.max_thread_block_size,
             output_tokens_tensor.layout,
             hw_info.sm_count,
-            1,
             top_k,
             n_experts,
             n_ranks,
@@ -1785,7 +1782,7 @@ struct Struct_ep_combine_cb:
             # fmt: on
 
         with Trace[TraceLevel.OP, target=target](
-            "ep.combine_cb",
+            "ep.combine_wait",
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
@@ -1799,7 +1796,7 @@ struct Struct_ep_combine_cb:
                 atomic_counters._ptr
             )
 
-            gpu_ctx.enqueue_function[combine_cb, combine_cb](
+            gpu_ctx.enqueue_function[combine_wait, combine_wait](
                 output_tokens_tensor,
                 recv_buf_ptr,
                 recv_count_ptr,

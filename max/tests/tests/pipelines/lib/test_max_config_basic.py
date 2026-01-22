@@ -17,11 +17,12 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+import pytest
 import yaml
 from max.config import ConfigFileModel, MAXBaseModel
 from max.dtype import DType
 from max.engine import GPUProfilingMode
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
@@ -235,3 +236,26 @@ class TestBuiltinConfigClasses:
 
         # Test section name.
         assert config._config_file_section_name == "lora_config"
+
+
+class TestProfilingConfigEnv:
+    def test_env_enables_profiling_by_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MODULAR_ENABLE_PROFILING", "on")
+        config = ProfilingConfig()
+        assert config.gpu_profiling == GPUProfilingMode.ON
+
+    def test_env_invalid_value_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MODULAR_ENABLE_PROFILING", "bad-value")
+        with pytest.raises(ValueError, match="gpu_profiling must be one of"):
+            ProfilingConfig()
+
+    def test_explicit_value_ignores_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MODULAR_ENABLE_PROFILING", "bad-value")
+        config = ProfilingConfig(gpu_profiling=GPUProfilingMode.ON)
+        assert config.gpu_profiling == GPUProfilingMode.ON

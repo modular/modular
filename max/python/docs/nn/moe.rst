@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.moe
+.. automodule:: max.nn.legacy.moe
    :members:
    :undoc-members:

@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -27,7 +27,7 @@ from ..llama3.model import Llama3Model
 from .weight_adapters import convert_exaone_safetensor_state_dict
 
 exaone_arch = SupportedArchitecture(
-    name="ExaoneForCausalLM",
+    name="ExaoneForCausalLM_Legacy",
     default_encoding=SupportedEncoding.float32,
     task=PipelineTask.TEXT_GENERATION,
     supported_encodings={

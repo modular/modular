@@ -20,7 +20,6 @@ modular_py_test(
         ["**/test_*.py"],
     ),
     tags = [
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
@@ -29,19 +28,16 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/entrypoints",
-        "//max/python/max/nn",
+        "//max/python/max/graph",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/serve",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
-        requirement("huggingface-hub"),
-        requirement("hypothesis"),
-        requirement("pytest-asyncio"),
+        requirement("numpy"),
         requirement("torch"),
         requirement("transformers"),
         requirement("datasets"),
-        requirement("librosa"),
     ],
 )

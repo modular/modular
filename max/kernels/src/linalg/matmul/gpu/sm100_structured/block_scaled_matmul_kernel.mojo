@@ -317,9 +317,6 @@ struct BlackwellBlockScaledMatmulKernel[
         Self.CLUSTER_N,
     ]
 
-    # TMEM allocation size
-    comptime max_tmem_cols: UInt = 512
-
     # ========== Tile Scheduler Type ==========
     comptime Scheduler = StructuredTileScheduler[
         num_stages = Self.num_clc_pipeline_stages,
@@ -511,23 +508,23 @@ struct BlackwellBlockScaledMatmulKernel[
                     sfa_tile,
                     barrier[0],
                     (
-                        UInt(0),
-                        UInt(0),
-                        UInt(iter_idx + j) * UInt(Self.config.num_sf_k_tiles),
-                        work_tile_coord[0] * UInt(Self.BM // SF_MN_GROUP_SIZE),
-                        UInt(batch_coord),
+                        0,
+                        0,
+                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(work_tile_coord[0]) * (Self.BM // SF_MN_GROUP_SIZE),
+                        Int(batch_coord),
                     ),
                 )
                 sfb_tma_op.async_copy_5d[Self.cta_group](
                     sfb_tile,
                     barrier[0],
                     (
-                        UInt(0),
-                        UInt(0),
-                        UInt(iter_idx + j) * UInt(Self.config.num_sf_k_tiles),
-                        work_tile_coord[1]
-                        * UInt(Self.MMA_N // SF_MN_GROUP_SIZE),
-                        UInt(batch_coord),
+                        0,
+                        0,
+                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(work_tile_coord[1])
+                        * (Self.MMA_N // SF_MN_GROUP_SIZE),
+                        Int(batch_coord),
                     ),
                 )
 
@@ -747,7 +744,6 @@ struct BlackwellBlockScaledMatmulKernel[
         # ===== Kernel Context =====
         # Encapsulates election variables, CTA coordinates, and multicast masks
         var ctx = Self.Context(tmem_addr_storage)
-        comptime max_tmem_cols = 512
 
         # ===== Barrier Initialization =====
         if ctx.elect_one_warp and ctx.elect_one_thread:

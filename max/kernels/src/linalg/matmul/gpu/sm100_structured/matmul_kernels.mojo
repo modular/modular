@@ -738,7 +738,6 @@ struct BlackwellMatmulSM100Kernel[
     # ========== Tensor Memory Type ==========
     # TMEM allocation and typed accumulator tensor
 
-    comptime max_tmem_cols: UInt = 512
     comptime Tmem = TmemAllocation[Self.cta_group]
 
     # Layout-parameterized TMEM tensor for type-safe accumulator access
@@ -798,7 +797,6 @@ struct BlackwellMatmulSM100Kernel[
         num_output_stages = Self.SmemType.num_output_stages,
         stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
-        max_tmem_cols = Self.max_tmem_cols,
         elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
         register_based_epilogue = Self.register_based_epilogue,
     ]
@@ -1078,9 +1076,6 @@ struct BlackwellMatmulSM100Kernel[
             smem.input_barriers(), tile_payload
         )
 
-        comptime accum_type = get_accum_type[Self.a_type]()
-        comptime max_tmem_cols = 512
-
         # Create kernel context with election vars, CTA coords, and masks
         var ctx = Self.Context(smem.tmem_addr())
 
@@ -1307,8 +1302,6 @@ struct BlackwellMatmulSM100Kernel[
         var input_pipeline = Self.InputTilePipeline(
             smem.input_barriers(), tile_payload
         )
-
-        comptime max_tmem_cols = 512
 
         # Create kernel context with election vars, CTA coords, and masks
         var ctx = Self.Context(smem.tmem_addr())
@@ -1685,17 +1678,17 @@ struct BlackwellMatmulSM100FallbackKernel[
                 a_tma_op.async_copy(
                     a_smem_tile,
                     tma_mbar[0],
-                    (UInt(i) * UInt(Self.BK), block_idx.y * UInt(Self.BM)),
+                    (Int(i) * Self.BK, Int(block_idx.y) * Self.BM),
                 )
                 b_tma_op.async_copy(
                     b_smem_tile,
                     tma_mbar[0],
                     (
-                        UInt(i) * UInt(Self.BK),
-                        block_idx.x * UInt(Self.BN),
+                        Int(i) * Self.BK,
+                        Int(block_idx.x) * Self.BN,
                     ) if Self.transpose_b else (
-                        block_idx.x * UInt(Self.BN),
-                        UInt(i) * UInt(Self.BK),
+                        Int(block_idx.x) * Self.BN,
+                        Int(i) * Self.BK,
                     ),
                 )
 

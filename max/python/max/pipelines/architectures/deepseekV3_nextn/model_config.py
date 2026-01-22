@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
@@ -40,7 +40,7 @@ class DeepseekV3NextNConfig(MAXModelConfig, DeepseekV3Config):
         return {}
 
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],

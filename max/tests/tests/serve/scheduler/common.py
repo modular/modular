@@ -33,7 +33,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
@@ -118,7 +118,7 @@ def create_paged_scheduler(
     enable_in_flight_batching: bool = False,
     enable_chunked_prefill: bool = True,
     enable_kvcache_swapping_to_host: bool = False,
-    max_batch_context_length: int | None = None,
+    max_batch_total_tokens: int | None = None,
     dp: int = 1,
     device: Device = CPU(),
     kvcache_ce_watermark: float = 1.0,
@@ -146,7 +146,7 @@ def create_paged_scheduler(
         max_seq_len=max_seq_len,
         enable_chunked_prefill=enable_chunked_prefill,
         enable_in_flight_batching=enable_in_flight_batching,
-        max_batch_context_length=max_batch_context_length,
+        max_batch_total_tokens=max_batch_total_tokens,
         data_parallel_degree=dp,
         kvcache_ce_watermark=kvcache_ce_watermark,
     )

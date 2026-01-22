@@ -1,12 +1,12 @@
-:description: Experimental functional tensor operations for MAX.
+:description: Functional tensor operations for MAX.
 :title: functional
 :card_title: Functional Operations
 :type: module
 :lang: python
 
 
-.. py:currentmodule:: max.experimental
+.. py:currentmodule:: max
 
-.. automodule:: max.experimental.functional
+.. automodule:: max.functional
    :members:
    :undoc-members:
