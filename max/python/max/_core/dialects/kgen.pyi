@@ -1249,6 +1249,67 @@ class StructFieldNamesAttr(max._core.Attribute):
     @property
     def type(self) -> VariadicType: ...
 
+class StructFieldOffsetByIndexAttr(max._core.Attribute):
+    """
+    The `#kgen.struct_field_offset_by_index` attribute returns the byte offset
+    of a field in a struct type given the field index. Produces a compile error
+    if the field index is out of bounds.
+
+    The offset is computed using the target's data layout to determine field
+    sizes and alignment requirements.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_offset_by_index<#MyStruct, 0 : index, #target> : index
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        field_index: max._core.dialects.builtin.TypedAttr,
+        target: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def field_index(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def target(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class StructFieldOffsetByNameAttr(max._core.Attribute):
+    """
+    The `#kgen.struct_field_offset_by_name` attribute returns the byte offset
+    of a field in a struct type given the field name. Produces a compile error
+    if the field name does not exist in the struct.
+
+    The fieldName parameter should resolve to a StringAttr (kgen.string) after
+    parameter evaluation.
+
+    The offset is computed using the target's data layout to determine field
+    sizes and alignment requirements.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_offset_by_name<#MyStruct, "x", #target> : index
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        field_name: max._core.dialects.builtin.TypedAttr,
+        target: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def field_name(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def target(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class StructFieldTypeByNameAttr(max._core.Attribute):
     """
     The `#kgen.struct_field_type_by_name` attribute returns the type of a field

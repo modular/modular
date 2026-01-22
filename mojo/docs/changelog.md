@@ -361,6 +361,26 @@ what we publish.
           print(names[i], "=", __struct_field_ref(i, s))
   ```
 
+  **Field byte offsets** - `offset_of[T, name=field_name]()` returns the byte
+  offset of a named field within a struct, enabling no-copy serialization and
+  other low-level memory operations. The offset is computed at compile time
+  using the target's data layout, correctly accounting for alignment padding.
+  This is analogous to C/C++'s `offsetof` and Rust's `offset_of!` macro. An
+  `offset_of[T, index=i]()` overload is also available to look up by field
+  index.
+
+  ```mojo
+  from reflection import offset_of
+
+  struct Point:
+      var x: Int      # offset 0
+      var y: Float64  # offset 8 (aligned)
+
+  fn main():
+      comptime x_off = offset_of[Point, name="x"]()  # 0
+      comptime y_off = offset_of[Point, name="y"]()  # 8
+  ```
+
   **Type introspection utilities:**
 
   - `is_struct_type[T]()` - Returns `True` if `T` is a Mojo struct type. Useful

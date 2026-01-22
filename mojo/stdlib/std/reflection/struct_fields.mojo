@@ -78,7 +78,26 @@ fn print_all_fields[T: AnyType](ref s: T):
     for i in range(struct_field_count[T]()):
         print(names[i], "=", __struct_field_ref(i, s))
 ```
+
+For struct field byte offsets (useful for low-level memory operations):
+
+- `offset_of[T, name="field_name"]()` - get offset by field name
+- `offset_of[T, index=0]()` - get offset by field index
+
+Example:
+
+```mojo
+struct Point:
+    var x: Int      # offset 0
+    var y: Float64  # offset 8 (aligned to 8 bytes)
+
+fn main():
+    comptime x_off = offset_of[Point, name="x"]()  # 0
+    comptime y_off = offset_of[Point, index=1]()   # 8
+```
 """
+
+from sys.info import _current_target, _TargetType
 
 
 fn struct_field_index_by_name[
@@ -401,3 +420,124 @@ fn is_struct_type[T: AnyType]() -> Bool:
         T,
         `> : i1`,
     ]
+
+
+# ===----------------------------------------------------------------------=== #
+# Struct Field Offset APIs
+# ===----------------------------------------------------------------------=== #
+
+
+fn _struct_field_offset_by_index[
+    T: AnyType, idx: Int, target: _TargetType = _current_target()
+]() -> Int:
+    """Internal: returns byte offset of field at given index. Use `offset_of`.
+    """
+    return Int(
+        mlir_value=__mlir_attr[
+            `#kgen.struct_field_offset_by_index<`,
+            T,
+            `, `,
+            idx,
+            `, `,
+            target,
+            `> : index`,
+        ]
+    )
+
+
+fn _struct_field_offset_by_name[
+    T: AnyType, name: StringLiteral, target: _TargetType = _current_target()
+]() -> Int:
+    """Internal: returns byte offset of field with given name. Use `offset_of`.
+    """
+    # Access the StringLiteral's `value` type parameter to get the raw string
+    comptime str_value = name.value
+    return Int(
+        mlir_value=__mlir_attr[
+            `#kgen.struct_field_offset_by_name<`,
+            T,
+            `, `,
+            str_value,
+            `, `,
+            target,
+            `> : index`,
+        ]
+    )
+
+
+fn offset_of[
+    T: AnyType, *, name: StringLiteral, target: _TargetType = _current_target()
+]() -> Int:
+    """Returns the byte offset of a field within a struct by name.
+
+    This function computes the byte offset from the start of the struct to the
+    named field, accounting for alignment padding between fields. The offset
+    is computed using the target's data layout.
+
+    This is useful for low-level memory operations like no-copy serialization,
+    memory-mapped I/O, or interfacing with C structs.
+
+    Note: This function works with both concrete types and generic type parameters.
+
+    Parameters:
+        T: A struct type.
+        name: The name of the field.
+        target: The target architecture (defaults to current target).
+
+    Constraints:
+        T must be a struct type. The field name must exist in the struct.
+
+    Returns:
+        The byte offset of the field from the start of the struct.
+
+    Example:
+        ```mojo
+        struct Point:
+            var x: Int      # offset 0
+            var y: Float64  # offset 8 (aligned to 8 bytes)
+
+        fn main():
+            comptime x_off = offset_of[Point, name="x"]()  # 0
+            comptime y_off = offset_of[Point, name="y"]()  # 8
+        ```
+    """
+    return _struct_field_offset_by_name[T, name, target]()
+
+
+fn offset_of[
+    T: AnyType, *, index: Int, target: _TargetType = _current_target()
+]() -> Int:
+    """Returns the byte offset of a field within a struct by index.
+
+    This function computes the byte offset from the start of the struct to the
+    specified field, accounting for alignment padding between fields. The offset
+    is computed using the target's data layout.
+
+    This is useful for low-level memory operations like no-copy serialization,
+    memory-mapped I/O, or interfacing with C structs.
+
+    Note: This function works with both concrete types and generic type parameters.
+
+    Parameters:
+        T: A struct type.
+        index: The zero-based index of the field.
+        target: The target architecture (defaults to current target).
+
+    Constraints:
+        T must be a struct type. The index must be valid (0 <= index < field_count).
+
+    Returns:
+        The byte offset of the field from the start of the struct.
+
+    Example:
+        ```mojo
+        struct Point:
+            var x: Int      # offset 0
+            var y: Float64  # offset 8 (aligned to 8 bytes)
+
+        fn main():
+            comptime x_off = offset_of[Point, index=0]()  # 0
+            comptime y_off = offset_of[Point, index=1]()  # 8
+        ```
+    """
+    return _struct_field_offset_by_index[T, index, target]()
