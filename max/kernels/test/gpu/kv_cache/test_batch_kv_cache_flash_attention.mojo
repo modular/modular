@@ -29,7 +29,7 @@ from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
-
+from sys import has_amd_gpu_accelerator
 from utils import Index, IndexList
 
 comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
@@ -317,6 +317,8 @@ def execute_flash_attention[
     ctx.synchronize()
 
     # Verify results
+    # amd uses more aggressive split-k partitioning
+    var rtol = 2e-2 if has_amd_gpu_accelerator() else 8e-3
     with test_output_device.map_to_host() as test_out_host:
         with ref_output_device.map_to_host() as ref_out_host:
             var test_out_tensor = LayoutTensor[dtype, output_static_layout](
@@ -333,7 +335,7 @@ def execute_flash_attention[
                                 ref_out_tensor[bs, s, h, Int(hd)],
                                 test_out_tensor[bs, s, h, Int(hd)],
                                 atol=1e-5,
-                                rtol=8e-3,
+                                rtol=rtol,
                             )
 
     # Explicitly free device buffers to return memory to the buffer cache
@@ -366,6 +368,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
     for dtype_idx in range(len(dtypes)):
         comptime dtype = dtypes[dtype_idx]
 
+        print("Replit context encoding")
         # Replit context encoding [testing even query valid lengths].
         valid_length[0] = 128
         valid_length[1] = 64
@@ -384,6 +387,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
             bs, valid_length, 1024, 4, 0, cache_valid_length, ctx
         )
 
+        print("Replit token gen")
         # Replit token gen [testing even cache valid lengths].
         valid_length[0] = 1
         valid_length[1] = 1
