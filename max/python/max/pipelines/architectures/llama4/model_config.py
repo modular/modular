@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -23,14 +23,16 @@ from max.nn.legacy.rotary_embedding import Llama3RopeScalingParams
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
-    MAXModelConfigBase,
     PipelineConfig,
     RopeType,
 )
+from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
+from typing_extensions import Self, override
 
 
-class Llama4Config(MAXModelConfigBase):
+@dataclass(kw_only=True)
+class Llama4Config(ArchConfigWithKVCache):
     """Configuration for Llama 4 models.
 
     Contains parameters specific to the Llama 4 architecture, typically
@@ -99,14 +101,8 @@ class Llama4Config(MAXModelConfigBase):
     rms_norm_eps: float
     """Epsilon value for RMS normalization layers."""
 
-    tie_word_embeddings: bool
-    """Whether to tie input and output word embeddings."""
-
     vocab_size: int
     """Size of the vocabulary."""
-
-    return_logits: ReturnLogits
-    """Whether to return the last token, all logits, or a variable number of logits."""
 
     max_seq_len: int
     """Maximum length of sequence."""
@@ -123,11 +119,17 @@ class Llama4Config(MAXModelConfigBase):
     devices: list[DeviceRef]
     """Devices to run the model with."""
 
-    @staticmethod
-    def help() -> dict[str, str]:
-        """Returns a dictionary describing the configuration parameters."""
-        # TODO: Populate this with helpful descriptions based on Args above.
-        return {}
+    tie_word_embeddings: bool = False
+    """Whether to tie input and output word embeddings."""
+
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+    """Whether to return the last token, all logits, or a variable number of logits."""
+
+    def get_kv_params(self) -> KVCacheParams:
+        return self.kv_params
+
+    def get_max_seq_len(self) -> int:
+        return self.max_seq_len
 
     @staticmethod
     def construct_kv_params(
@@ -198,41 +200,30 @@ class Llama4Config(MAXModelConfigBase):
         # Access max_position_embeddings from the text_config.
         return huggingface_config.text_config.max_position_embeddings
 
-    @staticmethod
-    def generate(
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        dtype: DType,
-        n_devices: int,
-        cache_dtype: DType,
-        kv_cache_config: KVCacheConfig,
-        return_logits: ReturnLogits,
-        norm_method: Literal["rms_norm"] = "rms_norm",
-        attention_bias: bool = False,  # Llama4 attention bias is False in HF.
-    ) -> Llama4Config:
-        """Generates a Llama4Config instance from various configuration sources.
+    @override
+    @classmethod
+    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+        """Initializes a Llama4Config instance from pipeline configuration.
 
-        This factory method takes pipeline settings, HuggingFace configuration,
-        model state dictionary, and other parameters to construct a fully initialized
-        :obj:`Llama4Config` object for use within the MAX Engine pipeline.
+        This method creates a config instance with all fields that can be determined
+        from the pipeline configuration, without needing the state_dict.
+        Fields that depend on the state_dict (like tie_word_embeddings)
+        should be set via the `finalize()` method.
 
         Args:
-            pipeline_config: The MAX Engine pipeline configuration (:obj:`max.pipelines.config.PipelineConfig`).
-            huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-            state_dict: The model's state dictionary containing weights (:obj:`max.graph.weights.WeightData`).
-            dtype: The primary data type for model parameters (:obj:`max.dtype.DType`).
-            n_devices: The number of devices the model will run on.
-            cache_dtype: The data type for the KV cache (:obj:`max.dtype.DType`).
-            kv_cache_config: Configuration settings for the KV cache (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            return_logits: Whether to return the last token, all tokens or a variable number of logits.
-            norm_method: The normalization method to use (currently only "rms_norm").
-            attention_bias: Whether to include bias in attention projections. Defaults
-              to `False` based on Llama 4 HuggingFace implementation.
+            pipeline_config: The MAX Engine pipeline configuration.
 
         Returns:
-            An initialized :obj:`Llama4Config` instance.
+            An initialized Llama4Config instance.
         """
+        huggingface_config = pipeline_config.model.huggingface_config
+        kv_cache_config = pipeline_config.model.kv_cache
+        quantization_encoding = pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must not be None")
+        dtype = quantization_encoding.dtype
+        cache_dtype = quantization_encoding.cache_dtype
+
         interleaved_rope_weights = (
             pipeline_config.model.rope_type == RopeType.normal
         )
@@ -242,13 +233,6 @@ class Llama4Config(MAXModelConfigBase):
         ]
 
         text_config = huggingface_config.text_config
-
-        # When tie_word_embeddings=True, the embedding weights are shared with
-        # the output weights.
-        tie_word_embeddings = (
-            getattr(huggingface_config, "tie_word_embeddings", False)
-            or "lm_head.weight" not in state_dict
-        )
 
         rope_scaling_params = None
         rope_scaling = text_config.rope_scaling
@@ -272,7 +256,15 @@ class Llama4Config(MAXModelConfigBase):
                     ],
                 )
 
-        return Llama4Config(
+        kv_params = cls.construct_kv_params(
+            huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
+            devices=device_refs,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
+
+        return cls(
             hidden_size=text_config.hidden_size,
             intermediate_size=text_config.intermediate_size,
             intermediate_size_mlp=text_config.intermediate_size_mlp,
@@ -303,20 +295,35 @@ class Llama4Config(MAXModelConfigBase):
             floor_scale=getattr(text_config, "floor_scale", 8192),
             attn_scale=getattr(text_config, "attn_scale", 0.1),
             rms_norm_eps=text_config.rms_norm_eps,
-            tie_word_embeddings=tie_word_embeddings,
             vocab_size=text_config.vocab_size,
-            return_logits=return_logits,
-            max_seq_len=Llama4Config.calculate_max_seq_len(
+            max_seq_len=cls.calculate_max_seq_len(
                 pipeline_config, huggingface_config
             ),
             num_hidden_layers=text_config.num_hidden_layers,
-            kv_params=Llama4Config.construct_kv_params(
-                huggingface_config=huggingface_config,
-                pipeline_config=pipeline_config,
-                devices=device_refs,
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
+            kv_params=kv_params,
             dtype=dtype,
             devices=device_refs,
         )
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: dict[str, WeightData],
+        return_logits: ReturnLogits,
+    ) -> None:
+        """Define parameters that can't be determined just from the pipeline config.
+
+        Args:
+            huggingface_config: The HuggingFace model configuration object.
+            state_dict: The model's state dictionary containing weights.
+            return_logits: Whether to return the last token, all tokens or a variable number of logits.
+        """
+        # When tie_word_embeddings=True, the embedding weights are shared with
+        # the output weights.
+        tie_word_embeddings = (
+            getattr(huggingface_config, "tie_word_embeddings", False)
+            or "lm_head.weight" not in state_dict
+        )
+
+        self.tie_word_embeddings = tie_word_embeddings
+        self.return_logits = return_logits

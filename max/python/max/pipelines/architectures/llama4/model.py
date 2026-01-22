@@ -266,15 +266,10 @@ class Llama4Model(
             state_dict = {
                 key: value.data() for key, value in self.weights.items()
             }
-        model_config = Llama4Config.generate(
-            pipeline_config=self.pipeline_config,
+        model_config = Llama4Config.initialize(self.pipeline_config)
+        model_config.finalize(
             huggingface_config=huggingface_config,
             state_dict=state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
-            attention_bias=huggingface_config.text_config.attention_bias,
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
         nn_model = Llama4(model_config)

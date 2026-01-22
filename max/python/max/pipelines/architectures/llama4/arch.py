@@ -27,6 +27,7 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import Llama4Model
+from .model_config import Llama4Config
 
 llama4_arch = SupportedArchitecture(
     name="Llama4ForConditionalGeneration_Legacy",
@@ -51,4 +52,5 @@ llama4_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    config=Llama4Config,
 )
