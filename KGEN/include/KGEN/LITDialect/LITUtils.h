@@ -50,6 +50,11 @@ bool isVariadicOfMetaType(Type type);
 bool isTypeExpr(TypedAttr attr);
 bool isVariadicOfTypeExpr(TypedAttr attr);
 
+/// Returns whether the given attribute is a LIT level-1 type expression (e.g.,
+/// a type expression that describe a struct type, such as struct meta type and
+/// trait type).
+bool isFirstLevelTypeExpr(TypedAttr attr);
+
 // This is the name of the field of the standard library Origin type.  This
 // needs to be kept in sync with the standard library.
 #define ORIGIN_FIELD_NAME "_mlir_origin"

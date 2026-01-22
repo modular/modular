@@ -44,6 +44,18 @@ bool LIT::isVariadicOfMetaType(Type type) {
   return va && LIT::isMetaType(va.getElementType());
 }
 
+bool LIT::isFirstLevelTypeExpr(TypedAttr typeExpr) {
+  auto type = SugarAttr::strip(typeExpr.getType());
+  if (auto param = dyn_cast<ParamType>(type))
+    return sugarIsa<StructMetaMetaType, AnyTraitType>(
+        param.getParam().getType());
+  if (isa<StructMetaType, TraitType>(type))
+    return true;
+
+  // TypeType is not always a L1 type expression.
+  return false;
+}
+
 bool LIT::isTypeExpr(TypedAttr attr) { return isMetaType(attr.getType()); }
 bool LIT::isVariadicOfTypeExpr(TypedAttr attr) {
   auto va = sugarDynCast<VariadicAttr>(attr);

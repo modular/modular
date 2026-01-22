@@ -4287,25 +4287,13 @@ AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
       sugarIsaAndNonNull<KGEN::TypeType>(typeToCheck.getType());
 
   // If not a !kgen.type value, check for metatype-based type expressions.
-  auto valueType = typeToCheck.getIfTypeValue();
-  if (!isTypeTypeValue && !valueType) {
-    emitter.emitError(subExprs[0]->getLoc(),
-                      "expected a type for the first argument")
+  if (!isTypeTypeValue && !LIT::isFirstLevelTypeExpr(typeToCheck)) {
+    // TODO: we should fold to constant when the metatype is `StructMetaType`,
+    // that means we know the concrete type to check at parsing time:
+    emitter.emitError(subExprs[0]->getLoc())
+        << typeToCheck << " is not a type expression"
         << subExprs[0]->getRange();
     return {};
-  }
-
-  // Validate the metatype for non-TypeType values.
-  if (!isTypeTypeValue) {
-    auto metaType = ASTType(valueType).getMetaType();
-    if (!sugarIsaAndNonNull<LIT::TraitType>(metaType) &&
-        !sugarIsaAndNonNull<LIT::StructMetaType>(metaType)) {
-      // TODO: we should fold to constant when the metatype is `StructMetaType`,
-      // that means we know the concrete type to check at parsing time:
-      emitter.emitError(subExprs[0]->getLoc())
-          << typeToCheck << " is not an 'AnyType'" << subExprs[0]->getRange();
-      return {};
-    }
   }
 
   // The second operand must be a !lit.anytrait
