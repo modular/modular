@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -7,10 +7,26 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+modular_py_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+    ],
+)
+
 modular_py_test(
     name = "tests",
     size = "large",
-    srcs = glob(["*.py"]),
+    srcs = glob(
+        ["*.py"],
+        exclude = [
+            "conftest.py",
+            "test_functional_custom_gpu.py",
+        ],
+    ),
     args = [
         "-n",
         "auto",
@@ -34,11 +50,42 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":conftest",
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("pytest-xdist"),
+    ],
+)
+
+modular_py_test(
+    name = "test_functional_custom_gpu",
+    srcs = ["test_functional_custom_gpu.py"],
+    data = ["//max/tests/integration:kernel_verification_ops"] + select({
+        "//:b200_gpu": ["//max/kernels/test/gpu/device_context:vec_add_cubin_sm100"],
+        "//:h100_gpu": ["//max/kernels/test/gpu/device_context:vec_add_cubin_sm90"],
+        "//conditions:default": ["//max/kernels/test/gpu/device_context:vec_add_cubin_sm80"],
+    }),
+    env = {
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration:kernel_verification_ops)",
+    } | select({
+        "//:b200_gpu": {"CUBIN_PATH": "$(location //max/kernels/test/gpu/device_context:vec_add_cubin_sm100)"},
+        "//:h100_gpu": {"CUBIN_PATH": "$(location //max/kernels/test/gpu/device_context:vec_add_cubin_sm90)"},
+        "//conditions:default": {"CUBIN_PATH": "$(location //max/kernels/test/gpu/device_context:vec_add_cubin_sm80)"},
+    }),
+    imports = ["."],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        # FIXME: MOCO-2411
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": ["//:nvidia_gpu"],
+    }),
+    deps = [
+        ":conftest",
+        "//max/python/max:tensor",
+        "//max/python/max/dtype",
     ],
 )

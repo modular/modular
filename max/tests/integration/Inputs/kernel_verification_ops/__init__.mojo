@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler_internal as compiler
+from gpu.host.device_context import DeviceExternalFunction
+from os import getenv
 from tensor import (
     foreach,
     DynamicTensor,
@@ -235,3 +237,46 @@ struct OpWithStaticStringParameter[StringParameter: StaticString]:
     ):
         output[0] = x[0]
         print(Self.StringParameter)
+
+
+@compiler.register("op_with_external_cubin")
+struct ExternalCubinVecAdd:
+    """Custom op that uses an external cubin for vector addition."""
+
+    @staticmethod
+    def execute[
+        target: StaticString
+    ](
+        output: OutputTensor[rank=1],
+        lhs: InputTensor[dtype = output.dtype, rank = output.rank],
+        rhs: InputTensor[dtype = output.dtype, rank = output.rank],
+        ctx: DeviceContextPtr,
+    ):
+        constrained[target == "gpu"]()
+        gpu_ctx = ctx.get_device_context()
+
+        with open(getenv("CUBIN_PATH"), "r") as file:
+            cubin_data = file.read_bytes()
+
+            external_func = DeviceExternalFunction(
+                gpu_ctx,
+                function_name="vec_add",  # matches extern "C" name
+                # DeviceExternalFunction takes a StringSlice, which is probably wrong.
+                # The cubin is [very, very likely] invalid UTF8.
+                asm=StringSlice(unsafe_from_utf8=cubin_data),
+            )
+
+        length = output.dim_size(0)
+        block_dim = 32
+        grid_dim = (length + block_dim - 1) // block_dim
+
+        # Execute the external cubin kernel
+        gpu_ctx.enqueue_function(
+            external_func,
+            lhs.unsafe_ptr(),
+            rhs.unsafe_ptr(),
+            output.unsafe_ptr(),
+            length,
+            grid_dim=(grid_dim,),
+            block_dim=(block_dim,),
+        )
