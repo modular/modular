@@ -3217,14 +3217,25 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // Finally, emit empty conformance tables.
   ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
-  for (SymbolRefAttr parent : structOp.getCanonicalTrait().getSymbols()) {
+  TraitType canonicalTrait = structOp.getCanonicalTrait();
+  ArrayRef<SymbolRefAttr> symbols = canonicalTrait.getSymbols();
+  // Constraints array is either empty (all unconditional) or parallel with
+  // symbols.
+  ArrayRef<ConstraintAttr> constraints = canonicalTrait.getConstraints();
+  bool hasConstraints = !constraints.empty();
+  for (size_t i = 0; i < symbols.size(); ++i) {
+    SymbolRefAttr parent = symbols[i];
     StringAttr name = b.getStringAttr(getFlattenedSymbolName(parent));
     ASTDecl &parentDecl = getDeclForTypeSymbol(parent);
     SymbolRefArrayAttr immediateParents =
         cast_or_null<TraitDeclOp>(parentDecl.getIfOperation())
             .getImmediateParentsAttr();
+    // Use 3-arg builder for unconditional conformance, 4-arg for conditional.
     ConformanceOp witnessTable =
-        ConformanceOp::create(b, name, parent, immediateParents);
+        hasConstraints
+            ? ConformanceOp::create(b, name, parent, immediateParents,
+                                    constraints[i])
+            : ConformanceOp::create(b, name, parent, immediateParents);
     witnessTable.getBody().push_back(new Block());
     ASTDecl &decl = addDecl(witnessTable, structDecl.getLoc(), name,
                             &structDecl, {}, {}, -1);
@@ -4250,6 +4261,9 @@ ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
   // Generate conformance tables for the extension's traits that the struct
   // doesn't already have. Use set difference to avoid duplicate conformances
   // between struct and extension. Extensions might have no canonical trait.
+  //
+  // TODO: Propagate constraints to ConformanceOp for extension conditional
+  // conformance. Currently only struct decls support conditional conformance.
   if (extensionDeclOp.getCanonicalTrait()) {
     Block *extensionBody = extensionDeclOp.getBody();
     ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockEnd(

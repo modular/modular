@@ -2030,6 +2030,64 @@ Value RebindOp::strip(Value value) {
   return value;
 }
 
+//===----------------------------------------------------------------------===//
+// ConformanceOp
+//===----------------------------------------------------------------------===//
+
+ParseResult ConformanceOp::parse(OpAsmParser &parser, OperationState &result) {
+  StringAttr symName;
+  if (parser.parseSymbolName(symName))
+    return failure();
+  result.addAttribute(getSymNameAttrName(result.name), symName);
+
+  // Parse the body region.
+  Region *body = result.addRegion();
+  if (parser.parseRegion(*body))
+    return failure();
+
+  // Ensure the region has at least one block (required by SizedRegion<1>).
+  if (body->empty())
+    body->emplaceBlock();
+
+  // Parse optional "where" clause for conditional conformance.
+  // Use a trivially true constraint when no "where" clause is present.
+  ConstraintAttr constraint;
+  if (succeeded(parser.parseOptionalKeyword("where"))) {
+    if (parser.parseAttribute(constraint))
+      return failure();
+  } else {
+    constraint = getUnconditionalConstraint(parser.getContext());
+  }
+  result.addAttribute(getConstraintAttrName(result.name), constraint);
+
+  // Parse the optional attribute dictionary.
+  if (parser.parseOptionalAttrDictWithKeyword(result.attributes))
+    return failure();
+
+  return success();
+}
+
+void ConformanceOp::print(OpAsmPrinter &p) {
+  p << " ";
+  p.printSymbolName(getSymName());
+  p << " ";
+  p.printRegion(getBody(), /*printEntryBlockArgs=*/false,
+                /*printBlockTerminators=*/true);
+
+  // Print "where <constraint>" only for conditional conformance constraints.
+  // Trivially true constraints (unconditional conformance) are not printed.
+  if (ConstraintAttr constraint = getConstraint();
+      !isTriviallyTrueConstraint(constraint)) {
+    p << " where ";
+    p.printAttribute(constraint);
+  }
+
+  // Print the attribute dictionary, excluding the constraint and sym_name
+  // since they're handled specially above.
+  p.printOptionalAttrDictWithKeyword(
+      (*this)->getAttrs(), {getSymNameAttrName(), getConstraintAttrName()});
+}
+
 ///===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
