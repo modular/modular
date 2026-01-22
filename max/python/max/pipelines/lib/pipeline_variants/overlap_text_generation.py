@@ -28,7 +28,6 @@ from max.driver import Buffer, load_devices
 from max.graph import DeviceRef
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
-    BatchLogitsProcessor,
     Pipeline,
     PipelineOutputsDict,
     PipelineTokenizer,
@@ -248,6 +247,11 @@ class OverlapTextGenerationPipeline(
                 "Log probabilities are not supported with overlap pipeline"
             )
 
+        if inputs.num_steps > 1:
+            raise ValueError(
+                "Max num steps > 1 is not supported with the Overlap scheduler."
+            )
+
         device0 = self._devices[0]
         pinned = not device0.is_host
         # Prepare the batch.
@@ -255,86 +259,48 @@ class OverlapTextGenerationPipeline(
             inputs.batches, inputs.num_steps
         )
 
-        batch_processors: list[BatchLogitsProcessor] = []
-        if len(flat_batch) > 0:
-            with Tracer("FusedSamplingProcessor"):
-                sampling_processor = FusedSamplingProcessor(
-                    sampler=self._sampler,
-                    pipeline_config=self._pipeline_config,
-                    context_batch=flat_batch,
-                    num_steps=num_steps,
-                    device=device0,
+        with Tracer("FusedSamplingProcessor"):
+            sampling_processor = FusedSamplingProcessor(
+                sampler=self._sampler,
+                pipeline_config=self._pipeline_config,
+                context_batch=flat_batch,
+                num_steps=num_steps,
+                device=device0,
+            )
+
+        with Tracer("pipeline_model.execute"):
+            # Execute the model and get next tokens.
+            try:
+                model_outputs = self._pipeline_model.execute(
+                    model_inputs=model_inputs
                 )
+            except Exception:
+                batch_size = len(flat_batch)
+                cache_tokens = sum(
+                    ctx.tokens.processed_length for ctx in flat_batch
+                )
+                input_tokens = sum(
+                    ctx.tokens.active_length for ctx in flat_batch
+                )
+                logger.error(
+                    "Encountered an exception while executing batch: "
+                    f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}, {num_steps=:}"
+                )
+                raise  # re-raise the original exception
+        assert model_outputs.logit_offsets is None
 
-            batch_processors.append(sampling_processor)
-
-        curr_step_inputs = model_inputs
-        for i in range(num_steps):
-            with Tracer(f"multistep_execution_loop_step_{i}"):
-                # Execute the model and get next tokens.
-                try:
-                    model_outputs = self._pipeline_model.execute(
-                        model_inputs=curr_step_inputs
-                    )
-                except Exception:
-                    batch_size = len(flat_batch)
-                    cache_tokens = sum(
-                        ctx.tokens.processed_length for ctx in flat_batch
-                    )
-                    input_tokens = sum(
-                        ctx.tokens.active_length for ctx in flat_batch
-                    )
-                    logger.error(
-                        "Encountered an exception while executing batch: "
-                        f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}, {num_steps=:}"
-                    )
-                    raise  # re-raise the original exception
-
-            assert model_outputs.logit_offsets is None
-
-            # Continue and execute the next step if the batch.
-            if len(flat_batch) == 0:
-                continue
-
-            # Sample next token.
-            with Tracer("sample_next_token_step_{i}"):
+        # Sample next token unless this is an empty batch.
+        # Empty batches still need to be run for deepseek DP / EP barrier.
+        if len(flat_batch) > 0:
+            with Tracer("sample_next_token"):
                 apply_logits_processors(
                     context_batch=flat_batch,
                     batch_logits=model_outputs.logits,
                     batch_logit_offsets=model_outputs.logit_offsets,
-                    batch_processors=batch_processors,
+                    batch_processors=[sampling_processor],
                 )
                 new_tokens = sampling_processor.new_tokens
                 assert new_tokens is not None
-
-            # Check if we're on our last iteration. If so, skip preparing the next batch
-            if i == num_steps - 1:
-                break
-
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs, KVCacheInputsSequence
-            ), (
-                "prepare_batch instantiates and passes this as a KVCacheInputsSequence"
-            )
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
-            ), "increment_cache_lengths instantiates and passes this as a list"
-            curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
-                self._pipeline_model.kv_manager.increment_cache_lengths(
-                    curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
-                    curr_step_inputs,
-                )
-            )
-            with Tracer(f"prepare_next_token_inputs_{i}"):
-                curr_step_inputs = (
-                    self._pipeline_model.prepare_next_token_inputs(
-                        new_tokens, curr_step_inputs
-                    )
-                )
-
-        # Return early if the batch is empty.
-        if len(flat_batch) == 0:
-            return {}
 
         # Do the copy to host for each token generated.
         with Tracer("D2H generated_tokens"):

@@ -816,27 +816,31 @@ class PipelineConfig(ConfigFileModel):
                 )
             if self.model.kv_cache.enable_prefix_caching:
                 raise ValueError(
-                    "Prefix caching is not supported with the Overlap scheduler. Overriding to False."
+                    "Prefix caching is not supported with the Overlap scheduler."
                 )
             if self.enable_chunked_prefill:
                 raise ValueError(
-                    "Chunked prefill is not supported with the Overlap scheduler. Overriding to False."
+                    "Chunked prefill is not supported with the Overlap scheduler."
                 )
             if self.sampling.enable_structured_output:
                 raise ValueError(
-                    "Structured outputs are not supported with the Overlap scheduler. Overriding to False."
+                    "Structured outputs are not supported with the Overlap scheduler."
                 )
             if self.sampling.enable_variable_logits:
                 raise ValueError(
-                    "Variable logits are not supported with the Overlap scheduler. Overriding to False."
+                    "Variable logits are not supported with the Overlap scheduler. "
                 )
             if self.speculative:
                 raise ValueError(
-                    "Speculative decoding is not supported with the Overlap scheduler. Overriding to None."
+                    "Speculative decoding is not supported with the Overlap scheduler."
                 )
             if self.lora:
                 raise ValueError(
-                    "LoRA is not supported with the Overlap scheduler. Overriding to None."
+                    "LoRA is not supported with the Overlap scheduler."
+                )
+            if self.max_num_steps > 1:
+                raise ValueError(
+                    "Max num steps > 1 is not supported with the Overlap scheduler."
                 )
 
     def _validate_and_resolve_max_num_steps(self) -> None:
