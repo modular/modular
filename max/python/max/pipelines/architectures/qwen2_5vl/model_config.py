@@ -175,7 +175,7 @@ class Qwen2_5VLConfig(MAXModelConfigBase):
         return {}
 
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -186,7 +186,7 @@ class Qwen2_5VLConfig(MAXModelConfigBase):
         llm_config = getattr(
             huggingface_config, "llm_config", huggingface_config
         )
-        return Llama3Config.get_kv_params(
+        return Llama3Config.construct_kv_params(
             huggingface_config=llm_config,
             pipeline_config=pipeline_config,
             devices=devices,
@@ -260,17 +260,15 @@ class Qwen2_5VLConfig(MAXModelConfigBase):
         )
 
         # Create Llama3Config for the language model (with Qwen2 attention_bias=True)
-        llm_config = Llama3Config.generate(
-            pipeline_config=pipeline_config,
+        llm_config = Llama3Config.initialize_from_config(
+            pipeline_config, huggingface_config
+        )
+        llm_config.finalize(
             huggingface_config=huggingface_config,
             state_dict=llm_state_dict,
-            dtype=dtype,
-            n_devices=n_devices,
-            cache_dtype=cache_dtype,
-            kv_cache_config=kv_cache_config,
             return_logits=return_logits,
             norm_method=norm_method,
-            attention_bias=True,  # Qwen2.5VL uses Qwen2 which has attention_bias=True
+            attention_bias=True,
         )
 
         return Qwen2_5VLConfig(

@@ -64,7 +64,7 @@ class PixtralConfig(MAXModelConfigBase):
 
     # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],

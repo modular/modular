@@ -107,7 +107,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return MPNetConfig.get_kv_params(
+        return MPNetConfig.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=devices,

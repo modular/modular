@@ -189,7 +189,7 @@ class Llama4Model(
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Llama 4.
 
-        Delegates to the :obj:`Llama4Config.get_kv_params` static method.
+        Delegates to the :obj:`Llama4Config.construct_kv_params` static method.
 
         Args:
             huggingface_config: The HuggingFace model configuration object
@@ -204,7 +204,7 @@ class Llama4Model(
         Returns:
             The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
         """
-        return Llama4Config.get_kv_params(
+        return Llama4Config.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,

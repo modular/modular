@@ -37,14 +37,14 @@ class Qwen3Config(Llama3Config):
     """
 
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        """Override the default Llama3Config.get_kv_params to use head_dim from config.
+        """Override the default Llama3Config.construct_kv_params to use head_dim from config.
 
         Qwen3 models have an explicit head_dim field in their configuration,
         unlike Llama models where it needs to be calculated.
@@ -112,7 +112,7 @@ class Qwen3Config(Llama3Config):
     ) -> Qwen3Config:
         """Generate a Qwen3Config from the provided parameters.
 
-        This method largely delegates to Llama3Config.generate but ensures
+        This method largely delegates to Llama3Config but ensures
         the correct attention_multiplier calculation using Qwen3's head_dim.
         - GGUF is not currently supported for Qwen3.
 
@@ -132,14 +132,12 @@ class Qwen3Config(Llama3Config):
             Configured Qwen3Config instance.
         """
         # Call the parent generate method to get most of the configuration
-        base_config = Llama3Config.generate(
-            pipeline_config=pipeline_config,
+        base_config = Llama3Config.initialize_from_config(
+            pipeline_config, huggingface_config
+        )
+        base_config.finalize(
             huggingface_config=huggingface_config,
             state_dict=state_dict,
-            dtype=dtype,
-            n_devices=n_devices,
-            cache_dtype=cache_dtype,
-            kv_cache_config=kv_cache_config,
             return_logits=return_logits,
             return_hidden_states=return_hidden_states,
             norm_method=norm_method,
@@ -152,7 +150,7 @@ class Qwen3Config(Llama3Config):
         ]
 
         # Override the KV parameters and attention multiplier with Qwen3-specific calculations
-        qwen3_kv_params = Qwen3Config.get_kv_params(
+        qwen3_kv_params = Qwen3Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=device_refs,

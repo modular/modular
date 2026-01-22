@@ -216,7 +216,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return DeepseekV2Config.get_kv_params(
+        return DeepseekV2Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=devices,

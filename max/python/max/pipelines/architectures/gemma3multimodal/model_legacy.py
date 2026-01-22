@@ -122,7 +122,7 @@ class Gemma3_MultiModalModelLegacy(Gemma3Model):
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Gemma 3.
 
-        Delegates to the :obj:`Gemma3Config.get_kv_params` static method.
+        Delegates to the :obj:`Gemma3Config.construct_kv_params` static method.
 
         Args:
             huggingface_config: The HuggingFace model configuration object

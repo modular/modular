@@ -127,7 +127,7 @@ class Gemma3Config(MAXModelConfigBase):
     """Float8 quantization configuration."""
 
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -293,7 +293,7 @@ class Gemma3Config(MAXModelConfigBase):
             devices=device_refs,
             interleaved_rope_weights=interleaved_rope_weights,
             return_logits=return_logits,
-            kv_params=Gemma3Config.get_kv_params(
+            kv_params=Gemma3Config.construct_kv_params(
                 huggingface_config=huggingface_config,
                 pipeline_config=pipeline_config,
                 devices=device_refs,

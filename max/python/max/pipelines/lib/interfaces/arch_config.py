@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass, field
-from functools import cached_property
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from max.driver import load_devices, scan_available_devices
@@ -58,12 +57,10 @@ class ArchConfig(Protocol):
 class ArchConfigWithKVCache(ArchConfig, Protocol):
     """Config for a model architecture that uses a KV cache."""
 
-    @property
-    def kv_params(self) -> KVCacheParams:
+    def get_kv_params(self) -> KVCacheParams:
         """KV cache parameters to use when running the model."""
 
-    @property
-    def max_seq_len(self) -> int:
+    def get_max_seq_len(self) -> int:
         """The default maximum sequence length that can be processed by the
         model.
 
@@ -103,6 +100,8 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
     user_provided_max_length: int | None = None
     """Override for the maximum sequence length."""
 
+    _kv_params: KVCacheParams | None = None
+
     @override
     @classmethod
     def initialize(cls, pipeline_config: PipelineConfig) -> Self:
@@ -122,8 +121,7 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
             user_provided_max_length=pipeline_config.max_length,
         )
 
-    @property
-    def max_seq_len(self) -> int:
+    def get_max_seq_len(self) -> int:
         """The maximum sequence length that can be processed by the model.
 
         Returns max_length if set, otherwise returns model_max_seq_len.
@@ -133,9 +131,10 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
             default=self.user_provided_max_length,
         )
 
-    @cached_property
-    def kv_params(self) -> KVCacheParams:
-        return KVCacheParams(
+    def get_kv_params(self) -> KVCacheParams:
+        if self._kv_params is not None:
+            return self._kv_params
+        self._kv_params = KVCacheParams(
             dtype=self.cache_dtype or self.dtype,
             n_kv_heads=self.num_key_value_heads,
             head_dim=self.head_dim,
@@ -148,6 +147,7 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
             devices=self.devices,
             data_parallel_degree=self.data_parallel_degree,
         )
+        return self._kv_params
 
     @property
     @abc.abstractmethod

@@ -22,6 +22,7 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
+from ..llama3.model_config import Llama3Config
 from . import weight_adapters
 from .model import EagleLlama3Model
 
@@ -46,4 +47,5 @@ eagle_llama_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     task=PipelineTask.TEXT_GENERATION,
+    config=Llama3Config,
 )

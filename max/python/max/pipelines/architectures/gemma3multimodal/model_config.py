@@ -167,7 +167,7 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfigBase):
     """
 
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -266,7 +266,7 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfigBase):
             float8_config=float8_config,
         )
 
-        kv_params = Gemma3ForConditionalGenerationConfig.get_kv_params(
+        kv_params = Gemma3ForConditionalGenerationConfig.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=device_refs,

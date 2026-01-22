@@ -200,7 +200,7 @@ class Qwen2_5VLModel(
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Qwen2.5VL."""
-        return Qwen2_5VLConfig.get_kv_params(
+        return Qwen2_5VLConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,

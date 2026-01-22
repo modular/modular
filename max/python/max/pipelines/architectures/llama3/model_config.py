@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Literal
 
 from max.dtype import DType
@@ -35,13 +36,14 @@ from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
-    MAXModelConfigBase,
     PipelineConfig,
     RopeType,
     parse_float8_config,
     upper_bounded_default,
 )
+from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
+from typing_extensions import Self, override
 
 
 def create_rope_embedding(
@@ -89,10 +91,10 @@ def create_rope_embedding(
         )
 
 
-class Llama3Config(MAXModelConfigBase):
+@dataclass(kw_only=True)
+class Llama3Config(ArchConfigWithKVCache):
     """Model configuration for Llama3 graph construction/execution."""
 
-    # Required fields
     hidden_size: int
     num_attention_heads: int
     num_key_value_heads: int
@@ -107,22 +109,20 @@ class Llama3Config(MAXModelConfigBase):
     model_quantization_encoding: QuantizationEncoding | None
     quantization_config: QuantizationConfig | None
     kv_params: KVCacheParams
-    return_logits: ReturnLogits
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"]
-    norm_dtype: DType | None
-    attention_bias: bool
-    rms_norm_eps: float | None
-    tie_word_embeddings: bool
-    stacked_mlp: bool
-    stacked_qkv: bool
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_dtype: DType | None = None
+    attention_bias: bool = False
+    rms_norm_eps: float | None = None
+    tie_word_embeddings: bool = False
+    stacked_mlp: bool = False
+    stacked_qkv: bool = False
     attention_multiplier: float
     embedding_multiplier: float
     residual_multiplier: float
     devices: list[DeviceRef]
     clip_qkv: float | None
-    float8_config: Float8Config | None
-
-    # Optional fields
+    float8_config: Float8Config | None = None
     lora_config: LoRAConfig | None = None
     dist_gemm_config: DistributedGemmConfig | None = None
     longrope_scaling_params: LongRoPEScalingParams | None = None
@@ -131,9 +131,11 @@ class Llama3Config(MAXModelConfigBase):
     use_subgraphs: bool = True
     data_parallel_degree: int = 1
 
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {}
+    def get_kv_params(self) -> KVCacheParams:
+        return self.kv_params
+
+    def get_max_seq_len(self) -> int:
+        return self.max_seq_len
 
     @staticmethod
     def calculate_attention_multiplier(
@@ -160,7 +162,7 @@ class Llama3Config(MAXModelConfigBase):
 
     # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -216,86 +218,35 @@ class Llama3Config(MAXModelConfigBase):
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
 
-    # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
-    @staticmethod
-    def generate(
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        dtype: DType,
-        n_devices: int,
-        cache_dtype: DType,
-        kv_cache_config: KVCacheConfig,
-        return_logits: ReturnLogits,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
-        attention_bias: bool = False,
-    ) -> Llama3Config:
+    @override
+    @classmethod
+    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+        return cls.initialize_from_config(
+            pipeline_config, pipeline_config.model.huggingface_config
+        )
+
+    @classmethod
+    def initialize_from_config(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> Self:
+        kv_cache_config = pipeline_config.model.kv_cache
+        quantization_encoding = pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must not be None")
+        dtype = quantization_encoding.dtype
+        cache_dtype = quantization_encoding.cache_dtype
+        n_devices = len(pipeline_config.model.device_specs)
+
         _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
             and pipeline_config.model.rope_type == RopeType.normal
         )
-        rms_norm_eps = None
-        if norm_method == "rms_norm":
-            if huggingface_config.model_type == "exaone":
-                rms_norm_eps = huggingface_config.layer_norm_epsilon
-            else:
-                rms_norm_eps = huggingface_config.rms_norm_eps
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model.device_specs[:n_devices]
         ]
-
-        # Normalize the LLM state dict so downstream introspection sees canonical
-        # Llama-style keys (no "language_model." or "model." prefix). This keeps
-        # float8 parsing and feature detection resilient to pack variations.
-        def _strip_prefix(s: str, prefix: str) -> str:
-            return s.removeprefix(prefix)
-
-        has_lm_prefix = any(k.startswith("language_model.") for k in state_dict)
-        has_model_prefix = any(k.startswith("model.") for k in state_dict)
-
-        if has_lm_prefix:
-            normalized_state_dict: dict[str, WeightData] = {
-                _strip_prefix(k, "language_model."): v
-                for k, v in state_dict.items()
-                if k.startswith("language_model.")
-            }
-        elif has_model_prefix:
-            normalized_state_dict = {
-                _strip_prefix(k, "model."): v
-                for k, v in state_dict.items()
-                if k.startswith("model.")
-            }
-        else:
-            normalized_state_dict = dict(state_dict)
-
-        # Parse the float8 config from compressed-tensors or FBGEMM.
-        float8_config = parse_float8_config(
-            huggingface_config, normalized_state_dict, dtype
-        )
-
-        # Determine norm_dtype.
-        # Note: due to automatic weight dtype casting, norm dtype is not always
-        # correct. To avoid any issue, only set norm_dtype for float8 models
-        # for now.
-        norm_dtype = None
-        if "layers.0.input_layernorm.weight" in normalized_state_dict:
-            norm_dtype = normalized_state_dict[
-                "layers.0.input_layernorm.weight"
-            ].dtype
-
-        # When tie_word_embeddings=True, the embedding weights are shared with
-        # the output weights.
-        if "tie_word_embeddings" in huggingface_config:
-            tie_word_embeddings = huggingface_config.tie_word_embeddings
-        else:
-            tie_word_embeddings = (
-                getattr(huggingface_config, "tie_word_embeddings", False)
-                or "lm_head.weight" not in normalized_state_dict
-            )
 
         embedding_multiplier = getattr(
             huggingface_config, "embedding_multiplier", 1.0
@@ -360,7 +311,7 @@ class Llama3Config(MAXModelConfigBase):
             )
             attention_multiplier = rope_embedding.compute_scale()
 
-        return Llama3Config(
+        return cls(
             hidden_size=huggingface_config.hidden_size,
             num_attention_heads=huggingface_config.num_attention_heads,
             num_key_value_heads=huggingface_config.num_key_value_heads,
@@ -368,43 +319,27 @@ class Llama3Config(MAXModelConfigBase):
             rope_theta=huggingface_config.rope_theta,
             rope_scaling_params=rope_scaling_params,
             longrope_scaling_params=longrope_scaling_params,
-            rms_norm_eps=rms_norm_eps,
             intermediate_size=huggingface_config.intermediate_size,
             interleaved_rope_weights=interleaved_rope_weights,
             vocab_size=huggingface_config.vocab_size,
             dtype=dtype,
-            # TODO: Since pipeline_config.model is a MAXModelConfig, these
-            # fields should not have to reinstantiated. Once we roll out the final
-            # iteration of MAXModelConfig, it will automatically instantiate based
-            # on the underlying model repo id.
             model_quantization_encoding=pipeline_config.model.graph_quantization_encoding,
             quantization_config=pipeline_config.model._quant,
-            return_logits=return_logits,
-            return_hidden_states=return_hidden_states,
             max_seq_len=Llama3Config.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             ),
-            kv_params=Llama3Config.get_kv_params(
+            kv_params=Llama3Config.construct_kv_params(
                 huggingface_config=huggingface_config,
                 pipeline_config=pipeline_config,
                 devices=device_refs,
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
             ),
-            norm_method=norm_method,
-            norm_dtype=norm_dtype,
-            attention_bias=attention_bias,
-            tie_word_embeddings=tie_word_embeddings,
-            stacked_mlp="layers.0.mlp.gate_up_proj.weight"
-            in normalized_state_dict,
-            stacked_qkv="layers.0.self_attn.qkv_proj.weight"
-            in normalized_state_dict,
             attention_multiplier=attention_multiplier,
             embedding_multiplier=embedding_multiplier,
             residual_multiplier=residual_multiplier,
             devices=device_refs,
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
-            float8_config=float8_config,
             use_subgraphs=pipeline_config.model.use_subgraphs,
             # Force-disable matmul-allreduce overlap for llama FP8.
             # TODO: GEX-2388: Figure out the issue and re-enable this.
@@ -417,3 +352,86 @@ class Llama3Config(MAXModelConfigBase):
             logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: dict[str, WeightData],
+        return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        attention_bias: bool = False,
+    ) -> None:
+        """Define parameters that can't be determined just from the pipeline config."""
+
+        # Normalize the LLM state dict so downstream introspection sees canonical
+        # Llama-style keys (no "language_model." or "model." prefix). This keeps
+        # float8 parsing and feature detection resilient to pack variations.
+        def _strip_prefix(s: str, prefix: str) -> str:
+            return s.removeprefix(prefix)
+
+        has_lm_prefix = any(k.startswith("language_model.") for k in state_dict)
+        has_model_prefix = any(k.startswith("model.") for k in state_dict)
+
+        if has_lm_prefix:
+            normalized_state_dict: dict[str, WeightData] = {
+                _strip_prefix(k, "language_model."): v
+                for k, v in state_dict.items()
+                if k.startswith("language_model.")
+            }
+        elif has_model_prefix:
+            normalized_state_dict = {
+                _strip_prefix(k, "model."): v
+                for k, v in state_dict.items()
+                if k.startswith("model.")
+            }
+        else:
+            normalized_state_dict = dict(state_dict)
+
+        # Parse the float8 config from compressed-tensors or FBGEMM.
+        float8_config = parse_float8_config(
+            huggingface_config, normalized_state_dict, self.dtype
+        )
+
+        # Determine norm_dtype.
+        # Note: due to automatic weight dtype casting, norm dtype is not always
+        # correct. To avoid any issue, only set norm_dtype for float8 models
+        # for now.
+        norm_dtype = None
+        if "layers.0.input_layernorm.weight" in normalized_state_dict:
+            norm_dtype = normalized_state_dict[
+                "layers.0.input_layernorm.weight"
+            ].dtype
+
+        # When tie_word_embeddings=True, the embedding weights are shared with
+        # the output weights.
+        if "tie_word_embeddings" in huggingface_config:
+            tie_word_embeddings = huggingface_config.tie_word_embeddings
+        else:
+            tie_word_embeddings = (
+                getattr(huggingface_config, "tie_word_embeddings", False)
+                or "lm_head.weight" not in normalized_state_dict
+            )
+
+        rms_norm_eps = None
+        if norm_method == "rms_norm":
+            if huggingface_config.model_type == "exaone":
+                rms_norm_eps = huggingface_config.layer_norm_epsilon
+            else:
+                rms_norm_eps = huggingface_config.rms_norm_eps
+
+        self.norm_method = norm_method
+        self.norm_dtype = norm_dtype
+        self.rms_norm_eps = rms_norm_eps
+        self.tie_word_embeddings = tie_word_embeddings
+        self.float8_config = float8_config
+        self.stacked_mlp = (
+            "layers.0.mlp.gate_up_proj.weight" in normalized_state_dict
+        )
+        self.stacked_qkv = (
+            "layers.0.self_attn.qkv_proj.weight" in normalized_state_dict
+        )
+
+        self.attention_bias = attention_bias
+        self.return_logits = return_logits
+        self.return_hidden_states = return_hidden_states

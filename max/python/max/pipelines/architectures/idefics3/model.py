@@ -266,7 +266,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Idefics3."""
-        return Idefics3Config.get_kv_params(
+        return Idefics3Config.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
@@ -438,7 +438,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        kv_params = Idefics3Config.get_kv_params(
+        kv_params = Idefics3Config.construct_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],

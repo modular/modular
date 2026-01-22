@@ -24,6 +24,7 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import Llama3Model
+from .model_config import Llama3Config
 
 llama_arch = SupportedArchitecture(
     name="LlamaForCausalLM_Legacy",
@@ -58,4 +59,5 @@ llama_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     task=PipelineTask.TEXT_GENERATION,
+    config=Llama3Config,
 )

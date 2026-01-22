@@ -58,7 +58,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
         else:
             graph_mode = "auto"
 
-        kv_params = DeepseekV3_2Config.get_kv_params(
+        kv_params = DeepseekV3_2Config.construct_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],

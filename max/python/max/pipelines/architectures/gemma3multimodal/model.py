@@ -285,7 +285,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for InternVL."""
-        return Gemma3ForConditionalGenerationConfig.get_kv_params(
+        return Gemma3ForConditionalGenerationConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
@@ -748,7 +748,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     ) -> list[PagedCacheValues]:
         """Receives KVCache inputs from the language graph, unflattens them, and
         returns in a list"""
-        kv_params = Gemma3ForConditionalGenerationConfig.get_kv_params(
+        kv_params = Gemma3ForConditionalGenerationConfig.construct_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],

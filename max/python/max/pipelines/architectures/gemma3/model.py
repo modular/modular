@@ -196,7 +196,7 @@ class Gemma3Model(
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Gemma 3.
 
-        Delegates to the :obj:`Gemma3Config.get_kv_params` static method.
+        Delegates to the :obj:`Gemma3Config.construct_kv_params` static method.
 
         Args:
             huggingface_config: The HuggingFace model configuration object
@@ -211,7 +211,7 @@ class Gemma3Model(
         Returns:
             The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
         """
-        return Gemma3Config.get_kv_params(
+        return Gemma3Config.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,

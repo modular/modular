@@ -203,7 +203,7 @@ class Qwen3VLModel(
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Qwen3VL."""
-        return Qwen3VLConfig.get_kv_params(
+        return Qwen3VLConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,

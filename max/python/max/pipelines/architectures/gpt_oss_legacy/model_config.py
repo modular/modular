@@ -133,7 +133,7 @@ class GptOssConfig(MAXModelConfigBase):
     """KV cache parameters."""
 
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -345,7 +345,7 @@ class GptOssConfig(MAXModelConfigBase):
             devices=device_refs,
             interleaved_rope_weights=interleaved_rope_weights,
             return_logits=return_logits,
-            kv_params=GptOssConfig.get_kv_params(
+            kv_params=GptOssConfig.construct_kv_params(
                 huggingface_config=huggingface_config,
                 pipeline_config=pipeline_config,
                 devices=device_refs,

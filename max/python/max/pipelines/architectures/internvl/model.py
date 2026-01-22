@@ -271,7 +271,7 @@ class InternVLModel(
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for InternVL."""
-        return InternVLConfig.get_kv_params(
+        return InternVLConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
@@ -559,7 +559,7 @@ class InternVLModel(
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        kv_params = InternVLConfig.get_kv_params(
+        kv_params = InternVLConfig.construct_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
