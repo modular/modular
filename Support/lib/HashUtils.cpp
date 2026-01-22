@@ -38,11 +38,15 @@
 
 using namespace mlir;
 
-M::raw_xxhash_stream::raw_xxhash_stream() : raw_ostream() {
+M::raw_xxhash128_stream::raw_xxhash128_stream() : raw_ostream() {
   XXH3_128bits_reset(&State);
 }
 
-std::array<uint8_t, 16> M::raw_xxhash_stream::hash() {
+M::raw_xxhash64_stream::raw_xxhash64_stream() : raw_ostream() {
+  XXH3_64bits_reset(&State);
+}
+
+std::array<uint8_t, 16> M::raw_xxhash128_stream::hash() {
   flush();
 
   XXH128_hash_t digest = XXH3_128bits_digest(&State);
@@ -52,10 +56,15 @@ std::array<uint8_t, 16> M::raw_xxhash_stream::hash() {
   return result;
 }
 
-std::string M::raw_xxhash_stream::hashString() {
+std::string M::raw_xxhash128_stream::hashString() {
   SmallString<32> output;
   llvm::toHex(hash(), /*LowerCase=*/true, output);
   return std::string(output);
+}
+
+uint64_t M::raw_xxhash64_stream::hash() {
+  flush();
+  return XXH3_64bits_digest(&State);
 }
 
 static LogicalResult writeBytecode(Operation *op, llvm::raw_ostream &os) {
@@ -79,7 +88,7 @@ static LogicalResult writeBytecode(Operation *op, llvm::raw_ostream &os) {
 }
 
 FailureOr<std::string> M::getBytecodeHash(Operation *op) {
-  raw_xxhash_stream ostream;
+  raw_xxhash128_stream ostream;
   if (failed(writeBytecode(op, ostream)))
     return op->emitError("Failed to write bytecode");
   return ostream.hashString();
@@ -136,7 +145,7 @@ FailureOr<std::string> M::getModuleBytecodeHash(mlir::ModuleOp module) {
   // input elements are associated to which cache.
   llvm::sort(resultCache.hashes);
 
-  raw_xxhash_stream hasher;
+  raw_xxhash128_stream hasher;
   llvm::interleave(resultCache.hashes, hasher, "");
   return hasher.hashString();
 }

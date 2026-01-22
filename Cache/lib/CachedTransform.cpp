@@ -28,7 +28,7 @@ std::string TransformCacheKey::hashKey(TransformCacheKey::KeyTy key) {
   TimeTraceScope scope(
       CacheProfilerEntry::create("TransformCacheKey::hashKey"));
 
-  raw_xxhash_stream hasher;
+  raw_xxhash128_stream hasher;
 
   // Take the 128-bit xxhash of the input.
   hasher << key->getBuffer();

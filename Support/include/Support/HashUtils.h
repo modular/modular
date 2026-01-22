@@ -25,8 +25,8 @@ class Operation;
 
 namespace M {
 
-/// A raw_ostream that hash the content using the xxhash algorithm.
-class raw_xxhash_stream : public llvm::raw_ostream {
+/// A raw_ostream that hashes content using the xxhash 128-bit algorithm.
+class raw_xxhash128_stream : public llvm::raw_ostream {
   XXH3_state_t State;
 
   /// See raw_ostream::write_impl.
@@ -35,13 +35,33 @@ class raw_xxhash_stream : public llvm::raw_ostream {
   }
 
 public:
-  raw_xxhash_stream();
+  raw_xxhash128_stream();
 
-  raw_xxhash_stream(raw_xxhash_stream &&other)
+  raw_xxhash128_stream(raw_xxhash128_stream &&other)
       : State(std::move(other.State)) {}
 
   std::array<uint8_t, 16> hash();
   std::string hashString();
+
+  uint64_t current_pos() const override { return 0; }
+};
+
+/// A raw_ostream that hashes content using the xxhash 64-bit algorithm.
+class raw_xxhash64_stream : public llvm::raw_ostream {
+  XXH3_state_t State;
+
+  /// See raw_ostream::write_impl.
+  void write_impl(const char *Ptr, size_t Size) override {
+    XXH3_64bits_update(&State, (void *)Ptr, Size);
+  }
+
+public:
+  raw_xxhash64_stream();
+
+  raw_xxhash64_stream(raw_xxhash64_stream &&other)
+      : State(std::move(other.State)) {}
+
+  uint64_t hash();
 
   uint64_t current_pos() const override { return 0; }
 };
