@@ -45,7 +45,6 @@ from max.pipelines.lib import (
     SupportedEncoding,
     upper_bounded_default,
 )
-from max.pipelines.lib.config_enums import PipelineRole
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
     log_probabilities_ragged_graph,
@@ -324,15 +323,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
                 "only safetensors weights supported in DeepseekV2."
             )
 
-        pipeline_config = self.pipeline_config
         huggingface_config = self.huggingface_config
-
-        if pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
-            graph_mode = "prefill"
-        elif pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
-            graph_mode = "decode"
-        else:
-            graph_mode = "auto"
 
         if self.adapter:
             state_dict = self.adapter(
@@ -345,56 +336,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
                 key: value.data() for key, value in self.weights.items()
             }
 
-        kv_params = self.kv_params
-        device_refs = [
-            DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model.device_specs
-        ]
-
-        model_config = DeepseekV2Config(
-            attention_bias=huggingface_config.attention_bias,
-            attention_dropout=huggingface_config.attention_dropout,
-            aux_loss_alpha=huggingface_config.aux_loss_alpha,
-            bos_token_id=huggingface_config.bos_token_id,
-            eos_token_id=huggingface_config.eos_token_id,
-            first_k_dense_replace=huggingface_config.first_k_dense_replace,
-            hidden_act=huggingface_config.hidden_act,
-            hidden_size=huggingface_config.hidden_size,
-            initializer_range=huggingface_config.initializer_range,
-            intermediate_size=huggingface_config.intermediate_size,
-            kv_lora_rank=huggingface_config.kv_lora_rank,
-            max_position_embeddings=huggingface_config.max_position_embeddings,
-            moe_intermediate_size=huggingface_config.moe_intermediate_size,
-            moe_layer_freq=huggingface_config.moe_layer_freq,
-            n_group=huggingface_config.n_group,
-            n_routed_experts=huggingface_config.n_routed_experts,
-            n_shared_experts=huggingface_config.n_shared_experts,
-            norm_topk_prob=huggingface_config.norm_topk_prob,
-            num_attention_heads=huggingface_config.num_attention_heads,
-            num_experts_per_tok=huggingface_config.num_experts_per_tok,
-            num_hidden_layers=huggingface_config.num_hidden_layers,
-            num_key_value_heads=huggingface_config.num_key_value_heads,
-            pretraining_tp=huggingface_config.pretraining_tp,
-            q_lora_rank=huggingface_config.q_lora_rank,
-            qk_nope_head_dim=huggingface_config.qk_nope_head_dim,
-            qk_rope_head_dim=huggingface_config.qk_rope_head_dim,
-            rms_norm_eps=huggingface_config.rms_norm_eps,
-            rope_scaling=huggingface_config.rope_scaling,
-            rope_theta=huggingface_config.rope_theta,
-            routed_scaling_factor=huggingface_config.routed_scaling_factor,
-            scoring_func=huggingface_config.scoring_func,
-            seq_aux=huggingface_config.seq_aux,
-            tie_word_embeddings=huggingface_config.tie_word_embeddings,
-            topk_group=huggingface_config.topk_group,
-            topk_method=huggingface_config.topk_method,
-            use_cache=huggingface_config.use_cache,
-            v_head_dim=huggingface_config.v_head_dim,
-            vocab_size=huggingface_config.vocab_size,
-            dtype=self.dtype,
-            kv_params=kv_params,
-            devices=device_refs,
-            graph_mode=graph_mode,
-        )
+        model_config = DeepseekV2Config.initialize(self.pipeline_config)
 
         # Get Graph Inputs
         graph_inputs = self.graph_inputs()

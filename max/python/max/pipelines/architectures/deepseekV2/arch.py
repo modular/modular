@@ -23,6 +23,7 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import DeepseekV2Model
+from .model_config import DeepseekV2Config
 
 deepseekV2_arch = SupportedArchitecture(
     name="DeepseekV2ForCausalLM_Legacy",
@@ -42,4 +43,5 @@ deepseekV2_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    config=DeepseekV2Config,
 )
