@@ -17,6 +17,7 @@ import functools
 import logging
 from collections.abc import Sequence
 
+from attention import Gemma3Attention
 from max.dtype import DType
 from max.experimental import functional as F
 from max.graph import (
@@ -31,18 +32,17 @@ from max.nn import (
     LayerNorm,
     ReturnLogits,
 )
-from max.nn.module_v3 import Embedding, Linear, Module
 from max.nn.kv_cache import PagedCacheValues
+from max.nn.module_v3 import Embedding, Linear, Module
 from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
-from attention import Gemma3Attention
-from rms_norm import Gemma3RMSNorm
-from transformer_block import Gemma3TransformerBlock
 from max.pipelines.architectures.internvl.embedding_utils import (
     merge_multimodal_embeddings,
 )
+from rms_norm import Gemma3RMSNorm
+from transformer_block import Gemma3TransformerBlock
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 from .embedding import Gemma3VisionEmbeddings
@@ -246,9 +246,7 @@ class Gemma3LanguageModel(Module):
                     zip(h, last_indices, strict=True)
                 )
             ]
-            logits = F.cast(
-                self.lm_head(variable_tokens)[0], DType.float32
-            )
+            logits = F.cast(self.lm_head(variable_tokens)[0], DType.float32)
             offsets = F.arange(
                 0,
                 last_indices[0].shape[0] + return_n_logits[0],
@@ -263,9 +261,7 @@ class Gemma3LanguageModel(Module):
             all_normalized = [
                 self.norm_shards[i](h_device) for i, h_device in enumerate(h)
             ]
-            logits = F.cast(
-                self.lm_head(all_normalized)[0], DType.float32
-            )
+            logits = F.cast(self.lm_head(all_normalized)[0], DType.float32)
             offsets = input_row_offsets[0]
 
         if offsets is not None:

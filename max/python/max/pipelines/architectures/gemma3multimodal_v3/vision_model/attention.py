@@ -15,10 +15,10 @@ from __future__ import annotations
 from max.dtype import DType
 from max.experimental import functional as F
 from max.graph import DeviceRef, TensorValue
-from max.nn.module_v3 import Linear
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu
 from max.nn.layer import Module
+from max.nn.module_v3 import Linear
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 
@@ -36,7 +36,9 @@ class Gemma3VisionAttention(Module):
         super().__init__()
         self.config = config
         vision_config = config.vision_config
-        vision_dtype = DType.bfloat16 # TODO hmmm?  what do with this after V3 move
+        vision_dtype = (
+            DType.bfloat16
+        )  # TODO hmmm?  what do with this after V3 move
 
         self.layer_idx = layer_idx
         self.device = device if device is not None else config.devices[0]
