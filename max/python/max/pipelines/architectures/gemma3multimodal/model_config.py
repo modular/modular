@@ -252,17 +252,14 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfigBase):
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
             raise ValueError("text_config not found in huggingface_config")
-        text_config = Gemma3Config.generate(
+        text_config = Gemma3Config.initialize_from_config(
             pipeline_config=pipeline_config,
             huggingface_config=hf_text_config,
+        )
+        text_config.finalize(
+            huggingface_config=hf_text_config,
             state_dict=state_dict,
-            dtype=dtype,
-            n_devices=n_devices,
-            cache_dtype=cache_dtype,
-            kv_cache_config=kv_cache_config,
             return_logits=return_logits,
-            norm_method=norm_method,
-            attention_bias=attention_bias,
             float8_config=float8_config,
         )
 

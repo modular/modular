@@ -25,6 +25,7 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import Gemma3Model
+from .model_config import Gemma3Config
 
 gemma3_arch = SupportedArchitecture(
     name="Gemma3ForCausalLM_Legacy",
@@ -50,4 +51,5 @@ gemma3_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    config=Gemma3Config,
 )

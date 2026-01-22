@@ -332,15 +332,10 @@ class Gemma3Model(
             ignored_modules_prefix=state_dict_prefix or "model.",
         )
 
-        model_config = Gemma3Config.generate(
-            pipeline_config=self.pipeline_config,
+        model_config = Gemma3Config.initialize(self.pipeline_config)
+        model_config.finalize(
             huggingface_config=huggingface_config,
             state_dict=state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
-            attention_bias=huggingface_config.attention_bias,
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
             float8_config=float8_config,
         )
