@@ -272,8 +272,12 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
 
   // Convert struct types to LLVM literal structs.
   addConversion([this](StructType structType) -> std::optional<Type> {
+    std::optional<SmallVector<Type>> elementTypes =
+        structType.getElementTypes();
+    if (!elementTypes)
+      return {};
     SmallVector<Type> types;
-    for (Type type : structType.getElementTypes()) {
+    for (Type type : *elementTypes) {
       types.push_back(convertType(type));
       if (!types.back())
         return {};

@@ -111,9 +111,11 @@ MojoTypeDataLayoutContext::Impl::calculateForPack(MojoASTTypeRef typeRef,
 std::optional<MojoTypeDataLayout>
 MojoTypeDataLayoutContext::Impl::calculateForStruct(
     MojoASTTypeRef typeRef, KGEN::StructType structType) {
-  return calculateForStructLike(
-      llvm::map_to_vector(structType.getElementTypes(),
-                          [&](Type value) { return MojoASTTypeRef(value); }));
+  std::optional<SmallVector<Type>> elementTypes = structType.getElementTypes();
+  if (!elementTypes)
+    return {};
+  return calculateForStructLike(llvm::map_to_vector(
+      *elementTypes, [&](Type value) { return MojoASTTypeRef(value); }));
 }
 
 std::optional<MojoTypeDataLayout>

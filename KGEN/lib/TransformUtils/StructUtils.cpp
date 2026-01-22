@@ -14,9 +14,11 @@ using namespace KGEN;
 
 void KGEN::flattenTypeIfStruct(Type type, SmallVectorImpl<Type> &types) {
   if (auto structType = dyn_cast<StructType>(type)) {
-    for (Type type : structType.getElementTypes())
-      flattenTypeIfStruct(type, types);
-    return;
+    if (auto elementTypes = structType.getElementTypes()) {
+      for (Type type : *elementTypes)
+        flattenTypeIfStruct(type, types);
+      return;
+    }
   }
   types.push_back(type);
 }
@@ -25,11 +27,13 @@ void KGEN::flattenAndUnpackIfStruct(mlir::RewriterBase &b, Location loc,
                                     Value value,
                                     SmallVectorImpl<Value> &values) {
   if (auto structType = dyn_cast<StructType>(value.getType())) {
-    for (auto [i, type] : llvm::enumerate(structType.getElementTypes())) {
-      Value element = StructExtractOp::create(b, loc, type, value, i);
-      flattenAndUnpackIfStruct(b, loc, element, values);
+    if (auto elementTypes = structType.getElementTypes()) {
+      for (auto [i, type] : llvm::enumerate(*elementTypes)) {
+        Value element = StructExtractOp::create(b, loc, type, value, i);
+        flattenAndUnpackIfStruct(b, loc, element, values);
+      }
+      return;
     }
-    return;
   }
   values.push_back(value);
 }
@@ -37,10 +41,12 @@ void KGEN::flattenAndUnpackIfStruct(mlir::RewriterBase &b, Location loc,
 Value KGEN::flattenAndPackIfStruct(mlir::RewriterBase &b, Location loc,
                                    Type type, ValueRange::iterator &it) {
   if (auto structType = dyn_cast<StructType>(type)) {
-    SmallVector<Value> values;
-    for (Type type : structType.getElementTypes())
-      values.push_back(flattenAndPackIfStruct(b, loc, type, it));
-    return StructCreateOp::create(b, loc, structType, values);
+    if (auto elementTypes = structType.getElementTypes()) {
+      SmallVector<Value> values;
+      for (Type type : *elementTypes)
+        values.push_back(flattenAndPackIfStruct(b, loc, type, it));
+      return StructCreateOp::create(b, loc, structType, values);
+    }
   }
   return *it++;
 }

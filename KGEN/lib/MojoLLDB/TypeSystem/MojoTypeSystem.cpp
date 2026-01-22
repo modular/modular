@@ -642,8 +642,10 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
     return 0;
   }
 
-  if (auto structType = dyn_cast<StructType>(astType))
-    return structType.getElementTypes().size();
+  if (auto structType = dyn_cast<StructType>(astType)) {
+    std::optional<size_t> numElements = structType.getNumElements();
+    return numElements.value_or(0);
+  }
 
   // One for the discriminator, one for each variant.
   if (auto variantType = dyn_cast<VariantType>(astType))

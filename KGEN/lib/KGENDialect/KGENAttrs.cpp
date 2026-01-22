@@ -1407,8 +1407,12 @@ bool TargetParamAttr::isConstant() const { return true; }
 static ParseResult parseStructElements(AsmParser &p,
                                        SmallVector<TypedAttr> &values,
                                        StructType type) {
+  std::optional<SmallVector<Type>> elementTypes = type.getElementTypes();
+  if (!elementTypes)
+    return p.emitError(p.getCurrentLocation(),
+                       "cannot parse elements of parametric struct");
   return failableInterleave(
-      type.getElementTypes(),
+      *elementTypes,
       [&](Type type) {
         return parseParamValue(p, values.emplace_back(), type);
       },
@@ -1450,12 +1454,14 @@ bool StructAttr::isConstant() const {
 
 LogicalResult StructAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                  ArrayRef<TypedAttr> values, StructType type) {
-  ArrayRef<Type> types = type.getElementTypes();
-  if (types.size() != values.size())
-    return emitError() << "struct attribute type requires " << types.size()
+  std::optional<SmallVector<Type>> types = type.getElementTypes();
+  if (!types)
+    return emitError() << "cannot verify struct attribute with parametric type";
+  if (types->size() != values.size())
+    return emitError() << "struct attribute type requires " << types->size()
                        << " elements but value has " << values.size();
   for (auto [idx, value, type] :
-       llvm::zip(llvm::seq<unsigned>(0, types.size()), values, types)) {
+       llvm::zip(llvm::seq<unsigned>(0, types->size()), values, *types)) {
     if (value.getType() != type) {
       return emitError() << "struct element #" << idx << " has type "
                          << value.getType() << " but expected " << type;
@@ -1491,10 +1497,11 @@ StructAttr StructAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
 
 TypedAttr StructExtractAttr::get(TypedAttr structValue, unsigned fieldNo) {
   auto structType = ::cast<StructType>(structValue.getType());
-  assert(fieldNo < structType.getElementTypes().size() &&
-         "struct extract index out of range");
+  std::optional<SmallVector<Type>> elementTypes = structType.getElementTypes();
+  assert(elementTypes && "cannot extract from parametric struct");
+  assert(fieldNo < elementTypes->size() && "struct extract index out of range");
   return get(structValue.getContext(), structValue, fieldNo,
-             structType.getElementTypes()[fieldNo]);
+             (*elementTypes)[fieldNo]);
 }
 
 TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,

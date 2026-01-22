@@ -139,8 +139,12 @@ private:
     if (!structType)
       return Error("expected ir type to be a struct type");
 
+    auto elementTypes = structType.getElementTypes();
+    if (!elementTypes)
+      return Error("expected struct type to have resolved element types");
+
     // The field type of the struct is used directly.
-    auto newFieldType = structType.getElementTypes()[i];
+    auto newFieldType = (*elementTypes)[i];
 
     // The leaf type is the struct field.
     auto newIrValue = DebugInfo::DIIRValueExprAttr::get(newFieldType);
@@ -163,7 +167,11 @@ private:
     auto structType = dyn_cast<StructType>(ptrType.getElementType());
     if (!structType)
       return Error("expected ir type to be a pointer to a struct type");
-    Type fieldType = structType.getElementTypes()[i];
+
+    auto elementTypes = structType.getElementTypes();
+    if (!elementTypes)
+      return Error("expected struct type to have resolved element types");
+    Type fieldType = (*elementTypes)[i];
 
     // The element of the struct is immediately allocated into memory,
     // so we add a pointer type and wrap the expression with a deref.
@@ -222,8 +230,11 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
 
   // Allocate the scalars which should replace the main alloc.
   void createScalarAllocs() {
-    newAllocas.reserve(containerTy.getNumElements());
-    for (Type elem : containerTy.getElementTypes()) {
+    auto elementTypes = containerTy.getElementTypes();
+    assert(elementTypes &&
+           "expected struct type to have resolved element types");
+    newAllocas.reserve(elementTypes->size());
+    for (Type elem : *elementTypes) {
       auto asPtr = PointerType::get(elem);
       Value v = StackAllocationOp::create(builder, alloc.getLoc(), asPtr,
                                           /*count=*/1, alloc.getAlignmentAttr(),
@@ -615,7 +626,10 @@ void SROAPass::runOnOperation() {
         changed |= replacer.run(toDelete);
       } else if (auto structTy =
                      dyn_cast<StructType>(ptrType.getElementType())) {
-        if (llvm::any_of(structTy.getElementTypes(),
+        auto elementTypes = structTy.getElementTypes();
+        if (!elementTypes)
+          return;
+        if (llvm::any_of(*elementTypes,
                          [](Type t) { return isa<VariadicSplatType>(t); })) {
           // TODO: Support variadic splat type. For now just disable it and
           // expect post-elaborated SROA to handle that struct.

@@ -187,7 +187,7 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
                              ParameterEvaluationContext &evalContext,
                              MLIRContext *ctx) {
   auto typeType = TypeType::get(ctx);
-  auto emptyStructType = KGEN::StructType::get(ctx, {});
+  auto emptyStructType = KGEN::StructType::get(ctx, ArrayRef<Type>{});
   auto emptyStruct = StructAttr::get({}, emptyStructType);
 
   // TypeParamAttr dispatches replacing to different domains.
@@ -433,10 +433,17 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
         }
         if (decl.isSingleElement())
           return replacer.replace(fieldTypes.front(), TypeDomain::AsType);
-        return replacer.replace(KGEN::StructType::get(ctx, fieldTypes,
-                                                      !decl.isRegisterPassable,
-                                                      decl.minAlignment),
-                                TypeDomain::AsType);
+        // Replace each field type individually, then create the struct.
+        SmallVector<Type> replacedTypes;
+        replacedTypes.reserve(fieldTypes.size());
+        for (Type t : fieldTypes) {
+          auto replaced = replacer.replace(t, TypeDomain::AsType);
+          if (failed(replaced))
+            return failure();
+          replacedTypes.push_back(*replaced);
+        }
+        return KGEN::StructType::get(
+            ctx, replacedTypes, !decl.isRegisterPassable, decl.minAlignment);
       },
       TypeDomain::AsType);
 

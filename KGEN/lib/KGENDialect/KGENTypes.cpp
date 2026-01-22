@@ -1026,17 +1026,6 @@ ErrorOr<TypedAttr> VariadicType::readFrom(int64_t addr,
 // StructType
 //===----------------------------------------------------------------------===//
 
-/// Return true if the specified type is a NoneType or an empty struct.
-bool StructType::isNoneOrEmpty(Type type) {
-  if (::isa<NoneType>(type))
-    return true;
-  if (auto structTy = dyn_cast<StructType>(type)) {
-    if (structTy.getElementTypes().empty() && !structTy.getIsMemoryOnly())
-      return true;
-  }
-  return false;
-}
-
 /// Try to narrow all the given type expressions to MLIR types.
 static LogicalResult resolveTypes(ArrayRef<TypedAttr> types,
                                   SmallVectorImpl<Type> &resolvedTypes) {
@@ -1047,6 +1036,168 @@ static LogicalResult resolveTypes(ArrayRef<TypedAttr> types,
       return failure();
   }
   return success();
+}
+
+/// Parse the StructType.
+/// Format:
+///   - concrete: `<` `(` types `)` [ `memoryOnly` ] `>`
+///   - parametric: `<` param_value [ `memoryOnly` ] `>`
+/// Where concrete types can be:
+///   - empty: `()`
+///   - concrete types: `(i32, i64)`
+Type StructType::parse(AsmParser &p) {
+  if (p.parseLess())
+    return {};
+
+  auto metatype = TypeType::get(p.getContext());
+  auto variadicType = VariadicType::get(metatype);
+  TypedAttr variadic;
+
+  // Check for `(` which indicates concrete types.
+  if (succeeded(p.parseOptionalLParen())) {
+    // Check for empty struct case.
+    if (succeeded(p.parseOptionalRParen())) {
+      // Empty struct.
+      variadic = VariadicAttr::get({}, variadicType);
+    } else {
+      // Parse concrete types.
+      SmallVector<Type> types;
+      if (parseParamTypes(p, types))
+        return {};
+      // Create TypeParamAttrs for each element type.
+      SmallVector<TypedAttr> elements;
+      elements.reserve(types.size());
+      for (Type type : types)
+        elements.push_back(cast<TypedAttr>(TypeParamAttr::get(type, metatype)));
+      variadic = VariadicAttr::get(elements, variadicType);
+
+      if (p.parseRParen())
+        return {};
+    }
+  } else {
+    // Parametric case - parse param value with implicit variadic<!kgen.type>.
+    if (parseParamValue(p, variadic, variadicType))
+      return {};
+  }
+
+  // Parse optional `memoryOnly` flag.
+  bool isMemoryOnly = false;
+  if (succeeded(p.parseOptionalKeyword("memoryOnly")))
+    isMemoryOnly = true;
+
+  // Parse optional `align(N)` for minAlignment.
+  TypedAttr minAlignment;
+  if (succeeded(p.parseOptionalKeyword("align"))) {
+    if (p.parseLParen())
+      return {};
+    int64_t alignValue;
+    if (p.parseInteger(alignValue))
+      return {};
+    if (p.parseRParen())
+      return {};
+    mlir::Builder b(p.getContext());
+    minAlignment = b.getIntegerAttr(b.getIntegerType(64), alignValue);
+  }
+
+  if (p.parseGreater())
+    return {};
+
+  return StructType::get(p.getContext(), variadic, isMemoryOnly, minAlignment);
+}
+
+/// Print the StructType.
+void StructType::print(AsmPrinter &p) const {
+  p << '<';
+
+  TypedAttr variadic = getElementTypesVariadic();
+  auto attr = dyn_cast<VariadicAttr>(variadic);
+  if (!attr) {
+    // Parametric expression - print without parens.
+    printParamValue(p, variadic);
+  } else {
+    // Concrete types - print with parens.
+    p << '(';
+    if (!attr.getValues().empty()) {
+      SmallVector<Type> types;
+      for (TypedAttr value : attr.getValues())
+        types.push_back(ParamType::get(value));
+      printParamTypes(p, types);
+    }
+    p << ')';
+  }
+
+  if (getIsMemoryOnly())
+    p << " memoryOnly";
+
+  // Print alignment if not the default (1).
+  TypedAttr minAlign = getMinAlignment();
+  if (auto intAttr = dyn_cast<IntegerAttr>(minAlign)) {
+    if (intAttr.getInt() != 1)
+      p << " align(" << intAttr.getInt() << ")";
+  } else if (minAlign) {
+    // Parametric alignment expression.
+    p << " align(";
+    printParamValue(p, minAlign);
+    p << ")";
+  }
+
+  p << '>';
+}
+
+/// Verify that the variadic parameter is valid.
+/// For concrete structs, the variadic should be a VariadicAttr.
+/// For parametric structs, it can be any TypedAttr representing a type
+/// expression.
+LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
+                                 TypedAttr variadic, bool /*isMemoryOnly*/,
+                                 TypedAttr /*minAlignment*/) {
+  // Accept any VariadicType (for concrete cases).
+  if (llvm::isa<VariadicType>(variadic.getType()))
+    return success();
+  // Accept any TypeType-based expression (for parametric single-type cases).
+  if (llvm::isa<TypeType>(variadic.getType()))
+    return success();
+  return emitError() << "expected an operand of variadic or type type, but got "
+                     << variadic.getType();
+}
+
+/// Return true if the specified type is a NoneType or an empty struct.
+bool StructType::isNoneOrEmpty(Type type) {
+  if (llvm::isa<NoneType>(type))
+    return true;
+  if (auto structTy = dyn_cast<StructType>(type)) {
+    auto resolved = structTy.getVariadicIfResolved();
+    if (resolved && resolved.getValues().empty() && !structTy.getIsMemoryOnly())
+      return true;
+  }
+  return false;
+}
+
+VariadicAttr StructType::getVariadicIfResolved() const {
+  return dyn_cast<VariadicAttr>(getElementTypesVariadic());
+}
+
+bool StructType::isResolved() const {
+  return getVariadicIfResolved() != nullptr;
+}
+
+std::optional<SmallVector<Type>> StructType::getElementTypes() const {
+  VariadicAttr resolved = getVariadicIfResolved();
+  if (!resolved)
+    return std::nullopt;
+
+  SmallVector<Type> types;
+  types.reserve(resolved.getValues().size());
+  for (TypedAttr value : resolved.getValues())
+    types.push_back(ParamType::get(value));
+  return types;
+}
+
+std::optional<size_t> StructType::getNumElements() const {
+  VariadicAttr resolved = getVariadicIfResolved();
+  if (!resolved)
+    return std::nullopt;
+  return resolved.getValues().size();
 }
 
 static std::optional<int64_t> getPackedElementsTypeSize(ArrayRef<Type> types,
@@ -1067,7 +1218,15 @@ static std::optional<int64_t> getPackedElementsTypeSize(ArrayRef<Type> types,
 }
 
 std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
-  return getPackedElementsTypeSize(getElementTypes(), target);
+  // A struct backed by a concrete VariadicAttr has a known size.
+  if (VariadicAttr attr = getVariadicIfResolved()) {
+    SmallVector<Type> types;
+    if (failed(resolveTypes(attr.getValues(), types)))
+      return {};
+    return getPackedElementsTypeSize(types, target);
+  }
+  // Parametric struct - size unknown until elaboration.
+  return {};
 }
 
 static std::optional<int64_t> getMaxAlignmentAmongTypes(ArrayRef<Type> types,
@@ -1084,7 +1243,24 @@ static std::optional<int64_t> getMaxAlignmentAmongTypes(ArrayRef<Type> types,
 }
 
 std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
-  auto naturalAlign = getMaxAlignmentAmongTypes(getElementTypes(), target);
+  std::optional<int64_t> naturalAlign;
+
+  // A struct backed by a concrete VariadicAttr has known alignment.
+  if (VariadicAttr attr = getVariadicIfResolved()) {
+    SmallVector<Type> types;
+    if (failed(resolveTypes(attr.getValues(), types)))
+      return {};
+    naturalAlign = getMaxAlignmentAmongTypes(types, target);
+  } else {
+    // A parametric struct has alignment based on the variadic element type.
+    TypedAttr variadic = getElementTypesVariadic();
+    auto variadicType = dyn_cast<VariadicType>(variadic.getType());
+    if (!variadicType)
+      return {};
+    Type type = variadicType.getElementType();
+    naturalAlign = DataLayoutInterface::getTypeABIAlign(target, type);
+  }
+
   if (!naturalAlign)
     return std::nullopt;
 
@@ -1121,9 +1297,12 @@ ErrorOrSuccess StructType::writeTo(TypedAttr value, int64_t addr,
 
 ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
                                         InterpreterState &state) const {
+  std::optional<SmallVector<Type>> elementTypes = getElementTypes();
+  if (!elementTypes)
+    return Error("cannot read from parametric struct type");
   SmallVector<TypedAttr> values;
   int64_t offset = 0;
-  for (Type elType : getElementTypes()) {
+  for (Type elType : *elementTypes) {
     auto dl = llvm::cast<DataLayoutInterface>(elType);
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
     ErrorOr<TypedAttr> value =
@@ -1136,9 +1315,125 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
   return StructAttr::get(values, *this);
 }
 
-StructType StructType::get(ArrayRef<Type> types) {
-  assert(!types.empty() && "expected at least one type");
-  return StructType::get(types.front().getContext(), types);
+/// Convert ArrayRef<Type> to VariadicAttr for the struct representation.
+///
+/// Each element type is wrapped in a TypedAttr via TypeParamAttr::get().
+/// This may return different attr kinds (TypeParamAttr or ParamOperatorAttr)
+/// depending on the input type, but the canonicalization is deterministic
+/// so identical input types always produce identical attrs, ensuring
+/// consistent type uniquing.
+static TypedAttr convertTypesToVariadicAttr(MLIRContext *context,
+                                            ArrayRef<Type> types) {
+  auto metatype = TypeType::get(context);
+  auto variadicType = VariadicType::get(metatype);
+  SmallVector<TypedAttr> elements;
+  elements.reserve(types.size());
+  for (Type type : types)
+    elements.push_back(cast<TypedAttr>(TypeParamAttr::get(type, metatype)));
+  return VariadicAttr::get(elements, variadicType);
+}
+
+/// Normalize a VariadicAttr to use canonicalized TypeParamAttrs.
+/// This ensures consistent uniquing regardless of how the VariadicAttr was
+/// created (e.g., from bytecode vs from ArrayRef<Type>).
+static TypedAttr normalizeVariadicForUniquing(MLIRContext *context,
+                                              TypedAttr variadic) {
+  // Only normalize concrete VariadicAttrs, not parametric expressions.
+  auto variadicAttr = dyn_cast<VariadicAttr>(variadic);
+  if (!variadicAttr)
+    return variadic;
+
+  // Directly canonicalize TypeParamAttr values by rebuilding them through
+  // TypeParamAttr::get(), which ensures consistent representation.
+  // Non-TypeParamAttr values (parametric expressions) are kept as-is.
+  auto metatype = TypeType::get(context);
+  SmallVector<TypedAttr> normalized;
+  normalized.reserve(variadicAttr.getValues().size());
+  bool changed = false;
+  for (TypedAttr value : variadicAttr.getValues()) {
+    if (auto typeParam = dyn_cast<TypeParamAttr>(value)) {
+      // Canonicalize by rebuilding through TypeParamAttr::get().
+      TypedAttr canonical = cast<TypedAttr>(
+          TypeParamAttr::get(typeParam.getMlirType(), metatype));
+      normalized.push_back(canonical);
+      if (canonical != value)
+        changed = true;
+    } else {
+      // Keep parametric expressions as-is.
+      normalized.push_back(value);
+    }
+  }
+
+  // Return original if nothing changed.
+  if (!changed)
+    return variadic;
+
+  return VariadicAttr::get(normalized, variadicAttr.getType());
+}
+
+/// Main builder for StructType with TypedAttr variadic.
+/// If minAlignment is null, uses the default value of 1.
+StructType StructType::get(MLIRContext *context, TypedAttr variadic,
+                           bool isMemoryOnly, TypedAttr minAlignment) {
+  if (!minAlignment) {
+    mlir::Builder b(context);
+    minAlignment = b.getIntegerAttr(b.getIntegerType(64), 1);
+  }
+  // Normalize the variadic to ensure consistent uniquing.
+  TypedAttr normalizedVariadic =
+      normalizeVariadicForUniquing(context, variadic);
+  return Base::get(context, normalizedVariadic, isMemoryOnly, minAlignment);
+}
+
+StructType StructType::get(ArrayRef<Type> types, bool isMemoryOnly) {
+  assert(!types.empty() &&
+         "cannot infer context from empty types; "
+         "use get(MLIRContext*, ArrayRef<Type>, bool) for empty structs");
+  MLIRContext *context = types.front().getContext();
+  TypedAttr variadic = convertTypesToVariadicAttr(context, types);
+  return StructType::get(context, variadic, isMemoryOnly);
+}
+
+StructType StructType::get(MLIRContext *context, ArrayRef<Type> types,
+                           bool isMemoryOnly, TypedAttr minAlignment) {
+  TypedAttr variadic = convertTypesToVariadicAttr(context, types);
+  return StructType::get(context, variadic, isMemoryOnly, minAlignment);
+}
+
+StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  ArrayRef<Type> types, bool isMemoryOnly) {
+  assert(!types.empty() &&
+         "cannot infer context from empty types; "
+         "use getChecked with explicit context for empty structs");
+  return getChecked(emitError, types.front().getContext(), types, isMemoryOnly);
+}
+
+StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  MLIRContext *context, ArrayRef<Type> types,
+                                  bool isMemoryOnly) {
+  TypedAttr variadic = convertTypesToVariadicAttr(context, types);
+  mlir::Builder b(context);
+  TypedAttr minAlignment = b.getIntegerAttr(b.getIntegerType(64), 1);
+  // Verify before calling get() to ensure proper error reporting.
+  if (failed(verify(emitError, variadic, isMemoryOnly, minAlignment)))
+    return {};
+  return get(context, variadic, isMemoryOnly, minAlignment);
+}
+
+StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  MLIRContext *context, TypedAttr variadic,
+                                  bool isMemoryOnly, TypedAttr minAlignment) {
+  if (!minAlignment) {
+    mlir::Builder b(context);
+    minAlignment = b.getIntegerAttr(b.getIntegerType(64), 1);
+  }
+  // Normalize the variadic to ensure consistent uniquing.
+  TypedAttr normalizedVariadic =
+      normalizeVariadicForUniquing(context, variadic);
+  // Verify before calling Base::get() to ensure proper error reporting.
+  if (failed(verify(emitError, normalizedVariadic, isMemoryOnly, minAlignment)))
+    return {};
+  return Base::get(context, normalizedVariadic, isMemoryOnly, minAlignment);
 }
 
 TypedAttr KGEN::createUninitializedValueOf(Type type) {
@@ -1147,9 +1442,12 @@ TypedAttr KGEN::createUninitializedValueOf(Type type) {
   auto structType = dyn_cast<StructType>(type);
   if (!structType)
     return UnknownAttr::get(type);
+  std::optional<SmallVector<Type>> elementTypes = structType.getElementTypes();
+  if (!elementTypes)
+    return UnknownAttr::get(type);
   SmallVector<TypedAttr> values;
-  values.reserve(structType.getElementTypes().size());
-  for (Type type : structType.getElementTypes())
+  values.reserve(elementTypes->size());
+  for (Type type : *elementTypes)
     values.push_back(createUninitializedValueOf(type));
   return StructAttr::get(values, structType);
 }

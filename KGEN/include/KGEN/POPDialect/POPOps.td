@@ -2081,14 +2081,16 @@ def POP_VariadicSizeOp : POPOp<"variadic.size", [Pure,
 
 def POP_AtomicCmpXchgResultType : Type<And<[
   KGEN_StructType.predicate,
-  CPred<"llvm::cast<StructType>($_self).getNumElements() == 2">,
+  // Ensure the struct is resolved before accessing element types.
+  CPred<"llvm::cast<StructType>($_self).isResolved()">,
+  CPred<"*llvm::cast<StructType>($_self).getNumElements() == 2">,
   SubstLeaves<"$_self",
-              "llvm::cast<StructType>($_self).getElementTypes()[0]",
+              "(*llvm::cast<StructType>($_self).getElementTypes())[0]",
               UnboundOrIndexOrInt.predicate>,
   SubstLeaves<"$_self",
-              "llvm::cast<StructType>($_self).getElementTypes()[1]",
+              "(*llvm::cast<StructType>($_self).getElementTypes())[1]",
               BoolScalar.predicate>]>,
- "an KGEN struct type with any integer or pointer followed by a boolean">;
+ "a resolved KGEN struct type with any integer or pointer followed by a boolean">;
 
 def POP_AtomicCmpXchgOp : POPOp<"atomic.cmpxchg", [
     PointerElementType<"ptr", "cmp">,

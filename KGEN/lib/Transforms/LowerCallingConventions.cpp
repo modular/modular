@@ -98,10 +98,11 @@ static StructType lowerVariantType(VariantType type) {
 static StructAttr lowerVariantAttr(VariantAttr attr) {
   StructType structType = lowerVariantType(attr.getType());
 
-  auto unionType = cast<POP::UnionType>(structType.getElementTypes().front());
+  auto elementTypes = *structType.getElementTypes();
+  auto unionType = cast<POP::UnionType>(elementTypes.front());
   auto unionAttr = POP::UnionAttr::get(attr.getValue(), unionType);
 
-  auto scalarType = cast<POP::SIMDType>(structType.getElementTypes().back());
+  auto scalarType = cast<POP::SIMDType>(elementTypes.back());
   auto discrAttr = POP::SIMDAttr::get(attr.getIndex(), scalarType);
 
   return StructAttr::get({unionAttr, discrAttr}, structType);
@@ -258,15 +259,15 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     return;
   }
   if (auto size = dyn_cast<PackSizeOp>(op)) {
-    ArrayRef<Type> types =
-        cast<StructType>(size->getOperand(0).getType()).getElementTypes();
-    b.replaceOpWithNewOp<ParamConstantOp>(size, b.getIndexAttr(types.size()));
+    size_t numElements =
+        *cast<StructType>(size->getOperand(0).getType()).getNumElements();
+    b.replaceOpWithNewOp<ParamConstantOp>(size, b.getIndexAttr(numElements));
     return;
   }
   if (auto load = dyn_cast<PackLoadOp>(op)) {
     SmallVector<Value> elements;
-    ArrayRef<Type> types =
-        cast<StructType>(load->getOperand(0).getType()).getElementTypes();
+    auto types =
+        *cast<StructType>(load->getOperand(0).getType()).getElementTypes();
     elements.reserve(types.size());
     for (auto [i, _] : llvm::enumerate(types)) {
       auto ptr =
@@ -281,8 +282,9 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
   // Handle variant operations.
   if (auto create = dyn_cast<VariantCreateOp>(op)) {
     auto structType = cast<StructType>(create->getResultTypes().front());
-    auto unionType = cast<POP::UnionType>(structType.getElementTypes().front());
-    auto discrType = cast<POP::SIMDType>(structType.getElementTypes().back());
+    auto elementTypes = *structType.getElementTypes();
+    auto unionType = cast<POP::UnionType>(elementTypes.front());
+    auto discrType = cast<POP::SIMDType>(elementTypes.back());
     Value unionVal = POP::UnionWrapOp::create(b, op->getLoc(), unionType,
                                               create.getOperand());
     Value discrVal = ParamConstantOp::create(
@@ -294,7 +296,8 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
   if (auto is = dyn_cast<VariantIsOp>(op)) {
     Value variantVal = is->getOperand(0);
     auto structType = cast<StructType>(variantVal.getType());
-    auto discrType = cast<POP::SIMDType>(structType.getElementTypes().back());
+    auto discrType =
+        cast<POP::SIMDType>((*structType.getElementTypes()).back());
     Value discrVal =
         StructExtractOp::create(b, op->getLoc(), variantVal, /*index=*/1);
     Value discrCst = ParamConstantOp::create(

@@ -381,8 +381,9 @@ void LowerAsyncBuildContext::takeSlicedFirstStateFrom(FuncOp hotRamp,
   /// Augment the hot ramp function signature. We will clone ops from the funcOp
   /// into the hot ramp function.
   FrameData emptyFrame;
-  COTypes opaqueCoTypes(builder.getContext(), std::move(emptyFrame),
-                        StructType::get(fromFuncOp.getResultTypes()));
+  COTypes opaqueCoTypes(
+      builder.getContext(), std::move(emptyFrame),
+      StructType::get(builder.getContext(), fromFuncOp.getResultTypes()));
   SmallVector<Type> inputs;
   SmallVector<ArgConvention> conventions;
   Type closureType = opaqueCoTypes.typeForField(ClosureState);
@@ -827,7 +828,7 @@ FuncOp LowerAsyncBuildContext::createSharedResume(StringRef prefix,
       cast<StructType>(
           cast<PointerType>(hotStartContinuation.getType()).getElementType())
           .getElementTypes()
-          .size();
+          ->size();
   auto pointerBitcast = PointerBitcastOp::create(
       builder, PointerType::get(coldContType), hotStartContinuation);
   Value coldStartContinuation = pointerBitcast.getResult();
@@ -1353,11 +1354,17 @@ COTypes::COTypes(MLIRContext *cxt, FrameData &&frameData,
   types[ResultSlot] = typeForField(ResultSlot);
 
   // Header type omits the variable sized frame and promise.
-  headerType = StructType::get(types);
-  types.push_back(typeForField(Promise));
-  for (auto [index, frameVariableType] : llvm::enumerate(frameData.frameTypes))
-    types.push_back(frameVariableType);
-  continuationType = StructType::get(types);
+  headerType = StructType::get(cxt, types);
+
+  // Only create continuationType if promiseType is valid. Some callers
+  // pass a null promiseType when they only need the headerType.
+  if (promiseType) {
+    types.push_back(typeForField(Promise));
+    for (auto [index, frameVariableType] :
+         llvm::enumerate(frameData.frameTypes))
+      types.push_back(frameVariableType);
+    continuationType = StructType::get(cxt, types);
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -2119,7 +2126,7 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       rewriter.setInsertionPoint(op);
       Value continuation = getResults.getOperand();
       StructType headerType = opaqueCoroutineTypes.getHeaderType();
-      SmallVector<Type> headerPlusPromiseTypes(headerType.getElementTypes());
+      SmallVector<Type> headerPlusPromiseTypes(*headerType.getElementTypes());
       headerPlusPromiseTypes.push_back(StructType::get(
           op->getContext(), llvm::to_vector(getResults.getResultTypes())));
       Value promiseContinuation = PointerBitcastOp::create(

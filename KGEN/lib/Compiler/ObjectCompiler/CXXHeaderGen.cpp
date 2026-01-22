@@ -118,7 +118,11 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
   }
 
   if (auto structType = dyn_cast<StructType>(t)) {
-    for (Type elTy : structType.getElementTypes())
+    std::optional<SmallVector<Type>> elementTypes =
+        structType.getElementTypes();
+    if (!elementTypes)
+      return func.emitError("cannot generate C type for parametric struct");
+    for (Type elTy : *elementTypes)
       if (failed(getCTypeForType(func, elTy, types)))
         return failure();
     return success();

@@ -1259,12 +1259,16 @@ Type CreateRegStubOp::getOriginalArgType(unsigned index) {
   if (!ptrTy)
     return rawArgTy;
   auto structElemTy = dyn_cast<StructType>(ptrTy.getElementType());
-  if (!structElemTy || structElemTy.getNumElements() != 1 ||
+  auto numElements =
+      structElemTy ? structElemTy.getNumElements() : std::nullopt;
+  if (!structElemTy || !numElements || *numElements != 1 ||
       !structElemTy.getIsMemoryOnly())
     return rawArgTy;
 
   // Returns pointer<T>.
-  return PointerType::get(structElemTy.getElementTypes()[0]);
+  auto elementTypes = structElemTy.getElementTypes();
+  assert(elementTypes && "numElements succeeded, so elementTypes must too");
+  return PointerType::get((*elementTypes)[0]);
 }
 
 Type CreateRegStubOp::getCalleeArgType(unsigned index) {
@@ -1439,7 +1443,14 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
                                            IntegerAttr indexAttr,
                                            Type valueType,
                                            StringRef valueKind) {
-  ArrayRef<Type> elementTypes = container.getElementTypes();
+  // Unresolved structs cannot be verified until element types are resolved.
+  if (!container.isResolved())
+    return success();
+
+  auto elementTypesOpt = container.getElementTypes();
+  if (!elementTypesOpt)
+    return success(); // Cannot verify without resolved element types.
+  SmallVector<Type> elementTypes = *elementTypesOpt;
   if (llvm::any_of(elementTypes,
                    [](Type type) { return isa<VariadicSplatType>(type); })) {
     if (elementTypes.size() != 1) {
@@ -1480,7 +1491,14 @@ inferStructElementType(function_ref<LogicalResult(const Twine &)> emitError,
   if (!indexAttr)
     return emitError("expected an integer index attribute");
 
-  ArrayRef<Type> elementTypes = structType.getElementTypes();
+  // Unresolved structs cannot have element types inferred until resolved.
+  if (!structType.isResolved())
+    return emitError("cannot infer element type from unresolved struct");
+
+  auto elementTypesOpt = structType.getElementTypes();
+  if (!elementTypesOpt)
+    return emitError("cannot infer element type from parametric struct");
+  SmallVector<Type> elementTypes = *elementTypesOpt;
   if (llvm::any_of(elementTypes,
                    [](Type type) { return isa<VariadicSplatType>(type); })) {
     if (elementTypes.size() != 1) {
@@ -1491,7 +1509,7 @@ inferStructElementType(function_ref<LogicalResult(const Twine &)> emitError,
     return variadicSplat.getElementType();
   }
   size_t index = indexAttr.getInt();
-  if (index >= structType.getNumElements())
+  if (index >= elementTypes.size())
     return emitError("struct element index out of bounds");
   return elementTypes[index];
 }
@@ -1520,8 +1538,11 @@ LogicalResult StructExtractOp::inferReturnTypes(
 
 static ParseResult parseStructValueType(AsmParser &p, Type &valueType,
                                         Type structType, IntegerAttr index) {
-  ArrayRef<Type> elementTypes =
-      llvm::cast<StructType>(structType).getElementTypes();
+  auto elementTypesOpt = llvm::cast<StructType>(structType).getElementTypes();
+  if (!elementTypesOpt)
+    return p.emitError(p.getCurrentLocation(),
+                       "cannot infer element type from parametric struct");
+  SmallVector<Type> elementTypes = *elementTypesOpt;
   if (index.getInt() > static_cast<int64_t>(elementTypes.size()))
     return p.emitError(p.getCurrentLocation(), "element index out of bounds (")
            << index.getInt() << " >= " << elementTypes.size() << ")";
@@ -1557,14 +1578,20 @@ LogicalResult StructGEPOp::verify() {
                          "type, got ")
              << elementType;
 
+    auto numElements = structType.getNumElements();
+    auto elementTypes = structType.getElementTypes();
+    // Skip verification for parametric structs.
+    if (!numElements || !elementTypes)
+      return success();
+
     unsigned index = indexAttr.getInt();
-    if (index >= structType.getNumElements())
+    if (index >= *numElements)
       return emitOpError("struct field index ")
-             << index << " is out of bounds for struct with "
-             << structType.getNumElements() << " elements";
+             << index << " is out of bounds for struct with " << *numElements
+             << " elements";
 
     // Verify result type matches the element type at the index.
-    Type expectedEltType = structType.getElementTypes()[index];
+    Type expectedEltType = (*elementTypes)[index];
     if (getType().getElementType() != expectedEltType)
       return emitOpError("result element type ")
              << getType().getElementType()
@@ -1585,7 +1612,9 @@ void StructGEPOp::build(OpBuilder &builder, OperationState &result,
                         Value container, unsigned index) {
   auto pointerType = cast<PointerType>(container.getType());
   auto structType = cast<StructType>(pointerType.getElementType());
-  Type resultEltType = structType.getElementTypes()[index];
+  auto elementTypes = structType.getElementTypes();
+  assert(elementTypes && "build requires concrete struct type");
+  Type resultEltType = (*elementTypes)[index];
   Type resultType = PointerType::get(resultEltType);
 
   result.addOperands(container);
@@ -1651,12 +1680,19 @@ ParseResult StructGEPOp::parse(OpAsmParser &parser, OperationState &result) {
       return parser.emitError(parser.getCurrentLocation(),
                               "parametric index requires explicit result type");
 
+    auto numElements = structType.getNumElements();
+    auto elementTypes = structType.getElementTypes();
+    if (!numElements || !elementTypes)
+      return parser.emitError(
+          parser.getCurrentLocation(),
+          "parametric struct requires explicit result type");
+
     unsigned index = indexIntAttr.getInt();
-    if (index >= structType.getNumElements())
+    if (index >= *numElements)
       return parser.emitError(parser.getCurrentLocation(),
                               "struct field index out of bounds");
 
-    resultType = PointerType::get(structType.getElementTypes()[index]);
+    resultType = PointerType::get((*elementTypes)[index]);
   }
 
   // Resolve operand and set result

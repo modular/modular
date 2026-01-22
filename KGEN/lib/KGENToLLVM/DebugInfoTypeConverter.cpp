@@ -274,7 +274,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::SIMDType type) {
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(StructType type) {
   return buildDebugStructTypeFromTypeAttrs(
-      type.getElementTypes(),
+      *type.getElementTypes(),
       StringAttr::get(type.getContext(), mlir::debugString(type)));
 }
 
