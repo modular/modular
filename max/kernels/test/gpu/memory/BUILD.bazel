@@ -42,13 +42,12 @@ mojo_filecheck_test(
     ],
 )
 
+# Most filecheck tests can run on any GPU
 [
     mojo_filecheck_test(
         name = src + ".test",
         srcs = [src],
-        tags = ["gpu"] + (
-            ["manual"] if src in "test_sharedmem_async_cp.mojo" else []  # TODO: KERN-1531 this hangs with regular builds after cubin compilation, Hangs with debug mode Issue #24921
-        ),
+        tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"],
         deps = [
             "//max:layout",
@@ -57,7 +56,24 @@ mojo_filecheck_test(
         ],
     )
     for src in _FILECHECK_TESTS
+    if src != "test_sharedmem_async_cp.mojo"
 ]
+
+# test_sharedmem_async_cp uses NVIDIA-specific mbarrier and time.sleep() in GPU kernel
+mojo_filecheck_test(
+    name = "test_sharedmem_async_cp.mojo.test",
+    srcs = ["test_sharedmem_async_cp.mojo"],
+    tags = [
+        "gpu",
+        "manual",
+    ],  # TODO: KERN-1531 hangs with regular builds
+    target_compatible_with = ["//:nvidia_gpu"],
+    deps = [
+        "//max:layout",
+        "//max:linalg",
+        "@mojo//:std",
+    ],
+)
 
 [
     mojo_test(

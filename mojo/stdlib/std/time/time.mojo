@@ -29,6 +29,7 @@ from sys import (
     is_nvidia_gpu,
     llvm_intrinsic,
 )
+from sys._assembly import inlined_assembly
 
 # ===-----------------------------------------------------------------------===#
 # Utilities
@@ -296,15 +297,48 @@ fn sleep(sec: Float64):
     """Suspends the current thread for the seconds specified.
 
     Args:
-        sec: The number of seconds to sleep for.
+        sec: The number of seconds to sleep for. Values <= 0 return immediately.
     """
+    # Guard against non-positive sleep durations.
+    if sec <= 0.0:
+        return
 
     @parameter
     if is_gpu():
-        var nsec = sec * 1.0e9
-        comptime intrinsic = _gpu_sleep_inst()
-        llvm_intrinsic[intrinsic, NoneType](nsec.cast[DType.int32]())
-        return
+
+        @parameter
+        if is_nvidia_gpu():
+            # NVIDIA's nanosleep has a max duration of 1ms (1,000,000 ns).
+            # Loop to handle longer sleep durations.
+            comptime MAX_SLEEP_NS = 1_000_000  # 1ms in nanoseconds
+            var total_ns = UInt64(sec * 1.0e9)
+            var start = global_perf_counter_ns()
+            var elapsed = global_perf_counter_ns() - start
+            while elapsed < total_ns:
+                var remaining = total_ns - elapsed
+                var sleep_ns = Int32(min(remaining, UInt64(MAX_SLEEP_NS)))
+                llvm_intrinsic["llvm.nvvm.nanosleep", NoneType](sleep_ns)
+                elapsed = global_perf_counter_ns() - start
+            return
+        elif is_amd_gpu():
+            # AMD's s_sleep instruction only accepts values 0-15 and sleeps
+            # for a hardware-dependent number of cycles. This doesn't provide
+            # accurate wall-clock timing, but is sufficient for spin-wait
+            # backoff operations like those used in hostcall mechanisms.
+            # We loop with s_sleep to approximate the requested duration,
+            # though actual timing will vary based on hardware.
+            var iterations = Int(sec * 1000)  # Rough approximation
+            for _ in range(max(1, iterations)):
+                inlined_assembly[
+                    "s_sleep 1", NoneType, constraints="", has_side_effect=True
+                ]()
+            return
+        else:
+            # Other GPUs are not supported.
+            return CompilationTarget.unsupported_target_error[
+                operation="time.sleep()",
+                note="time.sleep() is only supported on NVIDIA and AMD GPUs",
+            ]()
 
     comptime NANOSECONDS_IN_SECOND = 1_000_000_000
     var total_secs = floor(sec)
@@ -315,19 +349,6 @@ fn sleep(sec: Float64):
     var req = UnsafePointer(to=tv_spec)
     var rem = UnsafePointer[_CTimeSpec, MutExternalOrigin]()
     _ = external_call["nanosleep", Int32](req, rem)
-
-
-fn _gpu_sleep_inst() -> StaticString:
-    @parameter
-    if is_nvidia_gpu():
-        return "llvm.nvvm.nanosleep"
-    elif is_amd_gpu():
-        return "llvm.amdgcn.s.sleep"
-    else:
-        return CompilationTarget.unsupported_target_error[
-            StaticString,
-            operation="sleep",
-        ]()
 
 
 fn sleep(sec: UInt):

@@ -955,6 +955,14 @@ or removed in future releases.
 
 ### 🛠️ Fixed
 
+- `time.sleep()` now works correctly for durations longer than 1 millisecond on
+  NVIDIA GPUs. Previously, sleep durations were silently capped at 1ms due to a
+  hardware limitation in the underlying `nanosleep` intrinsic. AMD GPUs now have
+  basic sleep support using the `s_sleep` instruction, which is sufficient for
+  spin-wait backoff operations though it doesn't provide accurate wall-clock
+  timing. Additionally, `global_perf_counter_ns()` is now exported from the
+  `time` package for GPU code that needs nanosecond-resolution timing.
+
 - Mojo no longer complains about "cannot infer parameter X" when unrelated type
   checking errors happen in complex parametric code.  It now gives much more
   useful and actionable error messages in these cases.
