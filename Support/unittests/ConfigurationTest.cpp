@@ -220,3 +220,25 @@ TEST(Configuration, BooleanValues) {
   bool result = cfg.getValueAsBool("example", false);
   EXPECT_FALSE(result);
 }
+
+TEST(Configuration, ListValues) {
+  StringRef input = R"(
+values = one,two,three
+)";
+  Config cfg;
+  auto err = cfg.parseFrom(input);
+  ASSERT_FALSE(err.isError()) << err.getError();
+
+  SmallVector<StringRef, 3> values;
+  cfg.getValueAsList("values", values);
+  EXPECT_EQ(3, values.size());
+  EXPECT_TRUE(cfg.isValueInList("values", "one"));
+  EXPECT_TRUE(cfg.isValueInList("values", "two"));
+  EXPECT_TRUE(cfg.isValueInList("values", "three"));
+  EXPECT_FALSE(cfg.isValueInList("values", "four"));
+
+  cfg.setValue("empty", "");
+  SmallVector<StringRef, 3> empty;
+  cfg.getValueAsList("empty", empty);
+  EXPECT_EQ(0, empty.size());
+}
