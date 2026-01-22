@@ -21,7 +21,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask, TextGenerationContext
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,

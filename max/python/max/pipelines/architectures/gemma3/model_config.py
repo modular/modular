@@ -13,24 +13,27 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn import LinearScalingParams, ReturnLogits
-from max.nn.float8_config import Float8Config
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.float8_config import Float8Config
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.rotary_embedding import LinearScalingParams
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
-    MAXModelConfigBase,
     PipelineConfig,
     RopeType,
 )
+from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
+from typing_extensions import Self, override
 
 
-class Gemma3Config(MAXModelConfigBase):
+@dataclass(kw_only=True)
+class Gemma3Config(ArchConfigWithKVCache):
     """Represents the MAX Engine configuration for Gemma 3 models.
 
     Contains parameters specific to the Gemma 3 architecture (typically extracted
@@ -72,11 +75,6 @@ class Gemma3Config(MAXModelConfigBase):
     rms_norm_eps: float
     """The epsilon used by the rms normalization layers."""
 
-    tie_word_embeddings: bool
-    """Whether to tie weight embeddings. When true, the output linear layer
-    uses the same
-    weight as the embedding layer."""
-
     rope_theta: float
     """The base period of the RoPE embeddings."""
 
@@ -116,17 +114,27 @@ class Gemma3Config(MAXModelConfigBase):
     interleaved_rope_weights: bool
     """True if the rope weights are in interleaved complex format."""
 
-    return_logits: ReturnLogits
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     """Whether to return the last token, all logits, or a variable number of logits."""
 
     kv_params: KVCacheParams
     """KV cache parameters."""
 
+    tie_word_embeddings: bool = False
+    """Whether to tie weight embeddings. When true, the output linear layer
+    uses the same weight as the embedding layer."""
+
     float8_config: Float8Config | None = None
     """Float8 quantization configuration."""
 
+    def get_kv_params(self) -> KVCacheParams:
+        return self.kv_params
+
+    def get_max_seq_len(self) -> int:
+        return self.max_position_embeddings
+
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -192,42 +200,38 @@ class Gemma3Config(MAXModelConfigBase):
             return max_seq_len
         return huggingface_config.max_position_embeddings
 
-    @staticmethod
-    def generate(
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        dtype: DType,
-        n_devices: int,
-        cache_dtype: DType,
-        kv_cache_config: KVCacheConfig,
-        return_logits: ReturnLogits,
-        norm_method: Literal["rms_norm"] = "rms_norm",
-        attention_bias: bool = False,  # Gemma3 attention bias is False in HF.
-        float8_config: Float8Config | None = None,
-    ) -> Gemma3Config:
-        """Generates a Gemma3Config instance from various configuration sources.
+    @override
+    @classmethod
+    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+        return cls.initialize_from_config(
+            pipeline_config, pipeline_config.model.huggingface_config
+        )
 
-        This factory method takes pipeline settings, HuggingFace configuration,
-        model state dictionary, and other parameters to construct a fully initialized
-        :obj:`Gemma3Config` object for use within the MAX Engine pipeline.
+    @classmethod
+    def initialize_from_config(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> Self:
+        """Initializes a Gemma3Config instance from pipeline and HuggingFace configuration.
+
+        This method creates a config instance with all fields that can be determined
+        from the pipeline and HuggingFace configuration, without needing the state_dict.
+        Fields that depend on the state_dict (like tie_word_embeddings, float8_config)
+        should be set via the `finalize()` method.
 
         Args:
-            pipeline_config: The MAX Engine pipeline configuration (:obj:`max.pipelines.config.PipelineConfig`).
-            huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-            state_dict: The model's state dictionary containing weights (:obj:`max.graph.weights.WeightData`).
-            dtype: The primary data type for model parameters (:obj:`max.dtype.DType`).
-            n_devices: The number of devices the model will run on.
-            cache_dtype: The data type for the KV cache (:obj:`max.dtype.DType`).
-            kv_cache_config: Configuration settings for the KV cache (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            return_logits: Whether to return the last token, all tokens or a variable number of logits.
-            norm_method: The normalization method to use (currently only "rms_norm").
-            attention_bias: Whether to include bias in attention projections. Defaults
-              to `False` based on Gemma 3 HuggingFace implementation.
+            pipeline_config: The MAX Engine pipeline configuration.
+            huggingface_config: The HuggingFace model configuration object.
 
         Returns:
             An initialized :obj:`Gemma3Config` instance.
         """
+        kv_cache_config = pipeline_config.model.kv_cache
+        quantization_encoding = pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must not be None")
+        dtype = quantization_encoding.dtype
+        cache_dtype = quantization_encoding.cache_dtype
+
         _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
@@ -237,13 +241,6 @@ class Gemma3Config(MAXModelConfigBase):
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model.device_specs
         ]
-
-        # When tie_word_embeddings=True, the embedding weights are shared with
-        # the output weights.
-        tie_word_embeddings = (
-            getattr(huggingface_config, "tie_word_embeddings", False)
-            or "language_model.lm_head.weight" not in state_dict
-        )
 
         rope_scaling_params = None
         rope_scaling = huggingface_config.rope_scaling
@@ -267,7 +264,7 @@ class Gemma3Config(MAXModelConfigBase):
             huggingface_config.hidden_activation,
         )
 
-        return Gemma3Config(
+        return cls(
             vocab_size=huggingface_config.vocab_size,
             hidden_size=huggingface_config.hidden_size,
             intermediate_size=huggingface_config.intermediate_size,
@@ -276,9 +273,10 @@ class Gemma3Config(MAXModelConfigBase):
             num_key_value_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
             hidden_activation=hidden_activation,
-            max_position_embeddings=huggingface_config.max_position_embeddings,
+            max_position_embeddings=Gemma3Config.calculate_max_seq_len(
+                pipeline_config, huggingface_config=huggingface_config
+            ),
             rms_norm_eps=huggingface_config.rms_norm_eps,
-            tie_word_embeddings=tie_word_embeddings,
             rope_theta=huggingface_config.rope_theta,
             attention_bias=huggingface_config.attention_bias,
             query_pre_attn_scalar=huggingface_config.query_pre_attn_scalar,
@@ -291,16 +289,44 @@ class Gemma3Config(MAXModelConfigBase):
             dtype=dtype,
             devices=device_refs,
             interleaved_rope_weights=interleaved_rope_weights,
-            return_logits=return_logits,
-            kv_params=Gemma3Config.get_kv_params(
+            kv_params=Gemma3Config.construct_kv_params(
                 huggingface_config=huggingface_config,
                 pipeline_config=pipeline_config,
                 devices=device_refs,
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
             ),
-            float8_config=float8_config,
         )
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: dict[str, WeightData],
+        return_logits: ReturnLogits,
+        float8_config: Float8Config | None = None,
+    ) -> None:
+        """Define parameters that can't be determined just from the pipeline config.
+
+        This method sets fields that require introspection of the model weights
+        (state_dict), such as tie_word_embeddings and float8_config.
+
+        Args:
+            huggingface_config: The HuggingFace model configuration object.
+            state_dict: The model's state dictionary containing weights.
+            return_logits: Whether to return the last token, all tokens or a
+                variable number of logits.
+            float8_config: Float8 quantization configuration (optional).
+        """
+        # When tie_word_embeddings=True, the embedding weights are shared with
+        # the output weights.
+        tie_word_embeddings = (
+            getattr(huggingface_config, "tie_word_embeddings", False)
+            or "language_model.lm_head.weight" not in state_dict
+        )
+
+        self.tie_word_embeddings = tie_word_embeddings
+        self.float8_config = float8_config
+        self.return_logits = return_logits
 
 
 _HIDDEN_ACTIVATION_MAP = {

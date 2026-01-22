@@ -20,12 +20,16 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.attention.multi_latent_attention import (
+from max.nn.legacy.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
     LatentAttentionWithRope,
 )
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
-from max.nn.rotary_embedding import (
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedCacheValues,
+)
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )

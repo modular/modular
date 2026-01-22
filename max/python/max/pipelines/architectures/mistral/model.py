@@ -29,8 +29,14 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn import Module, ReturnLogits, Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
@@ -219,7 +225,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return MistralConfig.get_kv_params(
+        return MistralConfig.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=devices,

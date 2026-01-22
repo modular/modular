@@ -129,7 +129,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
     var q_out_managed = ManagedLayoutTensor[dtype, q_layout](ctx)
     var q_out_tensor = q_out_managed.tensor()
     # Initialize to zero
-    for i in range(q_tensor.layout.size()):
+    for i in range(comptime (q_tensor.layout.size())):
         q_out_tensor.ptr[i] = 0
 
     # Create start_pos tensor using ManagedLayoutTensor

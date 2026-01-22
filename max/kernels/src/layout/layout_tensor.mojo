@@ -94,14 +94,15 @@ fn _compute_distribute_layout[
     @parameter
     if axis:
         return zipped_divide(
-            data_layout, Layout(threads_layout.shape[axis.value()])
+            materialize[data_layout](),
+            Layout(threads_layout.shape[axis.value()]),
         )
 
     else:
         for dim in threads_layout.shape:
             thread_tile.append(Layout(dim))
 
-        return zipped_divide(data_layout, thread_tile)
+        return zipped_divide(materialize[data_layout](), thread_tile)
 
 
 fn _project_on_axis[
@@ -365,11 +366,11 @@ struct LayoutTensor[
             ", dtype = ",
             Self.dtype,
             ", layout = ",
-            Self.layout,
+            materialize[Self.layout](),
             ", address_space = ",
             Self.address_space,
             ", element_layout = ",
-            Self.element_layout,
+            materialize[Self.element_layout](),
             ", layout_int_type = ",
             Self.layout_int_type,
             ", linear_idx_type = ",
@@ -3122,7 +3123,7 @@ struct LayoutTensor[
     @staticmethod
     fn _divide_tiles[*tile_sizes: Int]() -> Layout:
         comptime tiler = MakeTileLayoutList[*tile_sizes]()
-        return zipped_divide(Self.layout, materialize[tiler]())
+        return zipped_divide(materialize[Self.layout](), materialize[tiler]())
 
     @staticmethod
     fn _fast_varying_dim_tiler(shape: Int) -> Layout:
@@ -3180,8 +3181,8 @@ struct LayoutTensor[
         var tiler = Self._tuple_divide_tiler(shape, linear_vectorize)
         if is_int(shape) and not linear_vectorize:
             # legacy behavior
-            return zipped_divide(Self.layout, LayoutList(tiler))
-        return zipped_divide(Self.layout, tiler)
+            return zipped_divide(materialize[Self.layout](), LayoutList(tiler))
+        return zipped_divide(materialize[Self.layout](), tiler)
 
     @staticmethod
     @always_inline
@@ -3204,7 +3205,7 @@ struct LayoutTensor[
             else:
                 tiler.append(Layout(dim))
             i += 1
-        return zipped_divide(Self.layout, tiler)
+        return zipped_divide(materialize[Self.layout](), tiler)
 
     comptime TileType[*tile_sizes: Int] = LayoutTensor[
         Self.dtype,
@@ -4628,8 +4629,8 @@ struct LayoutTensor[
         ), "Only rank-2 tensors slices are supported for now!"
         return Layout(
             [
-                _get_slice_size(Self.layout, d0_slice, 0),
-                _get_slice_size(Self.layout, d1_slice, 1),
+                _get_slice_size(materialize[Self.layout](), d0_slice, 0),
+                _get_slice_size(materialize[Self.layout](), d1_slice, 1),
             ],
             Self.layout.stride,
         )
@@ -4640,7 +4641,9 @@ struct LayoutTensor[
     ) -> Layout:
         __comptime_assert Self.layout.rank() >= 2, "Rank should be >= 2"
 
-        var sliced_layout = sublayout(Self.layout, slice_0_axis, slice_1_axis)
+        var sliced_layout = sublayout(
+            materialize[Self.layout](), slice_0_axis, slice_1_axis
+        )
         return Layout(
             [
                 _get_slice_size(sliced_layout, slice_0, 0),
@@ -4652,7 +4655,7 @@ struct LayoutTensor[
     @staticmethod
     fn _compute_slice_layout(slice_0: Slice, slice_0_axis: Int) -> Layout:
         __comptime_assert Self.layout.shape.__len__() > 1, "Rank should be >= 1"
-        var sliced_layout = sublayout(Self.layout, slice_0_axis)
+        var sliced_layout = sublayout(materialize[Self.layout](), slice_0_axis)
         return Layout(
             [_get_slice_size(sliced_layout, slice_0, 0)],
             sliced_layout.stride[0],

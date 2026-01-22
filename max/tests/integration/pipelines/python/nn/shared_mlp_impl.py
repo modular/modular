@@ -35,7 +35,7 @@ from max.graph import (
     ops,
 )
 from max.graph.ops.allreduce import matmul_allreduce
-from max.nn import MLP, Allreduce, DistributedGemmConfig, Module, Signals
+from max.nn.legacy import MLP, Allreduce, DistributedGemmConfig, Module, Signals
 from test_common.graph_utils import are_all_buffer_values_sequence
 
 DTYPE = DType.float32

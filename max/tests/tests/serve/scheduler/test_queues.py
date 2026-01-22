@@ -19,7 +19,7 @@ import time
 from collections.abc import Generator
 from dataclasses import fields, is_dataclass
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -408,7 +408,9 @@ def test_shared_memory_default_threshold_usage() -> None:
 
 
 @pytest.mark.asyncio
-async def test_engine_queue_stream_propagates_scheduler_error() -> None:
+async def test_engine_queue_stream_propagates_scheduler_error(
+    mocker: MockerFixture,
+) -> None:
     """Test that stream() raises with error details including remote traceback."""
     fake_traceback = (
         "Traceback (most recent call last):\n"
@@ -436,12 +438,11 @@ async def test_engine_queue_stream_propagates_scheduler_error() -> None:
     mock_out_queue: asyncio.Queue[SchedulerResult[Any]] = asyncio.Queue()
     await mock_out_queue.put(error_result)
 
-    with patch.object(EngineQueue, "__init__", lambda self, *args: None):
-        engine_queue: EngineQueue[TextContext, Any] = EngineQueue.__new__(
-            EngineQueue
-        )
-        engine_queue.pending_out_queues = {}
-        engine_queue.request_queue = Mock()
+    engine_queue: EngineQueue[TextContext, Any] = EngineQueue.__new__(
+        EngineQueue
+    )
+    engine_queue.pending_out_queues = {}
+    engine_queue.request_queue = Mock()
 
     @contextlib.contextmanager
     def mock_open_channel(
@@ -453,14 +454,15 @@ async def test_engine_queue_stream_propagates_scheduler_error() -> None:
         finally:
             del engine_queue.pending_out_queues[rid]
 
-    with patch.object(engine_queue, "open_channel", mock_open_channel):
-        with pytest.raises(RuntimeError) as exc_info:
-            async for _ in engine_queue.stream(req_id, context):
-                pass
+    mocker.patch.object(engine_queue, "open_channel", mock_open_channel)
 
-        # Verify error message includes type, message, and remote traceback
-        error_msg = str(exc_info.value)
-        assert "RuntimeError" in error_msg
-        assert "CUDA out of memory" in error_msg
-        assert "Remote traceback:" in error_msg
-        assert "pipeline.py" in error_msg
+    with pytest.raises(RuntimeError) as exc_info:
+        async for _ in engine_queue.stream(req_id, context):
+            pass
+
+    # Verify error message includes type, message, and remote traceback
+    error_msg = str(exc_info.value)
+    assert "RuntimeError" in error_msg
+    assert "CUDA out of memory" in error_msg
+    assert "Remote traceback:" in error_msg
+    assert "pipeline.py" in error_msg

@@ -1025,7 +1025,9 @@ fn _cublasLt_matmul[
                     " by 16/32 for MXFP8/NVFP4 input data type, respectively"
                 )
 
-            if a_scales_layout.rank() != 5 or b_scales_layout.rank() != 5:
+            if comptime (
+                a_scales_layout.rank() != 5 or b_scales_layout.rank() != 5
+            ):
                 raise Error(
                     "Invalid A/B scales dimensions. Expected 5D tensors."
                 )

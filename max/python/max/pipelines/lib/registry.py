@@ -33,7 +33,7 @@ from max.interfaces import (
     TextGenerationContext,
     TextGenerationRequest,
 )
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextAndVisionContext, TextContext
 from transformers import (
     AutoConfig,
@@ -334,14 +334,16 @@ class PipelineRegistry:
     def retrieve_architecture(
         self,
         huggingface_repo: HuggingFaceRepo,
-        use_module_v3: bool = False,
+        use_legacy_module: bool = True,
         task: PipelineTask | None = None,
     ) -> SupportedArchitecture | None:
         """Retrieve architecture matching the HuggingFace model config.
 
         Args:
             huggingface_repo: The HuggingFace repository to match against.
-            use_module_v3: Whether to append "_ModuleV3" suffix to architecture name.
+            use_legacy_module: Whether to use legacy Module architecture (default=True).
+                When True, appends "_Legacy" suffix to find legacy graph-based architecture.
+                When False, uses the standard HuggingFace architecture name for new API.
             task: Optional task to disambiguate when multiple architectures share the same name.
                   If not provided and multiple architectures share the same name, the task will
                   be inferred from the HuggingFace Hub's pipeline_tag.
@@ -362,8 +364,8 @@ class PipelineRegistry:
             return None
 
         for architecture_name in architecture_names:
-            if use_module_v3:
-                architecture_name += "_ModuleV3"
+            if use_legacy_module:
+                architecture_name += "_Legacy"
 
             # If task not provided, check if we need to infer it
             inferred_task = task
@@ -499,7 +501,7 @@ class PipelineRegistry:
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
-                use_module_v3=pipeline_config.use_module_v3,
+                use_legacy_module=pipeline_config.use_legacy_module,
             )
 
         if arch is None:
@@ -558,7 +560,7 @@ class PipelineRegistry:
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
-                use_module_v3=pipeline_config.use_module_v3,
+                use_legacy_module=pipeline_config.use_legacy_module,
                 task=task,
             )
 
@@ -626,7 +628,7 @@ class PipelineRegistry:
         if pipeline_config.draft_model is not None:
             draft_arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.draft_model.huggingface_weight_repo,
-                use_module_v3=pipeline_config.use_module_v3,
+                use_legacy_module=pipeline_config.use_legacy_module,
                 task=task,
             )
             if draft_arch is None:
@@ -672,7 +674,7 @@ class PipelineRegistry:
         """
         if arch := self.retrieve_architecture(
             huggingface_repo=pipeline_config.model.huggingface_model_repo,
-            use_module_v3=pipeline_config.use_module_v3,
+            use_legacy_module=pipeline_config.use_legacy_module,
         ):
             return arch.context_type
 
@@ -697,7 +699,7 @@ class PipelineRegistry:
         """
         if arch := self.retrieve_architecture(
             huggingface_repo=pipeline_config.model.huggingface_model_repo,
-            use_module_v3=pipeline_config.use_module_v3,
+            use_legacy_module=pipeline_config.use_legacy_module,
         ):
             return arch.task
 

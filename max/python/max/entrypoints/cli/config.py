@@ -236,10 +236,11 @@ def config_to_flag(
     cls: type[BaseModel], prefix: str | None = None
 ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     options = []
-    if hasattr(cls, "help"):
-        help_text = cls.help()
-    else:
-        help_text = {}
+    help_text = {
+        field_name: field_info.description
+        for field_name, field_info in cls.model_fields.items()
+        if field_info.description
+    }
     field_types = get_type_hints(cls)
     skip_fields = {
         "device_specs",

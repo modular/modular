@@ -33,9 +33,15 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn import Module, ReturnLogits, Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
-from max.nn.parallel import ParallelArrayOps
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.legacy.layer import Module
+from max.nn.legacy.parallel import ParallelArrayOps
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -194,7 +200,7 @@ class Qwen2_5VLModel(
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Qwen2.5VL."""
-        return Qwen2_5VLConfig.get_kv_params(
+        return Qwen2_5VLConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,

@@ -462,7 +462,7 @@ def test_indexing():
 def test_to_layout_tensor_square():
     var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
     var tensor = TileTensor(stack, row_major[2, 2]()).to_layout_tensor()
-    assert_equal(tensor.layout, layout.Layout.row_major(2, 2))
+    assert_equal(materialize[tensor.layout](), layout.Layout.row_major(2, 2))
     assert_equal(tensor.rank, 2)
     assert_equal(
         rebind[std.utils.IndexList[2]](
@@ -476,7 +476,7 @@ def test_to_layout_tensor_3d():
     var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
     var tensor = TileTensor(stack, row_major[64, 8, 4]())
     var lt = tensor.to_layout_tensor()
-    assert_equal(lt.layout, layout.Layout.row_major(64, 8, 4))
+    assert_equal(materialize[lt.layout](), layout.Layout.row_major(64, 8, 4))
     assert_equal(lt.rank, 3)
     assert_equal(
         rebind[std.utils.IndexList[3]](
@@ -491,7 +491,8 @@ def test_to_layout_tensor_3d_dynamic():
     var tensor = TileTensor(stack, row_major((Idx[64](), Idx[8](), Idx(4))))
     var lt = tensor.to_layout_tensor()
     assert_equal(
-        lt.layout, layout.Layout.row_major(64, 8, layout.UNKNOWN_VALUE)
+        materialize[lt.layout](),
+        layout.Layout.row_major(64, 8, layout.UNKNOWN_VALUE),
     )
     assert_equal(lt.rank, 3)
     assert_equal(

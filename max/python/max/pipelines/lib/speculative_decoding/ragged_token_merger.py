@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max import nn
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
-from max.nn.kernels import merge_ragged_tensors
+from max.nn.legacy.kernels import merge_ragged_tensors
+from max.nn.legacy.layer import Module
 
 
 def ragged_token_merger(device: DeviceRef) -> Graph:
@@ -37,7 +37,7 @@ def ragged_token_merger(device: DeviceRef) -> Graph:
         return graph
 
 
-class RaggedTokenMerger(nn.Module):
+class RaggedTokenMerger(Module):
     def __init__(self, device: DeviceRef) -> None:
         self.device = device
 

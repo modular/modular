@@ -24,8 +24,8 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.legacy.comm.ep import EPCommInitializer
+from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -109,7 +109,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return DeepseekV3NextNConfig.get_kv_params(
+        return DeepseekV3NextNConfig.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=devices,

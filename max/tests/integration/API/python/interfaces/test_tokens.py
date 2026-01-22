@@ -325,32 +325,79 @@ def test_token_buffer__apply_processing_offset_behaviour() -> None:
     """Verify apply_processing_offset windowing, reset semantics, and validation."""
     token_buffer = TokenBuffer(array=np.array([1, 2, 3, 4, 5], dtype=np.int64))
 
-    # Baseline: no offset, active window is the full prompt.
     np.testing.assert_array_equal(
         token_buffer.active, np.array([1, 2, 3, 4, 5], dtype=np.int64)
     )
+    assert token_buffer.active_length == 5
+    assert token_buffer.active_length == len(token_buffer.active)
 
-    # 1) Applying a valid offset should change which tokens are returned by `active`.
     token_buffer.apply_processing_offset(2)
     np.testing.assert_array_equal(
         token_buffer.active, np.array([3, 4, 5], dtype=np.int64)
     )
+    assert token_buffer.active_length == 3
+    assert token_buffer.active_length == len(token_buffer.active)
 
-    # 2) After adding a token, the processing offset should be reset to 0 and
-    #    the active window should begin at the new processing start.
     token_buffer.advance_with_token(6)
-    # Processed length is the original length, and active should now expose only
-    # the newly added token.
     assert token_buffer.processed_length == 5
     np.testing.assert_array_equal(
         token_buffer.active, np.array([6], dtype=np.int64)
     )
+    assert token_buffer.active_length == 1
+    assert token_buffer.active_length == len(token_buffer.active)
 
-    # 3) Invalid offsets should raise ValueError.
-    # Offset that would move the start before index 0.
+    token_buffer.apply_processing_offset(-2)
+    np.testing.assert_array_equal(
+        token_buffer.active, np.array([4, 5, 6], dtype=np.int64)
+    )
+    assert token_buffer.active_length == 3
+    assert token_buffer.active_length == len(token_buffer.active)
+
     with pytest.raises(ValueError):
         token_buffer.apply_processing_offset(-10)
 
-    # Offset that would move the start beyond the processing end.
     with pytest.raises(ValueError):
         token_buffer.apply_processing_offset(token_buffer.active_length + 1)
+
+
+def test_token_buffer__active_length_matches_active_with_offset() -> None:
+    """Verify active_length always matches len(active) when processing offset is applied.
+
+    This is critical for speculative decoding (EAGLE) which uses negative offsets
+    to include additional tokens in the active window.
+    """
+    token_buffer = TokenBuffer(array=np.array([1, 2, 3, 4, 5], dtype=np.int64))
+
+    # Skip some tokens to create a smaller active window
+    token_buffer.skip_processing(3)
+    assert token_buffer.active_length == 2
+    assert token_buffer.active_length == len(token_buffer.active)
+    np.testing.assert_array_equal(
+        token_buffer.active, np.array([4, 5], dtype=np.int64)
+    )
+
+    # Apply a negative offset to expand the active window backwards
+    # This is the pattern used in EAGLE speculative decoding
+    token_buffer.apply_processing_offset(-1)
+    np.testing.assert_array_equal(
+        token_buffer.active, np.array([3, 4, 5], dtype=np.int64)
+    )
+    # active_length must match the actual length of active
+    assert token_buffer.active_length == len(token_buffer.active)
+    assert token_buffer.active_length == 3
+
+    # Apply a positive offset to shrink the active window
+    token_buffer.apply_processing_offset(1)
+    np.testing.assert_array_equal(
+        token_buffer.active, np.array([5], dtype=np.int64)
+    )
+    assert token_buffer.active_length == len(token_buffer.active)
+    assert token_buffer.active_length == 1
+
+    # Reset offset to 0
+    token_buffer.apply_processing_offset(0)
+    np.testing.assert_array_equal(
+        token_buffer.active, np.array([4, 5], dtype=np.int64)
+    )
+    assert token_buffer.active_length == len(token_buffer.active)
+    assert token_buffer.active_length == 2

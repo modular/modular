@@ -13,13 +13,11 @@ mojo_library(
     srcs = glob(["Inputs/test_user_op/*.mojo"]),
     validate_missing_docs = False,
     deps = [
+        "//max:MOGGKernelAPI",
         "//max:compiler",
         "//max:tensor",
         "@mojo//:std",
-    ] + select({
-        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 mojo_library(

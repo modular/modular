@@ -55,6 +55,6 @@ Here's an example demonstrating how to use a 1D convolution:
         print(f"Conv1D output shape: {output_1d.shape}")
         # Output: Conv1D output shape: [Dim(2), Dim(10), Dim(32)]
 
-.. automodule:: max.nn.conv
+.. automodule:: max.nn.legacy.conv
    :members:
    :undoc-members:

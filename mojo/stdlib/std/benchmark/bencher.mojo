@@ -1318,9 +1318,26 @@ struct Bencher:
             iter_fn: The target function to benchmark.
         """
 
+        @always_inline
+        fn unified_closure() unified {}:
+            iter_fn()
+
+        self.iter(unified_closure)
+
+    fn iter[IterFn: fn () unified](mut self, f: IterFn):
+        """Returns the total elapsed time by running a target closure a
+        particular number of times.
+
+        Parameters:
+            IterFn: Type of the closure to benchmark.
+
+        Args:
+            f: The closure to benchmark.
+        """
+
         var start = time.perf_counter_ns()
         for _ in range(self.num_iters):
-            iter_fn()
+            f()
         var stop = time.perf_counter_ns()
         self.elapsed = Int(stop - start)
 

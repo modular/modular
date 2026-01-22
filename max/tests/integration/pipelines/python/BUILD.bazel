@@ -39,16 +39,16 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "test_compare_buffers",
+    name = "test_compare_tensors",
     size = "large",
     srcs = [
-        "test_compare_buffers.py",
+        "test_compare_tensors.py",
     ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/tests/integration/tools:compare_buffers",
+        "//max/tests/integration/tools:compare_tensors",
         requirement("click"),
         requirement("torch"),
     ],

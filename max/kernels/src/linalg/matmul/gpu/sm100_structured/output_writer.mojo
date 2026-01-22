@@ -73,8 +73,7 @@ struct TileWriter[
     c_smem_layout: Layout,
     num_output_stages: Int,
     stage_stride_cols: Int,  # Must match OutputTilePipeline's stage_stride_cols
-    num_output_warps: UInt,
-    max_tmem_cols: UInt = 512,
+    num_output_warps: Int,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
@@ -232,7 +231,7 @@ struct TileWriter[
             Self.MMA_N,
             Self.stageN,
             Self.cta_group,
-            Int(Self.num_output_warps),
+            Self.num_output_warps,
             Self.c_swizzle,
             Self.transpose_c,
         ]
@@ -327,7 +326,7 @@ struct TileWriter[
                     ),
                     c_smem_tile,
                 )
-                WarpGroupBarrier[Int(Self.num_output_warps) * WARP_SIZE].sync()
+                WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
             else:
                 var writer = SMemEpilogueWriter[
                     Self.epilogue_dtype,
@@ -336,7 +335,7 @@ struct TileWriter[
                     Self.MMA_M,
                     Self.MMA_N,
                     Self.cta_group,
-                    Int(Self.num_output_warps),
+                    Self.num_output_warps,
                     Self.c_swizzle,
                     Self.transpose_c,
                     Self.is_lower_frag_required,
@@ -377,4 +376,4 @@ struct TileWriter[
 
             @parameter
             if stage > 0 or stage == Self.num_stages - 1:
-                WarpGroupBarrier[Int(Self.num_output_warps) * WARP_SIZE].sync()
+                WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()

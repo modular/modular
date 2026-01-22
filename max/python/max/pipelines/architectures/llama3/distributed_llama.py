@@ -21,18 +21,16 @@ from collections import defaultdict
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
-from max.nn import (
-    MLP,
-    ColumnParallelLinear,
+from max.nn.legacy.attention import TensorParallelAttentionWithRope
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.transformer import (
     DistributedTransformer,
     DistributedTransformerBlock,
-    Linear,
-    RMSNorm,
-    Signals,
-    TensorParallelAttentionWithRope,
-    VocabParallelEmbedding,
 )
-from max.nn.kv_cache import KVCacheParams
 
 logger = logging.getLogger("max.pipelines")
 from .model_config import Llama3Config, create_rope_embedding

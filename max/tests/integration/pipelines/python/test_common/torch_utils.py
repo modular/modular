@@ -28,15 +28,21 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 
+from test_common.numerics import log_softmax
 from test_common.test_data import MockTextGenerationRequest
 
 
-def _create_logits_store() -> tuple[list[dict], Callable]:
+def _create_logits_store(
+    generate_logprobs: bool = False,
+) -> tuple[list[dict], Callable]:
     """Create a logits storage function and container.
 
     The `saved_logits` is captured into the `store_logits` closure, which is
     injected into `model.generate` as a logits processor.
-    This allows saving the logits.
+    This allows saving the logits, and optionally logprobs in addition.
+
+    Args:
+        generate_logprobs: If True, also compute and store logprobs in addition to logits.
     """
     saved_logits = []
 
@@ -45,13 +51,21 @@ def _create_logits_store() -> tuple[list[dict], Callable]:
         # Currently always passing in one batch at a time.
         scores_np = scores[0].cpu().detach().numpy()
         next_token = scores_np.argmax(axis=-1)
-        saved_logits.append(
-            {
-                "next_token": next_token,
-                "next_token_logits": scores_np[next_token],
-                "logits": scores_np,
-            }
-        )
+
+        # Always store logits
+        entry = {
+            "next_token": next_token,
+            "next_token_logits": scores_np[next_token],
+            "logits": scores_np,
+        }
+
+        if generate_logprobs:
+            # Also compute and store logprobs in addition to logits
+            scores_logprobs = log_softmax(scores_np)
+            entry["next_token_logprobs"] = float(scores_logprobs[next_token])
+            entry["logprobs"] = scores_logprobs
+
+        saved_logits.append(entry)
         return scores
 
     return saved_logits, store_logits
@@ -68,6 +82,7 @@ def run_text_generation(  # noqa: ANN201
     num_steps: int = 10,
     print_outputs: bool = False,
     use_cache: bool | None = None,
+    generate_logprobs: bool = False,
 ):
     """Run text generation using standard data processor for both text and images."""
 
@@ -103,6 +118,7 @@ def run_text_generation(  # noqa: ANN201
         print_outputs=print_outputs,
         use_cache=use_cache,
         request_processor_fn=standard_request_processor,
+        generate_logprobs=generate_logprobs,
     )
 
 
@@ -117,9 +133,12 @@ def run_text_generation_with_custom_image_processing(  # noqa: ANN201
         [MockTextGenerationRequest], dict[str, torch.Tensor]
     ],
     use_cache: bool | None = None,
+    generate_logprobs: bool = False,
 ):
     """Run text generation with custom request processing for specialized models."""
-    saved_logits, store_logits = _create_logits_store()
+    saved_logits, store_logits = _create_logits_store(
+        generate_logprobs=generate_logprobs
+    )
     results = []
 
     for request in textgen_requests:

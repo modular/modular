@@ -91,7 +91,7 @@ modular_py_test(
     size = "large",
     srcs = [
         "test_cli.py",
-        "test_use_module_v3.py",
+        "test_use_legacy_module.py",
     ],
     gpu_constraints = [
         "//:has_gpu",

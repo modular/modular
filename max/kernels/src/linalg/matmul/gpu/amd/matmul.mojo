@@ -393,7 +393,11 @@ fn gemm_kernel_amd[
         comptime base_layout = Layout.row_major(block_rows, k_tile_size)
         comptime num_repeats = block_cols // k_tile_size
         comptime tiler_layout = Layout.row_major(1, num_repeats)
-        return blocked_product(base_layout, tiler_layout, coalesce_output=True)
+        return blocked_product(
+            materialize[base_layout](),
+            materialize[tiler_layout](),
+            coalesce_output=True,
+        )
 
     # Helper function for thread layout
     @parameter
@@ -427,7 +431,9 @@ fn gemm_kernel_amd[
             Int(num_repeats_row),
             num_repeats_col,
         )
-        return blocked_product(base_layout, tiler_layout)
+        return blocked_product(
+            materialize[base_layout](), materialize[tiler_layout]()
+        )
 
     # AMD TensorCore operator for matrix multiplication
     var mma_op = MmaOpAMD[

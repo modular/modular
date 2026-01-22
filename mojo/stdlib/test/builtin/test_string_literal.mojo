@@ -233,15 +233,24 @@ def test_isupper():
 
 def test_iter():
     # Test iterating over a string
-    var s = "one"
     var i = 0
-    for c in s.codepoints():
+    for c in "one".codepoint_slices():
         if i == 0:
-            assert_equal(String(c), "o")
+            assert_equal(c, "o")
         elif i == 1:
-            assert_equal(String(c), "n")
+            assert_equal(c, "n")
         elif i == 2:
-            assert_equal(String(c), "e")
+            assert_equal(c, "e")
+        i += 1
+
+    i = 0
+    for c in "one".codepoints():
+        if i == 0:
+            assert_equal(c, Codepoint.ord("o"))
+        elif i == 1:
+            assert_equal(c, Codepoint.ord("n"))
+        elif i == 2:
+            assert_equal(c, Codepoint.ord("e"))
         i += 1
 
 

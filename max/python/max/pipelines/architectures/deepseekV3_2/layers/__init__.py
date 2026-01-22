@@ -12,3 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 """DeepseekV3.2 layer modules."""
+
+from .rms_norm_fused import RMSNormFused
+
+__all__ = ["RMSNormFused"]

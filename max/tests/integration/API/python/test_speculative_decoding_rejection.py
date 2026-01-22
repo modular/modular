@@ -25,7 +25,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TokenBuffer,
 )
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
 from max.pipelines.lib.speculative_config import SpeculativeMethod

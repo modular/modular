@@ -96,7 +96,7 @@ fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
     var input_tensor = LayoutTensor[DType.bfloat16, layout](stack)
     arange(input_tensor)
     var device_tensor = ctx.enqueue_create_buffer[DType.bfloat16](
-        input_tensor.layout.size()
+        comptime (input_tensor.layout.size())
     )
     ctx.enqueue_copy(device_tensor, input_tensor.ptr)
     comptime kernel = copy_dram_to_sram_buffer_load_kernel[
@@ -106,7 +106,7 @@ fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
         device_tensor,
         3,
         grid_dim=1,
-        block_dim=(thread_layout.size()),
+        block_dim=(comptime (thread_layout.size())),
     )
     ctx.synchronize()
     _ = device_tensor^
@@ -192,7 +192,7 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     var input_tensor = LayoutTensor[DType.bfloat16, input_layout](input_stack)
     arange(input_tensor)
     var device_tensor = ctx.enqueue_create_buffer[DType.bfloat16](
-        input_tensor.layout.size()
+        comptime (input_tensor.layout.size())
     )
     ctx.enqueue_copy(device_tensor, input_tensor.ptr)
     comptime kernel = copy_dram_to_local_buffer_load_kernel[
@@ -202,7 +202,7 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
         device_tensor,
         3,
         grid_dim=1,
-        block_dim=(thread_layout.size()),
+        block_dim=(comptime (thread_layout.size())),
     )
     ctx.synchronize()
     _ = device_tensor^

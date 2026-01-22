@@ -92,7 +92,9 @@ struct ThreadRole(Enum, Stringable, Writable):
 fn pipeline_layout[layout: Layout, pipeline_stages: Int]() -> Layout:
     constrained[layout.rank() == 2]()
     return blocked_product(
-        layout, Layout.row_major(1, pipeline_stages), coalesce_output=True
+        materialize[layout](),
+        Layout.row_major(1, pipeline_stages),
+        coalesce_output=True,
     )
 
 

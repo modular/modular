@@ -2194,9 +2194,9 @@ struct MLA_SM100_Decode[
                 smem_tensor,
                 mbar[],
                 (
-                    col_start + UInt(block * Self.config.BN),
-                    UInt(0),
-                    row_start,
+                    Int(col_start) + (block * Self.config.BN),
+                    0,
+                    Int(row_start),
                 ),  # 0, 64, 128, ...
             )
 
@@ -2225,8 +2225,8 @@ struct MLA_SM100_Decode[
                 smem_tensor,
                 mbar[],
                 (
-                    col_start + UInt(block * Self.config.BN),
-                    row_start,
+                    Int(col_start) + (block * Self.config.BN),
+                    Int(row_start),
                 ),  # 0, 64, 128, ...
             )
 

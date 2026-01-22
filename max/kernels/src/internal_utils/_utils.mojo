@@ -36,6 +36,31 @@ from tensor import DynamicTensor
 from utils import IndexList
 
 
+# ===----------------------------------------------------------------------=== #
+# Unsigned division/modulo helpers for Int
+# ===----------------------------------------------------------------------=== #
+# These helpers allow performing unsigned division and modulo operations on Int
+# arguments while using unsigned hardware operations internally. This is useful
+# when migrating from UInt to Int, as unsigned division is faster on NVIDIA GPUs.
+
+
+@always_inline
+fn ufloordiv(a: Int, b: Int) -> Int:
+    """Perform unsigned division (`//`) on Int arguments.
+
+    This function treats both arguments as unsigned values and performs
+    unsigned division, which is faster than signed division on NVIDIA GPUs.
+
+    Args:
+        a: The dividend (treated as unsigned).
+        b: The divisor (treated as unsigned).
+
+    Returns:
+        The quotient of unsigned division.
+    """
+    return Int(UInt(a) // UInt(b))
+
+
 struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
