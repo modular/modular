@@ -16,11 +16,11 @@
 Example usage:
     Compare two tensor files
         bazel run //max/tests/integration/tools:compare_buffers -- \
-            --torch-tensor ref.pt --max-buffer out.max --rtol 1e-5 --atol 1e-8
+            --torch-tensor ref.pt --max-tensor out.max --rtol 1e-5 --atol 1e-8
 
     Auto-match tensors in directories
         bazel run //max/tests/integration/tools:compare_buffers -- \
-            --torch-tensor torch_dir/ --max-buffer max_dir/
+            --torch-tensor torch_dir/ --max-tensor max_dir/
 """
 
 from __future__ import annotations
@@ -344,6 +344,9 @@ def main(
             "\nNo tolerances provided - reporting metrics only (no pass/fail)\n"
         )
 
+    # Track if any tensor has large relative diff for a single warning at the end
+    has_large_rel_diff = False
+
     for result in results:
         click.echo(
             f"\nTensor: {result.torch_tensor_name} vs {result.max_tensor_name}"
@@ -368,9 +371,7 @@ def main(
             f"Greatest relative difference: {result.max_rel_diff} at index {result.max_rel_diff_index}"
         )
         if result.max_rel_diff > 100:
-            click.echo(
-                "  ⚠️  Large relative diff often indicates near-zero values in reference tensor"
-            )
+            has_large_rel_diff = True
 
         if tolerances_provided and result.all_close is not None:
             click.echo()
@@ -385,6 +386,12 @@ def main(
                 click.echo(
                     f"Mismatched elements: {result.num_failing_elements} / {result.total_elements} ({failure_pct:.1f}%)"
                 )
+
+    # Print warning once if any tensor had large relative diff
+    if has_large_rel_diff:
+        click.echo(
+            "\n⚠️  Note: Large relative diff often indicates near-zero values in reference tensor"
+        )
 
     if tolerances_provided:
         num_close = sum(1 for r in results if r.all_close is True)
