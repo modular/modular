@@ -17,9 +17,8 @@ from max.experimental import functional as F
 from max.graph import DeviceRef, TensorValue
 from max.nn import (
     Conv2d,
-    Module,
 )
-from max.nn.module_v3 import Embedding
+from max.nn.module_v3 import Embedding, Module
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 

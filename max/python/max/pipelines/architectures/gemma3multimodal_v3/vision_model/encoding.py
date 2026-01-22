@@ -16,12 +16,10 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import (
-    BufferValue,
     DeviceRef,
     TensorValue,
 )
 from max.nn import (
-    LayerList,
     LayerNorm,
     Module,
 )
