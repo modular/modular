@@ -1022,6 +1022,16 @@ PIPELINES = {
             kl_div_threshold=2.1e01,
         ),
     ),
+    "Qwen/Qwen3-VL-4B-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=[],
+        run=_make_pipeline_runner(
+            pipeline="Qwen/Qwen3-VL-4B-Instruct",
+            encoding="bfloat16",
+            cos_dist_threshold=1.7e00,
+            kl_div_threshold=2.1e01,
+        ),
+    ),
     "Qwen/Qwen3-8B-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big", "nvidia-only"],  # TODO: Attention is broken on AMD.
