@@ -27,23 +27,22 @@ modular_py_library(
         "bench_blackwell_mla_decode.py",
         "bench_blackwell_prefill.py",
     ],
-    ignore_extra_deps = [
-        # Used as a backend
-        "//max/kernels/benchmarks/misc/blackwell_bench:cutlass-imports",
-    ],
+    # Add nvidia_cutlass_dsl/python_packages to sys.path for cutlass imports.
+    # nvidia-cutlass-dsl uses a .pth file which Bazel doesn't process.
+    # Path is relative from _main/max/kernels/benchmarks/misc/comparison/ in runfiles:
+    imports = ["../../../../../../rules_pycross++lock_file+modular_pip_lock_file_repo/deps/nvidia-cutlass-dsl@4.3.0/site-packages/nvidia_cutlass_dsl/python_packages"],
+    tags = ["no-pydeps"],  # The wheels do not behave well with our pydeps enforcer, see import above
     deps = [
         blackwell_bench_wheel("flash-attn"),
         blackwell_bench_wheel("flashinfer"),
         blackwell_bench_wheel("deep-gemm"),
+        requirement("packaging"),
         requirement("torch"),
+        ":bench_decode_lib",
         "//max/kernels/benchmarks/autotune:bencher_utils",
         "//max/kernels/benchmarks/misc/blackwell_bench:cutlass-imports",
         "//max/kernels/benchmarks/misc/utils:bench_utils",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max",
     ],
 )
 
@@ -64,16 +63,13 @@ modular_py_library(
     name = "bench_decode_lib",
     srcs = ["bench_blackwell_decode.py"],
     imports = ["."],
+    tags = ["no-pydeps"],  # The wheels do not behave well with our pydeps enforcer
     deps = [
         "//max/kernels/benchmarks/misc/utils:bench_utils",
         blackwell_bench_wheel("flashinfer"),
         requirement("torch"),
         "//max/kernels/benchmarks/autotune:bencher_utils",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max",
     ],
 )
 
@@ -147,14 +143,11 @@ modular_py_binary(
     tags = [
         "gpu",
         "manual",
+        "no-pydeps",
     ],
     deps = [
         requirement("torch"),
         "//max/kernels/benchmarks/misc/utils:bench_utils",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max",
     ],
 )
