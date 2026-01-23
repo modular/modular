@@ -874,7 +874,6 @@ class PixelGenerationTokenizer(
         revision: str | None = None,
         max_length: int | None = None,
         trust_remote_code: bool = False,
-        model_path_2: str | None = None,
         subfolder_2: str | None = None,
         max_length_2: int | None = None,
         chat_template: str | None = None,
@@ -884,6 +883,8 @@ class PixelGenerationTokenizer(
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
+        self.delegate_2 = None
+        self.max_length_2 = None
 
         try:
             self.delegate = AutoTokenizer.from_pretrained(
@@ -915,7 +916,6 @@ class PixelGenerationTokenizer(
 
         # Override chat template if provided
         # This will be used by the delegate(s)'s apply_chat_template method automatically
-        # TODO: Do we need this in diffusion models?
         self._custom_template_provided = chat_template is not None
         if chat_template is not None:
             self.delegate.chat_template = chat_template
@@ -994,6 +994,7 @@ class PixelGenerationTokenizer(
         if timesteps is not None and sigmas is not None:
             raise ValueError("Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values")
         if timesteps is not None:
+            import inspect
             accepts_timesteps = "timesteps" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
             if not accepts_timesteps:
                 raise ValueError(
@@ -1004,6 +1005,7 @@ class PixelGenerationTokenizer(
             timesteps = scheduler.timesteps
             num_inference_steps = len(timesteps)
         elif sigmas is not None:
+            import inspect
             accept_sigmas = "sigmas" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
             if not accept_sigmas:
                 raise ValueError(
@@ -1034,62 +1036,37 @@ class PixelGenerationTokenizer(
         width: int,
         seed: int | None,
         vae_scale_factor: int,
+        init_noise_sigma: float | None = None,
     ) -> npt.NDArray[np.float32]:
         height = 2 * (int(height) // (vae_scale_factor * 2))
         width = 2 * (int(width) // (vae_scale_factor * 2))
         shape = (batch_size, num_channels_latents, height, width)
 
         latents = self._randn_tensor(shape, seed)
-        return latents
-
-    async def encode_2(
-        self, prompt: str | Sequence[int], add_special_tokens: bool = True
-    ) -> npt.NDArray[np.integer[Any]] | None:
-        """Encode using the secondary tokenizer (e.g., T5 for Flux.1).
-
-        Returns None if no secondary tokenizer is configured.
-        """
-        if self.delegate_2 is None:
-            return None
-
-        encoded_prompt: npt.NDArray[np.integer[Any]]
-        if isinstance(prompt, str):
-
-            def _encode_fn(
-                prompt: str, add_special_tokens: bool
-            ) -> npt.NDArray[np.integer[Any]]:
-                return self.delegate_2.encode(
-                    prompt, add_special_tokens=add_special_tokens
-                )
-
-            encoded_prompt = await run_with_default_executor(
-                _encode_fn,
-                prompt,
-                add_special_tokens,
+        if latents.shape != shape:
+            raise ValueError(
+                f"Provided latents have shape {latents.shape}, expected {shape}."
             )
+        latents = latents.astype(np.float32, copy=False)
 
-            if self.max_length_2 and len(encoded_prompt) > self.max_length_2:
-                raise ValueError(
-                    f"Input string is larger than secondary tokenizer's max length "
-                    f"({len(encoded_prompt)} > {self.max_length_2})."
-                )
+        if init_noise_sigma is not None:
+            latents = latents * np.float32(init_noise_sigma)
 
-            encoded_prompt = np.array(encoded_prompt)
-        else:
-            encoded_prompt = np.array(list(prompt))
-
-        return encoded_prompt
+        return latents
 
     async def _generate_tokens_ids(
         self,
-        prompt: str,
+        prompt: str | None,
         prompt_2: str | None = None,
         negative_prompt: str | None = None,
         negative_prompt_2: str | None = None,
         messages: list[TextGenerationRequestMessage] | None = None,
         chat_template_options: dict[str, Any] | None = None,
     ) -> tuple[
-        npt.NDArray[np.integer[Any]], npt.NDArray[np.integer[Any]] | None
+        npt.NDArray[np.integer[Any]],
+        npt.NDArray[np.integer[Any]] | None,
+        npt.NDArray[np.integer[Any]],
+        npt.NDArray[np.integer[Any]] | None,
     ]:
         """Tokenize prompt for encoder models.
 
@@ -1114,11 +1091,34 @@ class PixelGenerationTokenizer(
             # Use prompt_2 if provided, else fall back to prompt
             text_for_secondary = prompt_2 if prompt_2 is not None else prompt
             if text_for_secondary is not None:
-                secondary_tokens = await self.encode_2(
-                    text_for_secondary, add_special_tokens=True
+                secondary_tokens = await self.encode(
+                    text_for_secondary,
+                    add_special_tokens=True,
+                    use_secondary=True,
                 )
 
-        return primary_tokens, secondary_tokens
+        if negative_prompt is not None:
+            negative_tokens = await self.encode(
+                negative_prompt, add_special_tokens=True
+            )
+        else:
+            negative_tokens = np.array([], dtype=np.int64)
+
+        negative_tokens_2 = None
+        if self.delegate_2 is not None:
+            text_for_secondary_negative = (
+                negative_prompt_2
+                if negative_prompt_2 is not None
+                else negative_prompt
+            )
+            if text_for_secondary_negative is not None:
+                negative_tokens_2 = await self.encode(
+                    text_for_secondary_negative,
+                    add_special_tokens=True,
+                    use_secondary=True,
+                )
+
+        return primary_tokens, secondary_tokens, negative_tokens, negative_tokens_2
 
     def apply_chat_template(
         self,
@@ -1167,9 +1167,18 @@ class PixelGenerationTokenizer(
         return False
 
     async def encode(
-        self, prompt: str | Sequence[int], add_special_tokens: bool = True
+        self,
+        prompt: str | Sequence[int],
+        add_special_tokens: bool = True,
+        *,
+        use_secondary: bool = False,
     ) -> npt.NDArray[np.integer[Any]]:
         """Transform the provided prompt into a token array."""
+
+        delegate = self.delegate_2 if use_secondary else self.delegate
+        max_length = self.max_length_2 if use_secondary else self.max_length
+        if delegate is None:
+            raise ValueError("Secondary tokenizer is not configured")
 
         encoded_prompt: npt.NDArray[np.integer[Any]]
         if isinstance(prompt, str):
@@ -1177,7 +1186,7 @@ class PixelGenerationTokenizer(
             def _encode_fn(
                 prompt: str, add_special_tokens: bool
             ) -> npt.NDArray[np.integer[Any]]:
-                return self.delegate.encode(
+                return delegate.encode(
                     prompt, add_special_tokens=add_special_tokens
                 )
 
@@ -1189,9 +1198,9 @@ class PixelGenerationTokenizer(
                 add_special_tokens,
             )
 
-            if self.max_length and len(encoded_prompt) > self.max_length:
+            if max_length and len(encoded_prompt) > max_length:
                 raise ValueError(
-                    f"Input string is larger than tokenizer's max length ({len(encoded_prompt)} > {self.max_length})."
+                    f"Input string is larger than tokenizer's max length ({len(encoded_prompt)} > {max_length})."
                 )
 
             encoded_prompt = np.array(encoded_prompt)
@@ -1209,6 +1218,23 @@ class PixelGenerationTokenizer(
         messages = request.messages
         chat_template_options = request.chat_template_options
 
+        do_classifier_free_guidance = getattr(
+            request, "do_classifier_free_guidance", None
+        )
+        if do_classifier_free_guidance is None:
+            do_classifier_free_guidance = bool(
+                request.guidance_scale is not None
+                and request.guidance_scale > 1.0
+            )
+
+        negative_prompt = request.negative_prompt
+        negative_prompt_2 = request.negative_prompt_2
+        if not do_classifier_free_guidance:
+            negative_prompt = None
+            negative_prompt_2 = None
+        elif negative_prompt is None:
+            negative_prompt = ""
+
         if (
             self._wrap_prompt_as_chat
             and prompt is not None
@@ -1222,10 +1248,15 @@ class PixelGenerationTokenizer(
                 chat_template_options = self._default_chat_template_options
 
         # 1. Tokenize prompts
-        token_ids, token_ids_2 = await self._generate_tokens_ids(
-            prompt, prompt_2,
-            request.negative_prompt, request.negative_prompt_2,
-            messages, chat_template_options
+        token_ids, token_ids_2, negative_token_ids, negative_token_ids_2 = (
+            await self._generate_tokens_ids(
+                prompt,
+                prompt_2,
+                negative_prompt,
+                negative_prompt_2,
+                messages,
+                chat_template_options,
+            )
         )
         token_buffer = TokenBuffer(
             array=token_ids.astype(np.int64, copy=False),
@@ -1234,6 +1265,15 @@ class PixelGenerationTokenizer(
         if token_ids_2 is not None:
             token_buffer_2 = TokenBuffer(
                 array=token_ids_2.astype(np.int64, copy=False),
+            )
+
+        negative_token_buffer = TokenBuffer(
+            array=negative_token_ids.astype(np.int64, copy=False),
+        )
+        negative_token_buffer_2 = None
+        if negative_token_ids_2 is not None:
+            negative_token_buffer_2 = TokenBuffer(
+                array=negative_token_ids_2.astype(np.int64, copy=False),
             )
 
         # 3. Resolve image dimensions
@@ -1261,20 +1301,11 @@ class PixelGenerationTokenizer(
         width = request.width or default_width
         num_channels_latents = vae_config.get("latent_channels", 4)
 
-        initial_noise = self._prepare_latents(
-            request.num_images_per_prompt,
-            num_channels_latents,
-            height,
-            width,
-            request.seed,
-            vae_scale_factor,
-        )
+        latent_height = 2 * (int(height) // (vae_scale_factor * 2))
+        latent_width = 2 * (int(width) // (vae_scale_factor * 2))
+        image_seq_len = (latent_height // 2) * (latent_width // 2)
 
-        # 4. Compute timestep schedule
-        image_seq_len = (initial_noise.shape[2] // 2) * (
-            initial_noise.shape[3] // 2
-        )
-        mu = self.calculate_shift(
+        mu = self._calculate_shift(
             image_seq_len,
             scheduler_config.get("base_image_seq_len", 256),
             scheduler_config.get("max_image_seq_len", 4096),
@@ -1293,6 +1324,20 @@ class PixelGenerationTokenizer(
             request.num_inference_steps,
             device=CPU,
             **scheduler_kwargs,
+        )
+
+        init_noise_sigma = getattr(scheduler, "init_noise_sigma", None)
+        if init_noise_sigma is None and sigmas.size > 0:
+            init_noise_sigma = float(sigmas[0])
+
+        initial_noise = self._prepare_latents(
+            request.num_images_per_prompt,
+            num_channels_latents,
+            height,
+            width,
+            request.seed,
+            vae_scale_factor,
+            init_noise_sigma,
         )
 
         # 5. Build the context
@@ -1318,24 +1363,3 @@ class PixelGenerationTokenizer(
             validator(context)
 
         return context
-
-    @property
-    def _is_llama_tokenizer(self) -> bool:
-        tokenizers = (
-            LlamaTokenizer,
-            LlamaTokenizerFast,
-            CodeLlamaTokenizer,
-            CodeLlamaTokenizerFast,
-        )
-        return isinstance(self.delegate, tokenizers)
-
-    async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
-        """Encodes `stop` to be used as stop criteria during generation."""
-        stop_tokenized: list[list[int]] = []
-        for stop_crit in stop:
-            tokenized: list[int] = (
-                await self.encode(stop_crit, False)
-            ).tolist()
-            stop_tokenized.append(tokenized)
-
-        return stop_tokenized
