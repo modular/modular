@@ -2155,7 +2155,9 @@ struct LayoutTensor[
         ).store(self.ptr.mut_cast[True]() + offset)
 
     @always_inline("nodebug")
-    fn load[width: Int](self, m: Int, n: Int) -> SIMD[Self.dtype, width]:
+    fn load[
+        width: Int, load_alignment: Int = Self.alignment
+    ](self, m: Int, n: Int) -> SIMD[Self.dtype, width]:
         """Load a SIMD vector from the tensor at the specified 2D coordinates.
 
         Performs a vectorized load operation from the tensor's memory,
@@ -2165,6 +2167,7 @@ struct LayoutTensor[
         Parameters:
             width: The number of elements to load into the SIMD vector. Should match
                   the target hardware's vector width for optimal performance.
+            load_alignment: The alignment to use. Defaults to Self.alignment.
 
         Args:
             m: The row index (first dimension).
@@ -2210,13 +2213,13 @@ struct LayoutTensor[
                 "LayoutTensor load out of bounds",
             )
 
-        return self.ptr.load[width=width, alignment = Self.alignment](
+        return self.ptr.load[width=width, alignment=load_alignment](
             self._offset(m, n)
         )
 
     @always_inline("nodebug")
     fn load[
-        width: Int
+        width: Int, load_alignment: Int = Self.alignment
     ](self, coords: IndexList[...]) -> SIMD[Self.dtype, width]:
         """Load a SIMD vector from the tensor at the specified coordinates.
 
@@ -2228,6 +2231,7 @@ struct LayoutTensor[
         Parameters:
             width: The number of elements to load into the SIMD vector. Should match
                     the target hardware's vector width for optimal performance.
+            load_alignment: The alignment to use. Defaults to Self.alignment.
 
         Args:
             coords: The coordinates to index. Must have the same size as the tensor's rank.
@@ -2252,7 +2256,7 @@ struct LayoutTensor[
         __comptime_assert self.rank == coords.size
         debug_assert(self.runtime_layout.stride.value[self.rank - 1] == 1)
 
-        return self.ptr.load[width=width, alignment = Self.alignment](
+        return self.ptr.load[width=width, alignment=load_alignment](
             self._offset(coords)
         )
 
@@ -2415,7 +2419,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn store[
-        width: Int
+        width: Int, store_alignment: Int = Self.alignment
     ](self: Self._AsMut, m: Int, n: Int, val: SIMD[Self.dtype, width],):
         """Store a SIMD vector to the tensor at the specified 2D coordinates.
 
@@ -2426,6 +2430,7 @@ struct LayoutTensor[
         Parameters:
             width: The number of elements in the SIMD vector to store. Should
                 match the target hardware's vector width for optimal performance.
+            store_alignment: The alignment to use. Defaults to Self.alignment.
 
         Args:
             m: The row index (first dimension) where the store operation begins.
@@ -2481,13 +2486,13 @@ struct LayoutTensor[
                 "])",
             )
 
-        return self.ptr.store[alignment = Self.alignment](
+        return self.ptr.store[alignment=store_alignment](
             self._offset(m, n), val
         )
 
     @always_inline("nodebug")
     fn store[
-        width: Int
+        width: Int, store_alignment: Int = Self.alignment
     ](
         self, coords: IndexList[...], val: SIMD[Self.dtype, width]
     ) where Self.mut:
@@ -2500,6 +2505,7 @@ struct LayoutTensor[
         Parameters:
             width: The number of elements in the SIMD vector to store. Should
                 match the target hardware's vector width for optimal performance.
+            store_alignment: The alignment to use. Defaults to Self.alignment.
 
         Args:
             coords: The coordinates to index.
@@ -2523,7 +2529,7 @@ struct LayoutTensor[
         __comptime_assert self.rank == coords.size
         debug_assert(self.runtime_layout.stride.value[self.rank - 1] == 1)
 
-        return self.ptr.store[alignment = Self.alignment](
+        return self.ptr.store[alignment=store_alignment](
             self._offset(coords), val
         )
 
