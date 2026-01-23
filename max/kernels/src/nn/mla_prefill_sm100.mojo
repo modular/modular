@@ -43,13 +43,11 @@ from nn.mha_sm100_2q import (
 )
 from nn.mha import q_num_matrix_view_rows
 from nn.mha_sm100_2q import (
-    SM100MHA2Q,
     MBarPipeline,
     SM100TensorAccumulatorSS,
     SM100TensorAccumulatorTS,
     LocalTensor,
     apply_mask,
-    maximum,
     STMatrixLayout,
     elect_mma_arrive,
     TMADestination,
@@ -431,13 +429,9 @@ struct SM100MLA[
         ).bitcast[Scalar[Self.accum_type]]()
         var mbar_base: MBarType
 
-        @parameter
-        if Self.config.use_tmem_for_correction():
-            mbar_base = correction_smem.bitcast[SharedMemBarrier]()
-        else:
-            mbar_base = (
-                correction_smem + Self.config.correction_smem_elements()
-            ).bitcast[SharedMemBarrier]()
+        mbar_base = (
+            correction_smem + Self.config.correction_smem_elements()
+        ).bitcast[SharedMemBarrier]()
 
         kv_pipeline = Self.KVPipelineType(mbar_base)
         mbar_base += Self.KVPipelineType.num_mbars()
@@ -450,7 +444,7 @@ struct SM100MLA[
         # 4s (2 consumer, 2 producer)
         # 4c (2 consumer, 2 producer)
         # 2 softmax-order
-        ptr_tmem_addr = misc_mbars.end().bitcast[UInt32]()
+        ptr_tmem_addr = (mbar_base + misc_mbars.num_mbars()).bitcast[UInt32]()
 
         # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
         comptime num_reg_softmax = 200
@@ -512,6 +506,7 @@ struct SM100MLA[
                 ragged_tma_store,
                 q_smem.bitcast[Scalar[Self.output_type]](),
                 sink_weights,
+                correction_smem,
             )
 
         elif warp_idx < 12:
@@ -534,6 +529,7 @@ struct SM100MLA[
                 pos.score_row,
                 pos.num_keys,
                 mask,
+                correction_smem,
             )
         else:
             warpgroup_reg_dealloc[num_reg_other]()
@@ -611,13 +607,12 @@ struct SM100MLA[
         score_row: UInt32,
         num_keys: UInt32,
         mask: Self.MaskType,
+        correction_smem_arg: SharedMemPointer[Scalar[Self.accum_type]],
     ):
         __comptime_assert size_of[Self.accum_type]() == 4
 
         o0_tmem = tmem_addr + Self.config.TMEM_O0
         o1_tmem = tmem_addr + Self.config.TMEM_O1
-        c0_tmem = tmem_addr + Self.config.TMEM_C0
-        c1_tmem = tmem_addr + Self.config.TMEM_C1
 
         pipeline_c0 = mbars.consumer_c0()
         pipeline_c1 = mbars.consumer_c1()
@@ -634,37 +629,24 @@ struct SM100MLA[
         # output is BM x depth
         comptime load_iters = Self.kv_depth // (2 * batch_size)
         comptime load_remainder = Self.kv_depth % (2 * batch_size)
+        var correction_smem_0 = correction_smem_arg + UInt32(thread_idx.x) % 128
+        var correction_smem_1 = correction_smem_0 + (Self.BM // 2)
 
         while iter_count != 0:
             iter_count -= 1
 
             @parameter
             for i in range(2):
-                var c_tmem: UInt32
+                var c_scalar: Scalar[Self.accum_type]
 
                 @parameter
                 if i == 0:
-                    c_tmem = c0_tmem
                     pipeline_c0.wait()
-                else:
-                    c_tmem = c1_tmem
-                    pipeline_c1.wait()
-
-                # correct
-                c_scalar = tcgen05_ld[
-                    datapaths=32,
-                    bits=32,
-                    repeat=1,
-                    dtype = Self.accum_type,
-                    pack=False,
-                    width=1,
-                ](c_tmem)
-                tcgen05_load_wait()
-
-                @parameter
-                if i == 0:
+                    c_scalar = correction_smem_0[0]
                     pipeline_c0.release()
                 else:
+                    pipeline_c1.wait()
+                    c_scalar = correction_smem_1[0]
                     pipeline_c1.release()
 
                 change = _vote_nvidia_helper(c_scalar != 1) != 0
@@ -778,6 +760,7 @@ struct SM100MLA[
         ],
         o_smem: SharedMemPointer[Scalar[Self.output_type]],
         sink_weights: Self.SinkType,
+        correction_smem_arg: SharedMemPointer[Scalar[Self.accum_type]],
     ):
         # FIXME: for depth 256
         var s_tmem: UInt32 = tmem_addr + Self.config.TMEM_S0
@@ -793,7 +776,6 @@ struct SM100MLA[
             s_tmem += Self.config.BN * warp_group_idx
 
         p_tmem = s_tmem
-        c_tmem = p_tmem + Self.config.BN // 2
         s_tile = Self.UMMA0Type.CType(s_tmem)
         p_tile = Self.UMMA1Type.AType(p_tmem)
 
@@ -808,6 +790,7 @@ struct SM100MLA[
         var tid = UInt32(thread_idx.x)
         var row = UInt32(tid % 128)
         var scale_log2e: Scalar[Self.accum_type] = scale
+        var correction_smem = correction_smem_arg + tid
 
         @parameter
         if not (Self.use_score_mod or Self.MaskType.apply_log2e_after_mask):
@@ -876,9 +859,10 @@ struct SM100MLA[
                 s_tmem + first_cols
             ).load_async()
             mask_row[mask_strategy=mask_strategy](s0, kv_row)
-            vrow_max = maximum[width = Self.simd_size](s0)
+            s0v = s0.ptr.load[width=first_cols]()
+            vrow_max = s0v.reduce_max[size_out = Self.simd_size]()
 
-            s.ptr.store(s0.ptr.load[width=first_cols]())
+            s.ptr.store(s0v)
             comptime cols = Self.config.BN - first_cols + batch_size
 
             @parameter
@@ -892,15 +876,21 @@ struct SM100MLA[
                 @parameter
                 if offset1 >= Self.config.BN:
                     mask_row[mask_strategy=mask_strategy](s1, kv_row + offset0)
-                    vrow_max = maximum(s1, vrow_max)
-                    s.ptr.store(offset0, s1.ptr.load[width=batch_size]())
+                    s1v = s1.ptr.load[width=batch_size]()
+                    vrow_max = max(
+                        s1v.reduce_max[size_out = Self.simd_size](), vrow_max
+                    )
+                    s.ptr.store(offset0, s1v)
                 else:
                     s2 = TMemTile[Self.accum_type, BM, batch_size](
                         s_tmem + offset1
                     ).load_async()
                     mask_row[mask_strategy=mask_strategy](s1, kv_row + offset0)
-                    vrow_max = maximum(s1, vrow_max)
-                    s.ptr.store(offset0, s1.ptr.load[width=batch_size]())
+                    s1v = s1.ptr.load[width=batch_size]()
+                    vrow_max = max(
+                        s1v.reduce_max[size_out = Self.simd_size](), vrow_max
+                    )
+                    s.ptr.store(offset0, s1v)
                     tcgen05_load_wait()
 
                     @parameter
@@ -909,8 +899,11 @@ struct SM100MLA[
                             s_tmem + offset2
                         ).load_async()
                     mask_row[mask_strategy=mask_strategy](s2, kv_row + offset1)
-                    vrow_max = maximum(s2, vrow_max)
-                    s.ptr.store(offset1, s2.ptr.load[width=batch_size]())
+                    s2v = s2.ptr.load[width=batch_size]()
+                    vrow_max = max(
+                        s2v.reduce_max[size_out = Self.simd_size](), vrow_max
+                    )
+                    s.ptr.store(offset1, s2v)
 
             return vrow_max.reduce_max()
 
@@ -1136,12 +1129,7 @@ struct SM100MLA[
                     row_max = max(old_max, new_row_max)
                     correction = exp2(old_max - row_max)
                     pipeline_c.acquire()
-                    tcgen05_st[
-                        datapaths=32,
-                        bits=32,
-                        repeat=1,
-                        pack=False,
-                    ](c_tmem, correction)
+                    correction_smem[] = correction
                     pipeline_c.commit()
                     # update s->p
                     local_rowsum = store_exp(row_max)
@@ -1171,12 +1159,7 @@ struct SM100MLA[
                 row_max = max(old_max, new_row_max)
                 correction = exp2(old_max - row_max)
                 pipeline_c.acquire()
-                tcgen05_st[
-                    datapaths=32,
-                    bits=32,
-                    repeat=1,
-                    pack=False,
-                ](c_tmem, correction)
+                correction_smem[] = correction
                 pipeline_c.commit()
                 # update s->p
                 local_rowsum = store_exp(row_max)
