@@ -145,10 +145,35 @@ def _Model_signature(self: Model) -> Signature:
     return Signature(parameters=parameters)
 
 
+def _Model_capture(self: Model, *inputs: Buffer) -> None:
+    """Capture execution into a device graph keyed by input shapes/dtypes.
+
+    Capture is best-effort and model-dependent. If the model issues
+    capture-unsafe operations (for example, host-device synchronization),
+    graph capture may fail. Callers should choose capture-safe execution paths.
+    """
+    if not inputs:
+        raise ValueError("Model.capture requires input buffers.")
+    self._capture(list(inputs))
+
+
+def _Model_debug_verify_replay(self: Model, *inputs: Buffer) -> None:
+    """Verify inputs match the captured graph's baseline trace."""
+    self._debug_verify_replay(list(inputs))
+
+
+def _Model_replay(self: Model, *inputs: Buffer) -> None:
+    """Replay the captured device graph for these inputs."""
+    self._replay(list(inputs))
+
+
 Model.execute = _Model_execute  # type: ignore[method-assign]
 Model.__call__ = _Model_call  # type: ignore[method-assign]
 Model.__repr__ = _Model_repr  # type: ignore[method-assign]
 Model.signature = property(_Model_signature)  # type: ignore[assignment]
+Model.capture = _Model_capture  # type: ignore[method-assign]
+Model.debug_verify_replay = _Model_debug_verify_replay  # type: ignore[attr-defined]
+Model.replay = _Model_replay  # type: ignore[attr-defined]
 
 
 def _TensorSpec_str(self: TensorSpec) -> str:
