@@ -17,7 +17,7 @@ Pipeline Tasks Module.
 This module defines the set of supported pipeline tasks for the MAX API, encapsulated
 in the `PipelineTask` enumeration. Pipeline tasks represent the high-level operations
 that can be performed by a pipeline, such as text generation, embeddings generation,
-audio generation, speech token generation, and pixel generation.
+audio generation, and speech token generation.
 
 Each task type is associated with a specific input/output contract and is used to
 route requests to the appropriate pipeline implementation. The `PipelineTask` enum
@@ -34,7 +34,6 @@ Available tasks:
     - EMBEDDINGS_GENERATION: Generate vector embeddings for input data.
     - AUDIO_GENERATION: Generate audio outputs from input data.
     - SPEECH_TOKEN_GENERATION: Generate speech tokens for speech-related tasks.
-    - PIXEL_GENERATION: Generate/Edit images/videos from input data.
 
 See the `PipelineTask` enum for further details on each task type.
 """
@@ -59,8 +58,6 @@ class PipelineTask(str, Enum):
     """Task for generating audio."""
     SPEECH_TOKEN_GENERATION = "speech_token_generation"
     """Task for generating speech tokens."""
-    PIXEL_GENERATION = "pixel_generation"
-    """Task for generating pixels."""
 
     @property
     def output_type(
@@ -75,7 +72,6 @@ class PipelineTask(str, Enum):
         from .pipeline_variants import (
             AudioGenerationOutput,
             EmbeddingsGenerationOutput,
-            PixelGenerationOutput,
             TextGenerationOutput,
         )
         from .scheduler import SchedulerResult
@@ -89,8 +85,6 @@ class PipelineTask(str, Enum):
             return dict[RequestID, SchedulerResult[EmbeddingsGenerationOutput]]
         elif self == PipelineTask.AUDIO_GENERATION:
             return dict[RequestID, SchedulerResult[AudioGenerationOutput]]
-        elif self == PipelineTask.PIXEL_GENERATION:
-            return dict[RequestID, SchedulerResult[PixelGenerationOutput]]
         else:
             raise ValueError(
                 f"PipelineTask ({self}) does not have an output_type defined."
