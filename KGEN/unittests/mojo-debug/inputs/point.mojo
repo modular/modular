@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-struct Point(ImplicitlyCopyable):
+struct Point(TrivialRegisterType):
     var x: Int
     var y: Int
 
