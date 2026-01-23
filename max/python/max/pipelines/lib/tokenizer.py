@@ -1236,22 +1236,18 @@ class PixelGenerationTokenizer(
         messages = request.messages
         chat_template_options = request.chat_template_options
 
-        do_classifier_free_guidance = getattr(
-            request, "do_classifier_free_guidance", None
-        )
-        if do_classifier_free_guidance is None:
-            do_classifier_free_guidance = bool(
-                request.guidance_scale is not None
-                and request.guidance_scale > 1.0
-            )
+        do_classifier_free_guidance = request.guidance_scale > 1.0
 
         negative_prompt = request.negative_prompt
         negative_prompt_2 = request.negative_prompt_2
         if not do_classifier_free_guidance:
             negative_prompt = None
             negative_prompt_2 = None
-        elif negative_prompt is None:
-            negative_prompt = ""
+        else:
+            if negative_prompt is None:
+                negative_prompt = ""
+            if prompt_2 is not None and negative_prompt_2 is None:
+                negative_prompt_2 = ""
 
         if (
             self._wrap_prompt_as_chat
