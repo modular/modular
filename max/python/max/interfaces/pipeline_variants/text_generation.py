@@ -588,10 +588,10 @@ class TextGenerationContext(BaseContext, Protocol):
 TextGenerationContextType = TypeVar(
     "TextGenerationContextType", bound=TextGenerationContext
 )
-"""Type variable for text generation context types, constrained to BaseContext.
+"""Type variable for text generation context types, constrained to TextGenerationContext.
 
 This allows generic typing of text generation pipeline components to accept any
-context type that implements the BaseContext protocol.
+context type that implements the TextGenerationContext protocol.
 """
 
 
