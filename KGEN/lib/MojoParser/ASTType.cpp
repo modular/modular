@@ -672,14 +672,16 @@ bool ASTType::isTrivialRegisterType(llvm::SMLoc loc,
 
   // TODO: probably no need to check this
   // once we deprecate @register_passable("trivial")
-  bool isRPTAlreadySet = false;
-  TypeSwitch<Operation &>(*typeDecl->getIfOperation())
-      .Case<StructDeclOp, TraitDeclOp>([&](auto op) {
-        if (op.isRegisterPassableTrivial())
-          isRPTAlreadySet = true;
-      });
-  if (isRPTAlreadySet)
-    return true;
+  if (auto *declOp = typeDecl->getIfOperation()) {
+    bool isRPTAlreadySet = false;
+    TypeSwitch<Operation &>(*declOp).Case<StructDeclOp, TraitDeclOp>(
+        [&](auto op) {
+          if (op.isRegisterPassableTrivial())
+            isRPTAlreadySet = true;
+        });
+    if (isRPTAlreadySet)
+      return true;
+  }
 
   // Check whether the type conforms to `TrivialRegisterType` trait.
   ASTDecl *traitDecl = shared.lookupBuiltinTrait("TrivialRegisterType",
