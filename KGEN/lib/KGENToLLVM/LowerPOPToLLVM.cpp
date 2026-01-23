@@ -1471,6 +1471,18 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
   if (!typeAllocSize)
     return op.emitError("could not get size of variadic element");
 
+  // Compute alignment from the KGEN element type. This correctly handles
+  // structs containing aligned fields (e.g., a struct with an @align(64) field
+  // will have 64-byte alignment even if the containing struct has no explicit
+  // @align decorator). We use the max of this computed alignment and any
+  // explicit alignment specified on the op.
+  std::optional<int64_t> typeAlign =
+      DataLayoutInterface::getTypeABIAlign(target, ptrType.getElementType());
+  if (!typeAlign)
+    return op.emitError("could not get alignment of element type");
+  int64_t alignment =
+      std::max(*typeAlign, (int64_t)resolveAlignment(op.getAlignment()));
+
   // Check to see if this stack allocation has a single pop.store to it and
   // some number of pop.loads.  If so, we know the store will dominate the loads
   // so we can just completely eliminate this.  This is a form of guaranteed
@@ -1515,7 +1527,7 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
 
   Value alloca = materializeLLVMAlloca(
       rewriter, target, elementType, cast<IntegerAttr>(op.getCount()).getInt(),
-      op, *typeAllocSize, resolveAlignment(op.getAlignment()));
+      op, *typeAllocSize, alignment);
   rewriter.replaceOp(op, alloca);
   return success();
 }
