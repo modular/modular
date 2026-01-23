@@ -18,8 +18,8 @@ from collections.abc import Callable, Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.kernels import grouped_matmul_ragged, moe_create_indices
-from max.nn.moe import MoE, MoEGate
+from max.nn.legacy.kernels import grouped_matmul_ragged, moe_create_indices
+from max.nn.legacy.moe import MoE, MoEGate
 
 
 class Qwen3VLMoEGate(MoEGate):

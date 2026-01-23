@@ -1265,10 +1265,10 @@ fn produce[
                 q_producer(q_idx, smem_offset),
                 q_mbar,
                 (
-                    UInt(d),
-                    UInt(0),
-                    UInt(position.head_idx),
-                    UInt(position.q_row),
+                    d,
+                    0,
+                    Int(position.head_idx),
+                    Int(position.q_row),
                 ),
             )
     else:
@@ -1366,10 +1366,10 @@ fn produce[
                             q_producer(q_idx),
                             pq_mbar,
                             (
-                                d,
-                                UInt(0),
-                                UInt(position.head_idx),
-                                UInt(position.q_row),
+                                Int(d),
+                                0,
+                                Int(position.head_idx),
+                                Int(position.q_row),
                             ),
                         )
 

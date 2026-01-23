@@ -31,7 +31,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout, LayoutTensor
 from layout.tma_async import TMATensorTile
 
-from linalg.structuring import SMemTileArrayType
+from linalg.structuring import SMemTileArray
 from linalg.utils import elementwise_compute_lambda_type
 
 from utils.index import IndexList
@@ -73,8 +73,7 @@ struct TileWriter[
     c_smem_layout: Layout,
     num_output_stages: Int,
     stage_stride_cols: Int,  # Must match OutputTilePipeline's stage_stride_cols
-    num_output_warps: UInt,
-    max_tmem_cols: UInt = 512,
+    num_output_warps: Int,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
@@ -97,7 +96,7 @@ struct TileWriter[
         Self.c_type, Self.c_layout, Self.c_desc_layout
     ]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
-    comptime CTileArray = SMemTileArrayType[
+    comptime CTileArray = SMemTileArray[
         Self.c_type, Self.c_smem_layout, Self.num_output_stages, alignment=128
     ]
     comptime Stage = OutputStage[
@@ -232,7 +231,7 @@ struct TileWriter[
             Self.MMA_N,
             Self.stageN,
             Self.cta_group,
-            Int(Self.num_output_warps),
+            Self.num_output_warps,
             Self.c_swizzle,
             Self.transpose_c,
         ]
@@ -264,8 +263,8 @@ struct TileWriter[
         var epilogue_applier = EpilogueApplierType(
             UInt32(warp_id), UInt32(lane)
         )
-        var c_row = UInt32(c_coord[0] * UInt32(Self.BM))
-        var c_col = UInt32(c_coord[1] * UInt32(Self.MMA_N))
+        var c_row = c_coord[0] * UInt32(Self.BM)
+        var c_col = c_coord[1] * UInt32(Self.MMA_N)
 
         var upper_frag_casted: SIMD[Self.epilogue_dtype, Self.rep_frag_size]
         var lower_frag_casted: SIMD[Self.epilogue_dtype, Self.rep_frag_size]
@@ -327,7 +326,7 @@ struct TileWriter[
                     ),
                     c_smem_tile,
                 )
-                WarpGroupBarrier[Int(Self.num_output_warps) * WARP_SIZE].sync()
+                WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
             else:
                 var writer = SMemEpilogueWriter[
                     Self.epilogue_dtype,
@@ -336,7 +335,7 @@ struct TileWriter[
                     Self.MMA_M,
                     Self.MMA_N,
                     Self.cta_group,
-                    Int(Self.num_output_warps),
+                    Self.num_output_warps,
                     Self.c_swizzle,
                     Self.transpose_c,
                     Self.is_lower_frag_required,
@@ -377,4 +376,4 @@ struct TileWriter[
 
             @parameter
             if stage > 0 or stage == Self.num_stages - 1:
-                WarpGroupBarrier[Int(Self.num_output_warps) * WARP_SIZE].sync()
+                WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()

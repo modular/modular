@@ -32,15 +32,17 @@ from max.kv_cache import (
     PagedKVCacheManager,
     load_kv_manager,
 )
-from max.nn import ReturnLogits, Signals
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
     PagedCacheValues,
 )
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
+    AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
     KVCacheMixin,
@@ -190,7 +192,9 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
+class Gemma3_MultiModalModel(
+    AlwaysSignalBuffersMixin, PipelineModel[TextAndVisionContext], KVCacheMixin
+):
     """Gemma 3 multimodal pipeline model for text generation.
 
     This class integrates the Gemma 3 multimodal architecture with the MAX Engine pipeline
@@ -254,13 +258,8 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             return_logits,
         )
 
-        # Initialize empty signal buffers
-        self.signal_buffers = [
-            Buffer.zeros(
-                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
-            )
-            for dev in self.devices
-        ]
+        # signal_buffers are provided by AlwaysSignalBuffersMixin as a cached_property
+        # to avoid GPU memory allocation during compile-only mode (cross-compilation)
 
         self._stacker = _VisionStacker()
         self.vision_model, self.language_model = self.load_model(session)
@@ -284,7 +283,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for InternVL."""
-        return Gemma3ForConditionalGenerationConfig.get_kv_params(
+        return Gemma3ForConditionalGenerationConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
@@ -747,7 +746,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     ) -> list[PagedCacheValues]:
         """Receives KVCache inputs from the language graph, unflattens them, and
         returns in a list"""
-        kv_params = Gemma3ForConditionalGenerationConfig.get_kv_params(
+        kv_params = Gemma3ForConditionalGenerationConfig.construct_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],

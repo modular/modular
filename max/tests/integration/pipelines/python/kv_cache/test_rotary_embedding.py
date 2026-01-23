@@ -23,7 +23,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValueLike, ops
-from max.nn import (
+from max.nn.legacy import (
     DynamicRotaryEmbedding,
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
@@ -378,8 +378,12 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
     # These imports are deferred to avoid Mojo module import race conditions
     # when running with pytest-xdist parallel workers.
     from max.kv_cache import PagedKVCacheManager
-    from max.nn.kernels import fused_qk_ragged_rope
-    from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
+    from max.nn.legacy.kernels import fused_qk_ragged_rope
+    from max.nn.legacy.kv_cache import (
+        KVCacheParams,
+        KVCacheStrategy,
+        PagedCacheValues,
+    )
     from test_common.context_utils import create_text_context
 
     num_q_heads = 32

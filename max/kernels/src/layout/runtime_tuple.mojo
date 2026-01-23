@@ -735,7 +735,7 @@ fn to_index_list[
     """
     var res = IndexList[rank]()
     for i in range(rank):
-        res[i] = Int(tuple.value[i])
+        res[i] = tuple.value[i]
     return res
 
 

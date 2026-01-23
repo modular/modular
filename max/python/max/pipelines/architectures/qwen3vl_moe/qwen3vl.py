@@ -14,9 +14,7 @@
 
 from __future__ import annotations
 
-from max.nn import (
-    Module,
-)
+from max.nn.legacy.layer import Module
 
 from .model_config import Qwen3VLConfig
 from .nn.decoder import Qwen3VLMoEDecoder

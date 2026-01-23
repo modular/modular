@@ -26,13 +26,14 @@ def register_all_models() -> None:
     from .bert import bert_arch
     from .deepseekV2 import deepseekV2_arch
     from .deepseekV3 import deepseekV3_arch
-    from .deepseekV32 import deepseekV32_arch
+    from .deepseekV3_2 import deepseekV3_2_arch
+    from .deepseekV3_nextn import deepseekV3_nextn_arch
     from .eagle_llama3 import eagle_llama_arch
     from .exaone import exaone_arch
     from .gemma3 import gemma3_arch
     from .gemma3multimodal import gemma3_multimodal_arch
     from .gpt_oss import gpt_oss_arch
-    from .gpt_oss_module_v3 import gpt_oss_module_v3_arch
+    from .gpt_oss_legacy import gpt_oss_legacy_arch
     from .granite import granite_arch
     from .idefics3 import idefics3_arch
     from .internvl import internvl_arch
@@ -48,19 +49,21 @@ def register_all_models() -> None:
     from .qwen2 import qwen2_arch
     from .qwen2_5vl import qwen2_5_vl_arch
     from .qwen3 import qwen3_arch
+    from .qwen3_embedding import qwen3_embedding_arch
     from .qwen3vl_moe import qwen3vl_arch, qwen3vl_moe_arch
 
     architectures = [
         exaone_arch,
         deepseekV2_arch,
         deepseekV3_arch,
-        deepseekV32_arch,
+        deepseekV3_2_arch,
+        deepseekV3_nextn_arch,
         eagle_llama_arch,
         gemma3_arch,
         gemma3_multimodal_arch,
         granite_arch,
         gpt_oss_arch,
-        gpt_oss_module_v3_arch,
+        gpt_oss_legacy_arch,
         internvl_arch,
         idefics3_arch,
         llama_arch,
@@ -76,6 +79,7 @@ def register_all_models() -> None:
         qwen2_arch,
         qwen2_5_vl_arch,
         qwen3_arch,
+        qwen3_embedding_arch,
         qwen3vl_arch,
         qwen3vl_moe_arch,
     ]

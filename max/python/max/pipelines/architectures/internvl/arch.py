@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
@@ -21,7 +21,7 @@ from .model import InternVLModel
 from .tokenizer import InternVLTokenizer
 
 internvl_arch = SupportedArchitecture(
-    name="InternVLChatModel",
+    name="InternVLChatModel_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["OpenGVLab/InternVL3-8B-Instruct"],
     default_encoding=SupportedEncoding.bfloat16,

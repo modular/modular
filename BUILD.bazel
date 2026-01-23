@@ -1,4 +1,4 @@
-load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@mojo//:mojo.bzl", "ALL_MOJOPKGS")
 load("@mojo_gpu_toolchains//:gpus.bzl", "SUPPORTED_GPUS")
 load("//bazel:api.bzl", "mojo_binary", "requirement")
@@ -312,16 +312,6 @@ config_setting(
     constraint_values = ["@platforms//os:macos"],
     flag_values = {"//:modular_config": "ubsan"},
     tags = [ALLOW_UNUSED_TAG],
-)
-
-bool_flag(
-    name = "emit_mojo",
-    build_setting_default = False,
-)
-
-config_setting(
-    name = "emit_mojo_enabled",
-    flag_values = {":emit_mojo": "true"},
 )
 
 filegroup(

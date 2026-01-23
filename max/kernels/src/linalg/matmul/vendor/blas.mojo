@@ -28,7 +28,7 @@ from _cublas.cublas import (
     _convert_to_cublas_datatype,
     _convert_to_cublas_transpose,
     check_cublas_error,
-    cublasContext,
+    cublasHandle_t,
     cublasCreate,
     cublasDestroy,
     cublasGemmEx,
@@ -183,7 +183,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
     ImplicitlyCopyable
 ):
     comptime resolved_backend = _resolve_backend[Self.backend]()
-    comptime _cublas_type = UnsafePointer[cublasContext]
+    comptime _cublas_type = cublasHandle_t
     comptime _rocblas_type = _rocblas.Handle
     comptime _hipblaslt_type = hipblasLtHandle_t
     comptime type = Variant[
@@ -197,7 +197,9 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
         @parameter
         if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             var handle = Self._cublas_type()
-            check_cublas_error(cublasCreate(LegacyUnsafePointer(to=handle)))
+            check_cublas_error(
+                cublasCreate(LegacyUnsafePointer(to=handle).as_unsafe_pointer())
+            )
             self._handle = handle
         elif Self.resolved_backend is Backend.ROCBLAS:
             var handle = Self._rocblas_type()
@@ -587,7 +589,7 @@ fn _cublas_matmul[
     use_tf32: Bool = False,
 ](
     ctx: DeviceContext,
-    handle: UnsafePointer[cublasContext],
+    handle: cublasHandle_t,
     c: LayoutTensor[c_type, c_layout, _],
     a: LayoutTensor[a_type, a_layout, _],
     b: LayoutTensor[b_type, b_layout, _],
@@ -658,14 +660,18 @@ fn _cublas_matmul[
                 N,
                 M,
                 K,
-                LegacyUnsafePointer(to=alpha).bitcast[NoneType](),
+                LegacyUnsafePointer(to=alpha)
+                .bitcast[NoneType]()
+                .as_unsafe_pointer(),
                 UnsafePointer(b.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[b_type](),
                 K if transpose_b else N,
                 UnsafePointer(a.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[a_type](),
                 M if transpose_a else K,
-                LegacyUnsafePointer(to=beta).bitcast[NoneType](),
+                LegacyUnsafePointer(to=beta)
+                .bitcast[NoneType]()
+                .as_unsafe_pointer(),
                 UnsafePointer(c.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[c_type](),
                 N,
@@ -696,14 +702,18 @@ fn _cublas_matmul[
             M,
             N,
             K,
-            LegacyUnsafePointer(to=alpha).bitcast[NoneType](),
+            LegacyUnsafePointer(to=alpha)
+            .bitcast[NoneType]()
+            .as_unsafe_pointer(),
             UnsafePointer(a.ptr.bitcast[NoneType]()),
             _convert_to_cublas_datatype[a_type](),
             M,
             UnsafePointer(b.ptr.bitcast[NoneType]()),
             _convert_to_cublas_datatype[b_type](),
             N if transpose_b else K,
-            LegacyUnsafePointer(to=beta).bitcast[NoneType](),
+            LegacyUnsafePointer(to=beta)
+            .bitcast[NoneType]()
+            .as_unsafe_pointer(),
             UnsafePointer(c.ptr.bitcast[NoneType]()),
             _convert_to_cublas_datatype[c_type](),
             M,
@@ -1015,7 +1025,9 @@ fn _cublasLt_matmul[
                     " by 16/32 for MXFP8/NVFP4 input data type, respectively"
                 )
 
-            if a_scales_layout.rank() != 5 or b_scales_layout.rank() != 5:
+            if comptime (
+                a_scales_layout.rank() != 5 or b_scales_layout.rank() != 5
+            ):
                 raise Error(
                     "Invalid A/B scales dimensions. Expected 5D tensors."
                 )

@@ -63,7 +63,7 @@ from algorithm import (
     vectorize,
 )
 from buffer.buffer import (
-    # NDBuffer,
+    # LayoutTensor,
     partial_simd_load,
     partial_simd_store,
     prod_dims,
@@ -1266,14 +1266,14 @@ struct ConvDirectNHWC[
         # [right_pad_impact_start, WO)
         var left_pad_impact_end = ceildiv(
             self.conv_shape.pad_w[0],
-            self.conv_shape.stride[Self.input_layout.rank() - 3],
+            self.conv_shape.stride[comptime (Self.input_layout.rank() - 3)],
         )
         var right_pad_impact_start = (
             self.conv_shape.w()
             + self.conv_shape.pad_w[0]
             - self.conv_shape.s()
-            * self.conv_shape.dilation[Self.input_layout.rank() - 3]
-        ) // self.conv_shape.stride[Self.input_layout.rank() - 3] + 1
+            * self.conv_shape.dilation[comptime (Self.input_layout.rank() - 3)]
+        ) // self.conv_shape.stride[comptime (Self.input_layout.rank() - 3)] + 1
 
         @parameter
         if Self.input_layout.rank() == 3:

@@ -22,10 +22,7 @@ modular_py_test(
     env = {
         "GRAPH_EXECUTOR": "$(location :example)",
     },
-    mojo_deps = select({
-        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
-        "//conditions:default": [],
-    }),
+    mojo_deps = ["//max:MOGGKernelAPI"],
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"],
     deps = [

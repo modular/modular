@@ -35,11 +35,13 @@ class SpeculativeMethod(str, Enum):
 class SpeculativeConfig(ConfigFileModel):
     """Configuration for speculative decoding."""
 
-    speculative_method: SpeculativeMethod | None = Field(default=None)
-    """The speculative decoding method to use."""
+    speculative_method: SpeculativeMethod | None = Field(
+        default=None, description="The speculative decoding method to use."
+    )
 
-    num_speculative_tokens: int = Field(default=5)
-    """The number of speculative tokens."""
+    num_speculative_tokens: int = Field(
+        default=5, description="The number of speculative tokens."
+    )
 
     _config_file_section_name: str = "speculative_config"
     """The section name to use when loading this config from a MAXConfig file.
@@ -59,12 +61,4 @@ class SpeculativeConfig(ConfigFileModel):
         """Get the enum mapping for SpeculativeConfig."""
         return {
             "speculative_method": SpeculativeMethod,
-        }
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {
-            "speculative_method": "The speculative decoding method to use (standalone, eagle).",
-            "num_speculative_tokens": "The number of speculative tokens. Defaults to the number in the draft model config if present.",
-            "model": "The name of the draft model, eagle head, or additional weights.",
         }

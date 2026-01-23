@@ -221,6 +221,9 @@ comptime Float64 = Scalar[DType.float64]
 comptime Byte = UInt8
 """Represents a byte (backed by an 8-bit unsigned integer)."""
 
+comptime UInt = Scalar[DType.uint]
+"""Represents an unsigned integer of platform-dependent bit-width."""
+
 # ===----------------------------------------------------------------------=== #
 # Utilities
 # ===----------------------------------------------------------------------=== #
@@ -633,28 +636,6 @@ struct SIMD[dtype: DType, size: Int](
         ```
         """
         self = value.cast[Self.dtype]()
-
-    @always_inline("nodebug")
-    @implicit
-    fn __init__(out self, value: UInt, /):
-        """Initializes the SIMD vector with an unsigned integer.
-
-        The unsigned integer value is splatted across all the elements of the SIMD
-        vector.
-
-        Args:
-            value: The input value.
-        """
-        _simd_construction_checks[Self.dtype, Self.size]()
-
-        @parameter
-        if bit_width_of[Self.dtype]() > bit_width_of[DType.int]():
-            comptime dt = _unsigned_integral_type_of[DType.int]()
-            self = bitcast[dt](Scalar[DType.int](value.__int__())).cast[
-                Self.dtype
-            ]()
-        else:
-            self = Self(value.__int__())
 
     @always_inline("builtin")
     @implicit
@@ -1962,32 +1943,32 @@ struct SIMD[dtype: DType, size: Int](
         self.write_repr_to(output)
         return output^
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __floor__(self) -> Self:
         """Performs elementwise floor on the elements of a SIMD vector.
 
         Returns:
             The elementwise floor of this SIMD vector.
         """
-        return self._floor_ceil_trunc_impl["llvm.floor"]()
+        return Self(mlir_value=__mlir_op.`pop.floor`(self._mlir_value))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ceil__(self) -> Self:
         """Performs elementwise ceiling on the elements of a SIMD vector.
 
         Returns:
             The elementwise ceiling of this SIMD vector.
         """
-        return self._floor_ceil_trunc_impl["llvm.ceil"]()
+        return Self(mlir_value=__mlir_op.`pop.ceil`(self._mlir_value))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __trunc__(self) -> Self:
         """Performs elementwise truncation on the elements of a SIMD vector.
 
         Returns:
             The elementwise truncated values of this SIMD vector.
         """
-        return self._floor_ceil_trunc_impl["llvm.trunc"]()
+        return Self(mlir_value=__mlir_op.`pop.trunc`(self._mlir_value))
 
     @always_inline
     fn __abs__(self) -> Self:
@@ -2391,19 +2372,6 @@ struct SIMD[dtype: DType, size: Int](
             count=size_of[Self](),
         )
         return array^
-
-    fn _floor_ceil_trunc_impl[intrinsic: StaticString](self) -> Self:
-        __comptime_assert (
-            intrinsic == "llvm.floor"
-            or intrinsic == "llvm.ceil"
-            or intrinsic == "llvm.trunc"
-        ), "unsupported intrinsic"
-
-        @parameter
-        if Self.dtype.is_integral() or Self.dtype == DType.bool:
-            return self
-        else:
-            return llvm_intrinsic[intrinsic, Self, has_side_effect=False](self)
 
     fn clamp(self, lower_bound: Self, upper_bound: Self) -> Self:
         """Clamps the values in a SIMD vector to be in a certain range.

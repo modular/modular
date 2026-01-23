@@ -19,7 +19,9 @@ This module provides compile-time reflection capabilities including:
 - Type checking (`is_struct_type`)
 - Struct field reflection (`struct_field_count`, `struct_field_names`, `struct_field_types`)
 - Field lookup by name (`struct_field_index_by_name`, `struct_field_type_by_name`)
+- Field offset calculation (`offset_of`)
 - Source location introspection (`source_location`, `call_location`)
+- Base type reflection (`get_base_type_name`)
 
 Example:
 ```mojo
@@ -45,6 +47,8 @@ from .type_info import (
     get_linkage_name,
     get_function_name,
     get_type_name,
+    # Base type reflection (for parameterized types)
+    get_base_type_name,
 )
 from .struct_fields import (
     is_struct_type,
@@ -53,5 +57,6 @@ from .struct_fields import (
     struct_field_types,
     struct_field_index_by_name,
     struct_field_type_by_name,
+    offset_of,
     ReflectedType,
 )

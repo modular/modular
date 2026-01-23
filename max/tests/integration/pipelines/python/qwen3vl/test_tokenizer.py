@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 from typing import Any
 from unittest.mock import MagicMock, NonCallableMock
 
@@ -27,6 +28,7 @@ from max.interfaces import (
 )
 from max.pipelines.architectures.qwen3vl_moe.tokenizer import Qwen3VLTokenizer
 from max.pipelines.lib import KVCacheConfig
+from PIL import Image
 from transformers import AutoConfig, AutoProcessor
 
 
@@ -47,12 +49,12 @@ def _create_mock_pipeline_config(model_path: str) -> MagicMock:
     return pipeline_config
 
 
-def _build_messages(image_url: str) -> list[dict[str, Any]]:
+def _build_messages(image: Image.Image) -> list[dict[str, Any]]:
     return [
         {
             "role": "user",
             "content": [
-                {"type": "image", "image": image_url},
+                {"type": "image", "image": image},
                 {"type": "text", "text": "Describe this image."},
             ],
         }
@@ -60,14 +62,18 @@ def _build_messages(image_url: str) -> list[dict[str, Any]]:
 
 
 def test_qwen3vl_tokenizer() -> None:
-    image_url = "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg"
+    # Create synthetic test image (matching InternVL/Idefics3 pattern)
+    img_buffer = io.BytesIO()
+    test_pil_image = Image.new("RGB", (448, 448), color="red")
+    test_pil_image.save(img_buffer, format="PNG")
+    test_image_bytes = img_buffer.getvalue()
 
     # Transformers reference outputs
     hf_processor = AutoProcessor.from_pretrained(
         "Qwen/Qwen3-VL-30B-A3B-Instruct", trust_remote_code=True
     )
     hf_inputs = hf_processor.apply_chat_template(
-        _build_messages(image_url),
+        _build_messages(test_pil_image),
         tokenize=True,
         add_generation_prompt=True,
         return_dict=True,
@@ -89,17 +95,17 @@ def test_qwen3vl_tokenizer() -> None:
         trust_remote_code=True,
     )
 
-    # Build MAX request mirroring the HF messages
     request = TextGenerationRequest(
         messages=[
             TextGenerationRequestMessage(
                 role="user",
                 content=[
-                    {"type": "image", "image": image_url},
+                    {"type": "image"},
                     {"type": "text", "text": "Describe this image."},
                 ],
             )
         ],
+        images=[test_image_bytes],
         request_id=RequestID("test-id"),
         model_name=model_path,
     )

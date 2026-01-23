@@ -20,7 +20,7 @@ from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,

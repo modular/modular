@@ -94,10 +94,10 @@ struct Bool(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    comptime MIN = Bool(False)
+    comptime MIN: Bool = False
     """The minimum value of a Bool."""
 
-    comptime MAX = Bool(True)
+    comptime MAX: Bool = True
     """The maximum value of a Bool."""
 
     # ===-------------------------------------------------------------------===#
