@@ -308,7 +308,9 @@ class Module(Generic[_P, _R]):
                 )
             )
 
-    def load_state(self, lookup: Callable[[str], DLPackArray]):  # noqa: ANN201
+    def load_state(  # noqa: ANN201
+        self, lookup: Callable[[str, Tensor], DLPackArray]
+    ):
         """Replaces each parameter in the module and its descendants.
 
         The transformation is applied in-place, updating the module's values
@@ -328,7 +330,7 @@ class Module(Generic[_P, _R]):
                 "weight": Tensor.zeros([3, 2]),
                 "bias": Tensor.zeros([3]),
             }
-            model.load_state(weights.__getitem__)
+            model.load_state(lambda name, _: weights[name])
 
         The lookup is defined as a function rather than a dictionary, allowing
         for functional remapping of names during this process to account
@@ -344,14 +346,15 @@ class Module(Generic[_P, _R]):
         Args:
             lookup: The lookup function for each parameter:
 
-                - The argument to the lookup function is the qualified name
-                  of the parameter with respect to the module on which
-                  ``load_state()`` was called.
+                - The first argument is the qualified name of the parameter
+                  with respect to the module on which ``load_state()`` was
+                  called.
+                - The second argument is the existing tensor value.
                 - The return value of this function is the new value that will
                   replace the value at that name in the module tree.
         """
         return self.apply_to_parameters(
-            lambda name, _: Tensor.from_dlpack(lookup(name))
+            lambda name, existing: Tensor.from_dlpack(lookup(name, existing))
         )
 
     def load_state_dict(
@@ -392,12 +395,17 @@ class Module(Generic[_P, _R]):
                 "weight": Tensor.zeros([10, 5]),
                 "bias": Tensor.zeros([10]),
             }
-            model.load_state(weights.__getitem__)
+            model.load_state(lambda name, _: weights[name])
 
         Args:
             state: Dictionary mapping qualified parameter names to tensor values.
                 Keys should match the names from :attr:`Module.parameters` property.
                 Values should be DLPack-compatible arrays or :obj:`Tensor` objects.
+                Their shapes and dtypes must match the existing parameters with the
+                corresponding name, but they may be on a different device. In the
+                case that the new value has a different device, it will be copied to
+                the same device as the existing value, and the parameter will be set
+                to the new copy.
             strict: If :obj:`True` (default), verify that all keys in ``state``
                 are used (i.e., match actual parameters). If :obj:`False`, silently
                 ignore extra keys that don't match any parameters.
@@ -406,20 +414,30 @@ class Module(Generic[_P, _R]):
             ValueError: If ``strict=True`` and some weights in ``state`` don't
                 match any model parameters (indicates architecture mismatch or
                 incorrect weight names).
+            ValueError: If a loaded tensor has a different dtype or shape than
+                the existing parameter.
             KeyError: If a required parameter name in the model is missing from
                 ``state`` (regardless of ``strict`` setting).
         """
         loaded = set()
 
-        def lookup(name: str) -> DLPackArray:
+        def lookup(name: str, existing: Tensor) -> DLPackArray:
             loaded.add(name)
-            return state[name]
+            value = Tensor.from_dlpack(state[name])
+
+            if value.shape != existing.shape or value.dtype != existing.dtype:
+                raise ValueError(
+                    f"{name!r}: Loaded tensor {value.type} not assignable to "
+                    f"parameter {existing.type}."
+                )
+
+            return value
 
         self.load_state(lookup)
 
         if strict and (unloaded := state.keys() - loaded):
             raise ValueError(
-                f"load_state_dict did not read some weights: {unloaded}"
+                f"load_state_dict did not use some weights: {unloaded}"
             )
 
     def map_parameters(self, f: Callable[[str, Tensor], Tensor]) -> Self:

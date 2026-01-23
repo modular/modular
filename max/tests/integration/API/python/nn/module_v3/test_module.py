@@ -21,6 +21,7 @@ import pytest
 from max import driver, random
 from max import functional as F
 from max.driver import CPU, Accelerator, accelerator_count
+from max.dtype import DType
 from max.nn.module import Module, module_dataclass
 from max.tensor import Tensor, TensorType, defaults
 
@@ -222,7 +223,7 @@ def test_load_state_simple_dict(test_module: TestModule) -> None:
         "a": Tensor.constant(5),
         "sub.b": Tensor.constant(6),
     }
-    test_module.load_state(weights.__getitem__)
+    test_module.load_state(lambda name, _: weights[name])
     assert test_module.a.item() == 5
     assert test_module.sub.b.item() == 6
 
@@ -231,7 +232,7 @@ def test_load_state_simple_dict_lookup_failure(test_module: TestModule) -> None:
     weights: dict[str, Tensor] = {}
     # No guarantee on the resulting state here!
     with pytest.raises(KeyError):
-        test_module.load_state(weights.__getitem__)
+        test_module.load_state(lambda name, _: weights[name])
 
 
 def test_load_state_name_remapping(test_module: TestModule) -> None:
@@ -244,7 +245,7 @@ def test_load_state_name_remapping(test_module: TestModule) -> None:
         "feed_forward.b": Tensor.constant(6),
     }
 
-    test_module.load_state(lambda name: weights[remap_name(name)])
+    test_module.load_state(lambda name, _: weights[remap_name(name)])
     assert test_module.a.item() == 5
     assert test_module.sub.b.item() == 6
 
@@ -278,6 +279,87 @@ def test_load_state_dict_nonstrict(test_module: TestModule) -> None:
     test_module.load_state_dict(weights, strict=False)
     assert test_module.a.item() == 5
     assert test_module.sub.b.item() == 6
+
+
+def test_load_state_dict_dtype_mismatch() -> None:
+    """Test that load_state_dict raises ValueError for dtype mismatch."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    # Create module with float32 weight
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+
+    # Try to load int32 weights - should fail
+    weights = {"weight": Tensor.zeros([3, 3], dtype=DType.int32)}
+
+    with pytest.raises(ValueError, match="not assignable"):
+        module.load_state_dict(weights)
+
+
+def test_load_state_dict_shape_mismatch() -> None:
+    """Test that load_state_dict raises ValueError for shape mismatch."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    # Create module with [3, 3] weight
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+
+    # Try to load [4, 4] weights - should fail
+    weights = {"weight": Tensor.zeros([4, 4], dtype=DType.float32)}
+
+    with pytest.raises(ValueError, match="not assignable"):
+        module.load_state_dict(weights)
+
+
+def test_load_state_dict_dtype_and_shape_mismatch() -> None:
+    """Test that load_state_dict raises ValueError when both dtype and shape mismatch."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    # Create module with float32 [3, 3] weight
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+
+    # Try to load int32 [4, 4] weights - should fail
+    weights = {"weight": Tensor.zeros([4, 4], dtype=DType.int32)}
+
+    with pytest.raises(ValueError, match="not assignable"):
+        module.load_state_dict(weights)
+
+
+def test_load_state_dict_valid_types() -> None:
+    """Test that load_state_dict succeeds when dtype and shape match."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    # Create module with float32 [3, 3] weight initialized to zeros
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+
+    # Load matching weights with ones - should succeed
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.float32)}
+    module.load_state_dict(weights)
+
+    # Verify the weights were loaded (first element should be 1.0, not 0.0)
+    assert module.weight[0, 0].item() == 1.0
 
 
 @pytest.mark.skipif(not accelerator_count(), reason="requires multiple devices")
