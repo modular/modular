@@ -494,7 +494,7 @@ kgen.generator export @main() -> !pop.scalar<uindex> {
 
 // COM: pop.rem with uindex on 32 bit
 
-module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
 kgen.generator @uindex_rem_32(%arg0: !pop.scalar<uindex>, %arg1: !pop.scalar<uindex>) -> !pop.scalar<uindex> {
   %0 = pop.rem %arg0, %arg1 : !pop.scalar<uindex>
   kgen.return %0 : !pop.scalar<uindex>
@@ -507,5 +507,45 @@ kgen.generator export @main() -> !pop.scalar<uindex> {
   %0 = kgen.param.constant: !pop.scalar<uindex> = <value>
   // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<uindex>
   kgen.return %0 : !pop.scalar<uindex>
+}
+}
+
+// -----
+
+// COM: pop.cmp with index on 32-bit
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+kgen.generator @pop_cmp_lt_32(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<index>) -> !pop.scalar<bool> {
+  %0 = pop.cmp lt(%arg0, %arg1) : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<bool>
+}
+
+// CHECK-LABEL: kgen.func export @main
+kgen.generator export @main() -> !pop.scalar<bool> {
+  kgen.param.declare value : !pop.scalar<bool> = <apply(:(!pop.scalar<index>, !pop.scalar<index>) -> !pop.scalar<bool> @pop_cmp_lt_32, 3000000000, 0)>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <true>
+  %0 = kgen.param.constant: !pop.scalar<bool> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<bool>
+  kgen.return %0 : !pop.scalar<bool>
+}
+}
+
+// -----
+
+// COM: pop.cmp with index on 64-bit
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
+kgen.generator @pop_cmp_lt_64(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<index>) -> !pop.scalar<bool> {
+  %0 = pop.cmp lt(%arg0, %arg1) : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<bool>
+}
+
+// CHECK-LABEL: kgen.func export @main
+kgen.generator export @main() -> !pop.scalar<bool> {
+  kgen.param.declare value : !pop.scalar<bool> = <apply(:(!pop.scalar<index>, !pop.scalar<index>) -> !pop.scalar<bool> @pop_cmp_lt_64, 3000000000, 0)>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <false>
+  %0 = kgen.param.constant: !pop.scalar<bool> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<bool>
+  kgen.return %0 : !pop.scalar<bool>
 }
 }
