@@ -13,7 +13,18 @@
 
 """Scheduler factory for creating schedulers from diffusers configuration."""
 
+import importlib
 from typing import Any
+
+
+# Registry mapping scheduler class names to (module_path, class_name) tuples.
+# Module paths are relative to this package.
+_SCHEDULER_REGISTRY: dict[str, tuple[str, str]] = {
+    "FlowMatchEulerDiscreteScheduler": (
+        ".scheduling_flow_match_euler_discrete",
+        "FlowMatchEulerDiscreteScheduler",
+    ),
+}
 
 
 class SchedulerFactory:
@@ -35,8 +46,14 @@ class SchedulerFactory:
         Raises:
             ValueError: If the scheduler class is not supported.
         """
-        if class_name == "FlowMatchEulerDiscreteScheduler":
-            from .scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
-            return FlowMatchEulerDiscreteScheduler(config_dict)
-        else:
-            raise ValueError(f"Unsupported scheduler class: {class_name}")
+        if class_name not in _SCHEDULER_REGISTRY:
+            supported = ", ".join(sorted(_SCHEDULER_REGISTRY.keys()))
+            raise ValueError(
+                f"Unsupported scheduler class: {class_name}. "
+                f"Supported schedulers: {supported}"
+            )
+
+        module_path, cls_name = _SCHEDULER_REGISTRY[class_name]
+        module = importlib.import_module(module_path, package=__package__)
+        scheduler_cls = getattr(module, cls_name)
+        return scheduler_cls(config_dict)
