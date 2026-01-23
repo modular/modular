@@ -24,17 +24,17 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
+from max.driver import CPU, Device
 from max.interfaces import (
     ImageMetadata,
     PipelineTokenizer,
+    PixelGenerationRequest,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    PixelGenerationRequest,
-    TokenBuffer
+    TokenBuffer,
 )
-from max.driver import CPU, Device
-from max.pipelines.core import TextAndVisionContext, TextContext, PixelContext
+from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import (
@@ -50,7 +50,6 @@ from transformers import (
 from typing_extensions import ParamSpec
 
 from .diffusion_schedulers import SchedulerFactory
-
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
@@ -903,7 +902,9 @@ class PixelGenerationTokenizer(
                     model_max_length=max_length_2,
                     subfolder=subfolder_2,
                 )
-                self.max_length_2 = max_length_2 or self.delegate_2.model_max_length
+                self.max_length_2 = (
+                    max_length_2 or self.delegate_2.model_max_length
+                )
         except Exception as e:
             raise ValueError(
                 f"Failed to load tokenizer from {model_path}. "
@@ -992,21 +993,31 @@ class PixelGenerationTokenizer(
             second element is the number of inference steps.
         """
         if timesteps is not None and sigmas is not None:
-            raise ValueError("Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values")
+            raise ValueError(
+                "Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values"
+            )
         if timesteps is not None:
             import inspect
-            accepts_timesteps = "timesteps" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
+
+            accepts_timesteps = "timesteps" in set(
+                inspect.signature(scheduler.set_timesteps).parameters.keys()
+            )
             if not accepts_timesteps:
                 raise ValueError(
                     f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
                     f" timestep schedules. Please check whether you are using the correct scheduler."
                 )
-            scheduler.set_timesteps(timesteps=timesteps, device=device, **kwargs)
+            scheduler.set_timesteps(
+                timesteps=timesteps, device=device, **kwargs
+            )
             timesteps = scheduler.timesteps
             num_inference_steps = len(timesteps)
         elif sigmas is not None:
             import inspect
-            accept_sigmas = "sigmas" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
+
+            accept_sigmas = "sigmas" in set(
+                inspect.signature(scheduler.set_timesteps).parameters.keys()
+            )
             if not accept_sigmas:
                 raise ValueError(
                     f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
@@ -1016,7 +1027,9 @@ class PixelGenerationTokenizer(
             timesteps = scheduler.timesteps
             num_inference_steps = len(timesteps)
         else:
-            scheduler.set_timesteps(num_inference_steps, device=device, **kwargs)
+            scheduler.set_timesteps(
+                num_inference_steps, device=device, **kwargs
+            )
             timesteps = scheduler.timesteps
         return timesteps, scheduler.sigmas, num_inference_steps
 
@@ -1118,7 +1131,12 @@ class PixelGenerationTokenizer(
                     use_secondary=True,
                 )
 
-        return primary_tokens, secondary_tokens, negative_tokens, negative_tokens_2
+        return (
+            primary_tokens,
+            secondary_tokens,
+            negative_tokens,
+            negative_tokens_2,
+        )
 
     def apply_chat_template(
         self,
@@ -1248,15 +1266,18 @@ class PixelGenerationTokenizer(
                 chat_template_options = self._default_chat_template_options
 
         # 1. Tokenize prompts
-        token_ids, token_ids_2, negative_token_ids, negative_token_ids_2 = (
-            await self._generate_tokens_ids(
-                prompt,
-                prompt_2,
-                negative_prompt,
-                negative_prompt_2,
-                messages,
-                chat_template_options,
-            )
+        (
+            token_ids,
+            token_ids_2,
+            negative_token_ids,
+            negative_token_ids_2,
+        ) = await self._generate_tokens_ids(
+            prompt,
+            prompt_2,
+            negative_prompt,
+            negative_prompt_2,
+            messages,
+            chat_template_options,
         )
         token_buffer = TokenBuffer(
             array=token_ids.astype(np.int64, copy=False),

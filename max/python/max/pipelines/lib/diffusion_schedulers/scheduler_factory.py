@@ -16,7 +16,6 @@
 import importlib
 from typing import Any
 
-
 # Registry mapping scheduler class names to (module_path, class_name) tuples.
 # Module paths are relative to this package.
 _SCHEDULER_REGISTRY: dict[str, tuple[str, str]] = {
