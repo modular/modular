@@ -14,11 +14,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from max import Tensor
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    TensorValue,
-)
+from max.graph import DeviceRef
 from max.nn import (
     LayerNorm,
     Module,
@@ -72,8 +70,8 @@ class Gemma3VisionEncoderLayer(Module):
 
     def __call__(
         self,
-        hidden_states: TensorValue,
-    ) -> TensorValue:
+        hidden_states: Tensor,
+    ) -> Tensor:
         """process the input hidden states through each of the sub-layers"""
         residual = hidden_states
         hidden_states = self.layer_norm1(hidden_states)
@@ -108,8 +106,8 @@ class Gemma3VisionEncoder(Module):
 
     def __call__(
         self,
-        hidden_states: TensorValue | Sequence[TensorValue],
-    ) -> TensorValue | Sequence[TensorValue]:
+        hidden_states: Tensor | Sequence[Tensor],
+    ) -> Tensor | Sequence[Tensor]:
         """Process hidden states through the stack of encoder layers"""
         # for layer in self.layers:
         #     hidden_states = layer(hidden_states)

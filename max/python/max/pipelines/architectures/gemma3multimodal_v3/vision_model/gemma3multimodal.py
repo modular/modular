@@ -18,14 +18,9 @@ import logging
 from collections.abc import Sequence
 
 from attention import Gemma3Attention
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.graph import (
-    DeviceRef,
-    ShardingStrategy,
-    TensorValue,
-    Weight,
-)
+from max.graph import DeviceRef
 from max.nn import (
     MLP,
     LayerList,
@@ -41,6 +36,7 @@ from max.nn.rotary_embedding import (
 from max.pipelines.architectures.internvl.embedding_utils import (
     merge_multimodal_embeddings,
 )
+from max.tensor import Tensor
 from rms_norm import Gemma3RMSNorm
 from transformer_block import Gemma3TransformerBlock
 
@@ -102,10 +98,6 @@ class Gemma3LanguageModel(Module):
             DType.bfloat16,
             text_config.rms_norm_eps,
         )
-        self.norm.sharding_strategy = ShardingStrategy.replicate(
-            len(config.devices)
-        )
-        self.norm_shards = self.norm.shard(config.devices)
 
         self.lm_head = Linear(
             text_config.hidden_size,
@@ -167,26 +159,21 @@ class Gemma3LanguageModel(Module):
 
     def __call__(
         self,
-        tokens: TensorValue,
-        return_n_logits: TensorValue,
-        input_row_offsets: Sequence[TensorValue],
-        image_embeddings: Sequence[TensorValue],
-        image_token_indices: Sequence[TensorValue],
+        tokens: Tensor,
+        return_n_logits: Tensor,
+        input_row_offsets: Tensor,
+        image_embeddings: Tensor,
+        image_token_indices: Tensor,
         kv_collections: Sequence[PagedCacheValues],
-    ) -> tuple[TensorValue, ...]:
+    ) -> tuple[Tensor, ...]:
         h = self.embed_tokens(tokens)
 
         # Replace image placeholder tokens with vision embeddings
-        h = [
-            merge_multimodal_embeddings(
-                inputs_embeds=h_device,
-                multimodal_embeddings=img_embed,
-                image_token_indices=img_tok_indices,
-            )
-            for h_device, img_embed, img_tok_indices in zip(
-                h, image_embeddings, image_token_indices, strict=True
-            )
-        ]
+        h = merge_multimodal_embeddings(
+            inputs_embeds=h,
+            multimodal_embeddings=image_embeddings,
+            image_token_indices=image_token_indices,
+        )
 
         # Run through transformer layers
         for idx, layer in enumerate(self.layers):
@@ -200,21 +187,10 @@ class Gemma3LanguageModel(Module):
                 input_row_offsets=input_row_offsets,
             )
 
-        last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
-        last_token_h = []
-        if h:
-            last_token_h = [
-                F.gather(h_device, indices, axis=0)
-                for h_device, indices in zip(h, last_token_indices, strict=True)
-            ]
+        last_token_indices = input_row_offsets[1:] - 1
+        last_token_h = F.gather(h, last_token_indices, axis=0)
         last_logits = F.cast(
-            # Take only the device 0 logits to device-to-host transfer.
-            self.lm_head(
-                [
-                    self.norm_shards[i](last_token_h[i])
-                    for i in range(len(last_token_h))
-                ],
-            )[0],
+            self.lm_head(self.norm(last_token_h)),
             DType.float32,
         )
 
@@ -231,25 +207,17 @@ class Gemma3LanguageModel(Module):
                 dtype=DType.int64,
                 device=self.devices[0],
             )
-            last_indices = [
-                F.reshape(
-                    F.unsqueeze(row_offset[1:], -1) - return_range,
-                    shape=(-1,),
-                )
-                for row_offset in input_row_offsets
-            ]
+            last_indices = F.reshape(
+                F.unsqueeze(input_row_offsets[1:], -1) - return_range,
+                shape=(-1,),
+            )
 
             # Gather, normalize, and get logits
-            variable_tokens = [
-                self.norm_shards[i](F.gather(h_device, indices, axis=0))
-                for i, (h_device, indices) in enumerate(
-                    zip(h, last_indices, strict=True)
-                )
-            ]
-            logits = F.cast(self.lm_head(variable_tokens)[0], DType.float32)
+            variable_tokens = self.norm(F.gather(h, last_indices, axis=0))
+            logits = F.cast(self.lm_head(variable_tokens), DType.float32)
             offsets = F.arange(
                 0,
-                last_indices[0].shape[0] + return_n_logits[0],
+                last_indices.shape[0] + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
                 dtype=DType.int64,
@@ -258,11 +226,9 @@ class Gemma3LanguageModel(Module):
 
         elif self.return_logits == ReturnLogits.ALL and h:
             # Apply normalization to all hidden states and get all logits
-            all_normalized = [
-                self.norm_shards[i](h_device) for i, h_device in enumerate(h)
-            ]
-            logits = F.cast(self.lm_head(all_normalized)[0], DType.float32)
-            offsets = input_row_offsets[0]
+            all_normalized = self.norm(h)
+            logits = F.cast(self.lm_head(all_normalized), DType.float32)
+            offsets = input_row_offsets
 
         if offsets is not None:
             assert logits is not None
@@ -289,10 +255,6 @@ class Gemma3VisionModel(Module):
         self.embeddings = Gemma3VisionEmbeddings(
             config, device=config.devices[0]
         )
-        self.embeddings.sharding_strategy = ShardingStrategy.replicate(
-            len(config.devices)
-        )
-        self.embeddings_list = self.embeddings.shard(config.devices)
 
         # Vision encoder (27 transformer layers)
         self.encoder = Gemma3VisionEncoder(config)
@@ -304,87 +266,25 @@ class Gemma3VisionModel(Module):
             devices=[device],
             dtype=vision_dtype,
         )
-        self.post_layernorm.weight.sharding_strategy = (
-            ShardingStrategy.replicate(len(config.devices))
-        )
-        if self.post_layernorm.bias is not None:
-            self.post_layernorm.bias.sharding_strategy = (
-                ShardingStrategy.replicate(len(config.devices))
-            )
-
-        # Shard post_layernorm across devices
-        post_layernorm_weight_shards = self.post_layernorm.weight.shard(
-            config.devices
-        )
-        post_layernorm_bias_shards: list[Weight | None] = (
-            list(self.post_layernorm.bias.shard(config.devices))
-            if self.post_layernorm.bias is not None
-            else [None] * len(config.devices)
-        )
-
-        self.post_layernorm_list = []
-        for device, weight_shard, bias_shard in zip(
-            config.devices,
-            post_layernorm_weight_shards,
-            post_layernorm_bias_shards,
-            strict=True,
-        ):
-            ln = LayerNorm(
-                vision_config.hidden_size,
-                eps=vision_config.layer_norm_eps,
-                devices=[device],
-                dtype=vision_dtype,
-            )
-            ln.weight = weight_shard
-            if bias_shard is not None:
-                ln.bias = bias_shard
-            self.post_layernorm_list.append(ln)
 
         # Multimodal projector to project vision embeddings to language space
         self.projector = Gemma3MultiModalProjector(
             config, device=config.devices[0]
         )
-        self.projector.sharding_strategy = ShardingStrategy.replicate(
-            len(config.devices)
-        )
-        self.projector_list = self.projector.shard(config.devices)
 
     def __call__(
         self,
-        pixel_values: Sequence[TensorValue],
-    ) -> Sequence[TensorValue]:
+        pixel_values: Tensor,
+    ) -> Tensor:
         """Processes vision inputs through the Gemma3 vision tower and produces a
         sequence of image embeddings"""
-        hidden_states: TensorValue | Sequence[TensorValue] = [
-            embed(pixels)
-            for embed, pixels in zip(
-                self.embeddings_list, pixel_values, strict=True
-            )
-        ]
+        hidden_states: Tensor | Sequence[Tensor] = self.embeddings(pixel_values)
 
         # Pass through encoder layers
         hidden_states = self.encoder(hidden_states)
 
         # Apply post-encoder layer norm
-        if isinstance(hidden_states, Sequence):
-            hidden_states = [
-                layer(states)
-                for layer, states in zip(
-                    self.post_layernorm_list, hidden_states, strict=True
-                )
-            ]
-        else:
-            hidden_states = self.post_layernorm_list[0](hidden_states)
+        hidden_states = self.post_layernorm(hidden_states)
 
-        # Project to language model hidden size
-        if isinstance(hidden_states, Sequence):
-            image_embeddings_list = [
-                projector(states)
-                for projector, states in zip(
-                    self.projector_list, hidden_states, strict=True
-                )
-            ]
-        else:
-            image_embeddings_list = [self.projector_list[0](hidden_states)]
-
-        return image_embeddings_list
+        # Project image embeddings to language model hidden size and return
+        return self.projector(hidden_states)
