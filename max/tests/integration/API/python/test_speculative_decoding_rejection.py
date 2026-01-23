@@ -309,8 +309,8 @@ def test_speculative_decoding_multiple_token_without_rejection(
     context1_len = len(context1.tokens)
     context2_len = len(context2.tokens)
     for _ in range(5):
-        inputs = TextGenerationInputs(
-            batches=[pipeline_request], num_steps=num_steps
+        inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+            batches=[list(pipeline_request.values())], num_steps=num_steps
         )
         pipeline.execute(inputs)
 

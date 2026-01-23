@@ -115,12 +115,14 @@ class NullKVCacheManager:
         self._request_to_replica_idx[data.request_id] = 0
 
     def get_runtime_inputs(
-        self, batch: Sequence[TextGenerationContext], num_steps: int = 1
+        self,
+        batches: Sequence[Sequence[TextGenerationContext]],
+        num_steps: int = 1,
     ) -> list[RaggedKVCacheInputs]:
         """Fetch KV cache blocks (returns dummy tensors).
 
         Args:
-            batch: Batch of contexts
+            batches: Per-replica batches of contexts
             num_steps: Number of steps to fetch
 
         Returns:
@@ -130,6 +132,7 @@ class NullKVCacheManager:
             Tensors are kept on host since this is only used in compile-only mode
             with virtual devices that don't support device operations.
         """
+        batch = [ctx for replica_batch in batches for ctx in replica_batch]
         # Create dummy tensors for compilation (kept on host for virtual devices)
         dummy_blocks = Buffer.from_numpy(np.zeros((1,), dtype=np.int32))
         dummy_cache_lengths = Buffer.from_numpy(

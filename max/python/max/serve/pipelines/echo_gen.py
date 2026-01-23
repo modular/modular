@@ -159,7 +159,8 @@ class EchoTokenGenerator(
     ) -> dict[RequestID, TextGenerationOutput]:
         responses = {}
 
-        for request_id, context in inputs.batch.items():
+        for context in inputs.flat_batch:
+            request_id = context.request_id
             if request_id not in responses:
                 responses[request_id] = TextGenerationOutput(
                     request_id=request_id,

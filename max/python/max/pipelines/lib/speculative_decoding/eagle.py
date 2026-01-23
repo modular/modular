@@ -239,7 +239,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         for ctx in batch:
             model.kv_manager.alloc(ctx, num_steps=num_steps)
-        kv_cache_inputs = model.kv_manager.get_runtime_inputs(batch, num_steps)
+        kv_cache_inputs = model.kv_manager.get_runtime_inputs(
+            [batch], num_steps
+        )
 
         for i, context in enumerate(batch):
             if needs_ce:
@@ -298,7 +300,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         """
         for ctx in batch:
             model.kv_manager.alloc(ctx, num_steps=num_steps)
-        kv_cache_inputs = model.kv_manager.get_runtime_inputs(batch, num_steps)
+        kv_cache_inputs = model.kv_manager.get_runtime_inputs(
+            [batch], num_steps
+        )
 
         # Running 1 step of the target model to get initial token and hidden states for EAGLE
         inputs = model.prepare_initial_token_inputs(
@@ -339,7 +343,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         """
         for ctx in batch:
             model.kv_manager.alloc(ctx, num_steps=num_steps)
-        kv_cache_inputs = model.kv_manager.get_runtime_inputs(batch, num_steps)
+        kv_cache_inputs = model.kv_manager.get_runtime_inputs(
+            [batch], num_steps
+        )
 
         kv_cache_updated_inputs: KVCacheInputs
         if isinstance(kv_cache_inputs, Sequence):
@@ -656,7 +662,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     def _target_extend(
         self, inputs: TextGenerationInputs[TextContext]
     ) -> tuple[ModelOutputs, Buffer]:
-        context_batch = list(inputs.batch.values())
+        context_batch = inputs.flat_batch
         target_inputs, _ = self.prepare_batch(
             self._target_model,
             context_batch,
@@ -706,7 +712,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         3. Verify draft tokens with target model
         4. Update contexts and build response
         """
-        context_batch = list(inputs.batch.values())
+        context_batch = inputs.flat_batch
 
         needs_ce = context_batch[0].tokens.generated_length == 0
         if needs_ce:

@@ -36,7 +36,6 @@ from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.interfaces import (
     LoRAStatus,
     LoRAType,
-    RequestID,
     TextGenerationContextType,
 )
 from max.interfaces.pipeline import (
@@ -1276,26 +1275,21 @@ class LoRAManager:
                 )
 
     def sort_lora_batch(
-        self, context_batch: dict[RequestID, TextGenerationContextType]
-    ) -> dict[RequestID, TextGenerationContextType]:
+        self, context_batch: list[TextGenerationContextType]
+    ) -> list[TextGenerationContextType]:
         """
         Sorts the LoRA batch by LRU cache id.
 
         Args:
-            batch: The context batch to sort
+            context_batch: The context batch to sort
         """
-        batch_by_model_ids = {
-            req_id: ctx
-            for req_id, ctx in sorted(
-                context_batch.items(),
-                key=lambda item: self._model_name_to_id(
-                    getattr(item[1], "model_name", None)
-                ),
-                reverse=True,
-            )
-        }
-
-        return batch_by_model_ids
+        return sorted(
+            context_batch,
+            key=lambda item: self._model_name_to_id(
+                getattr(item, "model_name", None)
+            ),
+            reverse=True,
+        )
 
     def is_lora(self, name: str) -> bool:
         """Checks to see if name is a lora"""

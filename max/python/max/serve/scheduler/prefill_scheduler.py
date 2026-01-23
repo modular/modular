@@ -282,7 +282,7 @@ class PrefillScheduler(Scheduler):
         batch_creation_time_s = t1 - t0
 
         # If the batch is empty, skip
-        if len(inputs.batch) == 0:
+        if len(inputs.flat_batch) == 0:
             return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch

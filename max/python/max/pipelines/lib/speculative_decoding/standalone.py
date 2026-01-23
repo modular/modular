@@ -67,7 +67,9 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         for ctx in batch:
             model.kv_manager.alloc(ctx, num_steps=num_steps)
-        kv_cache_inputs = model.kv_manager.get_runtime_inputs(batch, num_steps)
+        kv_cache_inputs = model.kv_manager.get_runtime_inputs(
+            [batch], num_steps
+        )
         if is_draft:
             return (
                 model.prepare_initial_token_inputs(
@@ -260,7 +262,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             raise ValueError(
                 "Standalone speculative decoding does not support data parallelism"
             )
-        context_batch = list(inputs.batch.values())
+        context_batch = inputs.flat_batch
 
         draft_inputs, draft_num_steps = self.prepare_batch(
             self._draft_model,

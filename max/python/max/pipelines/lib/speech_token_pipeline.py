@@ -81,7 +81,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
 
         # Prepare the batch.
         model_inputs, num_steps, bitmask, context_batch = self.prepare_batch(
-            [batch], num_steps
+            [list(batch.values())], num_steps
         )
 
         # Multistep execution loop.

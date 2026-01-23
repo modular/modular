@@ -313,7 +313,7 @@ class TextGenerationPipeline(
     @traced
     def prepare_batch(
         self,
-        batches: list[dict[RequestID, TextGenerationContextType]],
+        batches: list[list[TextGenerationContextType]],
         num_steps: int,
     ) -> tuple[
         Any,
@@ -328,7 +328,7 @@ class TextGenerationPipeline(
         per context, and builds initial model inputs.
 
         Args:
-            batches: Per-replica mapping of ``RequestID`` to context.
+            batches: Per-replica list of contexts.
             num_steps: Desired number of steps to run.
 
         Returns:
@@ -342,11 +342,10 @@ class TextGenerationPipeline(
         replica_ids: list[int] = [
             replica_idx
             for replica_idx, batch in enumerate(batches)
-            for _ in batch.values()
+            for _ in batch
         ]
         replica_batches: list[list[TextGenerationContextType]] = [
-            [ctx for ctx in self._maybe_sort_loras(batch).values()]
-            for batch in batches
+            self._maybe_sort_loras(batch) for batch in batches
         ]
         flat_batch = flatten2d(replica_batches)
 
@@ -382,7 +381,7 @@ class TextGenerationPipeline(
 
         # Retrieve the KV Cache Inputs.
         kv_cache_inputs = self._pipeline_model.kv_manager.get_runtime_inputs(
-            flat_batch, num_steps
+            replica_batches, num_steps
         )
 
         # Log batch details
@@ -403,8 +402,8 @@ class TextGenerationPipeline(
 
     @traced
     def _maybe_sort_loras(
-        self, batch: dict[RequestID, TextGenerationContextType]
-    ) -> dict[RequestID, TextGenerationContextType]:
+        self, batch: list[TextGenerationContextType]
+    ) -> list[TextGenerationContextType]:
         """
         Maybe sorts the batch by LoRA Ids. Requests that use the same LoRA need
         to be adjacent to each other.

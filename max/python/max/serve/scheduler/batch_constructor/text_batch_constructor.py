@@ -461,7 +461,7 @@ class TextBatchConstructor:
             replica.tg_reqs[ctx.request_id] = ctx
 
     def advance_requests_and_collect_invalid_ids(
-        self, executed_batches: list[dict[RequestID, TextContext]]
+        self, executed_batches: list[list[TextContext]]
     ) -> list[RequestID]:
         """Advances request state based on executed CE batches and returns invalid IDs.
 
@@ -472,9 +472,8 @@ class TextBatchConstructor:
         remove any partial responses for that request.
 
         Args:
-            executed_batches: A list of per-replica batches, where each batch maps
-                request IDs to their corresponding `TextContext` objects that have
-                just been executed by CE.
+            executed_batches: A list of per-replica context batches that have just
+                been executed by CE.
 
         Returns:
             A list of request IDs that should be treated as invalid by upstream
@@ -490,10 +489,11 @@ class TextBatchConstructor:
                 continue
 
             # Move the requests from CE to TG
-            replica.tg_reqs.update(per_replica_batch)
+            for context in per_replica_batch:
+                replica.tg_reqs[context.request_id] = context
 
             # Move Chunked requests back to the CE request queue
-            last_request = next(reversed(per_replica_batch.values()))
+            last_request = per_replica_batch[-1]
             if last_request.tokens.generated_length == 0:
                 del replica.tg_reqs[last_request.request_id]
                 replica.ce_reqs[last_request.request_id] = last_request
@@ -885,7 +885,9 @@ class TextBatchConstructor:
         ]
 
         return TextGenerationInputs[TextContext](
-            batches=[batch.batch for batch in batches_per_replica],
+            batches=[
+                list(batch.batch.values()) for batch in batches_per_replica
+            ],
             # Take the min num_steps across all replicas that have a non-empty batch.
             # This ensures that when there is a single request and DP>1, we run with
             # the full num_steps and not num_steps=1.

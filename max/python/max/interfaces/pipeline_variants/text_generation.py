@@ -614,12 +614,11 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     pattern of passing batch and num_steps as separate parameters.
     """
 
-    batches: list[dict[RequestID, TextGenerationContextType]]
-    """Variable list of batches, with each batch being a dictionary mapping
-    request IDs to context objects.
+    batches: list[list[TextGenerationContextType]]
+    """Variable list of batches, with each batch being a list of contexts.
 
     There can be multiple batches when using data parallelism, in which each
-    batch is mapped to a different device.
+    batch is mapped to a different device replica.
     """
 
     num_steps: int
@@ -633,27 +632,32 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
 
     def __post_init__(self) -> None:
         self.input_tokens = sum(
-            ctx.tokens.active_length for ctx in self.batch.values()
+            ctx.tokens.active_length for ctx in self.flat_batch
         )
         self.context_tokens = sum(
-            ctx.tokens.processed_length for ctx in self.batch.values()
+            ctx.tokens.processed_length for ctx in self.flat_batch
         )
         self.batch_type = BatchType.TG
-        for req in self.batch.values():
-            if req.tokens.generated_length == 0:
+        for context in self.flat_batch:
+            if context.tokens.generated_length == 0:
                 self.batch_type = BatchType.CE
                 break
 
     @property
-    def batch(self) -> dict[RequestID, TextGenerationContextType]:
-        """Returns merged batches."""
-        return {k: v for batch in self.batches for k, v in batch.items()}
+    def flat_batch(self) -> list[TextGenerationContextType]:
+        """Flattened list of contexts across all replicas."""
+        return [context for batch in self.batches for context in batch]
 
     def __bool__(self) -> bool:
-        return len(self.batch) > 0
+        return len(self.flat_batch) > 0
 
     def __repr__(self) -> str:
-        return f"TextGenerationInputs(batch_size={len(self.batch)}, num_steps={self.num_steps})"
+        return (
+            "TextGenerationInputs("
+            f"batch_size={len(self.flat_batch)}, "
+            f"num_steps={self.num_steps}"
+            ")"
+        )
 
     @property
     def enable_echo(self) -> bool:
@@ -668,12 +672,12 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     @cached_property
     def batch_top_log_probs(self) -> list[int]:
         """List of requested top log probabilities per context in the batch."""
-        return [ctx.log_probabilities for ctx in self.batch.values()]
+        return [ctx.log_probabilities for ctx in self.flat_batch]
 
     @cached_property
     def batch_echo(self) -> list[bool]:
         """List indicating whether echo is enabled for each context in the batch."""
-        return [ctx.log_probabilities_echo for ctx in self.batch.values()]
+        return [ctx.log_probabilities_echo for ctx in self.flat_batch]
 
 
 @dataclass(kw_only=True)

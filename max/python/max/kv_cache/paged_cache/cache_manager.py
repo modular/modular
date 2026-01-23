@@ -51,7 +51,9 @@ class PagedKVCacheManager:
         kv_manager.alloc(ctx2, num_steps=10)
 
         # Get KVCache inputs to feed to graph
-        kv_cache_inputs = kv_manager.get_runtime_inputs([ctx1, ctx2], num_steps=10)
+        kv_cache_inputs = kv_manager.get_runtime_inputs(
+            [[ctx1, ctx2]], num_steps=10
+        )
 
         # Run model...
         # Update requests with newly generated tokens
@@ -206,28 +208,26 @@ class PagedKVCacheManager:
         return self._replica_managers[replica_idx].alloc(data, num_steps)
 
     def get_runtime_inputs(
-        self, batch: Sequence[TextGenerationContext], num_steps: int = 1
+        self,
+        batches: Sequence[Sequence[TextGenerationContext]],
+        num_steps: int = 1,
     ) -> list[RaggedKVCacheInputs]:
-        """Get the graph inputs for a batch of requests.
+        """Get the graph inputs for per-replica batches of requests.
 
         This method will raise a RuntimeError if any request has insufficient blocks
         already allocated to it to run for the given number of steps.
 
         Args:
-            batch: Batch of requests
+            batches: Per-replica batches of requests
             num_steps: Number of steps to run for
         """
-
-        batch_by_replica: list[list[TextGenerationContext]] = [
-            [] for _ in range(len(self.devices_per_replica))
-        ]
-
-        for ctx in batch:
-            replica_idx = self._request_to_replica_idx[ctx.request_id]
-            batch_by_replica[replica_idx].append(ctx)
-
+        if len(batches) != self.num_replicas:
+            raise ValueError(
+                "Expected per-replica batches to match data parallel degree. "
+                f"Got {len(batches)} batches for {self.num_replicas} replicas."
+            )
         ret_list: list[RaggedKVCacheInputs] = []
-        for replica_idx, ctxs in enumerate(batch_by_replica):
+        for replica_idx, ctxs in enumerate(batches):
             ret_list.extend(
                 self._replica_managers[replica_idx].get_runtime_inputs(
                     ctxs, num_steps

@@ -26,6 +26,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationRequest,
 )
+from max.pipelines.core import TextContext
 from max.pipelines.lib import generate_local_model_path
 from max.support.image import hash_image
 from test_common.mocks import (
@@ -144,7 +145,9 @@ def test_text_generation_pipeline(
         length = {context.request_id: 0 for context in context_batch.values()}
         while True:
             # This will generate a list[dict[request_id, TextGenerationOutput]] for each step
-            inputs = TextGenerationInputs(batches=[context_batch], num_steps=1)
+            inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+                batches=[list(context_batch.values())], num_steps=1
+            )
             output = pipeline.execute(inputs)
             assert len(output) == len(context_batch)
 

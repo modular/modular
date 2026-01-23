@@ -186,27 +186,31 @@ class FakeTokenGeneratorPipeline(
     ) -> dict[RequestID, TextGenerationOutput]:
         max_seq_len = self.max_seq_len
         # Truncate num steps based on the max seq len
-        for context in inputs.batch.values():
+        num_steps = inputs.num_steps
+        for context in inputs.flat_batch:
             num_available_steps = context.compute_num_available_steps(
                 max_seq_len
             )
             assert num_available_steps > 0
-            num_steps = min(inputs.num_steps, num_available_steps)
+            num_steps = min(num_steps, num_available_steps)
 
         # Claim cache rows for context.
-        for _, context in inputs.batch.items():
-            if not self.kv_manager.contains(context.request_id):
-                self.kv_manager.claim(context.request_id)
+        for replica_idx, batch in enumerate(inputs.batches):
+            for context in batch:
+                if not self.kv_manager.contains(context.request_id):
+                    self.kv_manager.claim(
+                        context.request_id, replica_idx=replica_idx
+                    )
 
-        ctxs: list[TextContext] = list(inputs.batch.values())
-
-        for ctx in ctxs:
-            self.kv_manager.alloc(ctx, num_steps=num_steps)
-        self.kv_manager.get_runtime_inputs(ctxs, num_steps=num_steps)
+        for batch in inputs.batches:
+            for ctx in batch:
+                self.kv_manager.alloc(ctx, num_steps=num_steps)
+        self.kv_manager.get_runtime_inputs(inputs.batches, num_steps=num_steps)
 
         # Generate the responses
         responses = {}
-        for req_id, context in inputs.batch.items():
+        for context in inputs.flat_batch:
+            req_id = context.request_id
             for _ in range(num_steps):
                 context.update(new_token=self.token_id)
                 self.token_id += 1
@@ -220,7 +224,7 @@ class FakeTokenGeneratorPipeline(
             responses[req_id] = context.to_generation_output()
 
         # Step the kv cache manager
-        self.kv_manager.step(ctxs)
+        self.kv_manager.step(inputs.flat_batch)
 
         return responses
 
@@ -325,12 +329,12 @@ def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
     num_preempted_after = scheduler.batch_constructor.total_preemption_count
 
     num_preempted = num_preempted_after - num_preempted_before
-    batch_size = len(inputs.batch)
+    batch_size = len(inputs.flat_batch)
     batch_type = inputs.batch_type
     input_tokens = inputs.input_tokens
     num_steps = inputs.num_steps
     batch_context_length = sum(
-        context.tokens.processed_length for context in inputs.batch.values()
+        context.tokens.processed_length for context in inputs.flat_batch
     )
 
     if batch_size == 0:

@@ -16,10 +16,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import pytest
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
+from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
@@ -110,11 +112,15 @@ def test_step() -> None:
     # Create text contexts and externally claim each using their request_id
     prompt_lens = [3, 4, 7]
     batch = []
+    batches_by_replica: list[list[TextGenerationContext]] = [
+        [] for _ in range(kv_manager.num_replicas)
+    ]
     for prompt_len in prompt_lens:
         context = create_text_context(np.empty(prompt_len))
         replica_idx = kv_manager.get_or_recommend_replica(context)
         kv_manager.claim(context.request_id, replica_idx=replica_idx)
         batch.append(context)
+        batches_by_replica[replica_idx].append(context)
 
     # Assert that each cache_length is initialized appropriately as 0
     for ctx in batch:
@@ -124,7 +130,7 @@ def test_step() -> None:
     for j in range(3):
         for ctx in batch:
             kv_manager.alloc(ctx, 1)
-        kv_manager.get_runtime_inputs(batch)
+        kv_manager.get_runtime_inputs(batches_by_replica)
         for ctx in batch:
             ctx.update(42)
         kv_manager.step(batch)
@@ -139,6 +145,13 @@ def test_step() -> None:
             ctx.tokens.rewind_processing(
                 ctx.tokens.processed_length - orig_processed_length
             )
+
+
+def test_get_runtime_inputs_requires_per_replica_batches() -> None:
+    kv_manager = _create_kv_manager(data_parallel_degree=2, num_devices=2)
+
+    with pytest.raises(ValueError, match="Got 1 batches for 2 replicas"):
+        kv_manager.get_runtime_inputs([[]])
 
 
 @dataclass
@@ -157,13 +170,17 @@ def test_increment_cache_lengths() -> None:
     prompt_lens = [3, 4, 7]
     replica_idxs = [0, 0, 1]
     batch = []
+    batches_by_replica: list[list[TextGenerationContext]] = [
+        [] for _ in range(kv_manager.num_replicas)
+    ]
     for prompt_len, replica_idx in zip(prompt_lens, replica_idxs, strict=True):
         context = create_text_context(np.empty(prompt_len))
         kv_manager.claim(context.request_id, replica_idx=replica_idx)
         kv_manager.alloc(context, num_steps=1)
         batch.append(context)
+        batches_by_replica[replica_idx].append(context)
 
-    kv_cache_inputs = kv_manager.get_runtime_inputs(batch)
+    kv_cache_inputs = kv_manager.get_runtime_inputs(batches_by_replica)
 
     # Check that the cache lengths are initialized to 0.
     assert len(kv_cache_inputs) == 2

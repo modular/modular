@@ -134,7 +134,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
-    graph_inputs = kv_manager.get_runtime_inputs(batch)[0]
+    graph_inputs = kv_manager.get_runtime_inputs([batch])[0]
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = graph_inputs[0]
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
@@ -211,7 +211,7 @@ def test_partial_rms_norm_key_cache(
         kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
-    graph_inputs = kv_manager.get_runtime_inputs(batch)[0]
+    graph_inputs = kv_manager.get_runtime_inputs([batch])[0]
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = graph_inputs[0]
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
@@ -303,11 +303,11 @@ def test_rms_norm_new_key_cache(
 
     # note that unlike previous tests, we step the kv cache by 10 tokens
     # this is to test that we only operate on the new tokens
-    graph_inputs = kv_manager.get_runtime_inputs(batch)[0]
+    graph_inputs = kv_manager.get_runtime_inputs([batch])[0]
     for ctx in batch:
         ctx.update(42)
     kv_manager.step(batch)
-    graph_inputs = kv_manager.get_runtime_inputs(batch)[0]
+    graph_inputs = kv_manager.get_runtime_inputs([batch])[0]
 
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = graph_inputs[0]
@@ -449,7 +449,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         kv_manager.alloc(context, num_steps=1)
         batch.append(context)
 
-    graph_inputs = kv_manager.get_runtime_inputs(batch)[0]
+    graph_inputs = kv_manager.get_runtime_inputs([batch])[0]
 
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = graph_inputs[0]

@@ -177,7 +177,7 @@ def generate_max_outputs(
         for tok_idx in range(total_tokens):
             for ctx in batch:
                 kv_manager.alloc(ctx, 1)
-            kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
+            kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
             input_tensor_device = (
                 Buffer.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -199,7 +199,7 @@ def generate_max_outputs(
 
     for ctx in batch:
         kv_manager.alloc(ctx)
-    kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
+    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)
@@ -340,7 +340,7 @@ def generate_max_outputs_dp(
         for tok_idx in range(total_tokens):
             for ctx in batch:
                 kv_manager.alloc(ctx)
-            kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
+            kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
             input_tensor_device = (
                 Buffer.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -362,7 +362,7 @@ def generate_max_outputs_dp(
 
     for ctx in batch:
         kv_manager.alloc(ctx)
-    kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
+    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)

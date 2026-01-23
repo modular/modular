@@ -97,7 +97,8 @@ def create_mock_pipeline_with_lora(lora_manager: Mock) -> Mock:
     ) -> dict[RequestID, TextGenerationOutput]:
         responses: dict[RequestID, TextGenerationOutput] = {}
 
-        for request_id, request in inputs.batch.items():
+        for request in inputs.flat_batch:
+            request_id = request.request_id
             request.update(0)
 
             responses[request_id] = TextGenerationOutput(
@@ -133,6 +134,10 @@ def create_lora_context(
     if is_tg:
         context.update(ARBITRARY_TOKEN_ID)
     return context
+
+
+def has_request(batch: list[TextContext], request_id: RequestID) -> bool:
+    return any(ctx.request_id == request_id for ctx in batch)
 
 
 def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_preemption(
@@ -205,7 +210,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
 
     # Update a token for each request in the batch
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -231,7 +236,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
     assert inputs.num_steps == 1
 
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -363,11 +368,11 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 4
     # The last request should be chunked
-    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
+    assert inputs.batches[0][-1].tokens.generated_length == 0
 
     # Update a token for each request in the batch
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -376,10 +381,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
         )
     )
     assert len(chunked_request_ids) == 1
-    assert (
-        chunked_request_ids[0]
-        == list(inputs.batches[0].values())[-1].request_id
-    )
+    assert chunked_request_ids[0] == inputs.batches[0][-1].request_id
 
     # There should now be 3 requests in TG, and 7 in CE
     assert len(batch_constructor.replicas[0].tg_reqs) == 3
@@ -392,10 +394,10 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     # We only grab 2 new CE requests here, because we have 3 TG requests outstanding.
     # Since max_batch_size is 5, we can only have 5 requests outstanding at a time.
     assert len(inputs.batches[0]) == 2
-    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
+    assert inputs.batches[0][-1].tokens.generated_length == 0
 
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -425,7 +427,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     assert len(inputs.batches[0]) == 5
 
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -456,7 +458,9 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     assert len(batch_constructor.replicas[0].ce_reqs) == 3
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 4
-    assert last_request_id not in inputs.batches[0]
+    assert all(
+        context.request_id != last_request_id for context in inputs.batches[0]
+    )
 
     # We've pre-empted the last request, so it should be in the CE queue
     assert len(batch_constructor.replicas[0].ce_reqs) == 4
@@ -509,11 +513,11 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
     assert batch_constructor._identify_priority(0) == RequestType.CE
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 4
-    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
+    assert inputs.batches[0][-1].tokens.generated_length == 0
 
     # Update a token for each request in the batch
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -522,10 +526,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
         )
     )
     assert len(chunked_request_ids) == 1
-    assert (
-        chunked_request_ids[0]
-        == list(inputs.batches[0].values())[-1].request_id
-    )
+    assert chunked_request_ids[0] == inputs.batches[0][-1].request_id
 
     # There should now be 3 requests in TG, and 7 in CE
     assert len(batch_constructor.replicas[0].tg_reqs) == 3
@@ -538,10 +539,10 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
     # We should have 5 requests
     assert len(inputs.batches[0]) == 7
     # Last item should be chunked, with a length of 3
-    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
+    assert inputs.batches[0][-1].tokens.generated_length == 0
 
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -588,11 +589,11 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     assert batch_constructor._identify_priority(0) == RequestType.CE
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 4
-    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
+    assert inputs.batches[0][-1].tokens.generated_length == 0
 
     # Update a token for each request in the batch
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -611,17 +612,13 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     for i in range(len(inputs.batches[0])):
         if i < 4:
             # The first four requests are TG, and should not need CE
-            assert (
-                list(inputs.batches[0].values())[i].tokens.generated_length != 0
-            )
+            assert inputs.batches[0][i].tokens.generated_length != 0
         else:
             # The second four requests are CE, and should need CE
-            assert (
-                list(inputs.batches[0].values())[i].tokens.generated_length == 0
-            )
+            assert inputs.batches[0][i].tokens.generated_length == 0
 
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -658,7 +655,7 @@ def test_single_lora_scheduling() -> None:
     output = batch_constructor.construct_batch()
 
     assert len(output.batches[0]) == 1
-    assert ctx.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx.request_id)
     lora_manager.activate_adapter.assert_called_once_with("lora_model1")
     assert "lora_model1" in lora_manager._active_loras
 
@@ -691,9 +688,9 @@ def test_multi_lora_within_budget() -> None:
 
     output = batch_constructor.construct_batch()
     assert len(output.batches[0]) == 3
-    assert ctx1.request_id in output.batches[0]
-    assert ctx2.request_id in output.batches[0]
-    assert ctx3.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx1.request_id)
+    assert has_request(output.batches[0], ctx2.request_id)
+    assert has_request(output.batches[0], ctx3.request_id)
     assert len(lora_manager._active_loras) == 3
 
 
@@ -728,9 +725,9 @@ def test_lora_preemption_over_budget() -> None:
     output = batch_constructor.construct_batch()
 
     assert len(output.batches[0]) == 3
-    assert ctx_base.request_id in output.batches[0]
-    assert ctx_lora1.request_id in output.batches[0]
-    assert ctx_lora2.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx_base.request_id)
+    assert has_request(output.batches[0], ctx_lora1.request_id)
+    assert has_request(output.batches[0], ctx_lora2.request_id)
     assert ctx_lora3.request_id not in output.batches[0]
 
     assert ctx_lora3.request_id in batch_constructor.all_ce_reqs
@@ -767,8 +764,8 @@ def test_age_based_scheduling_with_lora() -> None:
     output = batch_constructor.construct_batch()
 
     assert len(output.batches[0]) == 2
-    assert ctx_inactive.request_id in output.batches[0]
-    assert ctx_base.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx_inactive.request_id)
+    assert has_request(output.batches[0], ctx_base.request_id)
 
 
 def test_tg_batch_with_active_loras() -> None:
@@ -803,9 +800,9 @@ def test_tg_batch_with_active_loras() -> None:
     output = batch_constructor.construct_batch()
 
     assert len(output.batches[0])
-    assert ctx_active1.request_id in output.batches[0]
-    assert ctx_active2.request_id in output.batches[0]
-    assert ctx_base.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx_active1.request_id)
+    assert has_request(output.batches[0], ctx_active2.request_id)
+    assert has_request(output.batches[0], ctx_base.request_id)
 
 
 def test_ce_lora_activation_within_budget() -> None:
@@ -835,8 +832,8 @@ def test_ce_lora_activation_within_budget() -> None:
     output = batch_constructor.construct_batch()
 
     assert len(output.batches[0]) == 2
-    assert ctx_lora1.request_id in output.batches[0]
-    assert ctx_lora2.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx_lora1.request_id)
+    assert has_request(output.batches[0], ctx_lora2.request_id)
 
     assert "lora_model1" in lora_manager._active_loras
     assert "lora_model2" in lora_manager._active_loras
@@ -878,7 +875,7 @@ def test_tg_pure_age_based_preemption() -> None:
     output = batch_constructor.construct_batch()
 
     assert len(output.batches[0]) == 1
-    assert ctx1.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx1.request_id)
     pipeline.release.assert_called()
 
 
@@ -920,8 +917,8 @@ def test_lora_swapping_ce_to_tg() -> None:
 
     tg_output = batch_constructor.construct_batch()
 
-    assert ctx.request_id in tg_output.batches[0]
-    assert ctx2.request_id in tg_output.batches[0]
+    assert has_request(tg_output.batches[0], ctx.request_id)
+    assert has_request(tg_output.batches[0], ctx2.request_id)
 
 
 def test_mixed_requests_scheduling() -> None:
@@ -955,10 +952,10 @@ def test_mixed_requests_scheduling() -> None:
     output = batch_constructor.construct_batch()
 
     assert len(output.batches[0]) == 3
-    assert ctx_base1.request_id in output.batches[0]
-    assert ctx_base2.request_id in output.batches[0]
-    assert (ctx_lora1.request_id in output.batches[0]) or (
-        ctx_lora2.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx_base1.request_id)
+    assert has_request(output.batches[0], ctx_base2.request_id)
+    assert has_request(output.batches[0], ctx_lora1.request_id) or (
+        has_request(output.batches[0], ctx_lora2.request_id)
     )
 
     assert len(lora_manager._active_loras) == 1

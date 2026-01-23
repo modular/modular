@@ -178,7 +178,7 @@ class OverlapTextGenerationPipeline(
     @traced
     def prepare_batch(
         self,
-        batches: list[dict[RequestID, TextGenerationContextType]],
+        batches: list[list[TextGenerationContextType]],
         num_steps: int,
     ) -> tuple[
         Any,
@@ -191,7 +191,7 @@ class OverlapTextGenerationPipeline(
         ``num_steps`` per context, and builds initial model inputs.
 
         Args:
-            batches: Per-replica mapping of ``RequestID`` to context.
+            batches: Per-replica list of contexts.
             num_steps: Desired number of steps to run.
 
         Returns:
@@ -201,7 +201,8 @@ class OverlapTextGenerationPipeline(
                 - list[TextGenerationContextType]: The flattened context batch.
         """
         for replica_idx, replica_batch in enumerate(batches):
-            for request_id, context in replica_batch.items():
+            for context in replica_batch:
+                request_id = context.request_id
                 if not self._pipeline_model.kv_manager.contains(request_id):
                     self._pipeline_model.kv_manager.claim(
                         request_id, replica_idx=replica_idx
@@ -213,16 +214,12 @@ class OverlapTextGenerationPipeline(
                 )
 
         # Retrieve the KV Cache Inputs.
-        flat_batch = [
-            context for batch in batches for context in batch.values()
-        ]
+        flat_batch = [context for batch in batches for context in batch]
         kv_cache_inputs = self._pipeline_model.kv_manager.get_runtime_inputs(
-            flat_batch, num_steps
+            batches, num_steps
         )
 
-        replica_batches = [
-            [context for context in batch.values()] for batch in batches
-        ]
+        replica_batches = batches
         return (
             self._pipeline_model.prepare_initial_token_inputs(
                 replica_batches=replica_batches,

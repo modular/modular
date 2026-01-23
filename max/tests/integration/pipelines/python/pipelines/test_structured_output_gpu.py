@@ -111,8 +111,8 @@ def test_smollm_with_structured_output_gpu(
 
     tokens = []
     while True:
-        inputs = TextGenerationInputs(
-            batches=[{request_id: context}], num_steps=1
+        inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+            batches=[[context]], num_steps=1
         )
         for kv_manager in kv_managers:
             kv_manager.alloc(context)

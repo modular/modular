@@ -265,7 +265,7 @@ def _build_and_execute_attention_graph(
         kv_manager.claim(context.request_id)
         kv_manager.alloc(context)
 
-    fetch_result = kv_manager.get_runtime_inputs(batch)[0]
+    fetch_result = kv_manager.get_runtime_inputs([batch])[0]
     blocks_tensor = fetch_result[0]
     cache_lengths_tensor = fetch_result[1]
     lookup_table_tensor = fetch_result[2]

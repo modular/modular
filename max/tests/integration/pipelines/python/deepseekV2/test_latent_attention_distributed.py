@@ -165,7 +165,7 @@ def _single_gpu_baseline(
     row_off[1] = prompt_lens[0]
 
     if use_prefill:
-        kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
+        kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
         inp = (
             Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
             .view(DType.bfloat16)
@@ -179,7 +179,7 @@ def _single_gpu_baseline(
     for tok_idx in range(total_tokens):
         for ctx in batch:
             kv_manager.alloc(ctx, 1)
-        kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
+        kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
         tok = (
             Buffer.from_numpy(
                 input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -386,10 +386,11 @@ def _run_distributed_dp(
         kv_manager.claim(ctx.request_id, replica_idx=replica_idx)
         kv_manager.alloc(ctx, 1)
         batch.append(ctx)
+    batches_by_replica = [[ctx] for ctx in batch]
 
     if use_prefill:
         # Single execute covering full prompt lengths (identical prompt on each replica).
-        fetch_list = kv_manager.get_runtime_inputs(batch)
+        fetch_list = kv_manager.get_runtime_inputs(batches_by_replica)
         kv_args = _flatten_kv_kv_inputs(fetch_list)
 
         # Per-device inputs: full sequence + [0, T] row offsets (built on host)
@@ -416,7 +417,7 @@ def _run_distributed_dp(
     for tok_idx in range(total_tokens):
         for ctx in batch:
             kv_manager.alloc(ctx, 1)
-        fetch_list = kv_manager.get_runtime_inputs(batch)
+        fetch_list = kv_manager.get_runtime_inputs(batches_by_replica)
         kv_args = _flatten_kv_kv_inputs(fetch_list)
 
         step_args = []

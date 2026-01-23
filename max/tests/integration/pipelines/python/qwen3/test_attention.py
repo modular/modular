@@ -210,7 +210,7 @@ def generate_max_outputs(
     kv_manager.claim(batch[0].request_id)
     kv_manager.alloc(batch[0])
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs(batch)[0]
+        kv_manager.get_runtime_inputs([batch])[0]
     )
 
     output = compiled.execute(
