@@ -12,8 +12,7 @@
 
 from collections import List
 
-@register_passable("trivial")
-struct Point(Copyable, Movable):
+struct Point(TrivialRegisterType, Copyable, Movable):
   var x: Int
   var y: Int
   fn __init__(out self, x: Int, y:Int):

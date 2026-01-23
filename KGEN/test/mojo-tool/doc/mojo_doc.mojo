@@ -746,11 +746,10 @@ fn parametric_ref_origin[b: Int](ref c: Int):
 
 # MOTO-516: [doc generation] Print 'ref' arguments and results in docgen
 # CHECK:  "convention": "register_passable_trivial",
-@register_passable("trivial")
 struct HMyUnsafePointer[
     T: AnyType,
     address_space: AddressSpace = AddressSpace.GENERIC,
-]:
+](TrivialRegisterType):
     # CHECK: "signature": "__getitem__(self) -> ref [MutAnyOrigin, address_space] T",
     fn __getitem__(
         self,
