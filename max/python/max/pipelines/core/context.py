@@ -600,22 +600,19 @@ class PixelContext:
     """
 
     # Request identification (required)
-    request_id: RequestID
+    request_id: RequestID = field(default_factory=RequestID)
 
-    # Text encoder parameters
     max_text_encoder_length: int = field(default=512)
     """Max sequence length for text encoder. Default 512 is sufficient for most prompts."""
 
     model_name: str = field(default="")
 
-    # Tokenized prompts (numeric data, no strings)
-    tokens: TokenBuffer = field(
-        default_factory=lambda: TokenBuffer(np.array([], dtype=np.int64))
-    )
-    """Primary encoder tokens (e.g., CLIP for Flux, Qwen3 for Z-Image)."""
+    # Tokenized prompts
+    tokens: TokenBuffer
+    """Primary encoder tokens."""
 
     tokens_2: TokenBuffer | None = field(default=None)
-    """Secondary encoder tokens (e.g., T5 for Flux). None for single-encoder models."""
+    """Secondary encoder tokens. None for single-encoder models."""
 
     negative_tokens: TokenBuffer = field(
         default_factory=lambda: TokenBuffer(np.array([], dtype=np.int64))
@@ -630,7 +627,7 @@ class PixelContext:
     extra_params: dict[str, npt.NDArray] = field(default_factory=dict)
     """Model-specific numeric parameters (e.g., cfg_normalization values)."""
 
-    # Precomputed tensors (populated by PixelGenerationTokenizer)
+    # Precomputed tensors
     timesteps: npt.NDArray = field(
         default_factory=lambda: np.array([], dtype=np.float32)
     )
@@ -646,15 +643,14 @@ class PixelContext:
     )
     """Precomputed initial noise (latents) for generation."""
 
-    # Image generation parameters (numeric)
+    # Image generation parameters
     height: int = field(default=1024)
     width: int = field(default=1024)
     num_inference_steps: int = field(default=50)
     guidance_scale: float = field(default=7.5)
     num_images_per_prompt: int = field(default=1)
-    seed: int | None = field(default=None)
 
-    # Generation status (for scheduler compatibility)
+    # Generation status
     _status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property
