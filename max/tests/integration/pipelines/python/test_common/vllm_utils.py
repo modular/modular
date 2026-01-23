@@ -139,8 +139,8 @@ def run_text_generation(
                 saved_logits.append(
                     {
                         "next_token": next_token,
-                        "next_token_logits": logits_np[next_token],
-                        "logits": logits_np,
+                        "next_token_logprobs": float(logits_np[next_token]),
+                        "logprobs": logits_np,
                     }
                 )
 

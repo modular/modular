@@ -15,8 +15,11 @@
 from __future__ import annotations
 
 from max.graph import TensorValue, TensorValueLike, ops
-from max.nn import Identity, Linear, Module, TransformerBlock
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.identity import Identity
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.transformer import TransformerBlock
 
 from ..llama3.llama3 import Llama3
 from ..llama3.model_config import Llama3Config

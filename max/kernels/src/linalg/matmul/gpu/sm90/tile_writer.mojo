@@ -36,8 +36,8 @@ from gpu.memory import fence_async_view_proxy
 from ....structuring import (
     SharedMemBarrier,
     SMemBarrier,
-    SMemTileType,
-    RegTileType,
+    SMemTile,
+    RegTile,
 )
 from layout.swizzle import Swizzle
 from gpu import thread_idx, lane_id
@@ -97,7 +97,7 @@ struct ThreadInfo:
             ThreadInfo struct with computed warp_id, lane_id, lane_row, and lane_col.
         """
         var warp_id = warp_group_thread_idx // UInt(WARP_SIZE)
-        var lid = UInt(lane_id())
+        var lid = lane_id()
         var lane_row, lane_col = divmod(UInt32(lid), 4)
         return ThreadInfo(warp_id, lid, lane_row, lane_col)
 
@@ -153,7 +153,7 @@ trait SMemTileWriter:
     @always_inline
     fn write_tile(
         self,
-        src: SMemTileType[Self._dtype, _, alignment=128, ...],
+        src: SMemTile[Self._dtype, _, alignment=128, ...],
         coords: Tuple[UInt, UInt],
     ):
         """Write a tile from shared memory to global memory.
@@ -208,7 +208,7 @@ struct TileWriterTMA[
     @always_inline
     fn write_tile(
         self,
-        src: SMemTileType[Self._dtype, _, alignment=128, ...],
+        src: SMemTile[Self._dtype, _, alignment=128, ...],
         coords: Tuple[UInt, UInt],
     ):
         """Write a tile using TMA hardware acceleration.
@@ -284,7 +284,7 @@ struct TileWriterThreadwise[
     @always_inline
     fn write_tile(
         self,
-        src: SMemTileType[Self._dtype, _, alignment=128, ...],
+        src: SMemTile[Self._dtype, _, alignment=128, ...],
         coords: Tuple[UInt, UInt],
     ):
         """Write a tile using thread-distributed stores.
@@ -403,7 +403,7 @@ trait RegTileWriter:
     @always_inline
     fn write_tile(
         self,
-        c_reg_tile: RegTileType,
+        c_reg_tile: RegTile,
         coords: Tuple[UInt, UInt],
     ) capturing -> None:
         """Write a register tile to memory.
@@ -471,7 +471,7 @@ struct FragmentToSMemWriter[
         Self.WG_BM, Self.tile_n_size
     ) if not Self.swapAB else Layout.row_major(Self.tile_n_size, Self.WG_BN)
 
-    var c_tile: SMemTileType[Self.c_type, Self.c_tile_layout, alignment=128]
+    var c_tile: SMemTile[Self.c_type, Self.c_tile_layout, alignment=128]
     var warp_group_thread_idx: UInt
     var local_warp_group_idx: UInt
     var st_matrix_rt_layout: Self.st_matrix_rt_layout_type
@@ -479,7 +479,7 @@ struct FragmentToSMemWriter[
     @always_inline
     fn __init__(
         out self,
-        c_tile: SMemTileType[Self.c_type, Self.c_tile_layout, alignment=128],
+        c_tile: SMemTile[Self.c_type, Self.c_tile_layout, alignment=128],
         warp_group_thread_idx: UInt,
         local_warp_group_idx: UInt,
     ):
@@ -527,7 +527,7 @@ struct FragmentToSMemWriter[
         n_frag: Int,
     ](
         self,
-        smem_tile: SMemTileType[Self.c_type, Self.st_matrix_layout, ...],
+        smem_tile: SMemTile[Self.c_type, Self.st_matrix_layout, ...],
         data: SIMD[Self.c_type, elements_per_op],
     ) -> None:
         """Store register data to shared memory using st.matrix instruction.
@@ -557,7 +557,7 @@ struct FragmentToSMemWriter[
     @always_inline
     fn write_tile(
         self,
-        c_reg_tile: RegTileType,
+        c_reg_tile: RegTile,
         coords: Tuple[UInt, UInt],
     ) capturing -> None:
         """Write accumulator tile from registers to shared memory.
@@ -744,7 +744,7 @@ struct RegisterToGMemWriter[
     @always_inline
     fn write_tile(
         self,
-        c_reg_tile: RegTileType,
+        c_reg_tile: RegTile,
         coords: Tuple[UInt, UInt],
     ) capturing -> None:
         """Write a single MMA tile from registers to global memory.
@@ -771,7 +771,7 @@ struct RegisterToGMemWriter[
     @always_inline
     fn _write_direct_vectorized(
         self,
-        c_reg_tile: RegTileType,
+        c_reg_tile: RegTile,
         m_mma: Int,
         n_mma: Int,
         mma_id: Int,
@@ -780,7 +780,7 @@ struct RegisterToGMemWriter[
         # Get the warp's portion of the tile
         var warp_tile = self.dst.tile[
             Self.wgmma_shape[0] // 4, Self.wgmma_shape[1]
-        ](Int(m_mma * 4 + Int(self.thread_info.warp_id)), n_mma)
+        ](m_mma * 4 + Int(self.thread_info.warp_id), n_mma)
 
         # Get the corresponding register fragment
         var c_frag = c_reg_tile.tile[1, Self.c_frag_size](mma_id, 0)
@@ -794,7 +794,7 @@ struct RegisterToGMemWriter[
     @always_inline
     fn _write_with_transform(
         self,
-        c_reg_tile: RegTileType,
+        c_reg_tile: RegTile,
         m_mma: Int,
         n_mma: Int,
         mma_id: Int,
@@ -804,7 +804,7 @@ struct RegisterToGMemWriter[
         var warp_tile, warp_tile_coords, warp_tile_offset = (
             self.dst.tile_with_offset[
                 Self.wgmma_shape[0] // 4, Self.wgmma_shape[1]
-            ](Int(m_mma * 4 + Int(self.thread_info.warp_id)), n_mma)
+            ](m_mma * 4 + Int(self.thread_info.warp_id), n_mma)
         )
 
         # Calculate global coordinates
@@ -835,8 +835,8 @@ struct RegisterToGMemWriter[
             comptime dst_idx = gmem_frag.layout(frag_idx)
             comptime dst_m_offset = dst_idx // Self.N
             comptime dst_n_offset = dst_idx % Self.N
-            var m = Int(coords[0] + dst_m_offset)
-            var n = Int(coords[1] + dst_n_offset)
+            var m = coords[0] + dst_m_offset
+            var n = coords[1] + dst_n_offset
 
             # Bounds check and apply transformation
             if m < Int(max_row) and n < Self.N:
@@ -852,7 +852,7 @@ struct RegisterToGMemWriter[
         gmem_frag: LayoutTensor[
             Self.c_type, _, MutAnyOrigin, address_space=_, ...
         ],
-        c_reg_frag: RegTileType,
+        c_reg_frag: RegTile,
         mma_id: Int,
         m: Int,
         n: Int,
@@ -878,7 +878,7 @@ struct RegisterToGMemWriter[
     @always_inline
     fn _write_with_runtime_bounds(
         self,
-        c_reg_tile: RegTileType,
+        c_reg_tile: RegTile,
         m_mma: Int,
         n_mma: Int,
         mma_id: Int,
@@ -899,10 +899,10 @@ struct RegisterToGMemWriter[
             1
         ] if not Self.swapAB else Self.wgmma_shape[0] // 4
 
-        var coord_0 = Int(
+        var coord_0 = (
             m_mma * 4 + Int(self.thread_info.warp_id)
-        ) if not Self.swapAB else Int(n_mma)
-        var coord_1 = Int(n_mma) if not Self.swapAB else Int(
+        ) if not Self.swapAB else n_mma
+        var coord_1 = n_mma if not Self.swapAB else (
             m_mma * 4 + Int(self.thread_info.warp_id)
         )
 
@@ -958,20 +958,20 @@ struct RegisterToGMemWriter[
                         if Self.swapAB:
                             # In swapAB mode, coordinates are transposed
                             return (
-                                Int(warp_tile_coords[0])
+                                warp_tile_coords[0]
                                 + Int(
                                     n_frag * 8
                                     + self.thread_info.lane_col * 2
                                     + i
                                 ),
-                                Int(warp_tile_coords[1])
+                                warp_tile_coords[1]
                                 + Int(m_frag * 8 + self.thread_info.lane_row),
                             )
                         else:
                             return (
-                                Int(warp_tile_coords[0])
+                                warp_tile_coords[0]
                                 + Int(m_frag * 8 + self.thread_info.lane_row),
-                                Int(warp_tile_coords[1])
+                                warp_tile_coords[1]
                                 + Int(
                                     n_frag * 8
                                     + self.thread_info.lane_col * 2

@@ -16,8 +16,10 @@
 
 from .config import (
     config_to_flag,
+    get_config_skip_fields,
     get_default,
     get_field_type,
+    get_fields_from_pydantic_model,
     is_flag,
     is_multiple,
     is_optional,
@@ -37,8 +39,10 @@ __all__ = [
     "TextGenerationMetrics",
     "config_to_flag",
     "generate_text_for_pipeline",
+    "get_config_skip_fields",
     "get_default",
     "get_field_type",
+    "get_fields_from_pydantic_model",
     "is_flag",
     "is_multiple",
     "is_optional",

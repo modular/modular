@@ -35,8 +35,6 @@ from layout._fillers import random
 from gpu.host.info import B200
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from buffer.buffer import NDBuffer
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from utils.index import IndexList
 from linalg.fp4_utils import (
     SF_ATOM_M,

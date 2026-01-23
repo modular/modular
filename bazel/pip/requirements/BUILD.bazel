@@ -53,6 +53,7 @@ pycross_uv_lock_model(
     development_groups = ["cpu"],
     lock_file = "uv.lock",
     project_file = "pyproject.toml",
+    tags = ["manual"],  # Broken because of https://github.com/pytorch/pytorch/issues/173099
 )
 
 pycross_lock_file(
@@ -64,5 +65,6 @@ pycross_lock_file(
         "wheel",
     ],
     lock_model_file = ":default_lock_model",
+    tags = ["manual"],  # Broken because of https://github.com/pytorch/pytorch/issues/173099
     target_environments = ["@rules_pycross_all_environments//:environments"],
 )

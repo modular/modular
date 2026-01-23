@@ -662,9 +662,9 @@ struct Bench(Stringable, Writable):
         if self.config.out_file:
             stem = String(self.config.out_file.value())
             current_suffix = String("")
-            split = String(stem).split(".")
+            split = stem.split(".")
             if len(split) > 1:
-                stem = String(".".join(split[:-1]))
+                stem = ".".join(split[:-1])
                 current_suffix = String(split[-1])
 
             self.config.out_file = Path(
@@ -1214,7 +1214,7 @@ struct Bench(Stringable, Writable):
     fn _get_max_name_width(self, label: StaticString) -> Int:
         var max_val = len(label)
         for i in range(len(self.info_vec)):
-            var namelen = len(String(self.info_vec[i].name))
+            var namelen = len(self.info_vec[i].name)
             max_val = max(max_val, namelen)
         return max_val
 
@@ -1318,9 +1318,26 @@ struct Bencher:
             iter_fn: The target function to benchmark.
         """
 
+        @always_inline
+        fn unified_closure() unified {}:
+            iter_fn()
+
+        self.iter(unified_closure)
+
+    fn iter[IterFn: fn () unified](mut self, f: IterFn):
+        """Returns the total elapsed time by running a target closure a
+        particular number of times.
+
+        Parameters:
+            IterFn: Type of the closure to benchmark.
+
+        Args:
+            f: The closure to benchmark.
+        """
+
         var start = time.perf_counter_ns()
         for _ in range(self.num_iters):
-            iter_fn()
+            f()
         var stop = time.perf_counter_ns()
         self.elapsed = Int(stop - start)
 

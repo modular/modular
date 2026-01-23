@@ -27,18 +27,16 @@ from max.graph import (
     TensorValueLike,
     ops,
 )
-from max.nn import (
-    MLP,
-    ColumnParallelLinear,
-    LayerList,
-    Module,
-    ReturnLogits,
-    RMSNorm,
-    VocabParallelEmbedding,
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.transformer import ReturnLogits
+from max.nn.legacy.transformer.distributed_transformer import (
+    forward_sharded_layers,
 )
-from max.nn.comm.allreduce import Allreduce
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.transformer.distributed_transformer import forward_sharded_layers
 from max.pipelines.architectures.internvl.embedding_utils import (
     merge_multimodal_embeddings,
 )
@@ -334,6 +332,9 @@ class Qwen3VLMoEDecoder(Module):
         # Ensure visual_embeds has the same dtype as hidden_states
         if visual_embeds.dtype != hidden_states.dtype:
             visual_embeds = ops.cast(visual_embeds, hidden_states.dtype)
+
+        # FIXME(SERVOPT-924): Fuse the scatter_nd and add op into a single kernel.
+        # This will improve perf and reduce size of activations.
 
         # Create a tensor of zeros with the same shape as hidden_states
         zeros = ops.constant(0, hidden_states.dtype, hidden_states.device)

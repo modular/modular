@@ -200,7 +200,7 @@ struct MatmulConfig[
         return UInt(self.block_tile_shape[1] // self.warp_tile_shape[1])
 
     fn num_threads(self) -> UInt:
-        return UInt(
+        return (
             self.num_warps_m()
             * self.num_warps_n()
             * self.num_warp_k_partitions
@@ -532,19 +532,19 @@ fn create_hilbert_lut(
             var ry = (t ^ rx) & 1
             if ry == 0:
                 if rx == 1:
-                    hx = UInt32(s) - 1 - hx
-                    hy = UInt32(s) - 1 - hy
+                    hx = s - 1 - hx
+                    hy = s - 1 - hy
                 # rotate
                 var tmp = hx
                 hx = hy
                 hy = tmp
-            hx += UInt32(s) * rx
-            hy += UInt32(s) * ry
+            hx += s * rx
+            hy += s * ry
             t >>= 2
             s <<= 1
 
         if hx < UInt32(grid_x) and hy < UInt32(grid_y):
-            host_ptr[seen] = UInt32((hy << 16) | hx)  # pack (y,x)
+            host_ptr[seen] = (hy << 16) | hx  # pack (y,x)
             seen += 1
         d += 1
 

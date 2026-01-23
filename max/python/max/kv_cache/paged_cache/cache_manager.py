@@ -24,12 +24,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
-from max.nn.kv_cache.data_parallelism_utils import (
+from max.nn.legacy.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.legacy.kv_cache.data_parallelism_utils import (
     split_input_row_offsets,
     split_into_groups,
 )
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
 from .tp_cache_manager import _TPPagedKVCacheManager

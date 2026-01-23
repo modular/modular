@@ -1,11 +1,11 @@
-:description: Experimental random tensor generation utilities for MAX.
+:description: Random tensor generation utilities for MAX.
 :title: random
 :card_title: Random Tensor Generation
 :type: module
 :lang: python
 
-.. py:currentmodule:: max.experimental
+.. py:currentmodule:: max
 
-.. automodule:: max.experimental.random
+.. automodule:: max.random
    :members:
    :undoc-members:

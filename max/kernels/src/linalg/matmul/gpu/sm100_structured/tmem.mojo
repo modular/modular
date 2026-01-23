@@ -34,7 +34,7 @@ from gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
 )
 
-from linalg.structuring import SMemArrayType
+from linalg.structuring import SMemArray
 
 
 @register_passable("trivial")
@@ -51,7 +51,7 @@ struct TmemAllocation[
         max_cols: TMEM columns (512 for SM100).
     """
 
-    comptime SmemAddrStorage = SMemArrayType[UInt32, 1]
+    comptime SmemAddrStorage = SMemArray[UInt32, 1]
 
     var addr: UInt32
 
@@ -627,7 +627,7 @@ struct TmemArrayType[
 ]:
     """Array of tiles in Tensor Memory (TMEM).
 
-    Similar to SMemArrayType but for TMEM-resident tiles. Provides indexed
+    Similar to SMemArray but for TMEM-resident tiles. Provides indexed
     access to a contiguous array of TmemTensor tiles.
 
     Parameters:

@@ -15,7 +15,6 @@ from math import ceildiv, isclose
 from sys import argv, simd_width_of
 from sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
 from gpu.host import DeviceContext

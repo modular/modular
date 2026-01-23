@@ -32,7 +32,7 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.kv_cache import NullKVCacheManager
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
 )

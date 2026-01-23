@@ -507,7 +507,7 @@ fn test_argn_simd_index_order() raises:
 fn test_argn_parallelize() raises:
     print("== test_argn_parallelize")
 
-    # Checks argn's performance when the size of the NDBuffer exceeds the threshold to enable parallelism
+    # Checks argn's performance when the size of the LayoutTensor exceeds the threshold to enable parallelism
     comptime batch_size = 8
     comptime hidden_dim = 16384
 

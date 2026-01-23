@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.attention.multi_latent_attention
+.. automodule:: max.nn.legacy.attention.multi_latent_attention
    :members:
    :undoc-members:

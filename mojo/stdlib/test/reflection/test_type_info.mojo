@@ -12,15 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for type and function name introspection APIs."""
 
-from sys.info import CompilationTarget, _current_target
+from sys.info import CompilationTarget, _current_target, is_64bit
+
+from collections import List, Optional
 
 from reflection import (
     get_linkage_name,
     get_type_name,
     get_function_name,
+    get_base_type_name,
 )
 from reflection.type_info import _unqualified_type_name
-from testing import assert_equal
+from testing import assert_equal, assert_true, assert_false
 from testing import TestSuite
 
 
@@ -222,6 +225,11 @@ struct GenericWrapper[T: AnyType]:
     pass
 
 
+# Generic struct with multiple type parameters
+struct Pair[T: AnyType, U: AnyType]:
+    pass
+
+
 def test_get_type_name_nested_parametric_direct():
     """Test that directly using nested parametric types works."""
     # Direct usage works fine
@@ -260,6 +268,74 @@ def test_get_type_name_through_generic():
     """Test get_type_name through a generic function."""
     assert_equal(_get_type_name_generic[Int](), "Int")
     assert_equal(_get_type_name_generic[String](), "String")
+
+
+struct UIndexParam[value: Scalar[DType.uint]]:
+    pass
+
+
+struct IndexParam[value: Scalar[DType.int]]:
+    pass
+
+
+def test_get_type_name_uindex_index_simd_value():
+    """Test that DType.uint and DType.int SIMD values are printed correctly."""
+
+    # Test unsigned uindex value - should print as large positive number
+    comptime uint_max: Scalar[DType.uint] = Scalar[DType.uint].MAX
+    var name = get_type_name[UIndexParam[uint_max]]()
+    if is_64bit():
+        assert_equal(
+            name,
+            (
+                "test_type_info.UIndexParam[18446744073709551615 :"
+                " SIMD[DType.uindex, 1]]"
+            ),
+        )
+    else:
+        assert_equal(
+            name,
+            "test_type_info.UIndexParam[4294967295 : SIMD[DType.uindex, 1]]",
+        )
+
+    # Test signed index value for comparison - should print as -1
+    comptime neg_one: Scalar[DType.int] = -1
+    name = get_type_name[IndexParam[neg_one]]()
+    assert_equal(
+        name,
+        "test_type_info.IndexParam[-1 : SIMD[DType.index, 1]]",
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# Base Type Reflection Tests (Issue #5735)
+# ===----------------------------------------------------------------------=== #
+
+
+def test_get_base_type_name_basic():
+    """Test get_base_type_name with simple and parameterized types."""
+    # For non-parameterized types, get_base_type_name returns the type's name
+    assert_equal(get_base_type_name[Int](), "Int")
+
+    # For parameterized types, get_base_type_name returns the base type name
+    assert_equal(get_base_type_name[List[Int]](), "List")
+
+    # Different parameterizations of the same type have the same base name
+    assert_equal(
+        get_base_type_name[List[Int]](), get_base_type_name[List[String]]()
+    )
+
+
+def test_get_base_type_name_user_defined():
+    """Test get_base_type_name with user-defined generic types."""
+    # User-defined generics should have the same base name
+    assert_equal(
+        get_base_type_name[GenericWrapper[Int]](),
+        get_base_type_name[GenericWrapper[String]](),
+    )
+
+    # Types with multiple parameters
+    assert_equal(get_base_type_name[Pair[Int, String]](), "Pair")
 
 
 def main():

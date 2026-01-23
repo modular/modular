@@ -40,7 +40,12 @@ from sys import (
     size_of,
 )
 from sys._assembly import inlined_assembly
-from sys.info import CompilationTarget, _is_sm_9x_or_newer, _is_sm_100x_or_newer
+from sys.info import (
+    CompilationTarget,
+    _is_sm_9x_or_newer,
+    _is_sm_100x_or_newer,
+    is_apple_gpu,
+)
 from sys.intrinsics import _RegisterPackType
 
 from builtin.dtype import _uint_type_of_width
@@ -653,7 +658,7 @@ fn async_copy[
     comptime cp_async_asm = "cp.async." + cache_op + ".shared.global" + cache_hint + l2_prefetch_substr
 
     @parameter
-    if Bool(fill) and Bool(fill.value() == 0):
+    if Bool(fill) and fill.value() == 0:
         debug_assert(
             not predicate, "Predicate bit has to be set False for zero fill."
         )
@@ -865,6 +870,9 @@ fn external_memory[
     - The pointer is only valid within the GPU kernel execution context.
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
+    __comptime_assert (
+        not is_apple_gpu()
+    ), "external memory is not supported on Apple GPU"
     var extern_ptr_symbol = UnsafePointer[
         StaticTuple[dtype, 0], MutAnyOrigin, address_space=address_space
     ](

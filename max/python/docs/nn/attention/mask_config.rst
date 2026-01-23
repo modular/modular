@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.attention.mask_config
+.. automodule:: max.nn.legacy.attention.mask_config
    :members:
    :undoc-members:

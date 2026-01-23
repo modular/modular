@@ -18,7 +18,7 @@ from typing import Any
 
 from max.driver import Device, is_virtual_device_mode
 from max.engine import InferenceSession
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
 
 from .null_cache_manager import NullKVCacheManager
 from .paged_cache import PagedKVCacheManager

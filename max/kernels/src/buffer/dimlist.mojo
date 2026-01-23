@@ -304,7 +304,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         Args:
             value: The initial dim values list.
         """
-        self.value = VariadicList[Dim](Int(index(value)))
+        self.value = VariadicList[Dim](index(value))
 
     @always_inline("nodebug")
     fn __init__[I: Indexer & Copyable](out self, values: Tuple[I]):

@@ -65,3 +65,32 @@ def assert_on_host(
                 )
             )
         )
+
+
+def assert_same_shape(*values: TensorValue | BufferValue) -> None:
+    first_shape = values[0].shape
+
+    for i, tensor in enumerate(values[1:], start=1):
+        if tensor.shape != first_shape:
+            raise ValueError(
+                f"All input tensors must have the same shape. "
+                f"Input 0 has shape {first_shape}, but input {i} has shape {tensor.shape}"
+            )
+
+
+def assert_same_dtype(*values: TensorValue | BufferValue) -> None:
+    first_dtype = values[0].dtype
+
+    for i, tensor in enumerate(values[1:], start=1):
+        if tensor.dtype != first_dtype:
+            raise ValueError(
+                f"All input tensors must have the same dtype. "
+                f"Input 0 has dtype {first_dtype}, but input {i} has dtype {tensor.dtype}"
+            )
+
+
+def assert_valid_axis(value: TensorValue | BufferValue, axis: int) -> None:
+    if not (-value.rank <= axis < value.rank):
+        raise IndexError(
+            f"Axis must be in range [-{value.rank}, {value.rank}), got {axis}"
+        )

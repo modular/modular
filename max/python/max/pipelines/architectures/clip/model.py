@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max import functional as F
 from max.driver import Device
 from max.engine import Model
-from max.experimental import functional as F
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.max_model import MaxModel

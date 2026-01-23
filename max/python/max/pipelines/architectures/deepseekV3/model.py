@@ -24,8 +24,8 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -123,7 +123,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return DeepseekV3Config.get_kv_params(
+        return DeepseekV3Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=devices,
@@ -137,9 +137,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
-        max_batch_context_length = self.pipeline_config.max_batch_context_length
+        max_batch_total_tokens = self.pipeline_config.max_batch_total_tokens
         # PipelineConfig would automatically resolve it if not set by user.
-        assert max_batch_context_length is not None, "max_length must be set"
+        assert max_batch_total_tokens is not None, "max_length must be set"
 
         if self.pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
             graph_mode = "prefill"
@@ -148,7 +148,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         else:
             graph_mode = "auto"
 
-        kv_params = DeepseekV3Config.get_kv_params(
+        kv_params = DeepseekV3Config.construct_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
@@ -184,7 +184,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
-                max_tokens_per_rank=self.pipeline_config.prefill_chunk_size,
+                max_tokens_per_rank=self.pipeline_config.max_batch_input_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
                 dispatch_fp8_config=None,
@@ -263,7 +263,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
-            max_batch_context_length=max_batch_context_length,
+            max_batch_context_length=max_batch_total_tokens,
             float8_config=float8_config,
             ep_config=ep_config,
             graph_mode=graph_mode,
@@ -374,15 +374,15 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         # During the prefill, we need to up-project all the KV cache for
         # current requests. The total context length of requests in a batch
-        # should be limited by max_batch_context_length.
+        # should be limited by max_batch_total_tokens.
         if pipeline_config.pipeline_role != PipelineRole.DecodeOnly:
             max_kv_length: int = 0
 
-            if pipeline_config.max_batch_context_length is None:
-                # If max_batch_context_length is not set, we use max_length.
+            if pipeline_config.max_batch_total_tokens is None:
+                # If max_batch_total_tokens is not set, we use max_length.
                 max_kv_length = pipeline_config.max_length or 0
             else:
-                max_kv_length = pipeline_config.max_batch_context_length
+                max_kv_length = pipeline_config.max_batch_total_tokens
 
             mla_activation_memory += (
                 pipeline_config.model.data_parallel_degree
@@ -396,7 +396,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # Estimate activation memory during Expert Parallel MoE.
         if pipeline_config.ep_size > 1:
             n_gpus_per_node = len(pipeline_config.model.device_specs)
-            max_input_len_per_rank = pipeline_config.prefill_chunk_size
+            max_input_len_per_rank = pipeline_config.max_batch_input_tokens
 
             # Calculate the maximum number of tokens a rank may receive during all-to-all routing.
             max_recv_tokens_per_rank = (

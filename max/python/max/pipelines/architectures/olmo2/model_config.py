@@ -20,8 +20,9 @@ from typing import Literal
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn import DistributedGemmConfig, ReturnHiddenStates, ReturnLogits
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.linear import DistributedGemmConfig
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 
@@ -36,14 +37,14 @@ class Olmo2Config(Llama3Config):
     """
 
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        """Override the default Llama3Config.get_kv_params to use head_dim from config.
+        """Override the default Llama3Config.construct_kv_params to use head_dim from config.
         Olmo2 models have an explicit head_dim field in their configuration,
         unlike Llama models where it needs to be calculated.
         Args:
@@ -116,7 +117,7 @@ class Olmo2Config(Llama3Config):
         attention_bias: bool = False,
     ) -> Olmo2Config:
         """Generate an Olmo2Config from the provided parameters.
-        This method largely delegates to Llama3Config.generate but ensures
+        This method largely delegates to Llama3Config but ensures
         the correct attention_multiplier calculation using Olmo2's head_dim.
         Args:
             pipeline_config: Pipeline configuration.
@@ -133,17 +134,16 @@ class Olmo2Config(Llama3Config):
             Configured Olmo2Config instance.
         """
         # Call the parent generate method to get most of the configuration
-        base_config = Llama3Config.generate(
-            pipeline_config=pipeline_config,
+        base_config = Llama3Config.initialize_from_config(
+            pipeline_config, huggingface_config
+        )
+        base_config.finalize(
             huggingface_config=huggingface_config,
             state_dict=state_dict,
-            dtype=dtype,
-            n_devices=n_devices,
-            cache_dtype=cache_dtype,
-            kv_cache_config=kv_cache_config,
-            return_logits=return_logits,
             norm_method=norm_method,
             attention_bias=attention_bias,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
         )
 
         device_refs = [
@@ -152,7 +152,7 @@ class Olmo2Config(Llama3Config):
         ]
 
         # Override the KV parameters and attention multiplier with Olmo2-specific calculations
-        olmo2_kv_params = Olmo2Config.get_kv_params(
+        olmo2_kv_params = Olmo2Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=device_refs,
