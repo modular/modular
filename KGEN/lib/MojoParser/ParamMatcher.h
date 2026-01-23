@@ -81,7 +81,7 @@ private:
 
 /// This class implements logic for match parameters between an actual value
 /// present at a call site, and expected value in the callee.  The former value
-/// is always concrete, but the later may contain symbolic parameters from the
+/// is always concrete, but the latter may contain symbolic parameters from the
 /// callees signature that we're trying to infer.  It is also possible this
 /// candidate is completely invalid!  The result of match is one of several
 /// cases:

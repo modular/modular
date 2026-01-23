@@ -2025,7 +2025,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   //    f = open("foo.txt", "r")
   //    print(f.read())
   //
-  // The later works because of Mojo's strong early-destruction guarantees and
+  // The latter works because of Mojo's strong early-destruction guarantees and
   // lack of frame-objects-capturing-variables problems, but the former is more
   // familiar to Pythonistas.
   ASTType contextRVType = MLValue(contextMgrDecl).getRValueType();

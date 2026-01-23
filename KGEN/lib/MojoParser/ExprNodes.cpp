@@ -3226,7 +3226,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, IREmitter &emitter) const {
   // because we can't have emitI1 consume it.
   if (lhsV.getIfSRValue() &&
       !lhsV.getRValueType().isTrivial(getLoc(), emitter.shared)) {
-    // We cannot convert an SRValue directly to an SBValue because the later
+    // We cannot convert an SRValue directly to an SBValue because the latter
     // doesn't track lifetimes back to the original value correctly. Instead,
     // decay the SRValue to an MRValue first, which does.
     lhsV = emitter.emitMRValue({lhsV, lhs}, EC_OperatorOperandValue);

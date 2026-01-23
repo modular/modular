@@ -815,7 +815,7 @@ ParseResult ExprParser::parsePrefixLBrace(ExprNode *&result, SMLoc lbraceLoc) {
 
     ExprNode *key = nullptr, *value = nullptr;
 
-    // Handle normal key:value and dictionary unpacking.  The later has a null
+    // Handle normal key:value and dictionary unpacking. The latter has a null
     // key in the DictLiteralNode representation.
     bool isDictEntry = false;
     auto loc = getToken().getLoc();
