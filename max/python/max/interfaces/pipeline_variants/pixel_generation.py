@@ -46,9 +46,17 @@ class PixelGenerationRequest(Request):
     """
     The text prompt to generate pixels for.
     """
+    prompt_2: str | None = None
+    """
+    The second text prompt to generate pixels for.
+    """
     negative_prompt: str | None = None
     """
     Negative prompt to guide what NOT to generate.
+    """
+    negative_prompt_2: str | None = None
+    """
+    Second negative prompt to guide what NOT to generate.
     """
     messages: list[TextGenerationRequestMessage] | None = None
     """
@@ -124,8 +132,18 @@ class PixelGenerationContext(BaseContext, Protocol):
         ...
 
     @property
+    def prompt_2(self) -> str | None:
+        """Second text prompt for pixel generation."""
+        ...
+
+    @property
     def negative_prompt(self) -> str | None:
         """Negative prompt for what NOT to generate."""
+        ...
+
+    @property
+    def negative_prompt_2(self) -> str | None:
+        """Second negative prompt for what NOT to generate."""
         ...
 
     @property
