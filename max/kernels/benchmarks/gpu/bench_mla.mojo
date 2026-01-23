@@ -31,6 +31,23 @@ from nn.mha_score_mod import IdentityScoreMod
 from utils.index import Index
 
 
+# Cache busting helpers: 512 MiB is larger than 2x the infinity cache on MI300x.
+fn _calculate_stride(tensor_size: Int, alignment: Int) -> Int:
+    return align_up(tensor_size, alignment)
+
+
+fn _calculate_buffer_size[
+    dtype: DType
+](tensor_size: Int, alignment: Int) -> Int:
+    comptime k512m = 512 * 1024 * 1024
+    var stride = _calculate_stride(tensor_size, alignment)
+    return align_up(k512m, stride * size_of[dtype]()) // size_of[dtype]()
+
+
+fn _calculate_offset(iteration: Int, stride: Int, buffer_size: Int) -> Int:
+    return (iteration * stride) % buffer_size
+
+
 fn bench_decode[
     mask_rank: Int,
     qkv_type: DType,
@@ -65,27 +82,16 @@ fn bench_decode[
     )
 
     # For cache busting: calculate strides and larger buffer sizes.
-    # 512 MiB is larger than 2x the infinity cache on MI300x.
     comptime simd_size = 4
-    var stride_q = align_up(q_size, simd_size)
-    var stride_k = align_up(k_size, simd_size)
-    var stride_mask = align_up(mask_size, simd_size)
-    var stride_o = align_up(o_size, simd_size)
+    var stride_q = _calculate_stride(q_size, simd_size)
+    var stride_k = _calculate_stride(k_size, simd_size)
+    var stride_mask = _calculate_stride(mask_size, simd_size)
+    var stride_o = _calculate_stride(o_size, simd_size)
 
-    comptime k512m = 512 * 1024 * 1024
-    var buf_q = (
-        align_up(k512m, stride_q * size_of[qkv_type]()) // size_of[qkv_type]()
-    )
-    var buf_k = (
-        align_up(k512m, stride_k * size_of[qkv_type]()) // size_of[qkv_type]()
-    )
-    var buf_mask = (
-        align_up(k512m, stride_mask * size_of[mask_type]())
-        // size_of[mask_type]()
-    )
-    var buf_o = (
-        align_up(k512m, stride_o * size_of[qkv_type]()) // size_of[qkv_type]()
-    )
+    var buf_q = _calculate_buffer_size[qkv_type](q_size, simd_size)
+    var buf_k = _calculate_buffer_size[qkv_type](k_size, simd_size)
+    var buf_mask = _calculate_buffer_size[mask_type](mask_size, simd_size)
+    var buf_o = _calculate_buffer_size[qkv_type](o_size, simd_size)
 
     # Allocate memory for all variables.
     var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
@@ -145,10 +151,12 @@ fn bench_decode[
 
             @parameter
             if cache_busting:
-                offset_q = (iteration * stride_q) % buf_q
-                offset_k = (iteration * stride_k) % buf_k
-                offset_mask = (iteration * stride_mask) % buf_mask
-                offset_o = (iteration * stride_o) % buf_o
+                offset_q = _calculate_offset(iteration, stride_q, buf_q)
+                offset_k = _calculate_offset(iteration, stride_k, buf_k)
+                offset_mask = _calculate_offset(
+                    iteration, stride_mask, buf_mask
+                )
+                offset_o = _calculate_offset(iteration, stride_o, buf_o)
 
             var q_device = LayoutTensor[qkv_type, q_layout](
                 q_device_ptr.unsafe_ptr() + offset_q,
@@ -281,29 +289,17 @@ fn bench_prefill[
 
     # For cache busting: calculate strides and larger buffer sizes.
     comptime simd_size = 4
-    var stride_q = align_up(q_size, simd_size)
-    var stride_k = align_up(k_size, simd_size)
-    var stride_v = align_up(v_size, simd_size)
-    var stride_cache = align_up(cache_size, simd_size)
-    var stride_o = align_up(o_size, simd_size)
+    var stride_q = _calculate_stride(q_size, simd_size)
+    var stride_k = _calculate_stride(k_size, simd_size)
+    var stride_v = _calculate_stride(v_size, simd_size)
+    var stride_cache = _calculate_stride(cache_size, simd_size)
+    var stride_o = _calculate_stride(o_size, simd_size)
 
-    comptime k512m = 512 * 1024 * 1024
-    var buf_q = (
-        align_up(k512m, stride_q * size_of[qkv_type]()) // size_of[qkv_type]()
-    )
-    var buf_k = (
-        align_up(k512m, stride_k * size_of[qkv_type]()) // size_of[qkv_type]()
-    )
-    var buf_v = (
-        align_up(k512m, stride_v * size_of[qkv_type]()) // size_of[qkv_type]()
-    )
-    var buf_cache = (
-        align_up(k512m, stride_cache * size_of[qkv_type]())
-        // size_of[qkv_type]()
-    )
-    var buf_o = (
-        align_up(k512m, stride_o * size_of[qkv_type]()) // size_of[qkv_type]()
-    )
+    var buf_q = _calculate_buffer_size[qkv_type](q_size, simd_size)
+    var buf_k = _calculate_buffer_size[qkv_type](k_size, simd_size)
+    var buf_v = _calculate_buffer_size[qkv_type](v_size, simd_size)
+    var buf_cache = _calculate_buffer_size[qkv_type](cache_size, simd_size)
+    var buf_o = _calculate_buffer_size[qkv_type](o_size, simd_size)
 
     # Allocate memory for all variables.
     var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
@@ -418,11 +414,13 @@ fn bench_prefill[
 
             @parameter
             if cache_busting:
-                offset_q = (iteration * stride_q) % buf_q
-                offset_k = (iteration * stride_k) % buf_k
-                offset_v = (iteration * stride_v) % buf_v
-                offset_cache = (iteration * stride_cache) % buf_cache
-                offset_o = (iteration * stride_o) % buf_o
+                offset_q = _calculate_offset(iteration, stride_q, buf_q)
+                offset_k = _calculate_offset(iteration, stride_k, buf_k)
+                offset_v = _calculate_offset(iteration, stride_v, buf_v)
+                offset_cache = _calculate_offset(
+                    iteration, stride_cache, buf_cache
+                )
+                offset_o = _calculate_offset(iteration, stride_o, buf_o)
 
             var q_device = LayoutTensor[qkv_type, q_layout](
                 q_device_ptr.unsafe_ptr() + offset_q,
