@@ -39,7 +39,7 @@ from .host.info import GPUInfo
 # ===-----------------------------------------------------------------------===#
 
 
-comptime WARP_SIZE = _resolve_warp_size()
+comptime WARP_SIZE: Int = _resolve_warp_size()
 """The number of threads that execute in lockstep within a warp on the GPU.
 
 This constant represents the hardware warp size, which is the number of threads that execute

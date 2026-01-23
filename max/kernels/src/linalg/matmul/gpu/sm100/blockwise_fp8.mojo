@@ -14,7 +14,6 @@ from collections import OptionalReg
 from math import ceildiv, gcd
 from sys import align_of, size_of
 
-from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
 from gpu.primitives.cluster import block_rank_in_cluster
@@ -26,7 +25,6 @@ from gpu.memory import external_memory
 from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
@@ -305,29 +303,33 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                 a_smem_tile_3D_view,
                 tma_mbar[0],
                 (
-                    UInt(k_iter) * UInt(BK),
-                    block_idx.y * UInt(BM),
-                    UInt(block_idx.z),
+                    Int(k_iter) * BK,
+                    Int(block_idx.y) * BM,
+                    Int(block_idx.z),
                 ),
             )
 
             a_scales_tma_op.async_copy_3d(
                 a_scales_smem_tile_3D_view,
                 tma_mbar[0],
-                (block_idx.y * UInt(BM), UInt(k_iter), UInt(block_idx.z)),
+                (
+                    Int(block_idx.y) * BM,
+                    Int(k_iter),
+                    Int(block_idx.z),
+                ),
             )
 
             b_tma_op.async_copy_3d(
                 b_smem_tile_3D_view,
                 tma_mbar[0],
                 (
-                    UInt(k_iter) * UInt(BK),
-                    block_idx.x * UInt(BN),
-                    block_idx.z,
+                    Int(k_iter) * BK,
+                    Int(block_idx.x) * BN,
+                    Int(block_idx.z),
                 ) if transpose_b else (
-                    block_idx.x * UInt(BN),
-                    UInt(k_iter) * UInt(BK),
-                    block_idx.z,
+                    Int(block_idx.x) * BN,
+                    Int(k_iter) * BK,
+                    Int(block_idx.z),
                 ),
             )
 
@@ -763,6 +765,6 @@ fn matmul_sm100_blockwise_scaled_fp8[
         UInt(ceildiv(K, BK)),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )

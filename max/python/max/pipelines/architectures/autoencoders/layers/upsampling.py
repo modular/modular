@@ -14,10 +14,10 @@
 """Upsampling utilities for MAX framework."""
 
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, TensorValueLike
-from max.nn.module_v3 import Conv2d, Module
+from max.nn import Conv2d, Module
 
 
 def interpolate_2d_nearest(
@@ -32,7 +32,7 @@ def interpolate_2d_nearest(
     nearest-neighbor upsampling by a factor of 2.
 
     This function works in both Graph context and eager execution contexts,
-    compatible with module_v3 style.
+    compatible with Module API style.
 
     Note:
         This workaround can be removed once ops.resize supports NEAREST mode.
@@ -80,12 +80,12 @@ def interpolate_2d_nearest(
 
 
 class Upsample2D(Module[[Tensor], Tensor]):
-    """2D upsampling module with optional convolution using module_v3.
+    """2D upsampling module with optional convolution.
 
     This module performs 2D upsampling using nearest-neighbor interpolation
     (via interpolate_2d_nearest function) followed by an optional convolution layer.
 
-    This is a module_v3-compatible version that uses Tensor instead of TensorValue
+    This version uses Tensor instead of TensorValue
     """
 
     conv: Conv2d | None
@@ -117,8 +117,8 @@ class Upsample2D(Module[[Tensor], Tensor]):
             padding: Padding for the convolution.
             bias: Whether to use bias in the convolution.
             interpolate: Whether to perform interpolation upsampling.
-            device: Device reference (optional in module_v3).
-            dtype: Data type (optional in module_v3).
+            device: Device reference (optional).
+            dtype: Data type (optional).
         """
         self.channels = channels
         self.out_channels = out_channels or channels

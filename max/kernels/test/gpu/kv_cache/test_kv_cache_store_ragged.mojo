@@ -15,7 +15,6 @@ from collections import Optional, Set
 from math import ceildiv
 from random import random_ui64, seed
 
-from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,

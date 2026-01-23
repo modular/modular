@@ -22,7 +22,7 @@ from pytest_benchmark.fixture import BenchmarkFixture
 def test_block_hasher() -> None:
     block_size = 128
     num_tokens = 3000
-    tokens = np.arange(num_tokens)
+    tokens = np.arange(num_tokens, dtype=np.int32)
 
     hashes = block_hasher(tokens, block_size, hash("None"))
 
@@ -85,7 +85,7 @@ def naive_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:
 
 def test_benchmark_mojo(benchmark: BenchmarkFixture) -> None:
     block_size = 128
-    tokens = np.arange(30000)
+    tokens = np.arange(30000, dtype=np.int32)
 
     _ = benchmark.pedantic(
         mojo_block_hasher,
@@ -98,7 +98,7 @@ def test_benchmark_mojo(benchmark: BenchmarkFixture) -> None:
 
 def test_benchmark_tensor(benchmark: BenchmarkFixture) -> None:
     block_size = 128
-    tokens = np.arange(30000)
+    tokens = np.arange(30000, dtype=np.int32)
 
     _ = benchmark.pedantic(
         tensor_block_hasher,
@@ -111,7 +111,7 @@ def test_benchmark_tensor(benchmark: BenchmarkFixture) -> None:
 
 def test_benchmark_naive(benchmark: BenchmarkFixture) -> None:
     block_size = 128
-    tokens = np.arange(30000)
+    tokens = np.arange(30000, dtype=np.int32)
 
     _ = benchmark.pedantic(
         naive_block_hasher,

@@ -31,9 +31,15 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn import Module, ReturnLogits, Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
-from max.nn.parallel import ParallelArrayOps
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.legacy.layer import Module
+from max.nn.legacy.parallel import ParallelArrayOps
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.qwen2_5vl.util import (
     compute_multimodal_merge_indices,
 )
@@ -197,19 +203,13 @@ class Qwen3VLModel(
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Qwen3VL."""
-        return Qwen3VLConfig.get_kv_params(
+        return Qwen3VLConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
             kv_cache_config,
             cache_dtype,
         )
-
-    # TODO: Seems like a common pattern. Implement in a base class?
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Gets the number of hidden layers from the HuggingFace configuration."""
-        return Qwen3VLConfig.get_num_layers(huggingface_config)
 
     # TODO: Seems like a common pattern. Implement in a base class?
     def _unflatten_kv_inputs(

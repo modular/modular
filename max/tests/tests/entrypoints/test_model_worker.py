@@ -44,7 +44,7 @@ def mock_pipeline_config() -> PipelineConfig:
     pipeline_config = PipelineConfig.model_construct(max_batch_size=1)
 
     model_config = MAXModelConfig.model_construct(served_model_name="echo")
-    pipeline_config._model = model_config
+    pipeline_config.model = model_config
     return pipeline_config
 
 

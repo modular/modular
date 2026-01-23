@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
 from collections import Set, OptionalReg
 from math import rsqrt
 from random import random_ui64, seed

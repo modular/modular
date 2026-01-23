@@ -34,8 +34,8 @@ class TokenGenerationSchedulerConfig:
     max_seq_len: int | None = None
     """The maximum sequence length of the model."""
 
-    max_batch_context_length: int | None = None
-    """Ensures that the sum of the context length in a batch does not exceed max_batch_context_length."""
+    max_batch_total_tokens: int | None = None
+    """Ensures that the sum of the context length in a batch does not exceed max_batch_total_tokens."""
 
     enable_chunked_prefill: bool = True
     """Enables chunked prefill, where the scheduler splits requests into chunks to ensure
@@ -72,12 +72,12 @@ class TokenGenerationSchedulerConfig:
                 f"`max_forward_steps_tg` must be greater than 0, found {self.max_forward_steps_tg}"
             )
         if (
-            self.max_batch_context_length is not None
+            self.max_batch_total_tokens is not None
             and self.max_seq_len is not None
-            and self.max_batch_context_length < self.max_seq_len
+            and self.max_batch_total_tokens < self.max_seq_len
         ):
             raise ValueError(
-                f"`max_batch_context_length` must be greater than or equal to `max_seq_len`, found {self.max_batch_context_length} < {self.max_seq_len}"
+                f"`max_batch_total_tokens` must be greater than or equal to `max_seq_len`, found {self.max_batch_total_tokens} < {self.max_seq_len}"
             )
         if self.max_batch_size > self.target_tokens_per_batch_ce:
             raise ValueError(
@@ -97,9 +97,9 @@ class TokenGenerationSchedulerConfig:
             max_forward_steps_tg=pipeline_config.max_num_steps
             if pipeline_config.max_num_steps != -1
             else 1,
-            target_tokens_per_batch_ce=pipeline_config.prefill_chunk_size,
+            target_tokens_per_batch_ce=pipeline_config.max_batch_input_tokens,
             max_seq_len=pipeline_config.max_length,
-            max_batch_context_length=pipeline_config.max_batch_context_length,
+            max_batch_total_tokens=pipeline_config.max_batch_total_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,

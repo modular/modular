@@ -89,7 +89,7 @@ struct WarpRole(ImplicitlyCopyable):
 
     @always_inline
     fn __eq__(self, other: UInt) -> Bool:
-        return self._role == other
+        return self._role == Int32(other)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -101,7 +101,7 @@ struct WarpRole(ImplicitlyCopyable):
 
     @always_inline
     fn __ge__(self, other: UInt) -> Bool:
-        return self._role >= other
+        return self._role >= Int32(other)
 
     @staticmethod
     @always_inline
@@ -492,7 +492,7 @@ fn kernel_7[
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
     num_pipeline_stages: UInt,
-    num_output_stages: UInt = 2,
+    num_output_stages: Int = 2,
     output_tile_shape: IndexList[2] = Index(128, 32),
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -549,9 +549,9 @@ fn kernel_7[
 
     comptime a_smem_size = a_smem_layout.size()
     comptime b_smem_size = b_smem_layout.size()
-    comptime c_smem_size = output_tile_shape[0] * output_tile_shape[1] * Int(
-        num_output_stages
-    )
+    comptime c_smem_size = output_tile_shape[0] * output_tile_shape[
+        1
+    ] * num_output_stages
 
     var a_smem_base = base_ptr_smem  # need space for 4096 (64 x 64) elements by 2 bytes or 8192 total, which is 0x2000
     var b_smem_base = (
@@ -682,9 +682,9 @@ fn kernel_7[
     for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= 1 << (i * cta_group)
 
-    a_multicast_mask <<= rank_m
-    b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
+    a_multicast_mask <<= UInt16(rank_m)
+    b_multicast_mask <<= UInt16(peer_cta_coord[0])
+    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)

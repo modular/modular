@@ -112,7 +112,7 @@ fn mojo_block_hasher(
 ) raises -> PythonObject:
     # Parse np array tokens input
     var py_array_object_ptr = LegacyUnsafePointer[
-        PyArrayObject[DType.int64], ...
+        PyArrayObject[DType.int32], ...
     ](unchecked_downcast_value=py_array_object)
 
     # Parse other arguments

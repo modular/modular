@@ -4,6 +4,6 @@
 :slug: transformer
 
 
-.. automodule:: max.nn.transformer.transformer
+.. automodule:: max.nn.legacy.transformer.transformer
    :members:
    :undoc-members:

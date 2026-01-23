@@ -14,6 +14,7 @@
 
 from ..value import TensorValue, TensorValueLike
 from .slice_tensor import slice_tensor
+from .validation import assert_valid_axis
 
 
 def chunk(x: TensorValueLike, chunks: int, axis: int = 0) -> list[TensorValue]:
@@ -42,11 +43,10 @@ def chunk(x: TensorValueLike, chunks: int, axis: int = 0) -> list[TensorValue]:
     if x.rank == 0 and chunks > 1:
         raise ValueError(f"Cannot split scalar value into {chunks=}")
 
+    assert_valid_axis(x, axis)
+
     if axis < 0:
         axis = x.rank + axis
-
-    if not 0 <= axis < x.rank:
-        raise ValueError(f"'{axis=}' out of bounds for tensor {x=}")
 
     # Convert to a python bigint for int math
     n = int(x.shape[axis])

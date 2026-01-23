@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     block_scales_interleave,
     dynamic_block_scaled_matmul_fp4,
     quantize_dynamic_block_scaled_fp4,

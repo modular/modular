@@ -14,11 +14,10 @@
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.tensor import Tensor
 from max.graph import DeviceRef, TensorType
-from max.nn.module_v3 import Conv2d, GroupNorm, Module
-from max.nn.module_v3.sequential import ModuleList
+from max.nn import Conv2d, GroupNorm, Module, ModuleList
 
 from .layers import ResnetBlock2D, Upsample2D, VAEAttention
 
@@ -131,7 +130,7 @@ class UpDecoderBlock2D(Module[[Tensor], Tensor]):
 
 
 class MidBlock2D(Module[[Tensor], Tensor]):
-    """Middle block for 2D VAE using module_v3.
+    """Middle block for 2D VAE.
 
     This module processes features at the middle of the VAE architecture,
     applying ResNet blocks with optional spatial attention mechanisms.
@@ -281,7 +280,7 @@ class DecoderOutput:
 
 
 class Decoder(Module[[Tensor], Tensor]):
-    """VAE decoder for generating images from latent representations using module_v3.
+    """VAE decoder for generating images from latent representations.
 
     This decoder progressively upsamples latent features through multiple
     decoder blocks, applying ResNet layers and attention mechanisms to

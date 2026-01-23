@@ -29,9 +29,9 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn import Module
-from max.nn.data_parallelism import split_batch
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.data_parallelism import split_batch
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import Module
 from max.pipelines.lib.lora import LoRAManager
 
 from .llama3 import Llama3

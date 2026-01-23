@@ -436,9 +436,30 @@ fn _allreduce_2stage_kernel[
     # 2. Memory fence ensures visibility of partial reductions.
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
-    _reduce_scatter_impl[ngpus, use_multimem=use_multimem](
-        ptrs, tmp_out, my_rank, rs_config
+    # TODO(KERN-2273): Remove this once temporary buffers removed
+    # Output lambda for reduce-scatter: write to scratch buffer
+    var tmp_buff = NDBuffer[dtype, 1, MutAnyOrigin](
+        tmp_out,
+        rs_config.largest_part,
     )
+
+    @always_inline
+    @parameter
+    @__copy_capture(tmp_out)
+    fn rs_output_lambda[
+        _dtype: DType,
+        _rank: Int,
+        _width: Int,
+        *,
+        _alignment: Int,
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+        tmp_out.address_space_cast[_target_address_space]().store[
+            alignment=_alignment
+        ](coords[0], val.cast[dtype]())
+
+    _reduce_scatter_impl[
+        ngpus, output_lambda=rs_output_lambda, use_multimem=use_multimem
+    ](ptrs, tmp_buff, my_rank, rs_config)
 
     # Second barrier with memory ordering guarantees.
     _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](

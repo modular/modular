@@ -190,7 +190,7 @@ struct Codepoint(
         )
 
         debug_assert(
-            string.byte_length() == Int(num_bytes),
+            string.byte_length() == num_bytes,
             "input string must be one character",
         )
 
@@ -575,7 +575,8 @@ struct Codepoint(
                 for i in range(1, num_bytes):
                     shift -= 6
                     ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
-        return Int(num_bytes)
+
+        return num_bytes
 
     @always_inline
     fn utf8_byte_length(self) -> Int:

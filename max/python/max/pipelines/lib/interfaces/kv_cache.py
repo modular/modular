@@ -27,7 +27,7 @@ from max.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
@@ -103,13 +103,6 @@ class KVCacheMixin(Protocol):
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Returns the KV cache params for the pipeline model."""
-        ...
-
-    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
-    @classmethod
-    @abstractmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Returns the number of layers for the pipeline model."""
         ...
 
 

@@ -14,15 +14,14 @@
 import math
 
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.tensor import Tensor
 from max.graph import DeviceRef
-from max.nn.module_v3 import GroupNorm, Linear, Module
-from max.nn.module_v3.sequential import ModuleList
+from max.nn import GroupNorm, Linear, Module, ModuleList
 
 
 class VAEAttention(Module[[Tensor], Tensor]):
-    """Spatial attention module for VAE models using module_v3.
+    """Spatial attention module for VAE models.
 
     This module performs self-attention on 2D spatial features by:
     1. Converting [N, C, H, W] to [N, H*W, C] sequence format

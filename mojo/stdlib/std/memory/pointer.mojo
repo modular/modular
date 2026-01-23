@@ -19,6 +19,7 @@ from memory import Pointer
 ```
 """
 
+from format._utils import FormatStruct, Named
 from reflection.type_info import _unqualified_type_name
 
 # ===-----------------------------------------------------------------------===#
@@ -325,17 +326,11 @@ struct Pointer[
         Args:
             writer: The object to write to.
         """
-        writer.write(
-            "Pointer[mut=",
-            Self.mut,
-            ", ",
+        FormatStruct(writer, "Pointer").params(
+            Named("mut", Self.mut),
             _unqualified_type_name[Self.type](),
-            ", address_space=",
-            Self.address_space,
-            "](",
-            self,
-            ")",
-        )
+            Named("address_space", Self.address_space),
+        ).fields(self)
 
     @always_inline("nodebug")
     fn __merge_with__[

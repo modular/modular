@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.tensor import Tensor
 from max.graph import DeviceRef
-from max.nn.module_v3 import Conv2d, GroupNorm, Module
+from max.nn import Conv2d, GroupNorm, Module
 
 
 class ResnetBlock2D(Module[[Tensor], Tensor]):
-    """Residual block for 2D VAE decoder using module_v3.
+    """Residual block for 2D VAE decoder.
 
     This module implements a residual block with two convolutional layers,
     group normalization, and optional shortcut connection. It supports

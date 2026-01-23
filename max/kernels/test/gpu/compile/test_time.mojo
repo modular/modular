@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from time import perf_counter_ns, time_function
+from time import perf_counter_ns, sleep, time_function
 
 from gpu.host import get_gpu_target
 from gpu.host.compile import _compile_code
@@ -76,8 +76,40 @@ def test_time_functions_sm90():
     _verify_time_functions(asm)
 
 
+fn sleep_function():
+    # Sleep for 1 second - this should generate a loop with nanosleep
+    # since NVIDIA's nanosleep has a max duration of 1ms.
+    sleep(1.0)
+
+
+@always_inline
+fn _verify_sleep_function(asm: StringSlice) raises -> None:
+    # Verify the nanosleep instruction is present.
+    assert_true("nanosleep" in asm, "Expected nanosleep instruction in PTX")
+    # Verify globaltimer read is present (used to track elapsed time).
+    assert_true("globaltimer" in asm, "Expected globaltimer read in PTX")
+    # Verify there's a backward branch (loop structure) - indicated by "@%p" predicate.
+    assert_true("bra" in asm, "Expected branch instruction for sleep loop")
+
+
+def test_sleep_function_sm80():
+    var asm = _compile_code[
+        sleep_function, target = get_gpu_target["sm_80"]()
+    ]().asm
+    _verify_sleep_function(asm)
+
+
+def test_sleep_function_sm90():
+    var asm = _compile_code[
+        sleep_function, target = get_gpu_target["sm_90"]()
+    ]().asm
+    _verify_sleep_function(asm)
+
+
 def main():
     test_clock_functions_sm80()
     test_clock_functions_sm90()
     test_time_functions_sm80()
     test_time_functions_sm90()
+    test_sleep_function_sm80()
+    test_sleep_function_sm90()

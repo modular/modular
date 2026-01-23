@@ -18,8 +18,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
 
@@ -70,10 +70,6 @@ class Mistral3Model(MistralModel):
             kv_cache_config,
             cache_dtype,
         )
-
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return super().get_num_layers(huggingface_config.text_config)
 
     @classmethod
     def calculate_max_seq_len(

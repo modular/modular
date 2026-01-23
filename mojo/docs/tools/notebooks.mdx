@@ -180,7 +180,7 @@ fn kernel():
 def main():
     # Launch GPU kernel
     with DeviceContext() as ctx:
-        ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
+        ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
         ctx.synchronize()
 ```
 
@@ -201,7 +201,7 @@ Each GPU thread updates one element.
 from gpu import thread_idx
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
+from sys import has_accelerator
 
 comptime VECTOR_WIDTH = 10
 comptime layout = Layout.row_major(VECTOR_WIDTH)
@@ -218,7 +218,7 @@ fn vector_addition(left: Tensor, right: Tensor, output: Tensor):
 def main():
     # Ensure a supported GPU (NVIDIA or AMD) is available
     constrained[
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
+        has_accelerator(),
         "This example requires a supported GPU",
     ]()
 
@@ -246,7 +246,7 @@ def main():
     _ = right_buffer.enqueue_fill(1)
 
     # Launch GPU kernel
-    ctx.enqueue_function_experimental[vector_addition](
+    ctx.enqueue_function[vector_addition, vector_addition](
         left_tensor,
         right_tensor,
         output_tensor,

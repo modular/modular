@@ -14,9 +14,9 @@
 from typing import ClassVar
 
 from max.driver import Device
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 from max.graph.weights import Weights
-from max.nn.module_v3 import Module
+from max.nn import Module
 from max.pipelines.lib import SupportedEncoding
 
 from .model import BaseAutoencoderModel
@@ -25,7 +25,7 @@ from .vae import Decoder
 
 
 class AutoencoderKL(Module[[Tensor], Tensor]):
-    r"""A VAE model with KL loss for encoding images into latents and decoding latent representations into images using module_v3."""
+    r"""A VAE model with KL loss for encoding images into latents and decoding latent representations into images."""
 
     def __init__(
         self,

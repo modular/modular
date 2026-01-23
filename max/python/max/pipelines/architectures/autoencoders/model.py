@@ -14,8 +14,8 @@
 from typing import TypeVar
 
 from max.driver import Device
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.max_model import MaxModel
@@ -77,14 +77,14 @@ class BaseAutoencoderModel(MaxModel):
         )
 
     def decode(self, *args, **kwargs) -> Tensor:
-        """Decode latents to images using module_v3 compiled decoder.
+        """Decode latents to images using compiled decoder.
 
         Args:
             *args: Input arguments (typically latents as Tensor).
             **kwargs: Additional keyword arguments.
 
         Returns:
-            Tensor: Decoded image tensor (module_v3 Tensor, V3).
+            Tensor: Decoded image tensor.
         """
         return self.model(*args, **kwargs)
 
@@ -99,6 +99,6 @@ class BaseAutoencoderModel(MaxModel):
             **kwargs: Additional keyword arguments.
 
         Returns:
-            Tensor: Decoded image tensor (module_v3 Tensor, V3).
+            Tensor: Decoded image tensor.
         """
         return self.decode(*args, **kwargs)
