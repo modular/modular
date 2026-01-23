@@ -7,8 +7,7 @@
 from debug_test_utils import keep_alive
 
 
-@register_passable("trivial")
-struct Point(ImplicitlyCopyable):
+struct Point(TrivialRegisterType):
     var x: Int
     var y: Int
 
