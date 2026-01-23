@@ -50,7 +50,13 @@ from ...utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from ...utils_gpu import MatmulConfig, MatmulKernels, _bk_base, select_config
+from ...utils_gpu import (
+    MatmulConfig,
+    MatmulKernels,
+    _bk_base,
+    select_config,
+    _vendor_blas_fallback_disabled,
+)
 from ..vendor.matmul import matmul as matmul_vendor
 from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
@@ -746,7 +752,7 @@ fn _matmul_gpu[
         and c_type in vendor_blas_fallback_dtypes
         and not has_apple_gpu_accelerator()
         # to disable vendor fallback, run export MODULAR_DISABLE_VENDOR_FALLBACK=1 in the environment
-        and not env_get_bool["MODULAR_DISABLE_VENDOR_FALLBACK", False]()
+        and not _vendor_blas_fallback_disabled()
     ):
         logger.info("Executing: vendor BLAS fallback")
         try:

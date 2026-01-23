@@ -20,7 +20,7 @@ comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
 
-from sys import env_get_int, has_nvidia_gpu_accelerator, size_of
+from sys import env_get_int, env_get_bool, has_nvidia_gpu_accelerator, size_of
 from sys.ffi import external_call
 
 from gpu import WARP_SIZE
@@ -498,6 +498,21 @@ fn select_config[
         num_pipeline_stages=UInt(best_num_stages),
         num_k_partitions=UInt(best_num_k_partitions),
     )
+
+
+fn _vendor_blas_fallback_disabled() -> Bool:
+    """Determine if fallback to vendor blas is disabled
+
+    Returns True if:
+        - vendor fallback has been globally disabled, or
+        - benchmark has specifically requested mojo kernel
+    else returns False.
+    """
+    comptime globally_disabled = env_get_bool[
+        "MODULAR_DISABLE_VENDOR_FALLBACK", False
+    ]()
+    comptime bench_disabled = not env_get_bool["use_vendor_blas", True]()
+    return globally_disabled or bench_disabled
 
 
 fn create_hilbert_lut(
