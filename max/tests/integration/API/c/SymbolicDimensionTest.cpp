@@ -15,7 +15,6 @@
 // Tests verify that models with static/symbolic dimensions properly validate
 // input shapes and execute correctly with various input configurations.
 
-#include "Support/PlatformUtils.h"
 #include "Utils.h"
 #include "max/c/common.h"
 #include "max/c/context.h"
@@ -38,9 +37,6 @@ static const char *algebraicMefPath() { return getenv("ALGEBRAIC_MEF_PATH"); }
 using M::APITest;
 
 TEST_F(APITest, StaticDimensionMismatch) {
-#if MODULAR_MACOS
-  GTEST_SKIP() << "Disabled on macOS due to platform-specific issues";
-#endif
   // Load static_dimensions.mef expecting [8, 10]
   M_CompileConfig *compileConfig = M_newCompileConfig();
   M_setModelPath(compileConfig, staticMefPath());
@@ -76,9 +72,6 @@ TEST_F(APITest, StaticDimensionMismatch) {
 }
 
 TEST_F(APITest, SymbolicDimensionDifferentShapes) {
-#if MODULAR_MACOS
-  GTEST_SKIP() << "Disabled on macOS due to platform-specific issues";
-#endif
   // Load symbolic_dimensions.mef with ["batch", 10]
   M_CompileConfig *compileConfig = M_newCompileConfig();
   M_setModelPath(compileConfig, symbolicMefPath());
@@ -161,9 +154,6 @@ TEST_F(APITest, SymbolicDimensionDifferentShapes) {
 }
 
 TEST_F(APITest, SameSymbolicDimensionMismatch) {
-#if MODULAR_MACOS
-  GTEST_SKIP() << "Disabled on macOS due to platform-specific issues";
-#endif
   // Load same_symbolic_two_inputs.mef with two ["seq_len", 768] inputs
   M_CompileConfig *compileConfig = M_newCompileConfig();
   M_setModelPath(compileConfig, sameSymbolicMefPath());
@@ -205,9 +195,6 @@ TEST_F(APITest, SameSymbolicDimensionMismatch) {
 }
 
 TEST_F(APITest, AlgebraicDimensionMeetsConstraints) {
-#if MODULAR_MACOS
-  GTEST_SKIP() << "Disabled on macOS due to platform-specific issues";
-#endif
   // Load algebraic_dimensions.mef with input [batch, 64] -> [batch, 4, 16]
   M_CompileConfig *compileConfig = M_newCompileConfig();
   M_setModelPath(compileConfig, algebraicMefPath());
