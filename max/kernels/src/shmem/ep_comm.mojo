@@ -1848,7 +1848,7 @@ struct EPCombineKernel[
                                 input_tokens.ptr_at_offset(
                                     IndexList[2](Int(token_idx), 0)
                                 ).bitcast[UInt8](),
-                                UInt(lane_id()),
+                                lane_id(),
                             )
 
                         barrier()

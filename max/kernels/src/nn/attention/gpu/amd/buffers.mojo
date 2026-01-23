@@ -828,7 +828,7 @@ struct QRegisterBuffer[
             ](
                 reg_tile.vectorize[1, Self.simd_width](),
                 gmem_warp_iter,
-                Int(readfirstlane(Int32(bounds))),
+                Int(readfirstlane(bounds)),
             )
             gmem_warp_iter._incr()
 

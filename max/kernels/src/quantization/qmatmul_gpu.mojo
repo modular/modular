@@ -987,10 +987,10 @@ fn repack_Q4_0_for_sm8x[
     comptime BK = 1024
 
     var tid: UInt = thread_idx.x
-    var warp_id = UInt(tid // WARP_SIZE)
+    var warp_id = tid // WARP_SIZE
     comptime num_warps_x = BN // repack_tile[0]
-    var warp_x = UInt(warp_id % UInt(num_warps_x))
-    var warp_y = UInt(warp_id // UInt(num_warps_x))
+    var warp_x = warp_id % UInt(num_warps_x)
+    var warp_y = warp_id // UInt(num_warps_x)
     var lane_id: Int = Int(tid % WARP_SIZE)
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
@@ -1180,10 +1180,10 @@ fn repack_GPTQ_for_sm8x[
     comptime BK = 1024
 
     var tid: UInt = thread_idx.x
-    var warp_id = UInt(tid // UInt(WARP_SIZE))
+    var warp_id = tid // UInt(WARP_SIZE)
     comptime num_warps_x = BN // repack_tile[0]
-    var warp_x = UInt(warp_id % UInt(num_warps_x))
-    var warp_y = UInt(warp_id // UInt(num_warps_x))
+    var warp_x = warp_id % UInt(num_warps_x)
+    var warp_y = warp_id // UInt(num_warps_x)
     var lane_id: Int = Int(tid % UInt(WARP_SIZE))
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
@@ -1420,8 +1420,8 @@ fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     var slice_k_reduction = UInt(block_mnk[0] * block_mnk[1] * Int(num_warp_k_partitions // 2) * size_of[DType.float32]())
     # fmt: on
 
-    var smem_usage = UInt(
-        num_warp_k_partitions * UInt(a_usage + b_usage + scales_usage)
+    var smem_usage = num_warp_k_partitions * UInt(
+        a_usage + b_usage + scales_usage
     )
     return max(c_usage, Int(smem_usage), Int(slice_k_reduction))
 
@@ -1471,8 +1471,8 @@ fn multistage_gemm_q[
                     block_tile_shape=config.block_tile_shape,
                     warp_tile_shape=config.warp_tile_shape,
                     num_pipeline_stages=UInt(num_stages),
-                    num_k_partitions=UInt(config.num_k_partitions),
-                    num_warp_k_partitions=UInt(
+                    num_k_partitions=config.num_k_partitions,
+                    num_warp_k_partitions=(
                         config.num_warp_k_partitions
                         // UInt(2**partition_reduction)
                     ),  # Reduce warp partitions by powers of 2

@@ -312,7 +312,7 @@ struct SharedMemBarrier(ImplicitlyCopyable):
         @parameter
         if ticks:
             inlined_assembly[asm, NoneType, constraints=constraints](
-                Int32(Int(self.unsafe_ptr())), phase, UInt32(ticks.value())
+                Int32(Int(self.unsafe_ptr())), phase, ticks.value()
             )
         else:
             inlined_assembly[asm, NoneType, constraints=constraints](

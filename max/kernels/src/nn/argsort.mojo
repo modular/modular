@@ -59,9 +59,9 @@ fn _argsort_cpu[
     fn cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
         @parameter
         if ascending:
-            return Bool(input[Int(a)] < input[Int(b)])
+            return input[Int(a)] < input[Int(b)]
         else:
-            return Bool(input[Int(a)] > input[Int(b)])
+            return input[Int(a)] > input[Int(b)]
 
     sort[cmp_fn](
         Span[
@@ -156,9 +156,9 @@ fn _argsort_gpu_impl[
 
             @parameter
             if ascending:
-                cmp_val = Bool(input[i] > input[partner])
+                cmp_val = input[i] > input[partner]
             else:
-                cmp_val = Bool(input[i] < input[partner])
+                cmp_val = input[i] < input[partner]
 
             # Determine if we are in ascending or descending part of bitonic merge.
             var bitonic_merge_direction = (i & UInt(stage)) == 0

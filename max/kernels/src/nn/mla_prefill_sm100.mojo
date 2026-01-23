@@ -788,7 +788,7 @@ struct SM100MLA[
 
         var q_head_idx: UInt32 = seq_info.head_idx
         var tid = UInt32(thread_idx.x)
-        var row = UInt32(tid % 128)
+        var row = tid % 128
         var scale_log2e: Scalar[Self.accum_type] = scale
         var correction_smem = correction_smem_arg + tid
 

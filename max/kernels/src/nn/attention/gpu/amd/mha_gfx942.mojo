@@ -74,7 +74,7 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
         if Self.token_gen:
             comptime mma_shape = Self.get_mma_shape()
             var group_idx = lane_id() % UInt(mma_shape[0])
-            return block_idx.y * UInt(Self.group) + UInt(group_idx)
+            return block_idx.y * UInt(Self.group) + group_idx
         else:
             return block_idx.x
 

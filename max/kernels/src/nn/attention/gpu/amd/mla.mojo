@@ -190,7 +190,7 @@ __extension Attention:
                 k_rope.block_paged_ptr[Int(Self.BN)](
                     self.get_batch_idx(),
                     kv_tile_start_row + self.cache_start_pos,
-                    Int(Self.kv_head_idx() // UInt(cache_group)),
+                    Int(Self.kv_head_idx() // cache_group),
                     cache_depth - rope_depth,
                 ),
                 k_rope_runtime_layout,

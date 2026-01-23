@@ -223,7 +223,7 @@ fn welford_block_all_reduce[
     barrier()
 
     if warp_idx == 0:
-        if thread_idx.x < UInt(block_dim.x // UInt(WARP_SIZE)):
+        if thread_idx.x < block_dim.x // UInt(WARP_SIZE):
             warp_mean = mean_shared[lane_idx]
             warp_m2 = m2_shared[lane_idx]
             warp_count = count_shared[lane_idx]

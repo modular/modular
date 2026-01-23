@@ -2744,11 +2744,11 @@ struct FA4MiscMBars:
 
     @always_inline
     fn pipeline_order_wait(self, wg_idx: UInt32) -> MBarType:
-        return {self.mbar_base + Self.order_offset + wg_idx}
+        return self.mbar_base + Self.order_offset + wg_idx
 
     @always_inline
     fn pipeline_order_arrive(self, wg_idx: UInt32) -> MBarType:
-        return {self.mbar_base + (Self.order_offset + 1) - wg_idx}
+        return self.mbar_base + (Self.order_offset + 1) - wg_idx
 
     @always_inline
     fn q1_wait_mbar(
@@ -3352,7 +3352,7 @@ struct SM100MHA2Q[
         var s_tmem: UInt32 = tmem_addr + Self.config.TMEM_S0
 
         var tid = UInt32(thread_idx.x)
-        var row = UInt32(tid % 128)
+        var row = tid % 128
         var warp_idx: UInt32 = warp.broadcast(tid // 32)
         var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
 

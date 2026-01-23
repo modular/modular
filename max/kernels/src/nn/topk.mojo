@@ -786,9 +786,7 @@ fn _block_reduce_topk[
 
     # Load warp results into final warp for block-level reduction
     var block_accum = TopK_2[T, largest]()
-    var thread_in_final_warp = thread_idx.x < UInt(
-        block_dim.x // UInt(WARP_SIZE)
-    )
+    var thread_in_final_warp = thread_idx.x < block_dim.x // UInt(WARP_SIZE)
     if thread_in_final_warp:
         var p_idx = p_sram[
             lane_id() * UInt(p_width)

@@ -475,7 +475,7 @@ fn flare_mla_decoding_dispatch[
             num_heads=num_heads,
             num_threads = UInt(num_threads),
             num_pipeline_stages = UInt(num_pipeline_stages),
-            group = UInt(group),
+            group=group,
             use_score_mod=use_score_mod,
             ragged=ragged,
             _use_valid_length=_use_valid_length,
@@ -732,7 +732,7 @@ fn mla_decoding_single_batch[
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    __comptime_assert num_warps_m * num_warps_n == UInt(
+    __comptime_assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -745,7 +745,7 @@ fn mla_decoding_single_batch[
     var lane = lane_id()
 
     # Coordinates of the current warp.
-    var warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
+    var warp_y, warp_x = divmod(warp_id, num_warps_n)
 
     # The entire query block (BM x depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()
@@ -1954,7 +1954,7 @@ fn mla_prefill_single_batch[
 
     comptime cache_num_heads = num_heads // UInt(group)
 
-    __comptime_assert num_warps_m * num_warps_n == UInt(
+    __comptime_assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 

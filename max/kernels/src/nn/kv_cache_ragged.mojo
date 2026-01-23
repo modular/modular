@@ -3355,9 +3355,7 @@ fn generic_kv_cache_radd_dispatch[
 
         var h_idx: UInt
         var hd_idx: UInt
-        h_idx, hd_idx = divmod(
-            UInt(corrected_dim), collection_t.kv_params.head_size
-        )
+        h_idx, hd_idx = divmod(corrected_dim, collection_t.kv_params.head_size)
 
         var cache_length = cache.cache_length(Int(corrected_batch_idx))
         var cache_token_idx = tok_idx + cache_length

@@ -84,10 +84,7 @@ struct StateContext:
 fn pack_string_res(
     str_ptr: UnsafePointer[Byte, ImmutAnyOrigin], str_len: Int
 ) raises -> String:
-    var span = Span[Byte, ImmutAnyOrigin](
-        ptr=UnsafePointer[Byte, origin=ImmutAnyOrigin](str_ptr),
-        length=str_len,
-    )
+    var span = Span(ptr=str_ptr, length=str_len)
     # We can not free the resource ptr embedded in MEF, create a copy
     return String(StringSlice(from_utf8=span))
 

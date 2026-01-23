@@ -470,7 +470,7 @@ fn _warp_reduce_value_count[T: DType](val: ValueCount[T]) -> ValueCount[T]:
     for i in reversed(range(limit)):
         comptime offset = 1 << i
         result.value += warp.shuffle_down(result.value, offset)
-        result.count += warp.shuffle_down(Int32(result.count), offset)
+        result.count += warp.shuffle_down(result.count, offset)
     return result
 
 
@@ -533,14 +533,12 @@ fn _block_reduce_value_count[
     # block_size = 1024 and WARP_SIZE = 32, then only the first 32 threads from warp 0
     # will have valid results).
     var block_accum: ValueCount[T]
-    var thread_in_final_warp = thread_idx.x < UInt(
-        block_dim.x // UInt(WARP_SIZE)
-    )
+    var thread_in_final_warp = thread_idx.x < block_dim.x // UInt(WARP_SIZE)
 
     if thread_in_final_warp:
         block_accum = {
             value = value_sram[lane_id() * UInt(value_width)],
-            count = Int32(count_sram[lane_id() * UInt(count_width)]),
+            count = count_sram[lane_id() * UInt(count_width)],
         }
     else:
         # Initialize unused threads with zeros (identity for sum).

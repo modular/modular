@@ -777,7 +777,7 @@ fn flash_attention_dispatch[
                     num_heads=num_heads,
                     num_threads = UInt(num_threads),
                     num_pipeline_stages = UInt(num_pipeline_stages),
-                    group = UInt(group),
+                    group=group,
                     use_score_mod=use_score_mod,
                     ragged=ragged,
                     is_shared_kv=is_shared_kv,
@@ -1048,7 +1048,7 @@ fn flash_attention_dispatch[
                         depth=depth,
                         num_heads=num_heads,
                         num_threads = UInt(WARP_SIZE),
-                        group = UInt(group),
+                        group=group,
                         use_exp2=use_fa3_kernel,
                     ]
 
@@ -1613,7 +1613,7 @@ fn mha_single_batch[
     comptime num_heads = config.num_heads
     comptime depth = config.depth
 
-    __comptime_assert num_warps_m * num_warps_n == UInt(
+    __comptime_assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -2372,7 +2372,7 @@ fn mha_single_batch_pipelined[
     comptime num_heads = config.num_heads
     comptime depth = config.depth
 
-    __comptime_assert num_warps_m * num_warps_n == UInt(
+    __comptime_assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -3416,7 +3416,7 @@ fn mha_decoding_single_batch[
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    __comptime_assert num_warps_m * num_warps_n == UInt(
+    __comptime_assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -3433,7 +3433,7 @@ fn mha_decoding_single_batch[
     var lane = lane_id()
 
     # Coordinates of the current warp.
-    var warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
+    var warp_y, warp_x = divmod(warp_id, num_warps_n)
 
     # The entire query block (BM x depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()
@@ -3754,7 +3754,7 @@ fn mha_decoding_single_batch[
             num_keys,
             UInt(kv_tile_num_rows),
             lane,
-            UInt(warp_id),
+            warp_id,
             mask,
             score_mod,
             kv_tile_start_row,
@@ -3985,7 +3985,7 @@ fn mha_decoding_single_batch[
 
         @parameter
         if m_mma * UInt(MMA_M) < group:
-            var rowsum_inv = Scalar[accum_type](recip(rowsum[2 * Int(m_mma)]))
+            var rowsum_inv = recip(rowsum[2 * Int(m_mma)])
 
             @parameter
             for n_mma in range(num_n_mmas):
@@ -3994,9 +3994,7 @@ fn mha_decoding_single_batch[
 
         @parameter
         if m_mma * UInt(MMA_M) + UInt(MMA_M // 2) < group:
-            var rowsum_inv = Scalar[accum_type](
-                recip(rowsum[2 * Int(m_mma) + 1])
-            )
+            var rowsum_inv = recip(rowsum[2 * Int(m_mma) + 1])
 
             @parameter
             for n_mma in range(num_n_mmas):
@@ -4131,7 +4129,7 @@ fn mha_decoding_single_batch_pipelined[
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    __comptime_assert num_warps_m * num_warps_n == UInt(
+    __comptime_assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -4146,7 +4144,7 @@ fn mha_decoding_single_batch_pipelined[
     var lane = lane_id()
 
     # Coordinates of the current warp.
-    warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
+    warp_y, warp_x = divmod(warp_id, num_warps_n)
 
     # The entire query block (BM x depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()
@@ -4417,7 +4415,7 @@ fn mha_decoding_single_batch_pipelined[
             num_keys,
             UInt(kv_tile_num_rows),
             lane,
-            UInt(warp_id),
+            warp_id,
             mask,
             score_mod,
             kv_tile_start_row,

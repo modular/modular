@@ -1002,7 +1002,7 @@ fn _mha_sm90[
     max_seq_len = pack.max_seq_len
     partition = pack.partition
 
-    __comptime_assert num_warps_m == UInt(
+    __comptime_assert num_warps_m == (
         num_consumer_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 

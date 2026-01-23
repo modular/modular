@@ -100,7 +100,7 @@ fn topk_wrapper[
     ]()
 
     # Pack the topk_vals and topk_idxs into shared memory
-    var block_offset = UInt(block_lane * block_size)
+    var block_offset = block_lane * block_size
     var stride = block_size * UInt(num_blocks_per_input)
     topk_sram[tid] = TopK_2[T, largest]()
     for i in range(tid + block_offset, num_elements, stride):

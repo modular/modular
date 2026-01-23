@@ -2395,7 +2395,7 @@ struct MLA_SM100_Decode[
 
             # Which S slot (0 or 1) are we producing into this time?
             var slot_idx: UInt32 = s_prod.slot_index()
-            var s_tmem_slot = s0_tmem + UInt32(slot_idx) * s_stride
+            var s_tmem_slot = s0_tmem + slot_idx * s_stride
 
             kv_cons.wait[mma_stage=0]()
             # wait for stage 0
@@ -2514,7 +2514,7 @@ struct MLA_SM100_Decode[
         var cache_start_pos: UInt32,
     ) -> IndexList[4, element_type = DType.uint32]:
         # Global key index (column) for this element
-        var score_col: UInt32 = UInt32(tile_key_base + col)
+        var score_col: UInt32 = tile_key_base + col
         var k_idx_abs: UInt32 = score_col + cache_start_pos
         # Clamp k to last valid key so MaterializedMask never reads OOB.
         var last_k_abs: UInt32 = cache_start_pos + UInt32(max(num_keys - 1, 0))
@@ -2585,7 +2585,7 @@ struct MLA_SM100_Decode[
 
             @parameter
             if NonCausalMask:
-                var v = SIMD[Self.AccumType, 1](masked_val)
+                var v: SIMD[Self.AccumType, 1] = masked_val
                 var coord = Self.clamped_index_coordinate(
                     prompt_idx,
                     q_head_idx,
@@ -2600,7 +2600,7 @@ struct MLA_SM100_Decode[
 
             @parameter
             if Self.use_score_mod:
-                var v2 = SIMD[Self.AccumType, 1](masked_val)
+                var v2: SIMD[Self.AccumType, 1] = masked_val
                 var coord = Self.clamped_index_coordinate(
                     prompt_idx,
                     q_head_idx,
@@ -2999,11 +2999,11 @@ struct MLA_SM100_Decode[
         @parameter
         for i in range(0, num_store_tiles // blocks_per_stage):
             # 2. Compute TMEM base for this subtile t
-            var o_tmem_subtile: UInt32 = o_tmem + UInt32(i) * UInt32(
-                half_load * blocks_per_stage
+            var o_tmem_subtile: UInt32 = (
+                o_tmem + UInt32(i) * half_load * blocks_per_stage
             )
             var o_row_subtile = LocalTensor[
-                Self.AccumType, Layout.row_major(Int(Self.config.BN))
+                Self.AccumType, Layout.row_major(Self.config.BN)
             ].stack_allocation()
             o_row_subtile.ptr.store(
                 0,
@@ -3052,7 +3052,7 @@ struct MLA_SM100_Decode[
                 out_dtype = Self.output_type,
                 in_dtype = Self.AccumType,
                 config = Self.config,
-                local_tile_size = Int(Self.config.BN),
+                local_tile_size = Self.config.BN,
             ](stage_ptr, o_row_subtile, col_start=Int(col0), row_start=Int(row))
             # The fence_async_view_proxy() here is not needed as the store puts this fence.
             out_prod.commit_step()
