@@ -2097,7 +2097,8 @@ struct String(
         return self.as_string_slice().center(width, fillchar)
 
     fn resize(mut self, length: Int, fill_byte: UInt8 = 0):
-        """Resize the string to a new length.
+        """Resize the string to a new length. Panics if new_len does not
+        lie on a codepoint boundary.
 
         Args:
             length: The new length of the string.
@@ -2116,11 +2117,19 @@ struct String(
                 fill_byte,
                 length - old_len,
             )
+        else:
+            debug_assert[assert_mode="safe"](
+                self.as_string_slice().is_codepoint_boundary(UInt(length)),
+                "String shrunk to length ",
+                length,
+                " which does not lie on a codepoint boundary.",
+            )
         self.set_byte_length(length)
 
     fn resize(mut self, *, unsafe_uninit_length: Int):
         """Resizes the string to the given new size leaving any new data
-        uninitialized.
+        uninitialized. Panics if the new length does not lie on a codepoint
+        boundary.
 
         If the new size is smaller than the current one, elements at the end
         are discarded. If the new size is larger than the current one, the
@@ -2130,6 +2139,15 @@ struct String(
             unsafe_uninit_length: The new size.
         """
         self._clear_nul_terminator()
+        debug_assert(
+            unsafe_uninit_length >= self.byte_length()
+            or self.as_string_slice().is_codepoint_boundary(
+                UInt(unsafe_uninit_length)
+            ),
+            "String shrunk to length ",
+            unsafe_uninit_length,
+            " which does not lie on a codepoint boundary.",
+        )
         if unsafe_uninit_length > self.capacity():
             self.reserve(unsafe_uninit_length)
         self.set_byte_length(unsafe_uninit_length)

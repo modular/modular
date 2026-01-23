@@ -25,6 +25,9 @@ what we publish.
 
 ### Library changes
 
+- `String.resize` will now panic if the new length would truncate a codepoint.
+  Previously it would result in a string with invalid UTF-8.
+
 ### Tooling changes
 
 ### ❌ Removed
