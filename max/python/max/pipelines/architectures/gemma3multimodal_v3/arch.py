@@ -54,7 +54,7 @@ example_repo_ids = [
 
 if ENABLE_NEW_IMPL:
     gemma3_multimodal_arch_v3 = SupportedArchitecture(
-        name="Gemma3ForConditionalGenerationV3",
+        name="Gemma3ForConditionalGeneration",
         example_repo_ids=example_repo_ids,
         default_encoding=SupportedEncoding.bfloat16,
         supported_encodings={
@@ -75,7 +75,7 @@ if ENABLE_NEW_IMPL:
     )
 else:
     gemma3_multimodal_arch_v3 = SupportedArchitecture(
-        name="Gemma3ForConditionalGenerationV3",
+        name="Gemma3ForConditionalGeneration",
         example_repo_ids=example_repo_ids,
         default_encoding=SupportedEncoding.bfloat16,
         supported_encodings={
