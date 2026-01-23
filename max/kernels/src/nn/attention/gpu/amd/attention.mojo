@@ -575,7 +575,7 @@ struct Attention[
             # Decoding with mask checking: check single token at num_keys-1
             return self.mask.status(
                 Index[dtype = DType.uint32](
-                    Int(self.num_keys - 1),
+                    self.num_keys - 1,
                     Int(kv_tile_start_row),
                 ),
                 Index[dtype = DType.uint32](Int(1), Int(Self.BN)),
@@ -795,7 +795,7 @@ struct Attention[
             self.out_reg_buffer.vectorize(),
             self.p_reg_buffer.vectorize[stage](),
             warp_scratch.tile[2 * Int(Self.num_warps_n), Int(Self.WM)](
-                0, Int(warp_row)
+                0, warp_row
             ),
         )
 

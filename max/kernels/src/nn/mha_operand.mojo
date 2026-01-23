@@ -331,7 +331,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
         var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
         var num_heads = self.buffer.dim[2]()
         tma = type_of(tma).create[depth=depth](
-            ctx, self.buffer.ptr, rows=Int(rows), middle_dim=num_heads
+            ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
         )
 
 
@@ -392,7 +392,7 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         )
         var ret_ptr = self.buffer.ptr + self.buffer._offset(
             IndexList[self.layout.rank()](
-                Int(global_token_idx),
+                global_token_idx,
                 Int(head_idx),
                 Int(head_dim_idx),
             )
@@ -470,5 +470,5 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         var rows = self.buffer.dim[0]()  # total tokens
         var num_heads = self.buffer.dim[1]()
         tma = type_of(tma).create[depth=depth](
-            ctx, self.buffer.ptr, rows=Int(rows), middle_dim=num_heads
+            ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
         )

@@ -2706,8 +2706,8 @@ fn _mha_sm100[
             # vector and stored using 16B store instruction.
             copy_sram_to_dram[
                 thread_layout = Layout.row_major(
-                    num_softmax_threads * simd_size // Int(depth),
-                    Int(depth // simd_size),
+                    num_softmax_threads * simd_size // depth,
+                    depth // simd_size,
                 ),
                 swizzle=swizzle,
             ](

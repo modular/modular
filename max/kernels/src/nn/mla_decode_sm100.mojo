@@ -476,8 +476,8 @@ fn mla_decode_sm100[
     comptime mla_config = MLA_SM100_Decode_Config(
         num_q_heads=num_heads,
         group=group,  # num_q_heads/h_k(1)
-        depth=Int(depth - 64),  # 512
-        q_depth=Int(depth),  # 576
+        depth=(depth - 64),  # 512
+        q_depth=depth,  # 576
         dtype_size=size_of[q_type](),
         swizzle_mode=config.swizzle_mode,
         kv_swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,

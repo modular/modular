@@ -1812,7 +1812,7 @@ fn rms_norm_fused_residual_add_gpu[
             )
 
     else:
-        var shared_mem_size = Int(cols * size_of[dtype]())
+        var shared_mem_size = cols * size_of[dtype]()
 
         comptime kernel = rms_norm_fused_residual_add_gpu_block[
             mut1 = gamma1.mut,

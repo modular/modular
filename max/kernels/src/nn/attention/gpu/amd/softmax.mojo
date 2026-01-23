@@ -39,7 +39,7 @@ struct Softmax[
     comptime exp_function = _exp2_concrete if Self.use_exp2 else _exp_concrete
     comptime num_m_mmas = Self.score_layout_by_mma_unit.shape[0].value()
     comptime row_layout = Layout.row_major(
-        Int(Self.num_m_mmas), Self.fragment_layout.shape[0].value()
+        Self.num_m_mmas, Self.fragment_layout.shape[0].value()
     )
     comptime num_colwise_warps = Self.block_layout_by_warp.shape[0].value()
     comptime num_rowwise_warps = Self.block_layout_by_warp.shape[1].value()

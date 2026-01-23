@@ -1244,7 +1244,7 @@ struct EPDispatchKernel[
                 RtTuple_4(
                     Int(local_expert_id),
                     Int(target_rank),
-                    Int(token_idx),
+                    token_idx,
                     0,
                 )
             )
@@ -1703,9 +1703,9 @@ struct EPCombineKernel[
             var output_tokens_p = output_tokens.ptr + token_idx * hid_dim
             block_memcpy[hid_dim * size_of[input_type](), Self.num_threads](
                 output_tokens_p.bitcast[UInt8](),
-                input_tokens.ptr_at_offset(
-                    IndexList[2](Int(token_idx), 0)
-                ).bitcast[UInt8](),
+                input_tokens.ptr_at_offset(IndexList[2](token_idx, 0)).bitcast[
+                    UInt8
+                ](),
                 UInt(tid),
             )
 
@@ -1769,7 +1769,7 @@ struct EPCombineKernel[
             var local_expert_id = global_idx % Self.n_local_experts
             var target_rank = global_idx // Self.n_local_experts
             var expert_rank_offset = recv_count_layout(
-                RtTuple_2(Int(local_expert_id), Int(target_rank))
+                RtTuple_2(local_expert_id, target_rank)
             )
             var dst_p2p_world, dst_p2p_rank = divmod(
                 target_rank, Self.p2p_world_size
@@ -2052,7 +2052,7 @@ struct EPCombineKernel[
                     RtTuple_3(
                         token_idx,
                         topk_idx,
-                        Int(chunk_idx_in_token * n_chunk_bytes),
+                        chunk_idx_in_token * n_chunk_bytes,
                     )
                 )
                 recv_chunk = bitcast[output_type, dst_simd_width](
@@ -2094,11 +2094,9 @@ struct EPCombineKernel[
                     comptime lambda_fn = elementwise_lambda_fn.value()
                     lambda_fn[alignment=_align](
                         (
-                            Int(token_idx),
-                            Int(
-                                chunk_idx_in_token * n_chunk_elems
-                                + Int(lane_id()) * dst_simd_width
-                            ),
+                            token_idx,
+                            chunk_idx_in_token * n_chunk_elems
+                            + Int(lane_id()) * dst_simd_width,
                         ),
                         accum.cast[output_type](),
                     )

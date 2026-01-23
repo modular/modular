@@ -86,7 +86,7 @@ fn pack_string_res(
 ) raises -> String:
     var span = Span[Byte, ImmutAnyOrigin](
         ptr=UnsafePointer[Byte, origin=ImmutAnyOrigin](str_ptr),
-        length=Int(str_len),
+        length=str_len,
     )
     # We can not free the resource ptr embedded in MEF, create a copy
     return String(StringSlice(from_utf8=span))
@@ -415,7 +415,7 @@ fn unpack_tensor_spec[
 
     @parameter
     for i in range(spec_rank):
-        shape[i] = Int(storage[i])
+        shape[i] = storage[i]
 
     return shape
 

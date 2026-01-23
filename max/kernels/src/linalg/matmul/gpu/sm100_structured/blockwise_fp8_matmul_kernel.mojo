@@ -152,8 +152,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     comptime accum_type = DType.float32
     comptime cta_group = Self.config.cta_group
 
-    comptime CLUSTER_M = Int(Self.config.cluster_shape[0])
-    comptime CLUSTER_N = Int(Self.config.cluster_shape[1])
+    comptime CLUSTER_M: Int = Self.config.cluster_shape[0]
+    comptime CLUSTER_N: Int = Self.config.cluster_shape[1]
     comptime CLUSTER_SIZE = Self.CLUSTER_M * Self.CLUSTER_N
 
     # ========== Thread/Warp Organization ==========
@@ -177,7 +177,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     comptime num_group_pipeline_stages = Self.num_pipeline_stages // Self.config.k_group_size
     comptime num_clc_pipeline_stages: Int = Self.config.num_clc_pipeline_stages
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
-    comptime num_output_stages = Int(Self.config.num_output_stages)
+    comptime num_output_stages = Self.config.num_output_stages
 
     # TMEM configuration
     comptime NUM_TMEM_COLS = 512
@@ -295,7 +295,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     comptime InputTilePipeline = InputTilePipeline[
         Self.TilePayload,
         Self.SmemType.num_group_pipeline_stages,
-        Int(Self.config.k_group_size),
+        Self.config.k_group_size,
     ]
 
     # ========== Tile Loader Types ==========
@@ -409,7 +409,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             tiles_origin,
             Self.TilePayload,
             Self.SmemType.num_group_pipeline_stages,
-            Int(Self.config.k_group_size),
+            Self.config.k_group_size,
         ],
         peer_cta_coord: Tuple[UInt, UInt, UInt],
         work_tile_coord: Tuple[UInt, UInt],
@@ -450,7 +450,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
             # Get tiles
             var a_tile, b_tile, a_scales_tile = tiles.payload().get_tile[
-                Int(Self.config.k_group_size)
+                Self.config.k_group_size
             ](stage, 0)
 
             # Peer CTA slicing
@@ -495,7 +495,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             tiles_origin,
             Self.TilePayload,
             Self.SmemType.num_group_pipeline_stages,
-            Int(Self.config.k_group_size),
+            Self.config.k_group_size,
         ],
         mma_op: Self.MmaOp,
         accum_tensor: Self.AccumTensor,
@@ -513,9 +513,9 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         """
         if elect_one_sync():
             # Loop through k_group_size tiles (typically 1)
-            for jj in range(Int(Self.config.k_group_size)):
+            for jj in range(Self.config.k_group_size):
                 var a_tile, b_tile, _ = tiles.payload().get_tile[
-                    Int(Self.config.k_group_size)
+                    Self.config.k_group_size
                 ](tiles.stage(), jj)
 
                 # Blockwise FP8: always init_c=True since epilogue accumulates

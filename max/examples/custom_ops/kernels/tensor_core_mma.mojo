@@ -498,7 +498,7 @@ fn naive_tensor[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
+    warp_y, warp_x = divmod(Int(warp_id()), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
@@ -614,7 +614,7 @@ fn basic_shared_mem[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
+    warp_y, warp_x = divmod(Int(warp_id()), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
@@ -758,7 +758,7 @@ fn multi_block_tiled[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
+    warp_y, warp_x = divmod(Int(warp_id()), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
@@ -821,8 +821,8 @@ fn multi_block_tiled[
         barrier()  # Synchronize after loading tiles
 
         # Get the warp tiles of A and B from shared memory
-        A_warp_tile = A_sram_tile.tile[WM, BK](Int(warp_y), 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, Int(warp_x))
+        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
+        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
 
         # Iterate over the elements in the K dimension within the tiles
         @parameter
@@ -933,7 +933,7 @@ fn scheduler_hints[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
+    warp_y, warp_x = divmod(Int(warp_id()), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
@@ -1002,8 +1002,8 @@ fn scheduler_hints[
             amd_schedule_barrier()
 
         # Get the warp tiles from shared memory
-        A_warp_tile = A_sram_tile.tile[WM, BK](Int(warp_y), 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, Int(warp_x))
+        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
+        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
 
         # Perform MMA operations on current tile with AMD scheduling hints
         @parameter
@@ -1132,7 +1132,7 @@ fn double_buffer[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
+    warp_y, warp_x = divmod(Int(warp_id()), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[

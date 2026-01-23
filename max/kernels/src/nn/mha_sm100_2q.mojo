@@ -1939,8 +1939,8 @@ fn _mha_sm100_enqueue[
         num_keys_arg,
         pack,
         grid_dim=SchedulerType.grid_dim(batch_size, block_x),
-        block_dim=(Int(num_threads), 1, 1),
-        shared_mem_bytes=Int(smem_use),
+        block_dim=(num_threads, 1, 1),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
 
@@ -3193,7 +3193,7 @@ struct SM100MHA2Q[
                 Int(score_row),
                 Int(kv_row),
             ),
-            Index[dtype = DType.int32](Int(Self.BM), Int(Self.BN)),
+            Index[dtype = DType.int32](Self.BM, Self.BN),
         )
 
     @always_inline

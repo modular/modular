@@ -708,7 +708,7 @@ fn gather[
         @parameter
         if is_cpu[target]():
             if error_index != -1:
-                var invalid_index = Int(error_index)
+                var invalid_index = error_index
                 raise Error(
                     String(
                         "gather index {} is out of bounds for axis {} with"
@@ -819,7 +819,7 @@ fn gather[
         @parameter
         if is_cpu[target]():
             if error_index != -1:
-                var invalid_index = Int(error_index)
+                var invalid_index = error_index
                 raise Error(
                     String(
                         "gather index {} is out of bounds for axis {} with"

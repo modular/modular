@@ -221,9 +221,9 @@ def test_where_bool():
     print("== test_where_bool")
     comptime rank = 3
     comptime values_shape = Layout.row_major(3, 2, 1)
-    var values_stack = InlineArray[
-        Scalar[DType.bool], Int(values_shape.size())
-    ](uninitialized=True)
+    var values_stack = InlineArray[Scalar[DType.bool], values_shape.size()](
+        uninitialized=True
+    )
     var values = LayoutTensor[DType.bool, values_shape](values_stack)
 
     values[0, 0, 0] = True

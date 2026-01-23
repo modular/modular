@@ -621,8 +621,8 @@ fn multistage_qgemm_kernel[
     )
 
     # global memory iterator
-    var bk_start: Int = Int(
-        (K // BK // Int(num_warp_k_partitions)) * Int(warp_k_part_id)
+    var bk_start: Int = (K // BK // Int(num_warp_k_partitions)) * Int(
+        warp_k_part_id
     )
     var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx[1], bk_start)
     var b_tile_coords = args_to_tuple[transpose_b](bk_start, block_idx[0])
@@ -631,10 +631,9 @@ fn multistage_qgemm_kernel[
         b_tile_coords[0], b_tile_coords[1]
     )
     comptime groups_per_iter = ceildiv(BK, group_size)
-    var bk_scales_start: Int = Int(
-        (K // (groups_per_iter * group_size) // Int(num_warp_k_partitions))
-        * Int(warp_k_part_id)
-    )
+    var bk_scales_start: Int = (
+        K // (groups_per_iter * group_size) // Int(num_warp_k_partitions)
+    ) * Int(warp_k_part_id)
     var scales_gmem_iter = scales.tiled_iterator[
         ceildiv(BK, group_size), BN, axis=0
     ](bk_scales_start, block_idx[0])
@@ -682,7 +681,7 @@ fn multistage_qgemm_kernel[
         b_smem_iter,
         scales_smem_iter,
         scales_gmem_iter,
-        Int(ceildiv(K // Int(num_warp_k_partitions), BK)),
+        ceildiv(K // Int(num_warp_k_partitions), BK),
     )
 
     # reduce within the threadblock
@@ -1316,7 +1315,7 @@ fn repack_GPTQ_for_sm8x[
                 if has_perm:
                     var p_block_idx = perm_idx.tile[BK](block_idx[1])
                     var p_group_idx = p_block_idx.tile[group_size](
-                        Int(2 * i + Int(warp_y))
+                        2 * i + Int(warp_y)
                     )
                     var p_Qtile_idx = p_group_idx.tile[repack_tile[1]](i_Q_tile)
                     var thd_idx = p_Qtile_idx.vectorize[2]().distribute[
@@ -1424,7 +1423,7 @@ fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     var smem_usage = UInt(
         num_warp_k_partitions * UInt(a_usage + b_usage + scales_usage)
     )
-    return Int(max(c_usage, Int(smem_usage), Int(slice_k_reduction)))
+    return max(c_usage, Int(smem_usage), Int(slice_k_reduction))
 
 
 fn multistage_gemm_q[

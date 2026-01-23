@@ -503,7 +503,7 @@ fn test_advanced_indexing_getitem() raises:
     comptime input_rank = 4
     comptime input_shape = IndexList[input_rank](2, 3, 5, 6)
     var input_stack = InlineArray[
-        Scalar[input_type], Int(input_shape.flattened_length())
+        Scalar[input_type], input_shape.flattened_length()
     ](uninitialized=True)
     comptime input_layout = Layout.row_major[input_rank]()
     var input_buffer = LayoutTensor[input_type, input_layout](
@@ -517,10 +517,10 @@ fn test_advanced_indexing_getitem() raises:
     comptime index_shape = IndexList[index_rank](2, 3)
     comptime index_type = DType.uint64
     var a_stack = InlineArray[
-        Scalar[index_type], Int(index_shape.flattened_length())
+        Scalar[index_type], index_shape.flattened_length()
     ](uninitialized=True)
     var b_stack = InlineArray[
-        Scalar[index_type], Int(index_shape.flattened_length())
+        Scalar[index_type], index_shape.flattened_length()
     ](uninitialized=True)
     comptime index_layout = Layout.row_major[index_rank]()
     var index_a = LayoutTensor[index_type, index_layout, MutAnyOrigin](
@@ -648,7 +648,7 @@ fn test_advanced_indexing_setitem_inplace() raises:
     comptime input_rank = 4
     comptime input_shape = IndexList[input_rank](2, 2, 4, 4)
     var input_stack = InlineArray[
-        Scalar[input_type], Int(input_shape.flattened_length())
+        Scalar[input_type], input_shape.flattened_length()
     ](uninitialized=True)
     comptime input_layout = Layout.row_major[input_rank]()
     var input_buffer = LayoutTensor[input_type, input_layout](
@@ -663,10 +663,10 @@ fn test_advanced_indexing_setitem_inplace() raises:
     comptime index_type = DType.uint64
 
     var a_stack = InlineArray[
-        Scalar[index_type], Int(index_shape.flattened_length())
+        Scalar[index_type], index_shape.flattened_length()
     ](uninitialized=True)
     var b_stack = InlineArray[
-        Scalar[index_type], Int(index_shape.flattened_length())
+        Scalar[index_type], index_shape.flattened_length()
     ](uninitialized=True)
     comptime index_layout = Layout.row_major[index_rank]()
     var index_a = LayoutTensor[index_type, index_layout, MutAnyOrigin](

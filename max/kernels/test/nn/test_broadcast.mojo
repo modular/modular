@@ -56,7 +56,7 @@ fn test_broadcast_same_shape():
 
     # Create a 3D tensor of shape (1, 2, 1), of the form
     # [[[1], [2]]]
-    var input_stack = InlineArray[Scalar[DType.int], Int(input_layout.size())](
+    var input_stack = InlineArray[Scalar[DType.int], input_layout.size()](
         uninitialized=True
     )
     var input = LayoutTensor[DType.int, input_layout](input_stack)
@@ -64,9 +64,9 @@ fn test_broadcast_same_shape():
     input[0, 1, 0] = 2
 
     # Create a 3D tensor of shape (1, 2, 1)
-    var output_stack = InlineArray[
-        Scalar[DType.int], Int(output_layout.size())
-    ](uninitialized=True)
+    var output_stack = InlineArray[Scalar[DType.int], output_layout.size()](
+        uninitialized=True
+    )
     var output = LayoutTensor[DType.int, output_layout](output_stack).fill(0)
 
     broadcast(output, input)
@@ -94,7 +94,7 @@ fn test_broadcast_single_axis():
 
     # Create a 2D tensor of shape (1, 2), of the form
     # [[1, 2]]
-    var input_stack = InlineArray[Scalar[DType.int], Int(input_layout.size())](
+    var input_stack = InlineArray[Scalar[DType.int], input_layout.size()](
         uninitialized=True
     )
     var input = LayoutTensor[DType.int, input_layout](input_stack)
@@ -103,9 +103,9 @@ fn test_broadcast_single_axis():
     input[0, 1] = 2
 
     # Create a 2D tensor of shape (3, 2)
-    var output_stack = InlineArray[
-        Scalar[DType.int], Int(output_layout.size())
-    ](uninitialized=True)
+    var output_stack = InlineArray[Scalar[DType.int], output_layout.size()](
+        uninitialized=True
+    )
     var output = LayoutTensor[DType.int, output_layout](output_stack).fill(0)
 
     broadcast(output, input)
@@ -141,7 +141,7 @@ fn test_broadcast_multi_axes():
 
     # Create a 3D tensor of shape (1, 2, 1), of the form
     # [[[1], [2]]]
-    var input_stack = InlineArray[Scalar[DType.int], Int(input_layout.size())](
+    var input_stack = InlineArray[Scalar[DType.int], input_layout.size()](
         uninitialized=True
     )
     var input = LayoutTensor[DType.int, input_layout](input_stack)
@@ -150,9 +150,9 @@ fn test_broadcast_multi_axes():
     input[0, 1, 0] = 2
 
     # Create a 3D tensor of shape (2, 2, 3)
-    var output_stack = InlineArray[
-        Scalar[DType.int], Int(output_layout.size())
-    ](uninitialized=True)
+    var output_stack = InlineArray[Scalar[DType.int], output_layout.size()](
+        uninitialized=True
+    )
     var output = LayoutTensor[DType.int, output_layout](output_stack).fill(0)
 
     broadcast(output, input)
@@ -198,7 +198,7 @@ fn test_broadcast_multi_axes_nested():
 
     # Create a 5D tensor of shape (2, 1, 2, 1, 2), of the form
     # [[[[[1, 2]], [[3, 4]]]], [[[[5, 6]], [[7, 8]]]]]
-    var input_stack = InlineArray[Scalar[DType.int], Int(input_layout.size())](
+    var input_stack = InlineArray[Scalar[DType.int], input_layout.size()](
         uninitialized=True
     )
     var input = LayoutTensor[DType.int, input_layout](input_stack)
@@ -213,9 +213,9 @@ fn test_broadcast_multi_axes_nested():
     input[1, 0, 1, 0, 1] = 8
 
     # Create a 5D tensor of shape (2, 2, 2, 2, 2)
-    var output_stack = InlineArray[
-        Scalar[DType.int], Int(output_layout.size())
-    ](uninitialized=True)
+    var output_stack = InlineArray[Scalar[DType.int], output_layout.size()](
+        uninitialized=True
+    )
     var output = LayoutTensor[DType.int, output_layout](output_stack).fill(0)
 
     broadcast(output, input)

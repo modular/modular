@@ -761,7 +761,7 @@ function arguments:
 
 ```mojo
 exp = 5 # or -5
-result = 2.0 ** Float64(exp) 
+result = 2.0 ** Float64(exp)
     if exp >= 0 \
     else 1.0 / (2.0 ** abs(Float64(exp))) \
     # For 5, 32, for -5, 0.03125
@@ -863,7 +863,7 @@ struct MyType(Copyable):
         return self.val > 0
 
     def __merge_with__[other_type: type_of(Int)](self) -> Int:
-        return Int(self.val)
+        return self.val
 
 def main():
     i = 0

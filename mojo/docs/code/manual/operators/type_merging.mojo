@@ -20,7 +20,7 @@ struct MyType(Copyable):
         return self.val > 0
 
     def __merge_with__[other_type: type_of(Int)](self) -> Int:
-        return Int(self.val)
+        return self.val
 
 
 def main():

@@ -651,13 +651,13 @@ fn flash_attention_dispatch[
                 ]
 
                 var grid_dim = LaunchDim(
-                    Int(ceildiv(max_prompt_len, Int(BM))),
+                    ceildiv(max_prompt_len, Int(BM)),
                     Int(config.num_heads),
-                    Int(batch_size),
+                    batch_size,
                 ) if has_nvidia_gpu_accelerator() else LaunchDim(
                     Int(config.num_heads),
-                    Int(ceildiv(max_prompt_len, Int(BM))),
-                    Int(batch_size),
+                    ceildiv(max_prompt_len, Int(BM)),
+                    batch_size,
                 )
 
                 ctx.enqueue_function[kernel, kernel](
@@ -870,7 +870,7 @@ fn flash_attention_dispatch[
                             grid_dim=(
                                 1,
                                 Int(num_blocks_y),
-                                Int(batch_size),
+                                batch_size,
                             ),
                             block_dim=(num_threads, 1, 1),
                             shared_mem_bytes=shared_mem_bytes if has_nvidia_gpu_accelerator() else 0,
@@ -1033,7 +1033,7 @@ fn flash_attention_dispatch[
                             grid_dim=(
                                 num_partitions_value,
                                 Int(num_blocks_y),
-                                Int(batch_size),
+                                batch_size,
                             ),
                             block_dim=(num_threads, 1, 1),
                             shared_mem_bytes=shared_mem_bytes if has_nvidia_gpu_accelerator() else 0,
@@ -1862,7 +1862,7 @@ fn mha_single_batch[
             mask.status(
                 Index[dtype = DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    Int(kv_tile_start_row),
+                    kv_tile_start_row,
                 ),
                 Index[dtype = DType.uint32](Int(BM), Int(BN)),
             )
@@ -1875,7 +1875,7 @@ fn mha_single_batch[
             IntTuple(Int(BN), Int(depth)),
             IntTuple(Int(kv_num_heads * depth), 1),
         )
-        var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
+        var kv_tile_num_rows = min(tile_size, end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout[kv_gmem_layout](
@@ -2589,7 +2589,7 @@ fn mha_single_batch_pipelined[
             mask.status(
                 Index[dtype = DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    Int(kv_tile_start_row),
+                    kv_tile_start_row,
                 ),
                 Index[dtype = DType.uint32](Int(BM), Int(BN)),
             )
@@ -2602,7 +2602,7 @@ fn mha_single_batch_pipelined[
             IntTuple(Int(BN), Int(depth)),
             IntTuple(Int(kv_num_heads * depth), 1),
         )
-        var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
+        var kv_tile_num_rows = min(tile_size, end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout[
@@ -2822,7 +2822,7 @@ fn mha_single_batch_pipelined[
             mask.status(
                 Index[dtype = DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    Int(kv_tile_start_row),
+                    kv_tile_start_row,
                 ),
                 Index[dtype = DType.uint32](Int(BM), Int(BN)),
             )
@@ -3324,7 +3324,7 @@ fn scale_and_mask_helper[
                         Int(block_idx.z),
                         Int(q_head_idx),
                         Int(score_row),
-                        Int(score_col),
+                        score_col,
                     ),
                     p_reg_tile[n_mma, i + i_group * simd_width]
                     * scale_log2e.cast[p_type](),
@@ -3338,7 +3338,7 @@ fn scale_and_mask_helper[
                                 Int(block_idx.z),
                                 Int(q_head_idx),
                                 Int(score_row),
-                                Int(score_col),
+                                score_col,
                             ),
                             p_reg_tile[n_mma, i + i_group * simd_width],
                             max_seq_len,
@@ -4381,7 +4381,7 @@ fn mha_decoding_single_batch_pipelined[
                 q_smem_iter,
                 k_smem_iter,
                 Int(depth // BK),
-                num_b_rows=Int(kv_tile_num_rows),
+                num_b_rows=kv_tile_num_rows,
             )
         else:
             multistage_mma[
@@ -4401,7 +4401,7 @@ fn mha_decoding_single_batch_pipelined[
                 q_smem_iter,
                 k_smem_iter,
                 Int(depth // BK),
-                num_b_rows=Int(kv_tile_num_rows),
+                num_b_rows=kv_tile_num_rows,
             )
 
         scale_and_mask_helper[
@@ -4487,7 +4487,7 @@ fn mha_decoding_single_batch_pipelined[
             p_smem_iter,
             v_smem_iter,
             Int(BN // BK),
-            num_b_rows=Int(kv_tile_num_rows),
+            num_b_rows=kv_tile_num_rows,
         )
 
     tile_and_unswitch[loop_over_kvcache, VariadicList(Int(BN))](start, end)
@@ -4661,7 +4661,7 @@ fn mha_splitk_reduce[
 
     # Precompute base pointer and partition stride to avoid ptr_at_offset in inner loop
     # Layout is [num_partitions, batch_size, num_heads, depth] in row-major
-    var partition_stride = Int(batch_size) * Int(num_heads) * Int(depth)
+    var partition_stride = batch_size * Int(num_heads) * Int(depth)
     var base_offset = (
         Int(batch_idx) * Int(num_heads) * Int(depth)
         + Int(q_head_idx) * Int(depth)
@@ -5063,7 +5063,7 @@ fn _bmm1_bs[
     var p = p_ptr + p_offset
 
     var kv_head = Int(head // UInt(group))
-    var output = output_ptr + Int(output_offset)
+    var output = output_ptr + output_offset
 
     var accum = Float32(0.0)
 

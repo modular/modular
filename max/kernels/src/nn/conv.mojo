@@ -3509,7 +3509,7 @@ fn conv_gpu[
                 var spatial_idx = axis - 1
                 before = padding[2 * spatial_idx]
                 after = padding[2 * spatial_idx + 1]
-            padded_shape[axis] = Int(input_shape[axis]) + before + after
+            padded_shape[axis] = input_shape[axis] + before + after
 
         var padded_elements = padded_shape.flattened_length()
         var tmp_buffer = ctx.enqueue_create_buffer[input_type](padded_elements)
