@@ -137,7 +137,7 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
     // The source value be something of trait type like Movable, or it may be
     // something of AnyTraitType type, like
     //   fn ex[Trait: MovableMetaType, T: Trait](argument: T):
-    // where T is some type that is known to conform to Movable.  In the later
+    // where T is some type that is known to conform to Movable.  In the latter
     // case we just know that the input type conforms to Movable, and we want to
     // look up members to bind in Movable, so bind the Trait type here.  If this
     // is a struct, or simple trait, keep it.

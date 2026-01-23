@@ -308,7 +308,7 @@ cache allows the recursive canonicalization process to stop early.
 
 If we see other compile time impacts, we can add this to other types, we should
 likely add it to `KGEN::SignatureType` and `KGEN::StructType`.  The former is a
-large and complicated type, and the later exists after lowering.
+large and complicated type, and the latter exists after lowering.
 
 ### Sugar Lowering
 

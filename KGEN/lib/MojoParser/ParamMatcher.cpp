@@ -566,7 +566,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       // FIXME: We are running into problems because we have Actual values of
       // "FnTypeGeneratorType" that have named parameters in them, but expected
       // values that want index-based ones.  matchFunctionTypes should convert
-      // the former to the later and we should remove this redundant check for
+      // the former to the latter and we should remove this redundant check for
       // implicit convertibility.
       expectedAttr = state.evaluator.getReboundAttribute(expectedAttr);
       auto expectedType = expectedAttr.getType();
