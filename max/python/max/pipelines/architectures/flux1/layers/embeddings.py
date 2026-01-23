@@ -13,10 +13,10 @@
 
 import math
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
-from max.nn.module_v3 import Linear, Module
+from max.nn import Linear, Module
+from max.tensor import Tensor
 
 
 def apply_rotary_emb(

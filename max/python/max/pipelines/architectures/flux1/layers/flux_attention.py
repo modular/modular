@@ -13,15 +13,15 @@
 
 import math
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
+from max.nn import Linear, Module
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu
-from max.nn.module_v3 import Linear, Module
-from max.nn.module_v3.norm import RMSNorm
-from max.nn.module_v3.sequential import ModuleList
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from .activations import GELU
 from .embeddings import apply_rotary_emb
