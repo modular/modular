@@ -18,7 +18,6 @@ import logging
 import os
 import sys
 from collections.abc import Callable, Sequence
-from pathlib import Path
 from typing import Any, TypeVar
 
 import click
@@ -415,6 +414,7 @@ def cli_pipeline(
         image_urls=image_url,
         num_warmups=num_warmups,
     )
+
 
 @main.command(name="encode", cls=WithLazyPipelineOptions)
 @click.option(

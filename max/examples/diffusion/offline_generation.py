@@ -15,11 +15,11 @@ import argparse
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
-from max.entrypoints.diffusion import PixelGenerator
+from max.entrypoints.diffusion import PixelGenerator, _PixelBatchResponse
 from max.experimental.realization_context import set_seed
 from max.pipelines import PipelineConfig
-from max.entrypoints.diffusion import _PixelBatchResponse
+from PIL import Image
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -46,12 +46,12 @@ def main() -> None:
         guidance_scale=3.5,
     )
 
-    image:np.ndarray = result.outputs[0].pixel_data[0]
+    image: np.ndarray = result.outputs[0].pixel_data[0]
 
     output_path = Path(args.output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(image.astype(np.uint8)).save(output_path)
-    
+
     print(f"Image saved to: {output_path}")
 
 

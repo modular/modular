@@ -23,17 +23,17 @@ from threading import Event, Thread
 import tqdm
 from max.interfaces import (
     GenerationStatus,
+    PipelineTask,
     PixelGenerationInputs,
     PixelGenerationOutput,
+    PixelGenerationPipeline,
     PixelGenerationRequest,
-    PipelineTask,
     RequestID,
 )
 from max.interfaces.pipeline_variants.text_generation import (
     TextGenerationRequestMessage,
 )
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
-from PIL.Image import Image
 
 
 @dataclass
@@ -210,7 +210,9 @@ class PixelGenerator:
         """
         raise NotImplementedError("Not implemented.")
 
-    def _submit_and_wait(self, request: _PixelBatchRequest) -> _PixelBatchResponse:
+    def _submit_and_wait(
+        self, request: _PixelBatchRequest
+    ) -> _PixelBatchResponse:
         """Submit a request to the queue and wait for response."""
         response_queue: queue.Queue[_PixelBatchResponse] = queue.Queue()
         self._pending_requests[request.id] = response_queue
@@ -281,7 +283,7 @@ def _run_worker(
 
 
 def _process_request(
-    pipeline,
+    pipeline: PixelGenerationPipeline,
     request: _PixelBatchRequest,
 ) -> list[PixelGenerationOutput]:
     """Process a single pixel generation request.
@@ -295,7 +297,9 @@ def _process_request(
     """
     # Handle negative prompts
     negative_prompts = request.negative_prompts
-    if negative_prompts is None or len(request.prompts) != len(negative_prompts):
+    if negative_prompts is None or len(request.prompts) != len(
+        negative_prompts
+    ):
         if negative_prompts is None or len(negative_prompts) == 0:
             negative_prompts = [None] * len(request.prompts)
         else:
@@ -334,5 +338,3 @@ def _process_request(
     outputs: list[PixelGenerationOutput] = pipeline.execute(inputs)
 
     return outputs
-
-
