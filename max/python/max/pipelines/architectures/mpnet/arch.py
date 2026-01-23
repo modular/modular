@@ -22,6 +22,7 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import MPNetPipelineModel
+from .model_config import MPNetConfig
 
 mpnet_arch = SupportedArchitecture(
     name="MPNetForMaskedLM_Legacy",
@@ -42,4 +43,5 @@ mpnet_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     required_arguments={"enable_prefix_caching": False},
+    config=MPNetConfig,
 )
