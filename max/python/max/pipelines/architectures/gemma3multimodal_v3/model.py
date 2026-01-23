@@ -394,7 +394,7 @@ class Gemma3_MultiModalModelV3(
         timer = CompilationTimer("language model")
         with F.lazy():
             language_model = Gemma3LanguageModel(config)
-            # language_model.to(self.devices[0]) # TODO multi device...?
+            language_model.to(self.devices[0])
 
         timer.mark_build_complete()
 
@@ -455,7 +455,7 @@ class Gemma3_MultiModalModelV3(
         timer = CompilationTimer("vision model")
         with F.lazy():
             vision_model = Gemma3VisionModel(config)
-            # vision_model.to(self.devices[0]) # TODO multi device...?
+            vision_model.to(self.devices[0])
 
         timer.mark_build_complete()
 
