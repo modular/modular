@@ -76,10 +76,6 @@ common --zip_undeclared_test_outputs=false
 # https://github.com/bazelbuild/rules_python/issues/2445
 common --@rules_python//python/config_settings:exec_tools_toolchain=disabled
 
-# Will be the default in a later rules_python release
-# https://github.com/bazel-contrib/rules_python/pull/3117
-common --@rules_python//python/config_settings:bootstrap_impl=script
-
 # Make flag easier to write on the command line
 build --flag_alias=mojocopt=@rules_mojo//:mojo_copt
 build --flag_alias=mojopackagecopt=@rules_mojo//:mojo_package_copt
