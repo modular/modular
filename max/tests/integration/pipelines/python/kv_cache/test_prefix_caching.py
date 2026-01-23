@@ -24,7 +24,11 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import ImageMetadata, RequestID, TokenBuffer
 from max.kv_cache import InsufficientBlocksError, PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, RaggedKVCacheInputs
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    RaggedKVCacheInputs,
+)
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.support.image import hash_image
 from test_common.context_utils import create_text_context

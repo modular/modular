@@ -181,6 +181,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
+        requirement("pillow"),
         requirement("transformers"),
     ],
 )
@@ -190,6 +191,7 @@ modular_py_library(
     testonly = True,
     srcs = ["generate_utils.py"],
     deps = [
+        "//max/tests/integration/pipelines/python/test_common:storage",
         "//max/tests/integration/pipelines/python/test_common:test_data",
         "//max/tests/integration/pipelines/python/test_common:torch_utils",
         requirement("torch"),

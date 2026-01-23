@@ -69,10 +69,10 @@ def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout_orig]):
 def test_color_to_grayscale():
     with DeviceContext() as ctx:
         var rgb_buffer = ctx.enqueue_create_buffer[int_dtype](
-            rgb_layout_orig.size()
+            comptime (rgb_layout_orig.size())
         )
         var gray_buffer = ctx.enqueue_create_buffer[int_dtype](
-            gray_layout_orig.size()
+            comptime (gray_layout_orig.size())
         )
 
         var rgb_tensor = InputTensor[static_spec=rgb_spec](

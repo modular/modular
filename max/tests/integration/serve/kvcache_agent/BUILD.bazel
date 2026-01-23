@@ -13,14 +13,11 @@ modular_py_test(
         ["*.py"],
         exclude = ["test_dispatcher_v2.py"],
     ),
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
-        "//max/python/max/serve:process_control",
         "//max/python/max/serve/kvcache_agent",
+        "//max/python/max/serve/kvcache_agent:kvcache_agent_proto_srcs",
         "//max/python/max/serve/queue",
         requirement("grpcio"),
-        requirement("pyzmq"),
-        requirement("pytest-asyncio"),
     ],
 )
 

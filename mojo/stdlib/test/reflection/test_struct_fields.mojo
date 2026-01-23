@@ -20,6 +20,7 @@ from reflection import (
     struct_field_count,
     struct_field_names,
     struct_field_types,
+    offset_of,
 )
 from testing import assert_equal, assert_true, assert_false
 from testing import TestSuite
@@ -153,6 +154,53 @@ struct Foo[
     T: Intable, //, b: T, c: Bool, d: NoneType = None, e: StaticString = "hello"
 ]:
     pass
+
+
+# Test struct for offset calculations - designed with predictable layout
+@fieldwise_init
+@register_passable("trivial")
+struct OffsetTestStruct:
+    """Struct with predictable field layout for offset testing."""
+
+    var a: Int8  # 1 byte at offset 0
+    var b: Int64  # 8 bytes, needs 8-byte alignment -> offset 8
+    var c: Int8  # 1 byte at offset 16
+    var d: Int32  # 4 bytes, needs 4-byte alignment -> offset 20
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct SimpleOffsetStruct:
+    """Simple struct for basic offset tests."""
+
+    var x: Int64  # 8 bytes at offset 0
+    var y: Int64  # 8 bytes at offset 8
+
+
+@register_passable("trivial")
+struct SingleFieldStruct:
+    """Struct with a single field."""
+
+    var value: Int32
+
+
+@register_passable("trivial")
+struct AllSameTypeStruct:
+    """Struct with all fields of the same type."""
+
+    var a: Int64
+    var b: Int64
+    var c: Int64
+
+
+# Parametric struct for testing offset calculation with varying field types.
+# The offset of `footer` depends on the size of `data`, which varies with T.
+struct GenericOffsetContainer[T: Copyable & Movable & ImplicitlyDestructible]:
+    """Parametric struct where field offsets depend on the type parameter."""
+
+    var header: Int8  # 1 byte at offset 0
+    var data: Self.T  # Size and alignment vary with T
+    var footer: Int8  # Offset depends on T's size and alignment
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1029,6 +1077,337 @@ def test___struct_field_ref_parametric_index():
     # These should compile and work without copying
     print_struct_debug(p)
     print_struct_debug(c)
+
+
+# ===----------------------------------------------------------------------=== #
+# Struct Field Offset Tests (offset_of)
+# ===----------------------------------------------------------------------=== #
+
+
+def test_offset_of_first_field_is_zero():
+    """Test that the first field always has offset 0."""
+    comptime off = offset_of[SimpleOffsetStruct, name="x"]()
+    assert_equal(off, 0)
+
+    comptime off2 = offset_of[OffsetTestStruct, name="a"]()
+    assert_equal(off2, 0)
+
+    comptime off3 = offset_of[SingleFieldStruct, name="value"]()
+    assert_equal(off3, 0)
+
+
+def test_offset_of_sequential_fields():
+    """Test offsets of sequential same-type fields."""
+    comptime x_off = offset_of[SimpleOffsetStruct, name="x"]()
+    comptime y_off = offset_of[SimpleOffsetStruct, name="y"]()
+
+    # x is at 0, y is at 8 (since Int64 is 8 bytes)
+    assert_equal(x_off, 0)
+    assert_equal(y_off, 8)
+
+
+def test_offset_of_with_alignment_padding():
+    """Test that alignment padding is correctly accounted for."""
+    # OffsetTestStruct layout:
+    # a: Int8 at offset 0 (1 byte)
+    # padding: 7 bytes to align b to 8
+    # b: Int64 at offset 8 (8 bytes)
+    # c: Int8 at offset 16 (1 byte)
+    # padding: 3 bytes to align d to 4
+    # d: Int32 at offset 20 (4 bytes)
+
+    comptime a_off = offset_of[OffsetTestStruct, name="a"]()
+    comptime b_off = offset_of[OffsetTestStruct, name="b"]()
+    comptime c_off = offset_of[OffsetTestStruct, name="c"]()
+    comptime d_off = offset_of[OffsetTestStruct, name="d"]()
+
+    assert_equal(a_off, 0)
+    assert_equal(b_off, 8)  # Aligned to 8 bytes
+    assert_equal(c_off, 16)  # After b (8 + 8)
+    assert_equal(d_off, 20)  # Aligned to 4 bytes (16 + 1 + 3 padding)
+
+
+def test_offset_of_by_index_basic():
+    """Test offset_of[index=] with basic structs."""
+    comptime off0 = offset_of[SimpleOffsetStruct, index=0]()
+    comptime off1 = offset_of[SimpleOffsetStruct, index=1]()
+
+    assert_equal(off0, 0)
+    assert_equal(off1, 8)
+
+
+def test_offset_of_by_index_with_padding():
+    """Test offset_of[index=] accounts for alignment padding."""
+    comptime off0 = offset_of[OffsetTestStruct, index=0]()
+    comptime off1 = offset_of[OffsetTestStruct, index=1]()
+    comptime off2 = offset_of[OffsetTestStruct, index=2]()
+    comptime off3 = offset_of[OffsetTestStruct, index=3]()
+
+    assert_equal(off0, 0)
+    assert_equal(off1, 8)
+    assert_equal(off2, 16)
+    assert_equal(off3, 20)
+
+
+def test_offset_of_by_name_basic():
+    """Test offset_of[name=] with basic structs."""
+    comptime x_off = offset_of[SimpleOffsetStruct, name="x"]()
+    comptime y_off = offset_of[SimpleOffsetStruct, name="y"]()
+
+    assert_equal(x_off, 0)
+    assert_equal(y_off, 8)
+
+
+def test_offset_of_index_and_name_are_consistent():
+    """Test that offset_of[index=] and offset_of[name=] return consistent values.
+    """
+    # index and name should be consistent for same field
+    comptime idx = struct_field_index_by_name[OffsetTestStruct, "c"]()
+    comptime off_by_name = offset_of[OffsetTestStruct, name="c"]()
+    comptime off_by_idx = offset_of[OffsetTestStruct, index=idx]()
+    assert_equal(off_by_name, off_by_idx)
+
+    # Test all fields of OffsetTestStruct
+    assert_equal(
+        offset_of[OffsetTestStruct, index=0](),
+        offset_of[OffsetTestStruct, name="a"](),
+    )
+    assert_equal(
+        offset_of[OffsetTestStruct, index=1](),
+        offset_of[OffsetTestStruct, name="b"](),
+    )
+    assert_equal(
+        offset_of[OffsetTestStruct, index=2](),
+        offset_of[OffsetTestStruct, name="c"](),
+    )
+    assert_equal(
+        offset_of[OffsetTestStruct, index=3](),
+        offset_of[OffsetTestStruct, name="d"](),
+    )
+
+
+fn get_offset_generically[T: AnyType, idx: Int]() -> Int:
+    """Helper to test offset calculation through generic function."""
+    return offset_of[T, index=idx]()
+
+
+def test_offset_through_generic_function():
+    """Test that offset calculation works through generic functions."""
+    comptime off0 = get_offset_generically[SimpleOffsetStruct, 0]()
+    comptime off1 = get_offset_generically[SimpleOffsetStruct, 1]()
+
+    assert_equal(off0, 0)
+    assert_equal(off1, 8)
+
+
+def test_offset_iteration_with_parameter_for():
+    """Test iterating over field offsets with @parameter for."""
+    var offsets = InlineArray[Int, 4](uninitialized=True)
+
+    @parameter
+    for i in range(struct_field_count[OffsetTestStruct]()):
+        offsets[i] = offset_of[OffsetTestStruct, index=i]()
+
+    assert_equal(offsets[0], 0)
+    assert_equal(offsets[1], 8)
+    assert_equal(offsets[2], 16)
+    assert_equal(offsets[3], 20)
+
+
+def test_offset_with_nested_struct():
+    """Test offset calculation with nested struct fields."""
+    # Inner has two Int fields (2 * 8 = 16 bytes on 64-bit)
+    # Outer has: name (String), inner (Inner), count (Int)
+    comptime name_off = offset_of[Outer, name="name"]()
+    comptime inner_off = offset_of[Outer, name="inner"]()
+    comptime count_off = offset_of[Outer, name="count"]()
+
+    # First field is always at 0
+    assert_equal(name_off, 0)
+
+    # inner and count offsets depend on String's size, but should be > 0
+    assert_true(inner_off > 0)
+    assert_true(count_off > inner_off)
+
+
+def test_offset_with_size_of_verification():
+    """Test that field offsets are consistent with size_of for packed fields."""
+    from sys.info import size_of
+
+    # For SimpleOffsetStruct with two Int64 fields:
+    # offset[y] should equal offset[x] + size_of[Int64]()
+    # since Int64 is naturally aligned and there's no padding
+    comptime x_off = offset_of[SimpleOffsetStruct, name="x"]()
+    comptime y_off = offset_of[SimpleOffsetStruct, name="y"]()
+    comptime int64_size = size_of[Int64]()
+
+    assert_equal(x_off, 0)
+    assert_equal(y_off, x_off + int64_size)
+
+
+def test_offset_by_name_with_generic_type():
+    """Test that offset_of[name=] works with generic type parameters."""
+
+    # Test offset_of through a generic function
+    # The field name must be a string literal, but T can be a generic type parameter
+    fn get_x_offset[T: AnyType]() -> Int:
+        """Helper that uses offset_of with a generic type parameter."""
+        return offset_of[T, name="x"]()
+
+    fn get_a_offset[T: AnyType]() -> Int:
+        """Helper that uses offset_of with a generic type parameter."""
+        return offset_of[T, name="a"]()
+
+    # Test with different struct types that have "x" field
+    comptime off1 = get_x_offset[SimpleOffsetStruct]()
+    assert_equal(off1, 0)
+
+    # Test with struct that has "a" field
+    comptime off2 = get_a_offset[OffsetTestStruct]()
+    assert_equal(off2, 0)
+
+
+fn get_all_offsets_generically[T: AnyType]() -> InlineArray[Int, 4]:
+    """Helper to get all field offsets for a struct with up to 4 fields."""
+    var offsets = InlineArray[Int, 4](fill=0)
+    comptime count = struct_field_count[T]()
+
+    @parameter
+    for i in range(count):
+        offsets[i] = offset_of[T, index=i]()
+
+    return offsets^
+
+
+def test_generic_offset_iteration():
+    """Test getting all offsets through a generic function."""
+    var offsets = get_all_offsets_generically[OffsetTestStruct]()
+
+    assert_equal(offsets[0], 0)
+    assert_equal(offsets[1], 8)
+    assert_equal(offsets[2], 16)
+    assert_equal(offsets[3], 20)
+
+
+def test_offset_single_field_struct():
+    """Test offset calculation for struct with a single field."""
+    comptime off = offset_of[SingleFieldStruct, index=0]()
+    assert_equal(off, 0)
+
+    comptime off_by_name = offset_of[SingleFieldStruct, name="value"]()
+    assert_equal(off_by_name, 0)
+
+
+def test_offset_all_same_type_fields():
+    """Test offset calculation when all fields have the same type."""
+    from sys.info import size_of
+
+    comptime a_off = offset_of[AllSameTypeStruct, name="a"]()
+    comptime b_off = offset_of[AllSameTypeStruct, name="b"]()
+    comptime c_off = offset_of[AllSameTypeStruct, name="c"]()
+    comptime int64_size = size_of[Int64]()
+
+    # All fields are Int64, so offsets should be multiples of Int64 size
+    assert_equal(a_off, 0)
+    assert_equal(b_off, int64_size)
+    assert_equal(c_off, 2 * int64_size)
+
+
+def test_offset_consistency_by_index_and_by_name():
+    """Verify index= and name= overloads return identical values for all fields.
+    """
+    # OffsetTestStruct has fields: a, b, c, d
+    # Verify index= and name= produce the same results for each
+    comptime off_a_idx = offset_of[OffsetTestStruct, index=0]()
+    comptime off_a_name = offset_of[OffsetTestStruct, name="a"]()
+    assert_equal(off_a_idx, off_a_name)
+
+    comptime off_b_idx = offset_of[OffsetTestStruct, index=1]()
+    comptime off_b_name = offset_of[OffsetTestStruct, name="b"]()
+    assert_equal(off_b_idx, off_b_name)
+
+    comptime off_c_idx = offset_of[OffsetTestStruct, index=2]()
+    comptime off_c_name = offset_of[OffsetTestStruct, name="c"]()
+    assert_equal(off_c_idx, off_c_name)
+
+    comptime off_d_idx = offset_of[OffsetTestStruct, index=3]()
+    comptime off_d_name = offset_of[OffsetTestStruct, name="d"]()
+    assert_equal(off_d_idx, off_d_name)
+
+
+def test_offset_with_parametric_struct_varying_field_type():
+    """Test offset calculation for parametric struct where field type varies.
+
+    This tests that offset_of correctly handles generic type parameters where
+    the field type (and thus its size/alignment) varies with the type parameter.
+    The footer field offset depends on the size and alignment of the data field.
+    """
+
+    # With Int8 data: header (1 byte) + data (1 byte) = 2 bytes, footer at 2
+    comptime footer_off_int8 = offset_of[
+        GenericOffsetContainer[Int8], name="footer"
+    ]()
+    assert_equal(footer_off_int8, 2)
+
+    # With Int64 data: header (1 byte) + padding (7 bytes) + data (8 bytes) = 16
+    # footer needs alignment, but Int8 only needs 1-byte alignment, so at 16
+    comptime footer_off_int64 = offset_of[
+        GenericOffsetContainer[Int64], name="footer"
+    ]()
+    assert_equal(footer_off_int64, 16)
+
+    # Verify data field offsets differ based on T's alignment
+    comptime data_off_int8 = offset_of[
+        GenericOffsetContainer[Int8], name="data"
+    ]()
+    comptime data_off_int64 = offset_of[
+        GenericOffsetContainer[Int64], name="data"
+    ]()
+
+    # Int8 only needs 1-byte alignment, so data is at offset 1
+    assert_equal(data_off_int8, 1)
+    # Int64 needs 8-byte alignment, so data is at offset 8 (with 7 bytes padding)
+    assert_equal(data_off_int64, 8)
+
+    # Verify that the difference between instantiations is correct
+    # footer_off_int64 - footer_off_int8 should reflect the size difference
+    assert_true(footer_off_int64 > footer_off_int8)
+
+
+def test_offset_matches_runtime_memory_layout():
+    """Verify that offset_of matches actual memory layout using pointer arithmetic.
+
+    This test creates struct instances and verifies that the compile-time
+    offsets match the actual byte offsets in memory at runtime.
+    """
+    # Test with OffsetTestStruct which has alignment padding
+    var s = OffsetTestStruct(a=1, b=2, c=3, d=4)
+
+    # Get address of struct and each field
+    var struct_addr = Int(UnsafePointer(to=s).bitcast[Int8]())
+    var a_addr = Int(UnsafePointer(to=s.a))
+    var b_addr = Int(UnsafePointer(to=s.b))
+    var c_addr = Int(UnsafePointer(to=s.c))
+    var d_addr = Int(UnsafePointer(to=s.d))
+
+    # Verify offsets match
+    assert_equal(a_addr - struct_addr, offset_of[OffsetTestStruct, name="a"]())
+    assert_equal(b_addr - struct_addr, offset_of[OffsetTestStruct, name="b"]())
+    assert_equal(c_addr - struct_addr, offset_of[OffsetTestStruct, name="c"]())
+    assert_equal(d_addr - struct_addr, offset_of[OffsetTestStruct, name="d"]())
+
+    # Also test with SimpleOffsetStruct (no padding between fields)
+    var simple = SimpleOffsetStruct(x=10, y=20)
+    var simple_addr = Int(UnsafePointer(to=simple).bitcast[Int8]())
+    var x_addr = Int(UnsafePointer(to=simple.x))
+    var y_addr = Int(UnsafePointer(to=simple.y))
+
+    assert_equal(
+        x_addr - simple_addr, offset_of[SimpleOffsetStruct, name="x"]()
+    )
+    assert_equal(
+        y_addr - simple_addr, offset_of[SimpleOffsetStruct, name="y"]()
+    )
 
 
 def main():

@@ -206,6 +206,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
         self = Self(from_borrowed=cpy.Py_None())
 
+    @implicit
     fn __init__(out self, value: Bool):
         """Initialize the object from a bool.
 
@@ -225,6 +226,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
         self = Self(from_owned=cpy.PyLong_FromSsize_t(c_ssize_t(value)))
 
+    @implicit
     fn __init__[dtype: DType](out self, value: Scalar[dtype]):
         """Initialize the object with a generic scalar value. If the scalar
         value type is bool, it is converted to a boolean. Otherwise, it is
@@ -243,7 +245,7 @@ struct PythonObject(
             var val = c_long(Int(value))
             self = Self(from_owned=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():
-            var val = c_size_t(mlir_value=value.cast[DType.int]()._mlir_value)
+            var val = c_size_t(value.cast[DType.uint]())
             self = Self(from_owned=cpy.PyLong_FromSize_t(val))
         elif dtype.is_integral():
             var val = c_ssize_t(value.cast[DType.int]()._mlir_value)
@@ -252,6 +254,7 @@ struct PythonObject(
             var val = c_double(value.cast[DType.float64]())
             self = Self(from_owned=cpy.PyFloat_FromDouble(val))
 
+    @implicit
     fn __init__(out self, string: StringSlice) raises:
         """Initialize the object from a string.
 
@@ -269,6 +272,7 @@ struct PythonObject(
             raise cpy.unsafe_get_error()
         self = Self(from_owned=unicode)
 
+    @implicit
     fn __init__(out self, value: StringLiteral) raises:
         """Initialize the object from a string literal.
 
@@ -280,6 +284,7 @@ struct PythonObject(
         """
         self = Self(value.as_string_slice())
 
+    @implicit
     fn __init__(out self, value: String) raises:
         """Initialize the object from a string.
 
@@ -291,6 +296,7 @@ struct PythonObject(
         """
         self = Self(value.as_string_slice())
 
+    @implicit
     fn __init__(out self, slice: Slice):
         """Initialize the object from a Mojo Slice.
 

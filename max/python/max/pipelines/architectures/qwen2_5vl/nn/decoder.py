@@ -32,29 +32,23 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn import (
-    MLP,
-    ColumnParallelLinear,
-    LayerList,
-    Linear,
-    Llama3RotaryEmbedding,
-    Module,
-    ReturnLogits,
-    RMSNorm,
-    VocabParallelEmbedding,
-)
-from max.nn.attention.attention_with_rope import _compute_shard_range
-from max.nn.comm.allreduce import Allreduce
-from max.nn.float8_config import Float8Config
-from max.nn.kernels import (
+from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.float8_config import Float8Config
+from max.nn.legacy.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import Shardable
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module, Shardable
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.transformer import ReturnLogits
+from max.nn.legacy.transformer.distributed_transformer import (
     ShardableCallable,
     forward_sharded_layers,
 )

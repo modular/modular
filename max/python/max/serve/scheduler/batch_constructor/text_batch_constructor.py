@@ -242,10 +242,10 @@ class TextBatchConstructor:
 
     *Total-context budget (optional)*
 
-    - Enabled when ``max_batch_context_length`` is not ``None``.
+    - Enabled when ``max_batch_total_tokens`` is not ``None``.
     - Tracks the total resident context across the batch, accounting for
       current context length and planned forward steps, and ensures the sum
-      does not exceed ``max_batch_context_length``.
+      does not exceed ``max_batch_total_tokens``.
     - This budget is only applied when a CE request is present, or to be
       added to the batch.
 
@@ -376,10 +376,10 @@ class TextBatchConstructor:
             )
         ]
 
-        if self.scheduler_config.max_batch_context_length is not None:
+        if self.scheduler_config.max_batch_total_tokens is not None:
             token_budgets.append(
                 TotalContextTokenBudget(
-                    capacity=self.scheduler_config.max_batch_context_length,
+                    capacity=self.scheduler_config.max_batch_total_tokens,
                     allow_chunking=self.scheduler_config.enable_chunked_prefill,
                     applicable_types=[
                         RequestType.CE,

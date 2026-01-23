@@ -65,8 +65,8 @@ from ..tile_scheduler import MatmulSchedule, TileScheduler, RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
 from ....structuring import NVIDIASharedMemoryManager as SharedMemoryManager
 from ....structuring import (
-    SMemTileType,
-    RegTileType,
+    SMemTile,
+    RegTile,
     PipelineBarrier,
     eval,
 )
@@ -247,7 +247,7 @@ struct HopperMatmulSM90Kernel[
 
     comptime adjusted_num_pipeline_stages = Self.num_pipeline_stages // Self.k_group_size
 
-    comptime AccumRegTileType = RegTileType[
+    comptime AccumRegTile = RegTile[
         Self.accum_type,
         Layout.row_major(Self.num_m_mmas * Self.num_n_mmas, Self.c_frag_size),
     ]
@@ -456,7 +456,7 @@ struct HopperMatmulSM90Kernel[
     @always_inline
     fn setup_consumer(
         warp_group_idx: UInt,
-    ) -> Tuple[UInt, Self.AccumRegTileType, Self.AccumRegTileType]:
+    ) -> Tuple[UInt, Self.AccumRegTile, Self.AccumRegTile]:
         """Setup consumer warp group.
 
         Returns:
@@ -474,8 +474,8 @@ struct HopperMatmulSM90Kernel[
         warpgroup_reg_alloc[num_regs()]()
 
         var local_warp_group_idx = warp_group_idx - 1
-        var c_reg_tile = Self.AccumRegTileType.stack_allocation()
-        var final_c_reg_tile = Self.AccumRegTileType.stack_allocation()
+        var c_reg_tile = Self.AccumRegTile.stack_allocation()
+        var final_c_reg_tile = Self.AccumRegTile.stack_allocation()
 
         return (local_warp_group_idx, c_reg_tile, final_c_reg_tile)
 
@@ -525,7 +525,7 @@ struct HopperMatmulSM90Kernel[
         c_tma_op: TMATensorTile[Self.c_type, _, _],
         c: LayoutTensor[Self.c_type, _, MutAnyOrigin, ...],
         c_tile: Self.SMem.CTile,
-        output_reg_tile: Self.AccumRegTileType,
+        output_reg_tile: Self.AccumRegTile,
         warp_group_thread_idx: UInt,
         local_warp_group_idx: UInt,
         local_thread_idx: UInt,
@@ -686,12 +686,8 @@ struct HopperMatmulSM90Kernel[
         ](k_iter: Int):
             @parameter
             for j in range(num_pipeline_stages_to_unroll):
-                var k_offset = UInt(
-                    k_coord
-                    + UInt(
-                        k_iter * Self.num_pipeline_stages
-                        + (j * Self.k_group_size)
-                    )
+                var k_offset = k_coord + UInt(
+                    k_iter * Self.num_pipeline_stages + (j * Self.k_group_size)
                 )
 
                 # Get the next available tile slot from the ring buffer.
@@ -859,7 +855,7 @@ struct HopperMatmulSM90Kernel[
                 output_reg_tile,
                 warp_group_thread_idx,
                 local_warp_group_idx,
-                UInt(thread_idx.x - UInt(WARPGROUP_SIZE)),
+                thread_idx.x - UInt(WARPGROUP_SIZE),
                 block_idx_swizzle[1],
                 block_idx_swizzle[0],
             )
@@ -1030,8 +1026,8 @@ struct HopperMatmulSM90Kernel[
                             c,
                             smem.c_tile,
                             output_reg_tile,
-                            UInt(warp_group_thread_idx),
-                            UInt(local_warp_group_idx),
+                            warp_group_thread_idx,
+                            local_warp_group_idx,
                             thread_idx.x - UInt(WARPGROUP_SIZE),
                             Int(block_y),
                             Int(block_x),
@@ -1220,7 +1216,7 @@ struct HopperMatmulSM90Kernel[
                 output_reg_tile,
                 warp_group_thread_idx,
                 local_warp_group_idx,
-                UInt(thread_idx.x - UInt(WARPGROUP_SIZE)),
+                thread_idx.x - UInt(WARPGROUP_SIZE),
                 block_idx_swizzle[1],
                 block_idx_swizzle[0],
             )
@@ -1236,8 +1232,8 @@ struct HopperMatmulSM90Kernel[
     ](
         wgmma_op: Self.WgmmaOp,
         local_warp_group_idx: UInt,
-        final_c_reg_tile: Self.AccumRegTileType,
-        c_reg_tile: Self.AccumRegTileType,
+        final_c_reg_tile: Self.AccumRegTile,
+        c_reg_tile: Self.AccumRegTile,
         mut ring_buffer: Self.RingBufferConsumer[ring_buffer_origin, _],
     ):
         """Main computation loop for consumer warp groups.
@@ -1323,8 +1319,8 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @always_inline
     fn promote_to_cuda_cores(
-        c_reg_tile: Self.AccumRegTileType,
-        final_c_reg_tile: Self.AccumRegTileType,
+        c_reg_tile: Self.AccumRegTile,
+        final_c_reg_tile: Self.AccumRegTile,
     ):
         """Promote FP8 accumulation to higher precision using CUDA cores.
 
@@ -1366,9 +1362,9 @@ struct HopperMatmulSM90Kernel[
     fn wgmma(
         wgmma_op: Self.WgmmaOp,
         local_warp_group_idx: UInt,
-        a_tile: SMemTileType[Self.a_type, _, ...],
-        b_tile: SMemTileType[Self.b_type, _, ...],
-        c_reg_tile: Self.AccumRegTileType,
+        a_tile: SMemTile[Self.a_type, _, ...],
+        b_tile: SMemTile[Self.b_type, _, ...],
+        c_reg_tile: Self.AccumRegTile,
     ):
         warpgroup_fence(c_reg_tile)
         wgmma_op.arrive()

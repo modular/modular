@@ -26,8 +26,8 @@ from typing import Any
 import numpy as np
 from max.driver import Buffer
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 
 logger = logging.getLogger("max.pipelines")
 

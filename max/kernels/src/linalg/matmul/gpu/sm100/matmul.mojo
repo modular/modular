@@ -307,8 +307,8 @@ fn shared_memory_epilogue_transpose[
     c_smem_layout: Layout,
     swizzle: Swizzle,
     compute_lambda_fn: elementwise_compute_lambda_type,
-    num_output_warps: UInt,
-    warp_dim: UInt,
+    num_output_warps: Int,
+    warp_dim: Int,
     MMA_M: Int,
     BN: Int,
     cta_group: Int,
@@ -368,9 +368,9 @@ fn shared_memory_epilogue_transpose[
                     Int(0),
                     Int(crd[3].get_int()),
                     Int(warp_j),
-                    Int(iter_j),
+                    iter_j,
                     Int(warp_i),
-                    Int(iter_i),
+                    iter_i,
                 )
                 var offset = simd_size * RLayout32Bits[result]()(coord)
                 var logical_crd = idx2crd(
@@ -452,9 +452,9 @@ fn shared_memory_epilogue_transpose[
                         Int(crd[0].get_int()),
                         Int(0),
                         Int(crd[2].get_int()),
-                        Int(iter_j),
+                        iter_j,
                         Int(warp_i),
-                        Int(iter_i),
+                        iter_i,
                     )
                     var offset = simd_size * RLayout32Bits[result]()(coord)
                     var logical_crd = idx2crd(
@@ -482,7 +482,7 @@ fn shared_memory_epilogue_transpose[
                         )
                         ptr.store[width=simd_size, alignment=alignment](reg_val)
 
-    named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+    named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
 @always_inline
@@ -499,7 +499,7 @@ fn shared_memory_epilogue[
     c_smem_lower_layout: Layout,
     swizzle: Swizzle,
     compute_lambda_fn: elementwise_compute_lambda_type,
-    num_output_warps: UInt,
+    num_output_warps: Int,
 ](
     M: UInt32,
     N: UInt32,
@@ -618,12 +618,14 @@ fn shared_memory_epilogue[
             var section_offset_lower = lower_coord[1][1].get_int()
             var col_offset_lower = lower_coord[1][0].get_int()
 
-            shared_upper_col = section_offset_upper * Int64(
-                num_stages * stageN
-            ) + Int64(col_offset_upper)
-            shared_lower_col = section_offset_lower * Int64(
-                num_stages * stageN
-            ) + Int64(col_offset_lower)
+            shared_upper_col = (
+                section_offset_upper * Int64(num_stages * stageN)
+                + col_offset_upper
+            )
+            shared_lower_col = (
+                section_offset_lower * Int64(num_stages * stageN)
+                + col_offset_lower
+            )
 
         else:
             # can't cast to uint64 as it's not supported yet
@@ -668,7 +670,7 @@ fn shared_memory_epilogue[
         shared_memory_row_upper_half += UInt(distribute_rows)
         shared_memory_row_lower_half += UInt(distribute_rows)
 
-    named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+    named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
 @always_inline

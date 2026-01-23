@@ -19,7 +19,6 @@ from math import ceildiv, isclose
 from random import randn
 from sys import argv, has_nvidia_gpu_accelerator
 
-from buffer import Dim, DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE

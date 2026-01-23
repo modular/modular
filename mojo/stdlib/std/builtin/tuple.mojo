@@ -461,7 +461,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         deinit self,
         deinit other: Tuple[*other_element_types],
         out result: Tuple[
-            *Variadic.concat[Self.element_types, other_element_types]
+            *Variadic.concat_types[Self.element_types, other_element_types]
         ],
     ):
         """Return a new tuple that concatenates this tuple with another.

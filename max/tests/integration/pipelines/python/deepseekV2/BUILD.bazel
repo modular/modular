@@ -21,12 +21,16 @@ modular_py_library(
         "torch_reference/configuration_deepseek.py",
         "torch_reference/modeling_deepseek.py",
     ],
+    ignore_unresolved_imports = [
+        # `transformers` code, checks if flash_attn is installed
+        "flash_attn",
+    ],
     imports = ["."],
     tags = [
         "no-mypy",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
+        requirement("numpy"),
         requirement("torch"),
         requirement("transformers"),
     ],
@@ -57,19 +61,21 @@ modular_py_test(
     }),
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
     ],
     deps = [
         ":torch_reference",
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/entrypoints",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures",
-        "//max/python/max/serve",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:context_utils",
+        requirement("numpy"),
         requirement("torch"),
-        requirement("transformers"),
     ],
 )
 
@@ -92,18 +98,20 @@ modular_py_test(
     gpu_constraints = ["//:has_4_gpus"],
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
     ],
     deps = [
         ":torch_reference",
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/entrypoints",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures",
-        "//max/python/max/serve",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:context_utils",
+        requirement("numpy"),
         requirement("torch"),
-        requirement("transformers"),
     ],
 )

@@ -392,7 +392,7 @@ fn mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
 fn mean[
     reduce_axis: Int
 ](src: LayoutTensor[...], dst: LayoutTensor[mut=True, src.dtype, ...]) raises:
-    """Computes the mean across reduce_axis of an NDBuffer.
+    """Computes the mean across reduce_axis of a LayoutTensor.
 
     Parameters:
         reduce_axis: The axis to reduce across.

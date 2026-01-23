@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.attention.attention_with_rope
+.. automodule:: max.nn.legacy.attention.attention_with_rope
    :members:
    :undoc-members:

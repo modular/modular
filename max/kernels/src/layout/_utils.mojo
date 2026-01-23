@@ -141,7 +141,7 @@ struct ManagedLayoutTensor[
         update: Bool = True
     ](self) raises -> Self.layout_tensor_type:
         debug_assert(
-            Bool(self.ctx.api() != "cpu"),
+            self.ctx.api() != "cpu",
             "device_tensor cannot be constructed for host only tensor.",
         )
 
@@ -256,7 +256,7 @@ fn idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
     for i in range(layout.rank()):
         comptime stride = layout.stride[i].value()
         comptime shape = layout.shape[i].value()
-        res[i] = (Int(idx) // stride) % shape
+        res[i] = (idx // stride) % shape
     return res
 
 

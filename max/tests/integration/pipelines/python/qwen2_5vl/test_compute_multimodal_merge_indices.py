@@ -28,7 +28,12 @@ from max.pipelines.architectures.qwen2_5vl.util import (
 
 
 def test_compute_multimodal_merge_indices() -> None:
+    # Sentinel OOB index value
+    OOB = np.iinfo(np.int32).min
+
+    # Image token ID
     IMG = 99
+
     # These pixel values are arbitrary
     img0 = np.array([[-1, -2], [-3, -4]])
     img1 = np.array([[-5, -6], [-7, -8]])
@@ -81,7 +86,7 @@ def test_compute_multimodal_merge_indices() -> None:
     image_token_indices = compute_multimodal_merge_indices([ctx])
     # 5 img tokens (img1)
     # 0-3 are skipped as img0 is not included
-    assert image_token_indices.tolist() == [-1, -1, -1, -1, 2, 3, 4, 5, 6]
+    assert image_token_indices.tolist() == [OOB, OOB, OOB, OOB, 2, 3, 4, 5, 6]
 
     # Test multiple contexts case
     # ctx0 (start_idx=0), ctx1 (start_idx=8)
@@ -93,7 +98,7 @@ def test_compute_multimodal_merge_indices() -> None:
     )
     # 9 (img0 + img1) + 5 (img1) = 14 img tokens
     # 9-12 are skipped as img0 of ctx1 is not included
-    assert image_token_indices.tolist() == [4, 5, 6, 7, 10, 11, 12, 13, 14, -1, -1, -1, -1, 18, 19, 20, 21, 22]
+    assert image_token_indices.tolist() == [4, 5, 6, 7, 10, 11, 12, 13, 14, OOB, OOB, OOB, OOB, 18, 19, 20, 21, 22]
 
     # Test empty case
     image_token_indices = compute_multimodal_merge_indices([])

@@ -227,12 +227,12 @@ fn tma_umma_kernel_pair_cta[
     for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= 1 << (i * cta_group)
 
-    a_multicast_mask <<= rank_m
-    b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
+    a_multicast_mask <<= UInt16(rank_m)
+    b_multicast_mask <<= UInt16(peer_cta_coord[0])
+    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
 
-    var a_mma_mask = a_multicast_mask >> peer_cta_coord[0]
-    var b_mma_mask = b_multicast_mask >> peer_cta_coord[0]
+    var a_mma_mask = a_multicast_mask >> UInt16(peer_cta_coord[0])
+    var b_mma_mask = b_multicast_mask >> UInt16(peer_cta_coord[0])
     var c_mma_mask: UInt16 = (a_mma_mask | a_mma_mask << 1) | (
         b_mma_mask | b_mma_mask << 1
     )

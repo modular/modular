@@ -48,6 +48,6 @@ Here's an example demonstrating how to use embeddings:
         print(f"Embedding output shape: {embeddings.shape}")
         # Embedding output shape: [Dim(4), Dim(16), Dim(256)]
 
-.. automodule:: max.nn.embedding
+.. automodule:: max.nn.legacy.embedding
    :members:
    :undoc-members:

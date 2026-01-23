@@ -217,7 +217,7 @@ struct KVCacheMHAOperand[
 
 @register_passable("trivial")
 struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
-    """An implementation for NDBuffer arguments to MHA kernels."""
+    """An implementation for LayoutTensor arguments to MHA kernels."""
 
     comptime dtype = Self.dtype_
     comptime page_size = 0
@@ -264,7 +264,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
 
     @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:
-        # NDBuffer path assumes BSHD layout and all cache entries have
+        # LayoutTensor path assumes BSHD layout and all cache entries have
         # the same length.
         return self.buffer.dim[1]()
 
@@ -339,7 +339,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
 struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
     MHAOperand
 ):
-    """An implementation for ragged NDBuffer arguments to MHA kernels."""
+    """An implementation for ragged LayoutTensor arguments to MHA kernels."""
 
     comptime dtype = Self.dtype_
     comptime page_size = 0

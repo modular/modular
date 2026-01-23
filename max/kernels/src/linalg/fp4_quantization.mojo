@@ -749,7 +749,7 @@ fn quantize_dynamic_scaled_async_kernel[
     comptime output_smem_tile_size = output_cta_tile_layout.size()
     comptime scales_smem_tile_size = scales_tma_tile_layout.size()
 
-    comptime SF_K_GROUP_SIZE = SF_VECTOR_SIZE * SF_ATOM_K
+    comptime SF_K_GROUP_SIZE: UInt = SF_VECTOR_SIZE * SF_ATOM_K
     comptime STAGE_GROUP_SIZE = SF_K_GROUP_SIZE // NUM_PIPELINES_STAGES
 
     __comptime_assert (
@@ -835,9 +835,11 @@ fn quantize_dynamic_scaled_async_kernel[
                     smem_tile,
                     tma_mbar[iter_idx],
                     (
-                        UInt(block_idx.y * SF_K_GROUP_SIZE)
-                        + UInt(iter_idx * STAGE_GROUP_SIZE),
-                        UInt(block_idx.x * UInt(SF_MN_GROUP_SIZE)),
+                        Int(
+                            (block_idx.y * SF_K_GROUP_SIZE)
+                            + (iter_idx * STAGE_GROUP_SIZE)
+                        ),
+                        Int(block_idx.x) * SF_MN_GROUP_SIZE,
                     ),
                 )
 
@@ -914,7 +916,7 @@ fn quantize_dynamic_scaled_async_kernel[
                 ]()
                 var swizzle_offset = local_row_idx * Int(
                     STAGE_GROUP_SIZE // 2
-                ) + Int(idx) * Int(SF_VECTOR_SIZE)
+                ) + idx * Int(SF_VECTOR_SIZE)
                 var output_swizzle_idx = output_swizzle(swizzle_offset)
                 output_smem.ptr.store[
                     alignment = align_of[
@@ -1100,7 +1102,7 @@ fn quantize_dynamic_scaled_fp4_async[
             1,
         ),
         block_dim=(SF_MN_GROUP_SIZE + 32),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
 

@@ -38,10 +38,10 @@ from shmem.ep_comm import (
     EP_DATA_READY_FLAG,
     EPLocalSyncCounters,
     TokenFormat,
-    dispatch_cb_kernel,
-    dispatch_kernel,
-    combine_cb_kernel,
-    combine_kernel,
+    dispatch_wait_kernel,
+    dispatch_async_kernel,
+    combine_wait_kernel,
+    combine_async_kernel,
 )
 from shmem._mpi import MPI_Finalize
 
@@ -250,13 +250,12 @@ fn bench_dispatch[
             UInt(n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes)
         )
 
-        comptime dispatch = dispatch_kernel[
+        comptime dispatch_async = dispatch_async_kernel[
             input_type,
             hw_info.max_thread_block_size,
             input_tokens_layout,
             topk_ids_layout,
             hw_info.sm_count,
-            n_experts // (hw_info.max_thread_block_size // hw_info.warp_size),
             n_experts,
             n_ranks,
             n_tokens_per_rank,
@@ -264,26 +263,27 @@ fn bench_dispatch[
             TokenFmtType,
         ]
 
-        var func = ctx.compile_function_experimental[dispatch]()
+        var func = ctx.compile_function_experimental[dispatch_async]()
         shmem_module_init(func)
 
-        comptime dispatch_cb = dispatch_cb_kernel[
+        comptime dispatch_wait = dispatch_wait_kernel[
             hw_info.max_thread_block_size,
             output_layout,
             row_offsets_layout,
             expert_ids_layout,
             src_token_info_layout,
             hw_info.sm_count,
-            1,
             n_experts,
             n_ranks,
             n_tokens_per_rank,
             FormatHandlerType,
         ]
 
-        var func_cb = ctx.compile_function_experimental[dispatch_cb]()
+        var func_dispatch_wait = ctx.compile_function_experimental[
+            dispatch_wait
+        ]()
 
-        comptime combine = combine_kernel[
+        comptime combine_async = combine_async_kernel[
             input_type,
             hw_info.max_thread_block_size,
             output_layout,
@@ -296,26 +296,29 @@ fn bench_dispatch[
             n_tokens_per_rank,
             1,  # p2p_world_size
         ]
-        var func_combine = ctx.compile_function_experimental[combine]()
-        shmem_module_init(func_combine)
+        var func_combine_async = ctx.compile_function_experimental[
+            combine_async
+        ]()
+        shmem_module_init(func_combine_async)
 
-        comptime combine_cb = combine_cb_kernel[
+        comptime combine_wait = combine_wait_kernel[
             input_type,
             hw_info.max_thread_block_size,
             output_2_layout,
             hw_info.sm_count,
-            1,
             top_k,
             n_experts,
             n_ranks,
             combine_msg_bytes,
             n_tokens_per_rank,
         ]
-        var func_combine_cb = ctx.compile_function_experimental[combine_cb]()
+        var func_combine_async_wait = ctx.compile_function_experimental[
+            combine_wait
+        ]()
 
         @always_inline
         @parameter
-        fn run_dispatch(ctx: DeviceContext) raises:
+        fn run_dispatch_async(ctx: DeviceContext) raises:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
             var recv_buf_ptrs = InlineArray[
                 UnsafePointer[UInt8, MutAnyOrigin], 1
@@ -341,9 +344,9 @@ fn bench_dispatch[
 
         @always_inline
         @parameter
-        fn run_dispatch_cb(ctx: DeviceContext) raises:
+        fn run_dispatch_async_wait(ctx: DeviceContext) raises:
             ctx.enqueue_function(
-                func_cb,
+                func_dispatch_wait,
                 format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
@@ -363,13 +366,13 @@ fn bench_dispatch[
 
         @always_inline
         @parameter
-        fn run_dispatch_e2e(ctx: DeviceContext) raises:
-            run_dispatch(ctx)
-            run_dispatch_cb(ctx)
+        fn run_dispatch_async_e2e(ctx: DeviceContext) raises:
+            run_dispatch_async(ctx)
+            run_dispatch_async_wait(ctx)
 
         @always_inline
         @parameter
-        fn run_combine(ctx: DeviceContext) raises:
+        fn run_combine_async(ctx: DeviceContext) raises:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
             var combine_recv_buf_ptrs = InlineArray[
                 UnsafePointer[UInt8, MutAnyOrigin], 1
@@ -381,7 +384,7 @@ fn bench_dispatch[
             combine_recv_count_ptrs[0] = recv_count
 
             ctx.enqueue_function(
-                func_combine,
+                func_combine_async,
                 output_tensor,
                 src_token_info_tensor,
                 recv_buf,
@@ -400,9 +403,9 @@ fn bench_dispatch[
 
         @always_inline
         @parameter
-        fn run_combine_cb(ctx: DeviceContext) raises:
+        fn run_combine_async_wait(ctx: DeviceContext) raises:
             ctx.enqueue_function(
-                func_combine_cb,
+                func_combine_async_wait,
                 output_2_tensor,
                 send_buf,
                 recv_count,
@@ -414,21 +417,21 @@ fn bench_dispatch[
 
         @always_inline
         @parameter
-        fn run_combine_e2e(ctx: DeviceContext) raises:
-            run_combine(ctx)
-            run_combine_cb(ctx)
+        fn run_combine_async_e2e(ctx: DeviceContext) raises:
+            run_combine_async(ctx)
+            run_combine_async_wait(ctx)
 
         shmem_barrier_all_on_stream(ctx.stream())
 
         @always_inline
         @parameter
-        fn run_dispatch_func() raises:
-            run_dispatch_e2e(ctx)
+        fn run_dispatch_async_func() raises:
+            run_dispatch_async_e2e(ctx)
 
         @always_inline
         @parameter
-        fn run_combine_func() raises:
-            run_combine_e2e(ctx)
+        fn run_combine_async_func() raises:
+            run_combine_async_e2e(ctx)
 
         @always_inline
         @parameter
@@ -441,7 +444,7 @@ fn bench_dispatch[
             @parameter
             @always_inline
             fn kernel_launch(ctx: DeviceContext) raises:
-                run_dispatch_func()
+                run_dispatch_async_func()
 
             b.iter_custom[kernel_launch](ctx)
 
@@ -451,7 +454,7 @@ fn bench_dispatch[
             @parameter
             @always_inline
             fn kernel_launch(ctx: DeviceContext) raises:
-                run_combine_func()
+                run_combine_async_func()
 
             b.iter_custom[kernel_launch](ctx)
 

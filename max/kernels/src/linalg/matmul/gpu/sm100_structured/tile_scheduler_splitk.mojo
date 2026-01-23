@@ -142,10 +142,15 @@ struct AdvanceAfterWorkContextSplitK[
 
 
 @register_passable("trivial")
-struct PrefetchBeforeWorkContextSplitK[
+struct WaitAndAdvanceContextSplitK[
     work_origin: MutOrigin,
 ]:
-    """Context for MMA warp that prefetches BEFORE work (software pipelining).
+    """Context for waiting on CLC barrier and advancing work iterator (Split-K).
+
+    Encapsulates the CLC response barrier synchronization:
+    - Construction: Waits for CLC response, fetches next work
+    - __enter__: Returns current work_info for processing
+    - __exit__: Assigns fetched work as current
     """
 
     var work_info_ptr: Pointer[WorkInfo, Self.work_origin]
@@ -238,19 +243,24 @@ struct WorkIteratorSplitK[
         )
 
     @always_inline
-    fn next_prefetch[
+    fn wait_and_advance[
         state_origin: MutOrigin, //
     ](
         ref [state_origin]self,
-    ) -> PrefetchBeforeWorkContextSplitK[
+    ) -> WaitAndAdvanceContextSplitK[
         origin_of(self.work_info)
     ]:
-        """Get next work item with prefetch (advance BEFORE work pattern)."""
+        """Wait for next work from CLC and advance iterator (Split-K).
+
+        Encapsulates the CLC barrier wait:
+        - __enter__: Waits for CLC response, returns current work
+        - __exit__: Assigns fetched work as current
+        """
         var next = self.scheduler.fetch_next_work(
             self.work_info, self.consumer_state
         )
         self.consumer_state.step()
-        return PrefetchBeforeWorkContextSplitK(Pointer(to=self.work_info), next)
+        return WaitAndAdvanceContextSplitK(Pointer(to=self.work_info), next)
 
     # ========== CLC Throttle (Producer Side) ==========
 
@@ -500,25 +510,25 @@ struct TileScheduler[
         )
 
     @always_inline
-    fn prefetch_before_work[
+    fn wait_and_advance_work[
         work_origin: MutOrigin, //
     ](
         self,
         ref [work_origin]work_info: WorkInfo,
         mut consumer_state: PipelineState[Self.num_stages],
-    ) -> PrefetchBeforeWorkContextSplitK[work_origin]:
-        """Context for MMA warp that prefetches BEFORE work (software pipelining).
+    ) -> WaitAndAdvanceContextSplitK[work_origin]:
+        """Wait for next work from CLC and advance (Split-K).
 
-        Fetches next work and steps state IMMEDIATELY (before the with block).
+        Encapsulates the CLC barrier wait (called on scheduler directly).
 
         Usage:
-            with scheduler.prefetch_before_work(work_info, state) as current:
-                do_mma(current)  # Uses current, not prefetched
-            # After: work_info updated to prefetched value
+            with scheduler.wait_and_advance_work(work_info, state) as current:
+                do_mma(current)
+            # After: work_info updated to next value
         """
         var next = self.fetch_next_work(work_info, consumer_state)
         consumer_state.step()
-        return PrefetchBeforeWorkContextSplitK(Pointer(to=work_info), next)
+        return WaitAndAdvanceContextSplitK(Pointer(to=work_info), next)
 
     @always_inline
     fn work_iterator(
@@ -898,4 +908,4 @@ fn get_required_locks_buffer_size_bytes[
 
     var locks_workspace_bytes = num_output_tiles * size_of[Int32]()
 
-    return Int(locks_workspace_bytes)
+    return locks_workspace_bytes

@@ -10,115 +10,47 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Neural network modules for MAX.
 
-from .attention import (
-    AttentionWithRope,
-    DistributedAttentionImpl,
-    GGUFQAttentionWithRope,
-    GPTQAttentionWithRope,
-    RaggedAttention,
-    TensorParallelAttentionWithRope,
-)
-from .clamp import clamp
-from .comm import Allreduce, Signals
-from .conv import Conv1D, Conv2d, Conv3D
-from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
-from .embedding import Embedding, VocabParallelEmbedding
-from .float8_config import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
-)
-from .identity import Identity
-from .layer import Layer, LayerList, Module, Shardable
-from .linear import (
-    MLP,
-    ColumnParallelLinear,
-    DistributedGemmConfig,
-    GPTQLinear,
-    Linear,
-)
-from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
-from .norm import (
-    ConstantLayerNorm,
-    GroupNorm,
-    LayerNorm,
-    RMSNorm,
-)
-from .rotary_embedding import (
-    DynamicRotaryEmbedding,
-    LinearScalingParams,
-    Llama3RopeScalingParams,
-    Llama3RotaryEmbedding,
-    LongRoPERotaryEmbedding,
-    LongRoPEScalingParams,
-    RotaryEmbedding,
-    YarnRotaryEmbedding,
-    YarnScalingParams,
-)
-from .sequential import Sequential
-from .transformer import (
-    DistributedTransformer,
-    DistributedTransformerBlock,
-    ReturnHiddenStates,
-    ReturnLogits,
-    Transformer,
-    TransformerBlock,
-)
+This module provides the primary neural network building blocks for MAX
+using eager tensor execution.
+
+New API:
+    - :class:`Module`: Base class for neural network modules
+    - :class:`Linear`: Linear transformation layer
+    - :class:`Embedding`: Vector embedding layer
+    - :class:`Sequential`: Sequential container for modules
+    - :func:`module_dataclass`: Decorator for creating module dataclasses
+
+For legacy layer-based API, use ``max.nn.legacy``:
+    >>> from max.nn.legacy import Module, Layer, Linear
+    >>> from max.nn.legacy.attention import AttentionWithRope
+
+Example:
+    >>> from max.nn import Module, Linear, Embedding, Sequential, module_dataclass
+    >>> from max.tensor import Tensor
+"""
+
+# New Module-based API (primary)
+# Legacy submodule is available for backward compatibility
+from . import legacy
+from .embedding import Embedding
+from .linear import Linear
+from .module import Module, module_dataclass
+from .norm import GemmaRMSNorm, RMSNorm
+from .rope import RotaryEmbedding, TransposedRotaryEmbedding
+from .sequential import ModuleList, Sequential
 
 __all__ = [
-    "MLP",
-    "Allreduce",
-    "AttentionWithRope",
-    "AttentionWithRopeAndLoRA",
-    "ColumnParallelLinear",
-    "ConstantLayerNorm",
-    "Conv1D",
-    "Conv2d",
-    "Conv3D",
-    "ConvTranspose1d",
-    "DistributedAttentionImpl",
-    "DistributedTransformer",
-    "DistributedTransformerBlock",
     "Embedding",
-    "Float8Config",
-    "Float8InputScaleSpec",
-    "Float8ScaleGranularity",
-    "Float8ScaleOrigin",
-    "Float8WeightScaleSpec",
-    "GGUFQAttentionWithRope",
-    "GPTQAttentionWithRope",
-    "GPTQLinear",
-    "GroupNorm",
-    "Identity",
-    "Layer",
-    "LayerList",
-    "LayerNorm",
+    "GemmaRMSNorm",
     "Linear",
-    "LinearLoRA",
-    "LinearScalingParams",
-    "Llama3RopeScalingParams",
-    "Llama3RotaryEmbedding",
-    "LongRoPERotaryEmbedding",
-    "LongRoPEScalingParams",
     "Module",
+    "ModuleList",
     "RMSNorm",
-    "RaggedAttention",
-    "ReturnHiddenStates",
-    "ReturnLogits",
     "RotaryEmbedding",
     "Sequential",
-    "Shardable",
-    "Signals",
-    "SupportsLoRA",
-    "TensorParallelAttentionWithRope",
-    "Transformer",
-    "TransformerBlock",
-    "VocabParallelEmbedding",
-    "WeightNormConvTranspose1d",
-    "YarnRotaryEmbedding",
-    "YarnScalingParams",
-    "clamp",
+    "TransposedRotaryEmbedding",
+    "legacy",
+    "module_dataclass",
 ]

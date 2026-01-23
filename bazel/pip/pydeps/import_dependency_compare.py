@@ -56,6 +56,7 @@ _THIRD_PARTY_IMPORTS = {
     "pillow": ["PIL"],
     "python_json_logger": ["pythonjsonlogger"],
     "ruamel_yaml": ["ruamel.yaml"],
+    "pytest": ["pytest", "_pytest"],
     "pyyaml": ["yaml"],
     "pyzmq": ["zmq"],
 }

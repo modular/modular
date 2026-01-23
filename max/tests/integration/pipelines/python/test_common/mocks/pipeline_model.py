@@ -23,12 +23,12 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.kv_cache import PagedKVCacheManager
-from max.nn import ReturnHiddenStates, ReturnLogits
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     KVCacheStrategy,
 )
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -140,10 +140,6 @@ class MockPipelineModel(PipelineModel):
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
-
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return 1
 
     @classmethod
     def infer_optional_batch_size(

@@ -1,11 +1,11 @@
-:description: Experimental tensor class with eager execution for MAX.
+:description: Tensor class with eager execution for MAX.
 :title: tensor
 :card_title: Tensor Operations
 :type: module
 :lang: python
 
-.. py:currentmodule:: max.experimental
+.. py:currentmodule:: max
 
-.. automodule:: max.experimental.tensor
+.. automodule:: max.tensor
    :members:
    :undoc-members:
