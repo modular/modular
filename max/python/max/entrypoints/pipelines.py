@@ -35,15 +35,28 @@ _R = TypeVar("_R")
 
 
 def replace_deprecated_model_flag(args: list[str]) -> list[str]:
-    """Replace deprecated --model flag with --model-path."""
+    """Replace deprecated --model flag with --model-path.
+
+    Raises:
+        ValueError: If both --model and --model-path are specified.
+    """
     updated_args: list[str] = []
+    saw_model = False
+    saw_model_path = False
     for arg in args:
         if arg == "--model":
+            saw_model = True
             updated_args.append("--model-path")
         elif arg.startswith("--model="):
+            saw_model = True
             updated_args.append("--model-path" + arg[len("--model") :])
         else:
+            if arg == "--model-path" or arg.startswith("--model-path="):
+                saw_model_path = True
             updated_args.append(arg)
+
+        if saw_model and saw_model_path:
+            raise ValueError("model_path and model cannot both be specified")
     return updated_args
 
 
