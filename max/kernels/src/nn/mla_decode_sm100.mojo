@@ -83,7 +83,7 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
     ThreadScope,
 )
-from layout.swizzle import make_swizzle
+from layout.swizzle import make_swizzle, make_ldmatrix_swizzle
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
@@ -173,6 +173,8 @@ comptime logger = Logger()
 # ------------------------------------------------------------------------------
 struct MLA_SM100_Decode_Config:
     var MMA_M: Int
+    var MMA_PV_N: Int
+    var MMA_QK_N: Int
     var BM: Int
     var BN: Int
     var BK0: Int  # BK for MMA0
@@ -224,8 +226,13 @@ struct MLA_SM100_Decode_Config:
         self.depth = depth
         self.q_depth = q_depth
         self.rope_depth = q_depth - depth
+
         self.BM = 64
         self.MMA_M = 64
+        self.MMA_PV_N = 256
+        self.MMA_QK_N = 64
+        self.BN = 64  # This can be increased since we are not doing sparse
+
         self.dtype_size = dtype_size
         self.swizzle_mode = swizzle_mode
         self.kv_swizzle_mode = kv_swizzle_mode
@@ -235,7 +242,6 @@ struct MLA_SM100_Decode_Config:
 
         # 4 bytes for the TMEM base pointer
         var smem_use = 4
-        self.BN = 64  # This can be increased since we are not doing sparse
         self.tmem_used = self.TMEM_S0 + 32
         self.decoding_warp_split_k = decoding_warp_split_k
         self.BK0 = self.padded_q_depth
@@ -291,22 +297,19 @@ struct MLA_SM100_Decode_Config:
         # bar_li_done[1] → 1  producer pipeline- softmax
         # bar_li_ready[1] → 1  consumer pipeline - correction
         # Total: 1 + 2 + 2 + 2 + 2  +2 + 2  + 1 + 1 + 1 + 1  +1 + 1 = 19 transaction barriers.
-        # If decoding_warp_split_k is True, we need to add 2 more barriers for the splitk.
         # bar_write_done[1] → 1 or  8  producer pipeline- Correction
         # bar_write_ready[1] → 1 or 8  consumer pipeline - write
         # However if it is false, we need to add ((Depth/BN) -1) x2  more barriers.
-        # the splitk the two added is enough for now. if decoding_warp_split_k
-        # is False, we need to add ((Depth/BN) -1) x2  more barriers.
+        # the splitk the two added is enough for now.
+        # we need to add ((Depth/BN) -1) x2  more barriers.
         # for the splitk the two added is enough for now. because in that case
         # we can increase the pipeline number between epilogue and wite by reusing
         # the KV SMEM for output.
-        var num_out_barrier = (
-            1 if decoding_warp_split_k else self.depth // self.BN
-        ) * 2
+        var num_out_barrier = (self.depth // self.BN) * 2
         # total number of barriers is 19 + num_out_barrier
-        smem_use += ((19 + num_out_barrier) * Self.mbar_size) + Int(
-            not decoding_warp_split_k
-        ) * (((self.depth // self.BN) - 1) * 2 * Self.mbar_size)
+        smem_use += (19 + num_out_barrier) * Self.mbar_size + (
+            ((self.depth // self.BN) - 1) * 2 * Self.mbar_size
+        )
 
         # for convinence we will add the smem for max and li to the smem_used for
         # correction separately (128 * 1 * 4 * 2) =1024 bytes
@@ -315,7 +318,7 @@ struct MLA_SM100_Decode_Config:
         # smem_use += smem_for_max_and_li_correction
 
         # 4 + (64x576x2) + (64x576x2x2) + (64x64x2) + (128 * 1 * 4 * 2) + (19x8)  = 230556 bytes
-        # if decoding_warp_split_k is False, we need to add ((Depth/BN) -1) x2
+        # we need to add ((Depth/BN) -1) x2
         # more barriers. for the splitk the two added is enough for now.
         # 230556 + ((512/64) -1) x2 x8 = 230556 + 15 x16 = 230556 + 240 = 230796 bytes
         # hence the remaining memory is 232448 - 230796 = 1652 bytes
@@ -487,15 +490,15 @@ fn mla_decode_sm100[
     )
     q_tma_op = tma_tile_qo[
         swizzle_mode = mla_config.swizzle_mode,
-        BM = mla_config.BM,
-        BK = mla_config.BN,
+        BM = mla_config.BM,  # tile_m =64
+        BK = mla_config.BK0,  # tile_n =576
         depth = mla_config.q_depth,
     ](ctx, q_ptr, num_rows_qo)
 
     k_tma_op = k.create_tma_tile[
-        BN = mla_config.BM,  # tile_m =64
+        BN = mla_config.BK1,  # tile_m =64
         depth = mla_config.q_depth,
-        BK = mla_config.BN,  # tile_n =64
+        BK = mla_config.BK0,  # tile_n =576
         swizzle_mode = mla_config.kv_swizzle_mode,
     ](ctx)
     comptime output_tile_width = (mla_config.BN // 2) * (
@@ -585,15 +588,15 @@ fn launch_mla_sm100_decode_enqueue_kernel[
 ](
     q_tma: QOTMATile[
         dtype = KVLUTType.dtype,
-        BM = config.BM,
-        BK = config.BN,
+        BM = config.BM,  # tile_m =64
+        BK = config.BK0,  # tile_n =576
         swizzle_mode = config.swizzle_mode,
     ],
     k_tma: KVTMATile[
         dtype = KVLUTType.dtype,
         swizzle_mode = config.kv_swizzle_mode,
-        BN = config.BM,
-        BK = config.BN,
+        BN = config.BK1,  # tile_m =64
+        BK = config.BK0,  # tile_n =576
     ],
     o_tma: QOTMATile[
         dtype=output_type,
@@ -1351,7 +1354,12 @@ struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int]:
 
 @register_passable("trivial")
 struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config]:
-    comptime num_out_stages: Int = 1 if Self.config.decoding_warp_split_k else Self.config.depth // Self.config.BN
+    # mma.ws split BN elements across even/odd warps
+    comptime col_per_warp = Self.config.MMA_PV_N // 2
+    comptime num_out_blocks: Int = Self.config.depth // Self.config.BN
+    comptime block_per_warp = Self.col_per_warp // Self.config.BN
+    comptime blocks_per_stage = 2 if Self.block_per_warp != 0 else 1
+    comptime num_out_stages: Int = Self.num_out_blocks // Self.blocks_per_stage
     comptime OutPipeType = OutPipeline[Self.num_out_stages, WARPGROUP_SIZE, 1]
 
     # One KV "stage" = whole 64 x 576 logical K tile (loaded as 9 x 64x64)
@@ -1379,9 +1387,14 @@ struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config]:
         self.pipe.init()
 
     @always_inline
-    fn stage_base_ptr(self) -> SharedMemPointer[Scalar[Self.dtype]]:
+    fn stage_base_ptr(
+        self, half_idx: Int
+    ) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
-        var stage_offset: UInt32 = stage_idx * Self.out_stage_elems
+        var stage_offset: UInt32 = (
+            stage_idx * Self.out_stage_elems * Self.blocks_per_stage
+            + half_idx * Self.out_stage_elems
+        )
         return self.smem + stage_offset
 
     @always_inline
@@ -1403,7 +1416,12 @@ struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config]:
 
 @register_passable("trivial")
 struct DecodeOutConsumer[dtype: DType, config: MLA_SM100_Decode_Config]:
-    comptime num_out_stages: Int = 1 if Self.config.decoding_warp_split_k else Self.config.depth // Self.config.BN
+    # mma.ws split BN elements across even/odd warps
+    comptime col_per_warp = Self.config.MMA_PV_N // 2
+    comptime num_out_blocks: Int = Self.config.depth // Self.config.BN
+    comptime block_per_warp = Self.col_per_warp // Self.config.BN
+    comptime blocks_per_stage = 2 if Self.block_per_warp != 0 else 1
+    comptime num_out_stages: Int = Self.num_out_blocks // Self.blocks_per_stage
     comptime OutPipeType = OutPipeline[Self.num_out_stages, WARPGROUP_SIZE, 1]
     comptime out_stage_elems = Self.config.BM * Self.config.BN
 
@@ -1420,9 +1438,14 @@ struct DecodeOutConsumer[dtype: DType, config: MLA_SM100_Decode_Config]:
         self.smem = smem
 
     @always_inline
-    fn stage_base_ptr(self) -> SharedMemPointer[Scalar[Self.dtype]]:
+    fn stage_base_ptr(
+        self, half_idx: Int
+    ) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
-        var stage_offset: UInt32 = stage_idx * Self.out_stage_elems
+        var stage_offset: UInt32 = (
+            stage_idx * Self.out_stage_elems * Self.blocks_per_stage
+            + half_idx * Self.out_stage_elems
+        )
         return self.smem + stage_offset
 
     @always_inline("nodebug")
@@ -1532,73 +1555,33 @@ fn bulk_mma_ws[
 # MLA decoding Tensor AccumulatorSS for QKT
 # ------------------------------------------------------------------------------
 @register_passable("trivial")
-struct DecodeSM100TensorAccumulatorSS[
-    operand_type: DType,
-    accum_type: DType,
-    *,
-    config: MLA_SM100_Decode_Config,
-]:
-    # Common geometry
-    comptime BM = Self.config.BM  # 64
-    comptime BN = Self.config.BN  # 64
-
-    # MMA shapes (same for QK and PV)
-    comptime MMA_M = Self.config.BM  # 64 rows
-    comptime MMA_N = Self.config.BN  # 64 cols
-    comptime MMA_K = Self.config.MMA_K  # 16
-
-    # K-depth per logical block
-    comptime BK = Self.config.BN  # 64
-    comptime num_k_mmas = Self.BK // Self.MMA_K
-
-    # Datatype / layout common bits
-    comptime operand_size = size_of[Self.operand_type]()
-    comptime a_swizzle = Self.config.swizzle_mode
-    comptime b_swizzle = Self.config.kv_swizzle_mode
-
-    # S tile (QKᵀ result) geometry – only QK uses these
-    comptime S_M = Self.config.BM * 2  # 128
-    comptime S_N = Self.config.BN // 2  # 32
-
-    # O tile (PV result) geometry – only PV uses these
-    comptime O_M = Self.config.BM * 2  # 128
-    comptime O_N = Self.config.padded_depth // 2  # 256
-
-
-@register_passable("trivial")
 struct DecodeSM100QKTSS[
     operand_type: DType,
     accum_type: DType,
     *,
     config: MLA_SM100_Decode_Config,
 ]:
-    # Bring in common geometry / constants
-    comptime TensorAccumulatorSS = DecodeSM100TensorAccumulatorSS[
-        Self.operand_type,
-        Self.accum_type,
-        config = Self.config,
-    ]
-
-    comptime CTileType = TMemTile[
-        Self.accum_type,
-        Self.TensorAccumulatorSS.S_M,
-        Self.TensorAccumulatorSS.S_N,
-    ]
+    comptime MMA_M = Self.config.MMA_M  # 64 rows
+    comptime MMA_N = Self.config.MMA_QK_N  # 64 cols
+    comptime MMA_K = Self.config.MMA_K  # 16
+    comptime BK = Self.config.BK0  # 576
+    comptime num_k_mmas = Self.BK // Self.MMA_K
+    comptime operand_size = size_of[Self.operand_type]()
 
     # ----- A (Q) tile layout -----
     comptime ALayout = tile_layout_k_major[
         Self.operand_type,
-        Self.TensorAccumulatorSS.BM,  # 64 rows
-        Self.TensorAccumulatorSS.BN,  # 64 cols
-        Self.TensorAccumulatorSS.a_swizzle,
+        Self.config.BM,  # 64 rows
+        Self.BK,  # 576 cols
+        Self.config.swizzle_mode,
     ]()
 
     # ----- B (K) tile layout -----
     comptime BLayout = tile_layout_k_major[
         Self.operand_type,
-        Self.TensorAccumulatorSS.BM,  # 64 rows
-        Self.TensorAccumulatorSS.BN,  # 64 cols
-        Self.TensorAccumulatorSS.b_swizzle,
+        Self.config.BN,  # 64 rows
+        Self.BK,  # 576 cols
+        Self.config.kv_swizzle_mode,
     ]()
 
     # ----- Instruction descriptor -----
@@ -1606,9 +1589,7 @@ struct DecodeSM100QKTSS[
         Self.accum_type,
         Self.operand_type,
         Self.operand_type,
-        Index[dtype = DType.uint32](
-            Self.TensorAccumulatorSS.MMA_M, Self.TensorAccumulatorSS.MMA_N
-        ),
+        Index[dtype = DType.uint32](Self.MMA_M, Self.MMA_N),
         transpose_b=True,  # QKᵀ
     ]()
 
@@ -1620,8 +1601,8 @@ struct DecodeSM100QKTSS[
         # Q: 64 x 64, k-major, same swizzle as TMA
         var base = q_smem
         return smem_descriptor[
-            BMN = Self.TensorAccumulatorSS.BM,  # 64 rows
-            BK = Self.TensorAccumulatorSS.BN,  # 64 (padded_q_depth)
+            BMN = Self.config.BM,  # 64 rows
+            BK = Self.BK,  # 576 (padded_q_depth)
             swizzle_mode = Self.config.swizzle_mode,
             is_k_major=True,
         ](base)
@@ -1634,8 +1615,8 @@ struct DecodeSM100QKTSS[
         var base = kv_smem
         # Layout is 64 x 64, k-major, same swizzle as k_tma
         return smem_descriptor[
-            BMN = Self.config.BM,  # 64 rows
-            BK = Self.config.BN,  # 64 columns
+            BMN = Self.config.BN,  # 64 rows
+            BK = Self.BK,  # 576 columns
             swizzle_mode = Self.config.kv_swizzle_mode,
             is_k_major=True,
         ](base)
@@ -1657,8 +1638,8 @@ struct DecodeSM100QKTSS[
             kind = UMMAKind.KIND_F16,
             layout_a = Self.ALayout,
             layout_b = Self.BLayout,
-            num_k_mmas = Self.TensorAccumulatorSS.num_k_mmas,
-            operand_size = Self.TensorAccumulatorSS.operand_size,
+            num_k_mmas = Self.num_k_mmas,
+            operand_size = Self.operand_size,
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
         ](Self.UMMAInstDesc, a, b, c, c_scale, elect)
 
@@ -1670,45 +1651,39 @@ struct DecodeSM100PVSS[
     *,
     config: MLA_SM100_Decode_Config,
 ]:
-    # Shared base
-    comptime TensorAccumulatorSS = DecodeSM100TensorAccumulatorSS[
-        Self.operand_type,
-        Self.accum_type,
-        config = Self.config,
-    ]
-
-    comptime CTileType = TMemTile[
-        Self.accum_type,
-        Self.TensorAccumulatorSS.O_M,
-        Self.TensorAccumulatorSS.O_N,
-    ]
+    comptime MMA_M = Self.config.MMA_M  # 64 rows
+    comptime MMA_N = Self.config.MMA_PV_N
+    comptime MMA_K = Self.config.MMA_K  # 16
+    comptime BM = Self.config.BM  # 64
+    comptime BN = Self.MMA_N  # 64
+    comptime BK = Self.config.BK1  # 64
+    comptime num_k_mmas = Self.BK // Self.MMA_K
+    comptime operand_size = size_of[Self.operand_type]()
 
     # ----- A (P) tile layout -----
     # P tiles are treated as mn-major in smem
     comptime ALayout = tile_layout_k_major[
         Self.operand_type,
-        Self.TensorAccumulatorSS.BM,  # 64
-        Self.TensorAccumulatorSS.BN,  # 64
-        Self.TensorAccumulatorSS.a_swizzle,
+        Self.BM,  # 64
+        Self.BK,  # 64
+        Self.config.swizzle_mode,
     ]()
 
     # ----- B (V) tile layout -----
     # V tiles are mn-major (is_k_major = False in descriptor_v_block)
-
     comptime BLayout = tile_layout_mn_major[
         Self.operand_type,
-        Self.TensorAccumulatorSS.BM,  # 64
-        Self.TensorAccumulatorSS.BN,  # 64
-        Self.TensorAccumulatorSS.a_swizzle,
+        Self.BN,  # 256 as this is the max number of column accepted for mma
+        Self.BK,  # 64
+        Self.config.kv_swizzle_mode,
     ]()
+
     # ----- Instruction descriptor -----
     comptime UMMAPVSS = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
         Self.accum_type,
         Self.operand_type,
         Self.operand_type,
-        Index[dtype = DType.uint32](
-            Self.TensorAccumulatorSS.MMA_M, Self.TensorAccumulatorSS.MMA_N
-        ),
+        Index[dtype = DType.uint32](Self.MMA_M, Self.MMA_N),
         transpose_b=False,  # P (k-major) * V (mn-major) = no transpose
     ]()
 
@@ -1718,10 +1693,10 @@ struct DecodeSM100PVSS[
         kv_smem: SharedMemPointer[Scalar[Self.operand_type]],
     ) -> MMASmemDescriptorPair:
         var base = kv_smem
-        # Layout is 64 x 64, mn-major, same swizzle as k_tma
+        # Layout is BDepth_max x 64, mn-major, same swizzle as k_tma
         return smem_descriptor[
-            BMN = Self.TensorAccumulatorSS.BM,  # 64 rows
-            BK = Self.TensorAccumulatorSS.BN,  # 64 columns
+            BMN = Self.BN,
+            BK = Self.BK,  # 64 rows
             swizzle_mode = Self.config.kv_swizzle_mode,
             is_k_major=False,
         ](base)
@@ -1734,8 +1709,8 @@ struct DecodeSM100PVSS[
         var base = p_smem
         # P: 64 x 64, k-major, same swizzle as Q/K
         return smem_descriptor[
-            BMN = Self.TensorAccumulatorSS.BM,  # 64 rows
-            BK = Self.TensorAccumulatorSS.BN,  # 64 columns
+            BMN = Self.BM,  # 64 rows
+            BK = Self.BK,  # 64 columns
             swizzle_mode = Self.config.swizzle_mode,
             is_k_major=True,  # P is k-major
         ](base)
@@ -1757,8 +1732,8 @@ struct DecodeSM100PVSS[
             kind = UMMAKind.KIND_F16,
             layout_a = Self.ALayout,
             layout_b = Self.BLayout,
-            num_k_mmas = Self.TensorAccumulatorSS.num_k_mmas,
-            operand_size = Self.TensorAccumulatorSS.operand_size,
+            num_k_mmas = Self.num_k_mmas,
+            operand_size = Self.operand_size,
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
         ](Self.UMMAPVSS, a, b, c, c_scale, elect)
 
@@ -1777,31 +1752,46 @@ fn write_bf16x2_row_to_smem_fast[
     config: MLA_SM100_Decode_Config,
     local_tile_size: Int,
 ](
-    shared_mem: SharedMemPointer[Scalar[out_dtype]],
+    shared_mem: UnsafePointer[
+        Scalar[out_dtype], MutAnyOrigin, address_space = AddressSpace.SHARED
+    ],
     local_mem: LocalTensor[in_dtype, layout],
     col_start: Int,
     row_start: Int,
 ):
-    # Swizzle at 128B mode – operates on 16B (8-element) chunk indices
-    comptime swz = make_swizzle[out_dtype, config.swizzle_mode]()
+    # Use ldmatrix swizzle
+    comptime swz = make_ldmatrix_swizzle[
+        dtype=out_dtype,
+        row_size = config.BN,
+        # 16B store => 8 elements for bf16
+        log2_vector_width=3,
+    ]()
+
     comptime element_per_write = 8
     comptime tile_number = local_tile_size // element_per_write
-    var vetorized_local_mem = local_mem.vectorize[element_per_write]()
+    var v = local_mem.vectorize[element_per_write]()
 
-    # For each group of 8 F32 -> 16 BF16 (4×bf16x2) = 128 bits
     @parameter
-    for g in range(0, tile_number):  # 4 * 8 = 32 elems
-        # Columns in P for this 128-bit chunk
-        var col_base: Int = (
-            col_start + g * element_per_write
-        )  # 0,8,16,24 or 32,40,48,56
-        # todo: this one always assume row major
+    for g in range(0, tile_number):
+        var col_base: Int = col_start + g * element_per_write
         var logical_elem: Int = row_start * config.BN + col_base
-        physical_offset = swz(logical_elem)
+        var physical_elem: Int = swz(logical_elem)
+        var dst_ptr = shared_mem + physical_elem
 
-        shared_mem.store(
-            physical_offset, (vetorized_local_mem[g].cast[out_dtype]())
-        )
+        var bf16_8 = v[g].cast[out_dtype]()
+
+        # 4x bf16x2 (each is 32-bit)
+        var p01: SIMD[out_dtype, 2] = SIMD[out_dtype, 2](bf16_8[0], bf16_8[1])
+        var p23: SIMD[out_dtype, 2] = SIMD[out_dtype, 2](bf16_8[2], bf16_8[3])
+        var p45: SIMD[out_dtype, 2] = SIMD[out_dtype, 2](bf16_8[4], bf16_8[5])
+        var p67: SIMD[out_dtype, 2] = SIMD[out_dtype, 2](bf16_8[6], bf16_8[7])
+
+        _ = inlined_assembly[
+            "st.shared.v4.b32 [$0], {$1, $2, $3, $4};",
+            NoneType,
+            constraints="l,r,r,r,r",
+            has_side_effect=True,
+        ](dst_ptr, p01, p23, p45, p67)
 
 
 # ------------------------------------------------------------------------------
@@ -1910,15 +1900,15 @@ struct MLA_SM100_Decode[
     fn kernel(
         q_tma: QOTMATile[
             dtype = Self.qkv_type,
-            BM = Self.config.BM,
-            BK = Self.config.BN,
+            BM = Self.config.BM,  # tile_m =64
+            BK = Self.config.BK0,  # tile_n =576
             swizzle_mode = Self.config.swizzle_mode,
         ],
         k_tma: KVTMATile[
             dtype = Self.qkv_type,
             swizzle_mode = Self.config.kv_swizzle_mode,
-            BN = Self.config.BM,
-            BK = Self.config.BN,
+            BN = Self.config.BK1,  # tile_m =64
+            BK = Self.config.BK0,  # tile_n =576
         ],
         o_tma: QOTMATile[
             dtype = Self.output_type,
@@ -1974,18 +1964,13 @@ struct MLA_SM100_Decode[
         # We move P to the last slot of KV pipeline SO now we have tile of 64x
         # 32 of flot or 64x64 of FP16 to save output into
         # tiles in SMEM and smooth the pipeline for the next batch if we use splitk
-        var out_smem_start = (
-            kv_smem
-            + kv_smem_total if Self.config.decoding_warp_split_k else kv_smem
-        )
+        var out_smem_start = kv_smem
         # there is potential to have two Tmem for S, because we have two K so we can
         # unblock the MMA while loading S to reg for softrmax
         # if it was splitk we need to use the extra P slot. If not we need
         # to clear the KV slot before statting the max because KV slot is used by
         # MMA/load when max is valid.
-        var out_smem_total = (
-            Self.BlockElems if Self.config.decoding_warp_split_k else kv_smem_total
-        )
+        var out_smem_total = kv_smem_total
 
         var out_smem = out_smem_start.bitcast[Scalar[Self.output_type]]()
 
@@ -2049,11 +2034,11 @@ struct MLA_SM100_Decode[
             mbar_base
         )  # C uses 17 and 18
         mbar_base = li_bars.end()  # barrier total [19]
-        # if decoding_warp_split_k is False, we need to add ((Depth/BN) -1) x2
+        # we need to add ((Depth/BN) -1) x2
         # more barriers. for the splitk the two added is enough for now.
-        comptime num_out_stages = 1 if Self.config.decoding_warp_split_k else Self.config.depth // Self.config.BN
+        comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
         var out_pipeline = OutPipeline[
-            num_out_stages=num_out_stages,
+            num_out_stages = OutPipeType.num_out_stages,
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
         ](
@@ -2175,38 +2160,29 @@ struct MLA_SM100_Decode[
         tma: KVTMATile[
             dtype = Self.qkv_type,
             swizzle_mode = Self.config.kv_swizzle_mode,
-            BN = Self.config.BM,
-            BK = Self.config.BN,
+            BN = Self.config.BK1,  # tile_m =64
+            BK = Self.config.BK0,  # tile_n =576
         ],
         smem: SharedMemPointer[Scalar[Self.qkv_type]],
         mbar: MBarType,
         col_start: UInt,
         row_start: UInt,
     ):
-        @parameter
-        for block in range(0, Self.NumQKBlocks):
-            var block_smem = smem + block * Self.BlockElems
-            var smem_tensor = SharedMemTensor[
-                Self.qkv_type, type_of(tma).layout  # 64x64 swizzled tile
-            ](block_smem)
-
-            tma.async_copy_3d(
-                smem_tensor,
-                mbar[],
-                (
-                    Int(col_start) + (block * Self.config.BN),
-                    0,
-                    Int(row_start),
-                ),  # 0, 64, 128, ...
-            )
+        var block_smem = smem
+        var smem_tensor = SharedMemTensor[
+            Self.qkv_type, type_of(tma).layout  # 64x576 swizzled tile
+        ](block_smem)
+        tma.async_copy_3d(
+            smem_tensor, mbar[], (Int(col_start), Int(0), Int(row_start))
+        )
 
     @staticmethod
     @always_inline
     fn load_q(
         tma: QOTMATile[
             dtype = Self.qkv_type,
-            BM = Self.config.BM,
-            BK = Self.config.BN,
+            BM = Self.config.BM,  # tile_m =64
+            BK = Self.config.BK0,  # tile_n =576
             swizzle_mode = Self.config.swizzle_mode,
         ],
         smem: SharedMemPointer[Scalar[Self.qkv_type]],
@@ -2214,36 +2190,27 @@ struct MLA_SM100_Decode[
         col_start: UInt,
         row_start: UInt,
     ):
-        @parameter
-        for block in range(0, Self.NumQKBlocks):
-            var block_smem = smem + block * Self.BlockElems
-            var smem_tensor = SharedMemTensor[
-                Self.KVLUTType.dtype, type_of(tma).layout  # 64x64 swizzled tile
-            ](block_smem)
+        var block_smem = smem
+        var smem_tensor = SharedMemTensor[
+            Self.KVLUTType.dtype, type_of(tma).layout  # 64x576 swizzled tile
+        ](block_smem)
 
-            tma.async_copy(
-                smem_tensor,
-                mbar[],
-                (
-                    Int(col_start) + (block * Self.config.BN),
-                    Int(row_start),
-                ),  # 0, 64, 128, ...
-            )
+        tma.async_copy(smem_tensor, mbar[], (Int(col_start), Int(row_start)))
 
     @staticmethod
     @always_inline
     fn load(
         q_tma: QOTMATile[
             dtype = Self.qkv_type,
-            BM = Self.config.BM,
-            BK = Self.config.BN,
+            BM = Self.config.BM,  # tile_m =64
+            BK = Self.config.BK0,  # tile_n =576
             swizzle_mode = Self.config.swizzle_mode,
         ],
         k_tma: KVTMATile[
             dtype = Self.qkv_type,
             swizzle_mode = Self.config.kv_swizzle_mode,
-            BN = Self.config.BM,
-            BK = Self.config.BN,
+            BN = Self.config.BK1,  # tile_m =64
+            BK = Self.config.BK0,  # tile_n =576
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.qkv_type]],
@@ -2373,15 +2340,15 @@ struct MLA_SM100_Decode[
         tmem_addr: UInt32,
         q_tma: QOTMATile[
             dtype = Self.qkv_type,
-            BM = Self.config.BM,
-            BK = Self.config.BN,
+            BM = Self.config.BM,  # tile_m =64
+            BK = Self.config.BK0,  # tile_n =576
             swizzle_mode = Self.config.swizzle_mode,
         ],
         k_tma: KVTMATile[
             dtype = Self.qkv_type,
             swizzle_mode = Self.config.kv_swizzle_mode,
-            BN = Self.config.BM,
-            BK = Self.config.BN,
+            BN = Self.config.BK1,  # tile_m =64
+            BK = Self.config.BK0,  # tile_n =576
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.qkv_type]],
@@ -2418,7 +2385,6 @@ struct MLA_SM100_Decode[
         var q_descriptor = Self.UMMAQKTSS.descriptor_q_block(q_smem)
         var k_descriptor = Self.UMMAQKTSS.descriptor_k_block(kv_smem)
         comptime stage_stride_in_bytes = Self.KVStageElems * Self.bytes_per_element
-        comptime block_stride_in_bytes = Self.BlockElems * Self.bytes_per_element
 
         mbar_q[].wait(0)
         var tile_idx: Int = 0
@@ -2438,19 +2404,13 @@ struct MLA_SM100_Decode[
             # this will let QK0 goes to SO_tmem and QK1 goes to S1_tmem and so on.
             k_slot_index = kv_cons.stage_index[mma_stage=0]()
 
-            @parameter
-            for block in range(0, Self.NumQKBlocks):
-                Self.UMMAQKTSS.mma[stage_idx=0](
-                    a=q_descriptor + block * block_stride_in_bytes,
-                    b=k_descriptor
-                    + k_slot_index * stage_stride_in_bytes
-                    + block * block_stride_in_bytes,
-                    c=s_tmem_slot,
-                    c_scale=UInt32(
-                        block != 0
-                    ),  # only the first block of the tile it's 0
-                    elect=elect_mask,
-                )
+            Self.UMMAQKTSS.mma[stage_idx=0](
+                a=q_descriptor,
+                b=k_descriptor + k_slot_index * stage_stride_in_bytes,
+                c=s_tmem_slot,
+                c_scale=UInt32(0),
+                elect=elect_mask,
+            )
             tcgen05_fence_before()
             s_prod.commit_mma(elect_mask)
             # Here we release the kV for ther QK but Load should not load it
@@ -2465,8 +2425,8 @@ struct MLA_SM100_Decode[
         k_tma: KVTMATile[
             dtype = Self.qkv_type,
             swizzle_mode = Self.config.kv_swizzle_mode,
-            BN = Self.config.BM,
-            BK = Self.config.BN,
+            BN = Self.config.BK1,  # tile_m =64
+            BK = Self.config.BK0,  # tile_n =576
         ],
         kv_lut: Self.KVLUTType,
         kv_smem: SharedMemPointer[Scalar[Self.qkv_type]],
@@ -2504,6 +2464,7 @@ struct MLA_SM100_Decode[
         var p_smem_base = kv_smem + Self.NumVOBlocks * Self.BlockElems
         var p_descriptor = Self.UMMAPVSS.descriptor_p_block(p_smem_base)
         var v_descriptor = Self.UMMAPVSS.descriptor_v_block(kv_smem)
+        comptime block_step = Self.config.MMA_PV_N // Self.config.BN
         comptime stage_stride_in_bytes = Self.KVStageElems * Self.bytes_per_element
         comptime block_stride_in_bytes = Self.BlockElems * Self.bytes_per_element
 
@@ -2516,10 +2477,9 @@ struct MLA_SM100_Decode[
 
             o_prod.acquire()
 
+            # PV does not have the k-rope so we don't need to do the last block
             @parameter
-            for block in range(
-                0, Self.NumVOBlocks
-            ):  # PV does not have the k-rope so we don't need to do the last block
+            for block in range(0, Self.NumVOBlocks, block_step):
                 Self.UMMAPVSS.mma[stage_idx=0](
                     a=p_descriptor + p_slot_index * stage_stride_in_bytes,
                     b=v_descriptor
@@ -2921,6 +2881,10 @@ struct MLA_SM100_Decode[
         ],
         num_k_tiles: Int,
     ):
+        comptime DecodeOutProducerType = DecodeOutProducer[
+            Self.output_type, Self.config
+        ]
+        comptime blocks_per_stage = DecodeOutProducerType.blocks_per_stage
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var corr_scale_tmem = tmem_addr + UInt32(Self.config.TMEM_CORR_SCALE)
         var corr_li_tmem = tmem_addr + UInt32(Self.config.TMEM_CORR_LI)
@@ -2951,6 +2915,7 @@ struct MLA_SM100_Decode[
                 # so when a row load 64 elements it is actually  the first half
                 # and the third half of the row is here as the second half
                 # and the forth half of the row is in the other warp
+                # however, the  correction scale for all rows are the same
                 comptime num_o_tiles = Self.config.depth // (
                     Self.output_tile_width * 2
                 )
@@ -3023,24 +2988,29 @@ struct MLA_SM100_Decode[
 
         # By the time we reach to epilogue the KV is free when we dont have the SplitK algorithm.
         # So we can safely use the KV buffer for writing the output and have more async write.
-
+        # howere the write function massively change based on the mma_n size
+        # so when mma_n is 256 we have the first 128 columns with waro0/1 and the
+        # next 128 column with warp2/3 tiles and so on for the next 256 columns
         # it is 256/32 which is equivalent of 512/64
-        comptime num_store_tiles = Self.config.depth // Self.output_tile_width
+
+        comptime num_store_tiles = Self.config.depth // Self.config.BN
         comptime half_load: UInt32 = Self.config.BN >> 1
 
         @parameter
-        for i in range(0, num_store_tiles):
+        for i in range(0, num_store_tiles // blocks_per_stage):
             # 2. Compute TMEM base for this subtile t
-            var o_tmem_subtile: UInt32 = o_tmem + UInt32(i) * UInt32(half_load)
+            var o_tmem_subtile: UInt32 = o_tmem + UInt32(i) * UInt32(
+                half_load * blocks_per_stage
+            )
             var o_row_subtile = LocalTensor[
-                Self.AccumType, Layout.row_major(Int(half_load))
+                Self.AccumType, Layout.row_major(Int(Self.config.BN))
             ].stack_allocation()
             o_row_subtile.ptr.store(
                 0,
                 tcgen05_ld[
                     datapaths=32,
                     bits=32,
-                    repeat = Int(half_load),
+                    repeat = Int(half_load * blocks_per_stage),
                     dtype = Self.AccumType,
                     pack=False,
                 ](o_tmem_subtile),
@@ -3056,7 +3026,7 @@ struct MLA_SM100_Decode[
                 o_scale_li = SIMD[Self.AccumType, 2](0.0)
 
             @parameter
-            for j in range(0, half_load // 2):
+            for j in range(0, half_load):
                 var element = rebind[SIMD[Self.AccumType, 2]](
                     float2_register[j]
                 )
@@ -3064,23 +3034,25 @@ struct MLA_SM100_Decode[
                     element * o_scale_li
                 )
 
-            out_prod.acquire()
             warp_idx = warp.broadcast(warp_id() - 4)
             var lane: UInt32 = UInt32(thread_idx.x & 0x7F)  # 0..127
             var row: UInt32 = lane & 0x3F  # lan % Config.BN 0..63
-            var warp_pair = UInt32(
-                warp_idx >> 1  # 0..3 inside correction group # 0 or 1
+            # 0..3 inside correction group # 0 or 1
+            var warp_pair = UInt32(warp_idx >> 1)
+            out_prod.acquire()
+            var stage_ptr = out_prod.stage_base_ptr(
+                Int(warp_pair * (blocks_per_stage >> 1))
             )
-            # Column range this thread owns in P
-            var col0: UInt32 = warp_pair * half_load  # 0 or 32
 
-            var stage_ptr = out_prod.stage_base_ptr()
+            var col0: UInt32 = (
+                warp_pair * half_load * ((blocks_per_stage >> 1) ^ 1)
+            )  # 0 or mma_n
 
             write_bf16x2_row_to_smem_fast[
                 out_dtype = Self.output_type,
                 in_dtype = Self.AccumType,
                 config = Self.config,
-                local_tile_size = Int(half_load),
+                local_tile_size = Int(Self.config.BN),
             ](stage_ptr, o_row_subtile, col_start=Int(col0), row_start=Int(row))
             # The fence_async_view_proxy() here is not needed as the store puts this fence.
             out_prod.commit_step()
@@ -3110,31 +3082,48 @@ struct MLA_SM100_Decode[
             Self.ValidLengthType,
         ],
     ):
+        comptime DecodeOutConsumerType = DecodeOutConsumer[
+            Self.output_type, Self.config
+        ]
+        comptime col_per_warp = DecodeOutConsumerType.col_per_warp
+        comptime blocks_per_stage = DecodeOutConsumerType.blocks_per_stage
+        comptime num_out_stages = DecodeOutConsumerType.num_out_stages
+        comptime num_out_stages_per_mma = num_out_stages // num_mma_pv
         elect_mask = elect()
         var is_leader = elect_mask != 0
         comptime num_store_tiles = Self.config.depth // Self.output_tile_width
         var row: UInt = UInt(offset_position.q_out_row_offset)
-        # The code work with the assumption that the num_q_heads is always power of two.
+        # The code work with the assumption that the num_q_heads is power of two.
         var tma_phase: UInt32 = 0
+        comptime num_mma_pv = Self.config.padded_depth // Self.config.MMA_PV_N
+
+        #   0       64     128     192      256      320      384     448     512
+        #   |-------|-------|-------|--------|--------|--------|-------|-------|
+        #     w0/1    w0/1     w2/3    w2/3     w0/1     w0/1     w2/3    w2/3
 
         @parameter
-        for i in range(0, num_store_tiles):
-            var col: UInt = UInt(i * Self.config.BN)
-            out_cons.wait()
-            var stage_ptr = out_cons.stage_base_ptr()
-            var smem_tensor = SharedMemTensor[
-                Self.output_type,
-                type_of(o_tma).layout,
-            ](stage_ptr)
-            if is_leader:
-                fence_async_view_proxy()
-                o_tma.async_store(smem_tensor, (col, row))
+        for n in range(0, num_mma_pv):
+
+            @parameter
+            for m in range(0, num_out_stages_per_mma):
+                out_cons.wait()
 
                 @parameter
-                if Self.config.decoding_warp_split_k:
-                    o_tma.commit_group()
-                    o_tma.wait_group[0]()
-            out_cons.release(elect_mask)
-        if is_leader and not Self.config.decoding_warp_split_k:
+                for k in range(0, blocks_per_stage):
+                    var stage_ptr = out_cons.stage_base_ptr(k)
+                    var col: UInt = UInt(
+                        n * Self.config.MMA_PV_N
+                        + m * Self.config.BN
+                        + k * col_per_warp
+                    )
+                    var smem_tensor = SharedMemTensor[
+                        Self.output_type,
+                        type_of(o_tma).layout,
+                    ](stage_ptr)
+                    if is_leader:
+                        fence_async_view_proxy()
+                        o_tma.async_store(smem_tensor, (col, row))
+                out_cons.release(elect_mask)
+        if is_leader:
             o_tma.commit_group()
         o_tma.wait_group[0]()
