@@ -5,13 +5,13 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-LABEL: @stack_allocation
 kgen.func @stack_allocation(%cond: i1) {
   // CHECK-NEXT: %[[C16:.*]] = llvm.mlir.constant(16 : i64) : i64
-  // CHECK-NEXT: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32
+  // CHECK-NEXT: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32 {alignment = 4 : i64}
   // CHECK-NEXT: llvm.intr.lifetime.start %[[PTR0]]
   %0 = pop.stack_allocation 16 x !pop.simd<1, f32>
   // CHECK: hlcf.if
   hlcf.if %cond {
     // CHECK-NEXT: %[[C4:.*]] = llvm.mlir.constant(4 : i64) : i64
-    // CHECK-NEXT: %[[PTR1:.*]] = llvm.alloca %[[C4]] x vector<4xf32>
+    // CHECK-NEXT: %[[PTR1:.*]] = llvm.alloca %[[C4]] x vector<4xf32> {alignment = 16 : i64}
     // CHECK-NEXT: llvm.intr.lifetime.start %[[PTR1]]
     // CHECK-NEXT: llvm.intr.lifetime.end %[[PTR1]]
     %1 = pop.stack_allocation 4 x !pop.simd<4, f32>
@@ -39,7 +39,7 @@ kgen.func @stack_allocation_with_alignment() {
 // CHECK-LABEL: @stack_allocation_with_addressspace
 kgen.func @stack_allocation_with_addressspace() {
   // CHECK-DAG: %[[C16:.*]] = llvm.mlir.constant(16 : i64) : i64
-  // CHECK-DAG: %[[PTR0:.*]] = llvm.alloca %[[C16]] x i32 : (i64) -> !llvm.ptr<5>
+  // CHECK-DAG: %[[PTR0:.*]] = llvm.alloca %[[C16]] x i32 {alignment = 4 : i64} : (i64) -> !llvm.ptr<5>
   // CHECK: llvm.intr.lifetime.start %[[PTR0]]
   %0 = pop.stack_allocation 16 x !pop.simd<1, si32> address_space 5
   // CHECK-NEXT: llvm.intr.lifetime.end %[[PTR0]]
