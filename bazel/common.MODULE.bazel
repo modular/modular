@@ -438,25 +438,25 @@ http_archive(
 http_archive(
     name = "uv_linux_aarch64",
     build_file_content = 'exports_files(["uv"])',
-    sha256 = "f177397625eb7ca184a01a954c7d487d1cafee68e53cc8f2789a02f75c347a68",
+    sha256 = "ba8698c36c00c22efed4bd3506339b03c95604d001f02eaf6fbc814c9224d801",
     strip_prefix = "uv-aarch64-unknown-linux-musl",
-    url = "https://github.com/astral-sh/uv/releases/download/0.9.7/uv-aarch64-unknown-linux-musl.tar.gz",
+    url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-aarch64-unknown-linux-musl.tar.gz",
 )
 
 http_archive(
     name = "uv_linux_x86_64",
     build_file_content = 'exports_files(["uv"])',
-    sha256 = "b26fcc8dfa1c39b5a5613445af3be3eefda45d9a39359bee271eafe34913583e",
+    sha256 = "30ccbf0a66dc8727a02b0e245c583ee970bdafecf3a443c1686e1b30ec4939e8",
     strip_prefix = "uv-x86_64-unknown-linux-gnu",
-    url = "https://github.com/astral-sh/uv/releases/download/0.9.7/uv-x86_64-unknown-linux-gnu.tar.gz",
+    url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-unknown-linux-gnu.tar.gz",
 )
 
 http_archive(
     name = "uv_darwin_aarch64",
     build_file_content = 'exports_files(["uv"])',
-    sha256 = "35572b9619fc14d67fc1cd72582c3cfc5c9c66d97f310192e04f26fb3fe96005",
+    sha256 = "fcf0a9ea6599c6ae28a4c854ac6da76f2c889354d7c36ce136ef071f7ab9721f",
     strip_prefix = "uv-aarch64-apple-darwin",
-    url = "https://github.com/astral-sh/uv/releases/download/0.9.7/uv-aarch64-apple-darwin.tar.gz",
+    url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-aarch64-apple-darwin.tar.gz",
 )
 
 bazel_dep(name = "sysroot-jammy-aarch64")
