@@ -815,6 +815,79 @@ fn fold_pop_simd_ceil_bool() -> POPBool2T[POP_BOOL2_Ceil]:
 
 
 ##===----------------------------------------------------------------------===##
+# Fold pop.simd_trunc
+##===----------------------------------------------------------------------===##
+
+
+comptime POP_F32x4_Trunc = __mlir_attr.`#pop.simd<"1.0", "-2.0", "0.0", "4.0"> : !pop.simd<4, f32>`
+
+
+@always_inline("builtin")
+fn pop_simd_trunc(
+    x: __mlir_type.`!pop.simd<4, f32>`,
+) -> __mlir_type.`!pop.simd<4, f32>`:
+    return __mlir_op.`pop.trunc`(x)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_trunc
+fn fold_pop_simd_trunc() -> POPF32x4T[POP_F32x4_Trunc]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPF32x4T <:simd<4, f32> {{.*}} <"1.5", "-2.29999995", "0", "4.9000001">), <"1", "-2", "0", "4">)>>
+    var a = POPF32x4T[
+        pop_simd_trunc(
+            __mlir_attr.`#pop.simd<"1.5", "-2.3", "0.0", "4.9"> : !pop.simd<4, f32>`
+        )
+    ]()
+    return a
+
+
+##===----------------------------------------------------------------------===##
+# Fold pop.simd_trunc (non-float)
+##===----------------------------------------------------------------------===##
+
+
+comptime POP_SI8x4_Trunc = __mlir_attr.`#pop.simd<7, -42, 1, 0> : !pop.simd<4, si8>`
+
+
+@always_inline("builtin")
+fn pop_simd_trunc_si8(
+    x: __mlir_type.`!pop.simd<4, si8>`,
+) -> __mlir_type.`!pop.simd<4, si8>`:
+    return __mlir_op.`pop.trunc`(x)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_trunc_si8
+fn fold_pop_simd_trunc_si8() -> POPSInt8x4T[POP_SI8x4_Trunc]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPSInt8x4T <:simd<4, si8> {{.*}} <7, -42, 1, 0>), <7, -42, 1, 0>)>>
+    var a = POPSInt8x4T[
+        pop_simd_trunc_si8(
+            __mlir_attr.`#pop.simd<7, -42, 1, 0> : !pop.simd<4, si8>`
+        )
+    ]()
+    return a
+
+
+comptime POP_BOOL2_Trunc = __mlir_attr.`#pop.simd<true, false> : !pop.simd<2, bool>`
+
+
+@always_inline("builtin")
+fn pop_simd_trunc_bool(
+    x: __mlir_type.`!pop.simd<2, bool>`,
+) -> __mlir_type.`!pop.simd<2, bool>`:
+    return __mlir_op.`pop.trunc`(x)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_trunc_bool
+fn fold_pop_simd_trunc_bool() -> POPBool2T[POP_BOOL2_Trunc]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPBool2T <:simd<2, bool> {{.*}} <true, false>), <true, false>)>>
+    var a = POPBool2T[
+        pop_simd_trunc_bool(
+            __mlir_attr.`#pop.simd<true, false> : !pop.simd<2, bool>`
+        )
+    ]()
+    return a
+
+
+##===----------------------------------------------------------------------===##
 # Fold pop.simd_shl
 ##===----------------------------------------------------------------------===##
 
