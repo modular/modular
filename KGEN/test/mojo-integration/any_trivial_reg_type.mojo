@@ -10,14 +10,12 @@ from collections import OptionalReg
 from sys import argv
 
 
-@register_passable("trivial")
-trait Position:
+trait Position(TrivialRegisterType):
     fn foo(self) -> Self:
         ...
 
 
-@register_passable("trivial")
-struct PositionImpl(Position):
+struct PositionImpl(Position, TrivialRegisterType):
     var x: Int
     var y: Int
 

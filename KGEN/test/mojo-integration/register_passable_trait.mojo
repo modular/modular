@@ -9,14 +9,12 @@
 from sys import argv
 
 
-@register_passable("trivial")
-trait RGTrivialTrait:
+trait RGTrivialTrait(TrivialRegisterType):
     fn doSomething(self):
         ...
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct Conforms(RGTrivialTrait):
     var x: Int
 

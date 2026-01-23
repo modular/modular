@@ -29,8 +29,7 @@ struct RegType(SimpleTrait):
         return __mlir_attr.`2:index`
 
 
-@register_passable("trivial")
-struct RegTypeTrivial(SimpleTrait):
+struct RegTypeTrivial(SimpleTrait, TrivialRegisterType):
     var x: Index
 
     @staticmethod
