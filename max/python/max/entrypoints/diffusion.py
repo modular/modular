@@ -26,7 +26,7 @@ from max.interfaces import (
     PixelGenerationOutput,
     PixelGenerationPipeline,
     PixelGenerationRequest,
-    PixelTokenizer,
+    PixelGenerationTokenizer,
     RequestID,
 )
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
@@ -192,13 +192,13 @@ def _run_async_worker(
     pipeline = model_factory()
 
     asyncio.run(
-        _async_worker(tokenizer, pipeline, pc, request_queue, pending_requests)
+        _async_worker(pipeline, tokenizer, pc, request_queue, pending_requests)
     )
 
 
 async def _async_worker(
-    tokenizer: PixelTokenizer,
     pipeline: PixelGenerationPipeline,
+    tokenizer: PixelGenerationTokenizer,
     pc: _ThreadControl,
     request_queue: queue.Queue[_Request],
     pending_requests: Mapping[RequestID, queue.Queue[_Response]],
