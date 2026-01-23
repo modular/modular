@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from max import Tensor
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
 from max.graph import (
     DeviceRef,
-    TensorValue,
     Weight,
 )
 from max.graph.ops import avg_pool2d
@@ -65,7 +65,7 @@ class Gemma3MultiModalProjector(Module):
         self.tokens_per_side = int(config.mm_tokens_per_image**0.5)
         self.kernel_size = self.patches_per_image // self.tokens_per_side
 
-    def __call__(self, vision_outputs: TensorValue) -> TensorValue:
+    def __call__(self, vision_outputs: Tensor) -> Tensor:
         """Process vision outputs through pooling, normalisation, and a
         projection weight"""
         batch_size, _, seq_length = vision_outputs.shape
@@ -123,8 +123,6 @@ class Gemma3VisionMLP(Module):
         self.intermediate_size = config.vision_config.intermediate_size
         self.device = device if device is not None else config.devices[0]
 
-        vision_dtype = DType.bfloat16  # TODO what do after move to V3?
-
         self.fc1 = Linear(
             self.hidden_size,
             self.intermediate_size,
@@ -137,12 +135,10 @@ class Gemma3VisionMLP(Module):
             has_bias=True,
         )
 
-    def __call__(self, x: TensorValue):
+    def __call__(self, x: Tensor):
         """Expands hidden states to intermediate size, applies GELU activation,
         then projects back to hidden size."""
         x = self.fc1(x)
-        x = F.gelu(
-            x, self.config.vision_config.hidden_act, approximate=True
-        )  # TODO true is correct or?
+        x = F.gelu(x, self.config.vision_config.hidden_act, approximate=True)
         x = self.fc2(x)
         return x

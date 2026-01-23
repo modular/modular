@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from max import Tensor
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.graph import DeviceRef, TensorValue
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu
 from max.nn.layer import Module
@@ -69,7 +69,7 @@ class Gemma3VisionAttention(Module):
             has_bias=vision_config.attention_bias,
         )
 
-    def __call__(self, x: TensorValue) -> TensorValue:
+    def __call__(self, x: Tensor) -> Tensor:
         """Process a tensor through the self attention layers and apply scaling"""
         batch_size, n_patches = x.shape[0], x.shape[1]
 

@@ -158,7 +158,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     def __init__(
         self,
         tokens: Buffer,
-        input_row_offsets: list[Buffer],
+        input_row_offsets: Buffer,
         return_n_logits: Buffer,
         kv_cache_inputs: KVCacheInputs | None = None,
         pixel_values: list[Buffer] | None = None,
@@ -401,16 +401,9 @@ class Gemma3_MultiModalModelV3(
         # Unpack inputs following InternVL pattern
         (tokens, return_n_logits, *variadic_args) = input_types
 
-        # Extract input_row_offsets (one per device)
-        input_row_offsets = [v for v in variadic_args[: len(self.devices)]]
-        variadic_args = variadic_args[len(self.devices) :]
-
-        # Extract image embeddings (one per device).
-        image_embeddings = [v for v in variadic_args[: len(self.devices)]]
-        variadic_args = variadic_args[len(self.devices) :]
-
-        image_token_indices = [v for v in variadic_args[: len(self.devices)]]
-        variadic_args = variadic_args[len(self.devices) :]
+        input_row_offsets, image_embeddings, image_token_indices = (
+            variadic_args[:3]
+        )
 
         # Extract KV cache inputs
         # kv_cache = self._unflatten_kv_inputs(variadic_args)
@@ -461,7 +454,7 @@ class Gemma3_MultiModalModelV3(
 
         input_types = self._vision_model_input_types(config)
 
-        pixel_values = [inp for inp in input_types[: len(self.devices)]]
+        pixel_values = input_types[0]
 
         image_embeddings = vision_model(pixel_values)
 
@@ -488,7 +481,7 @@ class Gemma3_MultiModalModelV3(
             assert model_inputs.pixel_values is not None
 
             # Execute vision model: patched pixel_values -> image_embeddings.
-            vision_outputs = self.vision_model(*model_inputs.pixel_values)
+            vision_outputs = self.vision_model(model_inputs.pixel_values)
             assert len(vision_outputs) == len(self.devices)
 
             image_embeddings = [
@@ -509,9 +502,9 @@ class Gemma3_MultiModalModelV3(
         model_outputs = self.language_model(
             model_inputs.tokens,
             model_inputs.return_n_logits,
-            *input_row_offsets,
-            *image_embeddings,
-            *image_token_indices,
+            input_row_offsets,
+            image_embeddings,
+            image_token_indices,
             *curr_kv_cache_inputs,
         )
 
@@ -578,7 +571,7 @@ class Gemma3_MultiModalModelV3(
         self, next_tokens: Buffer, prev_model_inputs: ModelInputs
     ) -> ModelInputs:
         prev_model_inputs = cast(Gemma3MultiModalModelInputs, prev_model_inputs)
-        row_offsets_size = prev_model_inputs.input_row_offsets[0].shape[0]
+        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
 
         # Slice each tensor in the list, not the list itself
         next_row_offsets = [
@@ -596,7 +589,7 @@ class Gemma3_MultiModalModelV3(
 
     def _prepare_vision_inputs(
         self, context_batch: TextAndVisionContext
-    ) -> list[Buffer] | None:
+    ) -> Buffer | None:
         """Use the VisionStacker to prepare batched vision inputs from multiple contexts.
         The Tokenizer should have already processed images into pixel_values (pan and scan etc)"""
         device0 = self.devices[0]
@@ -618,7 +611,7 @@ class Gemma3_MultiModalModelV3(
 
     def _batch_image_token_indices(
         self, context_batch: TextAndVisionContext
-    ) -> list[Buffer] | None:
+    ) -> Buffer | None:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
         """
@@ -697,13 +690,13 @@ class Gemma3_MultiModalModelV3(
             )
         return kv_caches_per_dev
 
-    def _create_empty_image_embeddings(self) -> list[Buffer]:
+    def _create_empty_image_embeddings(self) -> Buffer:
         """Create empty image embeddings for text-only inputs."""
         return Buffer.zeros(
             shape=[0, self.huggingface_config.text_config.hidden_size],
             dtype=DType.bfloat16,
         ).to(self.devices[0])
 
-    def _create_empty_indices(self) -> list[Buffer]:
+    def _create_empty_indices(self) -> Buffer:
         """Create empty image token indices tensor."""
         return Buffer.zeros(shape=[0], dtype=DType.int32).to(self.devices[0])

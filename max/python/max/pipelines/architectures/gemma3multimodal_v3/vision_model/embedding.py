@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from max import Tensor
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.graph import DeviceRef, TensorValue
+from max.graph import DeviceRef
 from max.nn import (
     Conv2d,
 )
@@ -58,7 +59,7 @@ class Gemma3VisionEmbeddings(Module):
             dim=self.embed_dim,
         )
 
-    def __call__(self, pixel_values: TensorValue) -> TensorValue:
+    def __call__(self, pixel_values: Tensor) -> Tensor:
         """Forward pass of vision embeddings.
 
         Args:
