@@ -2755,7 +2755,7 @@ fn depth(src: IntTuple) -> Int:
         print(depth(IntTuple(1))) # prints 0
         print(depth(IntTuple(1, 2))) # prints 1
         print(depth((IntTuple(1, 2)))) # prints 2
-        ````
+        ```
     """
     if is_int(src):
         return 0
@@ -2806,7 +2806,7 @@ fn _flat_apply_perm(tuple: IntTuple, perm: IntList) -> IntTuple:
     var n = len(tuple)
     var result = IntTuple()
     for i in range(n):
-        result.append(tuple[Int(perm[i])])
+        result.append(tuple[perm[i]])
     return result
 
 
@@ -2815,7 +2815,7 @@ fn _flat_apply_invperm(tuple: IntTuple, perm: IntList) -> IntTuple:
     var n = len(tuple)
     var result = IntTuple(num_elems=n)
     for i in range(n):
-        result.replace_entry(Int(perm[i]), int_value=Int(tuple[i]))
+        result.replace_entry(perm[i], int_value=Int(tuple[i]))
     return result
 
 

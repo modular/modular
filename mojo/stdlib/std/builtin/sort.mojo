@@ -154,8 +154,8 @@ fn _heap_sort[
 @always_inline
 fn _estimate_initial_height(size: Int) -> Int:
     # Compute the log2 of the size rounded upward.
-    var log2 = Int(
-        (bit_width_of[DType.int]() - 1) ^ count_leading_zeros(size | 1)
+    var log2: Int = (bit_width_of[DType.int]() - 1) ^ count_leading_zeros(
+        size | 1
     )
     # The number 1.3 was chosen by experimenting the max stack size for random
     # input. This also depends on insertion_sort_threshold

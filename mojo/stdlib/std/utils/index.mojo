@@ -363,7 +363,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
         @parameter
         for i in range(Self.size):
-            res[i] = Int(self.__getitem__[i]())
+            res[i] = self.__getitem__[i]()
         return res
 
     @always_inline("nodebug")

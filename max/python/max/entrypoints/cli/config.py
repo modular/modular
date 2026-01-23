@@ -184,7 +184,7 @@ def create_click_option(
     )
 
 
-def _get_fields_from_pydantic_model(
+def get_fields_from_pydantic_model(
     cls: type[BaseModel],
 ) -> list[SimpleNamespace]:
     """Get fields from a Pydantic model.
@@ -232,16 +232,8 @@ def _get_fields_from_pydantic_model(
     return pydantic_fields
 
 
-def config_to_flag(
-    cls: type[BaseModel], prefix: str | None = None
-) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
-    options = []
-    help_text = {
-        field_name: field_info.description
-        for field_name, field_info in cls.model_fields.items()
-        if field_info.description
-    }
-    field_types = get_type_hints(cls)
+def get_config_skip_fields(cls: type[BaseModel]) -> set[str]:
+    """Return config fields that should not be exposed as CLI flags."""
     skip_fields = {
         "device_specs",
         "in_dtype",
@@ -261,10 +253,29 @@ def config_to_flag(
         )
     elif cls is MAXModelConfig:
         skip_fields.add("kv_cache")
+    skip_fields.update(
+        field_name
+        for field_name in cls.model_fields
+        if field_name.startswith("_")
+    )
+    return skip_fields
 
-    for _field in _get_fields_from_pydantic_model(cls):
-        # Skip private config fields.
-        if _field.name.startswith("_") or _field.name in skip_fields:
+
+def config_to_flag(
+    cls: type[BaseModel], prefix: str | None = None
+) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
+    options = []
+    help_text = {
+        field_name: field_info.description
+        for field_name, field_info in cls.model_fields.items()
+        if field_info.description
+    }
+    field_types = get_type_hints(cls)
+    skip_fields = get_config_skip_fields(cls)
+
+    for _field in get_fields_from_pydantic_model(cls):
+        # Skip config fields that are not exposed in CLI.
+        if _field.name in skip_fields:
             continue
 
         original_name = _field.name

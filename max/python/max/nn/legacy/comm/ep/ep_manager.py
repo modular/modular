@@ -45,10 +45,13 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .ep_config import NUM_GROUPS, EPConfig
 from .ep_kernels import (
+    call_ep_combine,
     call_ep_combine_async,
     call_ep_combine_async_fused_shared_expert,
     call_ep_combine_wait,
+    call_ep_dispatch,
     call_ep_dispatch_async,
+    call_ep_dispatch_fp8,
     call_ep_dispatch_wait,
     call_ep_dispatch_wait_fp8,
     call_ep_init,
@@ -139,6 +142,24 @@ class EPBatchManager:
             config: EP configuration.
         """
         self.config = config
+
+    def _common_grouped_matmul_metadata(self) -> TensorValue:
+        """Common grouped matmul metadata for all devices. Shape: (2,). Contains
+        the max number of tokens per expert and the number of active experts.
+        """
+        n_ranks = self.config.n_gpus_per_node * self.config.n_nodes
+        max_recv_tokens_per_expert = self.config.max_tokens_per_rank * n_ranks
+        n_active_experts = self.config.n_experts // n_ranks + (
+            1 if self.config.fused_shared_expert else 0
+        )
+        return ops.constant(
+            [
+                max_recv_tokens_per_expert,
+                n_active_experts,
+            ],
+            dtype=DType.uint32,
+            device=DeviceRef.CPU(),
+        )
 
     @property
     def send_buf_ptrs(self) -> list[TensorValue]:
@@ -316,38 +337,26 @@ class EPBatchManager:
         """
         DISPATCH_GROUP = 0
 
-        if self.config.dispatch_fp8_config is not None:
-            results = call_ep_dispatch_wait_fp8(
-                self.atomic_counters[DISPATCH_GROUP][device_id],
-                self.recv_buf_ptrs[DISPATCH_GROUP],
-                self.recv_count_ptrs[DISPATCH_GROUP],
-                self.config,
-                self._input_x[device_id],
-            )
+        dispatch_fn = (
+            call_ep_dispatch_wait_fp8
+            if self.config.dispatch_fp8_config is not None
+            else call_ep_dispatch_wait
+        )
 
-            # The first five elements are the input for the grouped matmul
-            # operation. The last element is the src_info, we need to store it for
-            # the combine phase.
-            self._src_info[device_id] = results[5]
+        results = dispatch_fn(
+            self.atomic_counters[DISPATCH_GROUP][device_id],
+            self.recv_buf_ptrs[DISPATCH_GROUP],
+            self.recv_count_ptrs[DISPATCH_GROUP],
+            self.config,
+            self._input_x[device_id],
+        )
 
-            return results[:5]
+        # The last element is the src_info, we need to store it for the
+        # combine phase. Also add the common grouped matmul metadata to the
+        # results.
+        self._src_info[device_id] = results[-1]
 
-        else:
-            # Collect results from all devices
-            results = call_ep_dispatch_wait(
-                self.atomic_counters[DISPATCH_GROUP][device_id],
-                self.recv_buf_ptrs[DISPATCH_GROUP],
-                self.recv_count_ptrs[DISPATCH_GROUP],
-                self.config,
-                self._input_x[device_id],
-            )
-
-            # The first four elements are the input for the grouped matmul
-            # operation. The last element is the src_info, we need to store it for
-            # the combine phase.
-            self._src_info[device_id] = results[4]
-
-            return results[:4]
+        return (*results[:-1], self._common_grouped_matmul_metadata())
 
     def ep_combine_async(
         self, input_tokens: TensorValue, device_id: int
@@ -442,6 +451,133 @@ class EPBatchManager:
             shared_expert_outputs = self._shared_expert_outputs[device_id]
             assert shared_expert_outputs is not None
             results += shared_expert_outputs
+
+        return results
+
+    # ===-------------------------------------------------------------------===#
+    # Fused EP Operations
+    # ===-------------------------------------------------------------------===#
+
+    def ep_dispatch(
+        self, input_tokens: TensorValue, topk_ids: TensorValue, device_id: int
+    ) -> tuple[TensorValue, ...]:
+        """Execute fused Expert Parallelism token dispatch (async + wait).
+
+        This method launches the fused EP dispatch kernel that combines both
+        dispatch_async and dispatch_wait functionality in a single kernel
+        launch. It distributes input tokens to expert devices, waits for all
+        tokens to arrive, and organizes received tokens for grouped matmul.
+
+        For FP8 dispatch, input tokens are quantized to FP8 format during
+        dispatch and the output includes both FP8 tokens and their scales.
+
+        Args:
+            input_tokens: Input tokens for the current device. A TensorValue
+                with shape (num_local_tokens, hidden_size).
+            topk_ids: Top-k expert IDs for the current device. A TensorValue
+                with shape (num_local_tokens, top_k).
+            device_id: Device ID for the current device.
+
+        Returns:
+            A tuple containing:
+            - output_tokens: Aggregated tokens ready for grouped matmul.
+                Shape: (max_recv_tokens, hidden_size).
+            - For FP8: output_scales: Scales for the FP8 tokens.
+                Shape: (hidden_size // block_size, max_recv_tokens).
+            - expert_start_indices: Row offsets for grouped matmul.
+                Shape: (n_local_experts + 1,).
+            - expert_ids: Local expert IDs for the grouped operation.
+                Shape: (n_local_experts,).
+            - expert_usage_stats: Statistics for the grouped matmul.
+                Shape: (2,).
+        """
+        # Use group 0 for both send and recv buffers in fused kernel
+        DISPATCH_GROUP = 0
+
+        # Store the symbolic token numbers for the combine phase
+        self._dispatch_dim[device_id] = input_tokens.shape[0]
+
+        dispatch_fn = (
+            call_ep_dispatch_fp8
+            if self.config.dispatch_dtype.is_float8()
+            else call_ep_dispatch
+        )
+
+        results = dispatch_fn(
+            input_tokens,
+            topk_ids,
+            self.atomic_counters[DISPATCH_GROUP][device_id],
+            self.send_buf_ptrs[DISPATCH_GROUP],
+            self.recv_buf_ptrs[DISPATCH_GROUP],
+            self.recv_count_ptrs[DISPATCH_GROUP],
+            self.config,
+        )
+
+        # The last element is the src_info, we need to store it for the
+        # combine phase. Also add the common grouped matmul metadata to the
+        # results.
+        self._src_info[device_id] = results[-1]
+
+        return (*results[:-1], self._common_grouped_matmul_metadata())
+
+    def ep_combine(
+        self,
+        input_tokens: TensorValue,
+        router_weight: TensorValue,
+        device_id: int,
+    ) -> TensorValue:
+        """Execute fused Expert Parallelism token combine (async + wait).
+
+        This method launches the fused EP combine kernel that combines both
+        combine_async and combine_wait functionality in a single kernel launch.
+        It sends expert outputs back to original devices, waits for all
+        transfers to complete, and computes the weighted sum of routed expert
+        outputs.
+
+        Note: For fused_shared_expert mode with the fused combine kernel, the
+        shared expert outputs in input_tokens are automatically added to the
+        reduced routed expert outputs.
+
+        Args:
+            input_tokens: Expert output tensors from the current device.
+                A TensorValue with shape (max_recv_tokens, hidden_size).
+                For fused_shared_expert mode, the shared expert outputs are
+                stored at the start.
+            router_weight: Router weights for the current device.
+                A TensorValue with shape (num_local_tokens, top_k).
+            device_id: Device ID for the current device.
+
+        Returns:
+            Final output tensor with shape (num_local_tokens, hidden_size).
+        """
+        COMBINE_GROUP = 1
+
+        src_info = self._src_info[device_id]
+        assert src_info is not None, (
+            "Source info is not set, you should call ep_dispatch() or "
+            "ep_dispatch_wait() first."
+        )
+
+        dispatch_dim = self._dispatch_dim[device_id]
+        assert dispatch_dim is not None, (
+            "Dispatch dimension is not set, you should call ep_dispatch() or "
+            "ep_dispatch_async() first."
+        )
+
+        results = call_ep_combine(
+            input_tokens,
+            src_info,
+            self.atomic_counters[0][device_id],
+            self.send_buf_ptrs[COMBINE_GROUP],
+            self.recv_buf_ptrs[COMBINE_GROUP],
+            self.recv_count_ptrs[COMBINE_GROUP],
+            self.config,
+            dispatch_dim,
+            router_weight,
+        )
+
+        # Reset src_info to None to avoid reusing it for the next batch
+        self._src_info[device_id] = None
 
         return results
 

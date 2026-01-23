@@ -22,6 +22,7 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import BertPipelineModel
+from .model_config import BertModelConfig
 from .tokenizer import BertTokenizer
 
 bert_arch = SupportedArchitecture(
@@ -44,4 +45,5 @@ bert_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     required_arguments={"enable_prefix_caching": False},
+    config=BertModelConfig,
 )

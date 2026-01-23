@@ -195,24 +195,23 @@ modular_py_test(
     srcs = ["test_pipelines_cli.py"],
     data = [
         "//max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
+        "//max/tests/integration/pipelines/python/test_common/test_llama",
     ],
     env = {
         "PIPELINES_CUSTOM_ARCHITECTURE": "max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
+        "TEST_LLAMA_REPO": (
+            "max/tests/integration/pipelines/python/test_common/test_llama"
+        ),
     },
     tags = [
-        "manual",  # TODO(SERVOPT-900)
         "no-sandbox",
-        "requires-network",
-        "run-in-hf-workflow",  # TODO(SERVOPT-900)
     ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        ":hf_repo_lock",
         "//max/python/max/entrypoints:pipelines",
-        "//max/python/max/pipelines/lib",
     ],
 )
 
@@ -339,6 +338,20 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "longbench-v2-eval",
+    testonly = True,
+    srcs = ["run_longbench_v2.py"],
+    main = "run_longbench_v2.py",
+    deps = [
+        requirement("click"),
+        requirement("datasets"),
+        requirement("openai"),
+        requirement("tqdm"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_binary(
     name = "pipelines-lm-eval",
     testonly = True,
     srcs = ["pipelines_lm_eval.py"],
@@ -355,6 +368,7 @@ modular_py_binary(
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":lm-eval",
+        ":longbench-v2-eval",
         ":mistral-eval",
         "//max/python/max/entrypoints:pipelines",  # The transitive mojo deps from this target must be available
         "//max/tests/integration/pipelines/python/eval_tasks/human_eval",

@@ -230,7 +230,7 @@ fn load_AB[
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[stage],
-            (UInt(iter_idx) * UInt(BK), UInt(b_gmem_slice_coord)),
+            (UInt(iter_idx) * UInt(BK), b_gmem_slice_coord),
             b_multicast_mask,
         )
 
@@ -597,8 +597,8 @@ fn multi_stage_store_C[
                         c_tma_op.async_store(
                             c_smem_warp_tile,
                             (
-                                UInt(work_tile_coord[0] + UInt(i * 16)),
-                                UInt(coord_n),
+                                work_tile_coord[0] + UInt(i * 16),
+                                coord_n,
                             ),
                         )
                 else:
@@ -609,9 +609,9 @@ fn multi_stage_store_C[
                     c_tma_op.async_store(
                         c_smem_split,
                         (
-                            UInt(coord_n),
+                            coord_n,
                             # UInt(work_tile_coord[0] * BM),
-                            UInt(work_tile_coord[0]),
+                            work_tile_coord[0],
                         ),
                     )
                 c_tma_op.commit_group()
@@ -720,7 +720,7 @@ fn zero_output[
     )
     comptime row_thread_num = UInt32(output_N // simd_size)
     comptime cN = c.shape[1]()
-    var row_boundary = UInt32(cN - coord[0]) // simd_size
+    var row_boundary = (cN - coord[0]) // simd_size
     comptime alignment = align_of[SIMD[c_type, simd_size]]()
     var zero_vec = SIMD[c_type, simd_size](0.0)
     var M = group_end_idx - coord[1]
@@ -758,7 +758,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     cluster_shape: StaticTuple[Int32, 3],
     num_pipeline_stages: UInt,
     num_accum_pipeline_stages: Int,
-    num_output_stages: UInt = 2,
+    num_output_stages: Int = 2,
     output_tile_shape: IndexList[2] = Index(128, 32),
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -838,9 +838,9 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     comptime a_smem_size = a_smem_layout.size() * Int(num_pipeline_stages)
     comptime b_smem_size = b_smem_layout.size() * Int(num_pipeline_stages)
-    comptime c_smem_size = output_tile_shape[0] * output_tile_shape[1] * Int(
-        num_output_stages
-    )
+    comptime c_smem_size = output_tile_shape[0] * output_tile_shape[
+        1
+    ] * num_output_stages
 
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
@@ -971,8 +971,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        UInt(rank_m % UInt(cta_group)),
-        UInt(rank_m // UInt(cta_group)),
+        rank_m % UInt(cta_group),
+        rank_m // UInt(cta_group),
         rank_n,
     )  # v,m,n
 
@@ -1123,7 +1123,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             if expert_ids[Int(scheduler.current_group_idx)] < 0:
                 zero_output[output_tile_shape=output_tile_shape](
                     c,
-                    (UInt32(work_info.m), UInt32(work_info.n)),
+                    (work_info.m, work_info.n),
                     rebind[Scalar[DType.uint32]](
                         scheduler.group_offsets[
                             Int(scheduler.current_group_idx + 1)
@@ -1138,7 +1138,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 accum_type=accum_type,
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,
-                stage_stride_cols = Int(stage_stride_cols),
+                stage_stride_cols=stage_stride_cols,
                 c_swizzle=c_swizzle,
                 cta_group=cta_group,
                 num_output_warps=num_output_warps,
@@ -1422,9 +1422,9 @@ fn _grouped_matmul_sm100_persistent[
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
         cta_group=cta_group,
-        num_pipeline_stages = UInt(pipeline_stage),
+        num_pipeline_stages=pipeline_stage,
         num_accum_pipeline_stages=max_accum_pipeline_stages,
-        num_output_stages = UInt(num_output_stages),
+        num_output_stages=num_output_stages,
         output_tile_shape=output_tile_shape,
         transpose_c=transpose_c,
         elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1435,7 +1435,7 @@ fn _grouped_matmul_sm100_persistent[
     ), "cluster_shape[1] must be 1. Got " + String(cluster_shape[1])
 
     var grid_dim = (
-        Int(B200.sm_count),
+        B200.sm_count,
         1,
         1,
     )

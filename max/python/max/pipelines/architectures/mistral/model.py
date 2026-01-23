@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import logging
-import math
 from collections.abc import Sequence
 from typing import Any
 
@@ -334,25 +333,10 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
 
-        model_config = MistralConfig(
-            hidden_size=self.huggingface_config.hidden_size,
-            num_attention_heads=self.huggingface_config.num_attention_heads,
-            num_key_value_heads=self.kv_params.n_kv_heads,
-            num_hidden_layers=self.huggingface_config.num_hidden_layers,
-            vocab_size=self.huggingface_config.vocab_size,
-            dtype=self.dtype,
-            kv_params=self.kv_params,
-            return_logits=self.return_logits,
-            attention_multiplier=math.sqrt(1 / self.kv_params.head_dim),
-            head_dim=self.huggingface_config.head_dim,
-            rope_theta=self.huggingface_config.rope_theta,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            rms_norm_eps=self.huggingface_config.rms_norm_eps,
-            feed_forward_length=self.huggingface_config.intermediate_size,
-            devices=self.device_refs,
+        model_config = MistralConfig.initialize_from_config(
+            self.pipeline_config, self.huggingface_config
         )
+        model_config.return_logits = self.return_logits
 
         # Get Graph Inputs
         graph_inputs = self.graph_inputs()

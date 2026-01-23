@@ -26,26 +26,34 @@ Example usage:
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import NamedTuple
 
 import click
 import torch
 from max.driver.buffer import load_max_buffer
 
 
-class TensorComparisonResult(NamedTuple):
-    """Result of comparing two tensors."""
+@dataclass
+class ComparisonMetrics:
+    """Metrics computed when comparing two tensors."""
 
-    torch_tensor_name: str
-    max_tensor_name: str
-    all_close: bool | None
     max_abs_diff: float
     max_rel_diff: float
     max_abs_diff_index: tuple[int, ...]
     max_rel_diff_index: tuple[int, ...]
     num_failing_elements: int | None
     total_elements: int
+
+
+@dataclass
+class TensorComparisonResult:
+    """Result of comparing two tensors."""
+
+    torch_tensor_name: str
+    max_tensor_name: str
+    all_close: bool | None
+    metrics: ComparisonMetrics
     torch_shape: tuple[int, ...]
     max_shape: tuple[int, ...]
     was_reshaped: bool
@@ -84,7 +92,7 @@ def compute_comparison_metrics(
     max_tensor: torch.Tensor,
     rtol: float | None,
     atol: float | None,
-) -> tuple[float, float, tuple[int, ...], tuple[int, ...], int | None, int]:
+) -> ComparisonMetrics:
     """Compute comparison metrics between two tensors.
 
     Args:
@@ -94,9 +102,10 @@ def compute_comparison_metrics(
         atol: Absolute tolerance for tolerance check. If None, absolute tolerance is not checked.
 
     Returns:
-        Tuple of (max_abs_diff, max_rel_diff, max_abs_diff_idx, max_rel_diff_idx, num_failing, total_elements)
-        num_failing will be None if both rtol and atol are None. If only one tolerance is provided,
-        only that tolerance is checked (the other is treated as infinite).
+        ComparisonMetrics containing max_abs_diff, max_rel_diff, max_abs_diff_index,
+        max_rel_diff_index, num_failing_elements, and total_elements.
+        num_failing_elements will be None if both rtol and atol are None. If only one tolerance
+        is provided, only that tolerance is checked (the other is treated as infinite).
     """
     abs_diff = torch.abs(torch_tensor - max_tensor)
 
@@ -126,13 +135,13 @@ def compute_comparison_metrics(
 
     total_elements = int(torch.numel(torch_tensor))
 
-    return (
-        max_abs_diff,
-        max_rel_diff,
-        max_abs_diff_idx,
-        max_rel_diff_idx,
-        num_failing,
-        total_elements,
+    return ComparisonMetrics(
+        max_abs_diff=max_abs_diff,
+        max_rel_diff=max_rel_diff,
+        max_abs_diff_index=max_abs_diff_idx,
+        max_rel_diff_index=max_rel_diff_idx,
+        num_failing_elements=num_failing,
+        total_elements=total_elements,
     )
 
 
@@ -177,36 +186,31 @@ def compare_tensors(
                 torch_tensor_name=torch_name,
                 max_tensor_name=max_name,
                 all_close=None,
-                max_abs_diff=float("nan"),
-                max_rel_diff=float("nan"),
-                max_abs_diff_index=(),
-                max_rel_diff_index=(),
-                num_failing_elements=None,
-                total_elements=0,
+                metrics=ComparisonMetrics(
+                    max_abs_diff=float("nan"),
+                    max_rel_diff=float("nan"),
+                    max_abs_diff_index=(),
+                    max_rel_diff_index=(),
+                    num_failing_elements=None,
+                    total_elements=0,
+                ),
                 torch_shape=original_torch_shape,
                 max_shape=original_max_shape,
                 was_reshaped=False,
                 original_max_shape=original_max_shape,
             )
 
-    max_abs_diff, max_rel_diff, max_abs_idx, max_rel_idx, num_failing, total = (
-        compute_comparison_metrics(torch_cpu, max_cpu, rtol, atol)
-    )
+    metrics = compute_comparison_metrics(torch_cpu, max_cpu, rtol, atol)
 
     all_close: bool | None = None
-    if num_failing is not None:
-        all_close = num_failing == 0
+    if metrics.num_failing_elements is not None:
+        all_close = metrics.num_failing_elements == 0
 
     return TensorComparisonResult(
         torch_tensor_name=torch_name,
         max_tensor_name=max_name,
         all_close=all_close,
-        max_abs_diff=max_abs_diff,
-        max_rel_diff=max_rel_diff,
-        max_abs_diff_index=max_abs_idx,
-        max_rel_diff_index=max_rel_idx,
-        num_failing_elements=num_failing,
-        total_elements=total,
+        metrics=metrics,
         torch_shape=tuple(torch_cpu.shape),
         max_shape=tuple(max_cpu.shape),
         was_reshaped=reshaped,
@@ -364,13 +368,14 @@ def main(
             click.echo("\n⚠️  SHAPE MISMATCH - tensors cannot be compared!")
             continue
 
+        metrics = result.metrics
         click.echo(
-            f"Greatest absolute difference: {result.max_abs_diff} at index {result.max_abs_diff_index}"
+            f"Greatest absolute difference: {metrics.max_abs_diff} at index {metrics.max_abs_diff_index}"
         )
         click.echo(
-            f"Greatest relative difference: {result.max_rel_diff} at index {result.max_rel_diff_index}"
+            f"Greatest relative difference: {metrics.max_rel_diff} at index {metrics.max_rel_diff_index}"
         )
-        if result.max_rel_diff > 100:
+        if metrics.max_rel_diff > 100:
             has_large_rel_diff = True
 
         if tolerances_provided and result.all_close is not None:
@@ -378,13 +383,13 @@ def main(
             if result.all_close:
                 click.echo("✓ Tensors are close within specified tolerances!")
             else:
-                assert result.num_failing_elements is not None
+                assert metrics.num_failing_elements is not None
                 failure_pct = (
-                    result.num_failing_elements / result.total_elements
+                    metrics.num_failing_elements / metrics.total_elements
                 ) * 100
                 click.echo("✗ Tensors exceed specified tolerances!")
                 click.echo(
-                    f"Mismatched elements: {result.num_failing_elements} / {result.total_elements} ({failure_pct:.1f}%)"
+                    f"Mismatched elements: {metrics.num_failing_elements} / {metrics.total_elements} ({failure_pct:.1f}%)"
                 )
 
     # Print warning once if any tensor had large relative diff

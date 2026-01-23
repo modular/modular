@@ -388,7 +388,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         config.mma_shape,
         cluster_shape,
         Int(config.num_pipeline_stages),
-        Int(num_threads),
+        num_threads,
         transpose_b=True,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
@@ -599,16 +599,14 @@ fn _get_c_smem_layout[
     k_group_size: Int,
     swapAB: Bool = False,
 ]() -> Layout:
-    comptime BM = Int(block_tile_shape[0])
-    comptime BN = Int(block_tile_shape[1])
-    comptime BK = Int(block_tile_shape[2])
+    comptime BM: Int = block_tile_shape[0]
+    comptime BN: Int = block_tile_shape[1]
+    comptime BK: Int = block_tile_shape[2]
 
     comptime WG_BM = BM
     comptime MAX_WG_BN = 128  # a cap on the shared memory size
 
-    comptime available_smem_size = Int(
-        H100.shared_memory_per_multiprocessor - 1024
-    )
+    comptime available_smem_size: Int = H100.shared_memory_per_multiprocessor - 1024
 
     __comptime_assert not swapAB or (
         a_type == b_type == c_type == DType.bfloat16
@@ -620,11 +618,9 @@ fn _get_c_smem_layout[
         BM * BK * size_of[a_type]() + BN * BK * size_of[b_type]()
     )
 
-    comptime pipeline_smem_size = Int(total_smem_tile_size + barrier_size)
+    comptime pipeline_smem_size = total_smem_tile_size + barrier_size
 
-    comptime available_c_smem_size = Int(
-        available_smem_size - pipeline_smem_size
-    )
+    comptime available_c_smem_size = available_smem_size - pipeline_smem_size
 
     # In the normal case Shared Memory M will be the same as BM which can be either 64 or 128
     # This value is derived from the MMA_M shape which is fixed to 64. Similary BN is the same as

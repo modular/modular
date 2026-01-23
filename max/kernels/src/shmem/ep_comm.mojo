@@ -2321,6 +2321,367 @@ fn combine_wait_kernel[
 
 
 # ===-----------------------------------------------------------------------===#
+# Fused EP Kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+)
+fn dispatch_kernel[
+    input_type: DType,
+    num_threads: Int,
+    input_tokens_layout: Layout,
+    topk_ids_layout: Layout,
+    row_offsets_layout: Layout,
+    expert_ids_layout: Layout,
+    src_info_layout: Layout,
+    n_sms: Int,
+    n_experts: Int,
+    n_ranks: Int,
+    max_tokens_per_rank: Int,
+    p2p_world_size: Int,
+    token_fmt_type: TokenFormat,
+    expert_m_padding: Int = 0,
+    fused_shared_expert: Bool = False,
+    use_shmem: Bool = True,
+](
+    input_tokens: LayoutTensor[input_type, input_tokens_layout, ImmutAnyOrigin],
+    topk_ids: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin],
+    format_handler: token_fmt_type,
+    row_offsets: LayoutTensor[DType.uint32, row_offsets_layout, MutAnyOrigin],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
+    send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+    recv_buf_ptrs: InlineArray[
+        UnsafePointer[UInt8, MutExternalOrigin], p2p_world_size
+    ],
+    recv_count_ptrs: InlineArray[
+        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
+    ],
+    ep_counters: EPLocalSyncCounters[n_experts],
+    my_rank: Int32,
+):
+    """
+    Fused dispatch kernel that combines dispatch_async and dispatch_wait
+    functionality in a single kernel launch.
+
+    This kernel dispatches tokens to experts on remote ranks based on the top-k
+    expert IDs, then waits for all tokens to arrive and aggregates them for
+    grouped matmul computation.
+
+    Parameters:
+        input_type: The type of the input tokens.
+        num_threads: The number of threads in the block.
+        input_tokens_layout: The layout of the input tokens.
+        topk_ids_layout: The layout of the top-k expert IDs.
+        row_offsets_layout: The layout of the row offsets.
+        expert_ids_layout: The layout of the expert IDs.
+        src_info_layout: The layout of the source token info.
+        n_sms: The total number of SMs in the device.
+        n_experts: The total number of experts in the model.
+        n_ranks: The number of all devices participating in the communication.
+        max_tokens_per_rank: The maximum number of tokens per rank.
+        p2p_world_size: Size of a High-speed GPU interconnect group.
+        token_fmt_type: Type conforming to TokenFormat trait that defines the
+            token encoding scheme.
+        expert_m_padding: If non-zero, the number of tokens for each local
+            expert will be padded to the next multiple of `expert_m_padding`.
+        fused_shared_expert: Whether to pack the shared expert inputs with the
+            routed experts' inputs. When enabled, input_tokens is used as the
+            shared expert inputs.
+        use_shmem: Whether to use the SHMEM API for the communication.
+
+    Args:
+        input_tokens: The input tokens to be dispatched. Also used as shared
+            expert inputs when fused_shared_expert is True.
+        topk_ids: The top-k expert IDs for each token.
+        format_handler: Instance of token_fmt_type that performs token decoding
+            and manages output tensor writes.
+        row_offsets: The row offsets to be updated. Will be consumed by the
+            `grouped_matmul` kernel.
+        expert_ids: The expert IDs to be updated. Will be consumed by the
+            `grouped_matmul` kernel.
+        src_info: The source token info to be updated. Once the expert
+            computation is complete, tokens will be sent back to the original
+            rank using information in this tensor.
+        send_buf_p: The pointer to the send buffer. Need to be allocated using
+            `shmem_alloc` if `use_shmem` is True.
+        recv_buf_ptrs: An array of pointers to the receive buffers for each
+            device in the p2p world.
+        recv_count_ptrs: An array of pointers to the receive count buffers for
+            each device in the p2p world.
+        ep_counters: EP atomic counters for kernel synchronization.
+        my_rank: The rank of the current device.
+    """
+
+    comptime dispatch_impl = EPDispatchKernel[
+        num_threads,
+        n_sms,
+        n_experts,
+        n_ranks,
+        max_tokens_per_rank,
+        p2p_world_size,
+        token_fmt_type,
+        use_shmem,
+        expert_m_padding,
+        fused_shared_expert,
+    ]
+
+    # ===== dispatch_async =====
+    var async_atomic_counter = ep_counters.get_dispatch_async_ptr()
+    var expert_reserved_counter = async_atomic_counter
+    var expert_finished_counter = async_atomic_counter + n_experts
+    var rank_completion_counter = async_atomic_counter + 2 * n_experts
+
+    with PDL():
+        if block_idx.x < UInt(dispatch_impl.n_signal_sms):
+            dispatch_impl.monitor_and_signal_completion(
+                topk_ids,
+                recv_count_ptrs,
+                expert_reserved_counter,
+                expert_finished_counter,
+                rank_completion_counter,
+                my_rank,
+            )
+        else:
+            dispatch_impl.copy_and_send_tokens(
+                input_tokens,
+                topk_ids,
+                send_buf_p,
+                recv_buf_ptrs,
+                expert_reserved_counter,
+                expert_finished_counter,
+                my_rank,
+            )
+
+        # ===== dispatch_wait =====
+        var wait_atomic_counter = ep_counters.get_dispatch_wait_ptr()
+        var my_p2p_rank = my_rank % p2p_world_size
+
+        if block_idx.x < UInt(dispatch_impl.n_offset_sms):
+            var reserved_shared_expert_tokens: UInt32 = 0
+
+            @parameter
+            if fused_shared_expert:
+                reserved_shared_expert_tokens = input_tokens.dim(0)
+
+            dispatch_impl.wait_for_arrivals_and_compute_offsets(
+                row_offsets,
+                expert_ids,
+                recv_count_ptrs[my_p2p_rank],
+                wait_atomic_counter,
+                my_rank,
+                reserved_shared_expert_tokens,
+            )
+        else:
+
+            @parameter
+            if fused_shared_expert:
+                dispatch_impl.pack_shared_expert_inputs(
+                    format_handler, input_tokens
+                )
+
+            dispatch_impl.copy_received_tokens_to_output(
+                format_handler,
+                src_info,
+                recv_buf_ptrs[my_p2p_rank],
+                recv_count_ptrs[my_p2p_rank],
+                wait_atomic_counter,
+                my_rank,
+            )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+)
+fn combine_kernel[
+    input_type: DType,
+    num_threads: Int,
+    input_tokens_layout: Layout,
+    src_info_layout: Layout,
+    output_tokens_layout: Layout,
+    n_sms: Int,
+    top_k: Int,
+    n_experts: Int,
+    n_ranks: Int,
+    msg_bytes: Int,
+    max_tokens_per_rank: Int,
+    p2p_world_size: Int,
+    router_weights_wrapper: OptionalReg[
+        fn (Int, Int) capturing -> Float32
+    ] = None,
+    fused_shared_expert: Bool = False,
+    epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
+    use_shmem: Bool = True,
+](
+    input_tokens: LayoutTensor[input_type, input_tokens_layout, MutAnyOrigin],
+    src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
+    output_tokens: LayoutTensor[input_type, output_tokens_layout, MutAnyOrigin],
+    send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+    recv_buf_ptrs: InlineArray[
+        UnsafePointer[UInt8, MutExternalOrigin], p2p_world_size
+    ],
+    recv_count_ptrs: InlineArray[
+        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
+    ],
+    ep_counters: EPLocalSyncCounters[n_experts],
+    my_rank: Int32,
+):
+    """
+    Fused combine kernel that combines combine_async and combine_wait
+    functionality in a single kernel launch.
+
+    This kernel sends processed tokens back to their original ranks, then waits
+    for all tokens to arrive and computes the weighted sum of routed expert
+    outputs for each token.
+
+    For fused_shared_expert mode, the shared expert outputs are added to the
+    reduced routed expert outputs using an elementwise lambda. This requires
+    router_weights_wrapper to be provided (output must be reduced).
+
+    Parameters:
+        input_type: The type of the input/output tokens.
+        num_threads: The number of threads in the block.
+        input_tokens_layout: The layout of the input tokens.
+        src_info_layout: The layout of the source token info.
+        output_tokens_layout: The layout of the output tokens.
+        n_sms: The total number of SMs in the device.
+        top_k: The number of selected experts per token.
+        n_experts: The total number of experts in the model.
+        n_ranks: The number of all devices participating in the communication.
+        msg_bytes: The number of bytes per token message.
+        max_tokens_per_rank: The maximum number of tokens per rank.
+        p2p_world_size: Size of a High-speed GPU interconnect group.
+        router_weights_wrapper: The wrapper for the router weights. If provided,
+            all routed experts' outputs for a token will be weighted and summed.
+            REQUIRED when fused_shared_expert is True.
+        fused_shared_expert: Whether to add the shared expert's output to the
+            combined output. Requires router_weights_wrapper to be provided.
+        epilogue_fn: Optional elementwise epilogue function applied after
+            computing combined output. If provided, this function is called with
+            coordinates and values instead of directly storing to output.
+        use_shmem: Whether to use the SHMEM API for the communication.
+
+    Args:
+        input_tokens: The tokens to be sent back to the original rank.
+        src_info: The source token info tensor.
+        output_tokens: The tensor to store the output tokens.
+        send_buf_p: The pointer to the send buffer. Need to be allocated using
+            `shmem_alloc` if `use_shmem` is True.
+        recv_buf_ptrs: An array of pointers to the receive buffers for each
+            device in the p2p world. The local device's buffer at index
+            my_p2p_rank is used for both send (combine_async) and receive
+            (combine_wait) operations.
+        recv_count_ptrs: An array of pointers to the receive count buffers for
+            each device in the p2p world. The local device's buffer at index
+            my_p2p_rank is used for receive count tracking.
+        ep_counters: EP atomic counters for kernel synchronization.
+        my_rank: The rank of the current device.
+    """
+
+    @parameter
+    if fused_shared_expert:
+        __comptime_assert router_weights_wrapper, (
+            "EP combine_kernel: fused_shared_expert requires "
+            "router_weights_wrapper to be provided. Cannot add shared expert "
+            "output to non-reduced routed expert outputs."
+        )
+
+    comptime combine_impl = EPCombineKernel[
+        num_threads,
+        n_sms,
+        top_k,
+        n_experts,
+        n_ranks,
+        msg_bytes,
+        max_tokens_per_rank,
+        p2p_world_size,
+        use_shmem,
+        fused_shared_expert,
+    ]
+
+    # ===== combine_async =====
+    var async_atomic_counter = ep_counters.get_combine_async_ptr()
+    var rank_completion_counter = async_atomic_counter + 2 * n_experts
+
+    with PDL():
+        combine_impl.send_tokens_back(
+            input_tokens,
+            src_info,
+            send_buf_p,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            async_atomic_counter,
+            rank_completion_counter,
+            my_rank,
+        )
+
+        # ===== combine_wait =====
+        var wait_atomic_counter = ep_counters.get_combine_wait_ptr()
+        var my_p2p_rank = my_rank % p2p_world_size
+
+        if block_idx.x < combine_impl.n_wait_sms:
+            combine_impl.wait_for_all_arrivals(
+                recv_count_ptrs[my_p2p_rank], wait_atomic_counter
+            )
+        else:
+            # Create an elementwise lambda that adds shared expert output if enabled
+            @parameter
+            if fused_shared_expert:
+                comptime hid_dim = input_tokens_layout.shape[1].value()
+
+                @always_inline
+                @parameter
+                fn add_shared_expert_output[
+                    dtype: DType, width: Int, *, alignment: Int = 1
+                ](
+                    idx: IndexList[2], combined_val: SIMD[dtype, width]
+                ) capturing:
+                    """Add shared expert output to the reduced routed expert output.
+                    """
+
+                    var shared_expert_val = input_tokens.aligned_load[
+                        width=width
+                    ](idx).cast[dtype]()
+
+                    # Add and store the result
+                    var result = combined_val + shared_expert_val
+
+                    @parameter
+                    if epilogue_fn:
+                        comptime epilogue = epilogue_fn.value()
+                        epilogue[width=width, alignment=alignment](idx, result)
+                    else:
+                        output_tokens.aligned_store[width=width](
+                            idx[0], idx[1], result.cast[input_type]()
+                        )
+
+                combine_impl.reduce_and_copy_to_output[
+                    input_type,
+                    output_tokens_layout,
+                    router_weights_wrapper,
+                    add_shared_expert_output,
+                ](
+                    output_tokens,
+                    recv_buf_ptrs[my_p2p_rank],
+                    wait_atomic_counter,
+                )
+
+            else:
+                combine_impl.reduce_and_copy_to_output[
+                    input_type,
+                    output_tokens_layout,
+                    router_weights_wrapper,
+                    epilogue_fn,
+                ](
+                    output_tokens,
+                    recv_buf_ptrs[my_p2p_rank],
+                    wait_atomic_counter,
+                )
+
+
+# ===-----------------------------------------------------------------------===#
 # Expert Parallelism Utils
 # ===-----------------------------------------------------------------------===#
 

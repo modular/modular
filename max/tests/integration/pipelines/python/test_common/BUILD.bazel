@@ -190,6 +190,7 @@ modular_py_library(
         "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
+        requirement("numpy"),
         requirement("transformers"),
     ],
 )

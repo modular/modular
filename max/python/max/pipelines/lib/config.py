@@ -972,7 +972,7 @@ class PipelineConfig(ConfigFileModel):
         # Validate LoRA support - currently only Llama3 models support LoRA
         if self.lora and self.lora.enable_lora:
             # Check if the architecture is Llama3 (LlamaForCausalLM)
-            if arch.name != "LlamaForCausalLM":
+            if "LlamaForCausalLM" not in arch.name:
                 raise ValueError(
                     f"LoRA is not currently supported for architecture '{arch.name}'. "
                     f"LoRA support is currently only available for Llama-3.x models (LlamaForCausalLM architecture). "

@@ -84,6 +84,7 @@ def bench_flashinfer(
     head_dim: int,
     causal: bool,
     dtype: torch.dtype,
+    num_iters: int,
     backend: str = "cutlass",
 ) -> tuple[float, int] | None:
     if _flashinfer is None:
@@ -157,7 +158,7 @@ def bench_flashinfer(
     time_s = bench_kineto_with_cupti_warmup(
         run_kernel,
         kernel_names=kernel_name,
-        num_tests=100,
+        num_tests=num_iters,
         suppress_kineto_output=True,
         flush_l2=True,
     )
@@ -179,6 +180,7 @@ def bench_max(
     head_dim: int,
     causal: bool,
     dtype: torch.dtype,
+    num_iters: int,
 ) -> tuple[float, int] | None:
     """Benchmark MAX flash_attention_gpu kernel.
 
@@ -244,7 +246,7 @@ def bench_max(
     time_s = bench_kineto_with_cupti_warmup(
         run_kernel,
         kernel_names="mha",
-        num_tests=100,
+        num_tests=num_iters,
         suppress_kineto_output=True,
         flush_l2=True,
     )
@@ -266,6 +268,7 @@ def bench_tridao(
     head_dim: int,
     causal: bool,
     dtype: torch.dtype,
+    num_iters: int,
 ) -> tuple[float, int] | None:
     if _flash_attn_varlen_func is None:
         print("flash_attn not available, skipping bench_tridao")
@@ -309,7 +312,7 @@ def bench_tridao(
     time_s = bench_kineto_with_cupti_warmup(
         run_kernel,
         kernel_names="kernel_cutlass_kernel_flash_attncuteflash_fwd_sm100FlashAttentionForwardSm100",
-        num_tests=100,
+        num_tests=num_iters,
         suppress_kineto_output=True,
         flush_l2=True,
     )
@@ -332,6 +335,7 @@ def bench_prefill(
     causal: bool,
     dtype: torch.dtype,
     engine: str,
+    num_iters: int,
 ) -> tuple[float, int] | None:
     """Run all MHA prefill benchmarks and display results side-by-side.
 
@@ -343,6 +347,7 @@ def bench_prefill(
         causal: Whether to use causal masking
         dtype: torch dtype for inputs (e.g., torch.bfloat16)
         engine: backend to run the benchmark ("flashinfer" or "tridao" or "modular_max")
+        num_iters: Number of benchmark iters.
     """
     print("=" * 80)
     print(
@@ -363,6 +368,7 @@ def bench_prefill(
                     head_dim,
                     causal,
                     dtype,
+                    num_iters,
                     backend="cutlass",
                 )
             except Exception as e:
@@ -373,7 +379,13 @@ def bench_prefill(
         if _flash_attn_varlen_func is not None:
             try:
                 result = bench_tridao(
-                    batch_size, qkv_len, num_heads, head_dim, causal, dtype
+                    batch_size,
+                    qkv_len,
+                    num_heads,
+                    head_dim,
+                    causal,
+                    dtype,
+                    num_iters,
                 )
             except Exception as e:
                 print(f"Tri Dao benchmark failed: {e}")
@@ -382,7 +394,13 @@ def bench_prefill(
     elif engine == "modular_max":
         try:
             result = bench_max(
-                batch_size, qkv_len, num_heads, head_dim, causal, dtype
+                batch_size,
+                qkv_len,
+                num_heads,
+                head_dim,
+                causal,
+                dtype,
+                num_iters,
             )
         except Exception as e:
             print(f"MAX benchmark failed: {e}")
@@ -443,6 +461,14 @@ if __name__ == "__main__":
         default="output.csv",
         help="Output path",
     )
+
+    parser.add_argument(
+        "--num_iters",
+        "--num-iters",
+        type=int,
+        default=100,
+        help="Number of benchmark iterations",
+    )
     args, _ = parser.parse_known_args()
 
     dtype_map = {
@@ -462,22 +488,24 @@ if __name__ == "__main__":
         causal=args.causal,
         dtype=dtype_map[args.dtype],
         engine=args.engine,
+        num_iters=args.num_iters,
     )
 
-    met_sec, flops = result if result else [0, 0]
-    flops_per_sec = ThroughputMeasure(Bench.flops, flops)
-    name = (
-        f"MHA_Prefill/batch_size={args.batch_size}/qkv_len={args.qkv_len}/"
-        f"num_heads={args.num_heads}/head_dim={args.head_dim}/"
-        f"causal={args.causal}/dtype={dtype_map[args.dtype]}/"
-        f"engine={args.engine}/"
-    )
+    if args.num_iters > 1:
+        met_sec, flops = result if result else [0, 0]
+        flops_per_sec = ThroughputMeasure(Bench.flops, flops)
+        name = (
+            f"MHA_Prefill/batch_size={args.batch_size}/qkv_len={args.qkv_len}/"
+            f"num_heads={args.num_heads}/head_dim={args.head_dim}/"
+            f"causal={args.causal}/dtype={dtype_map[args.dtype]}/"
+            f"engine={args.engine}/"
+        )
 
-    b = Bench(
-        name,
-        iters=1,
-        met=met_sec,
-        metric_list=[flops_per_sec],
-    )
+        b = Bench(
+            name,
+            iters=1,
+            met=met_sec,
+            metric_list=[flops_per_sec],
+        )
 
-    b.dump_report(output_path=args.output)
+        b.dump_report(output_path=args.output)

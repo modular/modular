@@ -9,7 +9,10 @@ package(default_visibility = [
 
 modular_py_test(
     name = "max_tests",
-    srcs = glob(["*.py"]),
+    srcs = glob(
+        ["*.py"],
+        exclude = ["test_flashinfer_cubin.py"],
+    ),
     args = [
         "-n",
         "auto",
@@ -32,5 +35,15 @@ modular_py_test(
         "//max/python/max/mlir",
         requirement("pytest-xdist"),
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_flashinfer_cubin",
+    srcs = ["test_flashinfer_cubin.py"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:nvidia_gpu"],
+    deps = [
+        requirement("flashinfer-cubin"),
     ],
 )

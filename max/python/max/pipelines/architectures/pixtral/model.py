@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import logging
-import math
 from collections.abc import Sequence
 from typing import cast
 
@@ -376,33 +375,8 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     ) -> Graph:
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
-        model_config = PixtralConfig(
-            image_token_index=self.huggingface_config.image_token_index,
-            vocab_size=self.huggingface_config.text_config.vocab_size,
-            hidden_size=self.huggingface_config.text_config.hidden_size,
-            feed_forward_length=self.huggingface_config.text_config.intermediate_size,
-            num_hidden_layers=self.huggingface_config.text_config.num_hidden_layers,
-            num_attention_heads=self.huggingface_config.text_config.num_attention_heads,
-            num_key_value_heads=self.huggingface_config.text_config.num_key_value_heads,
-            head_dim=self.huggingface_config.text_config.head_dim,
-            rms_norm_eps=self.huggingface_config.text_config.rms_norm_eps,
-            rope_theta=self.huggingface_config.text_config.rope_theta,
-            max_seq_len=self.huggingface_config.text_config.max_position_embeddings,
-            patch_size=self.huggingface_config.vision_config.patch_size,
-            image_size=self.huggingface_config.vision_config.image_size,
-            num_channels=self.huggingface_config.vision_config.num_channels,
-            vision_hidden_size=self.huggingface_config.vision_config.hidden_size,
-            attention_multiplier=math.sqrt(1 / self.kv_params.head_dim),
-            vision_num_attention_heads=self.huggingface_config.vision_config.num_attention_heads,
-            vision_rope_theta=self.huggingface_config.vision_config.rope_theta,
-            vision_num_hidden_layers=self.huggingface_config.vision_config.num_hidden_layers,
-            vision_intermediate_size=self.huggingface_config.vision_config.intermediate_size,
-            vision_head_dim=self.huggingface_config.vision_config.head_dim,
-            dtype=self.dtype,
-            devices=self.device_refs,
-            return_logits=self.return_logits,
-            kv_params=self.kv_params,
-        )
+        model_config = PixtralConfig.initialize(self.pipeline_config)
+        model_config.return_logits = self.return_logits
 
         # Get Graph Inputs
         graph_inputs = self.graph_inputs()

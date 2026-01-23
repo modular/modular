@@ -241,9 +241,7 @@ fn row_reduce[
 
     var tid: UInt = thread_idx.x
     for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
-        var idx_in_padded_row = UInt(
-            (tid + UInt(offset_in_row)) * UInt(simd_width)
-        )
+        var idx_in_padded_row = (tid + UInt(offset_in_row)) * UInt(simd_width)
 
         if idx_in_padded_row >= UInt(rounded_row_size):
             break

@@ -24,7 +24,7 @@ from layout.int_tuple import product as prod
 from layout.layout import blocked_product
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg, TensorCore
-from linalg.structuring import SMemTileType, RegTileType
+from linalg.structuring import SMemTile, RegTile
 from sys._assembly import inlined_assembly
 from utils import IndexList, StaticTuple
 from gpu.intrinsics import load_acquire, store_release
@@ -112,16 +112,16 @@ struct SMemBuffer[
 
     """Manages shared memory and returns 2D tile slices of the buffer."""
 
-    comptime SMemTileType = SMemTileType[
+    comptime SMemTile = SMemTile[
         Self.dtype,
         pipeline_layout[Self.layout, Self.pipeline_stages](),
         alignment=128,
     ]
 
-    comptime BlockTileType = Self.SMemTileType.TileType[Self.BM, Self.BN]
+    comptime BlockTileType = Self.SMemTile.TileType[Self.BM, Self.BN]
     comptime WarpTileType = Self.BlockTileType.TileType[Self.WM, Self.WN]
 
-    var buffer: Self.SMemTileType
+    var buffer: Self.SMemTile
 
     @always_inline
     fn __init__(out self):
@@ -144,7 +144,7 @@ struct SMemBuffer[
             "BM and BN must be a multiple of WM and WN",
         ]()
 
-        self.buffer = Self.SMemTileType.stack_allocation()
+        self.buffer = Self.SMemTile.stack_allocation()
 
     @always_inline
     fn get_tile(self, stage: Int) -> Self.BlockTileType:
@@ -336,15 +336,15 @@ struct AmdTileOperator[
         _k_tiles_per_simd: Int,
     ] = Layout.row_major(_k_tiles_per_simd * num_mmas, Self.simd_width)
 
-    comptime ARegTileType = RegTileType[
+    comptime ARegTile = RegTile[
         Self.InType, Self._in_layout[Self.num_m_mmas, Self._k_tiles_per_simd_a]
     ]
 
-    comptime BRegTileType = RegTileType[
+    comptime BRegTile = RegTile[
         Self.InType, Self._in_layout[Self.num_n_mmas, Self._k_tiles_per_simd_b]
     ]
 
-    comptime OutRegTileType = LayoutTensor[
+    comptime OutRegTile = LayoutTensor[
         Self.OutType,
         Self._out_layout,
         MutAnyOrigin,
@@ -352,14 +352,14 @@ struct AmdTileOperator[
         address_space = AddressSpace.LOCAL,
     ]
 
-    comptime OutRegTileFragmentType = Self.OutRegTileType.TileType[
+    comptime OutRegTileFragmentType = Self.OutRegTile.TileType[
         Self._out_frag_rows, Self._out_frag_cols
     ]
 
     # Register storage for matrix data
-    var _a_reg_tile: Self.ARegTileType
-    var _b_reg_tile: Self.BRegTileType
-    var out_reg_tile: Self.OutRegTileType
+    var _a_reg_tile: Self.ARegTile
+    var _b_reg_tile: Self.BRegTile
+    var out_reg_tile: Self.OutRegTile
 
     @always_inline
     fn __init__(out self):
@@ -382,16 +382,16 @@ struct AmdTileOperator[
             "k_tiles_per_simd must be equal for A and B",
         ]()
 
-        self._a_reg_tile = Self.ARegTileType.stack_allocation()
-        self._b_reg_tile = Self.BRegTileType.stack_allocation()
+        self._a_reg_tile = Self.ARegTile.stack_allocation()
+        self._b_reg_tile = Self.BRegTile.stack_allocation()
 
         # Initialize output accumulator to zero
-        self.out_reg_tile = Self.OutRegTileType.stack_allocation().fill(0)
+        self.out_reg_tile = Self.OutRegTile.stack_allocation().fill(0)
 
     @always_inline
     fn a_reg_tile(
         self, k_tile_idx: Int
-    ) -> Self.ARegTileType.TileType[Self.num_m_mmas, Self.simd_width]:
+    ) -> Self.ARegTile.TileType[Self.num_m_mmas, Self.simd_width]:
         """Get A register tile for a specific K tile."""
         return self._a_reg_tile.tile[Self.num_m_mmas, Self.simd_width](
             k_tile_idx, 0
@@ -400,7 +400,7 @@ struct AmdTileOperator[
     @always_inline
     fn b_reg_tile(
         self, k_tile_idx: Int
-    ) -> Self.BRegTileType.TileType[Self.num_n_mmas, Self.simd_width]:
+    ) -> Self.BRegTile.TileType[Self.num_n_mmas, Self.simd_width]:
         """Get B register tile for a specific K tile."""
         return self._b_reg_tile.tile[Self.num_n_mmas, Self.simd_width](
             k_tile_idx, 0

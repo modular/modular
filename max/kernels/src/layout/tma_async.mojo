@@ -3024,9 +3024,7 @@ struct TMATensorTileArray[
         Returns:
             `UnsafePointer` to the `TMATensorTile` at the specified index.
         """
-        return UnsafePointer[UInt8, MutAnyOrigin](
-            self.tensormaps_ptr + index * self.descriptor_bytes
-        ).bitcast[
+        return (self.tensormaps_ptr + index * self.descriptor_bytes).bitcast[
             TMATensorTile[Self.dtype, Self.cta_tile_layout, Self.desc_layout]
         ]()
 

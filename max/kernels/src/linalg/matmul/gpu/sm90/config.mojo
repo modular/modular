@@ -149,15 +149,15 @@ struct MatmulConfig[
         )
 
     fn _maximize_pipeline_stages_by_default(mut self):
-        var BM = Int(self.block_tile_shape[0])
-        var BN = Int(self.block_tile_shape[1])
-        var BK = Int(self.block_tile_shape[2])
+        var BM: Int = self.block_tile_shape[0]
+        var BN: Int = self.block_tile_shape[1]
+        var BK: Int = self.block_tile_shape[2]
 
         var MBAR_BYTES = size_of[Int64]()  # 8 bytes per barrier
         var tma_mbar_bytes_per_stage = MBAR_BYTES
         var mma_mbar_bytes_per_stage = MBAR_BYTES
 
-        comptime h100_smem = Int(H100.shared_memory_per_multiprocessor - 1024)
+        comptime h100_smem = H100.shared_memory_per_multiprocessor - 1024
         # Assume largest c smem tile is BM * 128
         var c_smem_bytes = BM * 128 * size_of[Self.c_type]()
 

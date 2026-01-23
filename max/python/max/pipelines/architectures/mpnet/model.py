@@ -22,11 +22,9 @@ from collections.abc import Sequence
 
 import numpy as np
 from max.driver import Buffer, Device
-from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.dataprocessing import collate_batch
@@ -97,23 +95,6 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             return_logits,
         )
         self.model = self.load_model(session)
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return MPNetConfig.construct_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
 
     @classmethod
     def calculate_max_seq_len(
@@ -190,13 +171,8 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             state_dict = {
                 key: value.data() for key, value in self.weights.items()
             }
-        graph = build_graph(
-            self.pipeline_config,
-            state_dict,
-            self.huggingface_config,
-            self.dtype,
-            DeviceRef.from_device(self.devices[0]),
-        )
+        config = MPNetConfig.initialize(self.pipeline_config)
+        graph = build_graph(config, state_dict)
         timer.mark_build_complete()
         model = session.load(graph, weights_registry=state_dict)
         timer.done()

@@ -204,7 +204,7 @@ struct Int(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    comptime BITWIDTH = Int(bit_width_of[DType.int]())
+    comptime BITWIDTH: Int = bit_width_of[DType.int]()
     """The bit width of the integer type."""
 
     comptime MAX = Int(Scalar[DType.int].MAX)
@@ -1084,7 +1084,7 @@ struct Int(
         Raises:
             An error if the conversion failed.
         """
-        self = Int(Python.py_long_as_ssize_t(py.__int__()))
+        self = Python.py_long_as_ssize_t(py.__int__())
 
     # ===-------------------------------------------------------------------===#
     # Methods
