@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Interpreter/ParametricInterpreterState.h"
+#include "KGEN/Interpreter/Utils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
@@ -599,10 +600,23 @@ static bool compareConstants(CmpPredicate pred, ArgT lhs, ArgT rhs) {
   llvm_unreachable("invalid cmp predicate");
 }
 
+template <IndexFold T>
+static OpFoldResult doConstCmpFold(POP::CmpPredicate pred,
+                                   ArrayRef<Attribute> operands) {
+  return foldSIMDOpResult<T>(
+      operands, KGENDType::kBool,
+      [&](APSInt lhs, APSInt rhs) { return compareConstants(pred, lhs, rhs); },
+      [&](APFloat lhs, APFloat rhs) {
+        return compareConstants(pred, lhs, rhs);
+      },
+      [&](bool lhs, bool rhs) { return compareConstants(pred, lhs, rhs); });
+}
+
 static OpFoldResult cmpOpfoldHelper(SIMDType lhsType, SIMDType resultType,
                                     Value lhs, Value rhs,
                                     POP::CmpPredicate pred,
-                                    ArrayRef<Attribute> operands) {
+                                    ArrayRef<Attribute> operands,
+                                    TargetInfoAttr target) {
   std::optional<KGENDType> operandTy = lhsType.getResolvedDType();
   std::optional<int64_t> size = resultType.getResolvedSize();
 
@@ -631,16 +645,15 @@ static OpFoldResult cmpOpfoldHelper(SIMDType lhsType, SIMDType resultType,
 
   // Handle the case of applying the operation at compile time on the constant
   // values.
-  if (OpFoldResult result = foldSIMDOpResult<POP::kOtherResult>(
-          operands, KGENDType::kBool,
-          [&](APSInt lhs, APSInt rhs) {
-            return compareConstants(pred, lhs, rhs);
-          },
-          [&](APFloat lhs, APFloat rhs) {
-            return compareConstants(pred, lhs, rhs);
-          },
-          [&](bool lhs, bool rhs) { return compareConstants(pred, lhs, rhs); }))
+  if (target && target.getIndexBitWidth() == 32) {
+    if (auto result = doConstCmpFold<POP::k32BitResult>(pred, operands))
+      return result;
+  } else if (target && target.getIndexBitWidth() == 64) {
+    if (auto result = doConstCmpFold<POP::k64BitResult>(pred, operands))
+      return result;
+  } else if (auto result = doConstCmpFold<POP::kOtherResult>(pred, operands)) {
     return result;
+  }
 
   // Fold `eq(true, x) -> x` and `ne(false, x) -> x`.
   if (operandTy && operandTy == DType::kBool &&
@@ -707,13 +720,25 @@ static OpFoldResult cmpOpfoldHelper(SIMDType lhsType, SIMDType resultType,
 }
 
 OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
+  auto target = lookupTargetInfo(*this);
   return cmpOpfoldHelper(getLhs().getType(), getType(), getLhs(), getRhs(),
-                         getPred(), adaptor.getOperands());
+                         getPred(), adaptor.getOperands(), target);
 }
 
 ErrorTreeOrSuccess CmpOp::interpret(ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
-  return state.interpretOpWithFolder(this->getOperation(), operands);
+  auto lhsType = cast<SIMDType>(cast<TypedAttr>(operands[0]).getType());
+  auto resultType = cast<SIMDType>(getType());
+  if (OpFoldResult result =
+          cmpOpfoldHelper(lhsType, resultType, getLhs(), getRhs(), getPred(),
+                          operands, state.getTarget())) {
+    if (auto attr = dyn_cast<Attribute>(result)) {
+      state.mapResults(attr);
+      return success();
+    }
+  }
+  return reportFoldError(this->getOperation(), operands,
+                         "failed to fold operation ");
 }
 
 ErrorTreeOrSuccess
@@ -721,8 +746,9 @@ CmpOp::parametric_interpret(ArrayRef<Attribute> operands,
                             ParametricInterpreterState &state) {
   auto lhsType = cast<SIMDType>(cast<TypedAttr>(operands[0]).getType());
   auto resultType = cast<SIMDType>(state.getReboundType(getType()));
-  if (OpFoldResult result = cmpOpfoldHelper(lhsType, resultType, getLhs(),
-                                            getRhs(), getPred(), operands)) {
+  if (OpFoldResult result =
+          cmpOpfoldHelper(lhsType, resultType, getLhs(), getRhs(), getPred(),
+                          operands, state.getTarget())) {
     if (auto attr = dyn_cast<Attribute>(result)) {
       state.mapResults(attr);
       return success();

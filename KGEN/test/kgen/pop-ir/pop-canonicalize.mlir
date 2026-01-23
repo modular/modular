@@ -460,7 +460,7 @@ kgen.func @cmp_ge() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
 
 // CHECK-LABEL: @cmp_index
 kgen.func @cmp_index() -> !pop.scalar<bool> {
-  // CHECK: pop.cmp
+  // CHECK: <false>
   %0 = kgen.param.constant: scalar<index> = <4294967296>
   %1 = kgen.param.constant: scalar<index> = <8589934592>
   %2 = pop.cmp eq(%0, %1) : !pop.scalar<index>

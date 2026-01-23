@@ -265,6 +265,13 @@ kgen.generator @simd_reduce_and_fold_2() -> !pop.scalar<index> {
   kgen.return %1 : !pop.scalar<index>
 }
 
+kgen.generator @pop_cmp() -> !pop.scalar<bool> {
+  %0 = kgen.param.constant: !pop.scalar<index> = <3000000000>
+  %1 = kgen.param.constant: !pop.scalar<index> = <0>
+  %2 = pop.cmp lt(%0 , %1) : !pop.scalar<index>
+  kgen.return %2 : !pop.scalar<bool>
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -451,6 +458,9 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: constant: scalar<index> = <1>
   kgen.param.constant: scalar<index> = <apply(:() -> !pop.scalar<index> @simd_reduce_and_fold_2)>
+
+  // CHECK-NEXT: constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <apply(:() -> !pop.scalar<bool> @pop_cmp)>
 
   kgen.return
 }
