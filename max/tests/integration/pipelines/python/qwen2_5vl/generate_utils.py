@@ -18,7 +18,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 import torch
-from qwen_vl_utils.vision_process import process_vision_info
+from max.interfaces import ImageContentPart
 from test_common.storage import load_image
 from test_common.test_data import MockTextGenerationRequest
 from test_common.torch_utils import _create_logits_store
@@ -112,10 +112,7 @@ def run_text_generation(
                 content = msg.content
                 if isinstance(content, list):
                     for item in content:
-                        if (
-                            isinstance(item, dict)
-                            and item.get("type") == "image"
-                        ):
+                        if isinstance(item, ImageContentPart):
                             # Replace placeholder with actual image
                             msg_content.append(
                                 {
@@ -135,19 +132,17 @@ def run_text_generation(
                 else:
                     messages_data.append({"role": msg.role, "content": content})
 
-            texts = data_processor.apply_chat_template(
+            inputs = data_processor.apply_chat_template(
                 messages_data,
-                tokenize=False,
+                tokenize=True,
                 add_generation_prompt=True,
-            )
-            image_inputs, video_inputs = process_vision_info(messages_data)  # type: ignore
-            return data_processor(
-                text=texts,
-                images=image_inputs,
-                videos=video_inputs,
-                padding=True,
+                return_dict=True,
                 return_tensors="pt",
-            ).to(device)
+            )
+            return {
+                k: v.to(device) if isinstance(v, torch.Tensor) else v
+                for k, v in inputs.items()
+            }
         else:
             return data_processor(
                 text=request.prompt,
