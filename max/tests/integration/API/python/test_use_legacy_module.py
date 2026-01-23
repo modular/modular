@@ -50,6 +50,7 @@ def test_registry__retrieve_architecture_with_legacy_module() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
+        multi_gpu_supported=True,
     )
     PIPELINE_REGISTRY.register(legacy_arch)
 
@@ -85,6 +86,7 @@ def test_registry__retrieve_architecture_without_legacy_module() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
+        multi_gpu_supported=True,
     )
     PIPELINE_REGISTRY.register(legacy_arch)
 
@@ -122,6 +124,7 @@ def test_registry__retrieve_architecture_new_module() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
+        multi_gpu_supported=True,
     )
     PIPELINE_REGISTRY.register(legacy_arch)
 
@@ -138,6 +141,7 @@ def test_registry__retrieve_architecture_new_module() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
+        multi_gpu_supported=True,
     )
     PIPELINE_REGISTRY.register(new_arch)
 
@@ -179,6 +183,7 @@ def test_config__use_legacy_module_default_is_true() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
+        multi_gpu_supported=True,
     )
     PIPELINE_REGISTRY.register(legacy_arch)
 
@@ -212,6 +217,7 @@ def test_config__use_legacy_module_can_be_set_to_false() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
+        multi_gpu_supported=True,
     )
     PIPELINE_REGISTRY.register(new_arch)
 

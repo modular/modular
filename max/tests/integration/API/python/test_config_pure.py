@@ -257,7 +257,7 @@ class TestPipelineConfigUtilityMethods:
         kv_cache_kwargs: dict[str, Any] = {}
 
         config._create_and_set_config(
-            "_sampling", SamplingConfig, matched_kwargs, kv_cache_kwargs
+            "sampling", SamplingConfig, matched_kwargs, kv_cache_kwargs
         )
 
         # Should create and set the config
@@ -274,7 +274,7 @@ class TestPipelineConfigUtilityMethods:
         kv_cache_kwargs: dict[str, Any] = {"kv_cache_page_size": 256}
 
         config._create_and_set_config(
-            "_model", MAXModelConfig, matched_kwargs, kv_cache_kwargs
+            "model", MAXModelConfig, matched_kwargs, kv_cache_kwargs
         )
 
         # Should create model config with KV cache config
@@ -291,7 +291,7 @@ class TestPipelineConfigUtilityMethods:
         kv_cache_kwargs: dict[str, Any] = {}
 
         config._create_and_set_config(
-            "_sampling", SamplingConfig, matched_kwargs, kv_cache_kwargs
+            "sampling", SamplingConfig, matched_kwargs, kv_cache_kwargs
         )
 
         # Should create sampling config with variable logits enabled
@@ -417,6 +417,7 @@ def test_config_post_init__with_weight_path_but_no_model_path() -> None:
                 "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
             )
         ],
+        use_legacy_module=False,
     )
 
     assert config.model.model_path == "modularai/Llama-3.1-8B-Instruct-GGUF"
@@ -436,6 +437,7 @@ def test_config_post_init__other_repo_weights(
                 "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
             )
         ],
+        use_legacy_module=False,
     )
 
     assert (
@@ -457,6 +459,7 @@ def test_config_init__reformats_with_str_weights_path(
                 "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
             )
         ],
+        use_legacy_module=False,
     )
 
     assert isinstance(config.model.weight_path, list)
@@ -473,6 +476,7 @@ def test_validate_model_path__correct_repo_id_provided(
     config = PipelineConfig(
         model_path=modular_ai_llama_3_1_local_path,
         quantization_encoding=SupportedEncoding.bfloat16,
+        use_legacy_module=False,
     )
 
     assert config.model.model_path == modular_ai_llama_3_1_local_path
@@ -480,6 +484,7 @@ def test_validate_model_path__correct_repo_id_provided(
 
 @prepare_registry
 @mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_config__test_incompatible_quantization_encoding(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -497,6 +502,7 @@ def test_config__test_incompatible_quantization_encoding(
             ],
             max_batch_size=1,
             max_length=1,
+            use_legacy_module=False,
         )
 
     # This should not raise, as float32 == f32.
@@ -511,11 +517,13 @@ def test_config__test_incompatible_quantization_encoding(
         max_batch_size=1,
         max_length=1,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+        use_legacy_module=False,
     )
 
 
 @prepare_registry
 @mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_config__test_quantization_encoding_with_dtype_casting(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -530,6 +538,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
             quantization_encoding=SupportedEncoding.float32,
             max_batch_size=1,
             max_length=1,
+            use_legacy_module=False,
         )
 
     # This should pass, because the flag also supports casting bfloat16 weights
@@ -540,6 +549,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
         max_batch_size=1,
         max_length=1,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+        use_legacy_module=False,
     )
 
     # This should not raise, as allow_safetensors_weights_fp32_bf6_bidirectional_cast is set to True,
@@ -550,6 +560,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
         max_batch_size=1,
         max_length=1,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+        use_legacy_module=False,
     )
 
     # Test that quantization_encoding is required when allow_safetensors_weights_fp32_bf6_bidirectional_cast is True.
@@ -561,6 +572,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
             model_path="test/model",
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             # Note: quantization_encoding is not provided, which should cause the error
+            use_legacy_module=False,
         )
 
 
@@ -579,6 +591,7 @@ def test_config__test_retrieve_factory_with_known_architecture(
         quantization_encoding=SupportedEncoding.bfloat16,
         max_batch_size=1,
         max_length=1,
+        use_legacy_module=False,
     )
 
     _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
@@ -599,6 +612,7 @@ def test_config__test_retrieve_factory_with_unsupported_model_path(
             model_path=gemma_3_1b_it_local_path,
             max_batch_size=1,
             max_length=1,
+            use_legacy_module=False,
         )
 
 
@@ -623,6 +637,7 @@ def test_config_is_picklable(
     config = PipelineConfig(
         model_path=modular_ai_llama_3_1_local_path,
         quantization_encoding=SupportedEncoding.bfloat16,
+        use_legacy_module=False,
     )
 
     config.model._huggingface_config = None
@@ -652,6 +667,7 @@ def test_config__validates_supported_device(
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding=SupportedEncoding.float32,
         max_length=1,
+        use_legacy_module=False,
     )
 
     if accelerator_count() == 0:
@@ -661,6 +677,7 @@ def test_config__validates_supported_device(
                 device_specs=[DeviceSpec.accelerator()],
                 quantization_encoding=SupportedEncoding.float32,
                 max_length=1,
+                use_legacy_module=False,
             )
     else:
         _ = PipelineConfig(
@@ -668,6 +685,7 @@ def test_config__validates_supported_device(
             device_specs=[DeviceSpec.accelerator()],
             quantization_encoding=SupportedEncoding.bfloat16,
             max_length=1,
+            use_legacy_module=False,
         )
 
     with pytest.raises(
@@ -679,6 +697,7 @@ def test_config__validates_supported_device(
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.bfloat16,
             max_length=1,
+            use_legacy_module=False,
         )
 
 
@@ -697,6 +716,7 @@ def test_config__validates_lora_configuration(
         lora_paths=[llama_3_1_8b_lora_local_path],
         quantization_encoding=SupportedEncoding.bfloat16,
         enable_prefix_caching=False,  # Must be disabled for LoRA
+        use_legacy_module=False,
     )
     assert config.lora is not None
     assert config.lora.lora_paths[0] == llama_3_1_8b_lora_local_path
@@ -728,6 +748,7 @@ def test_config__validates_lora_only_supported_for_llama(
             lora_paths=["/some/lora/path"],
             enable_prefix_caching=False,
             quantization_encoding=SupportedEncoding.bfloat16,
+            use_legacy_module=False,
         )
 
 
@@ -748,6 +769,7 @@ def test_config__validates_lora_works_for_llama(
         quantization_encoding=SupportedEncoding.bfloat16,
         enable_prefix_caching=False,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+        use_legacy_module=False,
     )
 
     # Verify LoRA config was created successfully
@@ -777,6 +799,7 @@ def test_config__validates_lora_incompatible_with_prefix_caching(
             lora_paths=["/some/lora/path"],
             quantization_encoding=SupportedEncoding.bfloat16,
             enable_prefix_caching=True,  # This should conflict with LoRA
+            use_legacy_module=False,
         )
 
 
@@ -799,6 +822,7 @@ def test_config__validates_lora_single_device_only(
         max_length=1,
         quantization_encoding=SupportedEncoding.bfloat16,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+        use_legacy_module=False,
     )
     assert config.lora is not None
     assert config.lora.enable_lora is True
@@ -829,6 +853,7 @@ def test_config__validates_lora_fails_with_multiple_devices(
             max_length=1,
             quantization_encoding=SupportedEncoding.bfloat16,
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+            use_legacy_module=False,
         )
 
     config = PipelineConfig(
@@ -837,6 +862,7 @@ def test_config__validates_lora_fails_with_multiple_devices(
         max_length=1,
         quantization_encoding=SupportedEncoding.bfloat16,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+        use_legacy_module=False,
     )
     assert config.lora is None
 

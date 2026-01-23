@@ -107,7 +107,7 @@ TEST_COMMANDS = [
             "model": {
                 "model_path": "modularai/Llama-3.1-8B-Instruct-GGUF",
                 "trust_remote_code": False,
-                "kv_cache_config": {
+                "kv_cache": {
                     "cache_strategy": KVCacheStrategy.PAGED,
                 },
             },
@@ -124,7 +124,7 @@ TEST_COMMANDS = [
             "on",
         ],
         expected={
-            "profiling_config": {
+            "profiling": {
                 "gpu_profiling": GPUProfilingMode.ON,
             },
         },
@@ -140,7 +140,7 @@ TEST_COMMANDS = [
             "detailed",
         ],
         expected={
-            "profiling_config": {
+            "profiling": {
                 "gpu_profiling": GPUProfilingMode.DETAILED,
             },
         },
@@ -156,7 +156,7 @@ TEST_COMMANDS = [
             "invalid",
         ],
         expected={
-            "profiling_config": {
+            "profiling": {
                 "gpu_profiling": GPUProfilingMode.DETAILED,
             },
         },
@@ -270,8 +270,8 @@ def testing(idx: int, **config_kwargs) -> None:
                     assert hasattr(test_value, key)
                     nested_test_value = getattr(test_value, key)
 
-                    if key == "kv_cache_config":
-                        # Handle nested kv_cache_config
+                    if key == "kv_cache":
+                        # Handle nested kv_cache
                         for kv_key, kv_value in value.items():
                             assert hasattr(nested_test_value, kv_key)
                             kv_test_value = getattr(nested_test_value, kv_key)
@@ -296,8 +296,8 @@ def testing(idx: int, **config_kwargs) -> None:
                         assert hasattr(test_value, key)
                         nested_test_value = getattr(test_value, key)
 
-                        if key == "kv_cache_config":
-                            # Handle nested kv_cache_config
+                        if key == "kv_cache":
+                            # Handle nested kv_cache
                             for kv_key, kv_value in value.items():
                                 assert hasattr(nested_test_value, kv_key)
                                 kv_test_value = getattr(

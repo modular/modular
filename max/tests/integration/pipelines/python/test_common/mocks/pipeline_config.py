@@ -139,10 +139,13 @@ def mock_huggingface_config(func: Callable[_P, _R]) -> Callable[_P, _R]:
             # Create a mock config with the correct architectures based on model.
             mock_config = MagicMock()
 
-            # Map specific test models to their architectures
+            # Map model name patterns to their architectures.
+            # Uses substring matching to handle both direct repo IDs and
+            # local cache paths like /fake/cache/{repo_id}.
             model_architectures = {
                 "OpenGVLab/InternVL2-8B": ["InternVLChatModel"],
                 "modularai/Llama-3.1-8B-Instruct-GGUF": ["LlamaForCausalLM"],
+                "Llama-3.1-8B-Instruct": ["LlamaForCausalLM"],
                 "HuggingFaceTB/SmolLM-135M": ["LlamaForCausalLM"],
                 "trl-internal-testing/tiny-random-LlamaForCausalLM": [
                     "LlamaForCausalLM"
@@ -150,18 +153,16 @@ def mock_huggingface_config(func: Callable[_P, _R]) -> Callable[_P, _R]:
                 # Add other specific mappings as needed
             }
 
-            # Handle local paths that might be cache directories
-            if "Llama-3.1-8B-Instruct" in str(model_name_or_path):
-                mock_config.architectures = ["LlamaForCausalLM"]
-            else:
-                # Only return architectures for known test models, empty list for unknown ones
-                mock_config.architectures = model_architectures.get(
-                    str(model_name_or_path), []
-                )
+            path_str = str(model_name_or_path)
+            mock_config.architectures = []
+
+            # Use substring matching to handle cache paths like /fake/cache/{repo_id}
+            for model_pattern, architectures in model_architectures.items():
+                if model_pattern in path_str:
+                    mock_config.architectures = architectures
+                    break
 
             # Provide concrete numeric attributes expected by MAX model configs
-            repo_str = str(model_name_or_path)
-
             def _populate_llama_like_cfg(cfg: Any) -> None:
                 # Use small, consistent integers that satisfy head_dim divisibility
                 cfg.hidden_size = 4096
@@ -179,7 +180,7 @@ def mock_huggingface_config(func: Callable[_P, _R]) -> Callable[_P, _R]:
                 del cfg.head_dim
 
             if any(
-                x in repo_str
+                x in path_str
                 for x in [
                     "Llama-3.1-8B-Instruct",
                     "HuggingFaceTB/SmolLM-135M",
@@ -188,7 +189,7 @@ def mock_huggingface_config(func: Callable[_P, _R]) -> Callable[_P, _R]:
             ):
                 _populate_llama_like_cfg(mock_config)
 
-            if "OpenGVLab/InternVL2-8B" in repo_str:
+            if "OpenGVLab/InternVL2-8B" in path_str:
                 # For InternVL, we need both llm_config and vision_config
                 llm_cfg = MagicMock()
                 _populate_llama_like_cfg(llm_cfg)
@@ -220,12 +221,18 @@ def mock_huggingface_config(func: Callable[_P, _R]) -> Callable[_P, _R]:
 def mock_huggingface_hub_repo_exists_with_retry(
     func: Callable[_P, _R],
 ) -> Callable[_P, _R]:
+    def fake_generate_local_model_path(
+        repo_id: str, revision: str | None = None
+    ) -> str:
+        # Return a fake path that preserves the repo_id for identification
+        return f"/fake/cache/{repo_id}"
+
     @wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         with patch("huggingface_hub.revision_exists", return_value=True):
             with patch(
                 "max.pipelines.lib.hf_utils.generate_local_model_path",
-                return_value="/fake/cache/path",
+                side_effect=fake_generate_local_model_path,
             ):
                 return func(*args, **kwargs)
 
@@ -246,17 +253,25 @@ def mock_huggingface_hub_file_exists(
 def mock_generate_local_model_path(
     func: Callable[_P, _R],
 ) -> Callable[_P, _R]:
-    """Mock generate_local_model_path to return a fake path.
+    """Mock generate_local_model_path to return a fake path that preserves model identity.
 
     This allows tests to run with HF_HUB_OFFLINE=1 without requiring
-    models to be in the local cache.
+    models to be in the local cache. The returned path includes the repo_id
+    so that downstream mocks (like mock_huggingface_config) can still identify
+    which model is being requested.
     """
+
+    def fake_generate_local_model_path(
+        repo_id: str, revision: str | None = None
+    ) -> str:
+        # Return a fake path that preserves the repo_id for identification
+        return f"/fake/cache/{repo_id}"
 
     @wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         with patch(
             "max.pipelines.lib.hf_utils.generate_local_model_path",
-            return_value="/fake/cache/path",
+            side_effect=fake_generate_local_model_path,
         ):
             return func(*args, **kwargs)
 

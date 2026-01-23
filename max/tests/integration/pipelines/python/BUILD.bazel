@@ -195,24 +195,23 @@ modular_py_test(
     srcs = ["test_pipelines_cli.py"],
     data = [
         "//max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
+        "//max/tests/integration/pipelines/python/test_common/test_llama",
     ],
     env = {
         "PIPELINES_CUSTOM_ARCHITECTURE": "max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
+        "TEST_LLAMA_REPO": (
+            "max/tests/integration/pipelines/python/test_common/test_llama"
+        ),
     },
     tags = [
-        "manual",  # TODO(SERVOPT-900)
         "no-sandbox",
-        "requires-network",
-        "run-in-hf-workflow",  # TODO(SERVOPT-900)
     ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        ":hf_repo_lock",
         "//max/python/max/entrypoints:pipelines",
-        "//max/python/max/pipelines/lib",
     ],
 )
 
