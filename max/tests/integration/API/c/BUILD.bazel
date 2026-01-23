@@ -1,0 +1,226 @@
+load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test", "requirement")
+load(":mef.bzl", "mef")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+mef(
+    name = "vector_add",
+    src = "gen_vector_add_mef.py",
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+mef(
+    name = "vector_add_gpu",
+    src = "gen_vector_add_mef_gpu.py",
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+mef(
+    name = "mutable_buffer",
+    src = "gen_mutable_buffer_mef.py",
+    deps = [
+        requirement("click"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+mef(
+    name = "static_dimensions",
+    src = "gen_symbolic_dimension_mefs.py",
+    args = ["static-dimensions"],
+    deps = [
+        requirement("click"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+mef(
+    name = "symbolic_dimensions",
+    src = "gen_symbolic_dimension_mefs.py",
+    args = ["symbolic-dimensions"],
+    deps = [
+        requirement("click"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+mef(
+    name = "same_symbolic_input",
+    src = "gen_symbolic_dimension_mefs.py",
+    args = ["same-symbolic"],
+    deps = [
+        requirement("click"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+mef(
+    name = "algebraic_dimensions",
+    src = "gen_symbolic_dimension_mefs.py",
+    args = ["algebraic-dimensions"],
+    deps = [
+        requirement("click"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+mef(
+    name = "debug_print",
+    src = "gen_debug_print_mef.py",
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+modular_cc_test(
+    name = "CTest",
+    srcs = ["CTest.c"],
+    copts = ["-Werror"],  # Force any C specific warnings to be errors
+    deps = [
+        "//max:CAPI.headers",
+        "//max/internal:max",
+    ],
+)
+
+modular_cc_test(
+    name = "CompileTest",
+    srcs = ["CompileTest.cpp"],
+    tags = ["manual"],
+    deps = [
+        ":Utils",
+    ],
+)
+
+modular_cc_test(
+    name = "MEFTest",
+    srcs = ["MEFTest.cpp"],
+    data = [":vector_add.mef"],
+    env = {
+        "TEST_MEF_PATH": "$(rootpath :vector_add.mef)",
+    },
+    deps = [
+        ":Utils",
+    ],
+)
+
+modular_cc_test(
+    name = "TensorTest",
+    srcs = ["TensorTest.cpp"],
+    deps = [
+        ":Utils",
+    ],
+)
+
+modular_cc_test(
+    name = "DeviceTest",
+    srcs = ["DeviceTest.cpp"],
+    deps = [
+        ":Utils",
+    ],
+)
+
+modular_cc_test(
+    name = "DeviceGPUTest",
+    srcs = ["DeviceGPUTest.cpp"],
+    data = [":vector_add_gpu.mef"],
+    env = {
+        "TEST_MEF_PATH": "$(rootpath :vector_add_gpu.mef)",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":Utils",
+    ],
+)
+
+modular_cc_test(
+    name = "BufferTest",
+    srcs = ["BufferTest.cpp"],
+    data = [
+        ":mutable_buffer.mef",
+        ":vector_add.mef",
+    ],
+    env = {
+        "MUTATE_MEF_PATH": "$(rootpath :mutable_buffer.mef)",
+        "VECTOR_ADD_MEF_PATH": "$(rootpath :vector_add.mef)",
+    },
+    deps = [
+        ":Utils",
+    ],
+)
+
+modular_cc_test(
+    name = "SymbolicDimensionTest",
+    srcs = ["SymbolicDimensionTest.cpp"],
+    data = [
+        ":algebraic_dimensions.mef",
+        ":same_symbolic_input.mef",
+        ":static_dimensions.mef",
+        ":symbolic_dimensions.mef",
+    ],
+    env = {
+        "STATIC_MEF_PATH": "$(rootpath :static_dimensions.mef)",
+        "SYMBOLIC_MEF_PATH": "$(rootpath :symbolic_dimensions.mef)",
+        "SAME_SYMBOLIC_MEF_PATH": "$(rootpath :same_symbolic_input.mef)",
+        "ALGEBRAIC_MEF_PATH": "$(rootpath :algebraic_dimensions.mef)",
+    },
+    deps = [
+        ":Utils",
+    ],
+)
+
+modular_cc_test(
+    name = "DebugPrintTest",
+    srcs = ["DebugPrintTest.cpp"],
+    data = [":debug_print.mef"],
+    env = {"DEBUG_PRINT_MEF_PATH": "$(rootpath :debug_print.mef)"},
+    deps = [
+        ":Utils",
+    ],
+)
+
+modular_cc_library(
+    name = "Utils",
+    testonly = True,
+    hdrs = ["Utils.h"],
+    deps = [
+        "//max:CAPI.headers",
+        "//max/internal:max",
+        "@llvm-project//third-party/unittest:gmock",
+        "@llvm-project//third-party/unittest:gtest",
+    ],
+)
