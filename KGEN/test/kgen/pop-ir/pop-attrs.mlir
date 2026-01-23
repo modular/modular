@@ -107,3 +107,66 @@ kgen.func @union_constants() {
 
 // CHECK: f0 = #pop.simd_shr<#kgen.unknown : !pop.simd<4, si32>, #pop<simd 1> : !pop.simd<4, si32>> : !pop.simd<4, si32>
 "simd_shr.attr"() { f0 = #pop.simd_shr<#kgen.unknown : !pop.simd<4, si32>, #pop<simd 1> : !pop.simd<4, si32>> } : () -> ()
+
+// CHECK:      a0 = #pop<simd 0>
+// CHECK-SAME: a1 = #pop<simd 1>
+// CHECK-SAME: a2 = #pop<simd 0>
+// CHECK-SAME: a3 = #pop<simd 1>
+// CHECK-SAME: a4 = #pop<simd -1>
+// CHECK-SAME: a5 = #pop<simd 4294967295>
+// CHECK-SAME: a6 = #pop<simd -1>
+// CHECK-SAME: a7 = #pop<simd 255>
+// CHECK-SAME: a8 = #pop<simd -1>
+// CHECK-SAME: a9 = #pop<simd 65535>
+
+// CHECK-SAME: b0 = #pop<simd -1>
+// CHECK-SAME: b1 = #pop<simd 18446744073709551615>
+
+// CHECK-SAME: c0 = #pop<simd -1>
+// CHECK-SAME: c1 = #pop<simd 255>
+// CHECK-SAME: c2 = #pop<simd true>
+// CHECK-SAME: c3 = #pop<simd true>
+// CHECK-SAME: c4 = #pop<simd true>
+// CHECK-SAME: c5 = #pop<simd false>
+
+// CHECK-SAME: d0 = #pop<simd "1">
+// CHECK-SAME: d1 = #pop<simd "1">
+
+// CHECK-SAME: e0 = #pop<simd 255>
+
+// CHECK-SAME: z6 = #pop<simd -1>
+// CHECK-SAME: z7 = #pop<simd 18446744073709551615>
+// CHECK-SAME: z8 = #pop<simd -1>
+// CHECK-SAME: z9 = #pop<simd 340282366920938463463374607431768211455>
+"literal_converts"() {
+    a0 = #pop.int_literal_convert<0> : !pop.scalar<si32>,
+    a1 = #pop.int_literal_convert<1> : !pop.scalar<si32>,
+    a2 = #pop.int_literal_convert<0> : !pop.scalar<ui32>,
+    a3 = #pop.int_literal_convert<1> : !pop.scalar<ui32>,
+    a4 = #pop.int_literal_convert<-1> : !pop.scalar<si32>,
+    a5 = #pop.int_literal_convert<-1> : !pop.scalar<ui32>,
+    a6 = #pop.int_literal_convert<-1> : !pop.scalar<si8>,
+    a7 = #pop.int_literal_convert<-1> : !pop.scalar<ui8>,
+    a8 = #pop.int_literal_convert<-1> : !pop.scalar<si16>,
+    a9 = #pop.int_literal_convert<-1> : !pop.scalar<ui16>,
+
+    b0 = #pop.int_literal_convert<-1> : !pop.scalar<si64>,
+    b1 = #pop.int_literal_convert<-1> : !pop.scalar<ui64>,
+
+    c0 = #pop.int_literal_convert<65535> : !pop.scalar<si8>,
+    c1 = #pop.int_literal_convert<65535> : !pop.scalar<ui8>,
+    c2 = #pop.int_literal_convert<65535> : !pop.scalar<bool>,
+    c3 = #pop.int_literal_convert<65534> : !pop.scalar<bool>,
+    c4 = #pop.int_literal_convert<1> : !pop.scalar<bool>,
+    c5 = #pop.int_literal_convert<0> : !pop.scalar<bool>,
+
+    d0 = #pop.int_literal_convert<1> : !pop.scalar<f32>,
+    d1 = #pop.int_literal_convert<1> : !pop.scalar<f64>,
+
+    e0 = #pop.int_literal_convert<-1> : !pop.simd<4, ui8>,
+
+    z6 = #pop.int_literal_convert<-1> : !pop.scalar<index>,
+    z7 = #pop.int_literal_convert<-1> : !pop.scalar<uindex>,
+    z8 = #pop.int_literal_convert<-1> : !pop.scalar<si128>,
+    z9 = #pop.int_literal_convert<-1> : !pop.scalar<ui128>
+} : () -> ()

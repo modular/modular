@@ -501,14 +501,10 @@ fn pop_unresolved_simd_cmp_sge[
 
 @always_inline("builtin")
 fn var_decls[dtype: DType](value: IntLiteral) -> Scalar[dtype]._mlir_type:
-    # Convert the IntLiteral to si32
-    var si32_ = __mlir_attr[
-        `#pop<int_literal_convert<`, value.value, `, 0>> : si32`
+    # Convert the IntLiteral to !pop.simd<si32>
+    var si32 = __mlir_attr[
+        `#pop.int_literal_convert<`, value.value, `> : !pop.scalar<si32>`
     ]
-    # Convert si32 to !pop.simd<si32>
-    var si32 = __mlir_op.`pop.cast_from_builtin`[
-        _type = __mlir_type.`!pop.scalar<si32>`
-    ](si32_)
     # Convert !pop.simd<si32> to !pop.simd<X>
     var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](si32)
     # Convert !pop.simd<X> to !pop.simd<ui8>

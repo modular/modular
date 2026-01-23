@@ -183,31 +183,27 @@ def POP_IntLiteralAttr : POP_ExprAttr<"IntLiteral", "int_literal"> {
 //===----------------------------------------------------------------------===//
 
 def POP_IntLiteralConvertAttr : POP_ExprAttr<"IntLiteralConvert",
-                                         "int_literal_convert", [
+                                             "int_literal_convert", [
     DeclareAttrInterfaceMethods<ParameterAttrInterface,
                                 ["validateForElaborator"]>]> {
   let summary = "Convert an integer literal to a different type.";
   let description = [{
     The `#pop.int_literal_convert` attribute is used to convert an integer
-    literal to a different type.
+    literal to a different SIMD type.
   }];
 
   let parameters = (ins
-    AttributeSelfTypeParameter<"", "Type">:$type,
-    "TypedAttr":$input,
-    "bool":$treatIndexAsUnsigned
+    AttributeSelfTypeParameter<"", "Type">:$type, "TypedAttr":$input
   );
 
   let assemblyFormat = [{
-    `<` custom<ParamValue>($input, "IntLiteralType::get($_ctxt)")
-    `,` $treatIndexAsUnsigned `>`
+    `<` custom<ParamValue>($input, "IntLiteralType::get($_ctxt)") `>`
   }];
 
   let skipDefaultBuilders = 1;
   let builders = [
     // Override default builder so we can return a folded attribute.
-    AttrBuilder<(ins "Type":$type, "TypedAttr":$input,
-                     "bool":$treatIndexAsUnsigned), "", "TypedAttr">,
+    AttrBuilder<(ins "Type":$type, "TypedAttr":$input), "", "TypedAttr">,
   ];
 }
 
