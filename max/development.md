@@ -38,8 +38,9 @@ To build and test your changes to the MAX framework, run the following
 `./bazelw` commands from the top-level directory of the repository (where the
 `bazel` folder is located).
 
-Be sure that you meet the
-[system requirements](https://docs.modular.com/max/packages/install#system-requirements).
+MAX supports both CPUs and GPUs. Be sure that you meet the
+[system requirements](https://docs.modular.com/max/packages/install#system-requirements)
+specific to your environment.
 
 If you're developing on macOS, you need Xcode 16.0 or later and macOS 15.0 or
 later. You may need to run `xcodebuild -downloadComponent MetalToolchain`, which
