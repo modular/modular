@@ -142,10 +142,9 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     tokens: Buffer
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: list[Buffer]
+    input_row_offsets: Buffer
     """Tensor containing the offsets for each row in the ragged input sequence,
-    or the attention mask for the padded input sequence. For distributed execution,
-    this can be a list of tensors, one per device."""
+    or the attention mask for the padded input sequence"""
 
     pixel_values: list[Buffer] | None = None
     """Raw pixel values for vision inputs: [batch, channels, height, width]."""
@@ -416,13 +415,14 @@ class Gemma3_MultiModalModelV3(
         # Extract KV cache inputs
         # kv_cache = self._unflatten_kv_inputs(variadic_args)
 
+        # grabbing the first device only for single-GPU approach
         compiled_language_model = language_model.compile(
             tokens,
             return_n_logits,
-            input_row_offsets[0],
+            input_row_offsets,
             # kv_cache[0],
-            image_embeddings[0],
-            image_token_indices[0],
+            image_embeddings,
+            image_token_indices,
             weights=state_dict,
         )
         timer.done()
@@ -466,7 +466,7 @@ class Gemma3_MultiModalModelV3(
         image_embeddings = vision_model(pixel_values)
 
         compiled_vision_model = vision_model.compile(
-            pixel_values[0],
+            pixel_values,
             image_embeddings,
             weights=state_dict,
         )
