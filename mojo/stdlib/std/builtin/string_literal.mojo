@@ -531,11 +531,11 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         return String(self).upper()
 
-    fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal right justified in a string of specified width.
 
         Pads the string literal on the left with the specified fill character so
-        that the total length of the resulting string equals `width`. If the
+        that the total byte length of the resulting string equals `width`. If the
         original string literal is already longer than or equal to `width`,
         returns the string literal unchanged (as a `String`).
 
@@ -547,7 +547,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
                 a single-byte character.
 
         Returns:
-            A right-justified string of length `width`, or the original string
+            A right-justified string of byte length `width`, or the original string
             literal (as a `String`) if its length is already greater than or
             equal to `width`.
 
@@ -555,18 +555,18 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         ```mojo
         var s = "hello"
-        print(s.rjust(10))        # "     hello"
-        print(s.rjust(10, "*"))   # "*****hello"
-        print(s.rjust(3))         # "hello" (no padding)
+        print(s.ascii_rjust(10))        # "     hello"
+        print(s.ascii_rjust(10, "*"))   # "*****hello"
+        print(s.ascii_rjust(3))         # "hello" (no padding)
         ```
         """
-        return String(self).rjust(width, fillchar)
+        return String(self).ascii_rjust(width, fillchar)
 
-    fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal left justified in a string of specified width.
 
         Pads the string literal on the right with the specified fill character so
-        that the total length of the resulting string equals `width`. If the
+        that the total byte length of the resulting string equals `width`. If the
         original string literal is already longer than or equal to `width`,
         returns the string literal unchanged (as a `String`).
 
@@ -578,7 +578,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
                 a single-byte character.
 
         Returns:
-            A left-justified string of length `width`, or the original string
+            A left-justified string of (byte) length `width`, or the original string
             literal (as a `String`) if its length is already greater than or
             equal to `width`.
 
@@ -586,12 +586,12 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         ```mojo
         var s = "hello"
-        print(s.ljust(10))        # "hello     "
-        print(s.ljust(10, "*"))   # "hello*****"
-        print(s.ljust(3))         # "hello" (no padding)
+        print(s.ascii_ljust(10))        # "hello     "
+        print(s.ascii_ljust(10, "*"))   # "hello*****"
+        print(s.ascii_ljust(3))         # "hello" (no padding)
         ```
         """
-        return String(self).ljust(width, fillchar)
+        return String(self).ascii_ljust(width, fillchar)
 
     fn center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal center justified in a string of specified width.

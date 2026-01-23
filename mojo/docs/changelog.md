@@ -25,6 +25,10 @@ what we publish.
 
 ### Library changes
 
+- `String.ljust` and `String.rjust` have been renamed to
+  `String.ascii_ljust` and `String.ascii_rjust`. Likewise for their
+  equivalents on `StringSlice` and `StaticString`
+  
 - `String.resize` will now panic if the new length would truncate a codepoint.
   Previously it would result in a string with invalid UTF-8.
 

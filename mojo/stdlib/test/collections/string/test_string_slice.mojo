@@ -917,16 +917,16 @@ def test_is_ascii_printable():
     assert_false(StringSlice("aa\tae").is_ascii_printable())
 
 
-def test_rjust():
-    assert_equal(StringSlice("hello").rjust(4), "hello")
-    assert_equal(StringSlice("hello").rjust(8), "   hello")
-    assert_equal(StringSlice("hello").rjust(8, "*"), "***hello")
+def test_ascii_rjust():
+    assert_equal(StringSlice("hello").ascii_rjust(4), "hello")
+    assert_equal(StringSlice("hello").ascii_rjust(8), "   hello")
+    assert_equal(StringSlice("hello").ascii_rjust(8, "*"), "***hello")
 
 
-def test_ljust():
-    assert_equal(StringSlice("hello").ljust(4), "hello")
-    assert_equal(StringSlice("hello").ljust(8), "hello   ")
-    assert_equal(StringSlice("hello").ljust(8, "*"), "hello***")
+def test_ascii_ljust():
+    assert_equal(StringSlice("hello").ascii_ljust(4), "hello")
+    assert_equal(StringSlice("hello").ascii_ljust(8), "hello   ")
+    assert_equal(StringSlice("hello").ascii_ljust(8, "*"), "hello***")
 
 
 def test_center():

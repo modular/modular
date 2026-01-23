@@ -2015,11 +2015,11 @@ struct String(
         """
         return self.as_string_slice().is_ascii_printable()
 
-    fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string right justified in a string of specified width.
 
         Pads the string on the left with the specified fill character so that
-        the total length of the resulting string equals `width`. If the original
+        the total (byte) length of the resulting string equals `width`. If the original
         string is already longer than or equal to `width`, returns the original
         string unchanged.
 
@@ -2031,7 +2031,7 @@ struct String(
                 a single-byte character.
 
         Returns:
-            A right-justified string of length `width`, or the original string
+            A right-justified string of (byte) length `width`, or the original string
             if its length is already greater than or equal to `width`.
 
         Examples:
@@ -2043,13 +2043,13 @@ struct String(
         print(s.rjust(3))         # "hello" (no padding)
         ```
         """
-        return self.as_string_slice().rjust(width, fillchar)
+        return self.as_string_slice().ascii_rjust(width, fillchar)
 
-    fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string left justified in a string of specified width.
 
         Pads the string on the right with the specified fill character so that
-        the total length of the resulting string equals `width`. If the original
+        the total (byte) length of the resulting string equals `width`. If the original
         string is already longer than or equal to `width`, returns the original
         string unchanged.
 
@@ -2061,7 +2061,7 @@ struct String(
                 a single-byte character.
 
         Returns:
-            A left-justified string of length `width`, or the original string
+            A left-justified string of (byte) length `width`, or the original string
             if its length is already greater than or equal to `width`.
 
         Examples:
@@ -2073,7 +2073,7 @@ struct String(
         print(s.ljust(3))         # "hello" (no padding)
         ```
         """
-        return self.as_string_slice().ljust(width, fillchar)
+        return self.as_string_slice().ascii_ljust(width, fillchar)
 
     fn center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string center justified in a string of specified width.
