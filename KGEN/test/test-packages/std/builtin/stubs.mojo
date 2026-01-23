@@ -355,7 +355,9 @@ struct Int(Intable, Stringable, TrivialRegisterType):
     @implicit
     fn __init__(out self, value: IntLiteral[_]):
         self._mlir_value = __mlir_attr[
-            `#pop<int_literal_convert<`, +value.value, `, 0>> : index`
+            `#pop.cast_to_builtin<#pop.int_literal_convert<`,
+            +value.value,
+            `> : !pop.scalar<index>> : index`,
         ]
 
     @always_inline("builtin")

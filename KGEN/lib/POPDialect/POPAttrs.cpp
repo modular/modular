@@ -620,67 +620,63 @@ FloatLiteralAttr FloatLiteralAttr::get(MLIRContext *context, IPRational value) {
 // IntLiteralConvertAttr
 //===----------------------------------------------------------------------===//
 
-static ErrorOr<IntegerAttr> foldIntLiteralConvert(TypedAttr input, Type outType,
-                                                  bool treatIndexAsUnsigned) {
+static ErrorOr<TypedAttr> foldIntLiteralConvert(TypedAttr input, Type outType) {
   auto literal = ::dyn_cast<IntLiteralAttr>(input);
   if (!literal)
     return Error("input must be IntLiteralAttr");
 
-  const IPInt &invalIP = literal.getValue();
-  const APInt &invalAP = invalIP.getAPInt();
-  unsigned outWidth = 64;
-  bool isUnsigned = treatIndexAsUnsigned;
-  if (!outType.isIndex()) {
-    outWidth = outType.getIntOrFloatBitWidth();
-    isUnsigned = outType.isUnsignedInteger();
-  }
-  if (invalIP < 0 && isUnsigned) {
-    std::string msg;
-    llvm::raw_string_ostream msgStream(msg);
-    msgStream << "integer value " << invalIP
-              << " is negative, but is being converted to an unsigned type";
-    return Error(msgStream.str());
-  }
-  uint64_t effectiveInputWidth = invalAP.getBitWidth();
-  // Positive IPInts are stored with an extra leading zero.  If converting to an
-  // unsigned type, we can strip the leading zero.
-  if (isUnsigned)
-    effectiveInputWidth -= 1;
-  if (effectiveInputWidth > outWidth) {
-    std::string msg;
-    llvm::raw_string_ostream msgStream(msg);
-    msgStream << "integer value " << invalIP << " requires "
-              << effectiveInputWidth
-              << " bits to store, but the destination bit width is only "
-              << outWidth << " bits wide";
-    return Error(msgStream.str());
-  }
+  const IPInt &inputIP = literal.getValue();
+  const APInt &inputAP = inputIP.getAPInt();
 
-  APInt result;
-  if (isUnsigned)
-    result = invalAP.zextOrTrunc(outWidth);
-  else
-    result = invalAP.sextOrTrunc(outWidth);
-  return IntegerAttr::get(outType, result);
+  std::optional<KGEN::KGENDType> outDType;
+  SIMDType outSIMDTy = dyn_cast<SIMDType>(outType);
+  if (outSIMDTy)
+    outDType = outSIMDTy.getResolvedDType();
+  if (!outDType)
+    return Error("Must have resolved DType");
+
+  DTypeValue value = [&]() {
+    if (outDType->isBool())
+      return DTypeValue(!inputAP.isZero(), *outDType);
+
+    // Floating-point conversions
+    if (!outDType->isIntLike()) {
+      APFloat outFPVal(*outDType->getFloatSemantics());
+      outFPVal.convertFromAPInt(inputAP, /*IsSigned=*/true,
+                                APFloat::rmNearestTiesToEven);
+      return DTypeValue(outFPVal, *outDType);
+    }
+
+    // Note - we always sign-extend the input here to the right width to satisfy
+    // DTypeValue. DTypeValue is the one that re-interprets the bits as unsigned
+    // if the output DType type is unsigned.
+    int outWidth = outDType->getWidthInBits();
+    // Target-specific types return a width of -1. For now, assume the largest
+    // target-specific type we support: 64. If we end up truncating down to 32
+    // bits later, that's okay as we haven't lost any information.
+    return DTypeValue(inputAP.sextOrTrunc(outWidth < 0 ? 64 : outWidth),
+                      *outDType);
+  }();
+
+  auto scalarOut = SIMDAttr::get(value, SIMDType::get(1, outSIMDTy.getDType()));
+  return SIMDSplatAttr::get(scalarOut, outSIMDTy);
 }
 
 TypedAttr IntLiteralConvertAttr::get(MLIRContext *ctx, Type type,
-                                     TypedAttr input,
-                                     bool treatIndexAsUnsigned) {
+                                     TypedAttr input) {
   // If this is a literal constant coming in, we can fold this.  If not, stage
   // it until elaboration or something else simplifies things.
-  auto result = foldIntLiteralConvert(input, type, treatIndexAsUnsigned);
+  auto result = foldIntLiteralConvert(input, type);
   if (!result.isError())
     return result.get();
 
-  return Base::get(ctx, type, input, treatIndexAsUnsigned);
+  return Base::get(ctx, type, input);
 }
 
 bool IntLiteralConvertAttr::isConstant() const { return false; }
 
 ErrorOrSuccess IntLiteralConvertAttr::validateForElaborator() const {
-  auto result =
-      foldIntLiteralConvert(getInput(), getType(), getTreatIndexAsUnsigned());
+  auto result = foldIntLiteralConvert(getInput(), getType());
   assert(result.isError() && "Should be folded if present");
   return result.takeError();
 }

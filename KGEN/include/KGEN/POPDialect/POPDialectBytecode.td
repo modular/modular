@@ -91,8 +91,7 @@ def IntLiteralAttr : DialectAttribute<(attr
 
 def IntLiteralConvertAttr : DialectAttribute<(attr
   Type:$type,
-  TypedAttr:$input,
-  ConcreteAttribute<"UnitAttr">:$treatIndexAsUnsigned
+  TypedAttr:$input
 )>;
 
 def IntLiteralBinOpAttr : DialectAttribute<(attr
