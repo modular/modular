@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.dtype import DType
 from max import functional as F
-from max.tensor import Tensor
+from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn import Conv2d, GroupNorm, Module
+from max.tensor import Tensor
 
 
 class ResnetBlock2D(Module[[Tensor], Tensor]):

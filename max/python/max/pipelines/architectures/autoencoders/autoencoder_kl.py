@@ -14,10 +14,10 @@
 from typing import ClassVar
 
 from max.driver import Device
-from max.tensor import Tensor
 from max.graph.weights import Weights
 from max.nn import Module
 from max.pipelines.lib import SupportedEncoding
+from max.tensor import Tensor
 
 from .model import BaseAutoencoderModel
 from .model_config import AutoencoderKLConfig

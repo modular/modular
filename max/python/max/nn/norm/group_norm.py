@@ -15,9 +15,9 @@
 
 from __future__ import annotations
 
+from .... import functional as F
 from ....driver import CPU
 from ....dtype import DType
-from .... import functional as F
 from ....tensor import Tensor
 from ..module import Module
 

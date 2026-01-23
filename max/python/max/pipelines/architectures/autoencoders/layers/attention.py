@@ -13,11 +13,11 @@
 
 import math
 
-from max.dtype import DType
 from max import functional as F
-from max.tensor import Tensor
+from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn import GroupNorm, Linear, Module, ModuleList
+from max.tensor import Tensor
 
 
 class VAEAttention(Module[[Tensor], Tensor]):

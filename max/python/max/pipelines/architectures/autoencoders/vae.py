@@ -13,11 +13,11 @@
 
 from dataclasses import dataclass
 
-from max.dtype import DType
 from max import functional as F
-from max.tensor import Tensor
+from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.nn import Conv2d, GroupNorm, Module, ModuleList
+from max.tensor import Tensor
 
 from .layers import ResnetBlock2D, Upsample2D, VAEAttention
 

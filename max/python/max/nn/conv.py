@@ -16,13 +16,13 @@ from __future__ import annotations
 
 from typing import Literal
 
-from ...driver import Accelerator, accelerator_api
-from ...dtype import DType
 from ... import functional as F
 from ... import random
-from ...tensor import Tensor
+from ...driver import Accelerator, accelerator_api
+from ...dtype import DType
 from ...graph import DeviceRef
 from ...graph.type import FilterLayout
+from ...tensor import Tensor
 from .module import Module
 
 
