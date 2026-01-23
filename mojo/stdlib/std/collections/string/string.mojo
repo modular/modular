@@ -889,29 +889,39 @@ struct String(
     fn __getitem__[
         I: Indexer, //
     ](self, *, byte: I) -> StringSlice[origin_of(self)]:
-        """Gets the character at the specified position.
+        """Gets a single byte at the specified byte index.
+
+        This performs byte-level indexing, not character (codepoint) indexing.
+        For strings containing multi-byte UTF-8 characters, this may return a
+        partial or invalid character sequence. For proper character access, use
+        `codepoint_slices()` or iterate over the string directly.
 
         Parameters:
             I: A type that can be used as an index.
 
         Args:
-            byte: The byte index.
+            byte: The byte index (0-based). Negative indices count from the end.
 
         Returns:
-            A StringSlice view containing the character at the specified position.
+            A StringSlice containing a single byte at the specified position.
         """
         # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
         var normalized_idx = normalize_index["String"](byte, len(self))
         return StringSlice(ptr=self.unsafe_ptr() + normalized_idx, length=1)
 
     fn __getitem__(self, span: ContiguousSlice) -> StringSlice[origin_of(self)]:
-        """Gets the sequence of characters at the specified positions.
+        """Gets a substring at the specified byte positions.
+
+        This performs byte-level slicing, not character (codepoint) slicing.
+        The start and end positions are byte indices. For strings containing
+        multi-byte UTF-8 characters, slicing at arbitrary byte positions may
+        produce invalid UTF-8 sequences.
 
         Args:
-            span: A slice that specifies positions of the new substring.
+            span: A slice that specifies byte positions of the new substring.
 
         Returns:
-            A new string containing the string at the specified positions.
+            A StringSlice containing the bytes in the specified range.
         """
         var start: Int
         var end: Int
@@ -2356,6 +2366,13 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     https://docs.python.org/3/reference/lexical_analysis.html#integers).
 
     This function is in the prelude, so you don't need to import it.
+
+    Notes:
+        This function only accepts ASCII digits (0-9 and a-z/A-Z for bases
+        greater than 10). Unicode digit characters are not supported. Leading
+        and trailing whitespace is trimmed, but only ASCII/POSIX whitespace
+        characters are recognized (space, tab, newline, etc.). Unicode
+        whitespace characters will cause a parsing error.
 
     Args:
         str_slice: A string to be parsed as an integer in the given base.

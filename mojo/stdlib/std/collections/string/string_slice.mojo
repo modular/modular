@@ -901,13 +901,18 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
     @always_inline
     fn __getitem__(self, span: ContiguousSlice) -> Self:
-        """Gets the sequence of characters at the specified positions.
+        """Gets a substring at the specified byte positions.
+
+        This performs byte-level slicing, not character (codepoint) slicing.
+        The start and end positions are byte indices. For strings containing
+        multi-byte UTF-8 characters, slicing at arbitrary byte positions may
+        produce invalid UTF-8 sequences.
 
         Args:
-            span: A slice that specifies positions of the new substring.
+            span: A slice that specifies byte positions of the new substring.
 
         Returns:
-            A new StringSlice containing the substring at the specified positions.
+            A new StringSlice containing the bytes in the specified range.
         """
         return Self(unsafe_from_utf8=self._slice[span])
 
@@ -1139,16 +1144,21 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return CodepointSliceIter[Self.origin, forward=False](self)
 
     fn __getitem__[I: Indexer, //](self, *, byte: I) -> String:
-        """Gets the character at the specified position.
+        """Gets a single byte at the specified byte index.
+
+        This performs byte-level indexing, not character (codepoint) indexing.
+        For strings containing multi-byte UTF-8 characters, this may return a
+        partial or invalid character sequence. For proper character access, use
+        `codepoint_slices()` or iterate over the string directly.
 
         Parameters:
             I: A type that can be used as an index.
 
         Args:
-            byte: The index value.
+            byte: The byte index (0-based). Negative indices count from the end.
 
         Returns:
-            A new string containing the character at the specified position.
+            A new String containing a single byte at the specified position.
         """
         # TODO(#933): implement this for unicode when we support llvm intrinsic
         # evaluation at compile time
