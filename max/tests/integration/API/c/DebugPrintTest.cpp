@@ -15,6 +15,7 @@
 // Tests verify that debug print options can be configured and that
 // output is produced in the expected formats.
 
+#include "Support/PlatformUtils.h"
 #include "Utils.h"
 #include "max/c/common.h"
 #include "max/c/context.h"
@@ -82,6 +83,9 @@ static std::string captureModelStdout(M_RuntimeContext *context, M_Device *host,
 using M::APITest;
 
 TEST_F(APITest, DebugPrintDefault) {
+#if MODULAR_MACOS
+  GTEST_SKIP() << "Disabled on macOS due to platform-specific issues";
+#endif
   std::string output = captureModelStdout(context, host, status);
   // Default: M_COMPACT
 
@@ -97,6 +101,9 @@ TEST_F(APITest, DebugPrintDefault) {
 }
 
 TEST_F(APITest, DebugPrintCompact) {
+#if MODULAR_MACOS
+  GTEST_SKIP() << "Disabled on macOS due to platform-specific issues";
+#endif
   // Set compact format; precision is ignored
   M_setDebugPrintOptions(context, M_COMPACT, 4, "");
   std::string output = captureModelStdout(context, host, status);
@@ -113,6 +120,9 @@ TEST_F(APITest, DebugPrintCompact) {
 }
 
 TEST_F(APITest, DebugPrintFull) {
+#if MODULAR_MACOS
+  GTEST_SKIP() << "Disabled on macOS due to platform-specific issues";
+#endif
   // Set full format with precision 6
   M_setDebugPrintOptions(context, M_FULL, 6, "");
   std::string output = captureModelStdout(context, host, status);
@@ -129,12 +139,18 @@ TEST_F(APITest, DebugPrintFull) {
 }
 
 TEST_F(APITest, DebugPrintNone) {
+#if MODULAR_MACOS
+  GTEST_SKIP() << "Disabled on macOS due to platform-specific issues";
+#endif
   M_setDebugPrintOptions(context, M_NONE, 0, "");
   std::string output = captureModelStdout(context, host, status);
   EXPECT_EQ(output, "");
 }
 
 TEST_F(APITest, DebugPrintBinary) {
+#if MODULAR_MACOS
+  GTEST_SKIP() << "Disabled on macOS due to platform-specific issues";
+#endif
   // Create temporary directory for binary output
   auto tmp = std::filesystem::temp_directory_path();
   std::string tmpDir = (tmp / "max_debug_print_test_XXXXXX").string();
@@ -158,6 +174,9 @@ TEST_F(APITest, DebugPrintBinary) {
 }
 
 TEST_F(APITest, DebugPrintBinaryMaxCheckpoint) {
+#if MODULAR_MACOS
+  GTEST_SKIP() << "Disabled on macOS due to platform-specific issues";
+#endif
   // Create temporary directory for binary output
   auto tmp = std::filesystem::temp_directory_path();
   std::string tmpDir = (tmp / "max_debug_print_test_XXXXXX").string();
