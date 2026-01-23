@@ -700,19 +700,12 @@ struct SIMD[dtype: DType, size: Int](
             value: The input value.
         """
         _simd_construction_checks[Self.dtype, Self.size]()
-        var si128_ = __mlir_attr[
-            `#pop<int_literal_convert<`, value.value, `, 0>> : si128`
+        self._mlir_value = __mlir_attr[
+            `#pop.int_literal_convert<`,
+            value.value,
+            `> : `,
+            Self._mlir_type,
         ]
-        var si128 = __mlir_op.`pop.cast_from_builtin`[
-            _type = __mlir_type.`!pop.scalar<si128>`
-        ](si128_)
-        var s = __mlir_op.`pop.cast`[_type = Scalar[Self.dtype]._mlir_type](
-            si128
-        )
-
-        self._mlir_value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
-            s
-        )
 
     @always_inline("nodebug")
     @implicit
