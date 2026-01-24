@@ -24,12 +24,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
-from max.nn.kv_cache.data_parallelism_utils import (
+from max.nn.legacy.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.legacy.kv_cache.data_parallelism_utils import (
     split_input_row_offsets,
     split_into_groups,
 )
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
 from .tp_cache_manager import _TPPagedKVCacheManager
@@ -51,7 +51,9 @@ class PagedKVCacheManager:
         kv_manager.alloc(ctx2, num_steps=10)
 
         # Get KVCache inputs to feed to graph
-        kv_cache_inputs = kv_manager.get_runtime_inputs([ctx1, ctx2], num_steps=10)
+        kv_cache_inputs = kv_manager.get_runtime_inputs(
+            [[ctx1, ctx2]], num_steps=10
+        )
 
         # Run model...
         # Update requests with newly generated tokens
@@ -130,38 +132,6 @@ class PagedKVCacheManager:
             self._create_ragged_increment_cache_lengths_graph()
         )
 
-    def get_replica(self, request_id: RequestID) -> int:
-        return self._request_to_replica_idx[request_id]
-
-    def get_or_recommend_replica(self, context: TextGenerationContext) -> int:
-        """Return idx of the replica that should be used for the given request."""
-        if context.request_id in self._request_to_replica_idx:
-            return self._request_to_replica_idx[context.request_id]
-
-        # Choose the replica with the fewest requests.
-        replica_idx = min(
-            range(len(self._request_count_per_replica)),
-            key=self._request_count_per_replica.__getitem__,
-        )
-        return replica_idx
-
-    def get_replica_request_count(self, replica_idx: int) -> int:
-        """Get the number of active requests for a replica.
-
-        This count includes all requests that have been claimed but not yet released.
-        Used by schedulers to implement load-based replica assignment.
-
-        Args:
-            replica_idx: The replica index to query (0 to num_replicas-1)
-
-        Returns:
-            Number of active requests on the specified replica
-
-        Raises:
-            IndexError: If replica_idx is out of range
-        """
-        return self._request_count_per_replica[replica_idx]
-
     def get_pct_used_blocks_after_allocation(
         self, ctx: TextGenerationContext, num_steps: int = 1
     ) -> float:
@@ -206,28 +176,26 @@ class PagedKVCacheManager:
         return self._replica_managers[replica_idx].alloc(data, num_steps)
 
     def get_runtime_inputs(
-        self, batch: Sequence[TextGenerationContext], num_steps: int = 1
+        self,
+        batches: Sequence[Sequence[TextGenerationContext]],
+        num_steps: int = 1,
     ) -> list[RaggedKVCacheInputs]:
-        """Get the graph inputs for a batch of requests.
+        """Get the graph inputs for per-replica batches of requests.
 
         This method will raise a RuntimeError if any request has insufficient blocks
         already allocated to it to run for the given number of steps.
 
         Args:
-            batch: Batch of requests
+            batches: Per-replica batches of requests
             num_steps: Number of steps to run for
         """
-
-        batch_by_replica: list[list[TextGenerationContext]] = [
-            [] for _ in range(len(self.devices_per_replica))
-        ]
-
-        for ctx in batch:
-            replica_idx = self._request_to_replica_idx[ctx.request_id]
-            batch_by_replica[replica_idx].append(ctx)
-
+        if len(batches) != self.num_replicas:
+            raise ValueError(
+                "Expected per-replica batches to match data parallel degree. "
+                f"Got {len(batches)} batches for {self.num_replicas} replicas."
+            )
         ret_list: list[RaggedKVCacheInputs] = []
-        for replica_idx, ctxs in enumerate(batch_by_replica):
+        for replica_idx, ctxs in enumerate(batches):
             ret_list.extend(
                 self._replica_managers[replica_idx].get_runtime_inputs(
                     ctxs, num_steps

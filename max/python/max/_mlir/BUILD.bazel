@@ -14,10 +14,7 @@ modular_py_library(
         ":ir_py",
         "//max/python/max/_mlir/dialects",
     ],
-    data = select({
-        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
-        "//conditions:default": [],
-    }),
+    data = ["//max:MOGGKernelAPI"],
     tags = [
         "no-mypy",  # Upstream files with violations
         "no-pydeps",  # Works internally but not externally

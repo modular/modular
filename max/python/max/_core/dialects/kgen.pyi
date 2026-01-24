@@ -565,6 +565,30 @@ class GeneratorAttr(max._core.Attribute):
     @property
     def metadata(self) -> GeneratorMetadataAttrInterface: ...
 
+class GetBaseTypeNameAttr(max._core.Attribute):
+    """
+    The `#kgen.get_base_type_name` attribute extracts the unqualified name of
+    the base (unparameterized) type from a parameterized type. For example,
+    given `List[Int]`, it returns the string `"List"`. For non-parameterized
+    types, it returns the type's simple name.
+
+    This is useful for reflection-based code that needs to identify the base
+    type of parameterized types.
+
+    Example:
+
+    ```mlir
+    #kgen.get_base_type_name<#List[Int]> : !kgen.string
+    // Returns "List"
+    ```
+    """
+
+    def __init__(
+        self, type_value: max._core.dialects.builtin.TypedAttr
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class GetLinkageNameAttr(max._core.Attribute):
     """
     The `#kgen.get_linkage_name` attribute is used to get the linkage name of
@@ -1224,6 +1248,67 @@ class StructFieldNamesAttr(max._core.Attribute):
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def type(self) -> VariadicType: ...
+
+class StructFieldOffsetByIndexAttr(max._core.Attribute):
+    """
+    The `#kgen.struct_field_offset_by_index` attribute returns the byte offset
+    of a field in a struct type given the field index. Produces a compile error
+    if the field index is out of bounds.
+
+    The offset is computed using the target's data layout to determine field
+    sizes and alignment requirements.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_offset_by_index<#MyStruct, 0 : index, #target> : index
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        field_index: max._core.dialects.builtin.TypedAttr,
+        target: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def field_index(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def target(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class StructFieldOffsetByNameAttr(max._core.Attribute):
+    """
+    The `#kgen.struct_field_offset_by_name` attribute returns the byte offset
+    of a field in a struct type given the field name. Produces a compile error
+    if the field name does not exist in the struct.
+
+    The fieldName parameter should resolve to a StringAttr (kgen.string) after
+    parameter evaluation.
+
+    The offset is computed using the target's data layout to determine field
+    sizes and alignment requirements.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_field_offset_by_name<#MyStruct, "x", #target> : index
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        field_name: max._core.dialects.builtin.TypedAttr,
+        target: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def field_name(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def target(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class StructFieldTypeByNameAttr(max._core.Attribute):
     """
@@ -2404,6 +2489,12 @@ class ConformanceOp(max._core.Operation):
     - The `immediateParents` parameter contains the conformance tables that this
       conformance table directly inherits from. It only includes the first level
       of parents, not any further ancestors.
+    - The `constraint` parameter specifies the condition under which this
+      conformance applies. This is used for conditional trait conformance,
+      where a struct only conforms to a trait when certain conditions are met.
+      Unconditional conformances use a trivially true constraint (proposition =
+      constant 1) and are not printed with a `where` clause. Note: the builder
+      canonicalizes null constraints to the trivially true constraint.
 
     Logically, a ConformanceOp represents a witness table whose contents is a
     concatenation of each parent ConformanceOp's conformance table followed by
@@ -2422,8 +2513,30 @@ class ConformanceOp(max._core.Operation):
       ...
     }
     ```
+
+    Example with conditional conformance:
+
+    ```mlir
+    kgen.struct.generator @List<T: type> = ... {
+      kgen.conformance @Copyable where #kgen.constraint<conforms_to(T, Copyable), loc> {
+        ...
+      }
+      ...
+    }
+    ```
     """
 
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        sym_name: max._core.dialects.builtin.StringAttr,
+        trait_ref: max._core.dialects.builtin.SymbolRefAttr,
+        immediate_parents: max._core.dialects.m.SymbolRefArrayAttr,
+        constraint: ConstraintAttr,
+    ) -> None: ...
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
@@ -2452,6 +2565,10 @@ class ConformanceOp(max._core.Operation):
     def immediate_parents(
         self, arg: max._core.dialects.m.SymbolRefArrayAttr, /
     ) -> None: ...
+    @property
+    def constraint(self) -> ConstraintAttr: ...
+    @constraint.setter
+    def constraint(self, arg: ConstraintAttr, /) -> None: ...
 
 class CostOfOp(max._core.Operation):
     """
@@ -4540,6 +4657,10 @@ class StructType(max._core.Type):
     strips away all information except for those necessary for understanding the
     memory layout of the data it describes.
 
+    The element types are stored as a `TypedAttr` which can be either:
+    - A concrete `VariadicAttr` with resolved types
+    - A parametric expression (e.g., a variadic parameter reference) before elaboration
+
     Example:
 
     ```mlir
@@ -4561,26 +4682,35 @@ class StructType(max._core.Type):
 
     // A struct with parameterized element types.
     !kgen.struct<(type, array<size, scalar<dtype>>)>
+
+    // A struct parameterized on a variadic sequence of element types.
+    kgen.generator @example<Ts: variadic<!kgen.type>>(
+      %0: !kgen.struct<(Ts)>,
+    ) { kgen.return }
     ```
     """
 
     @overload
-    def __init__(self, types: Sequence[max._core.Type]) -> None: ...
-    @overload
-    def __init__(self, types: Sequence[max._core.Type]) -> None: ...
+    def __init__(
+        self,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        is_memory_only: bool = False,
+    ) -> None: ...
     @overload
     def __init__(
-        self, types: Sequence[max._core.Type], is_memory_only: bool
+        self, types: Sequence[max._core.Type], is_memory_only: bool = False
     ) -> None: ...
     @overload
     def __init__(
         self,
-        element_types: Sequence[max._core.Type],
-        is_memory_only: bool,
-        min_alignment: max._core.dialects.builtin.TypedAttr,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        is_memory_only: bool = False,
+        min_alignment: max._core.dialects.builtin.TypedAttr = ...,
     ) -> None: ...
     @property
-    def element_types(self) -> Sequence[max._core.Type]: ...
+    def element_types_variadic(
+        self,
+    ) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def is_memory_only(self) -> bool: ...
     @property

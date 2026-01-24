@@ -120,7 +120,7 @@ def layout_tensor_tile_example():
     comptime tiler_layout = Layout.row_major(rows, columns)
     comptime tiled_layout = blocked_product(tile_layout, tiler_layout)
     var storage = InlineArray[Float32, tiled_layout.size()](uninitialized=True)
-    for i in range(tiled_layout.size()):
+    for i in range(comptime (tiled_layout.size())):
         storage[i] = i
     var tensor = LayoutTensor[DType.float32, tiled_layout](storage)
     var tile = tensor.tile[32, 32](0, 1)
@@ -150,12 +150,13 @@ def layout_tensor_iterator_example():
         storage.unsafe_ptr(), buf_size
     )
 
-    for i in range(ceildiv(buf_size, tile_layout.size())):
+    for i in range(ceildiv(buf_size, comptime (tile_layout.size()))):
         var tile = iter[]
         # ... do something with tile
         iter += 1
         # end-layout-tensor-iterator-example-1
-        assert_equal(tile[0, 0][0], i * tile_layout.size())
+        comptime tile_size = tile_layout.size()
+        assert_equal(tile[0, 0][0], i * tile_size)
 
 
 def layout_tensor_iterator_example2():

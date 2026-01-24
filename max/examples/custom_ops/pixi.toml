@@ -20,8 +20,6 @@ test = { depends-on = [
   "addition",
   "mandelbrot",
   "vector_addition",
-  "top_k",
-  "fused_attention",
   "matrix_multiplication",
   "benchmark",
   "image_pipeline",

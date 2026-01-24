@@ -434,19 +434,6 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return Int(mlir_value=self.__mlir_index__())
 
     @always_inline("builtin")
-    fn __uint__(self) -> UInt:
-        """Convert from IntLiteral to UInt.
-
-        Returns:
-            The value as an unsigned integer of platform-specific width.
-        """
-        return UInt(
-            mlir_value=__mlir_attr[
-                `#pop<int_literal_convert<`, self.value, `, 1>> : index`
-            ]
-        )
-
-    @always_inline("builtin")
     fn __ceil__(self) -> Self:
         """Return the ceiling of the IntLiteral value, which is itself.
 
@@ -509,5 +496,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
             The corresponding __mlir_type.index value, interpreting as signed.
         """
         return __mlir_attr[
-            `#pop<int_literal_convert<`, self.value, `, 0>> : index`
+            `#pop.cast_to_builtin<#pop.int_literal_convert<`,
+            self.value,
+            `> : !pop.scalar<index>> : index`,
         ]

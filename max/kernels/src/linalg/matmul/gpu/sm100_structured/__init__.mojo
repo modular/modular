@@ -10,6 +10,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides the Nvidia Blackwell backend implementations for matmuls as Structured Kernels."""
-
-from .matmul import blackwell_matmul_tma_umma_warp_specialized
+"""SM100 Structured Kernels - Blackwell matmul implementation."""

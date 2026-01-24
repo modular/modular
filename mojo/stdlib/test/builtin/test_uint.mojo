@@ -32,15 +32,6 @@ def test_simple_uint():
     assert_equal(String(UInt(18446744073709551615)), "18446744073709551615")
 
 
-def test_uint_representation():
-    assert_equal(repr(UInt(32)), "UInt(32)")
-
-    assert_equal(repr(UInt(0)), "UInt(0)")
-    assert_equal(repr(UInt()), "UInt(0)")
-
-    assert_equal(repr(UInt(18446744073709551615)), "UInt(18446744073709551615)")
-
-
 def test_equality():
     assert_equal(UInt(32), UInt(32))
     assert_equal(UInt(0), UInt(0))
@@ -117,12 +108,13 @@ def test_sub():
     assert_equal(UInt.__sub__(UInt(4), UInt(5)), UInt(Int(-1)))
 
 
-def test_div():
-    var n = UInt(5)
-    var d = UInt(2)
-    assert_equal(2.5, UInt.__truediv__(n, d))
-    UInt.__itruediv__(n, d)
-    assert_equal(UInt(2), n)
+# TODO(MSTDL-2195): decide about what __truediv__ should return.
+# def test_div():
+#     var n = UInt(5)
+#     var d = UInt(2)
+#     assert_equal(2.5, UInt.__truediv__(n, d))
+#     UInt.__itruediv__(n, d)
+#     assert_equal(UInt(2), n)
 
 
 def test_pow():
@@ -147,10 +139,10 @@ def test_round():
     assert_equal(UInt.__round__(UInt(5)), UInt(5))
     assert_equal(UInt.__round__(UInt(0)), UInt(0))
     assert_equal(UInt.__round__(UInt(Int(-5))), UInt(Int(-5)))
-    assert_equal(UInt.__round__(UInt(5), UInt(1)), UInt(5))
-    assert_equal(UInt.__round__(UInt(0), UInt(1)), UInt(0))
-    assert_equal(UInt.__round__(UInt(Int(-5)), UInt(1)), UInt(Int(-5)))
-    assert_equal(UInt.__round__(UInt(100), UInt(Int(-2))), UInt(100))
+    assert_equal(UInt.__round__(UInt(5), 1), UInt(5))
+    assert_equal(UInt.__round__(UInt(0), 1), UInt(0))
+    assert_equal(UInt.__round__(UInt(Int(-5)), 1), UInt(Int(-5)))
+    assert_equal(UInt.__round__(UInt(100), -2), UInt(100))
 
 
 def test_trunc():
@@ -206,12 +198,16 @@ def test_string_conversion():
     assert_equal(UInt(Int(-100)).__str__(), "18446744073709551516")
 
 
-def test_int_representation():
-    assert_equal(UInt(3).__repr__(), "UInt(3)")
-    assert_equal(UInt(Int(-3)).__repr__(), "UInt(18446744073709551613)")
-    assert_equal(UInt(0).__repr__(), "UInt(0)")
-    assert_equal(UInt(100).__repr__(), "UInt(100)")
-    assert_equal(UInt(Int(-100)).__repr__(), "UInt(18446744073709551516)")
+def test_uint_representation():
+    assert_equal(UInt(3).__repr__(), "SIMD[DType.uint, 1](3)")
+    assert_equal(
+        UInt(Int(-3)).__repr__(), "SIMD[DType.uint, 1](18446744073709551613)"
+    )
+    assert_equal(UInt(0).__repr__(), "SIMD[DType.uint, 1](0)")
+    assert_equal(UInt(100).__repr__(), "SIMD[DType.uint, 1](100)")
+    assert_equal(
+        UInt(Int(-100)).__repr__(), "SIMD[DType.uint, 1](18446744073709551516)"
+    )
 
 
 def test_indexer():

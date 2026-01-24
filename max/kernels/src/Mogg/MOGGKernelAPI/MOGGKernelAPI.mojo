@@ -126,7 +126,7 @@ from nn.flash_attention import flash_attention_split_kv
 from nn.fold import fold, fold_shape
 from nn.gather_scatter import (
     Axis,
-    ScatterNegativeIndexStrategy,
+    ScatterOobIndexStrategy,
     _unsafe_normalize_neg_index,
     gather,
     gather_nd,
@@ -227,6 +227,7 @@ from nn.slice import (
     slice_shape,
     sliced_add,
 )
+from nn.shard_and_stack import shard_and_stack
 from nn.softmax import logsoftmax, softmax
 from nn.split import split
 from nn.tile import tile, tile_shape
@@ -1113,7 +1114,7 @@ struct ScatterNDSkipNegIndices:
             output_type = output.dtype,
             indices_type = indices.dtype,
             single_thread_blocking_override=False,
-            negative_index_strategy = ScatterNegativeIndexStrategy.SKIP,
+            oob_index_strategy = ScatterOobIndexStrategy.SKIP,
             target=target,
             reduce_fn=None,
             _trace_description="scatter_nd.skip_neg_indices",
@@ -1304,7 +1305,7 @@ struct ScatterNDMax:
             output_type = output.dtype,
             indices_type = indices.dtype,
             single_thread_blocking_override=False,
-            negative_index_strategy = ScatterNegativeIndexStrategy.NORMALIZE,
+            oob_index_strategy = ScatterOobIndexStrategy.UNDEFINED,
             target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.max",
@@ -4406,6 +4407,22 @@ fn concat_shape_impl[
     var output_shape = inputs[0].shape()
     output_shape[axis] = concat_axis_dim_sum
     return output_shape
+
+
+@compiler.register("mo.shard_and_stack")
+struct ShardWeights:
+    @staticmethod
+    fn execute[
+        axis: Int,
+    ](
+        outputs: OutputVariadicTensors,
+        inputs: InputVariadicTensors[
+            dtype = outputs.dtype,
+            rank = outputs.rank - 1,
+        ],
+        dev_ctxs_input: DeviceContextPtrList,
+    ) raises:
+        shard_and_stack[axis](outputs, inputs, dev_ctxs_input)
 
 
 @compiler.register("mo.concat")
@@ -7647,11 +7664,11 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
             transpose_b=True,
             target=target,
         ](
-            managed_tensor_slice_to_ndbuffer(c),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(a_scales),
-            managed_tensor_slice_to_ndbuffer(b_scales),
+            c.to_layout_tensor(),
+            a.to_layout_tensor(),
+            b.to_layout_tensor(),
+            a_scales.to_layout_tensor(),
+            b_scales.to_layout_tensor(),
             cuda_ctx,
         )
 

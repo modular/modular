@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
@@ -23,9 +23,10 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import MistralModel
+from .model_config import MistralConfig
 
 mistral_arch = SupportedArchitecture(
-    name="MistralForCausalLM",
+    name="MistralForCausalLM_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["mistralai/Mistral-Nemo-Instruct-2407"],
     default_encoding=SupportedEncoding.bfloat16,
@@ -38,4 +39,5 @@ mistral_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    config=MistralConfig,
 )

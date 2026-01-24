@@ -40,7 +40,7 @@ from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from linalg.matmul.gpu.sm100.config import MatmulConfig
+from .config import MatmulConfig
 from .tile_scheduler_splitk import (
     get_required_locks_buffer_size_bytes,
     get_num_tiles,
@@ -127,7 +127,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     comptime K = a_layout.shape[1].value()
 
     __comptime_assert (
-        ceildiv(K, BK) % Int(config.k_group_size) == 0
+        ceildiv(K, BK) % config.k_group_size == 0
     ), "K iterations must be a multiple of k_group_size"
 
     a_tma_op = create_tensor_tile[
@@ -202,8 +202,8 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     comptime kernel = matmul_kernel.run
 
     var grid_dim = (
-        align_up(ceildiv(M_maybe_swapped, BM), Int(cluster_shape[0])),
-        align_up(ceildiv(N_maybe_swapped, MMA_N), Int(cluster_shape[1])),
+        align_up(ceildiv(M_maybe_swapped, BM), cluster_shape[0]),
+        align_up(ceildiv(N_maybe_swapped, MMA_N), cluster_shape[1]),
         1,
     )
 
@@ -424,7 +424,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     comptime K = a_layout.shape[1].value()
 
     __comptime_assert (
-        ceildiv(K, BK) % Int(config.k_group_size) == 0
+        ceildiv(K, BK) % config.k_group_size == 0
     ), "K iterations must be a multiple of k_group_size"
 
     __comptime_assert (
@@ -502,8 +502,8 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     comptime kernel = matmul_kernel.run_splitk[reduction_layout]
 
     var grid_dim = (
-        align_up(ceildiv(M_maybe_swapped, BM), Int(cluster_shape[0])),
-        align_up(ceildiv(N_maybe_swapped, MMA_N), Int(cluster_shape[1])),
+        align_up(ceildiv(M_maybe_swapped, BM), cluster_shape[0]),
+        align_up(ceildiv(N_maybe_swapped, MMA_N), cluster_shape[1]),
         config.num_split_k,
     )
 
@@ -665,6 +665,6 @@ fn matmul_sm100_fallback[
         UInt(ceildiv(K, BK)),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )

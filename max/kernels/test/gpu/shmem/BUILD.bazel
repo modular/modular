@@ -19,6 +19,8 @@ lit_tests(
             "LD_LIBRARY_PATH": "../+http_archive+rocshmem/lib",
             "OPAL_PREFIX": "../+http_archive+rocshmem",
             "ROCSHMEM_MPIRUN": "../+http_archive+rocshmem/bin/mpirun",
+            # 8GB symmetric heap for large buffer tests
+            "ROCSHMEM_HEAP_SIZE": "8589934592",
         },
         "//conditions:default": {},
     }),

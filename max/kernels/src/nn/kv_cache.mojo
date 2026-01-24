@@ -17,7 +17,6 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import unswitch
-from buffer import DimList, NDBuffer
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
@@ -355,7 +354,9 @@ fn _fused_qkv_matmul_kv_cache_impl[
             return
 
         # Skip writing to cache for padded positions
-        var valid_len_for_batch = UInt(valid_lengths[Int(b_idx)])
+        var valid_len_for_batch_vec = valid_lengths[Int(b_idx)]
+        __comptime_assert valid_len_for_batch_vec.size == 1
+        var valid_len_for_batch = UInt(valid_len_for_batch_vec[0])
         if t_idx >= valid_len_for_batch:
             return
 
@@ -988,9 +989,9 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     @parameter
     if per_head_norm:
         shape[1] = Int(kv_params.num_heads)
-        shape[2] = Int(rms_norm_cols)
+        shape[2] = rms_norm_cols
     else:
-        shape[1] = Int(rms_norm_cols)
+        shape[1] = rms_norm_cols
 
     @always_inline
     @parameter
@@ -1153,9 +1154,9 @@ def rms_norm_kv_cache_ragged_paged[
     @parameter
     if per_head_norm:
         shape[1] = Int(kv_params.num_heads)
-        shape[2] = Int(rms_norm_cols)
+        shape[2] = rms_norm_cols
     else:
-        shape[1] = Int(rms_norm_cols)
+        shape[1] = rms_norm_cols
 
     @always_inline
     @parameter
@@ -1285,10 +1286,10 @@ def _print_cache[
                 ):
                     print(
                         cache.load[width=1](
-                            Int(b_idx),
+                            b_idx,
                             Int(h),
-                            Int(t_idx),
-                            Int(hd),
+                            t_idx,
+                            hd,
                         ),
                         end=", ",
                     )
@@ -1597,7 +1598,7 @@ fn _continuous_batch_kv_cache_collection[
     max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2]()],
     out result: ContinuousBatchingKVCacheCollection[dtype, kv_params],
 ):
-    # Marshal NDBuffers into arguments expected by the
+    # Marshal LayoutTensor into arguments expected by the
     # ContinuousKVCacheCollection constructor.
     return {
         blocks = blocks.as_any_origin(),

@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.float8_config
+.. automodule:: max.nn.legacy.float8_config
    :members:
    :undoc-members:

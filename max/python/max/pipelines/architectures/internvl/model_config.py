@@ -20,8 +20,8 @@ from typing import Literal
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import (
     Llama3Config as Qwen2Config,
 )
@@ -156,7 +156,7 @@ class InternVLConfig(MAXModelConfigBase):
         return {}
 
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -168,7 +168,7 @@ class InternVLConfig(MAXModelConfigBase):
             huggingface_config, "llm_config", huggingface_config
         )
         ConfigCls = _select_llm_config_class(llm_hf_cfg)
-        return ConfigCls.get_kv_params(
+        return ConfigCls.construct_kv_params(
             huggingface_config=llm_hf_cfg,
             pipeline_config=pipeline_config,
             devices=devices,
@@ -243,7 +243,7 @@ class InternVLConfig(MAXModelConfigBase):
             huggingface_config, "llm_config", huggingface_config
         )
         ConfigCls = _select_llm_config_class(hf_llm_config)
-
+        llm_config: Qwen2Config | Qwen3Config
         if ConfigCls is Qwen3Config:
             llm_config = Qwen3Config.generate(
                 pipeline_config=pipeline_config,
@@ -259,18 +259,16 @@ class InternVLConfig(MAXModelConfigBase):
             )
         elif ConfigCls is Qwen2Config:
             # Qwen2 semantics (delegates to Llama3-style config under the hood)
-            llm_config = Qwen2Config.generate(
-                pipeline_config=pipeline_config,
+            llm_config = Qwen2Config.initialize_from_config(
+                pipeline_config, hf_llm_config
+            )
+            llm_config.finalize(
                 huggingface_config=hf_llm_config,
                 state_dict=llm_state_dict,
-                dtype=dtype,
-                n_devices=n_devices,
-                cache_dtype=cache_dtype,
-                kv_cache_config=kv_cache_config,
-                return_logits=return_logits,
                 norm_method=norm_method,
                 attention_bias=True,  # Qwen2 uses attention bias
-            )  # type: ignore
+                return_logits=return_logits,
+            )
 
         return InternVLConfig(
             devices=[

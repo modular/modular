@@ -176,7 +176,7 @@ def test_num_conversion():
 
 def test_boolean_operations():
     # Test boolean conversion and context
-    var x: PythonObject = PythonObject(1)
+    var x: PythonObject = 1
     assert_true(x == 1)
     assert_false(x == 0)
     assert_true(x == 0 or x == 1)
@@ -280,7 +280,7 @@ fn test_iter() raises:
     for _ in list2:
         raise Error("This should not be reachable as the list is empty.")
 
-    var not_iterable = PythonObject(3)
+    var not_iterable: PythonObject = 3
     with assert_raises():
         for _ in not_iterable:
             assert_false(
@@ -309,8 +309,7 @@ fn test_iter() raises:
 fn test_setitem() raises:
     var ll: PythonObject = [1, 2, 3, "food"]
     assert_equal(String(py=ll), "[1, 2, 3, 'food']")
-    # TODO(MOCO-2851): This should work with the RHS being a string literal
-    ll[1] = PythonObject("nomnomnom")
+    ll[1] = "nomnomnom"
     assert_equal(String(py=ll), "[1, 'nomnomnom', 3, 'food']")
 
 
@@ -320,15 +319,10 @@ fn test_dict() raises:
     var dd = Python.dict(food=PythonObject(123), fries=PythonObject("yes"))
     assert_equal(String(py=dd), "{'food': 123, 'fries': 'yes'}")
 
-    # TODO(MOCO-2945): Heterogenous convertible kwargs should work
-    var dd2: PythonObject = {
-        PythonObject("food"): PythonObject(123),
-        PythonObject("fries"): PythonObject("yes"),
-    }
+    var dd2: PythonObject = {"food": 123, "fries": "yes"}
     assert_equal(String(py=dd2), "{'food': 123, 'fries': 'yes'}")
 
-    # TODO(MOCO-2851): This should work w/ keys and value being string literals
-    dd[PythonObject("food")] = PythonObject("salad")
+    dd["food"] = "salad"
     dd[42] = Python.list(4, 2)
     assert_equal(String(py=dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
 
@@ -481,23 +475,23 @@ def test_setitem_raises():
     with assert_raises(
         contains="'tuple' object does not support item assignment"
     ):
-        t[0] = PythonObject(0)
+        t[0] = 0
 
     lst = Python.evaluate("[1, 2, 3]")
     with assert_raises(contains="list assignment index out of range"):
-        lst[10] = PythonObject(4)
+        lst[10] = 4
 
     s = Python.evaluate('"hello"')
     with assert_raises(
         contains="'str' object does not support item assignment"
     ):
-        s[3] = PythonObject("xy")
+        s[3] = "xy"
 
     with_out = custom_indexable.Simple()
     with assert_raises(
         contains="'Simple' object does not support item assignment"
     ):
-        with_out[0] = PythonObject(0)
+        with_out[0] = 0
 
     d = Python.evaluate("{}")
     with assert_raises(contains="unhashable type: 'list'"):
@@ -696,8 +690,7 @@ def test_call_with_kwargs():
 
 def test_attribute_access():
     # Test __getattr__ and __setattr__
-    # TODO(MOCO-2945): Heterogenous convertible kwargs should work
-    var test_dict: PythonObject = {PythonObject("attr"): PythonObject("value")}
+    var test_dict: PythonObject = {"attr": "value"}
 
     # Test getting attributes that exist
     var attr_value = test_dict.__getattr__("get")

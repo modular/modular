@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -12,11 +12,13 @@ modular_py_test(
     size = "large",
     srcs = glob([
         "*.py",
+        "pixel_generation/*.py",
         "text_generation/*.py",
     ]),
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/interfaces",
         "//max/python/max/support",
+        requirement("msgspec"),
+        requirement("numpy"),
     ],
 )

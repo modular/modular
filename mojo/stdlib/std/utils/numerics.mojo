@@ -120,8 +120,7 @@ struct FPUtils[
         Returns:
             The sign mask.
         """
-        # convert to `Int` first to bypass overflow check
-        return 1 << Int(Self.exponent_width() + Self.mantissa_width())
+        return 1 << (Self.exponent_width() + Self.mantissa_width())
 
     @staticmethod
     @always_inline

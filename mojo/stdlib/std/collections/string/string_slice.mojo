@@ -454,7 +454,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
             # Advance the pointer in _slice.
             self._slice._slice._data += char_len
             # Decrement the byte-length of _slice.
-            self._slice._slice._len -= Int(char_len)
+            self._slice._slice._len -= char_len
 
         return result
 
@@ -901,13 +901,18 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
     @always_inline
     fn __getitem__(self, span: ContiguousSlice) -> Self:
-        """Gets the sequence of characters at the specified positions.
+        """Gets a substring at the specified byte positions.
+
+        This performs byte-level slicing, not character (codepoint) slicing.
+        The start and end positions are byte indices. For strings containing
+        multi-byte UTF-8 characters, slicing at arbitrary byte positions may
+        produce invalid UTF-8 sequences.
 
         Args:
-            span: A slice that specifies positions of the new substring.
+            span: A slice that specifies byte positions of the new substring.
 
         Returns:
-            A new StringSlice containing the substring at the specified positions.
+            A new StringSlice containing the bytes in the specified range.
         """
         return Self(unsafe_from_utf8=self._slice[span])
 
@@ -1139,16 +1144,21 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return CodepointSliceIter[Self.origin, forward=False](self)
 
     fn __getitem__[I: Indexer, //](self, *, byte: I) -> String:
-        """Gets the character at the specified position.
+        """Gets a single byte at the specified byte index.
+
+        This performs byte-level indexing, not character (codepoint) indexing.
+        For strings containing multi-byte UTF-8 characters, this may return a
+        partial or invalid character sequence. For proper character access, use
+        `codepoint_slices()` or iterate over the string directly.
 
         Parameters:
             I: A type that can be used as an index.
 
         Args:
-            byte: The index value.
+            byte: The byte index (0-based). Negative indices count from the end.
 
         Returns:
-            A new string containing the character at the specified position.
+            A new String containing a single byte at the specified position.
         """
         # TODO(#933): implement this for unicode when we support llvm intrinsic
         # evaluation at compile time
@@ -1345,10 +1355,25 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             res += codepoint
         return res^
 
+    fn _strip[forward: Bool](self, chars: StringSlice) -> Self:
+        var iter = CodepointSliceIter[forward=forward](self)
+        while True:
+            try:
+                var next_it = iter.copy()
+                var c = next_it.__next__()
+                if c not in chars:
+                    break
+                iter = next_it^
+            except:
+                break
+        return iter._slice
+
     @always_inline
     fn strip(self, chars: StringSlice) -> Self:
         """Return a copy of the string with leading and trailing characters
-        removed.
+        removed. Note character is defined as a single unicode code-point,
+        not any kind of displayed character, and strip can break apart
+        graphemes.
 
         Args:
             chars: A set of characters to be removed. Defaults to whitespace.
@@ -1399,11 +1424,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
 
-        var r_idx = self.byte_length()
-        while r_idx > 0 and self[byte = r_idx - 1] in chars:
-            r_idx -= 1
-
-        return Self(unsafe_from_utf8=self.as_bytes()[:r_idx])
+        return self._strip[forward=False](chars)
 
     @always_inline
     fn rstrip(self) -> Self:
@@ -1449,11 +1470,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
 
-        var l_idx = 0
-        while l_idx < self.byte_length() and self[byte=l_idx] in chars:
-            l_idx += 1
-
-        return Self(unsafe_from_utf8=self.as_bytes()[l_idx:])
+        return self._strip[forward=True](chars)
 
     @always_inline
     fn lstrip(self) -> Self:
@@ -2350,11 +2367,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 return False
         return True
 
-    fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string slice right justified in a string of specified width.
 
         Pads the string slice on the left with the specified fill character so
-        that the total length of the resulting string equals `width`. If the
+        that the total (byte) length of the resulting string equals `width`. If the
         original string slice is already longer than or equal to `width`,
         returns the string slice unchanged (as a `String`).
 
@@ -2366,7 +2383,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 a single-byte character.
 
         Returns:
-            A right-justified string of length `width`, or the original string
+            A right-justified string of (byte) length `width`, or the original string
             slice (as a `String`) if its length is already greater than or
             equal to `width`.
 
@@ -2374,18 +2391,18 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
         var s = StringSlice("hello")
-        print(s.rjust(10))        # "     hello"
-        print(s.rjust(10, "*"))   # "*****hello"
-        print(s.rjust(3))         # "hello" (no padding)
+        print(s.ascii_rjust(10))        # "     hello"
+        print(s.ascii_rjust(10, "*"))   # "*****hello"
+        print(s.ascii_rjust(3))         # "hello" (no padding)
         ```
         """
         return self._justify(width - len(self), width, fillchar)
 
-    fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string slice left justified in a string of specified width.
 
         Pads the string slice on the right with the specified fill character so
-        that the total length of the resulting string equals `width`. If the
+        that the total byte length of the resulting string equals `width`. If the
         original string slice is already longer than or equal to `width`,
         returns the string slice unchanged (as a `String`).
 
@@ -2397,7 +2414,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 a single-byte character.
 
         Returns:
-            A left-justified string of length `width`, or the original string
+            A left-justified string of (byte) length `width`, or the original string
             slice (as a `String`) if its length is already greater than or
             equal to `width`.
 
@@ -2405,9 +2422,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
         var s = StringSlice("hello")
-        print(s.ljust(10))        # "hello     "
-        print(s.ljust(10, "*"))   # "hello*****"
-        print(s.ljust(3))         # "hello" (no padding)
+        print(s.ascii_ljust(10))        # "hello     "
+        print(s.ascii_ljust(10, "*"))   # "hello*****"
+        print(s.ascii_ljust(3))         # "hello" (no padding)
         ```
         """
         return self._justify(0, width, fillchar)

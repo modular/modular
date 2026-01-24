@@ -270,7 +270,7 @@ fn select_k_atom[
         `Layout` - A core matrix layout optimized for tensor core operations.
     """
     comptime a = _select_k_atom_bits[swizzle_mode]()
-    return upcast(a, bit_width_of[dtype]())
+    return upcast(materialize[a](), bit_width_of[dtype]())
 
 
 fn _checked_tile_shape[
@@ -315,7 +315,7 @@ fn tile_layout_k_major[
     """
     comptime atom = select_k_atom[dtype, swizzle_mode]()
     comptime new_shape = _checked_tile_shape[dtype, swizzle_mode, BM, BK]()
-    return tile_to_shape(atom, new_shape)
+    return tile_to_shape(materialize[atom](), new_shape)
 
 
 fn tile_sf_layout_k_major[
@@ -352,7 +352,7 @@ fn tile_sf_layout_k_major[
         ],
         IntTuple(2, 1),
     )
-    return sf_layout
+    return materialize[sf_layout]()
 
 
 fn tile_to_descriptor[
@@ -379,10 +379,10 @@ fn tile_to_descriptor[
         # Tile a layout to ((8,m),(T,2)) shape to match the K-major wgmma descriptor
         comptime T = _CM_ROW_BYTES // size_of[dtype]()
         comptime tiler = MakeLayoutList(Layout(_CM_NUM_ROWS), Layout(T))
-        return logical_divide(layout, materialize[tiler]())
+        return logical_divide(materialize[layout](), materialize[tiler]())
     else:
         # We are not using atom layout for MN-major layouts.
-        return layout
+        return materialize[layout]()
 
 
 fn tile_layout_mn_major[
@@ -426,7 +426,7 @@ fn wgmma_c_thread_layout[C: Layout]() -> Layout:
     """
     return Layout(
         [4, 8, 4],
-        [C([0, 2]), C([1, 0]), C([16, 0])],
+        [comptime (C([0, 2])), comptime (C([1, 0])), comptime (C([16, 0]))],
     )
 
 
@@ -445,7 +445,7 @@ fn wgmma_output_layout[mma_n: Int, C: Layout]() -> Layout:
     """
     return Layout(
         [2, 2, mma_n // 8],
-        [C([0, 1]), C([8, 0]), C([0, 8])],
+        [comptime (C([0, 1])), comptime (C([8, 0])), comptime (C([0, 8]))],
     )
 
 
@@ -503,7 +503,11 @@ fn wgmma_c_layout[mma_m: Int, mma_n: Int, C: Layout]() -> List[Layout]:
     comptime TV_to_idx = make_layout(T_to_idx, V_to_idx)
     comptime tiler = Layout.col_major(num_m_mma, num_n_mma)
     comptime TV_tile_to_idx = logical_product(TV_to_idx, tiler)
-    return [proj_i, proj_j, TV_tile_to_idx]
+    return [
+        materialize[proj_i](),
+        materialize[proj_j](),
+        materialize[TV_tile_to_idx](),
+    ]
 
 
 fn st_matrix_n_atom[num_stmatrix: Int]() -> Layout:
@@ -525,7 +529,55 @@ fn st_matrix_n_atom[num_stmatrix: Int]() -> Layout:
     comptime C = Layout.row_major(64, 2 * num_stmatrix)
     return Layout(
         [16, 2, 4],
-        [C([1, 0]), C([0, 1]), C([16, 0])],
+        [comptime (C([1, 0])), comptime (C([0, 1])), comptime (C([16, 0]))],
+    )
+
+
+fn st_matrix_m_atom[num_stmatrix: Int, num_consumer: Int]() -> Layout:
+    """Creates a layout for M-major `st_matrix` atom in the context of WGMMA C
+    matrix.
+
+    The domain of this layout is the warp group local thread index. Thus, the
+    layout takes [0, 128) as input and returns an offset for a logical array
+    with an element size of 128-bit.
+
+    Assume num_consumer = 2, and num_stmatrix = 2 then a single atom for one warp would look like this
+    Each block contains the thread_idx, each thread idx will hold the address of the next 128-bit fragment.
+
+    |  0  |  8  |
+    |  1  |  9  |
+    |  2  | 10  |
+    | ... | ... |
+    |  7  | 15  |
+
+    | 16  | 24  |
+    | 17  | 25  |
+    | 18  | 26  |
+    | ... | ... |
+    | 23  | 31  |
+
+    All 4 warps in the warp group will then be laid out next to each other
+
+    |  w1  |  w2  | w3  | w4  |
+
+    Parameters:
+        num_stmatrix: Number of N-dimension tiles in the C matrix.
+        num_consumer: Number of consumers.
+
+    Returns:
+        `Layout` - A layout that maps warp group local thread index to an offset
+        for a logical array with an element size of 128-bit.
+    """
+    # C with the granularity of 128-bit per element
+    comptime C = Layout.row_major(2 * num_stmatrix, 8 * num_consumer)
+    return Layout(
+        [8, 2, 2, 4],
+        [
+            comptime (C([1, 0])),
+            comptime (C([0, 1])),
+            comptime (C([8, 0])),
+            comptime (C([0, 2])),
+        ],
     )
 
 
@@ -555,7 +607,38 @@ fn st_matrix_n_layout[
     comptime b128_layout = logical_product(
         atom, Layout.col_major(n_stmatrix, num_m_mmas, num_consumer)
     )
-    return downcast(b128_layout, 128 // (8 * size_of[c_type]()))
+    return downcast(materialize[b128_layout](), 128 // (8 * size_of[c_type]()))
+
+
+fn st_matrix_m_layout[
+    c_type: DType, WG_BM: Int, num_m_mmas: Int, num_consumer: Int
+]() -> Layout:
+    """Creates a layout for M-major `st_matrix` in the context of WGMMA C
+    matrix. This meant to be used with swapAB, since the C
+    matrix must be transposed during the write phase. This must also be used
+    in conjuction with st_matrix transposed modifier.
+
+    The M-dimension tiling size `WG_BM // 16`, the number of MMA tiles `num_m_mmas`
+    in the N-dimension, and the number of consumers `num_consumer`. The output is an
+    offset for a logical array with the element type `c_type`.
+
+    Parameters:
+        c_type: Data type of the C matrix.
+        WG_BM: Size of the K dimension in the C matrix in shared memory.
+        num_m_mmas: Number of MMA tiles in the M dimension.
+        num_consumer: Number of consumers.
+
+    Returns:
+        `Layout` - A layout that maps warp group local thread index to an offset
+        for a logical array with the element type `c_type`.
+    """
+    comptime n_stmatrix = WG_BM // 16
+    comptime atom = st_matrix_m_atom[n_stmatrix, num_consumer]()
+    comptime b128_layout = logical_product(
+        atom, Layout.row_major(n_stmatrix, num_m_mmas, num_consumer)
+    )
+
+    return downcast(materialize[b128_layout](), 128 // (8 * size_of[c_type]()))
 
 
 fn _wgmma_descriptor[

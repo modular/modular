@@ -19,19 +19,18 @@ from collections.abc import Callable, Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn import Module
-from max.nn.attention import MHAMaskVariant
-from max.nn.attention.attention_with_rope import _compute_shard_range
-from max.nn.kernels import (
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
+from max.nn.legacy.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     rms_norm_key_cache,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import Shardable
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
 
 from .text_rotary import Qwen3VLTextRotaryEmbedding
 

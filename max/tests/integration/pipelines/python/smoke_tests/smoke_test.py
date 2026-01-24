@@ -147,7 +147,15 @@ def get_server_cmd(framework: str, model: str) -> list[str]:
             "max": [*interpreter, *MAX.split()],
         }
         cmd = commands[framework]
-    return cmd + ["--port", "8000", "--trust-remote-code", "--model", model]
+
+    cmd = cmd + ["--port", "8000", "--trust-remote-code", "--model", model]
+
+    # GPT-OSS uses repetition_penalty in lm_eval to prevent reasoning loops,
+    # so we need to enable penalties on the server
+    if "gpt-oss" in model and framework in ["max-ci", "max"]:
+        cmd += ["--enable-penalties"]
+
+    return cmd
 
 
 def safe_model_name(model: str) -> str:
@@ -159,7 +167,14 @@ def call_lm_eval(
 ) -> tuple[LmEvalResults, LmEvalSamples]:
     extra_gen_kwargs = ""
     is_reasoning_model = any(
-        kw in model for kw in ("academic-ds", "gpt-oss", "internvl3_5", "qwen3")
+        kw in model
+        for kw in (
+            "academic-ds",
+            "deepseek-r1",
+            "gpt-oss",
+            "internvl3_5",
+            "qwen3",
+        )
     )
     # Reasoning models needs extra tokens for .. reasoning
     if is_reasoning_model:
@@ -216,16 +231,19 @@ def write_github_output(key: str, value: str) -> None:
 
 
 def gracefully_stop_process(process: Popen[bytes]) -> None:
-    process.send_signal(signal.SIGINT)  # Sends ctrl-c (usually works)
+    start_time = time.time()
+    process.send_signal(signal.SIGINT)
     try:
-        process.wait(5)
+        process.wait(25)
+        shutdown_seconds = int(time.time() - start_time)
+        logger.info(f"Server shutdown took {shutdown_seconds} seconds")
     except TimeoutExpired:
         logger.warning("Server did not stop after ctrl-c, trying SIGTERM")
         try:
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
             process.wait(5)
         except ProcessLookupError:
-            pass  # process already dead
+            pass
         except TimeoutExpired:
             logger.warning("Process did not terminate gracefully, forcing kill")
             os.killpg(os.getpgid(process.pid), signal.SIGKILL)
@@ -438,16 +456,20 @@ def smoke_test(
     is_vision_model = any(
         kw in model
         for kw in (
+            "gemma-3",
             "idefics",
             "internvl",
             "olmocr",
             "pixtral",
             "qwen2.5-vl",
             "qwen3-vl",
-            "tbmod/gemma-3-4b-it",
             "vision",
         )
     )
+    # 1b is non-vision, tbmod is temporary to test legacy impl
+    if "gemma-3-1b" in model or model == "tbmod/gemma-3-4b-it":
+        is_vision_model = False
+
     tasks = ["gsm8k_cot_llama"]
     if is_vision_model:
         tasks = ["chartqa"] + tasks
@@ -457,7 +479,7 @@ def smoke_test(
     all_samples = []
     extra_env = {}
     if model == "tbmod/gemma-3-4b-it":
-        extra_env = {"MODULAR_MAX_ENABLE_GEMMA3_VISION": "1"}
+        extra_env = {"MODULAR_MAX_DISABLE_GEMMA3_VISION": "1"}
 
     server_process, startup_time = start_server(cmd, extra_env)
     try:
@@ -478,16 +500,16 @@ def smoke_test(
             results.append(result)
             all_samples.append(samples)
     finally:
+        summary = build_eval_summary(results, startup_time_seconds=startup_time)
+
+        if output_path is not None:
+            path = output_path / safe_model_name(model)
+            path.mkdir(parents=True, exist_ok=True)
+            write_results(path, summary, results, all_samples, tasks)
+
+        logger.info(pformat(summary, indent=2))
+
         gracefully_stop_process(server_process)
-
-    summary = build_eval_summary(results, startup_time_seconds=startup_time)
-
-    if output_path is not None:
-        path = output_path / safe_model_name(model)
-        path.mkdir(parents=True, exist_ok=True)
-        write_results(path, summary, results, all_samples, tasks)
-
-    logger.info(pformat(summary, indent=2))
 
 
 if __name__ == "__main__":

@@ -208,7 +208,7 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
             Int32,
             constraints="=r,r,n,n,n",
             has_side_effect=False,
-        ](a, b, c, Int32(lut))
+        ](a, b, c, lut)
     else:
         return CompilationTarget.unsupported_target_error[
             Int32,

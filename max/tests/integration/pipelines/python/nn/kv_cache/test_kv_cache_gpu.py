@@ -19,7 +19,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
 from test_common.context_utils import create_text_context
 
 
@@ -48,6 +48,6 @@ async def _test_kv_cache_gpu() -> None:
     kv_manager.alloc(context)
     batch = [context]
     # suffixed [0] because we only have one device
-    kv_tuple = kv_manager.get_runtime_inputs(batch)[0]
+    kv_tuple = kv_manager.get_runtime_inputs([batch])[0]
     assert isinstance(kv_tuple, KVCacheInputs)
     assert len(kv_tuple) == 4

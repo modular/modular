@@ -25,7 +25,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TokenBuffer,
 )
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
 from max.pipelines.lib.speculative_config import SpeculativeMethod
@@ -107,6 +107,12 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     )
     pipeline_request = {req_id1: context1, req_id2: context2}
     context_batch = [context1, context2]
+
+    target_kv_manager = pipeline.kv_managers[-1]
+    target_kv_manager.claim(req_id1)
+    target_kv_manager.claim(req_id2)
+    target_kv_manager.alloc(context1, num_steps=num_steps)
+    target_kv_manager.alloc(context2, num_steps=num_steps)
 
     return SpeculativeDecodingSetup(
         model_name=model_name,
@@ -309,8 +315,8 @@ def test_speculative_decoding_multiple_token_without_rejection(
     context1_len = len(context1.tokens)
     context2_len = len(context2.tokens)
     for _ in range(5):
-        inputs = TextGenerationInputs(
-            batches=[pipeline_request], num_steps=num_steps
+        inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+            batches=[list(pipeline_request.values())], num_steps=num_steps
         )
         pipeline.execute(inputs)
 

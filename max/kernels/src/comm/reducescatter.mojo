@@ -14,7 +14,7 @@
 """
 
 from collections import InlineArray
-from collections.optional import Optional
+from collections.optional import Optional, OptionalReg
 
 from buffer import NDBuffer
 from gpu import (
@@ -31,7 +31,7 @@ from gpu.primitives.grid_controls import (
 from gpu.primitives.grid_controls import PDLLevel
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
-from utils import StaticTuple
+from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
 from gpu.intrinsics import (
@@ -51,6 +51,10 @@ from .sync import (
 # On AMD Systems, the loads from GLOBAL addressspace gives an improvement
 # to the performance.
 comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
+
+comptime elementwise_epilogue_type = fn[
+    dtype: DType, rank: Int, width: Int, *, alignment: Int
+] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
 
 @always_inline
@@ -151,19 +155,21 @@ struct ReduceScatterConfig[
 @always_inline
 fn _reduce_scatter_impl[
     dtype: DType,
+    rank: Int,
     simd_width: Int,
     alignment: Int,
     accum_type: DType,
     //,
     ngpus: Int,
     *,
+    output_lambda: elementwise_epilogue_type,
     use_multimem: Bool = False,
 ](
     src_ptrs: InlineArray[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
-    out_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
     my_rank: Int,
     config: ReduceScatterConfig[
         dtype, ngpus, simd_width, alignment, accum_type
@@ -186,10 +192,11 @@ fn _reduce_scatter_impl[
             use_multimem=use_multimem,
         ](idx, src_ptrs)
 
-        # Convert back to the element index before storing.
-        out_ptr.address_space_cast[_target_address_space]().store[
-            alignment=alignment
-        ](idx - config.rank_start, reduced_result)
+        # Apply epilogue and store result.
+        output_lambda[width = config.simd_width, alignment = config.alignment](
+            out_buf.get_nd_index(idx - config.rank_start),
+            reduced_result,
+        )
 
 
 @__llvm_metadata(
@@ -201,14 +208,15 @@ fn _reducescatter_kernel[
     ngpus: Int,
     *,
     BLOCK_SIZE: Int,
+    output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
-    result: NDBuffer[dtype, rank, MutAnyOrigin],
     src_ptrs: InlineArray[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
+    out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
@@ -223,12 +231,13 @@ fn _reducescatter_kernel[
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
         BLOCK_SIZE: Number of threads per block.
+        output_lambda: Elementwise epilogue function to apply to reduced values.
         pdl_level: Control PDL behavior for the kernel.
         use_multimem: Whether multimem optimization is enabled.
 
     Args:
-        result: Output buffer for THIS GPU's partition of reduced values.
         src_ptrs: Input buffers from all GPUs.
+        out_buf: Output buffer for this GPU's partition of reduced data.
         rank_sigs: Signal pointers for synchronization.
         num_elements: Total number of elements across all GPUs.
         my_rank: Current GPU rank.
@@ -253,8 +262,6 @@ fn _reducescatter_kernel[
     if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
-    var result_ptr = result.data
-
     # Round-robin access pattern to balance NVLink traffic across GPUs.
     var ptrs = InlineArray[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
@@ -267,9 +274,9 @@ fn _reducescatter_kernel[
 
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
-    _reduce_scatter_impl[ngpus, use_multimem=use_multimem](
-        ptrs, result_ptr, my_rank, reduce_scatter_config
-    )
+    _reduce_scatter_impl[
+        ngpus, output_lambda=output_lambda, use_multimem=use_multimem
+    ](ptrs, out_buf, my_rank, reduce_scatter_config)
     # Compared w/ usage in allreduce, a second `_multi_gpu_barrier` has been removed
     # here, as it shouldn't be necessary
 
@@ -279,14 +286,15 @@ fn _reducescatter_p2p[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    # output_lambda: elementwise_epilogue_type,
+    *,
+    output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
     list_of_in_bufs: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
     ],
-    out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
+    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
     ctx: DeviceContext,
@@ -301,12 +309,13 @@ fn _reducescatter_p2p[
         dtype: Data dtype of tensor elements.
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
+        output_lambda: Elementwise epilogue function to apply to reduced values.
         pdl_level: Control PDL behavior for the kernel.
         use_multimem: Whether multimem optimization is enabled.
 
     Args:
-        list_of_in_bufs: Input buffers from ALL GPUs (peer access required).
-        out_buf: Output buffer for THIS GPU's partition of reduced data.
+        list_of_in_bufs: Input buffers from all GPUs (peer access required).
+        output_buffer: Output buffer for this GPU's partition of reduced data.
         rank_sigs: Signal pointers for synchronization.
         max_num_blocks: Maximum number of thread blocks to launch.
         ctx: Device context for THIS GPU.
@@ -346,14 +355,15 @@ fn _reducescatter_p2p[
         rank,
         ngpus,
         BLOCK_SIZE=BLOCK_SIZE,
+        output_lambda=output_lambda,
         pdl_level=pdl_level,
         use_multimem=use_multimem,
     ]
 
     # Launch the kernel
     ctx.enqueue_function[kernel, kernel](
-        out_buf,
         list_of_in_ptrs,
+        output_buffer,
         rank_sigs,
         num_elements,
         Int(ctx.id()),
@@ -367,8 +377,7 @@ fn reducescatter[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    # TODO(KERN-2293): add epilogue support
-    # output_lambda: OptionalReg[elementwise_epilogue_type] = None,
+    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
@@ -392,11 +401,13 @@ fn reducescatter[
         dtype: Data dtype of tensor elements.
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
+        output_lambda: Optional elementwise epilogue function. If not provided,
+            reduced values are stored directly to output_buffer.
         pdl_level: Control PDL behavior for the kernel.
         use_multimem: If True, use multimem optimization (reserved for future use).
 
     Args:
-        input_buffers: Input buffers from ALL GPUs (peer access required).
+        input_buffers: Input buffers from all GPUs (peer access required).
             When use_multimem is False (default), expects ngpus buffers.
             When use_multimem is True, expects a single buffer.
         output_buffer: Output buffer for THIS GPU's partition of reduced data.
@@ -424,11 +435,29 @@ fn reducescatter[
         _max_num_blocks.value() if _max_num_blocks else MAX_NUM_BLOCKS_UPPER_BOUND
     )
 
+    # Default epilogue: store directly to output buffer
+    @always_inline
+    @parameter
+    @__copy_capture(output_buffer)
+    fn default_output_lambda[
+        _dtype: DType,
+        _rank: Int,
+        _width: Int,
+        *,
+        _alignment: Int,
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+        output_buffer.store[width=_width, alignment=_alignment](
+            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, _width]](val)
+        )
+
+    comptime actual_output_lambda = default_output_lambda if not output_lambda else output_lambda.value()
+
     # Launch the reduce-scatter kernel via P2P
     _reducescatter_p2p[
         dtype,
         rank,
         ngpus,
+        output_lambda=actual_output_lambda,
         pdl_level=pdl_level,
         use_multimem=use_multimem,
     ](

@@ -27,22 +27,18 @@ from max.graph import (
     TensorValueLike,
     ops,
 )
-from max.nn import (
-    MLP,
-    ColumnParallelLinear,
-    LayerList,
-    Module,
-    ReturnLogits,
-    RMSNorm,
-    VocabParallelEmbedding,
-)
-from max.nn.comm.allreduce import Allreduce
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.transformer import ReturnLogits
+from max.nn.legacy.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings_with_gather,
+    merge_multimodal_embeddings,
 )
 from max.pipelines.architectures.internvl.internvl import distribute_value
 
@@ -317,8 +313,7 @@ class Qwen3VLMoEDecoder(Module):
         self,
         hidden_states: TensorValue,
         visual_embeds: TensorValue,
-        gather_indices: TensorValue,
-        scatter_indices: TensorValue,
+        image_token_indices: TensorValue,
     ) -> TensorValue:
         """Add deepstack visual embeddings to hidden states at visual positions.
 
@@ -329,50 +324,38 @@ class Qwen3VLMoEDecoder(Module):
         Args:
             hidden_states: Hidden states (output of a decoder layer) tensor of shape (seq_len, hidden_dim).
             visual_embeds: deepstack visual embeddings. tensor of shape (visual_seqlen, hidden_dim).
-            scatter_indices: Per-device scatter indices for image embeddings.
-            gather_indices: Per-device gather indices for image embeddings.
+            image_token_indices: Per-device image token indices for image embeddings.
 
         Returns:
             Updated hidden states with visual embeddings added at visual positions. tensor of shape (seq_len, hidden_dim).
         """
-        # Get indices where mask is True
-        gather_indices_unsqueezed = ops.unsqueeze(gather_indices, -1)
-        scatter_indices_unsqueezed = ops.unsqueeze(scatter_indices, -1)
-
-        # Gather hidden states at visual positions
-        visual_hidden = ops.gather_nd(
-            input=hidden_states,
-            indices=scatter_indices_unsqueezed,
-        )  # (visual_seqlen, hidden_dim)
-
-        visual_embeds = ops.gather_nd(
-            input=visual_embeds,
-            indices=gather_indices_unsqueezed,
-        )  # (visual_seqlen, hidden_dim)
-
         # Ensure visual_embeds has the same dtype as hidden_states
         if visual_embeds.dtype != hidden_states.dtype:
             visual_embeds = ops.cast(visual_embeds, hidden_states.dtype)
 
-        # Add visual embeddings
-        visual_hidden_updated = (
-            visual_hidden + visual_embeds
-        )  # (visual_seqlen, hidden_dim)
+        # FIXME(SERVOPT-924): Fuse the scatter_nd and add op into a single kernel.
+        # This will improve perf and reduce size of activations.
 
-        # Scatter back into hidden_states
-        return ops.scatter_nd(
-            input=hidden_states,
-            updates=visual_hidden_updated,
-            indices=scatter_indices_unsqueezed,
+        # Create a tensor of zeros with the same shape as hidden_states
+        zeros = ops.constant(0, hidden_states.dtype, hidden_states.device)
+        zeros_like = ops.broadcast_to(zeros, hidden_states.shape)
+
+        # Write the visual_embeds to the appropriate positions in the zeros tensor
+        visual_hidden_states = merge_multimodal_embeddings(
+            inputs_embeds=zeros_like,
+            multimodal_embeddings=visual_embeds,
+            image_token_indices=image_token_indices,
         )
+
+        # Add the visual_hidden_states to the hidden_states
+        return hidden_states + visual_hidden_states
 
     def __call__(
         self,
         tokens: TensorValueLike,
         return_n_logits: TensorValue,
         image_embeddings: list[TensorValue],
-        scatter_indices: list[TensorValue],
-        gather_indices: list[TensorValue],
+        image_token_indices: list[TensorValue],
         position_ids: TensorValue,
         mrope_section: list[int],
         kv_collections: list[PagedCacheValues],
@@ -386,8 +369,7 @@ class Qwen3VLMoEDecoder(Module):
             tokens: Input token IDs.
             return_n_logits: Number of logits to return.
             image_embeddings: List of image embeddings per device.
-            scatter_indices: Per-device scatter indices for image embeddings.
-            gather_indices: Per-device gather indices for image embeddings.
+            image_token_indices: Per-device scatter indices for image embeddings.
             position_ids: 3D position IDs for RoPE.
             mrope_section: MRoPE section configuration.
             kv_collections: Per-device KV cache collections.
@@ -404,17 +386,15 @@ class Qwen3VLMoEDecoder(Module):
 
         # Merge image embeddings into text embeddings
         h = [
-            merge_multimodal_embeddings_with_gather(
+            merge_multimodal_embeddings(
                 inputs_embeds=h_device,
-                multimodal_embeddings=img_embed,
-                scatter_indices=scatter_indices_device,
-                gather_indices=gather_indices_device,
+                multimodal_embeddings=image_embeddings_device,
+                image_token_indices=image_token_indices_device,
             )
-            for h_device, img_embed, scatter_indices_device, gather_indices_device in zip(
+            for h_device, image_embeddings_device, image_token_indices_device in zip(
                 h,
                 image_embeddings,
-                scatter_indices,
-                gather_indices,
+                image_token_indices,
                 strict=True,
             )
         ]
@@ -449,14 +429,12 @@ class Qwen3VLMoEDecoder(Module):
                     self._deepstack_process(
                         hidden_states=h_device,
                         visual_embeds=visual_embeds_device,
-                        gather_indices=gather_indices_device,
-                        scatter_indices=scatter_indices_device,
+                        image_token_indices=image_token_indices_device,
                     )
-                    for h_device, visual_embeds_device, gather_indices_device, scatter_indices_device in zip(
+                    for h_device, visual_embeds_device, image_token_indices_device in zip(
                         h,
                         visual_embeds,
-                        gather_indices,
-                        scatter_indices,
+                        image_token_indices,
                         strict=True,
                     )
                 ]

@@ -32,34 +32,28 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn import (
-    MLP,
-    ColumnParallelLinear,
-    LayerList,
-    Linear,
-    Llama3RotaryEmbedding,
-    Module,
-    ReturnLogits,
-    RMSNorm,
-    VocabParallelEmbedding,
-)
-from max.nn.attention.attention_with_rope import _compute_shard_range
-from max.nn.comm.allreduce import Allreduce
-from max.nn.float8_config import Float8Config
-from max.nn.kernels import (
+from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.float8_config import Float8Config
+from max.nn.legacy.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import Shardable
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module, Shardable
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.transformer import ReturnLogits
+from max.nn.legacy.transformer.distributed_transformer import (
     ShardableCallable,
     forward_sharded_layers,
 )
 from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings_with_gather,
+    merge_multimodal_embeddings,
 )
 from max.pipelines.architectures.internvl.internvl import distribute_value
 from max.pipelines.architectures.llama3.model_config import Llama3Config
@@ -591,8 +585,7 @@ class Qwen25VLDecoder(Module):
         tokens: TensorValueLike,
         return_n_logits: TensorValue,
         image_embeddings: list[TensorValue],
-        scatter_indices: list[TensorValue],
-        gather_indices: list[TensorValue],
+        image_token_indices: list[TensorValue],
         position_ids: TensorValue,
         mrope_section: list[int],
         kv_collections: list[PagedCacheValues],
@@ -605,17 +598,15 @@ class Qwen25VLDecoder(Module):
         # Let the kernel handle the no-image embeddings case.
         # And use the first device's image embeddings since they're replicated.
         h = [
-            merge_multimodal_embeddings_with_gather(
+            merge_multimodal_embeddings(
                 inputs_embeds=h_device,
-                multimodal_embeddings=img_embed,
-                scatter_indices=scatter_indices,
-                gather_indices=gather_indices,
+                multimodal_embeddings=image_embeddings_device,
+                image_token_indices=image_token_indices_device,
             )
-            for h_device, img_embed, scatter_indices, gather_indices in zip(
+            for h_device, image_embeddings_device, image_token_indices_device in zip(
                 h,
                 image_embeddings,
-                scatter_indices,
-                gather_indices,
+                image_token_indices,
                 strict=True,
             )
         ]

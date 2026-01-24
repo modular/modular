@@ -1880,9 +1880,6 @@ def test_rpow():
     assert_equal(Int(2) ** i32x4_val, I32x4(1, 2, 4, 8))
     assert_equal(Int(-1) ** i32x4_val, I32x4(1, -1, 1, -1))
 
-    assert_equal(UInt(2) ** i32x4_val, I32x4(1, 2, 4, 8))
-    assert_equal(UInt(0) ** i32x4_val, I32x4(1, 0, 0, 0))
-
     assert_almost_equal(1.0**f32x4_val, F32x4(1.0, 1.0, 1.0, 1.0))
     assert_almost_equal(2.5**f32x4_val, F32x4(1.0, 2.5, 6.25, 15.625))
     assert_almost_equal(3.0**f32x4_val, F32x4(1.0, 3.0, 9.0, 27.0))
