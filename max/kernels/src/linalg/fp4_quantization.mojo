@@ -128,6 +128,8 @@ fn quantize_dynamic_scaled_fp4[
     comptime num_SMs = B200.sm_count
 
     var num_rows = input.dim(0)
+    if num_rows == 0 or num_cols == 0:
+        return
     var num_rows_padded = align_up(num_rows, SF_MN_GROUP_SIZE)
 
     var block_dim = (
