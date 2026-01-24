@@ -12,9 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceil, floor
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from memory import alloc, UnsafePointer
 
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
@@ -344,34 +342,32 @@ fn _resize[
     var interpolator = Interpolator[interpolation_mode]()
 
     var in_ptr = input.ptr
-    var out_ptr = UnsafePointer[Scalar[dtype]]()
+    var out_ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin]()
     var using_tmp1 = False
-    var tmp_buffer1 = UnsafePointer[Scalar[dtype]]()
-    var tmp_buffer2 = UnsafePointer[Scalar[dtype]]()
+    var tmp_buffer1 = UnsafePointer[Scalar[dtype], MutExternalOrigin]()
+    var tmp_buffer2 = UnsafePointer[Scalar[dtype], MutExternalOrigin]()
     # ping pong between using tmp_buffer1 and tmp_buffer2 to store outputs
     # of 1d interpolation pass across one of the dimensions
     if len(resize_dims) == 1:  # avoid allocating tmp_buffer
-        out_ptr = output.ptr
+        out_ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](output.ptr)
     if len(resize_dims) > 1:  # avoid allocating second tmp_buffer
-        tmp_buffer1 = UnsafePointer[Scalar[dtype]].alloc(
-            tmp_dims.flattened_length()
-        )
+        tmp_buffer1 = alloc[Scalar[dtype]](tmp_dims.flattened_length())
         out_ptr = tmp_buffer1
         using_tmp1 = True
     if len(resize_dims) > 2:  # need a second tmp_buffer
         # TODO: if you are upsampling all dims, you can use the output in place of tmp_buffer2
         # as long as you make sure that the last iteration uses tmp1_buffer as the input
         # and tmp_buffer2 (output) as the output
-        tmp_buffer2 = UnsafePointer[Scalar[dtype]].alloc(
-            tmp_dims.flattened_length()
-        )
+        tmp_buffer2 = alloc[Scalar[dtype]](tmp_dims.flattened_length())
     var in_shape = input.runtime_layout.shape.value.canonicalize()
     var out_shape = input.runtime_layout.shape.value.canonicalize()
     # interpolation is separable, so perform 1d interpolation across each
     # interpolated dimension
     for dim_idx in range(len(resize_dims)):
         if dim_idx == len(resize_dims) - 1:
-            out_ptr = output.ptr
+            out_ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
+                output.ptr
+            )
         var resize_dim = resize_dims[dim_idx]
         out_shape[resize_dim] = output.dim(resize_dim)
 
