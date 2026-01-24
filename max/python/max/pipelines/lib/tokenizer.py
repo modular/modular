@@ -1278,21 +1278,17 @@ class PixelGenerationTokenizer(
             scheduler_component.class_name, scheduler_config
         )
 
-        sigmas = (
-            np.linspace(
-                1.0,
-                1 / request.num_inference_steps,
-                request.num_inference_steps,
-            )
-            if sigmas is None
-            else sigmas
+        sigmas = np.linspace(
+            1.0,
+            1 / request.num_inference_steps,
+            request.num_inference_steps,
         )
         if (
             hasattr(scheduler.config, "use_flow_sigmas")
             and scheduler.config.use_flow_sigmas
         ):
             sigmas = None
-        timesteps, num_inference_steps = _retrieve_timesteps(
+        timesteps, num_inference_steps = self._retrieve_timesteps(
             scheduler,
             request.num_inference_steps,
             CPU(),

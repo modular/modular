@@ -617,11 +617,11 @@ class PixelContext:
     tokens_2: TokenBuffer | None = field(default=None)
     """Secondary encoder tokens. None for single-encoder models."""
 
-    negative_tokens: TokenBuffer = field(
+    negative_token_ids: TokenBuffer = field(
         default_factory=lambda: TokenBuffer(np.array([], dtype=np.int64))
     )
 
-    negative_tokens_2: TokenBuffer | None = field(default=None)
+    negative_token_ids_2: TokenBuffer | None = field(default=None)
     """Secondary encoder negative tokens. None for single-encoder models."""
 
     extra_params: dict[str, npt.NDArray] = field(default_factory=dict)
@@ -652,7 +652,8 @@ class PixelContext:
     height: int = field(default=1024)
     width: int = field(default=1024)
     num_inference_steps: int = field(default=50)
-    guidance_scale: float = field(default=7.5)
+    guidance_scale: float = field(default=3.5)
+    true_cfg_scale: float = field(default=1.0)
     num_images_per_prompt: int = field(default=1)
 
     # Generation status
@@ -730,7 +731,7 @@ if TYPE_CHECKING:
             request_id=RequestID(),
             max_text_encoder_length=512,
             tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-            negative_tokens=TokenBuffer(np.array([0], dtype=np.int64)),
+            negative_token_ids=TokenBuffer(np.array([0], dtype=np.int64)),
         )
 
 
