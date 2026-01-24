@@ -30,7 +30,7 @@ class DocString;
 class TraitDeclOp;
 class TraitType;
 
-using DeclIRValue = SmartVariant<Operation *, CValue>;
+using DeclIRValue = SmartVariant<Operation *, CValue, std::nullopt_t>;
 
 /// This is the AST representation (as opposed to the MLIR representation) of a
 /// declaration in a program.  These maintain type checking and other
@@ -49,20 +49,12 @@ public:
   SharedState &getShared() const { return shared; }
   MLIRContext *getContext() const { return shared.getContext(); }
 
-  CValue getIfIRValue() const {
-    if (isDisabled())
-      return {};
-    return dyn_cast<CValue>(irValue.value());
-  }
+  CValue getIfIRValue() const { return dyn_cast<CValue>(irValue); }
 
   /// If the IRValue is an Operation*, return it, otherwise return null.
   /// This is used for things like Module, StructDecl, Func, or ParamDecl.
-  Operation *getIfOperation() const {
-    if (isDisabled())
-      return nullptr;
-    return dyn_cast<Operation *>(irValue.value());
-  }
-  void setIRValue(SmartVariant<Operation *, CValue> value) { irValue = value; }
+  Operation *getIfOperation() const { return dyn_cast<Operation *>(irValue); }
+  void setIRValue(DeclIRValue value) { irValue = value; }
 
   // When handling things like default trait method, we might insert placeholder
   // ASTDecl for default implementation that later become invalid after body
@@ -75,7 +67,7 @@ public:
     resolvedness = DeclResolvedness::body;
     irValue = std::nullopt;
   }
-  bool isDisabled() const { return !irValue.has_value(); }
+  bool isDisabled() const { return isa<std::nullopt_t>(irValue); }
 
   /// Get the user-printable name of the declaration if it has one.
   ///  This removes any mangling (e.g. for parameters).
@@ -302,7 +294,7 @@ private:
 
   /// This is the IRValue or MLIR operation that this decl corresponds to if it
   /// has one.
-  std::optional<DeclIRValue> irValue;
+  DeclIRValue irValue;
 
   /// This is the source location of the declaration, used for diagnostics and
   /// debug information.

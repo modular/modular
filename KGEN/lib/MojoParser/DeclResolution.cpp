@@ -1476,8 +1476,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
       assert(paramDecls.size() == 1 &&
              "expected exactly one parameter declaration");
       ASTDecl *paramDecl = paramDecls.front();
-      addFullyResolvedDecl(paramDecl->irValue.value(), paramName,
-                           paramDecl->getLoc(), &sigDecl);
+      addFullyResolvedDecl(paramDecl->irValue, paramName, paramDecl->getLoc(),
+                           &sigDecl);
     }
   }
 
