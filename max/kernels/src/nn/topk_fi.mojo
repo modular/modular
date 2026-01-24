@@ -34,10 +34,7 @@ from layout import (
     RuntimeLayout,
 )
 from math import ceildiv, gcd, exp
-from memory import stack_allocation
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from memory import stack_allocation, UnsafePointer
 from os import Atomic
 from random import Random
 from sys import align_of, bit_width_of, simd_width_of, size_of
@@ -49,12 +46,10 @@ fn get_min_max_value[
     block_size: Int,
     dtype: DType,
 ](
-    in_data: UnsafePointer[Scalar[dtype]],
+    in_data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     row_idx: Int,
     d: Int,
-) -> Tuple[
-    Float32, Float32
-]:
+) -> Tuple[Float32, Float32]:
     """Compute the minimum and maximum values from input data using block reduction.
 
     Parameters:
@@ -117,7 +112,7 @@ fn TopKMaskLogitsKernel[
     masked_logits: LayoutTensor[
         mut=True, dtype, masked_logits_layout, MutAnyOrigin
     ],
-    top_k_arr: UnsafePointer[Scalar[out_idx_type]],
+    top_k_arr: UnsafePointer[Scalar[out_idx_type], MutAnyOrigin],
     top_k_val: Int,
     d: Int,
 ):
@@ -289,7 +284,10 @@ fn topk_mask_logits[
         top_k_buf = top_k_arr.value().to_device_buffer(ctx)
     else:
         top_k_buf = DeviceBuffer[out_idx_type](
-            ctx, UnsafePointer[Scalar[out_idx_type]](), 0, owning=False
+            ctx,
+            UnsafePointer[Scalar[out_idx_type], MutAnyOrigin](),
+            0,
+            owning=False,
         )
 
     @parameter
@@ -333,8 +331,12 @@ fn device_sampling_from_prob[
     u: Float32,
     prob_vec: SIMD[DType.float32, vec_size],
     aggregate: Float32,
-    sampled_id_sram: UnsafePointer[Int, address_space = AddressSpace.SHARED],
-    last_valid_id_sram: UnsafePointer[Int, address_space = AddressSpace.SHARED],
+    sampled_id_sram: UnsafePointer[
+        Int, MutAnyOrigin, address_space = AddressSpace.SHARED
+    ],
+    last_valid_id_sram: UnsafePointer[
+        Int, MutAnyOrigin, address_space = AddressSpace.SHARED
+    ],
 ) -> Float32:
     """Device-level sampling from probability distribution with atomic operations.
     """
@@ -580,8 +582,8 @@ fn TopKSamplingFromProbKernel[
 ](
     probs: LayoutTensor[dtype, probs_layout, MutAnyOrigin],
     output: LayoutTensor[mut=True, out_idx_type, output_layout, MutAnyOrigin],
-    indices: UnsafePointer[Scalar[out_idx_type]],
-    top_k_arr: UnsafePointer[Scalar[out_idx_type]],
+    indices: UnsafePointer[Scalar[out_idx_type], MutAnyOrigin],
+    top_k_arr: UnsafePointer[Scalar[out_idx_type], MutAnyOrigin],
     top_k_val: Int,
     d: Int,
     rng_seed: UInt64,
@@ -823,14 +825,20 @@ fn topk_sampling_from_prob[
         indices_buf = indices.value().to_device_buffer(ctx)
     else:
         indices_buf = DeviceBuffer[out_idx_type](
-            ctx, UnsafePointer[Scalar[out_idx_type]](), 0, owning=False
+            ctx,
+            UnsafePointer[Scalar[out_idx_type], MutAnyOrigin](),
+            0,
+            owning=False,
         )
     var top_k_buf: DeviceBuffer[out_idx_type]
     if top_k_arr:
         top_k_buf = top_k_arr.value().to_device_buffer(ctx)
     else:
         top_k_buf = DeviceBuffer[out_idx_type](
-            ctx, UnsafePointer[Scalar[out_idx_type]](), 0, owning=False
+            ctx,
+            UnsafePointer[Scalar[out_idx_type], MutAnyOrigin](),
+            0,
+            owning=False,
         )
 
     @parameter
@@ -885,12 +893,12 @@ fn TopKSoftmaxSampleKernel[
     sampled_indices: LayoutTensor[
         mut=True, out_idx_type, sampled_indices_layout, MutAnyOrigin
     ],
-    top_k_arr: UnsafePointer[Scalar[out_idx_type]],
+    top_k_arr: UnsafePointer[Scalar[out_idx_type], MutAnyOrigin],
     top_k_val: Int,
     temperature_val: Float32,
-    temperature: UnsafePointer[Float32],
+    temperature: UnsafePointer[Float32, MutAnyOrigin],
     seed_val: UInt64,
-    seed: UnsafePointer[UInt64],
+    seed: UnsafePointer[UInt64, MutAnyOrigin],
     d: Int,
 ):
     var bx = Int(block_idx.x)
@@ -1157,21 +1165,30 @@ fn topk_softmax_sample[
         top_k_buf = top_k_arr.value().to_device_buffer(ctx)
     else:
         top_k_buf = DeviceBuffer[out_idx_type](
-            ctx, UnsafePointer[Scalar[out_idx_type]](), 0, owning=False
+            ctx,
+            UnsafePointer[Scalar[out_idx_type], MutAnyOrigin](),
+            0,
+            owning=False,
         )
     var temp_buf: DeviceBuffer[DType.float32]
     if temperature:
         temp_buf = temperature.value().to_device_buffer(ctx)
     else:
         temp_buf = DeviceBuffer[DType.float32](
-            ctx, UnsafePointer[Scalar[DType.float32]](), 0, owning=False
+            ctx,
+            UnsafePointer[Scalar[DType.float32], MutAnyOrigin](),
+            0,
+            owning=False,
         )
     var seed_buf: DeviceBuffer[DType.uint64]
     if seed:
         seed_buf = seed.value().to_device_buffer(ctx)
     else:
         seed_buf = DeviceBuffer[DType.uint64](
-            ctx, UnsafePointer[Scalar[DType.uint64]](), 0, owning=False
+            ctx,
+            UnsafePointer[Scalar[DType.uint64], MutAnyOrigin](),
+            0,
+            owning=False,
         )
 
     @parameter
