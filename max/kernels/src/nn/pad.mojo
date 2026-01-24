@@ -28,9 +28,6 @@ from layout import (
 # TODO Refactor -- we should decide on and put them into a more common file
 from linalg.transpose import _fill_strides
 from memory import memcpy
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils import IndexList, StaticTuple
 
@@ -38,7 +35,11 @@ from utils import IndexList, StaticTuple
 @always_inline
 fn _fill[
     dtype: DType
-](dst: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], count: Int):
+](
+    dst: UnsafePointer[mut=True, Scalar[dtype]],
+    value: Scalar[dtype],
+    count: Int,
+):
     comptime layout = Layout.row_major(UNKNOWN_VALUE)
     _ = LayoutTensor[dtype, layout](
         dst, RuntimeLayout[layout].row_major(IndexList[1](count))
@@ -175,7 +176,9 @@ fn pad_constant[
     @parameter
     fn pad_constant_wrapper(
         output: UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.GENERIC, ...
+            mut=True,
+            Scalar[dtype],
+            address_space = AddressSpace.GENERIC,
         ],
         input: UnsafePointer[
             Scalar[dtype], address_space = AddressSpace.GENERIC, ...
@@ -248,7 +251,9 @@ fn pad_reflect[
     @parameter
     fn pad_reflect_wrapper(
         output: UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.GENERIC, ...
+            mut=True,
+            Scalar[dtype],
+            address_space = AddressSpace.GENERIC,
         ],
         input: UnsafePointer[
             Scalar[dtype], address_space = AddressSpace.GENERIC, ...
@@ -322,8 +327,12 @@ fn _do_pad[
     dtype: DType,
     paddings_type: DType,
     pad_impl_fn: fn (
-        UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, ...],
-        UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, ...],
+        UnsafePointer[
+            mut=True,
+            Scalar[dtype],
+            address_space = AddressSpace.GENERIC,
+        ],
+        UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC],
         UnsafePointer[Scalar[paddings_type]],
         IndexList[output_layout.rank()],
         UnsafePointer[Scalar[DType.int]],
@@ -442,7 +451,7 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
     @always_inline
     fn base(
         mut self,
-        output: UnsafePointer[Scalar[Self.dtype]],
+        output: UnsafePointer[mut=True, Scalar[Self.dtype]],
         input: UnsafePointer[Scalar[Self.dtype]],
         constant: Scalar[Self.dtype],
         axis_dim: Int,
@@ -467,7 +476,7 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
 fn _pad_constant_axis[
     rank: Int, dtype: DType, paddings_type: DType, axis: Int
 ](
-    output: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[mut=True, Scalar[dtype]],
     input: UnsafePointer[Scalar[dtype]],
     constant: Scalar[dtype],
     output_shape: IndexList[rank],
@@ -505,7 +514,7 @@ fn _pad_constant_axis[
 fn _pad_constant_impl[
     rank: Int, dtype: DType, paddings_type: DType
 ](
-    output: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[mut=True, Scalar[dtype]],
     input: UnsafePointer[Scalar[dtype]],
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: Scalar[dtype],
@@ -562,7 +571,7 @@ fn _memcpy_regions_fast[
     post_pad: Int,
     non_pad: Int,
     output_axis_stride: Int,
-    pre_pad_start_ptr: UnsafePointer[Scalar[dtype]],
+    pre_pad_start_ptr: UnsafePointer[mut=True, Scalar[dtype]],
 ):
     @always_inline
     fn modulo_inc(mut cnt: Int, modulo: Int):
@@ -668,9 +677,9 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         output_offset: Int,
         input_offset: Int,
         output: UnsafePointer[
+            mut=True,
             Scalar[Self.dtype],
             address_space = AddressSpace.GENERIC,
-            ...,
         ],
         input: UnsafePointer[
             Scalar[Self.dtype], address_space = AddressSpace.GENERIC, ...
@@ -686,7 +695,7 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         mut self,
         output_axis_stride: Int,
         output_offset: Int,
-        output: UnsafePointer[Scalar[Self.dtype]],
+        output: UnsafePointer[mut=True, Scalar[Self.dtype]],
     ):
         var pre_pad_start_ptr = output + output_offset
 
@@ -707,7 +716,9 @@ fn _pad_reflect_axis[
     axis: Int,
 ](
     output: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GENERIC, ...
+        mut=True,
+        Scalar[dtype],
+        address_space = AddressSpace.GENERIC,
     ],
     input: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.GENERIC, ...
@@ -767,7 +778,9 @@ fn _pad_reflect_impl[
     paddings_type: DType,
 ](
     output: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GENERIC, ...
+        mut=True,
+        Scalar[dtype],
+        address_space = AddressSpace.GENERIC,
     ],
     input: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.GENERIC, ...
@@ -843,12 +856,6 @@ fn pad_repeat[
                   [3, 3, 4],
                   [3, 3, 4]]
     """
-    var output_shape = output.layout.shape
-    var input_shape = input.layout.shape
-
-    var output_strides = output.layout.stride
-    var input_strides = input.layout.stride
-
     var pre_pads = IndexList[output_layout.rank()]()
     var post_pads = IndexList[output_layout.rank()]()
 
