@@ -14,9 +14,8 @@
 
 from buffer import Dim, DimList, NDBuffer
 from math import align_up
-from memory import AddressSpace, LegacyUnsafePointer
+from memory import AddressSpace
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import simd_width_of, size_of
 from utils.index import Index, IndexList
 
