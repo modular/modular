@@ -3954,7 +3954,9 @@ fn mha_decoding_single_batch[
         ](0, 0).vectorize[1, p_frag_size // 2]()
         # offset on the pointer is to avoid possible races
         # with `accum_smem_warp_tile`.
-        var o_smem_ptr = q_smem.bitcast[Scalar[accum_type]]()
+        var o_smem_ptr = q_smem.bitcast[
+            Scalar[accum_type]
+        ]().unsafe_origin_cast[MutExternalOrigin]()
         var scratch = LayoutTensor[
             accum_type,
             Layout.row_major(2 * Int(num_warps_n), Int(BM)),
