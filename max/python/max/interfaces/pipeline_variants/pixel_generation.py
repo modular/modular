@@ -38,7 +38,8 @@ from .text_generation import (
 @dataclass(frozen=True)
 class PixelGenerationRequest(Request):
     model_name: str = field()
-    """The name of the model to be used for generating pixels. This should match
+    """
+    The name of the model to be used for generating pixels. This should match
     the available models on the server and determines the behavior and
     capabilities of the response generation.
     """
@@ -46,19 +47,25 @@ class PixelGenerationRequest(Request):
     """
     The text prompt to generate pixels for.
     """
+    prompt_2: str | None = None
+    """
+    The second text prompt to generate pixels for.
+    """
     negative_prompt: str | None = None
     """
-    Negative prompt to guide what NOT to generate.
+    The negative prompt to guide what NOT to generate.
     """
-    messages: list[TextGenerationRequestMessage] | None = None
+    negative_prompt_2: str | None = None
     """
-    A list of messages for chat-based interactions. This is used in chat
-    completion APIs, where each message represents a turn in the conversation.
-    If provided, the model will generate responses based on these messages.
+    The second negative prompt to guide what NOT to generate.
     """
-    guidance_scale: float = 7.5
+    guidance_scale: float = 3.5
     """
     Guidance scale for classifier-free guidance. Set to 1.0 to disable CFG.
+    """
+    true_cfg_scale: float = 1.0
+    """
+    True classifier-free guidance is enabled when true_cfg_scale > 1.0 and negative_prompt is provided.
     """
     height: int | None = None
     """
@@ -76,38 +83,18 @@ class PixelGenerationRequest(Request):
     """
     Number of images/videos to generate per prompt.
     """
-    chat_template_options: dict[str, Any] | None = None
-    """
-    Optional dictionary of options to pass when applying the chat template.
-    """
     seed: int | None = None
     """
-    Optional random number generator.
+    Optional random number generator seed for reproducible generation.
+    """
+    max_sequence_length: int = 512
+    """
+    Maximum sequence length for text encoder.
     """
 
     def __post_init__(self) -> None:
-        """Validates mutual exclusivity and converts dict messages after initialization."""
-        # Convert dict messages to TextGenerationRequestMessage objects
-        if self.messages is not None:
-            converted_messages: list[TextGenerationRequestMessage] = []
-            for msg in self.messages:
-                if isinstance(msg, dict):
-                    converted_messages.append(
-                        TextGenerationRequestMessage(**msg)
-                    )
-                elif isinstance(msg, TextGenerationRequestMessage):
-                    converted_messages.append(msg)
-                else:
-                    raise TypeError(f"Invalid message type: {type(msg)}")
-            # Use object.__setattr__ for frozen dataclass
-            object.__setattr__(self, "messages", converted_messages)
-
-        if self.prompt is None and self.messages is None:
-            raise ValueError("Either prompt or messages must be provided.")
-        if self.prompt is not None and self.messages is not None:
-            raise ValueError(
-                "Both prompt and messages cannot be provided to PixelGenerationRequest."
-            )
+        if self.prompt is None:
+            raise ValueError("Prompt must be provided.")
 
 
 @runtime_checkable
@@ -124,17 +111,22 @@ class PixelGenerationContext(BaseContext, Protocol):
         ...
 
     @property
+    def prompt_2(self) -> str | None:
+        """Second text prompt for pixel generation."""
+        ...
+
+    @property
     def negative_prompt(self) -> str | None:
         """Negative prompt for what NOT to generate."""
         ...
 
     @property
-    def messages(self) -> list[TextGenerationRequestMessage] | None:
-        """Chat messages for generation."""
+    def negative_prompt_2(self) -> str | None:
+        """Second negative prompt for what NOT to generate."""
         ...
 
     @property
-    def max_text_encoder_length(self) -> int:
+    def max_sequence_length(self) -> int:
         """Maximum sequence length for text encoder."""
         ...
 
@@ -156,6 +148,11 @@ class PixelGenerationContext(BaseContext, Protocol):
     @property
     def guidance_scale(self) -> float:
         """Classifier-free guidance scale (1.0 to disable CFG)."""
+        ...
+
+    @property
+    def true_cfg_scale(self) -> float:
+        """True classifier-free guidance scale (1.0 to disable CFG)."""
         ...
 
     @property
