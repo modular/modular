@@ -46,7 +46,10 @@ from .lora_config import LoRAConfig
 from .lora_request_processor import LoRARequestProcessor
 from .memory_estimation import MemoryEstimator
 from .model_config import MAXModelConfig, MAXModelConfigBase
-from .pipeline_variants.text_generation import TextGenerationPipeline
+from .pipeline_variants import (
+    PixelGenerationPipeline,
+    TextGenerationPipeline,
+)
 from .pixel_tokenizer import PixelGenerationTokenizer
 from .profiling_config import ProfilingConfig
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
@@ -97,6 +100,7 @@ __all__ = [
     "PipelineConfig",
     "PipelineModel",
     "PipelineRole",
+    "PixelGenerationPipeline",
     "PixelGenerationTokenizer",
     "PreTrainedPipelineTokenizer",
     "ProfilingConfig",
