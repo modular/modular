@@ -12,16 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Inverse real FFT kernel using cuFFT."""
 
-from memory import (
-    UnsafePointer as UnsafePointerV2,
-)
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
-
 from sys.ffi import external_call
 
 from _cufft.cufft import (
@@ -46,14 +36,14 @@ from layout import LayoutTensor
 # This should eventually be moved to ffi.mojo with a more general global cache method
 # cache key is a string and cache value is a pointer.
 @always_inline
-fn global_cache_lookup(key: String) -> OpaquePointer:
-    return external_call["KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer](
-        key.unsafe_ptr(), key.byte_length()
-    )
+fn global_cache_lookup(key: String) -> OpaquePointer[MutAnyOrigin]:
+    return external_call[
+        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutAnyOrigin]
+    ](key.unsafe_ptr(), key.byte_length())
 
 
 @always_inline
-fn global_cache_insert(key: String, value: OpaquePointer):
+fn global_cache_insert(key: String, value: OpaquePointer[MutAnyOrigin]):
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(key),
         value,
@@ -62,7 +52,7 @@ fn global_cache_insert(key: String, value: OpaquePointer):
 
 fn _get_fft_workarea(
     buffer_size: Int, ctx: DeviceContext
-) raises -> OpaquePointer:
+) raises -> OpaquePointer[MutAnyOrigin]:
     # Include device ID in cache key to ensure per-device workspace buffers.
     var fft_buffer_key = String(
         "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.id()
@@ -140,9 +130,7 @@ fn _get_fft_plan[
         cached_plan_key,
         # we are bitcasting the integer plan to a void * to cache it,
         # because that's what KGEN_CompilerRT_InsertGlobal expects.
-        UnsafePointerV2[NoneType, MutExternalOrigin](
-            unsafe_from_address=Int(plan)
-        ),
+        OpaquePointer[MutAnyOrigin](unsafe_from_address=Int(plan)),
     )
 
     return plan
