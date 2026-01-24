@@ -39,9 +39,10 @@ defm mtune : CommandOption<["--", "-"], "mtune", TargetOptionGroup,
   Index<6>, MetaVarName<"TUNE">,
   HelpText<"Sets the CPU for which to tune code.">>;
 
-defm target_accelerator : CommandOptionHidden<["--", "-"], "target-accelerator",
+defm target_accelerator : CommandOption<["--", "-"], "target-accelerator",
   TargetOptionGroup, Index<7>, MetaVarName<"ACCELERATOR">,
-  HelpText<"Sets the accelerator used for computation.">>;
+  HelpText<"Sets the GPU or accelerator architecture for heterogeneous "
+           "computing (e.g., sm_90 for NVIDIA H100, gfx942 for AMD MI300).">>;
 
 defm mcmodel: CommandOptionHidden<["--", "-"], "mcmodel",
   TargetOptionGroup, Index<8>, MetaVarName<"MCMODEL">,
