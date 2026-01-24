@@ -370,9 +370,6 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
   auto atBlockEndBuilder = OpBuilder::atBlockEnd(funcOp.getBody());
   EndFnOp::create(atBlockEndBuilder, funcOp.getLoc(), /*unresolved=*/true);
 
-  if (structDefinesMethod)
-    funcOp.setDisabled(true);
-
   return funcOp;
 }
 

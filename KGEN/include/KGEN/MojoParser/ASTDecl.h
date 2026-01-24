@@ -49,12 +49,33 @@ public:
   SharedState &getShared() const { return shared; }
   MLIRContext *getContext() const { return shared.getContext(); }
 
-  CValue getIfIRValue() const { return dyn_cast<CValue>(irValue); }
+  CValue getIfIRValue() const {
+    if (isDisabled())
+      return {};
+    return dyn_cast<CValue>(irValue.value());
+  }
 
   /// If the IRValue is an Operation*, return it, otherwise return null.
   /// This is used for things like Module, StructDecl, Func, or ParamDecl.
-  Operation *getIfOperation() const { return dyn_cast<Operation *>(irValue); }
-  void setIRValue(DeclIRValue value) { irValue = value; }
+  Operation *getIfOperation() const {
+    if (isDisabled())
+      return nullptr;
+    return dyn_cast<Operation *>(irValue.value());
+  }
+  void setIRValue(SmartVariant<Operation *, CValue> value) { irValue = value; }
+
+  // When handling things like default trait method, we might insert placeholder
+  // ASTDecl for default implementation that later become invalid after body
+  // resolving the struct (e.g., when there is a user-provided overload), this
+  // that case, we  need to mark the ASTDecl to be invalid. We cannot simply
+  // detach it from the parent decl as it corrupt a lot of loop iteration over
+  // ASTDecls.
+  void markDisabled() {
+    assert(getCursor().isInvalid() && "should only disable synthetic ASTDecl");
+    resolvedness = DeclResolvedness::body;
+    irValue = std::nullopt;
+  }
+  bool isDisabled() const { return !irValue.has_value(); }
 
   /// Get the user-printable name of the declaration if it has one.
   ///  This removes any mangling (e.g. for parameters).
@@ -281,7 +302,7 @@ private:
 
   /// This is the IRValue or MLIR operation that this decl corresponds to if it
   /// has one.
-  DeclIRValue irValue;
+  std::optional<DeclIRValue> irValue;
 
   /// This is the source location of the declaration, used for diagnostics and
   /// debug information.

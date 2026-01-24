@@ -176,63 +176,76 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     // The struct doesn't provide an override, see if the wrapper fn we're about
     // to create has a matching signature to an existing wrapper function in the
     // struct.
-    if (!structDefinesMethod) {
-      for (ASTDecl *decl : possibleOverloads) {
-        auto fnOp = cast<FnOp>(decl->getIfOperation());
+    if (structDefinesMethod) {
+      // Since we are not using the default implementation, set the ASTDecl
+      // which were inserted for referencing default method to be fully
+      // resolved.
+      assert(structFnDecl->resolvedness <= DeclResolvedness::signature &&
+             "synthesizeMethodInStruct is only valid on non-body resolved Fn "
+             "ASTDecls");
+      // This was pointed to the trait default implementation, now that we know
+      // this decl is useless, simply disable it. We mark the ASTDecl as
+      // disabled instead of creating a fake FnOp and mark the FnOp to be
+      // disabled.
+      structFnDecl->markDisabled();
+      return success();
+    }
 
-        // Skip any decls currently pointing to the parent trait method
-        if (fnOp.getDisabled())
-          continue;
+    for (ASTDecl *decl : possibleOverloads) {
+      // Skip any decls currently pointing to the parent trait method
+      if (decl->isDisabled())
+        continue;
 
-        auto existingSignature = fnOp.getFullSignature();
-        // now we need to compare the full signature to the trait signature
-        if (isEqualCanon(existingSignature, wrapperSignature)) {
-          // Produce an informative diagnostic citing the conflicting traits
-          // **and the struct name**.
-          StringAttr currentTraitName =
-              traitDecl.getSymbolRef().getLeafReference();
+      auto fnOp = cast<FnOp>(decl->getIfOperation());
 
-          auto otherTraitFn = shared.getDeclResolver().getDeclForFuncSymbol(
-              fnOp.getInheritedFromAttr());
+      auto existingSignature = fnOp.getFullSignature();
+      // now we need to compare the full signature to the trait signature
+      if (isEqualCanon(existingSignature, wrapperSignature)) {
+        // Produce an informative diagnostic citing the conflicting traits
+        // **and the struct name**.
+        StringAttr currentTraitName =
+            traitDecl.getSymbolRef().getLeafReference();
 
-          auto otherTraitName =
-              otherTraitFn->getParentDecl()->getSymbolRef().getLeafReference();
+        auto otherTraitFn = shared.getDeclResolver().getDeclForFuncSymbol(
+            fnOp.getInheritedFromAttr());
 
-          auto diag = shared.emitError(structDecl.getLoc())
-                      << "trait method requirement " << traitFn.getDeclName()
-                      << " has conflicting default implementations in "
-                      << otherTraitName << " and " << currentTraitName
-                      << " you must implement it manually";
+        auto otherTraitName =
+            otherTraitFn->getParentDecl()->getSymbolRef().getLeafReference();
 
-          diag.attachNote(decl->getLoc())
-              << "original default implementation from trait " << otherTraitName
-              << " here";
+        auto diag = shared.emitError(structDecl.getLoc())
+                    << "trait method requirement " << traitFn.getDeclName()
+                    << " has conflicting default implementations in "
+                    << otherTraitName << " and " << currentTraitName
+                    << " you must implement it manually";
 
-          diag.attachNote(traitFn.getLoc())
-              << "conflicting implementation from trait " << currentTraitName
-              << " here";
+        diag.attachNote(decl->getLoc())
+            << "original default implementation from trait " << otherTraitName
+            << " here";
 
-          // Set decl as erroneous here. To answer why consider a case like:
-          //
-          // trait Foo1:
-          //     fn foo(self) -> Int:
-          //         return 1
-          //
-          // trait Foo2(Foo1):
-          //     fn foo(self) -> Int:
-          //         return 2
-          //
-          // @fieldwise_init
-          // struct Foo(Foo2):#), Foo3):
-          //     pass
-          //
-          // In such a case if we're on this codepath decl would correspond to
-          // Foo1.foo -- we set it erroneous here to prevent further processing
-          // (namely body resolution) and additional spurious errors that would
-          // cause.
-          decl->setErroneous();
-          return failure();
-        }
+        diag.attachNote(traitFn.getLoc())
+            << "conflicting implementation from trait " << currentTraitName
+            << " here";
+
+        // Set decl as erroneous here. To answer why consider a case like:
+        //
+        // trait Foo1:
+        //     fn foo(self) -> Int:
+        //         return 1
+        //
+        // trait Foo2(Foo1):
+        //     fn foo(self) -> Int:
+        //         return 2
+        //
+        // @fieldwise_init
+        // struct Foo(Foo2):#), Foo3):
+        //     pass
+        //
+        // In such a case if we're on this codepath decl would correspond to
+        // Foo1.foo -- we set it erroneous here to prevent further processing
+        // (namely body resolution) and additional spurious errors that would
+        // cause.
+        decl->setErroneous();
+        return failure();
       }
     }
 

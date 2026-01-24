@@ -145,6 +145,7 @@ struct BarableStruct(Barable):
     fn bar(self):
         pass
 
+
 # COM: Test that visiting the same struct twice during default-trait-method
 # synthesis doesn't crash.
 trait FooA:
@@ -162,19 +163,22 @@ trait FooB(FooA):
     fn bar(self) -> RP:
         return RP()
 
+
 # CHECK-LABEL: lit.struct.decl @FooA_FooB_Struct(
 struct FooA_FooB_Struct(FooB):
-# CHECK-DAG: lit.fn @"foo(default_trait_methods::FooA_FooB_Struct)"[
-# CHECK-DAG: lit.fn @"bar(default_trait_methods::FooA_FooB_Struct)"[
-# CHECK-DAG: lit.fn @"foo(default_trait_methods::FooA_FooB_Struct)FooA"[
-# CHECK-DAG: lit.fn @"bar(default_trait_methods::FooA_FooB_Struct)FooB"[
-# CHECK-DAG: lit.fn @"foo(default_trait_methods::FooA_FooB_Struct)FooB"[
-# CHECK-DAG: lit.fn @"bar(default_trait_methods::FooA_FooB_Struct)FooA"[
+    # CHECK-DAG: lit.fn @"foo(default_trait_methods::FooA_FooB_Struct)"[
+    # CHECK-DAG: lit.fn @"bar(default_trait_methods::FooA_FooB_Struct)"[
+    # CHECK-NOT: lit.fn @"foo(default_trait_methods::FooA_FooB_Struct)FooA"[
+    # CHECK-NOT: lit.fn @"bar(default_trait_methods::FooA_FooB_Struct)FooB"[
+    # CHECK-NOT: lit.fn @"foo(default_trait_methods::FooA_FooB_Struct)FooB"[
+    # CHECK-NOT: lit.fn @"bar(default_trait_methods::FooA_FooB_Struct)FooA"[
     fn foo(self) -> RP:
         return RP()
 
     fn bar(self) -> RP:
         return RP()
+
+
 # CHECK: kgen.conformance @"{{.*}}::FooA" {
 # CHECK-DAG:   kgen.witness "foo($0)"
 # CHECK-DAG:   kgen.witness "bar($0)"

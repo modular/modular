@@ -1476,8 +1476,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
       assert(paramDecls.size() == 1 &&
              "expected exactly one parameter declaration");
       ASTDecl *paramDecl = paramDecls.front();
-      addFullyResolvedDecl(paramDecl->irValue, paramName, paramDecl->getLoc(),
-                           &sigDecl);
+      addFullyResolvedDecl(paramDecl->irValue.value(), paramName,
+                           paramDecl->getLoc(), &sigDecl);
     }
   }
 
@@ -3826,7 +3826,6 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
   DenseSet<StringAttr> existingFns;
   auto childFnDecls = childTraitDecl->lookupInCurrentScope(functionName);
 
-  bool markDisabled = false;
   // Signature resolve all corresponding overloads in the child trait decl.
   for (auto &childOverload : childFnDecls) {
     auto actualParentTraitRef = getFullyResolvedSymbolRef(
@@ -3848,25 +3847,9 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
     // In such cases we'd really like to be able to just delete the decl we had
     // created at this point since nothing will ever actually make use of it (as
     // the child already has a definition).
-    //
-    // Unfortunately this isn't really possible without making it easy to hit UB
-    // specifically around iterator invalidation.
-    //
-    // A very common sort of pattern across the parser is:
-    //
-    // for (auto& [name, decls] : scope.getDeclsInScope()) {
-    //   for (auto& decl : decls)
-    //     resolveSignature(decl, decl.getLoc());
-    // }
-    //
-    // For decls such as the one we're currently dealing with this code would
-    // bottom out here in this function and to properly remove childTraitFnDecl
-    // from its parent scope we'd have to reach into one of the sub entries of
-    // ASTDecl::declsInScope which in turn would cause issues with the second
-    // for loop in the example above.
     if (parentFnSymName == childFnSymName) {
-      markDisabled = true;
-      break;
+      childTraitFnDecl.markDisabled();
+      return success();
     }
   }
 
@@ -3908,26 +3891,6 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
     Block *entryBlock = clonedFunc.addEntryBlock();
     auto builder = OpBuilder::atBlockEnd(entryBlock);
     UnreachableOp::create(builder, clonedFunc.getLoc());
-  }
-
-  // In this case the child trait has an override for a method defined in the
-  // parent trait. In these sorts of cases we need to 'deactivate' the decl we
-  // had created earlier we do this by creating an empty body for the function
-  // and marking it so that overload resolution will never pick it.
-  if (markDisabled) {
-    // We set this property and use it during overload resolution to skip
-    // declarations like this.
-    clonedFunc.setDisabled(true);
-
-    // Append parent trait name to the function name
-    auto parentTraitName = parentTraitDeclOp.getSymNameAttr();
-    auto sourceName = clonedFunc.getSymNameAttr();
-    // We need to make sure we won't have a symbol that will conflict with the
-    // child's override.
-    auto newName = StringAttr::get(clonedFunc->getContext(),
-                                   parentTraitName.getValue() +
-                                       "::" + sourceName.getValue());
-    clonedFunc.setSymNameAttr(newName);
   }
 
   replaceTraitMethodSelfTypes(clonedFunc, PValue(parentTraitSelfType).get(),

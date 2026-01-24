@@ -1025,6 +1025,9 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
     // Resolve the decl.
     (void)resolveBody(*declIt, declIt->getLoc());
 
+    if (declIt->isDisabled())
+      continue;
+
     // When validating doc strings, we wish to only validate those defined on
     // decl in the main container. As this point the main container decl has
     // been fully resolved, so it's an opportune time to validate.

@@ -1549,6 +1549,8 @@ LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
   unsigned numPosBindings =
       overloadSet.paramBindings.getParameters().getNumPositional();
   for (ASTDecl *fnDecl : overloadSet.fnDecls) {
+    if (fnDecl->isDisabled())
+      continue;
     FnTypeGeneratorType sig =
         cast<FnOp>(fnDecl->getIfOperation()).getFullSignature();
     bindables.emplace_back(sig.getInputParamTypes(), sig.getParamListAttrs(),
