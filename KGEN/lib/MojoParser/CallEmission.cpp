@@ -39,24 +39,6 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-/// Checks if a decl is 'disabled' for the purposes of overload resolution.
-///
-/// There really isn't a clean way to delete decls in the parser. For things
-/// like trait -> struct default method inheritance we have to create decls
-/// early on since we haven't resolved other declarations in the struct fully
-/// enough to determine whether a default trait method has an override in the
-/// struct or not.
-///
-/// This function checks whether a decl was marked as disabled (say in a case
-/// where a struct provides an implementation for a default trait method) so we
-/// can easily filter these decls out of overload resolution. Symbol DCE later
-/// in the compiler handles actually deleting these extra methods.
-static bool isDisabledFunction(ASTDecl *decl) {
-  if (auto fnOp = dyn_cast<FnOp>(decl->getIfOperation()))
-    return fnOp.getDisabled();
-  return false;
-}
-
 //===----------------------------------------------------------------------===//
 // OverloadSet Implementation
 //===----------------------------------------------------------------------===//
@@ -127,7 +109,7 @@ static bool filterForBestCandidates(
       continue;
 
     // Ignore any functions explicitly marked as disabled.
-    if (isDisabledFunction(candidate))
+    if (candidate->isDisabled())
       continue;
 
     // If we found a strictly better candidate, clear the list and update.
@@ -505,6 +487,9 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   bool allInvalid = true;
   bool anyParamConstraintInconclusive = false;
   for (ASTDecl *candidate : fnDecls) {
+    if (candidate->isDisabled())
+      continue;
+
     auto func = cast<FnOp>(candidate->getIfOperation());
 
     // If we are dealing with a static method, we check if the operands include
@@ -832,7 +817,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
   SmallVector<ParameterExprArrayAttr> candidateBindings;
   for (ASTDecl *candidate : fnDecls) {
     // Skip functions explicitly marked as 'disabled'.
-    if (isDisabledFunction(candidate))
+    if (candidate->isDisabled())
       continue;
 
     FnTypeGeneratorType candidateType =
@@ -979,8 +964,6 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
         for (ASTDecl *decl : foundDecls) {
           if (!isa_and_nonnull<FnOp>(decl->getIfOperation()))
             continue;
-          if (isDisabledFunction(decl))
-            continue;
           result.fnDecls.push_back(decl);
         }
       }
@@ -1000,20 +983,18 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
     if (lookupResult.isSuccess()) {
       ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
       assert(!resultDecls.empty() && "We know this succeeded");
-
-      // If we find a vardecl or any other thing, then fail to find anything
-      // because it cannot be called.
-      if (!isa<FnOp>(resultDecls[0]->getIfOperation())) {
-        // FIXME: This seems wrong. why aren't we emitting an error??
-        return result;
-      }
-
       assert(result.fnDecls.empty() && "Already have entries");
 
       // Filter out disabled functions to avoid multiple definition conflicts
       for (ASTDecl *decl : resultDecls) {
-        if (isDisabledFunction(decl))
+        if (decl->isDisabled())
           continue;
+        // If we find a vardecl or any other thing, then fail to find anything
+        // because it cannot be called.
+        if (!isa<FnOp>(decl->getIfOperation())) {
+          // FIXME: This seems wrong. why aren't we emitting an error??
+          return result;
+        }
         result.fnDecls.push_back(decl);
       }
     }
@@ -1036,16 +1017,16 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
         ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
         assert(!resultDecls.empty() && "We know this succeeded");
 
-        // If we find a vardecl or any other thing, then fail to find anything
-        // because it cannot be called.
-        if (!isa<FnOp>(resultDecls[0]->getIfOperation()))
-          // FIXME: This seems wrong. why aren't we emitting an error??
-          return result;
-
         // Filter out disabled functions to avoid multiple definition conflicts
         for (ASTDecl *decl : resultDecls) {
-          if (isDisabledFunction(decl))
+          if (decl->isDisabled())
             continue;
+          // If we find a vardecl or any other thing, then fail to find anything
+          // because it cannot be called.
+          if (!isa<FnOp>(decl->getIfOperation())) {
+            // FIXME: This seems wrong. why aren't we emitting an error??
+            return result;
+          }
           result.fnDecls.push_back(decl);
         }
       }
